@@ -50,6 +50,7 @@ import * as sharedBoards from '@boardsesh/graphql/operations/boards';
 import * as sharedFavorites from '@boardsesh/graphql/operations/favorites';
 import * as sharedGyms from '@boardsesh/graphql/operations/gyms';
 import * as sharedIntegrations from '@boardsesh/graphql/operations/integrations';
+import * as sharedConnectedApps from '@boardsesh/graphql/operations/connected-apps';
 import * as sharedLiveSessions from '@boardsesh/graphql/operations/live-sessions';
 import * as sharedNewClimbFeed from '@boardsesh/graphql/operations/new-climb-feed';
 import * as sharedPlaylists from '@boardsesh/graphql/operations/playlists';
@@ -178,6 +179,7 @@ const SHARED_OPERATION_MODULES: Record<string, Record<string, unknown>> = {
   '@boardsesh/graphql/operations/favorites': sharedFavorites,
   '@boardsesh/graphql/operations/gyms': sharedGyms,
   '@boardsesh/graphql/operations/integrations': sharedIntegrations,
+  '@boardsesh/graphql/operations/connected-apps': sharedConnectedApps,
   '@boardsesh/graphql/operations/live-sessions': sharedLiveSessions,
   '@boardsesh/graphql/operations/new-climb-feed': sharedNewClimbFeed,
   '@boardsesh/graphql/operations/playlists': sharedPlaylists,

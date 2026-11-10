@@ -826,6 +826,7 @@
       "settings": {
         "draftLabel": "Als Entwurf speichern",
         "draftDescription": "Entwürfe bleiben privat, bis du sie veröffentlichst.",
+        "draftDescriptionApps": "Entwürfe bleiben nicht gelistet, bis du sie veröffentlichst. Verbundene Apps von Leuten, die einen davon eintragen, sehen ihn trotzdem.",
         "noMatchLabel": "Kein Matchen",
         "noMatchDescription": "Hände dürfen nicht am selben Griff matchen",
         "noKickboardLabel": "Ohne Fußleiste",
@@ -834,7 +835,8 @@
         "campusDescription": "Nur Hände, keine Füße",
         "anyFeetLabel": "Freie Füße",
         "anyFeetDescription": "Füße dürfen jeden Griff nutzen, nicht nur die markierten",
-        "wallDraftDescription": "Alle mit Zugang zu dieser Spraywall können deine gespeicherten Entwürfe klettern."
+        "wallDraftDescription": "Alle mit Zugang zu dieser Spraywall können deine gespeicherten Entwürfe klettern.",
+        "wallDraftDescriptionApps": "Alle mit Zugang zu dieser Spraywall können deine gespeicherten Entwürfe klettern. Verbundene Apps von Leuten, die einen davon eintragen, sehen ihn auch."
       },
       "drafts": {
         "holds_one": "{{count}} Griff",

@@ -826,6 +826,7 @@
       "settings": {
         "draftLabel": "Enregistrer comme brouillon",
         "draftDescription": "Les brouillons restent privés jusqu’à publication.",
+        "draftDescriptionApps": "Les brouillons restent non listés jusqu’à publication. Les apps connectées par les personnes qui en notent un peuvent quand même le voir.",
         "noMatchLabel": "Une main par prise",
         "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise",
         "noKickboardLabel": "Sans kickboard",
@@ -834,7 +835,8 @@
         "campusDescription": "Mains seulement, sans les pieds",
         "anyFeetLabel": "Pieds libres",
         "anyFeetDescription": "Les pieds peuvent utiliser n’importe quelle prise, pas seulement les prises marquées",
-        "wallDraftDescription": "Toute personne ayant accès à ce Spraywall peut grimper tes brouillons enregistrés."
+        "wallDraftDescription": "Toute personne ayant accès à ce Spraywall peut grimper tes brouillons enregistrés.",
+        "wallDraftDescriptionApps": "Toute personne ayant accès à ce Spraywall peut grimper tes brouillons enregistrés. Les apps connectées par les personnes qui en notent un peuvent aussi le voir."
       },
       "drafts": {
         "holds_one": "{{count}} prise",

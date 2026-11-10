@@ -2,7 +2,8 @@
 /**
  * Two-way static check over the i18n catalogs and the code that reads them,
  * across `packages/web/app/`, `packages/web/scripts/`, `packages/mobile/{src,app}/`,
- * `packages/backend/src/` and `packages/shared/workout-summary/src/`:
+ * `packages/backend/src/`, `packages/shared/workout-summary/src/` and
+ * `packages/shared/connected-apps/src/`:
  *
  *   - ORPHANS — a key in `packages/shared/i18n/locales/en-US/<ns>.json` with no
  *     live reference. en-US is the source of truth — `es`, `fr`, `de`, and `it` fall
@@ -68,6 +69,8 @@ const mobileAppRoot = join(packagesRoot, 'mobile', 'app');
 const backendSrcRoot = join(packagesRoot, 'backend', 'src');
 // Shared copy helpers that take a `t` from web and mobile alike (#6903).
 const workoutSummarySrcRoot = join(packagesRoot, 'shared', 'workout-summary', 'src');
+// Connected apps' copy, the same way (#6981 F16).
+const connectedAppsSrcRoot = join(packagesRoot, 'shared', 'connected-apps', 'src');
 const catalogRoot = join(packagesRoot, 'shared', 'i18n', 'locales', 'en-US');
 const repoRoot = join(webRoot, '..', '..');
 
@@ -762,6 +765,7 @@ function run(): Report {
     mobileAppRoot,
     backendSrcRoot,
     workoutSummarySrcRoot,
+    connectedAppsSrcRoot,
   ]);
   const usedKeys = new Map<string, Set<string>>();
   const globs = new Map<string, GlobPattern[]>();

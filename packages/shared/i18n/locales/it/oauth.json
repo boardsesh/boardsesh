@@ -63,6 +63,8 @@
       "profileRead": "Vedere il tuo nome visualizzato e la foto profilo",
       "logbookRead": "Vedere ogni salita del tuo diario, su ogni pannello",
       "logbookOnlyMe": "Comprese le salite che tieni su «Solo io»",
+      "logbookUnlisted": "Compresi i blocchi non in elenco e le bozze tracciati da altri che hai registrato",
+      "logbookSpraywall": "I blocchi della Spraywall «Privata» o «Solo con link» di un’altra persona arrivano senza nome",
       "offlineAccess": "Mantenere questo accesso finché non la scolleghi",
       "other": "Altro accesso: {{scope}}"
     },

@@ -49,6 +49,9 @@ type Documents = {
   '\n  mutation UpdateComment($input: UpdateCommentInput!) {\n    updateComment(input: $input) {\n      uuid\n      userId\n      userDisplayName\n      userAvatarUrl\n      entityType\n      entityId\n      parentCommentUuid\n      body\n      isDeleted\n      replyCount\n      upvotes\n      downvotes\n      voteScore\n      userVote\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.UpdateCommentDocument;
   '\n  mutation DeleteComment($commentUuid: ID!) {\n    deleteComment(commentUuid: $commentUuid)\n  }\n': typeof types.DeleteCommentDocument;
   '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n': typeof types.VoteDocument;
+  '\n  query GetMyConnectedApps {\n    myConnectedApps {\n      apps {\n        connectionId\n        name\n        publisherName\n        scopes\n        connectedAt\n        lastUsedAt\n        suspended\n      }\n      partnerAppsEnabled\n    }\n  }\n': typeof types.GetMyConnectedAppsDocument;
+  '\n  query GetPartnerAppsEnabled {\n    partnerAppsEnabled\n  }\n': typeof types.GetPartnerAppsEnabledDocument;
+  '\n  mutation DisconnectApp($connectionId: ID!) {\n    disconnectApp(connectionId: $connectionId)\n  }\n': typeof types.DisconnectAppDocument;
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n': typeof types.CreateSessionDocument;
   '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n': typeof types.FavoritesDocument;
   '\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n': typeof types.ToggleFavoriteDocument;
@@ -277,6 +280,11 @@ const documents: Documents = {
     types.DeleteCommentDocument,
   '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n':
     types.VoteDocument,
+  '\n  query GetMyConnectedApps {\n    myConnectedApps {\n      apps {\n        connectionId\n        name\n        publisherName\n        scopes\n        connectedAt\n        lastUsedAt\n        suspended\n      }\n      partnerAppsEnabled\n    }\n  }\n':
+    types.GetMyConnectedAppsDocument,
+  '\n  query GetPartnerAppsEnabled {\n    partnerAppsEnabled\n  }\n': types.GetPartnerAppsEnabledDocument,
+  '\n  mutation DisconnectApp($connectionId: ID!) {\n    disconnectApp(connectionId: $connectionId)\n  }\n':
+    types.DisconnectAppDocument,
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n':
     types.CreateSessionDocument,
   '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n':
@@ -812,6 +820,24 @@ export function graphql(
 export function graphql(
   source: '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n',
 ): (typeof documents)['\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetMyConnectedApps {\n    myConnectedApps {\n      apps {\n        connectionId\n        name\n        publisherName\n        scopes\n        connectedAt\n        lastUsedAt\n        suspended\n      }\n      partnerAppsEnabled\n    }\n  }\n',
+): (typeof documents)['\n  query GetMyConnectedApps {\n    myConnectedApps {\n      apps {\n        connectionId\n        name\n        publisherName\n        scopes\n        connectedAt\n        lastUsedAt\n        suspended\n      }\n      partnerAppsEnabled\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query GetPartnerAppsEnabled {\n    partnerAppsEnabled\n  }\n',
+): (typeof documents)['\n  query GetPartnerAppsEnabled {\n    partnerAppsEnabled\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DisconnectApp($connectionId: ID!) {\n    disconnectApp(connectionId: $connectionId)\n  }\n',
+): (typeof documents)['\n  mutation DisconnectApp($connectionId: ID!) {\n    disconnectApp(connectionId: $connectionId)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

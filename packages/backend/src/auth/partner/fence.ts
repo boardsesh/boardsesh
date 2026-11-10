@@ -388,10 +388,18 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               if (capRefusal) throw connectionRefusal(context, codeOwner, capRefusal);
               if (connection.revokedAt) {
                 // An approved reconnect: no longer revoked, but not live again
-                // (and not counted) until the app redeems a code.
+                // (and not counted) until the app redeems a code. Its last use
+                // belonged to the connection that ended, so Connected apps reads
+                // "Not used yet" and the first call after reconnecting stamps it.
                 await transaction
                   .update(oauthConnections)
-                  .set({ revokedAt: null, revocationReason: null, connectedAt: null, updatedAt: issuedAt })
+                  .set({
+                    revokedAt: null,
+                    revocationReason: null,
+                    connectedAt: null,
+                    lastUsedAt: null,
+                    updatedAt: issuedAt,
+                  })
                   .where(eq(oauthConnections.id, connection.id));
               }
             }

@@ -146,6 +146,26 @@ describe('PartnerConsentContent', () => {
     expect(item.textContent).toContain('Including ticks you keep to “Only me”');
   });
 
+  it('says that logbook:read includes unlisted climbs and drafts set by others (#7387), and only there', async () => {
+    await renderReady(
+      details({
+        scopes: [
+          { scope: 'logbook:read', includesOnlyMeTicks: true },
+          { scope: 'profile:read', includesOnlyMeTicks: false },
+        ],
+      }),
+    );
+    const [logbook, profile] = within(screen.getByRole('region', { name: 'Sequence will be able to' })).getAllByRole(
+      'listitem',
+    );
+    const unlisted = "Including other setters' unlisted climbs and drafts you've logged";
+    const spraywall = "Climbs on someone else's Private or Link only Spraywall arrive without their names";
+    expect(logbook.textContent).toContain(unlisted);
+    expect(logbook.textContent).toContain(spraywall);
+    expect(profile.textContent).not.toContain(unlisted);
+    expect(profile.textContent).not.toContain(spraywall);
+  });
+
   it('names a reconnect in the title and explains it', async () => {
     const heading = await renderReady(details({ reconnect: true }));
     expect(heading.textContent).toBe('Connect Sequence again?');

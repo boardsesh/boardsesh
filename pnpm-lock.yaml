@@ -656,6 +656,9 @@ importers:
       '@boardsesh/community-roles':
         specifier: workspace:*
         version: link:../shared/community-roles
+      '@boardsesh/connected-apps':
+        specifier: workspace:*
+        version: link:../shared/connected-apps
       '@boardsesh/consent':
         specifier: workspace:*
         version: link:../shared/consent
@@ -1298,6 +1301,12 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/shared/connected-apps:
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/shared/consent:
     devDependencies:
       '@types/node':
@@ -1817,6 +1826,9 @@ importers:
       '@boardsesh/community-roles':
         specifier: workspace:*
         version: link:../shared/community-roles
+      '@boardsesh/connected-apps':
+        specifier: workspace:*
+        version: link:../shared/connected-apps
       '@boardsesh/consent':
         specifier: workspace:*
         version: link:../shared/consent

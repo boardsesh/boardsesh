@@ -46,9 +46,21 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   // Account deletion takes a developer's partner app locks in the partner order
   // before its cascade reaches them (plain SQL, whatever the mode).
   'packages/backend/src/graphql/resolvers/users/mutations.ts': ['../../../auth/partner/locks'],
+  // Connected apps' GraphQL operations (F16), which serve every mode and so must never load Better Auth.
+  'packages/backend/src/graphql/resolvers/connected-apps/connected-apps.ts': [
+    '../../../auth/partner/connected-apps',
+    '../../../auth/partner/mode',
+  ],
 };
 /** The sweep itself: plain SQL on the partner tables. */
 const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
+/**
+ * Connected apps (F16): a climber's list and Disconnect, which work in every
+ * mode. Plain SQL through the same Disconnect path as `DELETE /v1/connection`,
+ * and these are every partner module it loads, at any depth.
+ */
+const CONNECTED_APPS_MODULE = `${PARTNER_ROOT}connected-apps.ts`;
+const CONNECTED_APPS_PARTNER_CLOSURE = ['connected-apps.ts', 'connection.ts', 'locks.ts', 'transaction.ts'];
 /**
  * Partner modules an entry point loads besides the loader, whose one import of
  * the authority is dynamic (checked below). They import no Better Auth and no
@@ -244,6 +256,24 @@ describe('Better Auth dependency boundary', () => {
     const relativeImports = runtimeImportSpecifiers(sweepSource).filter((specifier) => specifier.startsWith('.'));
     expect(relativeImports).toEqual(['../../utils/postgres-errors']);
     expect(importSpecifiers(sweepSource).some(isBetterAuthSpecifier)).toBe(false);
+  });
+
+  it('keeps Connected apps, which run whatever the mode, off Better Auth and the authority at any depth', () => {
+    const loaded = new Set<string>();
+    const pending = [CONNECTED_APPS_MODULE];
+    while (pending.length > 0) {
+      const path = pending.pop() as string;
+      if (loaded.has(path)) continue;
+      loaded.add(path);
+      const specifiers = runtimeImportSpecifiers(readRepoFile(path));
+      expect(specifiers.filter(isBetterAuthSpecifier), path).toEqual([]);
+      for (const specifier of specifiers.filter((candidate) => candidate.startsWith('./'))) {
+        pending.push(`${PARTNER_ROOT}${specifier.slice(2)}.ts`);
+      }
+    }
+    expect([...loaded].map((path) => path.slice(PARTNER_ROOT.length)).sort()).toEqual(
+      [...CONNECTED_APPS_PARTNER_CLOSURE].sort(),
+    );
   });
 
   it('reaches the authority only through a dynamic import in the loader', () => {

@@ -428,12 +428,15 @@ native/watch aliases are owned by the migration doc, not this API contract.
 ### Routes and the mode switch
 
 `PARTNER_OAUTH_MODE` is read once, from the environment. No request can
-choose it. Three production modules outside `auth/partner/` may reach into that
+choose it. Five production modules outside `auth/partner/` may reach into that
 folder: `handlers/partner-auth.ts` (these routes), `handlers/public-api/router.ts`
-(the `/v1` API) and `graphql/resolvers/oauth-clients/partner-registration.ts` (the
-developer console's operations, see [Self-service registration](#self-service-registration)).
-With the mode `off` none answers anything new, and none loads Better Auth.
-`scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
+(the `/v1` API), `graphql/resolvers/oauth-clients/partner-registration.ts` (the
+developer console's operations, see [Self-service registration](#self-service-registration)),
+`services/partner-oauth-sweep.ts` (the [retention sweep](#retention-sweep)) and
+`graphql/resolvers/connected-apps/connected-apps.ts` ([Connected apps](#connected-apps)).
+With the mode `off` the first three answer nothing new, and none loads Better Auth.
+The sweep and Connected apps run in every mode, so they load only plain-SQL partner
+modules. `scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
 may import. Backend and web parse it with the same function
 (`@boardsesh/auth-protocol/partner-oauth-mode`): an absent, empty or misspelled
 value is `off`.
@@ -878,6 +881,70 @@ nothing. The link stays until it expires, and it can never match again, because 
 generation only rises, a reconnect keeps it, and the link is deleted with the
 climber or the app.
 
+### Connected apps
+
+A climber sees and ends their own connections in Settings › Connected apps, in the
+app (the "Apps with access" section, last on the `integrations` page) and on the
+website (`/settings`), so a connection can be ended from any browser (#6981 F16).
+Both show one compact row per app (name and last use). A row opens the app's detail:
+the app opens a pushed settings page (`/settings/connected-app?id=…`, registered flat
+in the settings stack like Board look's leaves), the website a dialog. The detail
+lists what the app can see, when it connected and was last used, and Disconnect,
+which asks first. First-party GraphQL operations serve both, from
+`graphql/resolvers/connected-apps/connected-apps.ts` over `auth/partner/connected-apps.ts`:
+
+| Operation | What it does |
+| --- | --- |
+| `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes from its remembered consent, `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
+| `disconnectApp(connectionId)` | Ends the connection through `endPartnerConnection`, the same path as `DELETE /v1/connection`, with reason `climber_disconnect`. `true` once ended, also when it already was |
+| `partnerAppsEnabled` | The same flag on its own, signed in or not, for screens that only need to know whether to mention connected apps. The app caches it for an hour, so the editor never asks per open |
+
+Both work in **every** mode, `off` and `hold` included: a climber can always end a
+connection, including one made before the mode was turned off. Neither loads Better
+Auth, and both run on the GraphQL pool, not the partner pool.
+
+Disconnect keeps the partner lock order: the climber's `users` row `FOR SHARE`, then
+the connection `FOR UPDATE`, then the provider rows, with consent links deleted
+through `SKIP LOCKED` as described above. The id is matched to the signed-in climber
+before any lock and again under it, so another climber's id answers `NOT_FOUND`
+exactly like an unknown one and ends nothing. A connection approved for a reconnect
+but not redeemed yet is not listed, but Disconnect ends it too. A lock that does not
+come within 2 s answers `SERVICE_UNAVAILABLE` with `retryAfterSeconds: 2`.
+Disconnect is limited to 30 a minute per climber.
+
+**Last used.** `oauth_connections.last_used_at` is written after a `/v1` token
+passes the bearer check and the rate limits, at most once an hour per connection.
+The bearer read already carries the stored value, so a fresh one costs nothing. A
+stale one runs one `UPDATE` that names its row through `FOR NO KEY UPDATE SKIP
+LOCKED`, re-checks the hour, the generation and `revoked_at` in SQL, and never
+touches `users`: it never waits for a row, racing requests write once, and a row a
+Disconnect, refresh or consent answer holds is simply stamped on a later call. SKIP
+LOCKED does not cover the table lock the UPDATE takes, so the stamp sets a 50 ms
+`lock_timeout`: while a migration holds `oauth_connections`, a request gives up the
+stamp after 50 ms instead of the partner 2 s. A failure to stamp is logged and never
+fails the request. An approved reconnect clears `last_used_at` with `connected_at`,
+so the new connection starts at "Not used yet". Connected apps shows a stamp under an
+hour old as "Used in the last hour".
+
+**What the climber sees.** The words and the show-or-hide rule live in
+`@boardsesh/connected-apps`, shared by both platforms. The section is hidden while
+signed out, before the first answer, after a failed first load, and when there is
+nothing connected while partner apps are off; with partner apps on and nothing
+connected it says so. The detail page opened by a cold link whose first load failed
+says so and offers a retry. Under `logbook:read` the detail carries the same three
+lines as the consent screen, matching what the logbook serializer sends (see [Data
+boundaries](#data-boundaries-and-legalmd)): ticks kept to "Only me" (decision 21);
+other setters' unlisted climbs and drafts the climber logged, which arrive in full
+(#7387, owner decision 2026-11-10); and climbs on someone else's Private or Link only
+Spraywall, which arrive without their names.
+
+Setters hear the same from the other side only once partner apps are on
+(`partnerAppsEnabled`; with the mode `off` nothing changes): the "Save as draft"
+switch says drafts stay unlisted and that apps connected by climbers who log one can
+still see it, on a board and on a public Spraywall. A Private or Link only
+Spraywall's draft line and its visibility hints say nothing about apps, because apps
+get those climbs without their names.
+
 ### Retention sweep
 
 The provider deletes a row only when someone presents it, so expired partner
@@ -1017,8 +1084,8 @@ seconds in the `backend` project.
 
 It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
 sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
-front of the API host, and Sentry and PostHog redaction. The logbook routes have
-their own suites (L4), and Connected apps Disconnect is not built yet.
+front of the API host, and Sentry and PostHog redaction. The logbook routes and
+Connected apps have their own suites (L4, F16).
 
 ---
 

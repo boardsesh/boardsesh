@@ -68,8 +68,13 @@ function visibilityOptions(t: Translate): (MoreOption & { key: SprayWallVisibili
   ];
 }
 
-/** What choosing this visibility means, said under the control (the same hints as Edit board). */
-function visibilityHint(visibility: SprayWallVisibility, t: Translate): string {
+/**
+ * What choosing this visibility means, said under the control, here and on Edit
+ * board. Nothing about connected apps: a climber's apps get a Link only or
+ * private wall's climbs without their names (`logbook-tick-serializer.ts`), so
+ * there is nothing for the owner to weigh.
+ */
+export function sprayVisibilityHint(visibility: SprayWallVisibility, t: Translate): string {
   if (visibility === 'public') return t('mobile.sprayVisibility.publicHint');
   if (visibility === 'unlisted') return t('mobile.sprayVisibility.unlistedHint');
   return t('mobile.sprayVisibility.privateHint');
@@ -114,7 +119,7 @@ export function buildSprayDetailsModel(input: SprayDetailsModelInput): MoreFormM
   sections.push({
     key: 'visibility',
     title: t('mobile.sprayVisibility.label'),
-    footer: visibilityHint(input.visibility, t),
+    footer: sprayVisibilityHint(input.visibility, t),
     rows: [
       {
         // Three states in one control: two switches made "Public and Link only"

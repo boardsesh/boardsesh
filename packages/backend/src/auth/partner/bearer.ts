@@ -15,6 +15,8 @@ export interface PartnerApiPrincipal {
   scopes: string[];
   /** The stored hash, so a write can check the token again under its lock. */
   accessTokenHash: string;
+  /** The connection's `last_used_at` as read, so a request writes it only when it is an hour old. */
+  connectionLastUsedAt: Date | null;
 }
 
 /** Why a token was refused. For logs only: every reason answers the same 401. */
@@ -50,6 +52,7 @@ type PartnerBearerRow = {
   connectionClientId: string;
   connectionGeneration: number;
   connectionRevokedAt: Date | null;
+  connectionLastUsedAt: Date | null;
   clientDisabled: boolean | null;
 };
 
@@ -87,6 +90,7 @@ export function judgePartnerBearer(
       connectionGeneration: row.connectionGeneration,
       scopes: row.scopes,
       accessTokenHash,
+      connectionLastUsedAt: row.connectionLastUsedAt,
     },
   };
 }
@@ -117,6 +121,7 @@ export async function findPartnerApiPrincipal(
       connectionClientId: oauthConnections.clientId,
       connectionGeneration: oauthConnections.generation,
       connectionRevokedAt: oauthConnections.revokedAt,
+      connectionLastUsedAt: oauthConnections.lastUsedAt,
       clientDisabled: oauthClient.disabled,
     })
     .from(oauthAccessToken)

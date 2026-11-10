@@ -33,6 +33,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
+import { sprayVisibilityHint } from '../spray-wall/spray-details-model';
 import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -240,11 +241,7 @@ export function SprayWallVisibilityField({
         accessibilityLabel={t('mobile.sprayVisibility.label')}
       />
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
-        {visibility === 'public'
-          ? t('mobile.sprayVisibility.publicHint')
-          : visibility === 'unlisted'
-            ? t('mobile.sprayVisibility.unlistedHint')
-            : t('mobile.sprayVisibility.privateHint')}
+        {sprayVisibilityHint(visibility, t)}
       </Text>
     </>
   );

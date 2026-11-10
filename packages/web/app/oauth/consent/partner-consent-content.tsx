@@ -12,6 +12,7 @@ import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import ReplayOutlined from '@mui/icons-material/ReplayOutlined';
+import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined';
 import { visuallyHidden } from '@mui/utils';
 import { useTranslation } from 'react-i18next';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -86,6 +87,28 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
           >
             <LockOutlined aria-hidden sx={{ fontSize: 16 }} />
             {t('consent.scopes.logbookOnlyMe')}
+          </Typography>
+        ) : null}
+        {/* #7387: the full climb behind every tick, unlisted climbs and drafts set by others included. */}
+        {scope === 'logbook:read' ? (
+          <Typography
+            variant="body2"
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 0.5,
+              mt: 0.5,
+              fontWeight: themeTokens.typography.fontWeight.medium,
+            }}
+          >
+            <VisibilityOffOutlined aria-hidden sx={{ fontSize: 16, mt: '2px' }} />
+            {t('consent.scopes.logbookUnlisted')}
+          </Typography>
+        ) : null}
+        {/* The serializer's one exception: someone else's non-public Spraywall keeps its climbs' names. */}
+        {scope === 'logbook:read' ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, pl: 2.5 }}>
+            {t('consent.scopes.logbookSpraywall')}
           </Typography>
         ) : null}
       </Box>

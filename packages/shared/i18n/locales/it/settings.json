@@ -577,6 +577,40 @@
     },
     "garmin": {
       "title": "Garmin"
+    },
+    "partnerApps": {
+      "title": "App con accesso",
+      "empty": "Ancora nessuna app collegata. Le app che colleghi al tuo account Boardsesh compaiono qui.",
+      "footer": "Un’app scollegata non legge più niente di nuovo. Quello che ha già copiato resta nell’app.",
+      "gone": "Questa app non è più collegata.",
+      "loadFailed": "Impossibile caricare questa app. Controlla la connessione e riprova.",
+      "retry": "Riprova",
+      "scopesHeading": "Cosa può vedere {{app}}",
+      "unnamedApp": "App senza nome",
+      "publisher": "Di {{publisher}}",
+      "connected": "Collegata il {{date}}",
+      "lastUsed": "Ultimo uso {{time}}",
+      "lastUsedRecently": "Usata nell’ultima ora",
+      "notUsedYet": "Non ancora usata",
+      "suspended": "Boardsesh ha messo in pausa questa app. Per ora non può leggere niente.",
+      "suspendedShort": "Messa in pausa da Boardsesh",
+      "scopes": {
+        "logbookRead": "Vede ogni salita del tuo diario, su ogni pannello",
+        "logbookOnlyMe": "Comprese le salite che tieni su «Solo io»",
+        "logbookUnlisted": "Compresi i blocchi non in elenco e le bozze tracciati da altri che hai registrato",
+        "logbookSpraywall": "I blocchi della Spraywall «Privata» o «Solo con link» di un’altra persona arrivano senza nome",
+        "profileRead": "Vede il tuo nome visualizzato e la foto profilo",
+        "offlineAccess": "Mantiene questo accesso finché non la scolleghi",
+        "other": "Altro accesso: {{scope}}"
+      },
+      "disconnect": "Scollega",
+      "disconnectA11y": "Scollega {{app}}",
+      "disconnectConfirmTitle": "Scollegare {{app}}?",
+      "disconnectConfirmBody": "{{app}} smette subito di vedere il tuo account. Quello che ha già copiato resta nell’app. Per usarla di nuovo, collegala dall’app.",
+      "disconnected": "{{app}} scollegata",
+      "disconnectFailed": "Impossibile scollegare {{app}}. Riprova.",
+      "cancel": "Annulla",
+      "close": "Chiudi"
     }
   },
   "watchPairing": {

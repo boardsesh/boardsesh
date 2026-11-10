@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+// Whether partner apps are on, for the draft switch's note (#7387).
+const partnerApps = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({ usePartnerAppsEnabled: () => partnerApps.enabled }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -42,12 +45,13 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../SwitchRow', () => ({
-  SwitchRow: ({ label }: { label: string }) => createElement('div', { 'data-testid': 'switch-row' }, label),
+  SwitchRow: ({ label, description }: { label: string; description?: string }) =>
+    createElement('div', { 'data-testid': 'switch-row', 'data-description': description }, label),
 }));
 
 import { CreateDrawerForm } from '../CreateDrawerForm';
 
-function renderForm(boardName: string) {
+function renderForm(boardName: string, sprayWallPublic = false) {
   const noop = () => {};
   return render(
     <CreateDrawerForm
@@ -65,6 +69,7 @@ function renderForm(boardName: string) {
       anyFeetAvailable
       isDraft={false}
       onChangeIsDraft={noop}
+      sprayWallPublic={sprayWallPublic}
     />,
   );
 }
@@ -82,5 +87,31 @@ describe('CreateDrawerForm no-kickboard switch', () => {
 
   it('is offered on a catalogue board', () => {
     expect(switchLabels('kilter')).toContain('mobile.create.settings.noKickboardLabel');
+  });
+});
+
+describe('CreateDrawerForm draft switch', () => {
+  function draftDescription(boardName: string, sprayWallPublic = false): string | null {
+    const draft = renderForm(boardName, sprayWallPublic)
+      .getAllByTestId('switch-row')
+      .find((row) => row.textContent === 'mobile.create.settings.draftLabel');
+    return draft?.getAttribute('data-description') ?? null;
+  }
+
+  // A Private or Link only Spraywall's climbs reach apps without their names, so
+  // only a board or a public Spraywall mentions them, and only with apps on.
+  it.each([
+    ['kilter', false, false, 'mobile.create.settings.draftDescription'],
+    ['spray', false, true, 'mobile.create.settings.wallDraftDescription'],
+    ['kilter', true, false, 'mobile.create.settings.draftDescriptionApps'],
+    ['spray', true, false, 'mobile.create.settings.wallDraftDescription'],
+    ['spray', true, true, 'mobile.create.settings.wallDraftDescriptionApps'],
+  ])('on %s, partner apps on: %s, public wall: %s, says %s', (boardName, enabled, wallPublic, expected) => {
+    partnerApps.enabled = enabled;
+    try {
+      expect(draftDescription(boardName, wallPublic)).toBe(expected);
+    } finally {
+      partnerApps.enabled = false;
+    }
   });
 });

@@ -1483,6 +1483,14 @@ export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResp
     response: { data: { sessionWorkoutHeadlines: [] } },
     reason: 'no recorded session followed a workout stored on the server',
   },
+  // query GetPartnerAppsEnabled — packages/shared/graphql/src/operations/connected-apps.ts
+  // (#6981 F16). The create-climb editor and the Spraywall visibility controls
+  // ask it whether to mention connected apps. Partner apps are off in production,
+  // where the set is recorded, and both screens draw exactly as before on false.
+  GetPartnerAppsEnabled: {
+    response: { data: { partnerAppsEnabled: false } },
+    reason: 'partner apps are off in production, where the set is recorded',
+  },
 };
 
 /** This operation's replay default, or `null` when it has none. */

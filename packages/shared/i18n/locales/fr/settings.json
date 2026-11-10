@@ -577,6 +577,40 @@
     },
     "garmin": {
       "title": "Garmin"
+    },
+    "partnerApps": {
+      "title": "Apps avec accès",
+      "empty": "Aucune app connectée pour l’instant. Les apps que tu connectes à ton compte Boardsesh apparaissent ici.",
+      "footer": "Une app déconnectée ne lit plus rien de nouveau. Ce qu’elle a déjà copié reste chez elle.",
+      "gone": "Cette app n’est plus connectée.",
+      "loadFailed": "Impossible de charger cette app. Vérifie ta connexion et réessaie.",
+      "retry": "Réessayer",
+      "scopesHeading": "Ce que {{app}} peut voir",
+      "unnamedApp": "App sans nom",
+      "publisher": "Par {{publisher}}",
+      "connected": "Connectée le {{date}}",
+      "lastUsed": "Dernière utilisation {{time}}",
+      "lastUsedRecently": "Utilisée dans la dernière heure",
+      "notUsedYet": "Pas encore utilisée",
+      "suspended": "Boardsesh a mis cette app en pause. Elle ne peut rien lire pour l’instant.",
+      "suspendedShort": "Mise en pause par Boardsesh",
+      "scopes": {
+        "logbookRead": "Voit toutes les entrées de ton carnet, sur toutes les boards",
+        "logbookOnlyMe": "Y compris les entrées que tu gardes en « Moi uniquement »",
+        "logbookUnlisted": "Y compris les blocs non listés et les brouillons ouverts par d’autres que tu as notés",
+        "logbookSpraywall": "Les blocs du Spraywall « Privé » ou « Lien seulement » d’une autre personne arrivent sans leur nom",
+        "profileRead": "Voit ton nom affiché et ta photo de profil",
+        "offlineAccess": "Garde cet accès jusqu’à ce que tu la déconnectes",
+        "other": "Autre accès : {{scope}}"
+      },
+      "disconnect": "Déconnecter",
+      "disconnectA11y": "Déconnecter {{app}}",
+      "disconnectConfirmTitle": "Déconnecter {{app}} ?",
+      "disconnectConfirmBody": "{{app}} ne voit plus ton compte dès maintenant. Ce qu’elle a déjà copié reste dans l’app. Pour l’utiliser à nouveau, connecte-la depuis l’app.",
+      "disconnected": "{{app}} déconnectée",
+      "disconnectFailed": "Impossible de déconnecter {{app}}. Réessaie.",
+      "cancel": "Annuler",
+      "close": "Fermer"
     }
   },
   "watchPairing": {
