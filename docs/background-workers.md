@@ -259,27 +259,40 @@ How a run works, and what it costs:
   feed's transaction horizon. It uses the primary key, not the BRIN index on
   `created_at`: rows leave from the head of the table, VACUUM gives those pages
   to new rows, and a BRIN range only ever widens. Measured on PostgreSQL 15
-  against 1.8M synthetic rows (90 days at 20,000 a day, 231 MB heap): after 30
+  against 1.8M synthetic rows (90 days at 20,000 a day, 231 MB heap; production
+  writes more, see below): after 30
   days of deletions and page reuse, a BRIN scan for one day's 20,000 old rows
   read 10,311 of 29,509 heap pages, against 459 on the fresh table. After a full
   90-day cycle it would read all of them. One 500-row step of the walk reads
   about 17 pages.
 - **Each delete** is one fenced transaction of at most 500 rows, with a 5 s
-  statement timeout and a 1 s lock timeout. It checks both conditions again,
+  statement timeout, a 1 s lock timeout and a 10 s idle-in-transaction timeout
+  (the walk has the same idle timeout). A worker that freezes mid-batch holds a
+  transaction id, and with it every partner's feed horizon, for at most 10 s. It checks both conditions again,
   claims its rows `FOR UPDATE SKIP LOCKED` (a row an account deletion holds is
   skipped, never waited for), deletes them, and raises the watermark to the last
   position it deleted. It never lowers the watermark. Measured: 5,520 buffer hits
   and 10 pages dirtied for 500 rows, 1.5 ms warm. It takes row locks on the rows
   it deletes and on the one watermark row, and no table lock stronger than ROW
   EXCLUSIVE, so tick writes and feed reads never wait for it.
-- **A day's run** at 20,000 rows a day is 40 batches, 46 ms warm. The first walk
-  of a run also steps over every index entry that earlier runs deleted and
-  autovacuum has not cleared yet. At autovacuum's 20% threshold that is up to
-  about 900 leaf pages, plus the previous run's ~400 heap pages the first time.
-  Measured with 600,000 such entries: 11,054 pages on the first walk, 1,645 on
-  the next. At 30 ms a cold page (see
+- **A day's run.** Production writes about 674 change rows every 30 minutes
+  (November 2026), about 32,000 a day, so 90 days is about 2.9M rows. A day's
+  run is then about 65 batches; 40 batches took 46 ms warm on the synthetic
+  table. The first walk of a run also steps over every index entry that earlier
+  runs deleted and autovacuum has not cleared yet. At autovacuum's 20% threshold
+  (about 576,000 rows, 18 days of deletions) that is up to about 1,450 leaf
+  pages, plus the previous run's ~530 heap pages the first time. Measured with
+  600,000 such entries, none yet marked dead: 11,054 pages on the first walk,
+  1,645 on the next. At 30 ms a cold page (see
   [postgres-query-costs.md](./postgres-query-costs.md)) a whole run is about
-  2,000 cold pages, about 60 s.
+  3,100 cold pages (about 2,000 for the first walk, about 17 per batch after
+  it), about 93 s.
+- **Not worth tuning autovacuum for.** A lower
+  `autovacuum_vacuum_scale_factor` on this table would clear those entries
+  sooner, but every vacuum of a 2.9M-row table reads its two B-tree indexes in
+  full, about 50,000 pages. Vacuuming every 2 days instead of every 18 costs
+  about 25,000 cold page reads a day to save at most about 1,450 on the walk.
+  Where cold reads are the cost, that is a poor trade.
 - **Bounds:** 400 batches (200,000 rows) or 240 s a run, then the rest waits a
   day. The lease is 600 s and the heartbeat 60 s. Nothing a client sees depends
   on when the run happens: a cursor answers 410 only once the watermark has

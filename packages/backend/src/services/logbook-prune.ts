@@ -49,13 +49,20 @@ export const LOGBOOK_PRUNE_BUDGET_MS = 240_000;
 /**
  * The walk is a plain read outside every transaction that holds a lock, so it
  * may take longer than a delete. The first one of a run steps over every index
- * entry earlier runs deleted and autovacuum has not cleared yet: at 20,000 rows
- * a day and autovacuum's 20% threshold, up to about 900 leaf pages, plus the
- * previous run's ~400 heap pages the first time. At 30 ms a cold page that is
- * about 40 s, so the bound is 120 s. It holds only ACCESS SHARE on the table.
+ * entry earlier runs deleted and autovacuum has not cleared yet: at about 32,000
+ * rows a day (production, November 2026) and autovacuum's 20% threshold, up to
+ * about 1,450 leaf pages, plus the previous run's ~530 heap pages the first
+ * time. At 30 ms a cold page that is about 60 s, so the bound is 120 s. It holds
+ * only ACCESS SHARE on the table.
  */
 const WALK_STATEMENT_TIMEOUT = '120s';
 const DELETE_STATEMENT_TIMEOUT = '5s';
+/**
+ * Both transactions, as the feed read does: a worker that freezes mid-batch
+ * holds a transaction id, and every partner's feed horizon with it, for at most
+ * this long.
+ */
+const IDLE_IN_TRANSACTION_TIMEOUT = '10s';
 /**
  * Only the watermark row can make a delete wait: a candidate row someone else
  * holds (an account deletion) is skipped, not waited for.
@@ -120,7 +127,9 @@ async function readWatermark(transaction: BackgroundJobTransaction): Promise<Log
 /** The next rows in insertion order, and whether each may go. A read; it locks nothing. */
 async function walk(read: BatchRunner, afterSeq: bigint, limit: number): Promise<WalkedRow[]> {
   return read(async (transaction) => {
-    await transaction.execute(sql`SELECT set_config('statement_timeout', ${WALK_STATEMENT_TIMEOUT}, true)`);
+    await transaction.execute(
+      sql`SELECT set_config('statement_timeout', ${WALK_STATEMENT_TIMEOUT}, true), set_config('idle_in_transaction_session_timeout', ${IDLE_IN_TRANSACTION_TIMEOUT}, true)`,
+    );
     return transaction
       .select({
         seq: sql<string>`${logbookChanges.seq}::text`,
@@ -141,7 +150,7 @@ async function walk(read: BatchRunner, afterSeq: bigint, limit: number): Promise
  */
 async function deleteBatch(transaction: BackgroundJobTransaction, seqs: bigint[]): Promise<number> {
   await transaction.execute(
-    sql`SELECT set_config('statement_timeout', ${DELETE_STATEMENT_TIMEOUT}, true), set_config('lock_timeout', ${DELETE_LOCK_TIMEOUT}, true)`,
+    sql`SELECT set_config('statement_timeout', ${DELETE_STATEMENT_TIMEOUT}, true), set_config('lock_timeout', ${DELETE_LOCK_TIMEOUT}, true), set_config('idle_in_transaction_session_timeout', ${IDLE_IN_TRANSACTION_TIMEOUT}, true)`,
   );
   // Both conditions again, in this transaction: the walk was another snapshot.
   const claimable = transaction
