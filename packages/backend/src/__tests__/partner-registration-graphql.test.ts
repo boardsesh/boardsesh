@@ -492,7 +492,9 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       expect(errorOf(imitating)?.message).toBe('The publisher name cannot use or imitate "Boardsesh".');
 
       const created = await server.graphql({ query: CREATE_MUTATION, variables: { input: APP_INPUT } }, { bearer });
-      const { clientId } = (created.body.data?.createOAuthClient as { client: { clientId: string } }).client;
+      expect(created.body.errors).toBeUndefined();
+      const { clientId } = (created.body.data as { createOAuthClient: { client: { clientId: string } } })
+        .createOAuthClient.client;
       const updated = await server.graphql(
         {
           query: /* GraphQL */ `
