@@ -76,7 +76,7 @@ describe('join page metadata', () => {
         liveBoard: { boardType: 'moonboard', angle: 40 },
         totalSends: 9,
         tickCount: 9,
-        hardestSend: { climbName: 'Arch', grade: '6c/V5', angle: 40, flashed: false },
+        hardestSend: { grade: '6c/V5', angle: 40, flashed: false },
       }),
     );
 
@@ -109,7 +109,7 @@ describe('join page metadata', () => {
         tickCount: 2,
         recapParticipants: [{ name: 'Alex' }],
         boardTypes: ['kilter'],
-        hardestSend: { climbName: 'Slab', grade: '6a/V3', angle: 30, flashed: false },
+        hardestSend: { grade: '6a/V3', angle: 30, flashed: false },
       }),
     );
 

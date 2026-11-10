@@ -61,21 +61,15 @@ export function buildSessionRecapShareCopy(
     ogTitle = t('metadata.recap.ogTitleAllFlashed', { name, count: sends, grade: hardest.grade });
   else ogTitle = t('metadata.recap.ogTitleSends', { name, count: sends, grade: hardest.grade });
 
-  const sentences: string[] = [];
-  if (hardest?.climbName && hardest.flashed) {
-    sentences.push(t('metadata.recap.ogHardestFlashed', { climb: hardest.climbName, angle: hardest.angle }));
-  } else if (hardest?.climbName) {
-    sentences.push(t('metadata.recap.ogHardestSent', { climb: hardest.climbName, angle: hardest.angle }));
-  }
+  // Grades and counts only: the climb behind the hardest grade can be one the
+  // community hid, which a share must never name (see `SessionOgHighlight`).
   if (summary.durationMinutes) {
     const duration = new Intl.NumberFormat(locale, { style: 'unit', unit: 'minute', unitDisplay: 'long' }).format(
       summary.durationMinutes,
     );
-    sentences.push(t('metadata.recap.ogSendsInDuration', { count: sends, duration, boards }));
-  } else {
-    sentences.push(t('metadata.recap.ogSendsOnBoards', { count: sends, boards }));
+    return { ogTitle, ogDescription: t('metadata.recap.ogSendsInDuration', { count: sends, duration, boards }) };
   }
-  return { ogTitle, ogDescription: sentences.join(' ') };
+  return { ogTitle, ogDescription: t('metadata.recap.ogSendsOnBoards', { count: sends, boards }) };
 }
 
 /**

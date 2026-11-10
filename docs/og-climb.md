@@ -535,11 +535,13 @@ has changed.
 `og:title` and `og:description` are the share copy from the design doc, translated
 in all five locales, and set separately from `<title>` and the meta description so
 search titles do not move (`ogTitle` / `ogDescription` on `createPageMetadata`). They
-never claim live state. An unnamed climber is `profile.page.displayNameFallback`.
+never claim live state. An unnamed climber is `profile.page.displayNameFallback`. Session copy names grades and
+counts, never a climb: the anonymous `sessionDetail` ticks carry no community-hidden
+flag, and the backend card never features a hidden climb.
 
 **`daily:` session ids.** A daily feed group is not a session and `/og/session`
 refuses it, so its session and join pages keep advertising the web route's card,
-`/api/og/session`, which still draws those groups.
+`/api/og/session`, which still draws those groups, on the app's dark ground.
 
 **Legacy URLs.** `/api/og/{playlist,profile,setter}` are 307 redirects to the
 backend card, like `/api/og/climb`, so links shared before the move still unfurl.

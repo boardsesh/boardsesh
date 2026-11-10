@@ -82,7 +82,7 @@ describe('session page metadata', () => {
         durationMinutes: 49,
         recapParticipants: [{ name: 'Zara' }],
         boardTypes: ['kilter'],
-        hardestSend: { climbName: 'Half Mast', grade: '6a/V3', angle: 40, flashed: true },
+        hardestSend: { grade: '6a/V3', angle: 40, flashed: true },
       }),
     );
 
@@ -96,9 +96,7 @@ describe('session page metadata', () => {
     expect(metadata.title).toEqual({ absolute: 'Board Session | Boardsesh' });
     expect(metadata.description).toBe('Zara — 17 sends');
     expect(metadata.openGraph?.title).toBe('Zara flashed 17 climbs, hardest 6a/V3');
-    expect(metadata.openGraph?.description).toBe(
-      'Hardest send: Half Mast, flashed at 40°. 17 sends in 49 minutes on Kilter.',
-    );
+    expect(metadata.openGraph?.description).toBe('17 sends in 49 minutes on Kilter.');
     expect(metadata.twitter?.title).toBe('Zara flashed 17 climbs, hardest 6a/V3');
     const imageUrl = getOpenGraphImageUrl(image);
     expect(imageUrl).toMatch(/^https:\/\/ws\.boardsesh\.com\/og\/session\?sessionId=session-1&v=[0-9a-z]+$/);
@@ -109,21 +107,21 @@ describe('session page metadata', () => {
     [
       'mixed sends',
       { totalSends: 3, totalFlashes: 1, tickCount: 5, recapParticipants: [{ name: 'jed kinross' }] },
-      { climbName: 'Crimp City', grade: '7a+/V7', angle: 45, flashed: false },
+      { grade: '7a+/V7', angle: 45, flashed: false },
       'jed kinross sent 3, hardest 7a+/V7',
-      'Hardest send: Crimp City at 45°. 3 sends on Kilter.',
+      '3 sends on Kilter.',
     ],
     [
       'one flash',
       { totalSends: 1, totalFlashes: 1, tickCount: 1, recapParticipants: [{ name: 'Line' }] },
-      { climbName: 'Warm Up', grade: '4a/V0', angle: 20, flashed: true },
+      { grade: '4a/V0', angle: 20, flashed: true },
       'Line flashed 4a/V0 on Kilter',
-      'Hardest send: Warm Up, flashed at 20°. 1 send on Kilter.',
+      '1 send on Kilter.',
     ],
     [
       'an unnamed climber',
       { totalSends: 2, totalFlashes: 0, tickCount: 2, recapParticipants: [{ name: null }] },
-      { climbName: null, grade: '6b/V4', angle: 40, flashed: false },
+      { grade: '6b/V4', angle: 40, flashed: false },
       'A climber sent 2, hardest 6b/V4',
       '2 sends on Kilter.',
     ],
@@ -135,9 +133,9 @@ describe('session page metadata', () => {
         tickCount: 4,
         recapParticipants: [{ name: null }, { name: 'Ana' }, { name: 'Ben' }],
       },
-      { climbName: 'Roof', grade: '6c/V5', angle: 40, flashed: false },
+      { grade: '6c/V5', angle: 40, flashed: false },
       'Ana + 2 others sent 4, hardest 6c/V5',
-      'Hardest send: Roof at 40°. 4 sends on Kilter.',
+      '4 sends on Kilter.',
     ],
   ])('words a recap with %s', async (_label, counts, hardestSend, ogTitle, ogDescription) => {
     getSessionOgSummaryMock.mockResolvedValue(makeSessionOgSummary({ ...counts, boardTypes: ['kilter'], hardestSend }));
@@ -148,19 +146,19 @@ describe('session page metadata', () => {
     expect(metadata.openGraph?.description).toBe(ogDescription);
   });
 
-  it('keeps a zero-send session honest: projecting, never a send', async () => {
+  it('keeps a zero-send session honest: it was projecting, never a send', async () => {
     getSessionOgSummaryMock.mockResolvedValue(
       makeSessionOgSummary({
         tickCount: 6,
         recapParticipants: [{ name: 'Dylan Lenze' }],
         boardTypes: ['tension'],
-        hardestAttempt: { climbName: 'Project', grade: '7a+/V7', angle: 40, flashed: false },
+        hardestAttempt: { grade: '7a+/V7', angle: 40, flashed: false },
       }),
     );
 
     const metadata = await pageModule.generateMetadata({ params: Promise.resolve({ sessionId: 'session-1' }) });
 
-    expect(metadata.openGraph?.title).toBe('Dylan Lenze is projecting 7a+/V7');
+    expect(metadata.openGraph?.title).toBe('Dylan Lenze was projecting 7a+/V7');
     expect(metadata.openGraph?.description).toBe('6 tries logged on Tension, no sends yet.');
   });
 

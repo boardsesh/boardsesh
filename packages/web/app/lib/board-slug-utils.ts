@@ -71,13 +71,15 @@ export const resolveBoardBySlug = cache(async (slug: string, wallUuid?: string):
  * The board as a stranger holding only its slug sees it: what an unfurler sees,
  * and so the question the backend's board share card asks before it draws.
  *
- * For an anonymous request that is the read the page already made; a signed-in
- * viewer can open boards a stranger cannot (followers, invite-only, their own
- * Only-me board), so their request asks again without the token. No `?wall=`
- * capability is ever sent: an unlisted spray wall must read as missing here.
+ * With no viewer token this is the page's own `resolveBoardBySlug(slug, undefined)`
+ * read. `undefined` is passed explicitly because React `cache` keys on the argument
+ * list, so `(slug)` and `(slug, undefined)` are two entries and two backend calls.
+ * A signed-in viewer can open boards a stranger cannot (followers, invite-only,
+ * their own Only-me board), so their request asks again with the token left off.
+ * No `?wall=` capability is ever sent: an unlisted spray wall must read as missing.
  */
 export const resolveBoardBySlugAsStranger = cache(async (slug: string): Promise<ResolvedBoard | null> => {
-  if (!(await getServerAuthToken())) return resolveBoardBySlug(slug);
+  if (!(await getServerAuthToken())) return resolveBoardBySlug(slug, undefined);
   return fetchBoardBySlug(slug, undefined, false);
 });
 

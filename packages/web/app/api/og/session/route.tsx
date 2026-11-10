@@ -380,7 +380,7 @@ async function renderDailySessionCard(request: NextRequest) {
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          background: '#FFFFFF',
+          background: themeTokens.semantic.background,
           padding: '60px 80px',
           gap: '32px',
         }}
@@ -407,7 +407,7 @@ async function renderDailySessionCard(request: NextRequest) {
             <div
               style={{
                 fontSize: '24px',
-                color: themeTokens.neutral[500],
+                color: themeTokens.neutral[600],
               }}
             >
               {participantNames}
@@ -416,7 +416,7 @@ async function renderDailySessionCard(request: NextRequest) {
           <div
             style={{
               fontSize: '20px',
-              color: themeTokens.neutral[400],
+              color: themeTokens.neutral[500],
             }}
           >
             {summary.totalSends > 0
@@ -469,7 +469,7 @@ async function renderDailySessionCard(request: NextRequest) {
                     flex: 1,
                     fontSize: '14px',
                     textAlign: 'center',
-                    color: themeTokens.neutral[400],
+                    color: themeTokens.neutral[500],
                   }}
                 >
                   {bar.grade}
@@ -485,7 +485,7 @@ async function renderDailySessionCard(request: NextRequest) {
             bottom: '24px',
             right: '40px',
             fontSize: '20px',
-            color: themeTokens.neutral[300],
+            color: themeTokens.neutral[500],
             fontWeight: 600,
           }}
         >

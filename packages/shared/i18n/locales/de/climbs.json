@@ -31,7 +31,7 @@
       "fallbackDescription": "Boulder durchstöbern",
       "paginatedTitle": "{{boardName}}-Boulder bei {{angle}}° — Seite {{page}}",
       "ogTitle": "Boulder an {{name}} bei {{angle}}°",
-      "ogDescription": "Such dir einen aus, beleuchte das Board und trag die Begehung ein."
+      "ogDescription": "Such dir einen aus, beleuchte ihn am Board und trag die Begehung ein."
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",

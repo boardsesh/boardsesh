@@ -165,9 +165,13 @@ export type SessionOgGradeRow = {
   count: number;
 };
 
-/** The hardest tick of a kind a stranger may see, as the share copy names it. */
+/**
+ * The hardest tick of a kind a stranger may see. No climb name: the backend card
+ * never features a community-hidden climb, and the anonymous `sessionDetail`
+ * ticks carry no hidden flag to tell one apart, so the share copy names grades,
+ * never climbs.
+ */
 export type SessionOgHighlight = {
-  climbName: string | null;
   grade: string;
   angle: number;
   flashed: boolean;
@@ -204,7 +208,6 @@ export type SessionOgSummary = {
 };
 
 type SessionTickRead = {
-  climbName: string | null;
   boardType: string;
   angle: number;
   status: string;
@@ -223,7 +226,7 @@ function pickHardestTick(ticks: readonly SessionTickRead[]): SessionOgHighlight 
   if (!picked) return null;
   const grade = formatCardGrade(picked.boardType, picked.difficulty) ?? picked.difficultyName;
   if (!grade) return null;
-  return { climbName: picked.climbName, grade, angle: picked.angle, flashed: picked.status === 'flash' };
+  return { grade, angle: picked.angle, flashed: picked.status === 'flash' };
 }
 
 /**
@@ -296,7 +299,7 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
       sessionName totalSends totalFlashes durationMinutes lastTickAt boardTypes
       gradeDistribution { grade flash send }
       participants { displayName }
-      ticks { climbName boardType angle status difficulty difficultyName }
+      ticks { boardType angle status difficulty difficultyName }
     }
     session(sessionId: $sessionId) { name startedAt boardPath users { userId username isLeader } }
   }`,
@@ -317,7 +320,9 @@ export const getSessionOgSummary = cache(async (sessionId: string): Promise<Sess
   // The anonymous projection blanks `userId` for a climber who stays unnamed.
   const nameableUsers = (session?.users ?? []).filter((user) => user.userId && user.username.trim());
   const ticks = sessionDetail?.ticks ?? [];
-  const liveBoard = session ? await resolveLiveBoard(session.boardPath) : null;
+  // The board is a nicety on the invite's words. A failed lookup costs the board,
+  // never the session: it must not turn a real session into "not found".
+  const liveBoard = session ? await resolveLiveBoard(session.boardPath).catch(() => null) : null;
   return {
     ...empty,
     sessionType: 'party',

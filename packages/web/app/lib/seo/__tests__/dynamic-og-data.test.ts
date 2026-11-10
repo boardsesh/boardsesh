@@ -177,7 +177,6 @@ describe('public previews reauthorize through the backend', () => {
         participants: [{ displayName: 'Zara' }],
         ticks: [
           {
-            climbName: 'Easy',
             boardType: 'kilter',
             angle: 40,
             status: 'flash',
@@ -185,7 +184,6 @@ describe('public previews reauthorize through the backend', () => {
             difficultyName: '6a/V3',
           },
           {
-            climbName: 'Hard',
             boardType: 'kilter',
             angle: 45,
             status: 'send',
@@ -193,7 +191,6 @@ describe('public previews reauthorize through the backend', () => {
             difficultyName: '7a/V6',
           },
           {
-            climbName: 'Project',
             boardType: 'kilter',
             angle: 45,
             status: 'attempt',
@@ -211,8 +208,8 @@ describe('public previews reauthorize through the backend', () => {
       totalFlashes: 1,
       durationMinutes: 49,
       recapParticipants: [{ name: 'Zara' }],
-      hardestSend: { climbName: 'Hard', grade: '7a/V6', angle: 45, flashed: false },
-      hardestAttempt: { climbName: 'Project', grade: '7b+/V8', angle: 45, flashed: false },
+      hardestSend: { grade: '7a/V6', angle: 45, flashed: false },
+      hardestAttempt: { grade: '7b+/V8', angle: 45, flashed: false },
     });
   });
 
@@ -234,6 +231,24 @@ describe('public previews reauthorize through the backend', () => {
       liveBoard: { boardType: 'moonboard', angle: 25 },
     });
     expect(execute.mock.calls[1][1]).toEqual({ slug: 'boiler-room-moonboard' });
+  });
+
+  it('never asks the anonymous surface for climb names, since it cannot say which are hidden', async () => {
+    execute.mockResolvedValue({ sessionDetail: null, session: null });
+
+    await getSessionOgSummary('any');
+
+    expect(String(execute.mock.calls[0][0])).not.toContain('climbName');
+  });
+
+  it('keeps a live session found when its board lookup fails, and drops only the board', async () => {
+    execute.mockResolvedValueOnce({
+      sessionDetail: null,
+      session: { name: null, startedAt: '2026-01-01', boardPath: '/b/some-wall', users: [] },
+    });
+    execute.mockRejectedValueOnce(new Error('boardBySlug failed'));
+
+    expect(await getSessionOgSummary('live-flaky')).toMatchObject({ found: true, isLive: true, liveBoard: null });
   });
 
   it("reads a live session's geometry path without a lookup", async () => {

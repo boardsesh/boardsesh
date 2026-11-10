@@ -11,10 +11,10 @@
       "titleWithBoard": "Sesiones de {{board}} de {{name}}",
       "ogTitleSent": "{{name}} encadenó {{grade}}",
       "ogTitleNoSends": "{{name}} en Boardsesh",
-      "ogDescriptionHardest_one": "{{climb}} es su primer encadene en {{boards}}. Mira su registro.",
-      "ogDescriptionHardest_other": "{{climb}} es el más duro de {{count}} bloques encadenados en {{boards}}. Mira su registro.",
-      "ogDescriptionCount_one": "{{count}} bloque encadenado en {{boards}}. Mira su registro.",
-      "ogDescriptionCount_other": "{{count}} bloques encadenados en {{boards}}. Mira su registro.",
+      "ogDescriptionHardest_one": "{{climb}} es su primer encadene en {{boards}}. Mira su logbook.",
+      "ogDescriptionHardest_other": "{{climb}} es el más duro de {{count}} bloques encadenados en {{boards}}. Mira su logbook.",
+      "ogDescriptionCount_one": "{{count}} bloque encadenado en {{boards}}. Mira su logbook.",
+      "ogDescriptionCount_other": "{{count}} bloques encadenados en {{boards}}. Mira su logbook.",
       "ogDescriptionNoSends": "Todavía no hay encadenes registrados. Mira el perfil."
     },
     "statistics": {

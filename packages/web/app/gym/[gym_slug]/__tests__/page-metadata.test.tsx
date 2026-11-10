@@ -15,8 +15,9 @@ vi.mock('@/app/lib/i18n/server', () => ({
   })),
 }));
 
+const viewer = vi.hoisted(() => ({ token: undefined as string | undefined }));
 vi.mock('@/app/lib/auth/server-auth', () => ({
-  getServerAuthToken: vi.fn(async () => undefined),
+  getServerAuthToken: vi.fn(async () => viewer.token),
 }));
 
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
@@ -57,6 +58,7 @@ const metadataFor = (slug: string, params: Record<string, string | string[] | un
 
 beforeEach(() => {
   executeAuthenticatedGraphQL.mockReset();
+  viewer.token = undefined;
 });
 
 describe('gym page metadata', () => {
@@ -229,6 +231,24 @@ describe('gym page share card', () => {
 
     expect(metadata.openGraph?.title).toBe('Boulderwelt');
     expect(metadata.openGraph?.description).toBe('A big gym');
+  });
+
+  it("reads the boards a stranger sees, never a signed-in member's view", async () => {
+    // A member can see the gym's Only-me boards; the card and its words cannot.
+    viewer.token = 'member-token';
+    serveGym(gym('member-view'), [{ boardType: 'kilter', angle: 40 }]);
+
+    await metadataFor('member-view', {});
+
+    const boardReads = executeAuthenticatedGraphQL.mock.calls.filter(([document]) =>
+      String(document).includes('gymBoards'),
+    );
+    expect(boardReads.length).toBeGreaterThan(0);
+    for (const [, , token] of boardReads) expect(token).toBeUndefined();
+    const gymRead = executeAuthenticatedGraphQL.mock.calls.find(
+      ([document]) => !String(document).includes('gymBoards'),
+    );
+    expect(gymRead?.[2]).toBe('member-token');
   });
 
   it('changes the token when the boards a stranger sees change', async () => {
