@@ -3,7 +3,11 @@ import { eq } from 'drizzle-orm';
 import { graphql } from 'graphql';
 import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { DISCONNECT_APP, GET_MY_CONNECTED_APPS } from '@boardsesh/graphql/operations/connected-apps';
+import {
+  DISCONNECT_APP,
+  GET_MY_CONNECTED_APPS,
+  GET_PARTNER_APPS_ENABLED,
+} from '@boardsesh/graphql/operations/connected-apps';
 import type { ConnectedApps, ConnectionContext } from '@boardsesh/shared-schema';
 import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsent, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
@@ -297,6 +301,11 @@ describe('every PARTNER_OAUTH_MODE', () => {
     const rows = await seedConnectedClimber();
     const listed = await appsOf(rows.climberId);
     expect(listed.partnerAppsEnabled).toBe(enabled);
+    // The standalone read the draft and Spraywall notes use: the same answer, signed in or not.
+    for (const userId of [rows.climberId, null]) {
+      const reply = await graphql({ schema, source: GET_PARTNER_APPS_ENABLED, contextValue: contextFor(userId) });
+      expect(reply).toEqual({ data: { partnerAppsEnabled: enabled } });
+    }
     expect(listed.apps.map((app) => app.connectionId)).toEqual([rows.connectionId]);
     expect((await disconnectAs(rows.climberId, rows.connectionId)).data).toEqual({ disconnectApp: true });
     expect(countsOf(await readPartnerState(rows))).toEqual(DISCONNECTED_COUNTS);

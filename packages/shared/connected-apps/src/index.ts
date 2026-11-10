@@ -1,4 +1,5 @@
 export {
+  buildConnectedAppDetail,
   buildConnectedAppRow,
   buildConnectedAppsSection,
   connectedAppDisconnectPrompt,
@@ -7,6 +8,8 @@ export {
   describeConnectedAppScope,
   orderConnectedAppScopes,
   withoutConnectedApp,
+  type ConnectedAppDetailInput,
+  type ConnectedAppDetailView,
   type ConnectedAppDisconnectPrompt,
   type ConnectedAppFacts,
   type ConnectedAppRowView,

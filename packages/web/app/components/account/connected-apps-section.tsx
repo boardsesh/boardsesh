@@ -11,20 +11,30 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogTitle from '@mui/material/DialogTitle';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import MuiAlert from '@mui/material/Alert';
 import MuiDivider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
+import ChevronRightOutlined from '@mui/icons-material/ChevronRightOutlined';
+import LinkOutlined from '@mui/icons-material/LinkOutlined';
+import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import {
+  buildConnectedAppDetail,
   buildConnectedAppsSection,
   connectedAppDisconnectPrompt,
   connectedAppDisconnectResult,
   withoutConnectedApp,
   type ConnectedAppRowView,
+  type ConnectedAppsFormatters,
   type ConnectedAppsTranslate,
 } from '@boardsesh/connected-apps';
 import {
@@ -62,9 +72,10 @@ function relativeTimeFormatter(locale: string, nowMs: number): (iso: string) => 
 
 /**
  * Settings › Connected apps on the website (#6981 F16): the apps a climber
- * connected through Boardsesh sign-in, what each can read, and Disconnect, so
- * a connection can be ended from any browser. The words and the show-or-hide
- * rule come from `@boardsesh/connected-apps`, shared with the app.
+ * connected through Boardsesh sign-in, so a connection can be ended from any
+ * browser. Like the app: one row per app with its last use, each opening the
+ * app's detail (what it can see, when it connected, Disconnect). The words and
+ * the show-or-hide rule come from `@boardsesh/connected-apps`, shared with the app.
  */
 export default function ConnectedAppsSection() {
   const { t, i18n } = useTranslation('settings');
@@ -72,7 +83,8 @@ export default function ConnectedAppsSection() {
   const { token, isAuthenticated } = useWsAuthToken();
   const queryClient = useQueryClient();
   const { showMessage } = useSnackbar();
-  const [confirming, setConfirming] = useState<ConnectedAppRowView | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const queryKey = useMemo(() => ['myConnectedApps', session?.user?.id ?? null] as const, [session?.user?.id]);
   const translate = t as ConnectedAppsTranslate;
 
@@ -89,12 +101,18 @@ export default function ConnectedAppsSection() {
     retry: false,
   });
 
+  const close = () => {
+    setOpenId(null);
+    setConfirming(false);
+  };
+
   const disconnect = useMutation({
     mutationFn: async (row: ConnectedAppRowView) =>
       createGraphQLHttpClient(token).request<DisconnectAppResponse>(DISCONNECT_APP, {
         connectionId: row.connectionId,
       }),
     onSuccess: (_answer, row) => {
+      close();
       queryClient.setQueryData<ConnectedApps>(queryKey, (current) =>
         current ? withoutConnectedApp(current, row.connectionId) : current,
       );
@@ -102,28 +120,41 @@ export default function ConnectedAppsSection() {
       showMessage(connectedAppDisconnectResult({ name: row.name }, 'disconnected', translate), 'success');
     },
     onError: (_error, row) => {
+      setConfirming(false);
       showMessage(connectedAppDisconnectResult({ name: row.name }, 'failed', translate), 'error');
     },
-    onSettled: () => setConfirming(null),
   });
 
   const locale = i18n.language;
-  const section = useMemo(() => {
+  const formatters = useMemo<ConnectedAppsFormatters>(() => {
     const nowMs = Date.now();
-    return buildConnectedAppsSection({
-      signedIn: isAuthenticated,
-      data: list.data,
-      t: translate,
-      formatters: {
-        date: (iso) => new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
-        relativeTime: relativeTimeFormatter(locale, nowMs),
-        nowMs,
-      },
-    });
-  }, [isAuthenticated, list.data, translate, locale]);
+    return {
+      date: (iso) => new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
+      relativeTime: relativeTimeFormatter(locale, nowMs),
+      nowMs,
+    };
+  }, [locale]);
+  const section = useMemo(
+    () => buildConnectedAppsSection({ signedIn: isAuthenticated, data: list.data, t: translate, formatters }),
+    [isAuthenticated, list.data, translate, formatters],
+  );
+  const detail = useMemo(
+    () =>
+      openId === null
+        ? null
+        : buildConnectedAppDetail({
+            signedIn: isAuthenticated,
+            data: list.data,
+            connectionId: openId,
+            t: translate,
+            formatters,
+          }),
+    [openId, isAuthenticated, list.data, translate, formatters],
+  );
 
   if (section.kind === 'hidden') return null;
-  const prompt = confirming ? connectedAppDisconnectPrompt({ name: confirming.name }, translate) : null;
+  const shownApp = detail?.kind === 'app' ? detail : null;
+  const prompt = shownApp ? connectedAppDisconnectPrompt({ name: shownApp.row.name }, translate) : null;
 
   return (
     <>
@@ -133,7 +164,7 @@ export default function ConnectedAppsSection() {
           <Typography id="connected-apps-title" variant="h5" component="h2">
             {t('integrations.title')}
           </Typography>
-          <Typography variant="subtitle2" color="text.secondary" component="p" sx={{ mb: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary" component="p" sx={{ mb: 1 }}>
             {section.title}
           </Typography>
           {section.kind === 'empty' ? (
@@ -141,43 +172,46 @@ export default function ConnectedAppsSection() {
               {section.message}
             </Typography>
           ) : (
-            <Stack
-              component="ul"
-              divider={<MuiDivider component="li" aria-hidden />}
-              spacing={2}
-              sx={{ listStyle: 'none', m: 0, p: 0 }}
-            >
-              {section.rows.map((row) => (
-                <ConnectedAppRow
-                  key={row.connectionId}
-                  row={row}
-                  disconnecting={disconnect.isPending && disconnect.variables?.connectionId === row.connectionId}
-                  onDisconnect={() => setConfirming(row)}
-                />
+            <List disablePadding>
+              {section.rows.map((row, index) => (
+                <ListItem key={row.connectionId} disablePadding divider={index < section.rows.length - 1}>
+                  <ListItemButton
+                    onClick={() => setOpenId(row.connectionId)}
+                    data-testid={`connected-app-${row.connectionId}`}
+                    sx={{ px: 1, borderRadius: themeTokens.borderRadius.md }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 40 }}>
+                      {row.suspendedNotice ? (
+                        <WarningAmberOutlined aria-hidden sx={{ color: themeTokens.colors.warning }} />
+                      ) : (
+                        <LinkOutlined aria-hidden />
+                      )}
+                    </ListItemIcon>
+                    <ListItemText primary={row.name} secondary={row.summary} />
+                    <ChevronRightOutlined aria-hidden sx={{ color: 'text.secondary' }} />
+                  </ListItemButton>
+                </ListItem>
               ))}
-            </Stack>
+            </List>
           )}
-          {section.kind === 'list' ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              {section.footer}
-            </Typography>
-          ) : null}
         </CardContent>
       </Card>
 
       <Dialog
-        open={confirming !== null}
-        onClose={() => (disconnect.isPending ? undefined : setConfirming(null))}
-        aria-labelledby="connected-apps-disconnect-title"
+        open={shownApp !== null}
+        onClose={() => (disconnect.isPending ? undefined : close())}
+        aria-labelledby="connected-app-dialog-title"
+        fullWidth
+        maxWidth="sm"
       >
-        {prompt ? (
+        {shownApp && prompt && confirming ? (
           <>
-            <DialogTitle id="connected-apps-disconnect-title">{prompt.title}</DialogTitle>
+            <DialogTitle id="connected-app-dialog-title">{prompt.title}</DialogTitle>
             <DialogContent>
               <DialogContentText>{prompt.message}</DialogContentText>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setConfirming(null)} disabled={disconnect.isPending}>
+              <Button onClick={() => setConfirming(false)} disabled={disconnect.isPending}>
                 {prompt.cancelLabel}
               </Button>
               <Button
@@ -187,10 +221,32 @@ export default function ConnectedAppsSection() {
                 startIcon={
                   disconnect.isPending ? <CircularProgress size={16} color="inherit" aria-hidden /> : undefined
                 }
-                onClick={() => confirming && disconnect.mutate(confirming)}
+                onClick={() => disconnect.mutate(shownApp.row)}
               >
                 {prompt.confirmLabel}
               </Button>
+            </DialogActions>
+          </>
+        ) : null}
+        {shownApp && !confirming ? (
+          <>
+            <DialogTitle id="connected-app-dialog-title">{shownApp.row.name}</DialogTitle>
+            <DialogContent>
+              <ConnectedAppDetail row={shownApp.row} scopesHeading={shownApp.scopesHeading} />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                {shownApp.footer}
+              </Typography>
+            </DialogContent>
+            <DialogActions sx={{ justifyContent: 'space-between' }}>
+              <Button
+                color="error"
+                variant="outlined"
+                aria-label={shownApp.row.disconnectAccessibilityLabel}
+                onClick={() => setConfirming(true)}
+              >
+                {shownApp.row.disconnectLabel}
+              </Button>
+              <Button onClick={close}>{t('integrations.partnerApps.close')}</Button>
             </DialogActions>
           </>
         ) : null}
@@ -199,34 +255,33 @@ export default function ConnectedAppsSection() {
   );
 }
 
-function ConnectedAppRow({
-  row,
-  disconnecting,
-  onDisconnect,
-}: {
-  row: ConnectedAppRowView;
-  disconnecting: boolean;
-  onDisconnect: () => void;
-}) {
+function ConnectedAppDetail({ row, scopesHeading }: { row: ConnectedAppRowView; scopesHeading: string }) {
   return (
-    <Box component="li" sx={{ listStyle: 'none' }} data-testid={`connected-app-${row.connectionId}`}>
-      <Typography variant="subtitle1" component="h3" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
-        {row.name}
-      </Typography>
+    <Box data-testid={`connected-app-detail-${row.connectionId}`}>
       {row.publisher ? (
         <Typography variant="body2" color="text.secondary">
           {row.publisher}
         </Typography>
       ) : null}
       <Typography variant="body2" color="text.secondary">
-        {`${row.connected} · ${row.lastUsed}`}
+        {row.connected}
+      </Typography>
+      <Typography variant="body2" color="text.secondary">
+        {row.lastUsed}
       </Typography>
       {row.suspendedNotice ? (
         <MuiAlert severity="warning" sx={{ mt: 1.5 }}>
           {row.suspendedNotice}
         </MuiAlert>
       ) : null}
-      <Stack component="ul" spacing={1} sx={{ listStyle: 'none', m: 0, mt: 1.5, p: 0 }}>
+      <Typography
+        variant="subtitle2"
+        component="h3"
+        sx={{ mt: 2.5, mb: 1, fontWeight: themeTokens.typography.fontWeight.semibold }}
+      >
+        {scopesHeading}
+      </Typography>
+      <Stack component="ul" spacing={1} sx={{ listStyle: 'none', m: 0, p: 0 }}>
         {row.scopes.map((scope) => (
           <Box component="li" key={scope.scope} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
             <CheckCircleOutlined aria-hidden sx={{ color: themeTokens.colors.primary, fontSize: 20, mt: '1px' }} />
@@ -241,17 +296,6 @@ function ConnectedAppRow({
           </Box>
         ))}
       </Stack>
-      <Button
-        color="error"
-        variant="outlined"
-        size="small"
-        sx={{ mt: 2 }}
-        disabled={disconnecting}
-        aria-label={row.disconnectAccessibilityLabel}
-        onClick={onDisconnect}
-      >
-        {row.disconnectLabel}
-      </Button>
     </Box>
   );
 }

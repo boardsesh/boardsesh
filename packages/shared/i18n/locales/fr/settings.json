@@ -582,6 +582,8 @@
       "title": "Apps avec accès",
       "empty": "Aucune app connectée pour l’instant. Les apps que tu connectes à ton compte Boardsesh apparaissent ici.",
       "footer": "Une app déconnectée ne lit plus rien de nouveau. Ce qu’elle a déjà copié reste chez elle.",
+      "gone": "Cette app n’est plus connectée.",
+      "scopesHeading": "Ce que {{app}} peut voir",
       "unnamedApp": "App sans nom",
       "publisher": "Par {{publisher}}",
       "connected": "Connectée le {{date}}",
@@ -589,6 +591,7 @@
       "lastUsedRecently": "Utilisée dans la dernière heure",
       "notUsedYet": "Pas encore utilisée",
       "suspended": "Boardsesh a mis cette app en pause. Elle ne peut rien lire pour l’instant.",
+      "suspendedShort": "Mise en pause par Boardsesh",
       "scopes": {
         "logbookRead": "Voit toutes les entrées de ton carnet, sur toutes les boards",
         "logbookOnlyMe": "Y compris les entrées que tu gardes en « Moi uniquement »",
@@ -603,7 +606,8 @@
       "disconnectConfirmBody": "{{app}} ne voit plus ton compte dès maintenant. Ce qu’elle a déjà copié reste dans l’app. Pour l’utiliser à nouveau, connecte-la depuis l’app.",
       "disconnected": "{{app}} déconnectée",
       "disconnectFailed": "Impossible de déconnecter {{app}}. Réessaie.",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "close": "Fermer"
     }
   },
   "watchPairing": {

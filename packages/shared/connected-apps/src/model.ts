@@ -54,6 +54,8 @@ export interface ConnectedAppRowView {
   connected: string;
   /** "Last used 3 hours ago", "Used in the last hour" or "Not used yet". */
   lastUsed: string;
+  /** The list row's second line: the last use, or "Paused by Boardsesh" while suspended. */
+  summary: string;
   /** Set while Boardsesh has suspended the app. */
   suspendedNotice: string | null;
   disconnectLabel: string;
@@ -62,16 +64,27 @@ export interface ConnectedAppRowView {
 }
 
 /**
- * What the section shows:
+ * What the section on the Connected apps page shows:
  * - `hidden`: nothing at all. Signed out, still loading the first time, a
  *   failed first load, or no connections while partner apps are switched off.
  * - `empty`: no connections, with partner apps on.
- * - `list`: one row per connection, most recently connected first.
+ * - `list`: one compact row per connection (name and last use), most recently
+ *   connected first. Each opens the app's detail.
  */
 export type ConnectedAppsSectionView =
   | { kind: 'hidden' }
   | { kind: 'empty'; title: string; message: string }
-  | { kind: 'list'; title: string; rows: ConnectedAppRowView[]; footer: string };
+  | { kind: 'list'; title: string; rows: ConnectedAppRowView[] };
+
+/**
+ * One app's detail: what it can see, when it connected and was last used, and
+ * Disconnect. `loading` until the list has arrived once; `gone` when the app is
+ * no longer among the climber's connections (disconnected elsewhere, or a stale link).
+ */
+export type ConnectedAppDetailView =
+  | { kind: 'loading' }
+  | { kind: 'gone'; message: string }
+  | { kind: 'app'; row: ConnectedAppRowView; scopesHeading: string; footer: string };
 
 export interface ConnectedAppsSectionInput {
   signedIn: boolean;
@@ -149,13 +162,15 @@ export function buildConnectedAppRow(
 ): ConnectedAppRowView {
   const name = connectedAppName(app, t);
   const publisher = app.publisherName?.trim();
+  const lastUsed = lastUsedLine(app.lastUsedAt, formatters, t);
   return {
     connectionId: app.connectionId,
     name,
     publisher: publisher ? t('settings:integrations.partnerApps.publisher', { publisher }) : null,
     scopes: orderConnectedAppScopes(app.scopes).map((scope) => describeConnectedAppScope(scope, t)),
     connected: t('settings:integrations.partnerApps.connected', { date: formatters.date(app.connectedAt) }),
-    lastUsed: lastUsedLine(app.lastUsedAt, formatters, t),
+    lastUsed,
+    summary: app.suspended ? t('settings:integrations.partnerApps.suspendedShort') : lastUsed,
     suspendedNotice: app.suspended ? t('settings:integrations.partnerApps.suspended') : null,
     disconnectLabel: t('settings:integrations.partnerApps.disconnect'),
     disconnectAccessibilityLabel: t('settings:integrations.partnerApps.disconnectA11y', { app: name }),
@@ -183,10 +198,29 @@ export function buildConnectedAppsSection({
     if (!data.partnerAppsEnabled) return { kind: 'hidden' };
     return { kind: 'empty', title, message: t('settings:integrations.partnerApps.empty') };
   }
+  return { kind: 'list', title, rows: data.apps.map((app) => buildConnectedAppRow(app, t, formatters)) };
+}
+
+export interface ConnectedAppDetailInput extends ConnectedAppsSectionInput {
+  connectionId: string;
+}
+
+/** The detail an app's row opens, from the same list the section shows. */
+export function buildConnectedAppDetail({
+  signedIn,
+  data,
+  connectionId,
+  t,
+  formatters,
+}: ConnectedAppDetailInput): ConnectedAppDetailView {
+  if (signedIn && !data) return { kind: 'loading' };
+  const app = signedIn ? data?.apps.find((candidate) => candidate.connectionId === connectionId) : undefined;
+  if (!app) return { kind: 'gone', message: t('settings:integrations.partnerApps.gone') };
+  const row = buildConnectedAppRow(app, t, formatters);
   return {
-    kind: 'list',
-    title,
-    rows: data.apps.map((app) => buildConnectedAppRow(app, t, formatters)),
+    kind: 'app',
+    row,
+    scopesHeading: t('settings:integrations.partnerApps.scopesHeading', { app: row.name }),
     footer: t('settings:integrations.partnerApps.footer'),
   };
 }

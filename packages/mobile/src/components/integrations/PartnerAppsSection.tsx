@@ -1,97 +1,69 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
   buildConnectedAppsSection,
-  connectedAppDisconnectPrompt,
-  connectedAppDisconnectResult,
   type ConnectedAppRowView,
+  type ConnectedAppsFormatters,
   type ConnectedAppsSectionView,
   type ConnectedAppsTranslate,
 } from '@boardsesh/connected-apps';
-import { Button } from '../Button';
 import { Icon } from '../Icon';
+import { ListRow } from '../ListRow';
 import { SectionHeader } from '../SectionHeader';
 import { Text } from '../Text';
 import { useAuth } from '../../providers/auth-provider';
-import { useConfirm } from '../../providers/dialog-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { useToast } from '../../providers/toast-provider';
 import { nowMs } from '../../lib/clock';
 import { formatRelativeTime } from '../../lib/format-relative-time';
-import { useDisconnectApp, useMyConnectedApps } from '../../lib/graphql/hooks/use-connected-apps';
+import { useMyConnectedApps } from '../../lib/graphql/hooks/use-connected-apps';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
 import { borderRadius, spacing } from '../../theme/tokens';
+
+/** The dates in the climber's language, with mobile's clock (frozen in screenshot mode). */
+export function useConnectedAppsFormatters(): ConnectedAppsFormatters {
+  const { i18n } = useTranslation('settings');
+  const locale = i18n.language;
+  return useMemo(
+    () => ({
+      date: (iso) => new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
+      relativeTime: formatRelativeTime,
+      nowMs: nowMs(),
+    }),
+    [locale],
+  );
+}
 
 /**
  * Apps the climber connected to their account through partner OAuth (#6981
- * F16): what each can read, when it connected and was last used, and
- * Disconnect. The words and the show-or-hide rule come from
- * `@boardsesh/connected-apps`, shared with the website; this file only draws them.
+ * F16), last on Settings › Connected apps: one row per app with when it was last
+ * used, each opening the app's detail (`ConnectedAppDetailScreen`). The words and
+ * the show-or-hide rule come from `@boardsesh/connected-apps`, shared with the
+ * website; this file only draws them.
  */
 export function PartnerAppsSection() {
-  const { t, i18n } = useTranslation('settings');
+  const { t } = useTranslation('settings');
   const { isAuthenticated } = useAuth();
   const { data } = useMyConnectedApps();
-  const { disconnect, disconnectingId } = usePartnerAppDisconnect();
-  const locale = i18n.language;
+  const formatters = useConnectedAppsFormatters();
 
   const section = useMemo(
-    () =>
-      buildConnectedAppsSection({
-        signedIn: isAuthenticated,
-        data,
-        t: t as ConnectedAppsTranslate,
-        formatters: {
-          date: (iso) => new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
-          relativeTime: formatRelativeTime,
-          nowMs: nowMs(),
-        },
-      }),
-    [isAuthenticated, data, t, locale],
+    () => buildConnectedAppsSection({ signedIn: isAuthenticated, data, t: t as ConnectedAppsTranslate, formatters }),
+    [isAuthenticated, data, t, formatters],
   );
+  const openApp = useCallback((row: ConnectedAppRowView) => {
+    router.push({ pathname: '/settings/connected-app', params: { id: row.connectionId } });
+  }, []);
 
-  return <PartnerAppsSectionView section={section} onDisconnect={disconnect} disconnectingId={disconnectingId} />;
-}
-
-/** Confirm, then end the connection and say how it went. One handler for every row. */
-export function usePartnerAppDisconnect() {
-  const { t } = useTranslation('settings');
-  const confirm = useConfirm();
-  const { showToast } = useToast();
-  const { mutate } = useDisconnectApp();
-  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
-  const translate = t as ConnectedAppsTranslate;
-
-  const disconnect = useCallback(
-    async (row: ConnectedAppRowView) => {
-      const prompt = connectedAppDisconnectPrompt({ name: row.name }, translate);
-      const confirmed = await confirm({ ...prompt, destructive: true });
-      if (!confirmed) return;
-      setDisconnectingId(row.connectionId);
-      mutate(
-        { connectionId: row.connectionId },
-        {
-          onSuccess: () =>
-            showToast(connectedAppDisconnectResult({ name: row.name }, 'disconnected', translate), 'success'),
-          onError: () => showToast(connectedAppDisconnectResult({ name: row.name }, 'failed', translate), 'error'),
-          onSettled: () => setDisconnectingId(null),
-        },
-      );
-    },
-    [confirm, mutate, showToast, translate],
-  );
-
-  return { disconnect, disconnectingId };
+  return <PartnerAppsSectionView section={section} onOpen={openApp} />;
 }
 
 type PartnerAppsSectionViewProps = {
   section: ConnectedAppsSectionView;
-  onDisconnect: (row: ConnectedAppRowView) => void;
-  /** The connection whose Disconnect is in flight. */
-  disconnectingId: string | null;
+  onOpen: (row: ConnectedAppRowView) => void;
 };
 
-export function PartnerAppsSectionView({ section, onDisconnect, disconnectingId }: PartnerAppsSectionViewProps) {
+export function PartnerAppsSectionView({ section, onOpen }: PartnerAppsSectionViewProps) {
   const { systemColors } = useTheme();
   if (section.kind === 'hidden') return null;
   const cardBackground = { backgroundColor: systemColors.secondaryGroupedBackground };
@@ -106,94 +78,48 @@ export function PartnerAppsSectionView({ section, onDisconnect, disconnectingId 
           </Text>
         </View>
       ) : (
-        <>
+        <View style={[styles.card, cardBackground]}>
           {section.rows.map((row, index) => (
-            <PartnerAppCard
+            <PartnerAppRow
               key={row.connectionId}
               row={row}
-              isLast={index === section.rows.length - 1}
-              disconnecting={disconnectingId === row.connectionId}
-              onDisconnect={onDisconnect}
+              showSeparator={index < section.rows.length - 1}
+              onOpen={onOpen}
             />
           ))}
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
-            {section.footer}
-          </Text>
-        </>
+        </View>
       )}
     </View>
   );
 }
 
-type PartnerAppCardProps = {
+type PartnerAppRowProps = {
   row: ConnectedAppRowView;
-  isLast: boolean;
-  disconnecting: boolean;
-  onDisconnect: (row: ConnectedAppRowView) => void;
+  showSeparator: boolean;
+  onOpen: (row: ConnectedAppRowView) => void;
 };
 
-const PartnerAppCard = memo(function PartnerAppCard({ row, isLast, disconnecting, onDisconnect }: PartnerAppCardProps) {
+const PartnerAppRow = memo(function PartnerAppRow({ row, showSeparator, onOpen }: PartnerAppRowProps) {
   const { systemColors, brandColors } = useTheme();
-  const handleDisconnect = useCallback(() => onDisconnect(row), [onDisconnect, row]);
-
+  const handlePress = useCallback(() => onOpen(row), [onOpen, row]);
+  const suspended = row.suspendedNotice !== null;
   return (
-    <View
-      style={[
-        styles.card,
-        styles.paddedCard,
-        !isLast && styles.cardSpacing,
-        { backgroundColor: systemColors.secondaryGroupedBackground },
-      ]}
-      testID={`partner-app-${row.connectionId}`}
-    >
-      <Text variant="headline">{row.name}</Text>
-      {row.publisher ? (
-        <Text variant="subheadline" color={systemColors.secondaryLabel}>
-          {row.publisher}
-        </Text>
-      ) : null}
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.when}>
-        {`${row.connected} · ${row.lastUsed}`}
-      </Text>
-
-      {row.suspendedNotice ? (
-        <View style={[styles.notice, { backgroundColor: systemColors.tertiaryGroupedBackground }]}>
-          <Icon name="warning" size={18} color={brandColors.warning} />
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.noticeText}>
-            {row.suspendedNotice}
-          </Text>
-        </View>
-      ) : null}
-
-      <View style={styles.scopes}>
-        {row.scopes.map((scope) => (
-          <View key={scope.scope} style={styles.scopeRow}>
-            <Icon name="check.small" size={16} color={brandColors.primary} />
-            <View style={styles.scopeText}>
-              <Text variant="subheadline">{scope.label}</Text>
-              {scope.notes.map((note) => (
-                <Text key={note} variant="footnote" color={systemColors.secondaryLabel}>
-                  {note}
-                </Text>
-              ))}
-            </View>
-          </View>
-        ))}
-      </View>
-
-      <View style={styles.actionRow}>
-        <Button
-          title={row.disconnectLabel}
-          accessibilityLabel={row.disconnectAccessibilityLabel}
-          variant="text"
-          size="small"
-          role="destructive"
-          loading={disconnecting}
-          disabled={disconnecting}
-          onPress={handleDisconnect}
+    <ListRow
+      title={row.name}
+      subtitle={row.summary}
+      leading={
+        <Icon
+          name={suspended ? 'warning' : 'link'}
+          size={20}
+          color={suspended ? brandColors.warning : systemColors.secondaryLabel}
         />
-      </View>
-    </View>
+      }
+      showChevron
+      showSeparator={showSeparator}
+      separatorInset={52}
+      onPress={handlePress}
+      testID={`partner-app-${row.connectionId}`}
+    />
   );
 });
 
@@ -209,43 +135,5 @@ const styles = StyleSheet.create({
   },
   paddedCard: {
     padding: spacing[4],
-  },
-  cardSpacing: {
-    marginBottom: spacing[3],
-  },
-  when: {
-    marginTop: spacing[1],
-  },
-  notice: {
-    marginTop: spacing[3],
-    borderRadius: borderRadius.md,
-    padding: spacing[3],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  noticeText: {
-    flex: 1,
-  },
-  scopes: {
-    marginTop: spacing[3],
-    gap: spacing[2],
-  },
-  scopeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing[2],
-  },
-  scopeText: {
-    flex: 1,
-    gap: 2,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    marginTop: spacing[3],
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
   },
 });

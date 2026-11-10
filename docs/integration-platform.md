@@ -884,15 +884,20 @@ climber or the app.
 ### Connected apps
 
 A climber sees and ends their own connections in Settings › Connected apps, in the
-app (the "Apps with access" section of the `integrations` page) and on the website
-(`/settings`), so a connection can be ended from any browser (#6981 F16). Two
-first-party GraphQL operations serve both, from
+app (the "Apps with access" section, last on the `integrations` page) and on the
+website (`/settings`), so a connection can be ended from any browser (#6981 F16).
+Both show one compact row per app (name and last use). A row opens the app's detail:
+the app opens a pushed settings page (`/settings/connected-app?id=…`, registered flat
+in the settings stack like Board look's leaves), the website a dialog. The detail
+lists what the app can see, when it connected and was last used, and Disconnect,
+which asks first. First-party GraphQL operations serve both, from
 `graphql/resolvers/connected-apps/connected-apps.ts` over `auth/partner/connected-apps.ts`:
 
 | Operation | What it does |
 | --- | --- |
 | `myConnectedApps` | Every live connection of the signed-in climber (`connected_at` set, not revoked), most recently connected first: the app's name, the scopes from its remembered consent, `connectedAt`, `lastUsedAt`, and `suspended` (`oauth_client.disabled` or a policy suspension). `publisherName` is in the shape and null until apps carry one. `partnerAppsEnabled` is false while the mode is `off` |
 | `disconnectApp(connectionId)` | Ends the connection through `endPartnerConnection`, the same path as `DELETE /v1/connection`, with reason `climber_disconnect`. `true` once ended, also when it already was |
+| `partnerAppsEnabled` | The same flag on its own, signed in or not, for screens that only need to know whether to mention connected apps. The app caches it for an hour, so the editor never asks per open |
 
 Both work in **every** mode, `off` and `hold` included: a climber can always end a
 connection, including one made before the mode was turned off. Neither loads Better
@@ -928,8 +933,11 @@ nothing connected while partner apps are off; with partner apps on and nothing
 connected it says so. Under `logbook:read` it carries the same two lines as the
 consent screen: ticks kept to "Only me" (decision 21), and unlisted climbs and drafts
 set by others (#7387, owner decision 2026-11-10: a connected app gets the full climb
-for every tick). The setter's "Save as draft" switch says the same from the other
-side: apps connected by climbers who log a draft can still see it.
+for every tick). Setters hear the same from the other side, only once partner apps
+are on (`partnerAppsEnabled`; with the mode `off` nothing changes): the "Save as
+draft" switch says drafts stay unlisted and that apps connected by climbers who log
+one can still see it, and a Spraywall's Link only and private hints add that apps
+connected by climbers who log its climbs still see them.
 
 ### Retention sweep
 

@@ -26,6 +26,16 @@ export type GetMyConnectedAppsResponse = {
   myConnectedApps: ConnectedApps;
 };
 
+export const GET_PARTNER_APPS_ENABLED = gql`
+  query GetPartnerAppsEnabled {
+    partnerAppsEnabled
+  }
+`;
+
+export type GetPartnerAppsEnabledResponse = {
+  partnerAppsEnabled: boolean;
+};
+
 export const DISCONNECT_APP = gql`
   mutation DisconnectApp($connectionId: ID!) {
     disconnectApp(connectionId: $connectionId)

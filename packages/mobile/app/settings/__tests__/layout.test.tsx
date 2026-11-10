@@ -167,6 +167,7 @@ const SETTINGS_PAGES = [
   'edit',
   'export',
   'watch-pair',
+  'connected-app',
   'branch-switcher',
   'dev-servers',
   'feature-flags',

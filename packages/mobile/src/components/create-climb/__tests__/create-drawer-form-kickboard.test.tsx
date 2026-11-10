@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+// Whether partner apps are on, for the draft switch's note (#7387).
+const partnerApps = vi.hoisted(() => ({ enabled: false }));
+vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({ usePartnerAppsEnabled: () => partnerApps.enabled }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -42,7 +45,8 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../SwitchRow', () => ({
-  SwitchRow: ({ label }: { label: string }) => createElement('div', { 'data-testid': 'switch-row' }, label),
+  SwitchRow: ({ label, description }: { label: string; description?: string }) =>
+    createElement('div', { 'data-testid': 'switch-row', 'data-description': description }, label),
 }));
 
 import { CreateDrawerForm } from '../CreateDrawerForm';
@@ -82,5 +86,28 @@ describe('CreateDrawerForm no-kickboard switch', () => {
 
   it('is offered on a catalogue board', () => {
     expect(switchLabels('kilter')).toContain('mobile.create.settings.noKickboardLabel');
+  });
+});
+
+describe('CreateDrawerForm draft switch', () => {
+  function draftDescription(boardName: string): string | null {
+    const draft = renderForm(boardName)
+      .getAllByTestId('switch-row')
+      .find((row) => row.textContent === 'mobile.create.settings.draftLabel');
+    return draft?.getAttribute('data-description') ?? null;
+  }
+
+  it.each([
+    ['kilter', false, 'mobile.create.settings.draftDescription'],
+    ['spray', false, 'mobile.create.settings.wallDraftDescription'],
+    ['kilter', true, 'mobile.create.settings.draftDescriptionApps'],
+    ['spray', true, 'mobile.create.settings.wallDraftDescriptionApps'],
+  ])('on %s with partner apps on: %s, says %s', (boardName, enabled, expected) => {
+    partnerApps.enabled = enabled;
+    try {
+      expect(draftDescription(boardName)).toBe(expected);
+    } finally {
+      partnerApps.enabled = false;
+    }
   });
 });

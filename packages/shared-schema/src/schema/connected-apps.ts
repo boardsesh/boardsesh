@@ -37,6 +37,12 @@ export const connectedAppsTypeDefs = /* GraphQL */ `
   extend type Query {
     "The signed-in climber's connected apps, in every PARTNER_OAUTH_MODE."
     myConnectedApps: ConnectedApps!
+    """
+    Whether partner apps are switched on (any PARTNER_OAUTH_MODE but off), the same
+    value as ConnectedApps.partnerAppsEnabled. Screens that only need to know whether
+    to mention connected apps read this. It changes only with a deploy.
+    """
+    partnerAppsEnabled: Boolean!
   }
 
   extend type Mutation {
