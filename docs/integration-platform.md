@@ -1400,9 +1400,13 @@ Registering needs the developer terms box ticked; the form links to
 `/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
 `PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.
 The backend takes its own copy of the version
-(`PartnerAuthorityConfiguration.developerTermsVersion`: the shared constant,
-unless `PARTNER_DEVELOPER_TERMS_VERSION` is set in its environment, which only
-tests do). While that version ends in `-draft` it refuses every registration with
+(`PartnerAuthorityConfiguration.developerTermsVersion`): always the shared
+constant in production, so publishing terms is a reviewed code change and never
+an environment flip. Outside production (the backend's own test, the one its
+Sentry gate uses, since Railway leaves `NODE_ENV` unset) a
+`PARTNER_DEVELOPER_TERMS_VERSION` variable may name another version, which is how
+the tests and the end-to-end journey register apps while the shipped terms are a
+draft. While that version ends in `-draft` it refuses every registration with
 `BAD_USER_INPUT`, reason `TERMS_UNPUBLISHED`, "Developer terms are not published
 yet", in every mode that reaches registration. Otherwise it refuses any other
 accepted value with `BAD_USER_INPUT`, so a console left open across a terms change
@@ -2362,7 +2366,7 @@ stays `off` until step 1 of stage A.
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
-| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and set `PARTNER_DEVELOPER_TERMS_VERSION` to the approval date, which opens registration | The terms page no longer says "Draft, not in force"; the console registers an app |
+| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | The terms page no longer says "Draft, not in force"; the console registers an app |
 
 ### Turning it on and off
 

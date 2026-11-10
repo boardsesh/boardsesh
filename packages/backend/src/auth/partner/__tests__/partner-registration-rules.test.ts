@@ -308,12 +308,21 @@ describe('a registration request', () => {
     });
   });
 
-  it('takes the shared terms version unless a deployment names its own', () => {
+  it('takes the shared terms version, and a variable may name another only outside production', () => {
     const base = { PARTNER_OAUTH_SECRETS: `1:${'s'.repeat(40)}`, NEXTAUTH_SECRET: 'next-auth-secret' };
-    const read = (environment: Record<string, string>) =>
-      readPartnerAuthorityConfiguration(environment as unknown as NodeJS.ProcessEnv).developerTermsVersion;
-    expect(read(base)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
-    expect(read({ ...base, PARTNER_DEVELOPER_TERMS_VERSION: ' 2026-12-01 ' })).toBe('2026-12-01');
+    const read = (environment: Record<string, string>, production: boolean) =>
+      readPartnerAuthorityConfiguration(environment as unknown as NodeJS.ProcessEnv, { production })
+        .developerTermsVersion;
+    const named = { ...base, PARTNER_DEVELOPER_TERMS_VERSION: ' 2026-12-01 ' };
+    expect(read(base, false)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    expect(read(named, false)).toBe('2026-12-01');
+    // Production: publishing terms is a code change, never an environment flip.
+    expect(read(base, true)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    expect(read(named, true)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    // This test process is not production, which is how the suites publish their own version.
+    expect(readPartnerAuthorityConfiguration(named as unknown as NodeJS.ProcessEnv).developerTermsVersion).toBe(
+      '2026-12-01',
+    );
   });
 
   it('refuses every registration while the terms are a draft, before any other check', () => {
