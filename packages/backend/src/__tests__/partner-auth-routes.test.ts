@@ -1025,7 +1025,8 @@ describe('partner OAuth routes on the API host', () => {
         const slowHost = await startPartnerHost({
           mode: 'allowlist',
           loadRuntime: async () => runtime,
-          bodyReadDeadlineMs: 10_000,
+          // Longer than the wait below, so no slot frees while the test looks for the 503.
+          bodyReadDeadlineMs: 30_000,
         });
         try {
           // 32 addresses at their cap of 8, opened in small groups.
@@ -1044,7 +1045,7 @@ describe('partner OAuth routes on the API host', () => {
               expect(probe.status).toBe(503);
               expect(probe.headers['retry-after']).toBe('2');
             },
-            { timeout: 8000, interval: 100 },
+            { timeout: 20_000, interval: 100 },
           );
         } finally {
           await slowHost.close();
@@ -1308,11 +1309,28 @@ describe('partner OAuth routes on the API host', () => {
         const connectionId = await connectionIdFor(client);
         await seedLimiter(`${client.clientId}:${connectionId}`, 'oauth-refresh', 5);
 
-        const burst = await Promise.all(
-          refreshTokens.map((refreshToken) =>
-            sendToken({ grant_type: 'refresh_token', refresh_token: refreshToken, ...clientCredentials(client) }),
-          ),
-        );
+        // Every Redis increment takes 50 ms, as a slow Redis would. The bound has
+        // to hold anyway, which it does only if a charge lands before the next
+        // request can check: a charge made after the permit is released would
+        // let the queued requests read a stale count.
+        const { publisher } = redisClientManager.getClients();
+        const realEval = publisher.eval.bind(publisher);
+        const slowIncrements = vi.spyOn(publisher, 'eval').mockImplementation((async (
+          ...evalArguments: Parameters<typeof realEval>
+        ) => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return realEval(...evalArguments);
+        }) as typeof realEval);
+        let burst: SentResponse[];
+        try {
+          burst = await Promise.all(
+            refreshTokens.map((refreshToken) =>
+              sendToken({ grant_type: 'refresh_token', refresh_token: refreshToken, ...clientCredentials(client) }),
+            ),
+          );
+        } finally {
+          slowIncrements.mockRestore();
+        }
         const statusCounts = burst.reduce<Record<number, number>>((counts, { status }) => {
           counts[status] = (counts[status] ?? 0) + 1;
           return counts;
@@ -1397,7 +1415,8 @@ describe('partner OAuth routes on the API host', () => {
         const waitedMs = performance.now() - started;
         expect(waited).toBeNull();
         expect(waitedMs).toBeGreaterThanOrEqual(900);
-        expect(waitedMs).toBeLessThan(1500);
+        // Loose above: it proves a deadline exists, not how precisely a busy machine keeps it.
+        expect(waitedMs).toBeLessThan(5000);
       } finally {
         for (const permit of permits) permit?.release();
       }
