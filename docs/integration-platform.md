@@ -758,9 +758,13 @@ a positive-result cache. The sole partner API resource identifier is
 `https://api.boardsesh.com/v1` (no trailing slash); it is distinct from the
 issuer. Register that resource and link every self-service client to it through
 supported provider APIs. Clients send it as `resource` at authorization, code
-exchange and refresh. A missing or different resource must never produce a usable
-API token: the pinned provider issues a token with no audience when `resource` is
-omitted, so `/v1/*` answers it `401 invalid_token`. Registration links alone are
+exchange and refresh. A missing or different resource at the authorization and
+the code exchange must never produce a usable API token: the pinned provider
+issues a token with no audience when neither step names it, so `/v1/*` answers it
+`401 invalid_token`, and naming it at either step is enough. A refresh inherits
+the grant's audience. One that leaves `resource` out gets tokens for the same
+audience (RFC 8707 section 2.2), which is standard and never wider; one that names
+any other resource is refused with `invalid_target`. Registration links alone are
 not assumed to supply a request default.
 
 How it is built (`auth/partner/bearer.ts`): the presented token is hashed with the
@@ -906,7 +910,8 @@ not mocks of library internals.
 Protocol coverage includes PKCE S256 for every client, exact redirects and
 allowed native loopback behavior, unknown-client errors, code expiry and
 single use, client-specific authentication methods, discovery/issuer
-consistency, opaque resource-bound tokens (including missing/wrong resource at every grant step),
+consistency, opaque resource-bound tokens (a missing resource at authorization and
+code exchange, a wrong one at every grant step, and a refresh keeping the grant's audience),
 scope ceilings, remembered-consent widening with newly
 issued tokens and unchanged old-token scopes, and refresh issuance
 only with `offline_access`. Prove refresh on day 30 and after day 90 of
