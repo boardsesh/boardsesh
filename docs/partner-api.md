@@ -909,6 +909,11 @@ still readable through the API.
 | Blocks per workout               | 12                                  |
 | Request body                     | 64 KB                               |
 
+A limit "per client IP" counts an IPv6 client as its /64. An app on Cloudflare
+Workers counts per Worker zone (the `CF-Worker` header Cloudflare adds), because
+every Worker reaches us from the same address; all Worker zones together share 10
+times each per-IP limit.
+
 Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset` for the tightest limit that applies. Over the limit returns
 `429` with `Retry-After` in seconds. If your app genuinely needs more, ask

@@ -67,6 +67,10 @@ function limitIdentity(address: string): string {
 export function getTrustedClientIp(req: IncomingMessage): string {
   const edgeVisitor = resolveEdgeVisitorIp(req);
   if (edgeVisitor) return limitIdentity(edgeVisitor);
+  return trustedNonEdgeIdentity(req);
+}
+
+function trustedNonEdgeIdentity(req: IncomingMessage): string {
   const socketPeer = normalizeIpAddress(req.socket.remoteAddress);
   const forwardedFor = req.headers['x-forwarded-for'];
   if (socketPeer && isPrivatePeerAddress(socketPeer) && typeof forwardedFor === 'string') {
@@ -74,4 +78,65 @@ export function getTrustedClientIp(req: IncomingMessage): string {
     if (appendedHop) return limitIdentity(appendedHop);
   }
   return socketPeer ? limitIdentity(socketPeer) : 'unknown';
+}
+
+/**
+ * The address Cloudflare reports as `CF-Connecting-IP` for every request a
+ * Worker on another zone sends us, whoever's Worker it is.
+ * https://developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ip-in-worker-subrequests
+ */
+export const CLOUDFLARE_WORKER_EGRESS_ADDRESS = '2a06:98c0:3600::103';
+const workerEgressGroups = ipv6Groups(CLOUDFLARE_WORKER_EGRESS_ADDRESS);
+
+/** The whole address, in any spelling. The rest of its /64 is ordinary Cloudflare space, not the Worker address. */
+function isWorkerEgressAddress(address: string): boolean {
+  if (isIP(address) !== 6) return false;
+  const groups = ipv6Groups(address);
+  return groups.every((group, index) => group === workerEgressGroups[index]);
+}
+
+const ZONE_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const MAX_ZONE_LENGTH = 253;
+
+/**
+ * The zone a `CF-Worker` header names, lower-cased, or undefined unless it is
+ * exactly one hostname of at least two labels. A repeated header reaches us
+ * joined with a comma and is refused like any other malformed value.
+ */
+function workerZone(header: string | string[] | undefined): string | undefined {
+  if (typeof header !== 'string') return undefined;
+  const zone = header.trim().toLowerCase();
+  if (zone.length === 0 || zone.length > MAX_ZONE_LENGTH) return undefined;
+  const labels = zone.split('.');
+  if (labels.length < 2 || !labels.every((label) => ZONE_LABEL.test(label))) return undefined;
+  return zone;
+}
+
+export interface PartnerLimitIdentity {
+  /** The bucket every per-address partner limit counts. */
+  key: string;
+  /**
+   * Set only for a request from a Cloudflare Worker: the Worker egress
+   * address's own limit identity. The zone header is the Worker's to write, so
+   * the caller also counts every zone together against a ceiling on this.
+   */
+  sharedEgress?: string;
+}
+
+/**
+ * The identity the partner OAuth limits count. Every Worker on another zone
+ * reaches us from one `CF-Connecting-IP`, so keyed by address alone all
+ * Worker-hosted apps would share one bucket worldwide. For that one address,
+ * from a verified Cloudflare edge only, the bucket is the `CF-Worker` zone
+ * instead. Anything else, including a `CF-Worker` header from any other
+ * address or from a request that did not come through Cloudflare, gets exactly
+ * `getTrustedClientIp`.
+ */
+export function getPartnerLimitIdentity(req: IncomingMessage): PartnerLimitIdentity {
+  const edgeVisitor = resolveEdgeVisitorIp(req);
+  if (!edgeVisitor) return { key: trustedNonEdgeIdentity(req) };
+  const addressIdentity = limitIdentity(edgeVisitor);
+  if (!isWorkerEgressAddress(edgeVisitor)) return { key: addressIdentity };
+  const zone = workerZone(req.headers['cf-worker']);
+  return zone ? { key: `cf-worker:${zone}`, sharedEgress: addressIdentity } : { key: addressIdentity };
 }

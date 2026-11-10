@@ -19,7 +19,7 @@ import { db } from '../db/client';
 import { API_HOSTNAME, rejectApiHostRequest } from '../handlers/api-host';
 import { createPartnerAuthHandler, type PartnerAuthHandlerOptions } from '../handlers/partner-auth';
 import { redisClientManager } from '../redis/client';
-import { getTrustedClientIp } from '../utils/client-ip';
+import { CLOUDFLARE_WORKER_EGRESS_ADDRESS, getTrustedClientIp } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import {
   clientCredentials,
@@ -177,7 +177,7 @@ async function startPartnerHost(options: PartnerAuthHandlerOptions) {
     send,
     port,
     /** Sends the headers of a POST and then nothing, for as long as the socket stays open. */
-    openEndlessPost(path: string, clientIp: string) {
+    openEndlessPost(path: string, clientIp: string, headers: Record<string, string> = {}) {
       return new Promise<SentResponse>((resolve, reject) => {
         const outgoing = request(
           {
@@ -191,6 +191,7 @@ async function startPartnerHost(options: PartnerAuthHandlerOptions) {
               'X-Forwarded-For': clientIp,
               'Content-Type': 'application/x-www-form-urlencoded',
               'Transfer-Encoding': 'chunked',
+              ...headers,
             },
           },
           (incoming) => {
@@ -1030,6 +1031,217 @@ describe('partner OAuth routes on the API host', () => {
           const limited = await partnerHost.send('GET', target, { clientIp: `${prefix}:aaaa:bbbb:cccc:dddd` });
           expect(limited.status).toBe(429);
         });
+      },
+      TEST_DEADLINE_MS,
+    );
+  });
+
+  describe('Cloudflare Workers', () => {
+    // Our private ingress saw a Cloudflare edge, which reported Cloudflare's one Worker egress address.
+    const CLOUDFLARE_EDGE_HOP = '173.245.48.5';
+    const WORKER_ADDRESS_KEY = '2a06:98c0:3600:0::/64';
+    const randomZone = () => `app-${randomUUID().slice(0, 8)}.example`;
+    const fromWorker = (zone?: string, extraHeaders: Record<string, string> = {}): SendOptions => ({
+      clientIp: CLOUDFLARE_EDGE_HOP,
+      headers: {
+        'CF-Connecting-IP': CLOUDFLARE_WORKER_EGRESS_ADDRESS,
+        ...(zone === undefined ? {} : { 'CF-Worker': zone }),
+        ...extraHeaders,
+      },
+    });
+    const authorizeFrom = (client: TestClient, options: SendOptions) =>
+      partnerHost.send('GET', browserRouteTarget(AUTHORIZE_PATH, authorizeQuery(client)), options);
+
+    /** Sets a shared ceiling for one test and puts back what was there, so later tests start below it. */
+    async function withCeilingAt<Result>(operation: string, count: number, body: () => Promise<Result>) {
+      const previous = await limiterCount(WORKER_ADDRESS_KEY, operation);
+      await seedLimiter(WORKER_ADDRESS_KEY, operation, count);
+      try {
+        return await body();
+      } finally {
+        await seedLimiter(WORKER_ADDRESS_KEY, operation, previous);
+      }
+    }
+
+    it('gives each Worker zone its own per-address budget, and counts it on the ceiling too', async () => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const fullZone = randomZone();
+        const otherZone = randomZone();
+        await seedLimiter(`cf-worker:${fullZone}`, 'oauth-authorize', 60);
+        const ceilingBefore = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize-worker-egress');
+        const headerlessBefore = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize');
+
+        const limited = await authorizeFrom(client, fromWorker(fullZone));
+        expect(limited.status).toBe(429);
+        expect(limited.headers['ratelimit-limit']).toBe('60');
+        // A zone over its own limit spends none of the shared ceiling.
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize-worker-egress')).toBe(ceilingBefore);
+
+        expect((await authorizeFrom(client, fromWorker(otherZone))).status).toBe(302);
+        expect(await limiterCount(`cf-worker:${otherZone}`, 'oauth-authorize')).toBe(1);
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize-worker-egress')).toBe(ceilingBefore + 1);
+        // The address's own, header-less bucket is not touched.
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize')).toBe(headerlessBefore);
+      });
+    });
+
+    it('keys the token endpoint per app and zone, with a per-app ceiling', async () => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const zone = randomZone();
+        const ceilingBefore = await limiterCount(
+          `${client.clientId}:${WORKER_ADDRESS_KEY}`,
+          'oauth-client-worker-egress',
+        );
+        const bodyCeilingBefore = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-body-ip-worker-egress');
+        const answered = await sendToken(
+          { grant_type: 'authorization_code', code: 'not-real', client_id: client.clientId },
+          fromWorker(zone),
+        );
+        expect(answered.status).toBe(400);
+        expect(await limiterCount(`cf-worker:${zone}`, 'oauth-body-ip')).toBe(1);
+        expect(await limiterCount(`${client.clientId}:cf-worker:${zone}`, 'oauth-client')).toBe(1);
+        expect(await limiterCount(`${client.clientId}:${WORKER_ADDRESS_KEY}`, 'oauth-client')).toBe(0);
+        expect(await limiterCount(`${client.clientId}:${WORKER_ADDRESS_KEY}`, 'oauth-client-worker-egress')).toBe(
+          ceilingBefore + 1,
+        );
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-body-ip-worker-egress')).toBe(bodyCeilingBefore + 1);
+
+        // Another zone's full body budget is not this zone's.
+        const fullZone = randomZone();
+        await seedLimiter(`cf-worker:${fullZone}`, 'oauth-body-ip', 1200);
+        const limited = await sendToken({ grant_type: 'authorization_code', code: 'not-real' }, fromWorker(fullZone));
+        expect(limited.status).toBe(429);
+        expect(limited.headers['ratelimit-limit']).toBe('1200');
+        expect(
+          (
+            await sendToken(
+              { grant_type: 'authorization_code', code: 'not-real', client_id: client.clientId },
+              fromWorker(randomZone()),
+            )
+          ).status,
+        ).toBe(400);
+      });
+    });
+
+    it('holds every zone together to ten times one address', async () => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        await withCeilingAt('oauth-authorize-worker-egress', 600, async () => {
+          const zones = Array.from({ length: 3 }, randomZone);
+          for (const zone of zones) {
+            const limited = await authorizeFrom(client, fromWorker(zone));
+            expect(limited.status).toBe(429);
+            expect(limited.headers['ratelimit-limit']).toBe('600');
+          }
+          // The ceiling never mixes with the Worker address's header-less bucket.
+          expect((await authorizeFrom(client, fromWorker())).status).toBe(302);
+        });
+        await withCeilingAt('oauth-body-ip-worker-egress', 12_000, async () => {
+          const limited = await sendToken(
+            { grant_type: 'authorization_code', code: 'not-real', client_id: client.clientId },
+            fromWorker(randomZone()),
+          );
+          expect(limited.status).toBe(429);
+          expect(limited.headers['ratelimit-limit']).toBe('12000');
+        });
+      });
+    });
+
+    it.each([
+      ['no CF-Worker header', undefined],
+      ['two CF-Worker headers', 'one.example, two.example'],
+      ['a single-label zone', 'localhost'],
+      ['a zone with a port', 'partner.example:443'],
+      ['a zone with a space', 'partner example.com'],
+      ['a label over 63 characters', `${'a'.repeat(64)}.example`],
+    ])('keeps the Worker address on its own bucket with %s', async (_label, header) => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const before = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize');
+        const ceilingBefore = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize-worker-egress');
+        expect((await authorizeFrom(client, fromWorker(header))).status).toBe(302);
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize')).toBe(before + 1);
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize-worker-egress')).toBe(ceilingBefore);
+      });
+    });
+
+    it('ignores CF-Worker on a request that did not come through Cloudflare', async () => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const zone = randomZone();
+        // The ingress observed an ordinary address, which forged both Cloudflare headers.
+        const directPeer = randomClientIp();
+        expect((await authorizeFrom(client, { ...fromWorker(zone), clientIp: directPeer })).status).toBe(302);
+        expect(await limiterCount(directPeer, 'oauth-authorize')).toBe(1);
+        expect(await limiterCount(`cf-worker:${zone}`, 'oauth-authorize')).toBe(0);
+      });
+    });
+
+    it('ignores CF-Worker from a Cloudflare visitor that is not the Worker address', async () => {
+      await inOneLimitWindow(async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const zone = randomZone();
+        const visitor = randomClientIp();
+        expect((await authorizeFrom(client, fromWorker(zone, { 'CF-Connecting-IP': visitor }))).status).toBe(302);
+        expect(await limiterCount(visitor, 'oauth-authorize')).toBe(1);
+        // A neighbour in the Worker address's /64 is not the Worker address.
+        const neighbourBefore = await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize');
+        expect(
+          (await authorizeFrom(client, fromWorker(zone, { 'CF-Connecting-IP': '2a06:98c0:3600::104' }))).status,
+        ).toBe(302);
+        expect(await limiterCount(WORKER_ADDRESS_KEY, 'oauth-authorize')).toBe(neighbourBefore + 1);
+        expect(await limiterCount(`cf-worker:${zone}`, 'oauth-authorize')).toBe(0);
+      });
+    });
+
+    it(
+      'lets one zone send 8 bodies at once and every zone together 32',
+      async () => {
+        const statusesOf = async (posts: Promise<SentResponse>[]) =>
+          (await Promise.all(posts)).map((answer) => answer.status);
+
+        const oneZone = randomZone();
+        const fromOneZone = await statusesOf(
+          Array.from({ length: 12 }, () =>
+            partnerHost.openEndlessPost(TOKEN_PATH, CLOUDFLARE_EDGE_HOP, fromWorker(oneZone).headers),
+          ),
+        );
+        expect(fromOneZone.filter((status) => status === 503).length).toBeGreaterThanOrEqual(1);
+
+        // Five zones at their own limit of 8 each: 40 bodies, 8 over the shared 32.
+        const zones = Array.from({ length: 5 }, randomZone);
+        const fromManyZones = await statusesOf(
+          zones.flatMap((zone) =>
+            Array.from({ length: 8 }, () =>
+              partnerHost.openEndlessPost(TOKEN_PATH, CLOUDFLARE_EDGE_HOP, fromWorker(zone).headers),
+            ),
+          ),
+        );
+        expect(fromManyZones.filter((status) => status === 503).length).toBeGreaterThanOrEqual(8);
+        expect(fromManyZones.every((status) => status === 503 || status === 408)).toBe(true);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'gives every body slot back: 40 bodies in a row from 40 zones, then 10 from one, are all read',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const exchange = (zone: string) =>
+          sendToken(
+            { grant_type: 'authorization_code', code: 'not-real', client_id: client.clientId },
+            fromWorker(zone),
+          );
+        const statuses: number[] = [];
+        // More than the 32 the Worker address may hold at once, so one slot that
+        // is never given back refuses the 33rd.
+        for (let index = 0; index < 40; index += 1) statuses.push((await exchange(randomZone())).status);
+        // More than one zone's 8.
+        const oneZone = randomZone();
+        for (let index = 0; index < 10; index += 1) statuses.push((await exchange(oneZone)).status);
+        expect(statuses).toEqual(Array.from({ length: 50 }, () => 400));
       },
       TEST_DEADLINE_MS,
     );

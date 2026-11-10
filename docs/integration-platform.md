@@ -514,6 +514,23 @@ Availability is protected before any transaction opens:
 - The client address for a limit is `CF-Connecting-IP` only from a verified
   Cloudflare edge, otherwise the last `X-Forwarded-For` hop. An IPv6 client counts
   as its /64, and an IPv4-mapped address as that IPv4 address.
+- Cloudflare Workers on other zones all reach us from one address,
+  `2a06:98c0:3600::103`, so keyed by address every Worker-hosted app would share
+  one bucket worldwide. For that exact address, reported by a verified Cloudflare
+  edge, the OAuth routes key every per-address limit (60 authorizes, 60 consents,
+  1,200 body reads, 60 token and 600 refresh requests per app, and 8 bodies in
+  flight) by the `CF-Worker` zone instead (`cf-worker:<zone>`), one hostname of two or more
+  labels, lower-cased. The Worker writes that header, so all zones together also
+  count against a ceiling of 10 times each limit on the Worker address (operation
+  names ending `-worker-egress`; 600 authorizes, 12,000 body reads, 32 bodies in
+  flight). A zone is charged before the ceiling, so a zone over its own limit
+  spends none of it. A missing or malformed `CF-Worker` leaves the request on the
+  Worker address's own bucket at the normal limit, and the header means nothing
+  from any other address or from a request that did not come through Cloudflare
+  (`getPartnerLimitIdentity` in `utils/client-ip.ts`). Someone who can make
+  Cloudflare report many zones can still fill the ceiling: that takes 12,000 body
+  reads a minute, where one address took 1,200 before. `/v1` still counts failed
+  token lookups per address.
 - A Redis command that takes over 100 ms falls back to the per-instance memory limit.
 
 For `/v1`, in this order:
@@ -2018,7 +2035,7 @@ What LEGAL.md implies:
 
 | Limit | Default | Key |
 | --- | --- | --- |
-| `/api/auth/oauth2/authorize` | 60 requests/min per client IP | `oauth-authorize:<ip>`; protects the authorization flow before any identity is established |
+| `/api/auth/oauth2/authorize` | 60 requests/min per client IP | `oauth-authorize:<ip>`; protects the authorization flow before any identity is established. A Cloudflare Worker counts per `CF-Worker` zone, with every zone together held to 10 times each per-address limit (see "Routes and the mode switch") |
 | Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<connectionId>` once validated, plus an IP bound before validation; prove supported middleware/body handling in D2 |
 | Token endpoint, code exchange and revoke | 60 requests/min per (app, client IP) | `oauth-client:<clientId>:<ip>`, IP from `getPublicClientIp` |
 | Token endpoint, whole app | 6,000 requests/min | `oauth-client:<clientId>` |
