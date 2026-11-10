@@ -68,7 +68,7 @@ const logbookSnapshotsSchema = readFileSync(
 );
 // The password-write trigger that ends partner connections, straight from the migration.
 const partnerRevocationTriggerSchema = readFileSync(
-  new URL('../../../db/drizzle/0297_partner_revocation_trigger.sql', import.meta.url),
+  new URL('../../../db/drizzle/0300_partner_revocation_trigger.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(

@@ -2101,6 +2101,13 @@
       "when": 1794300197601,
       "tag": "0299_logbook_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 300,
+      "version": "7",
+      "when": 1794300273523,
+      "tag": "0300_partner_revocation_trigger",
+      "breakpoints": true
     }
   ]
 }
