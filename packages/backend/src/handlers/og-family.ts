@@ -12,7 +12,14 @@ import {
   renderOgFamilyArt,
 } from '../services/board-render';
 import { OgFamilyNotFoundError } from '../services/og-family/run-document';
-import { loadPlaylistCard, loadSessionJoinCard } from '../services/og-family/load-cards';
+import { CardReadsSaturatedError } from '../services/og-family/card-read-limit';
+import {
+  loadPlaylistCard,
+  loadProfileCard,
+  loadSessionJoinCard,
+  loadSessionRecapCard,
+  loadSetterCard,
+} from '../services/og-family/load-cards';
 import type { LoadedOgFamilyCard } from '../services/og-family/card-model';
 
 // The same limits as `/og/climb`: one image per crawl, and a card costs a render.
@@ -27,6 +34,17 @@ const OG_FAMILY_FONT_FAMILY = process.env.OG_CARD_FONT_FAMILY?.trim() || 'Noto S
 /** A session id or playlist uuid: bounded before any database or CPU work. */
 const OG_RESOURCE_ID_PATTERN = /^[A-Za-z0-9-]{1,100}$/;
 
+/** A user id: uuid or a Better Auth id, bounded before any database or CPU work. */
+const OG_USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+/** Same bound the resolver uses; a setter name can be any script, with spaces. */
+const OG_SETTER_NAME_MAX_LENGTH = 100;
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+/** A setter name a database and a text renderer can both take. Any script, any spacing, no control characters. */
+function isAcceptableSetterName(username: string | null): username is string {
+  return !!username && username.length <= OG_SETTER_NAME_MAX_LENGTH && !CONTROL_CHARACTER.test(username);
+}
+
 /**
  * The one "no card" answer. Missing, private, ended and refused all answer this,
  * byte for byte, with `no-store`: anything else would say which ids are real.
@@ -40,6 +58,15 @@ function sendNotFound(req: IncomingMessage, res: ServerResponse): void {
     'Cache-Control': 'no-store',
   });
   res.end(req.method === 'HEAD' ? undefined : NOT_FOUND_BODY);
+}
+
+function sendSaturated(req: IncomingMessage, res: ServerResponse, message: string): void {
+  res.writeHead(503, {
+    'Content-Type': 'application/json',
+    'Retry-After': '5',
+    'Cache-Control': 'no-store',
+  });
+  res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: message }));
 }
 
 function sendJson(req: IncomingMessage, res: ServerResponse, status: number, body: unknown): void {
@@ -81,7 +108,7 @@ async function passRateLimit(req: IncomingMessage, res: ServerResponse): Promise
 async function serveOgFamilyCard(
   req: IncomingMessage,
   res: ServerResponse,
-  surface: 'playlist' | 'session-join',
+  surface: 'playlist' | 'session-join' | 'session-recap' | 'profile' | 'setter',
   load: () => Promise<LoadedOgFamilyCard | null>,
 ): Promise<void> {
   if (!(await passRateLimit(req, res))) return;
@@ -95,6 +122,10 @@ async function serveOgFamilyCard(
   } catch (error) {
     if (error instanceof OgFamilyNotFoundError) {
       sendNotFound(req, res);
+      return;
+    }
+    if (error instanceof CardReadsSaturatedError) {
+      sendSaturated(req, res, error.message);
       return;
     }
     logger.error('[OGFamily] load failed:', error);
@@ -151,12 +182,7 @@ async function serveOgFamilyCard(
     else logger.info('[OGFamily] served', logPayload);
   } catch (error) {
     if (error instanceof RenderQueueSaturatedError) {
-      res.writeHead(503, {
-        'Content-Type': 'application/json',
-        'Retry-After': '5',
-        'Cache-Control': 'no-store',
-      });
-      res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ error: error.message }));
+      sendSaturated(req, res, error.message);
       return;
     }
     logger.error('[OGFamily] render failed:', error);
@@ -176,17 +202,49 @@ export async function handleOgPlaylist(req: IncomingMessage, res: ServerResponse
 }
 
 /**
- * GET/HEAD/OPTIONS /og/session?sessionId=…&variant=join
+ * GET/HEAD/OPTIONS /og/session?sessionId=…[&variant=join]
  *
- * An ended session has no truthful "join" to offer, so it answers the same 404 as
- * a missing one until the recap card ships. The same goes for any other variant.
+ * No variant is the recap. `variant=join` is the invite, and an invite for a
+ * session that ended tells the truth by serving the recap instead of saying Join;
+ * no recap to serve (nothing visible logged) is the same 404 as a missing session.
+ * Any other variant is a 404, so a typo cannot be used to probe an id.
  */
 export async function handleOgSession(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
   const sessionId = url.searchParams.get('sessionId');
-  if (url.searchParams.get('variant') !== 'join' || !sessionId || !OG_RESOURCE_ID_PATTERN.test(sessionId)) {
+  const variant = url.searchParams.get('variant');
+  if (!sessionId || !OG_RESOURCE_ID_PATTERN.test(sessionId) || (variant !== null && variant !== 'join')) {
     sendNotFound(req, res);
     return;
   }
-  await serveOgFamilyCard(req, res, 'session-join', () => loadSessionJoinCard(sessionId, OG_FAMILY_FONT_FAMILY));
+  if (variant === 'join') {
+    await serveOgFamilyCard(req, res, 'session-join', async () => {
+      const invite = await loadSessionJoinCard(sessionId, OG_FAMILY_FONT_FAMILY);
+      return invite ?? loadSessionRecapCard(sessionId, OG_FAMILY_FONT_FAMILY);
+    });
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'session-recap', () => loadSessionRecapCard(sessionId, OG_FAMILY_FONT_FAMILY));
+}
+
+/** GET/HEAD/OPTIONS /og/profile?user_id=… */
+export async function handleOgProfile(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!applyCorsHeaders(req, res)) return;
+  const userId = url.searchParams.get('user_id');
+  if (!userId || !OG_USER_ID_PATTERN.test(userId)) {
+    sendNotFound(req, res);
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'profile', () => loadProfileCard(userId, OG_FAMILY_FONT_FAMILY));
+}
+
+/** GET/HEAD/OPTIONS /og/setter?username=… */
+export async function handleOgSetter(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!applyCorsHeaders(req, res)) return;
+  const username = url.searchParams.get('username');
+  if (!isAcceptableSetterName(username)) {
+    sendNotFound(req, res);
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'setter', () => loadSetterCard(username, OG_FAMILY_FONT_FAMILY));
 }

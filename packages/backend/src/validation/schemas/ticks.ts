@@ -229,6 +229,7 @@ export const AscentFeedInputSchema = z.object({
   minAngle: z.number().int().min(-5).max(90).optional(),
   maxAngle: z.number().int().min(-5).max(90).optional(),
   benchmarkOnly: z.boolean().optional(),
+  excludeHiddenClimbs: z.boolean().optional(),
   // Stars the logbook row shows: the tick's own, else the climber's synced rating.
   minQuality: z.number().int().min(1).max(5).optional(),
   // Exact setter usernames. Capped so one request can't build a huge IN list.

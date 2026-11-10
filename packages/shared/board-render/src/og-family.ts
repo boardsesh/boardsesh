@@ -235,8 +235,12 @@ export const OG_FAMILY_MUTED = '#94A3B8';
 export const OG_FAMILY_JOIN_GREEN = '#3DDC84';
 const WORDMARK_COLOR = '#8791A3';
 
-/** A run of one colour. Hero rows and supporting rows are both a list of these. */
-export type OgFamilyTextRun = { text: string; color: string };
+/**
+ * A run of one colour. Hero rows and supporting rows are both a list of these.
+ * `scale` draws the run smaller than its row (the unit in `1.1M sends`), on the
+ * same baseline, so the number can carry the size that reads at 110px.
+ */
+export type OgFamilyTextRun = { text: string; color: string; scale?: number };
 
 export type OgFamilyHero = {
   runs: readonly OgFamilyTextRun[];
@@ -252,6 +256,12 @@ export type OgFamilyHero = {
    * wrapped or cut. `true` wraps and, as a last resort, truncates: names run long.
    */
   wrap: boolean;
+  /**
+   * Trim the raster to the glyphs' own height. A display-size line carries about
+   * a third of its height as empty ascender and descender, which would float the
+   * rows far from a big grade.
+   */
+  tight?: boolean;
 };
 
 export type OgFamilyRow = {
@@ -265,12 +275,38 @@ export type OgFamilyRow = {
 
 export type OgFamilyPill = { text: string; color: string };
 
+/** Either a decoded avatar or a drawn initial. `digest` is what the byte cache keys on. */
+export type OgFamilyAvatar =
+  | { kind: 'image'; png: Buffer; digest: string }
+  | { kind: 'monogram'; letter: string; color: string };
+
+/** The name line above the hero, with an optional avatar or monogram beside it. */
+export type OgFamilyIdentity = { name: string; avatar: OgFamilyAvatar | null; sizePt: number };
+
+/** A chart bar. `value` is relative to the tallest bar on the same card. */
+export type OgFamilyBar = { color: string; value: number };
+
+/** One dot per send. `total` is the real count, which may exceed `dots.length`. */
+export type OgFamilyDots = {
+  dots: readonly { color: string; filled: boolean }[];
+  total: number;
+  /** Muted text drawn after the dots: `3 attempts`. */
+  label?: string;
+};
+
+/** The credit on the right of a narrow card. Never part of the hero, so it may sit outside the crop. */
+export type OgFamilyAside = { eyebrow: string; title: string; lines: readonly string[] };
+
 export type OgFamilyCardContent = {
   slot: OgFamilySlot;
   fontFamily?: string;
+  identity?: OgFamilyIdentity;
   pill?: OgFamilyPill;
   hero: OgFamilyHero;
   rows: readonly OgFamilyRow[];
+  dots?: OgFamilyDots;
+  bars?: readonly OgFamilyBar[];
+  aside?: OgFamilyAside;
 };
 
 /** Renders at 96 dpi throughout, so a point is 1.33 pixels. */
@@ -284,6 +320,34 @@ const PILL_HEIGHT = 44;
 const PILL_PADDING_X = 18;
 const PILL_DOT_SIZE = 12;
 const PILL_GAP = 10;
+
+const AVATAR_SIZE = 80;
+const AVATAR_GAP = 18;
+const AVATAR_RING_WIDTH = 3;
+
+/** Chart bars live in the lower column, above the wordmark's row and clear of the text. */
+const BARS_TOP = 486;
+const BARS_BOTTOM = 556;
+const BARS_CLEARANCE = 16;
+const BARS_MIN_COUNT = 3;
+const BAR_MAX_WIDTH = 40;
+const BAR_GAP = 6;
+const BAR_ZERO_HEIGHT = 4;
+const BAR_ZERO_COLOR = '#2A2438';
+
+/** Under this many dots they can afford to be big; over it they run one line. */
+const DOTS_LARGE_UP_TO = 10;
+const DOT_LARGE_SIZE = 40;
+const DOT_LARGE_GAP = 10;
+const DOT_SMALL_SIZE = 26;
+const DOT_SMALL_GAP = 8;
+const DOT_RING_WIDTH = 5;
+const DOT_LABEL_PT = 20;
+const DOT_LABEL_GAP = 12;
+
+const ASIDE_LEFT = 930;
+const ASIDE_TOP = 72;
+const ASIDE_WIDTH = 230;
 
 const LEFT_TO_RIGHT_MARK = '\u200E';
 const CJK_WORD = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -326,7 +390,7 @@ function runsMarkup(runs: readonly OgFamilyTextRun[], pt: number, weight: number
   return runs
     .map(
       (run) =>
-        `<span size="${pt}pt" weight="${weight}" foreground="${run.color}"${lineHeightAttr}>${escapePangoMarkup(run.text)}</span>`,
+        `<span size="${Math.round(pt * (run.scale ?? 1))}pt" weight="${weight}" foreground="${run.color}"${lineHeightAttr}>${escapePangoMarkup(run.text)}</span>`,
     )
     .join('');
 }
@@ -346,6 +410,7 @@ async function trimHeroInk(
   raster: FittedHero,
   side: 'left' | 'right',
   multiLine: boolean,
+  tight: boolean,
 ): Promise<FittedHero & { hang: number }> {
   const { data, info } = await sharp(raster.buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
@@ -364,12 +429,28 @@ async function trimHeroInk(
   const inset = firstInked(0);
   // One line has no lower lines to align on, and its lower half is just the point of a "V".
   const hang = side === 'left' && multiLine ? firstInked(Math.floor(height / 2)) - inset : 0;
-  if (inset === 0) return { ...raster, hang };
+
+  let topInset = 0;
+  let inkHeight = height;
+  if (tight) {
+    const rowHasInk = (row: number) => {
+      for (let column = 0; column < width; column++) {
+        if (data[(row * width + column) * channels + (channels - 1)] > 8) return true;
+      }
+      return false;
+    };
+    while (topInset < height - 1 && !rowHasInk(topInset)) topInset++;
+    let lastInked = height - 1;
+    while (lastInked > topInset && !rowHasInk(lastInked)) lastInked--;
+    inkHeight = lastInked - topInset + 1;
+  }
+
+  if (inset === 0 && topInset === 0 && inkHeight === height) return { ...raster, hang };
   const buffer = await sharp(raster.buffer)
-    .extract({ left: side === 'left' ? inset : 0, top: 0, width: width - inset, height })
+    .extract({ left: side === 'left' ? inset : 0, top: topInset, width: width - inset, height: inkHeight })
     .png()
     .toBuffer();
-  return { ...raster, buffer, width: width - inset, hang };
+  return { ...raster, buffer, width: width - inset, height: inkHeight, hang };
 }
 
 /**
@@ -537,7 +618,93 @@ async function renderPill(pill: OgFamilyPill, fontFamily: string | undefined) {
   return { background, text, width };
 }
 
+/** A circular image, ringed, as one layer. The caller has already decoded and sized `png`. */
+async function renderAvatarImage(png: Buffer): Promise<Buffer> {
+  const radius = AVATAR_SIZE / 2;
+  const circle = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius}" fill="#fff"/></svg>`,
+  );
+  const ring = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
+  );
+  const clipped = await sharp(png)
+    .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: 'cover' })
+    .ensureAlpha()
+    .composite([{ input: circle, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+  return sharp(clipped)
+    .composite([{ input: ring }])
+    .png()
+    .toBuffer();
+}
+
+function renderMonogramDisc(color: string): Buffer {
+  const radius = AVATAR_SIZE / 2;
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_SIZE}" height="${AVATAR_SIZE}"><circle cx="${radius}" cy="${radius}" r="${radius - AVATAR_RING_WIDTH / 2}" fill="${color}" fill-opacity="0.22" stroke="${color}" stroke-opacity="0.6" stroke-width="${AVATAR_RING_WIDTH}"/></svg>`,
+  );
+}
+
+/** The dots as one SVG, plus how many it drew: the rest are carried by the `+N` label. */
+function renderDotsSvg(
+  dots: OgFamilyDots['dots'],
+  count: number,
+  size: number,
+  gap: number,
+): { svg: Buffer; width: number; height: number } {
+  const step = size + gap;
+  const width = Math.max(size, count * step - gap);
+  const circles = dots
+    .slice(0, count)
+    .map((dot, index) => {
+      const cx = index * step + size / 2;
+      const cy = size / 2;
+      return dot.filled
+        ? `<circle cx="${cx}" cy="${cy}" r="${size / 2}" fill="${dot.color}"/>`
+        : `<circle cx="${cx}" cy="${cy}" r="${(size - DOT_RING_WIDTH) / 2}" fill="none" stroke="${dot.color}" stroke-width="${DOT_RING_WIDTH}"/>`;
+    })
+    .join('');
+  return {
+    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${size}">${circles}</svg>`),
+    width,
+    height: size,
+  };
+}
+
+/**
+ * Bars as one SVG, scaled to the card's tallest. Bars with no count keep a flat
+ * tick, so the x-axis stays a continuous scale from easiest to hardest.
+ */
+function renderBarsSvg(bars: readonly OgFamilyBar[], maxWidth: number): { svg: Buffer; width: number; height: number } {
+  const height = BARS_BOTTOM - BARS_TOP;
+  const tallest = Math.max(1, ...bars.map((bar) => bar.value));
+  const barWidth = Math.min(BAR_MAX_WIDTH, Math.floor((maxWidth - BAR_GAP * (bars.length - 1)) / bars.length));
+  const width = bars.length * barWidth + BAR_GAP * (bars.length - 1);
+  const rects = bars
+    .map((bar, index) => {
+      const barHeight =
+        bar.value > 0 ? Math.max(BAR_ZERO_HEIGHT, Math.round((bar.value / tallest) * height)) : BAR_ZERO_HEIGHT;
+      const color = bar.value > 0 ? bar.color : BAR_ZERO_COLOR;
+      return `<rect x="${index * (barWidth + BAR_GAP)}" y="${height - barHeight}" width="${barWidth}" height="${barHeight}" rx="2" fill="${color}"/>`;
+    })
+    .join('');
+  return {
+    svg: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${rects}</svg>`),
+    width,
+    height,
+  };
+}
+
 export type OgFamilyHeroRect = { left: number; top: number; width: number; height: number; pt: number };
+
+/** Where the optional blocks landed, for the geometry tests. Absent when not drawn. */
+export type OgFamilyBlockRects = {
+  identity?: { left: number; top: number; width: number; height: number };
+  dots?: { left: number; top: number; width: number; height: number };
+  bars?: { left: number; top: number; width: number; height: number };
+  aside?: { left: number; top: number; width: number; height: number };
+};
 
 /**
  * Lay out the family's text stack for one card and return its composite layers.
@@ -548,8 +715,8 @@ export type OgFamilyHeroRect = { left: number; top: number; width: number; heigh
  */
 export async function renderOgFamilyTextLayers(
   content: OgFamilyCardContent,
-): Promise<{ layers: TextLayer[]; hero: OgFamilyHeroRect }> {
-  const { slot, fontFamily, pill, hero, rows } = content;
+): Promise<{ layers: TextLayer[]; hero: OgFamilyHeroRect; blocks: OgFamilyBlockRects }> {
+  const { slot, fontFamily, identity, pill, hero, rows, dots, bars, aside } = content;
   const bounds = ogFamilyHeroBounds(slot);
   const heroWidth = bounds.right - bounds.left;
   const columnWidth = COLUMN_RIGHT - bounds.left;
@@ -564,23 +731,75 @@ export async function renderOgFamilyTextLayers(
     if (direction === 'right') return bounds.right - width;
     return Math.round((bounds.left + bounds.right - width) / 2);
   };
-  // Only a left-aligned stack can use the rest of the column past the crop.
-  const rowWidth = direction === 'left' ? columnWidth : heroWidth;
+  // Only a left-aligned stack can use the rest of the column past the crop, and
+  // never when an aside already claims that side of the card.
+  const rowWidth = direction === 'left' && !aside ? columnWidth : heroWidth;
 
   const fitted = await fitHero(hero, { width: heroWidth }, fontFamily, direction);
-  const heroRaster = direction === 'centre' ? { ...fitted, hang: 0 } : await trimHeroInk(fitted, direction, hero.wrap);
+  const heroRaster =
+    direction === 'centre' ? { ...fitted, hang: 0 } : await trimHeroInk(fitted, direction, hero.wrap, !!hero.tight);
 
   const stacked: { input: Buffer; left: number; offset: number }[] = [];
+  const blocks: OgFamilyBlockRects = {};
+  const blockOffsets: { identity?: number; dots?: number } = {};
   let cursor = 0;
+
+  if (identity) {
+    const avatarWidth = identity.avatar ? AVATAR_SIZE + AVATAR_GAP : 0;
+    const name = await renderRow(
+      {
+        runs: [{ text: identity.name, color: OG_FAMILY_WHITE }],
+        sizePt: identity.sizePt,
+        weight: 700,
+      },
+      rowWidth - avatarWidth,
+      fontFamily,
+      direction,
+    );
+    const blockHeight = Math.max(identity.avatar ? AVATAR_SIZE : 0, name.height);
+    const blockWidth = avatarWidth + name.width;
+    const blockLeft = anchor(blockWidth);
+    if (identity.avatar?.kind === 'image') {
+      stacked.push({
+        input: await renderAvatarImage(identity.avatar.png),
+        left: blockLeft,
+        offset: Math.round((blockHeight - AVATAR_SIZE) / 2),
+      });
+    } else if (identity.avatar?.kind === 'monogram') {
+      const { letter, color } = identity.avatar;
+      stacked.push({
+        input: renderMonogramDisc(color),
+        left: blockLeft,
+        offset: Math.round((blockHeight - AVATAR_SIZE) / 2),
+      });
+      const glyph = await renderRaster(
+        `<span size="30pt" weight="700" foreground="${color}">${escapePangoMarkup(letter)}</span>`,
+        { fontFamily },
+      );
+      stacked.push({
+        input: glyph.buffer,
+        left: blockLeft + Math.round((AVATAR_SIZE - glyph.width) / 2),
+        offset: Math.round((blockHeight - glyph.height) / 2),
+      });
+    }
+    stacked.push({
+      input: name.buffer,
+      left: blockLeft + avatarWidth,
+      offset: Math.round((blockHeight - name.height) / 2),
+    });
+    blocks.identity = { left: blockLeft, top: 0, width: blockWidth, height: blockHeight };
+    blockOffsets.identity = 0;
+    cursor += blockHeight + 14;
+  }
 
   if (pill) {
     const { background, text, width } = await renderPill(pill, fontFamily);
     const left = anchor(width);
-    stacked.push({ input: background, left, offset: 0 });
+    stacked.push({ input: background, left, offset: cursor });
     stacked.push({
       input: text.buffer,
       left: left + PILL_PADDING_X + PILL_DOT_SIZE + PILL_GAP,
-      offset: Math.round((PILL_HEIGHT - text.height) / 2),
+      offset: cursor + Math.round((PILL_HEIGHT - text.height) / 2),
     });
     cursor += PILL_HEIGHT + 14;
   }
@@ -588,7 +807,7 @@ export async function renderOgFamilyTextLayers(
   const heroLeft = anchor(heroRaster.width) - heroRaster.hang;
   stacked.push({ input: heroRaster.buffer, left: heroLeft, offset: cursor });
   const heroOffset = cursor;
-  cursor += heroRaster.height + (hero.wrap ? 26 : 4);
+  cursor += heroRaster.height + (hero.wrap ? 26 : hero.tight ? 18 : 4);
 
   for (const row of rows) {
     const raster = await renderRow(row, rowWidth, fontFamily, direction);
@@ -597,12 +816,97 @@ export async function renderOgFamilyTextLayers(
     cursor += raster.height + (row.gapBelow ?? 10);
   }
 
-  const blockTop = Math.max(COLUMN_TOP, COLUMN_TOP + Math.round((COLUMN_FLOOR - COLUMN_TOP - cursor) / 2));
+  if (dots && dots.total > 0) {
+    const large = dots.dots.length <= DOTS_LARGE_UP_TO && dots.total <= DOTS_LARGE_UP_TO;
+    const size = large ? DOT_LARGE_SIZE : DOT_SMALL_SIZE;
+    const gap = large ? DOT_LARGE_GAP : DOT_SMALL_GAP;
+    const capacity = Math.floor((heroWidth + gap) / (size + gap));
+    const measureLabel = (text: string) =>
+      renderRaster(runsMarkup([{ text, color: OG_FAMILY_MUTED }], DOT_LABEL_PT, 600), { fontFamily });
+    const overflowLabel = (drawn: number) => `+${(dots.total - drawn).toLocaleString('en-US')}`;
+    let shown = Math.min(capacity, dots.dots.length);
+    const labelText = dots.label ?? (dots.total > shown ? overflowLabel(shown) : null);
+    let labelRaster: TextRaster | null = labelText ? await measureLabel(labelText) : null;
+    // A `+N` chip takes room from the dots it stands for, so it has to count itself in.
+    while (labelRaster && shown > 1 && shown * (size + gap) - gap + DOT_LABEL_GAP + labelRaster.width > heroWidth) {
+      shown -= 1;
+      if (!dots.label) labelRaster = await measureLabel(overflowLabel(shown));
+    }
+    const { svg, width, height } = renderDotsSvg(dots.dots, shown, size, gap);
+    const fullWidth = width + (labelRaster ? DOT_LABEL_GAP + labelRaster.width : 0);
+    if (cursor + height <= COLUMN_FLOOR - COLUMN_TOP) {
+      cursor += 6;
+      const left = anchor(fullWidth);
+      stacked.push({ input: svg, left, offset: cursor });
+      if (labelRaster) {
+        stacked.push({
+          input: labelRaster.buffer,
+          left: left + width + DOT_LABEL_GAP,
+          offset: cursor + Math.round((height - labelRaster.height) / 2),
+        });
+      }
+      blocks.dots = { left, top: 0, width: fullWidth, height };
+      blockOffsets.dots = cursor;
+      cursor += height;
+    }
+  }
+
+  // Bars go in only when the text is genuinely clear of them; the words always win.
+  const drawBars = !!bars && bars.length >= BARS_MIN_COUNT && cursor <= BARS_TOP - BARS_CLEARANCE - COLUMN_TOP;
+  const blockFloor = drawBars ? BARS_TOP - BARS_CLEARANCE : COLUMN_FLOOR;
+  const blockTop = Math.max(COLUMN_TOP, COLUMN_TOP + Math.round((blockFloor - COLUMN_TOP - cursor) / 2));
+
   const layers: TextLayer[] = stacked.map((row) => ({
     input: row.input,
     left: row.left,
     top: blockTop + row.offset,
   }));
+  if (blocks.identity) blocks.identity.top = blockTop + (blockOffsets.identity ?? 0);
+  if (blocks.dots) blocks.dots.top = blockTop + (blockOffsets.dots ?? 0);
+
+  if (drawBars && bars) {
+    const { svg, width, height } = renderBarsSvg(bars, columnWidth);
+    layers.push({ input: svg, left: bounds.left, top: BARS_TOP });
+    blocks.bars = { left: bounds.left, top: BARS_TOP, width, height };
+  }
+
+  if (aside) {
+    const asideRows = [
+      await renderRaster(
+        `<span size="13pt" weight="700" letter_spacing="1200" foreground="${OG_FAMILY_MUTED}">${escapePangoMarkup(aside.eyebrow)}</span>`,
+        { fontFamily },
+      ),
+      await renderRow(
+        { runs: [{ text: aside.title, color: OG_FAMILY_WHITE }], sizePt: 21, weight: 700, maxLines: 3 },
+        ASIDE_WIDTH,
+        fontFamily,
+        'left',
+      ),
+      ...(await Promise.all(
+        aside.lines.map((line) =>
+          renderRow(
+            { runs: [{ text: line, color: OG_FAMILY_MUTED }], sizePt: 16, weight: 500, maxLines: 2 },
+            ASIDE_WIDTH,
+            fontFamily,
+            'left',
+          ),
+        ),
+      )),
+    ];
+    let asideCursor = ASIDE_TOP;
+    let asideRight = ASIDE_LEFT;
+    for (const raster of asideRows) {
+      layers.push({ input: raster.buffer, left: ASIDE_LEFT, top: asideCursor });
+      asideRight = Math.max(asideRight, ASIDE_LEFT + raster.width);
+      asideCursor += raster.height + 8;
+    }
+    blocks.aside = {
+      left: ASIDE_LEFT,
+      top: ASIDE_TOP,
+      width: asideRight - ASIDE_LEFT,
+      height: asideCursor - ASIDE_TOP,
+    };
+  }
 
   const wordmark = await renderRaster(
     `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
@@ -623,6 +927,7 @@ export async function renderOgFamilyTextLayers(
       height: heroRaster.height,
       pt: heroRaster.pt,
     },
+    blocks,
   };
 }
 

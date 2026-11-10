@@ -98,13 +98,16 @@ describe('resolveBackendTracesSampleRate', () => {
     ).toBe(0);
   });
 
-  it.each(['/og/playlist', '/og/session'])('samples the family card route %s at 5%%', (path) => {
-    expect(resolveBackendTracesSampleRate({ name: `GET ${path}` })).toBe(0.05);
-    expect(
-      resolveBackendTracesSampleRate({ name: `GET ${path}`, normalizedRequest: { url: `${path}?uuid=abc` } }),
-    ).toBe(0.05);
-    expect(resolveBackendTracesSampleRate({ name: `GET ${path}/nested` })).toBe(0.1);
-  });
+  it.each(['/og/playlist', '/og/session', '/og/profile', '/og/setter'])(
+    'samples the family card route %s at 5%%',
+    (path) => {
+      expect(resolveBackendTracesSampleRate({ name: `GET ${path}` })).toBe(0.05);
+      expect(
+        resolveBackendTracesSampleRate({ name: `GET ${path}`, normalizedRequest: { url: `${path}?uuid=abc` } }),
+      ).toBe(0.05);
+      expect(resolveBackendTracesSampleRate({ name: `GET ${path}/nested` })).toBe(0.1);
+    },
+  );
 
   it('samples /og/climb at 5%', () => {
     expect(resolveBackendTracesSampleRate({ name: 'GET /og/climb' })).toBe(0.05);

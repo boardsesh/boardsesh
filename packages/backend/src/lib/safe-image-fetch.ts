@@ -14,9 +14,13 @@ const HOST_ALLOWLISTS: Record<ImageHostKind, RegExp> = {
   // all show up in practice — the EU CDN serves thumbnails for posts viewed
   // from European IPs, and the dev proxy already treats it as valid.
   tiktok: /^[a-z0-9-]+\.(tiktokcdn\.com|tiktokcdn-us\.com|tiktokcdn-eu\.com)$/i,
+  // Profile pictures drawn on share cards: our media CDN, and the Google OAuth
+  // photo host a signed-in account's `users.image` points at. `avatarUrl` is
+  // whatever the row holds, so nothing else may be fetched on its say-so.
+  avatar: /^(media\.boardsesh\.com|[a-z0-9-]+\.googleusercontent\.com)$/i,
 };
 
-export type ImageHostKind = 'instagram' | 'tiktok';
+export type ImageHostKind = 'instagram' | 'tiktok' | 'avatar';
 
 export class UnsafeImageHostError extends Error {
   constructor(message: string) {
@@ -110,4 +114,71 @@ export async function assertAllowedImageHost(rawUrl: string, kind: ImageHostKind
       throw new UnsafeImageHostError(`Refusing image fetch: ${parsed.hostname} resolves to private IP ${address}`);
     }
   }
+}
+
+/**
+ * Read a response body with a hard byte cap. Wall-clock is bounded by the fetch
+ * timeout but bytes aren't, so without this a hostile server over a fast pipe
+ * could exhaust memory before the timeout fires. Null when the cap is exceeded.
+ */
+export async function readBodyWithCap(res: Response, maxBytes: number): Promise<Buffer | null> {
+  if (res.body) {
+    const reader = res.body.getReader();
+    let total = 0;
+    const chunks: Uint8Array[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // best-effort
+        }
+        return null;
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+  }
+  // Fallback for environments / mocks where `res.body` isn't a ReadableStream.
+  // Fetch the whole buffer, then enforce the cap on the result. Less
+  // protective than streaming (the byte cap doesn't help if Node already
+  // buffered the whole response) but at least keeps the runtime check in
+  // place for the upload step.
+  const arrayBuffer = await res.arrayBuffer();
+  if (arrayBuffer.byteLength > maxBytes) return null;
+  return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Fetch an image for an internal purpose, or throw. On top of
+ * `assertAllowedImageHost`: a short timeout, no redirects (a redirect could point
+ * back into the private network, and the allowlist only judged the first hop), a
+ * declared image content type, a byte cap, and a non-empty body. The bytes are
+ * still attacker-influenced: the caller decodes them with a pixel limit.
+ */
+export async function fetchAllowedImage(
+  rawUrl: string,
+  kind: ImageHostKind,
+  options: { timeoutMs: number; maxBytes: number },
+): Promise<Buffer> {
+  await assertAllowedImageHost(rawUrl, kind);
+  const response = await fetch(rawUrl, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(options.timeoutMs),
+    headers: { Accept: 'image/*' },
+  });
+  if (!response.ok) throw new UnsafeImageHostError(`Image fetch answered ${response.status}`);
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().startsWith('image/')) {
+    throw new UnsafeImageHostError(`Refusing non-image content type: ${contentType}`);
+  }
+  const declaredLength = Number(response.headers.get('content-length') ?? 0);
+  if (declaredLength > options.maxBytes) throw new UnsafeImageHostError('Declared image size exceeds the cap');
+  const bytes = await readBodyWithCap(response, options.maxBytes);
+  if (!bytes) throw new UnsafeImageHostError('Image exceeds the byte cap');
+  if (bytes.length === 0) throw new UnsafeImageHostError('Image response was empty');
+  return bytes;
 }

@@ -55,3 +55,95 @@ export const OG_BOARD_BY_SLUG = parse(/* GraphQL */ `
     }
   }
 `);
+
+/**
+ * The gate for a profile card. `isPrivate` is read here and checked before any
+ * other read: a private account has no card at all.
+ */
+export const OG_PROFILE_GATE = parse(/* GraphQL */ `
+  query OgProfileGate($userId: ID!) {
+    publicProfile(userId: $userId) {
+      displayName
+      avatarUrl
+      isPrivate
+    }
+  }
+`);
+
+export const OG_PROFILE_STATS = parse(/* GraphQL */ `
+  query OgProfileStats($userId: ID!) {
+    userProfileStats(userId: $userId) {
+      totalDistinctClimbs
+      layoutStats {
+        boardType
+        distinctClimbCount
+        gradeCounts {
+          grade
+          count
+        }
+      }
+    }
+  }
+`);
+
+/** The hardest send a stranger may see: `userAscentsFeed` already applies tick privacy and spray visibility. */
+export const OG_PROFILE_HARDEST_SEND = parse(/* GraphQL */ `
+  query OgProfileHardestSend($userId: ID!, $input: AscentFeedInput) {
+    userAscentsFeed(userId: $userId, input: $input) {
+      items {
+        climbName
+        boardType
+        difficulty
+        consensusDifficulty
+        frames
+        renderBoard {
+          layoutId
+          sizeId
+          setIds
+        }
+      }
+    }
+  }
+`);
+
+/**
+ * What the setter card draws about the setter. Not the gate: this counts every
+ * climb the setter has, which is about a second on a prolific one, so it sits
+ * behind `setterHasVisibleClimbs` and a short memory.
+ */
+export const OG_SETTER_SUMMARY = parse(/* GraphQL */ `
+  query OgSetterSummary($input: SetterProfileInput!) {
+    setterProfile(input: $input) {
+      climbCount
+      boardTypes
+      linkedUserDisplayName
+      linkedUserAvatarUrl
+    }
+  }
+`);
+
+export const OG_SETTER_TOTAL_ASCENTS = parse(/* GraphQL */ `
+  query OgSetterTotalAscents($input: SetterProfileInput!) {
+    setterProfile(input: $input) {
+      totalAscents
+    }
+  }
+`);
+
+/** The single most-sent climb. `listableSetterClimbConditions` keeps drafts, hidden and private-wall climbs out. */
+export const OG_SETTER_TOP_CLIMB = parse(/* GraphQL */ `
+  query OgSetterTopClimb($input: SetterClimbsFullInput!) {
+    setterClimbsFull(input: $input) {
+      climbs {
+        uuid
+        name
+        boardType
+        layoutId
+        frames
+        ascensionist_count
+        compatibleSizeIds
+        requiredSetIds
+      }
+    }
+  }
+`);

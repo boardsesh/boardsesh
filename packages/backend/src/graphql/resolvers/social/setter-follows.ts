@@ -128,6 +128,63 @@ async function getSetterAccount(username: string, viewerUserId: string | null | 
   return linkedUsers[0] ?? null;
 }
 
+/**
+ * Whether a stranger gets a setter profile at all. The same predicate `setterProfile`
+ * answers null on, as one bounded row, so the share card can ask on every request
+ * without counting a prolific setter's whole catalogue each time.
+ */
+export async function setterHasVisibleClimbs(username: string): Promise<boolean> {
+  const [climb] = await db
+    .select({ uuid: dbSchema.boardClimbs.uuid })
+    .from(dbSchema.boardClimbs)
+    .where(and(...visibleSetterClimbConditions(username, null)))
+    .limit(1);
+  return !!climb;
+}
+
+/** Whether this climb is still one a stranger may be shown as this setter's. */
+export async function isSetterClimbListable(username: string, boardType: string, climbUuid: string): Promise<boolean> {
+  const [climb] = await db
+    .select({ uuid: dbSchema.boardClimbs.uuid })
+    .from(dbSchema.boardClimbs)
+    .where(
+      and(
+        ...listableSetterClimbConditions(username, null),
+        eq(dbSchema.boardClimbs.boardType, boardType),
+        eq(dbSchema.boardClimbs.uuid, climbUuid),
+      ),
+    )
+    .limit(1);
+  return !!climb;
+}
+
+/**
+ * Sends across a setter's listable climbs. Stats are per angle, and the same
+ * climber is on the rows for every angle they have sent, so the per-climb figure
+ * is the most-ascended angle rather than the sum: that matches the count on the
+ * climb's own row and cannot double-count someone who sent it at two angles.
+ * Lazy, because only the share card reads it.
+ */
+export const setterProfileFieldResolvers = {
+  totalAscents: async (parent: { username: string }, _: unknown, ctx: ConnectionContext): Promise<number> => {
+    const perClimb = db
+      .select({ best: sql<number>`MAX(${dbSchema.boardClimbStats.ascensionistCount})`.as('best') })
+      .from(dbSchema.boardClimbs)
+      .innerJoin(
+        dbSchema.boardClimbStats,
+        and(
+          eq(dbSchema.boardClimbStats.boardType, dbSchema.boardClimbs.boardType),
+          eq(dbSchema.boardClimbStats.climbUuid, dbSchema.boardClimbs.uuid),
+        ),
+      )
+      .where(and(...listableSetterClimbConditions(parent.username, ctx.userId)))
+      .groupBy(dbSchema.boardClimbs.boardType, dbSchema.boardClimbs.uuid)
+      .as('per_climb');
+    const [row] = await db.select({ total: sql<string>`COALESCE(SUM(${perClimb.best}), 0)::bigint` }).from(perClimb);
+    return Number(row?.total ?? 0);
+  },
+};
+
 export const setterFollowQueries = {
   /**
    * Get a setter profile by username

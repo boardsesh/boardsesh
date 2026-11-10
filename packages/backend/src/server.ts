@@ -27,7 +27,7 @@ import { staticPathToMediaRedirect } from './lib/media-url';
 import { getMediaPublicBaseUrl } from './storage/s3';
 import { handleRobotsTxt } from './handlers/robots';
 import { handleOgClimb } from './handlers/og-climb';
-import { handleOgPlaylist, handleOgSession } from './handlers/og-family';
+import { handleOgPlaylist, handleOgProfile, handleOgSession, handleOgSetter } from './handlers/og-family';
 import { handleBoardRender, isBoardRenderPath } from './handlers/board-render';
 import { handleBoardGeometry, isBoardGeometryPath } from './handlers/board-geometry';
 import { initBoardRenderer } from './services/board-render';
@@ -394,7 +394,7 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         return;
       }
 
-      // Share-card family: playlist and join cards, rendered through the same
+      // Share-card family: playlist, session, profile and setter cards, rendered through the same
       // pipeline as the climb card but answered from the database on every request.
       if (pathname === '/og/playlist' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
         await handleOgPlaylist(req, res, url);
@@ -403,6 +403,16 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
 
       if (pathname === '/og/session' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
         await handleOgSession(req, res, url);
+        return;
+      }
+
+      if (pathname === '/og/profile' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
+        await handleOgProfile(req, res, url);
+        return;
+      }
+
+      if (pathname === '/og/setter' && ['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
+        await handleOgSetter(req, res, url);
         return;
       }
 

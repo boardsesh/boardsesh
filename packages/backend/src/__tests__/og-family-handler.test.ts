@@ -16,12 +16,22 @@ vi.mock('../services/board-render', () => ({
 vi.mock('../utils/redis-rate-limiter', () => ({ checkRateLimitRedis: vi.fn(async () => {}) }));
 vi.mock('../services/og-family/load-cards', () => ({
   loadPlaylistCard: vi.fn(),
+  loadProfileCard: vi.fn(),
   loadSessionJoinCard: vi.fn(),
+  loadSessionRecapCard: vi.fn(),
+  loadSetterCard: vi.fn(),
 }));
 
-import { handleOgPlaylist, handleOgSession } from '../handlers/og-family';
-import { loadPlaylistCard, loadSessionJoinCard } from '../services/og-family/load-cards';
+import { handleOgPlaylist, handleOgProfile, handleOgSession, handleOgSetter } from '../handlers/og-family';
+import {
+  loadPlaylistCard,
+  loadProfileCard,
+  loadSessionJoinCard,
+  loadSessionRecapCard,
+  loadSetterCard,
+} from '../services/og-family/load-cards';
 import { OgFamilyNotFoundError } from '../services/og-family/run-document';
+import { CardReadsSaturatedError } from '../services/og-family/card-read-limit';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -227,15 +237,28 @@ describe('family card handlers', () => {
 
   describe('/og/session', () => {
     it.each([
-      ['no variant', '/og/session?sessionId=abc'],
-      ['the recap variant, until it ships', '/og/session?sessionId=abc&variant=recap'],
+      ['an unknown variant', '/og/session?sessionId=abc&variant=recap'],
       ['a missing id', '/og/session?variant=join'],
-    ])('answers the same 404 for %s', async (_label, path) => {
+      ['a hostile id', '/og/session?sessionId=%3Cscript%3E'],
+      ['a NUL in the id', '/og/session?sessionId=abc%00def'],
+    ])('answers the same 404 for %s, before any load', async (_label, path) => {
       const res = await callSession(path);
 
       expect(res.statusCode).toBe(404);
       expect(res.body).toBe(notFoundBody);
       expect(loadSessionJoinCard).not.toHaveBeenCalled();
+      expect(loadSessionRecapCard).not.toHaveBeenCalled();
+    });
+
+    it('serves the recap with no variant', async () => {
+      vi.mocked(loadSessionRecapCard).mockResolvedValue(artlessCard);
+
+      const res = await callSession('/og/session?sessionId=abc');
+
+      expect(res.statusCode).toBe(200);
+      expect(loadSessionRecapCard).toHaveBeenCalledWith('abc', expect.any(String));
+      expect(loadSessionJoinCard).not.toHaveBeenCalled();
+      expect(renderFamily.mock.calls[0][0].cacheKey).toBe('key:session-recap:abc');
     });
 
     it('serves the join variant', async () => {
@@ -243,16 +266,111 @@ describe('family card handlers', () => {
 
       expect(res.statusCode).toBe(200);
       expect(loadSessionJoinCard).toHaveBeenCalledWith('abc', expect.any(String));
+      expect(loadSessionRecapCard).not.toHaveBeenCalled();
     });
 
-    it('answers an ended session with the same 404', async () => {
+    it('serves the recap for an invite to an ended session', async () => {
       vi.mocked(loadSessionJoinCard).mockResolvedValue(null);
+      vi.mocked(loadSessionRecapCard).mockResolvedValue(artlessCard);
+
+      const res = await callSession('/og/session?sessionId=abc&variant=join');
+
+      expect(res.statusCode).toBe(200);
+      expect(loadSessionRecapCard).toHaveBeenCalledWith('abc', expect.any(String));
+    });
+
+    it('answers an ended session with nothing to recap with the same 404', async () => {
+      vi.mocked(loadSessionJoinCard).mockResolvedValue(null);
+      vi.mocked(loadSessionRecapCard).mockResolvedValue(null);
 
       const res = await callSession('/og/session?sessionId=abc&variant=join');
 
       expect(res.statusCode).toBe(404);
       expect(res.body).toBe(notFoundBody);
       expect(renderFamily).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('/og/profile', () => {
+    const callProfile = async (path: string) => {
+      const res = makeRes();
+      await handleOgProfile(makeReq(), res as unknown as ServerResponse, url(path));
+      return res;
+    };
+
+    it('answers no-store with a JPEG for a card that passed its gate', async () => {
+      vi.mocked(loadProfileCard).mockResolvedValue(artlessCard);
+
+      const res = await callProfile('/og/profile?user_id=abc-1_2');
+
+      expect(res.statusCode).toBe(200);
+      expect(String(res.headers['Cache-Control'])).toMatch(/no-store/);
+      expect(renderFamily).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+      ['a missing id', '/og/profile'],
+      ['a hostile id', '/og/profile?user_id=%3Cscript%3E'],
+      ['a NUL in the id', '/og/profile?user_id=abc%00def'],
+      ['an oversized id', `/og/profile?user_id=${'a'.repeat(101)}`],
+    ])('answers the same 404 for %s, before any load', async (_label, path) => {
+      const res = await callProfile(path);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toBe(notFoundBody);
+      expect(loadProfileCard).not.toHaveBeenCalled();
+    });
+
+    it('sheds with a 503 and Retry-After when card reads are saturated, logging no failure', async () => {
+      vi.mocked(loadProfileCard).mockRejectedValue(new CardReadsSaturatedError());
+
+      const res = await callProfile('/og/profile?user_id=abc');
+
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['Retry-After']).toBe('5');
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(renderFamily).not.toHaveBeenCalled();
+    });
+
+    it('answers a gate refusal with the same 404', async () => {
+      vi.mocked(loadProfileCard).mockResolvedValue(null);
+
+      const res = await callProfile('/og/profile?user_id=abc');
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toBe(notFoundBody);
+      expect(renderFamily).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('/og/setter', () => {
+    const callSetter = async (path: string) => {
+      const res = makeRes();
+      await handleOgSetter(makeReq(), res as unknown as ServerResponse, url(path));
+      return res;
+    };
+
+    it('accepts a setter name in any script', async () => {
+      vi.mocked(loadSetterCard).mockResolvedValue(artlessCard);
+
+      const res = await callSetter(`/og/setter?username=${encodeURIComponent('Коваленко')}`);
+
+      expect(res.statusCode).toBe(200);
+      expect(loadSetterCard).toHaveBeenCalledWith('Коваленко', expect.any(String));
+    });
+
+    it.each([
+      ['a missing name', '/og/setter'],
+      ['an empty name', '/og/setter?username='],
+      ['an oversized name', `/og/setter?username=${'a'.repeat(101)}`],
+      ['a NUL in the name', '/og/setter?username=abc%00def'],
+      ['a newline in the name', '/og/setter?username=abc%0Adef'],
+    ])('answers the same 404 for %s, before any load', async (_label, path) => {
+      const res = await callSetter(path);
+
+      expect(res.statusCode).toBe(404);
+      expect(res.body).toBe(notFoundBody);
+      expect(loadSetterCard).not.toHaveBeenCalled();
     });
   });
 });

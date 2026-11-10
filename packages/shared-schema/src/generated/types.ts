@@ -423,6 +423,8 @@ export type AscentFeedInput = {
   boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Optional climb name search (case-insensitive partial match) */
   climbName?: InputMaybe<Scalars['String']['input']>;
+  /** Leave out ascents of climbs the community has hidden. For surfaces that headline one ascent; the logbook itself keeps them. */
+  excludeHiddenClimbs?: InputMaybe<Scalars['Boolean']['input']>;
   /** When true, only include flashes within the selected status mode */
   flashOnly?: InputMaybe<Scalars['Boolean']['input']>;
   /** Optional start of the date range, inclusive. Either a calendar day (YYYY-MM-DD, from that UTC day's midnight) or an ISO 8601 instant with Z or an offset (from exactly that instant). */
@@ -10360,6 +10362,8 @@ export type SetterProfile = {
   linkedUserDisplayName?: Maybe<Scalars['String']['output']>;
   /** Linked Boardsesh user ID (if setter has a Boardsesh account) */
   linkedUserId?: Maybe<Scalars['ID']['output']>;
+  /** Sends across this setter's listable climbs, summing each climb's best angle so a climber who sent it at two angles counts once. Includes imported Aurora ascents. */
+  totalAscents: Scalars['Int']['output'];
   /** The setter's Aurora username */
   username: Scalars['String']['output'];
 };
@@ -19242,6 +19246,7 @@ export type SetterProfileResolvers<
   linkedUserAvatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   linkedUserDisplayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   linkedUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   username?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

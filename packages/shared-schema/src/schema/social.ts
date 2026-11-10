@@ -130,6 +130,8 @@ export const socialTypeDefs = /* GraphQL */ `
     linkedUserDisplayName: String
     "Linked user's avatar URL"
     linkedUserAvatarUrl: String
+    "Sends across this setter's listable climbs, summing each climb's best angle so a climber who sent it at two angles counts once. Includes imported Aurora ascents."
+    totalAscents: Int!
   }
 
   """
