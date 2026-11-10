@@ -1554,22 +1554,26 @@ describe('partner OAuth routes on the API host', () => {
       for (const permit of await Promise.all(queued)) permit?.release();
     });
 
-    it('caps how long a queued request waits', async () => {
-      const gate = freshGate();
-      const permits = await Promise.all(Array.from({ length: PARTNER_POOL_MAX }, () => gate.acquire('token')));
+    it('refuses a queued request after exactly one second', async () => {
+      // Fake timers: a wall-clock bound failed when this machine stopped running
+      // timers for seconds at a time (a 1 s timer once fired after 6,784 ms).
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
       try {
-        const started = performance.now();
-        const waited = await gate.acquire('token');
-        const waitedMs = Math.round(performance.now() - started);
-        // Both in one assertion, so a failure says what happened.
-        expect({ granted: waited !== null, waitedAtLeast900Ms: waitedMs >= 900, waitedMs }).toMatchObject({
-          granted: false,
-          waitedAtLeast900Ms: true,
+        const gate = freshGate();
+        const permits = await Promise.all(Array.from({ length: PARTNER_POOL_MAX }, () => gate.acquire('token')));
+        let outcome: 'waiting' | 'granted' | 'refused' = 'waiting';
+        const queued = gate.acquire('token').then((permit) => {
+          outcome = permit ? 'granted' : 'refused';
+          permit?.release();
         });
-        // Loose above: it proves a deadline exists, not how precisely a busy machine keeps it.
-        expect(waitedMs).toBeLessThan(5000);
-      } finally {
+        await vi.advanceTimersByTimeAsync(999);
+        expect(outcome).toBe('waiting');
+        await vi.advanceTimersByTimeAsync(1);
+        await queued;
+        expect(outcome).toBe('refused');
         for (const permit of permits) permit?.release();
+      } finally {
+        vi.useRealTimers();
       }
     });
 
