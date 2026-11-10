@@ -485,9 +485,10 @@ Availability is protected before any transaction opens:
 - At most 3 requests run at once, one for an authorize and two for `/v1`, with token
   work first, then `/v1`, then authorize. 16 more wait per kind, for at most 1
   second. Anything else gets `503` and `Retry-After` at once. `/v1` never holds the
-  third permit, so an app's polling always leaves one for its refreshes. Of the two
-  `/v1` permits, addresses with many failed token lookups share one, with 4 waiting
-  (below).
+  third permit, so an app's polling always leaves one for its refreshes. One address
+  may hold at most 8 of the shared `/v1` lane's 18 places (2 running, 16 waiting);
+  past that its requests wait in an overflow lane with one of the two permits and 8
+  places (below).
 - Discovery and a signed-out authorize take no transaction.
 - Rate limits use the table under Operations and run first. Per-connection refresh
   and the app limits never reach a lock. The first replay of a spent code closes
@@ -513,7 +514,8 @@ Availability is protected before any transaction opens:
   app and bills a shared invalid bucket.
 - The client address for a limit is `CF-Connecting-IP` only from a verified
   Cloudflare edge, otherwise the last `X-Forwarded-For` hop. An IPv6 client counts
-  as its /64, and an IPv4-mapped address as that IPv4 address.
+  as its /64, and an IPv4-mapped address as that IPv4 address. The `/v1` lane
+  decision alone groups IPv6 wider, at /48 (below).
 - Cloudflare Workers on other zones all reach us from one address,
   `2a06:98c0:3600::103`, so keyed by address every Worker-hosted app would share
   one bucket worldwide. For that exact address, reported by a verified Cloudflare
@@ -529,8 +531,8 @@ Availability is protected before any transaction opens:
   from any other address or from a request that did not come through Cloudflare
   (`getPartnerLimitIdentity` in `utils/client-ip.ts`). Someone who can make
   Cloudflare report many zones can still fill the ceiling: that takes 12,000 body
-  reads a minute, where one address took 1,200 before. `/v1` still counts failed
-  token lookups per address.
+  reads a minute, where one address took 1,200 before. `/v1` uses the same
+  identity for its lanes and its failed-lookup count (below).
 - A Redis command that takes over 100 ms falls back to the per-instance memory limit.
 
 For `/v1`, in this order:
@@ -538,25 +540,63 @@ For `/v1`, in this order:
 1. No `Authorization: Bearer` header is a `401` at once, with no lookup.
 2. A `/v1` admission permit, then the token lookup on the primary. The two `/v1`
    permits, 16 waiting and the 1 s deadline are what bound the database work junk
-   tokens can cause. An address with 30 or more failed lookups this minute waits in
-   its own lane instead: one of the two permits and a queue of 4, behind the shared
-   lane. That is routing, not refusal: its junk can never fill the lane everyone
-   else uses, and a valid token from it is still served there, only slower. The
-   threshold sits far below the 429 limit because a junk sender fills the shared
-   lane long before it has failed 600 times.
+   tokens can cause. The lane is chosen by how many requests an address has in
+   flight, never by how many of them failed. An address may hold 8 places in the
+   shared lane, running and waiting together. Its 9th and later requests wait in
+   the overflow lane instead: at most one of the two permits, 8 places, and served
+   only when the shared lane has nobody waiting. That is routing, not refusal. A
+   burst of 16 from one address fits (8 shared, then 1 running and 7 waiting in
+   overflow), so a partner polling many climbers at once is served, only slower.
+   A junk sender holds at most 8 of the shared lane's 18 places, so it can never
+   fill the lane everyone else uses. The count is per instance and lives in the
+   gate (`auth/partner/admission.ts`), so it costs no Redis call.
+
+   This replaced routing on failures (30 failed lookups a minute sent an address
+   to a one-permit lane with 4 places), which sidelined honest partners. One with
+   about 2,000 climbers produces about 33 expired-token `401`s a minute, and behind
+   shared egress everyone's `401`s count together. Measured: after 31 legitimate
+   `401`s, 11 of a 16-request burst answered `503` (69%).
+
+   For the lane alone, an IPv6 address counts as its /48, not its /64. One site is
+   routinely given a /48, so a sender rotating through fresh /64s inside it (one per
+   30 junk lookups was enough under the old rule to refuse 78% of valid tokens)
+   still holds only 8 shared places. The cost falls on people behind carrier NAT:
+   public clients call `/v1` from climbers' phones, and every phone behind one
+   carrier-NAT IPv4 address, or one mobile carrier /48, shares one address's 8
+   places. Their 9th concurrent request and later ones wait in the overflow lane,
+   one at a time, and answer `503` with `Retry-After: 2` only when that lane's 8
+   places are also full. Partner mode is off, so there is no `/v1` traffic to size
+   this against yet; if carrier groups overflow in practice, raise the share, not
+   the grouping. What this
+   does not stop is a sender holding many /48s (one /32 is 65,536 of them): that
+   is the same "many addresses" class as the token endpoint's per-address limits,
+   for a Cloudflare rule.
+
+   Every partner hosted on Cloudflare Workers reaches us as the same
+   `CF-Connecting-IP` (`2a06:98c0:3600::103`), so until the lane uses the Worker
+   zone as the address, all of them share one address's 8 places and overflow
+   together. That is still served, only slower; the old rule refused them.
 3. A lookup that finds no usable token is charged to the address: 600 a minute, the
    sizing of the token endpoint's per-address refresh bound. Past that the address
    gets `429` instead of `401`. Only a failed lookup is ever refused for this count;
-   a valid token never sees it, in a status or a `RateLimit-*` header. Many partners
-   share one address (every Cloudflare Worker reaches us as the same
-   `CF-Connecting-IP`; carrier NAT, cloud NAT gateways and shared hosting do the
-   same), so refusing on the count before a lookup would let one sender of junk lock
-   all of them out.
+   a valid token never sees it, in a status or a `RateLimit-*` header, and it no
+   longer changes which lane a request waits in. Many partners share one address
+   (every Cloudflare Worker reaches us as the same `CF-Connecting-IP`; carrier NAT,
+   cloud NAT gateways and shared hosting do the same), so refusing on the count
+   before a lookup would let one sender of junk lock all of them out.
 
-Measured on a laptop with 48 concurrent junk loops from one address for 2 s, and a
-valid token sent from another address every 20 ms: before the separate lane it got
-`503` on 19 of 27 attempts; with it, `503` on 2 of 57. The flooding address's own
-valid token got 14 of 61 through, and never a `429`.
+Measured on a laptop, two runs, with 48 concurrent junk loops from one address for
+2 s and a valid token sent every 20 ms from another address and from the flooding
+address itself:
+
+| Valid token from | Failure-count routing (before) | Concurrency routing |
+| --- | --- | --- |
+| Another address | `503` on 2 of 57 (19 of 27 with no separate lane) | `503` on 0 of 93 and 0 of 65 |
+| The flooding address | 14 of 61 served | 22 of 93 and 12 of 65 served |
+| A 16-request burst after 31 `401`s | 5 of 16 served | 16 of 16, in 10 of 10 bursts |
+
+The flooding address's own valid token waits in the overflow lane behind its own
+junk, as before. It is never refused with `429`.
 4. Only once a token has passed are the connection (120 a minute,
    `api-connection`) and the app (6,000 a minute, `api-app`) charged. A caller
    without a valid token for them cannot spend either.
@@ -2042,6 +2082,7 @@ What LEGAL.md implies:
 | API, per connection | 120 requests/min per (app, climber) | `<clientId>:<userId>` under `api-connection`, charged once the token has passed |
 | API, per app | 6,000 requests/min across all its climbers | `<clientId>` under `api-app`, charged once the token has passed |
 | API, failed token lookups | 600/min per client IP | `<ip>` under `api-invalid-token-ip`; charged, and refused with 429, only after a lookup fails, never before one |
+| API, in flight | 8 places in the shared `/v1` lane per address, per instance | IPv4 address or IPv6 /48, counted in the admission gate; the 9th waits in the overflow lane, never a refusal on its own |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |

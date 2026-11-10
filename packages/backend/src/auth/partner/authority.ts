@@ -80,8 +80,11 @@ export const PARTNER_ADMISSION_LIMITS: PartnerAdmissionLimits = {
   permits: PARTNER_POOL_MAX,
   authorizePermits: 1,
   apiPermits: PARTNER_POOL_MAX - 1,
-  flaggedApiPermits: 1,
-  flaggedApiQueueLimit: 4,
+  // 8 places in the shared lane, then 1 running and up to 8 waiting in
+  // overflow: a burst of 16 from one address fits.
+  apiPerAddressLimit: 8,
+  overflowApiPermits: 1,
+  overflowApiQueueLimit: 8,
   queueLimitPerLane: 16,
   queueDeadlineMs: 1000,
 };
