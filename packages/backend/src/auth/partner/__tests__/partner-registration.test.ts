@@ -41,6 +41,7 @@ const consoleDatabase = db as unknown as PartnerDatabase;
 
 const APP_INPUT = {
   name: 'Hangboard Planner',
+  publisherName: 'Planner Labs',
   homepageUrl: 'https://planner.example.test/',
   privacyPolicyUrl: 'https://planner.example.test/privacy',
   applicationType: 'web',
@@ -50,6 +51,7 @@ const APP_INPUT = {
 
 const NATIVE_PUBLIC_INPUT = {
   name: 'Fingerboard CLI',
+  publisherName: 'Ana Ruiz',
   homepageUrl: null,
   privacyPolicyUrl: 'https://cli.example.test/privacy',
   applicationType: 'native',
@@ -165,12 +167,30 @@ describe('partner app registration', () => {
       const [policy] = await db.select().from(oauthAppPolicy).where(eq(oauthAppPolicy.clientId, created.app.clientId));
       expect(policy).toMatchObject({
         ownerUserId: developerId,
+        publisherName: APP_INPUT.publisherName,
         maxActiveConnections: 25,
         maxNewConnectionsPerDay: 20,
         suspendedAt: null,
       });
       expect([PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS, PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY]).toEqual([25, 20]);
-      expect(created.app).toMatchObject({ maxActiveConnections: 25, maxNewConnectionsPerDay: 20 });
+      expect(created.app).toMatchObject({
+        publisherName: APP_INPUT.publisherName,
+        maxActiveConnections: 25,
+        maxNewConnectionsPerDay: 20,
+      });
+    });
+
+    it('requires a publisher that does not pass as Boardsesh or a board maker, and writes nothing without one', async () => {
+      const developerId = await createDeveloper();
+      expect((await refusal(register(developerId, { ...APP_INPUT, publisherName: undefined }))).message).toMatch(
+        /who makes the app/,
+      );
+      for (const publisherName of ['Boardsesh Team', 'Aurora Climbing', 'Moon Climbing', 'K1lter Grips']) {
+        const refused = await refusal(register(developerId, { ...APP_INPUT, publisherName }));
+        expect(refused.reason).toBe('invalid_input');
+        expect(refused.message).toMatch(/publisher name cannot use or imitate/);
+      }
+      expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
     });
 
     it('ignores every hazard a caller slips into the input, and refuses private_key_jwt', async () => {
@@ -432,6 +452,32 @@ describe('partner app registration', () => {
   });
 
   describe('editing', () => {
+    it('changes the publisher on the policy row, and never clears it', async () => {
+      const developerId = await createDeveloper();
+      const created = await register(developerId);
+      const { clientId } = created.app;
+      const renamed = await runtime.registration.updateApp(consoleDatabase, developerId, clientId, {
+        publisherName: '  Planner   Labs Ltd ',
+      });
+      expect(renamed).toMatchObject({ publisherName: 'Planner Labs Ltd', name: APP_INPUT.name });
+      const [policy] = await db.select().from(oauthAppPolicy).where(eq(oauthAppPolicy.clientId, clientId));
+      expect(policy.publisherName).toBe('Planner Labs Ltd');
+
+      for (const publisherName of ['Boardsesh', '', 'x']) {
+        const refused = await refusal(
+          runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName }),
+        );
+        expect(refused.reason).toBe('invalid_input');
+      }
+      // A null publisher means "keep it": with nothing else, there is nothing to change.
+      expect(
+        (await refusal(runtime.registration.updateApp(consoleDatabase, developerId, clientId, { publisherName: null })))
+          .reason,
+      ).toBe('invalid_input');
+      const [listed] = await runtime.registration.listApps(consoleDatabase, developerId);
+      expect(listed.publisherName).toBe('Planner Labs Ltd');
+    });
+
     it('changes the developer fields and nothing the policy fixes', async () => {
       const developerId = await createDeveloper();
       const created = await register(developerId);

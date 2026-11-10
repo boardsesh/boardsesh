@@ -6,6 +6,8 @@ export type OAuthClientAuthMethod = 'NONE' | 'CLIENT_SECRET_BASIC' | 'CLIENT_SEC
 export type OAuthClient = {
   clientId: string;
   name: string;
+  /** "Made by" on the consent screen. Null only for an app registered before publishers were recorded. */
+  publisherName: string | null;
   homepageUrl: string | null;
   privacyPolicyUrl: string;
   applicationType: OAuthClientApplicationType;
@@ -28,6 +30,7 @@ export type OAuthClientCredentials = {
 
 export type CreateOAuthClientInput = {
   name: string;
+  publisherName: string;
   homepageUrl?: string | null;
   privacyPolicyUrl: string;
   applicationType: OAuthClientApplicationType;
@@ -38,6 +41,7 @@ export type CreateOAuthClientInput = {
 export type UpdateOAuthClientInput = {
   clientId: string;
   name?: string | null;
+  publisherName?: string | null;
   homepageUrl?: string | null;
   privacyPolicyUrl?: string | null;
   redirectUris?: string[] | null;

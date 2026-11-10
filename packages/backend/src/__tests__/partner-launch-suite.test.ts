@@ -326,6 +326,7 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     {
       input: {
         name: `Crimp Planner ${appCounter}`,
+        publisherName: 'Crimp Labs',
         homepageUrl: `https://${host}/`,
         privacyPolicyUrl: `https://${host}/privacy`,
         applicationType: native ? 'NATIVE' : 'WEB',
@@ -679,6 +680,7 @@ describe('partner OAuth on, in the real server', () => {
         {
           input: {
             name: 'Outside Planner',
+            publisherName: 'Crimp Labs',
             privacyPolicyUrl: 'https://outside.example.test/privacy',
             applicationType: 'WEB',
             tokenEndpointAuthMethod: 'NONE',
@@ -926,6 +928,7 @@ describe('partner OAuth on, in the real server', () => {
             {
               input: {
                 name: 'Token Planner',
+                publisherName: 'Crimp Labs',
                 privacyPolicyUrl: 'https://token.example.test/privacy',
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',
@@ -2402,6 +2405,7 @@ describe('partner OAuth on, in the real server', () => {
             {
               input: {
                 name: 'Outside Planner',
+                publisherName: 'Crimp Labs',
                 privacyPolicyUrl: 'https://outside.example.test/privacy',
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',

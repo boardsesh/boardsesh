@@ -253,6 +253,13 @@ export const oauthAppPolicy = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     termsVersion: text('terms_version'),
     termsAcceptedAt: timestamptz('terms_accepted_at'),
+    /**
+     * Who makes the app, as the developer typed it at registration: the consent
+     * screen's "Made by". Public, so it follows the app-name rules. Null only for
+     * an app registered before the column existed; the screen then shows no
+     * "Made by" and never falls back to the developer's own account name.
+     */
+    publisherName: text('publisher_name'),
     rateTier: text('rate_tier').default('default').notNull(),
     /** Launch caps. Raising an app's limit is an update to its own row. */
     maxActiveConnections: integer('max_active_connections').default(25).notNull(),

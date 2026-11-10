@@ -25,6 +25,8 @@ export const oauthClientsTypeDefs = /* GraphQL */ `
     clientId: ID!
     "Shown on the consent screen."
     name: String!
+    "Who makes the app: the consent screen's Made by line. Null only for an app registered before publishers were recorded."
+    publisherName: String
     homepageUrl: String
     privacyPolicyUrl: String!
     applicationType: OAuthClientApplicationType!
@@ -53,6 +55,8 @@ export const oauthClientsTypeDefs = /* GraphQL */ `
   input CreateOAuthClientInput {
     "3 to 50 characters. Names of Boardsesh, Aurora and board brands are refused."
     name: String!
+    "The person or company that makes the app. Same rules as name."
+    publisherName: String!
     "https:// only."
     homepageUrl: String
     "https:// only."
@@ -63,10 +67,11 @@ export const oauthClientsTypeDefs = /* GraphQL */ `
     redirectUris: [String!]!
   }
 
-  "Fields left out keep their value. A null homepageUrl removes it. The app type and auth method never change."
+  "Fields left out keep their value. A null homepageUrl removes it; publisherName can change but never be removed. The app type and auth method never change."
   input UpdateOAuthClientInput {
     clientId: ID!
     name: String
+    publisherName: String
     homepageUrl: String
     privacyPolicyUrl: String
     redirectUris: [String!]

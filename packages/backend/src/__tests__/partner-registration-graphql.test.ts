@@ -28,6 +28,7 @@ const CREATE_MUTATION = /* GraphQL */ `
       client {
         clientId
         name
+        publisherName
         applicationType
         tokenEndpointAuthMethod
         redirectUris
@@ -48,6 +49,7 @@ const LIST_QUERY = /* GraphQL */ `
 `;
 const APP_INPUT: CreateOAuthClientInput = {
   name: 'Hangboard Planner',
+  publisherName: 'Planner Labs',
   homepageUrl: 'https://planner.example.test/',
   privacyPolicyUrl: 'https://planner.example.test/privacy',
   applicationType: 'WEB',
@@ -292,6 +294,7 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       expect(result.clientSecret).toMatch(/^[A-Za-z]{32}$/);
       expect(result.client).toMatchObject({
         name: 'Hangboard Planner',
+        publisherName: 'Planner Labs',
         applicationType: 'WEB',
         tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
         maxActiveConnections: 25,
@@ -465,6 +468,52 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       );
       expect(errorOf(reply)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
       expect(errorOf(reply)?.message).toMatch(/fragment/);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'requires a publisher at registration, holds it to the name rules, and lets an edit change it',
+    async () => {
+      await enoughWindowLeft();
+      const bearer = await firstPartyToken(secondDeveloperId);
+      const { publisherName: _required, ...withoutPublisher } = APP_INPUT;
+      const missing = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: withoutPublisher } },
+        { bearer },
+      );
+      expect(errorOf(missing)?.message).toMatch(/publisherName/);
+
+      const imitating = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: { ...APP_INPUT, publisherName: 'B0ardsesh Team' } } },
+        { bearer },
+      );
+      expect(errorOf(imitating)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
+      expect(errorOf(imitating)?.message).toBe('The publisher name cannot use or imitate "Boardsesh".');
+
+      const created = await server.graphql({ query: CREATE_MUTATION, variables: { input: APP_INPUT } }, { bearer });
+      const { clientId } = (created.body.data?.createOAuthClient as { client: { clientId: string } }).client;
+      const updated = await server.graphql(
+        {
+          query: /* GraphQL */ `
+            mutation Update($input: UpdateOAuthClientInput!) {
+              updateOAuthClient(input: $input) {
+                clientId
+                name
+                publisherName
+              }
+            }
+          `,
+          variables: { input: { clientId, publisherName: 'Planner Labs Ltd' } },
+        },
+        { bearer },
+      );
+      expect(updated.body.errors).toBeUndefined();
+      expect(updated.body.data?.updateOAuthClient).toEqual({
+        clientId,
+        name: APP_INPUT.name,
+        publisherName: 'Planner Labs Ltd',
+      });
     },
     TEST_DEADLINE_MS,
   );

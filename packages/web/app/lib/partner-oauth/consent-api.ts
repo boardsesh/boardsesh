@@ -23,6 +23,14 @@ const consentDetailsSchema = z.object({
     homepageUrl: z.string().nullable(),
     privacyPolicyUrl: z.string().nullable(),
     termsUrl: z.string().nullable(),
+    /**
+     * "Made by". Null for an app registered before publishers were recorded, and
+     * missing from a backend older than the field: both show no "Made by" line.
+     */
+    publisherName: z
+      .string()
+      .nullish()
+      .transform((publisherName) => publisherName ?? null),
     redirectHost: z.string().nullable(),
   }),
   scopes: z.array(z.object({ scope: z.string(), includesOnlyMeTicks: z.boolean() })),
