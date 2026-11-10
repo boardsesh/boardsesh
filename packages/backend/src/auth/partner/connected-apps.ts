@@ -16,6 +16,8 @@ import { isPartnerDatabaseBusy, runInPartnerTransaction } from './transaction';
 export interface ConnectedAppRecord {
   connectionId: string;
   name: string | null;
+  /** Who makes the app, from its registration; null for an app registered before it was required. */
+  publisherName: string | null;
   /** What the climber approved, from the remembered consent. */
   scopes: string[];
   connectedAt: Date;
@@ -42,6 +44,7 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
       connectedAt: oauthConnections.connectedAt,
       lastUsedAt: oauthConnections.lastUsedAt,
       name: oauthClient.name,
+      publisherName: oauthAppPolicy.publisherName,
       disabled: oauthClient.disabled,
       suspendedAt: oauthAppPolicy.suspendedAt,
     })
@@ -81,6 +84,7 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
   return connections.map((connection) => ({
     connectionId: connection.connectionId,
     name: connection.name?.trim() || null,
+    publisherName: connection.publisherName?.trim() || null,
     scopes: [...new Set(scopesByClient.get(connection.clientId) ?? connection.connectionScopes)],
     // Filtered on above; the column is nullable only for approvals not yet redeemed.
     connectedAt: connection.connectedAt as Date,

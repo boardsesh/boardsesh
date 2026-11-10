@@ -50,8 +50,7 @@ function toConnectedApp(record: ConnectedAppRecord): ConnectedApp {
   return {
     connectionId: record.connectionId,
     name: record.name,
-    // Read from the app's registration once it carries one (BA-07/08 fast path, "From F12").
-    publisherName: null,
+    publisherName: record.publisherName,
     scopes: record.scopes,
     connectedAt: record.connectedAt.toISOString(),
     lastUsedAt: record.lastUsedAt?.toISOString() ?? null,
