@@ -15,7 +15,7 @@ const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
 const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
 const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
 /** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
-const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'family-guard.ts', 'fence.ts', 'registration.ts'];
+const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'consent.ts', 'family-guard.ts', 'fence.ts', 'registration.ts'];
 /**
  * The only production modules outside the partner folder that may reach into
  * it, and what each may load. None of these constructs an authority or opens a

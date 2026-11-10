@@ -104,14 +104,15 @@ describe('partner fence', () => {
         .for('update'),
     );
 
-  it('binds a code to the connection generation and marks the connection connected', async () => {
+  it('binds a code to the connection generation, and marks the connection connected once the code is redeemed', async () => {
     const client = await environment.createClient();
     const authorization = await environment.authorize(client);
     expect(authorization.response.status).toBe(302);
     const connection = await connectionRow(client);
     expect(connection.userId).toBe(client.owner.userId);
     expect(connection.generation).toBe(0);
-    expect(connection.connectedAt).not.toBeNull();
+    // An issued code is not a connection yet: it counts towards no cap until redeemed.
+    expect(connection.connectedAt).toBeNull();
     const grants = await db.select().from(oauthGrants).where(eq(oauthGrants.connectionId, connection.id));
     expect(grants).toHaveLength(1);
     expect(grants[0].generation).toBe(0);
@@ -121,6 +122,8 @@ describe('partner fence', () => {
       .from(oauthVerification)
       .where(eq(oauthVerification.identifier, grants[0].authorizationCodeId));
     expect(code).toBeDefined();
+    expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+    expect((await connectionRow(client)).connectedAt).not.toBeNull();
   });
 
   it('fails a code closed when its grant row is missing, without consuming the code', async () => {
@@ -741,14 +744,28 @@ describe('partner fence', () => {
       expect(new URL(denied.body.url!).searchParams.get('error')).toBe('access_denied');
       expect(await consentlessConnections(client.owner.userId)).toEqual([]);
 
-      const accepted = await environment.consent(client.owner, {
+      // A consent link answers once: the denied one cannot be approved afterwards.
+      const reused = await environment.consent(client.owner, {
         accept: true,
         oauth_query: new URL(atConsent.location!).searchParams.toString(),
+      });
+      expect(reused.response.status).toBe(400);
+      expect(await consentlessConnections(client.owner.userId)).toEqual([]);
+
+      const again = await environment.authorize(client);
+      const accepted = await environment.consent(client.owner, {
+        accept: true,
+        oauth_query: new URL(again.location!).searchParams.toString(),
       });
       expect(accepted.response.status).toBe(200);
       const rows = await consentlessConnections(client.owner.userId);
       expect(rows).toHaveLength(1);
-      expect(rows[0].connectedAt).not.toBeNull();
+      expect(rows[0].connectedAt).toBeNull();
+      expect(
+        (await environment.exchange(client, { location: accepted.body.url!, verifier: again.verifier })).response
+          .status,
+      ).toBe(200);
+      expect((await consentlessConnections(client.owner.userId))[0].connectedAt).not.toBeNull();
     });
 
     it(

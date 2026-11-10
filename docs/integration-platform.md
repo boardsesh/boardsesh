@@ -414,6 +414,7 @@ to Better Auth's handler as well as mounting `/api/auth/*`. A mount limited to
 | `GET /api/auth/oauth2/authorize` on `api` | Better Auth OAuth provider | Validates client, redirect and PKCE before continuing to login/consent; untrusted redirects are never followed |
 | `/oauth/consent` on `www` | Next page | Renders the supported provider consent flow, requiring a current first-party session |
 | `POST /api/auth/oauth2/consent` on `api` | Better Auth OAuth provider | Supported session-bound consent API, with the provider's continuation and CSRF checks |
+| `POST /api/auth/oauth2/consent-details` on `api` | Boardsesh, inside the authority | What the consent screen shows for an open consent link. See [Consent and the www session](#consent-and-the-www-session) |
 | `POST /api/auth/oauth2/token` on `api` | Better Auth OAuth provider | Authorization-code and refresh grants only; each client uses its registered authentication method |
 | `POST /api/auth/oauth2/revoke` on `api` | Better Auth OAuth provider | RFC 7009 token revocation, distinct from disconnect |
 | `GET /.well-known/oauth-authorization-server/api/auth` on `api` | Better Auth handler, explicitly forwarded outside its base mount | Canonical RFC 8414 metadata for the pathful issuer; the provider's `/api/auth/.well-known/oauth-authorization-server` alias may also be served, with identical metadata |
@@ -433,7 +434,20 @@ folder: `handlers/partner-auth.ts` (these routes), `handlers/public-api/router.t
 developer console's operations, see [Self-service registration](#self-service-registration)).
 With the mode `off` none answers anything new, and none loads Better Auth.
 `scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
-may import.
+may import. Backend and web parse it with the same function
+(`@boardsesh/auth-protocol/partner-oauth-mode`): an absent, empty or misspelled
+value is `off`.
+
+**Set it on the web service too, every time it changes.** The web reads its own
+environment to decide whether to guard OAuth account links and to mark new
+sign-ins `link_guarded` (see [Consent and the www session](#consent-and-the-www-session)).
+Turn the web on first, then the backend; turn the backend off first. A mismatch
+fails closed rather than open: while the web reads `off`, no sign-in carries
+`link_guarded`, so a backend serving consent asks every climber to sign in, and
+signing in does not help. `infra/railway/config.ts` refuses any web value but
+`off`, `hold`, `allowlist` or `open`, since the web would read a typo as `off`. It
+cannot compare the web's value with the backend's: the plan reads one service at
+a time, and the backend is inventory-only there.
 
 | Mode | What the backend does |
 | --- | --- |
@@ -443,10 +457,11 @@ may import.
 
 Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
 `GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
-`POST /api/auth/oauth2/token`, `POST /api/auth/oauth2/revoke`, RFC 8414 metadata at
-both paths above, and `GET /api/auth/error`, the page the provider sends a browser
-to when it must not send it to the app. Token, revoke and consent also answer a
-CORS preflight, which never reaches Better Auth. The path is matched byte for byte
+`POST /api/auth/oauth2/consent-details`, `POST /api/auth/oauth2/token`,
+`POST /api/auth/oauth2/revoke`, RFC 8414 metadata at both paths above, and
+`GET /api/auth/error`, the page the provider sends a browser to when it must not
+send it to the app. Token, revoke and both consent routes also answer a CORS
+preflight, which never reaches Better Auth. The path is matched byte for byte
 against what the client sent, so a trailing slash, a doubled slash, different case,
 a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
 stock routes inside Better Auth, except the two with path parameters.
@@ -523,6 +538,155 @@ valid token got 14 of 61 through, and never a `429`.
 4. Only once a token has passed are the connection (120 a minute,
    `api-connection`) and the app (6,000 a minute, `api-app`) charged. A caller
    without a valid token for them cannot spend either.
+
+### Consent and the www session
+
+Code: `auth/partner/consent.ts`, `first-party-session.ts`, `connection-caps.ts`.
+The consent pages on `www` call the two consent routes with the climber's cookie;
+everything that decides lives here.
+
+**Who is signed in.** Only the www NextAuth session cookie says. The session
+bridge decrypts it with the strict legacy verifier (`auth/legacy-web-credentials.ts`:
+pinned algorithms, required claims, chunked and duplicate cookies fail closed) on
+every authorize and consent request. No Better Auth cookie is ever set, and the
+adapter never finds a session by token, so a correctly signed Better Auth cookie
+still signs no one in. A signed-out authorize is one with no NextAuth cookie,
+which is why it can run outside a transaction.
+
+**When a sign-in counts** (decision 19). The cookie must carry an `auth_time`
+the web wrote at sign-in (#6981 F5), under 30 days old, written beside
+`link_guarded: true` (so the web was guarding links when it was minted), and more
+than 60 seconds after the climber's last password write
+(`user_credentials.updated_at`, from the database clock). The 60 seconds cover a
+web clock running ahead of the database. Web and backend apply this as one
+function, `isSignInGoodForPartnerConsent` in `@boardsesh/auth-protocol/auth-time`.
+A missing, fractional, non-positive or future (beyond 60 s of skew) `auth_time`
+is unknown, and unknown is too old. A cookie that fails any of this sends authorize
+to `/oauth/sign-in`, and consent answers `401 login_required`. A deleted account's
+cookie, which stays decryptable for 30 days, reads as signed out. The sign-in
+check runs after the request takes `users` FOR SHARE, so a consent queued behind
+a password reset sees the reset. `user_credentials` is read, never locked: the
+legacy reset locks that row before `users`.
+
+The bridge keeps one `oauth_session` row per NextAuth login (user, `authSessionId`,
+`auth_time`), created under `users` FOR SHARE, with `created_at` set to the sign-in
+time. The provider takes a code's auth time and `max_age` from that column.
+
+The web side closes the one way an old cookie could get a new `auth_time`: an
+OAuth callback that links an unlinked provider account into a live session, after
+which NextAuth's jwt callback writes `auth_time` as if the climber had just signed
+in. `oauth-link-guard.server.ts` gives legacy-mode callbacks a request-local
+adapter whose `linkAccount` refuses that link (NextAuth's `error=Callback`) unless
+the session's own sign-in passes the same rule consent applies, password write
+included, so a cookie from before a reset cannot buy a new sign-in time either.
+Requiring `link_guarded` there too means a sign-in bought while the guard was off
+cannot be laundered through a second link once it is on. Signing in with a
+provider account already linked to the climber, creating an account, and linking
+by verified provider email with no session all work as before.
+
+The guard, and the `link_guarded` mark, are on only while the web's
+`PARTNER_OAUTH_MODE` is not `off`. This defers the cost; it does not avoid it.
+NextAuth re-issues the session cookie on every use, but writes `auth_time` and
+`link_guarded` only on a sign-in, so a climber who stays active and never signs
+out keeps a cookie without them indefinitely. On the day the mode leaves `off`,
+every climber is in that position: they are asked to sign in again before they
+can approve an app, and before they can link a Google, Apple or Facebook account
+into their session. Signing in once clears both.
+
+**`prompt=login`** is dropped. Stock Better Auth answers it by asking for a
+Better Auth sign-in, which never happens here, so it would loop; the 30-day rule
+already asks for a real sign-in when one is due.
+
+**Consent links.** Every time the provider sends a signed-in climber to the
+consent screen, the link's signature is stored as an `oauth_consent_interactions`
+row: climber, bridged login, app, connection generation (0 when there is no
+connection yet) and the link's 600-second expiry. The consent post must present a
+row that is open, unexpired, for this climber, this login and this app, at the
+generation the connection has now; it is locked and spent in the same
+transaction, whether the climber allows or declines. So a link answers once,
+cannot be answered by someone else or after an account switch, and cannot
+reconnect an app the climber disconnected meanwhile. A first-time consent has no
+connection row to lock, so the fence checks the generation again when it binds
+the code, and rolls the whole request back if a Disconnect moved it.
+
+**Cross-site requests.** Both consent routes take only `Origin:
+https://www.boardsesh.com`, exactly, whatever the cookies say. SameSite=Lax lets
+every `*.boardsesh.com` subdomain send the session cookie, so a cookie is no proof
+of where a request came from.
+
+**Caps** (decision 22). An app holds at most `max_active_connections` (25)
+live, unrevoked connections and gains at most `max_new_connections_per_day` (20)
+in any 24 hours; a reconnect counts as new. A connection goes live, and
+`connected_at` is set, when the app first redeems a code for it, not when the
+climber approves. An approval nobody redeems counts for nothing: its code dies in
+60 seconds, a first-time connection stays a row with no `connected_at`, and an
+approved reconnect stays not revoked but not live. So throwaway accounts that
+approve and walk away fill no place.
+
+The caps are enforced at the exchange, under the connection lock the redemption
+already holds and then the app's `oauth_app_policy` row FOR NO KEY UPDATE, so two
+codes redeemed at once cannot both take the last place. A refusal there rolls the
+token request back and answers `400 invalid_grant` with the reason; the code is
+not spent. The same check also runs when the climber approves, only so a full app
+turns them away at once: that refusal rolls the request back (consent, code and
+the spent link alike) and sends the browser to the app with
+`error=temporarily_unavailable` (`access_denied` for an app with no policy row,
+which can never gain connections).
+
+Public clients are the limit of this. A confidential app's code can only be
+redeemed with its secret, so only the app itself can make a connection live. A
+public app authenticates by `client_id` and PKCE, and anyone can run its flow end
+to end, for example to their own loopback redirect, so someone with N accounts
+can take N of its places and up to 20 a day. The caps bound the blast radius
+during allowlisted stages; they are not abuse-proof for public apps. The owner
+raises the app's caps in its policy row, and `revoke-user` (F12) ends the
+offending accounts' connections.
+
+**What the screen shows.** `POST /api/auth/oauth2/consent-details` with
+`{ "oauth_query": "<the page's query>" }` answers, for an open link and the same
+checks as the post, without spending it:
+
+```json
+{
+  "client": {
+    "clientId": "bsk_…",
+    "name": "Sequence",
+    "homepageUrl": "https://…",
+    "privacyPolicyUrl": "https://…",
+    "termsUrl": null,
+    "redirectHost": "com.example.app"
+  },
+  "scopes": [{ "scope": "profile:read", "includesOnlyMeTicks": false }],
+  "reconnect": false,
+  "reviewed": false,
+  "expiresAt": "2026-11-10T12:10:00.000Z"
+}
+```
+
+Facts only; the page words them in the climber's language. `includesOnlyMeTicks`
+is true for `logbook:read` (decision 21), so the screen can say that approving
+shares ticks the climber keeps to "only me". `logbook:read` cannot be requested
+until its route ships (L4); until then no response lists it. Nothing about the
+account that registered the app is sent: its display or account name is the
+developer's own, not something a climber should see. A `publisherName` from the
+registration record joins `client` once that column exists (F12); until then the
+screen shows no "Made by" line.
+
+**Refusals on both consent routes.** Each is `{ "error": "<code>",
+"error_description": "<English text>" }` with `cache-control: no-store`. Switch on
+`error` and the status, never on the text. The codes are `PARTNER_CONSENT_ERRORS`
+in `@boardsesh/auth-protocol/partner-oauth`, beside `PARTNER_OAUTH_ISSUER`.
+
+| Status | `error` | Means | Page does |
+| --- | --- | --- | --- |
+| `401` | `login_required` | No www session, or one whose sign-in cannot approve an app | Send the climber to sign in, then back |
+| `403` | `invalid_request` | Origin is not exactly `https://www.boardsesh.com` | Nothing a climber can fix |
+| `403` | `app_suspended` | The app is suspended or deleted. Checked first; the link is not spent | Say the app cannot be connected now |
+| `400` | `link_spent` | The link was already answered, expired, belongs to another climber or sign-in, or the climber disconnected the app since | Ask the climber to start again from the app |
+
+An approval the caps refuse is not an error response: it answers `200` with
+`{ "redirect": true, "url": "<app redirect with error=temporarily_unavailable>" }`,
+like a denial.
 
 ### Browser access
 
@@ -798,7 +962,8 @@ Rules enforced without a human:
 | New connections per app per day | 200 by default; a developer can ask for more through the console form | Bounds the damage of a phishing app; ordinary apps never hit it |
 | Scopes | Any app may request any published scope. The consent page lists them | No approval tier |
 
-The consent screen shows: the app name, "Made by {developer's display name}",
+The consent screen shows: the app name, "Made by {publisher name}" once
+registration records one (never the developer's account name),
 the redirect host, the app's homepage and privacy links, one line per scope,
 and "Boardsesh hasn't reviewed this app. Only connect apps you trust." That
 line is on every app; a verified-domain badge (the developer proves control of

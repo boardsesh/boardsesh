@@ -1,4 +1,7 @@
-export const PARTNER_ISSUER = 'https://api.boardsesh.com/api/auth';
+import { PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+
+/** Shared with the www consent pages, which send the browser back to it. */
+export const PARTNER_ISSUER = PARTNER_OAUTH_ISSUER;
 export const PARTNER_RESOURCE = 'https://api.boardsesh.com/v1';
 export const PARTNER_WEB_ORIGIN = 'https://www.boardsesh.com';
 
@@ -26,6 +29,11 @@ export interface PartnerAuthorityConfiguration {
   webOrigin: string;
   /** Newest first. The newest encrypts; older versions only decrypt. */
   secrets: PartnerSecret[];
+  /**
+   * Decrypts the www NextAuth session cookie, the only source of a signed-in
+   * climber here. Read-only: the authority never writes that cookie.
+   */
+  nextAuthSecret: string;
 }
 
 export class PartnerAuthorityConfigurationError extends Error {
@@ -68,7 +76,15 @@ export function readPartnerAuthorityConfiguration(
     resource: PARTNER_RESOURCE,
     webOrigin: PARTNER_WEB_ORIGIN,
     secrets: parsePartnerSecrets(environment.PARTNER_OAUTH_SECRETS),
+    nextAuthSecret: requireNextAuthSecret(environment.NEXTAUTH_SECRET),
   };
+}
+
+function requireNextAuthSecret(rawSecret: string | undefined): string {
+  if (!rawSecret?.trim()) {
+    throw new PartnerAuthorityConfigurationError('NEXTAUTH_SECRET is required when the mode is not off.');
+  }
+  return rawSecret;
 }
 
 /**

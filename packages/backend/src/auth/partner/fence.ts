@@ -10,6 +10,8 @@ import {
   oauthVerification,
 } from '@boardsesh/db/schema/auth';
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
+import { checkConnectionCaps, type ConnectionCapRefusal } from './connection-caps';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
 import {
   lockClimber,
@@ -19,7 +21,7 @@ import {
   selectConnectionForUpdate,
 } from './locks';
 import type { PartnerDatabase } from './tables';
-import { currentPartnerTransaction } from './transaction';
+import { currentPartnerTransaction, PartnerRefusal } from './transaction';
 
 /** RFC 6749 section 3.2 forbids repeats. RFC 8707 makes `resource` the one exception. */
 const REPEATABLE_FORM_PARAMETERS = new Set(['resource']);
@@ -80,7 +82,14 @@ async function isSpentCodeWithNoTokens(transaction: PartnerDatabase, authorizati
   return refreshToken === undefined;
 }
 
-function parseCodeOwner(serialized: string): { userId: string; clientId: string } | null {
+interface CodeOwner {
+  userId: string;
+  clientId: string;
+  redirectUri: string | null;
+  state: string | null;
+}
+
+function parseCodeOwner(serialized: string): CodeOwner | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(serialized);
@@ -91,12 +100,87 @@ function parseCodeOwner(serialized: string): { userId: string; clientId: string 
   const record = parsed as Record<string, unknown>;
   const query = record.query;
   if (typeof record.userId !== 'string' || typeof query !== 'object' || query === null) return null;
-  const clientId = (query as Record<string, unknown>).client_id;
-  return typeof clientId === 'string' ? { userId: record.userId, clientId } : null;
+  const { client_id: clientId, redirect_uri: redirectUri, state } = query as Record<string, unknown>;
+  if (typeof clientId !== 'string') return null;
+  return {
+    userId: record.userId,
+    clientId,
+    redirectUri: typeof redirectUri === 'string' ? redirectUri : null,
+    state: typeof state === 'string' ? state : null,
+  };
+}
+
+const CAP_DESCRIPTIONS: Record<ConnectionCapRefusal, { error: string; description: string }> = {
+  no_policy: { error: 'access_denied', description: 'This app is not set up to connect climbers yet.' },
+  active_connections: {
+    error: 'temporarily_unavailable',
+    description: 'This app has reached its limit of connected climbers.',
+  },
+  new_connections_today: {
+    error: 'temporarily_unavailable',
+    description: 'This app has reached its limit of new connections for today. Try again tomorrow.',
+  },
+};
+
+/**
+ * The app hears about a refused connection the way it hears a denial: an error
+ * on its own redirect URI, as a 302 for a browser or `{ redirect, url }` for the
+ * consent page's fetch. Nothing from the request survives: the provider's
+ * consent and code roll back with it, and the consent link stays unspent.
+ */
+function connectionRefusal(
+  context: { headers?: Headers; request?: Request; context: { baseURL: string } },
+  owner: CodeOwner,
+  refusal: ConnectionCapRefusal,
+): PartnerRefusal {
+  const { error, description } = CAP_DESCRIPTIONS[refusal];
+  if (!owner.redirectUri || !URL.canParse(owner.redirectUri)) {
+    return new PartnerRefusal(
+      Response.json(
+        { error, error_description: description },
+        { status: 403, headers: { 'cache-control': 'no-store' } },
+      ),
+    );
+  }
+  const target = new URL(owner.redirectUri);
+  target.searchParams.set('error', error);
+  target.searchParams.set('error_description', description);
+  if (owner.state) target.searchParams.set('state', owner.state);
+  target.searchParams.set('iss', context.context.baseURL);
+  const wantsJson =
+    context.headers?.get('accept')?.includes('application/json') ||
+    context.request?.headers.get('sec-fetch-mode') === 'cors';
+  return new PartnerRefusal(
+    wantsJson
+      ? Response.json({ redirect: true, url: target.href }, { headers: { 'cache-control': 'no-store' } })
+      : new Response(null, { status: 302, headers: { location: target.href, 'cache-control': 'no-store' } }),
+  );
+}
+
+/**
+ * The same caps at the code exchange, where they are enforced: the token
+ * response becomes this error and everything the provider wrote rolls back.
+ */
+function exchangeRefusal(refusal: ConnectionCapRefusal): PartnerRefusal {
+  return new PartnerRefusal(
+    Response.json(
+      { error: 'invalid_grant', error_description: CAP_DESCRIPTIONS[refusal].description },
+      { status: 400, headers: { 'cache-control': 'no-store' } },
+    ),
+  );
+}
+
+/** A token endpoint answer that issued tokens, as opposed to an error the provider returned. */
+function issuedTokens(returned: unknown): boolean {
+  return (
+    typeof returned === 'object' &&
+    returned !== null &&
+    typeof (returned as { access_token?: unknown }).access_token === 'string'
+  );
 }
 
 /** Where the provider sent the browser, whether it answered JSON or a 302. */
-function authorizeRedirectTarget(context: {
+export function authorizeRedirectTarget(context: {
   context: { returned?: unknown; responseHeaders?: Headers };
 }): string | undefined {
   const returned = context.context.returned;
@@ -165,7 +249,17 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
                 : null
               : stringParameter(parameters.client_id);
             if (!clientId) return;
-            if (isConsent && context.body?.accept === true) state.consentApproved = true;
+            if (isConsent) {
+              // The consent guard checked and spent the consent link before this
+              // hook runs. Without its decision, nothing here approves anything.
+              if (!state.consent) {
+                throw new APIError('BAD_REQUEST', {
+                  error: PARTNER_CONSENT_ERRORS.linkSpent,
+                  error_description: 'This consent link is no longer valid.',
+                });
+              }
+              if (state.consent.approved) state.consentApproved = true;
+            }
 
             // Held even with no connection yet: a password reset then waits for this
             // request and finds the code it binds. The row itself waits for a code.
@@ -228,6 +322,7 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (await isSpentCodeWithNoTokens(transaction, authorizationCodeId)) return invalidGrant();
             const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
             if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
+            currentPartnerTransaction().state.redemption = { userId: grant.userId, clientId: grant.clientId };
             // RFC 6749 section 4.1.2: a code used twice takes its tokens with it.
             // Done here, under the lock, because the provider only does it after
             // its own checks, and a replay that fails those (no code_verifier)
@@ -269,12 +364,36 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (connection.revokedAt && !state.consentApproved) {
               throw new Error('Authorization code issued for a disconnected connection without consent.');
             }
+            // The guard read the generation under the connection lock, but a
+            // first-time consent had no row to lock: a connection made and then
+            // disconnected since then has moved it, and this approval was for
+            // the generation that ended. Reconnecting here would undo Disconnect.
+            if (state.consentApproved && state.consent && connection.generation !== state.consent.generation) {
+              throw new PartnerRefusal(
+                Response.json(
+                  {
+                    error: PARTNER_CONSENT_ERRORS.linkSpent,
+                    error_description: 'This consent link is no longer valid.',
+                  },
+                  { status: 400, headers: { 'cache-control': 'no-store' } },
+                ),
+              );
+            }
             const issuedAt = new Date();
             if (connection.revokedAt || !connection.connectedAt) {
-              await transaction
-                .update(oauthConnections)
-                .set({ revokedAt: null, revocationReason: null, connectedAt: issuedAt, updatedAt: issuedAt })
-                .where(eq(oauthConnections.id, connection.id));
+              // Nothing is counted here; the caps are enforced when the app
+              // redeems a code. Checked now only so a full app turns the climber
+              // away at once instead of after they approve.
+              const capRefusal = await checkConnectionCaps(transaction, connection, issuedAt);
+              if (capRefusal) throw connectionRefusal(context, codeOwner, capRefusal);
+              if (connection.revokedAt) {
+                // An approved reconnect: no longer revoked, but not live again
+                // (and not counted) until the app redeems a code.
+                await transaction
+                  .update(oauthConnections)
+                  .set({ revokedAt: null, revocationReason: null, connectedAt: null, updatedAt: issuedAt })
+                  .where(eq(oauthConnections.id, connection.id));
+              }
             }
             await transaction
               .insert(oauthGrants)
@@ -286,6 +405,32 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
           }),
         },
         ...(family.after ?? []),
+        // A code became tokens: the connection goes live now, if the app's caps
+        // allow, under the connection lock the redemption holds and then the
+        // app's policy row. Approvals nobody redeems hold no place: a code lives
+        // 60 seconds, and only an exchange, which a confidential app makes with
+        // its secret, can fill an app's caps.
+        {
+          matcher: (context) => context.path === '/oauth2/token' && context.body?.grant_type === 'authorization_code',
+          handler: createAuthMiddleware(async (context) => {
+            const { transaction, state } = currentPartnerTransaction();
+            if (!state.redemption || !issuedTokens(context.context.returned)) return;
+            const connection = await selectConnectionForUpdate(
+              transaction,
+              state.redemption.userId,
+              state.redemption.clientId,
+            );
+            if (!connection) throw new Error('Redeemed a code for a missing connection.');
+            if (connection.connectedAt) return;
+            const liveAt = new Date();
+            const capRefusal = await checkConnectionCaps(transaction, connection, liveAt);
+            if (capRefusal) throw exchangeRefusal(capRefusal);
+            await transaction
+              .update(oauthConnections)
+              .set({ connectedAt: liveAt, updatedAt: liveAt })
+              .where(eq(oauthConnections.id, connection.id));
+          }),
+        },
       ],
     },
   } satisfies BetterAuthPlugin;

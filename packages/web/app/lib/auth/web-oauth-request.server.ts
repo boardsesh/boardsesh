@@ -7,6 +7,7 @@ import { AUTH_COMMAND_REQUEST_BYTES, type WebOAuthProvider } from '@boardsesh/au
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { createWebOAuthCommandClient, webOAuthMode } from './web-oauth-command-client.server';
 import { createWebOAuthIdentityAuthRequest, createWebOAuthLogger } from './web-oauth-auth.server';
+import { withSessionLinkGuard } from './oauth-link-guard.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import {
   createWebOAuthCookieScope,
@@ -203,7 +204,10 @@ export async function withWebOAuthIdentity(
   } catch {
     return unavailableResponse(request, false, provider ?? 'google');
   }
-  if (mode === 'legacy') return invoke(request, base);
+  if (mode === 'legacy') {
+    // Only a callback can link an account; a sign-in start never reaches the adapter.
+    return invoke(request, action === 'callback' ? await withSessionLinkGuard(base, request) : base);
+  }
   if (!provider) return unavailableResponse(request, false, 'google');
   if (action === 'signin' && request.method !== 'POST') return invoke(request, base);
 

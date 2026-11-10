@@ -924,6 +924,28 @@ describe('diffServiceVars', () => {
     );
   });
 
+  it.each(['off', 'hold', 'allowlist', 'open'])('accepts PARTNER_OAUTH_MODE=%s on the web', (mode) => {
+    const variables = convergedVariables();
+    variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], PARTNER_OAUTH_MODE: mode };
+    expect(diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS)).toEqual([]);
+  });
+
+  it.each(['allowlst', 'enabled', 'Allowlist'])(
+    'reports a PARTNER_OAUTH_MODE other than the four exact values (%s), without printing it',
+    (mode) => {
+      const variables = convergedVariables();
+      variables[WEB_SERVICE_NAME] = { ...variables[WEB_SERVICE_NAME], PARTNER_OAUTH_MODE: mode };
+      const changes = diffServiceVars(WEB, liveState({ variables }), PLAN_OPTIONS);
+      expect(JSON.stringify(changes)).not.toContain(mode);
+      expect(changes).toEqual([
+        expect.objectContaining({
+          summary: expect.stringContaining('PARTNER_OAUTH_MODE must be absent or "off" or "hold"'),
+          blocked: true,
+        }),
+      ]);
+    },
+  );
+
   it('requires a canonical NEXTAUTH_URL or BASE_URL without printing the live URL', () => {
     const wrongOrigin = 'https://attacker.example';
     const variables = convergedVariables();

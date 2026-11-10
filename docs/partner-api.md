@@ -137,8 +137,9 @@ unregistered redirect URI shows an error page on boardsesh.com and never
 redirects anywhere.
 
 Boardsesh sends the browser on to the consent screen on `www.boardsesh.com`.
-If the climber is not signed in they sign in first, then see it. Once they
-approve:
+If the climber is not signed in, or last signed in more than 30 days ago, they
+sign in first, then see it. `prompt=login` is accepted and changes nothing on top
+of that. Once they approve:
 
 ```
 com.example.app:/oauth/boardsesh?code=SplxlOBeZQQYbYS6WxSbIA&state=8f3c...&iss=https%3A%2F%2Fapi.boardsesh.com%2Fapi%2Fauth
@@ -916,9 +917,11 @@ Errors are JSON:
 
 If your app is suspended or deleted, the token endpoint answers
 `invalid_client` and the API answers `401 invalid_token`; the console says why.
-If your app has reached its daily cap of new connections, the authorize step
-redirects back with `error=temporarily_unavailable`; existing connections are
-unaffected.
+If your app has reached its cap of connected climbers or its daily cap of new
+connections, approving redirects back with `error=temporarily_unavailable`;
+existing connections are unaffected. A connection counts from your first code
+exchange, not from the climber's approval, so if the last place goes between the
+two, the exchange answers `400 invalid_grant` with that reason.
 
 New `error` codes may be added; branch on the HTTP status first.
 

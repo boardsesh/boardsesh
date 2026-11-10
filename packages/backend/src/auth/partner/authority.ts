@@ -21,6 +21,7 @@ import {
   readPartnerAuthorityConfiguration,
   type PartnerAuthorityConfiguration,
 } from './configuration';
+import { partnerConsentGuard, partnerSessionBridge } from './consent';
 import { partnerFencePlugin } from './fence';
 import { createPartnerOriginDirectory, type PartnerRegisteredOrigins } from './registered-origins';
 import { createPartnerRegistration, partnerRegistrationActorPlugin, type PartnerRegistration } from './registration';
@@ -137,8 +138,10 @@ export function partnerOAuthOptions(configuration: PartnerAuthorityConfiguration
  * read-only. Building one starts telemetry in the library, so the flag is
  * checked first, and nothing here runs at import.
  *
- * `plugins` run before the fence, which is where the consent bridge goes: it
- * sets `ctx.context.session` for the fence and the provider to find.
+ * Hooks run in plugin order: the provider (which checks a consent link's
+ * signature), the session bridge (the only source of a signed-in climber in
+ * production), any `plugins` (tests add a stand-in session source here), the
+ * consent guard, then the fence.
  *
  * `disabledPaths` defaults to every route the plan does not name. Only the
  * authority's own test suite, which exercises stock routes directly, changes it.
@@ -187,8 +190,10 @@ export function createPartnerAuthority(
     ),
     plugins: [
       oauthProvider(oauthOptions),
+      partnerSessionBridge(configuration),
       partnerRegistrationActorPlugin(),
       ...plugins,
+      partnerConsentGuard(configuration, oauthOptions),
       partnerFencePlugin(oauthOptions),
     ],
   };

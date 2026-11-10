@@ -15,11 +15,27 @@ const BUSY_RETRY_AFTER_SECONDS = '2';
 /** lock_not_available, query_canceled (statement_timeout), deadlock_detected: all retryable. */
 const DATABASE_BUSY_CODES = new Set(['55P03', '57014', '40P01']);
 
+/** What the consent guard established about this request's consent link. */
+export interface PartnerConsentDecision {
+  /** The climber pressed Allow. */
+  approved: boolean;
+  /**
+   * The connection generation the link was opened against, 0 when there was no
+   * connection yet. Still current when the guard checked; the code is issued only
+   * if it is still current then too.
+   */
+  generation: number;
+}
+
 export interface PartnerRequestState {
   /** A lock wait or statement timeout aborted this request's transaction. */
   databaseBusy: boolean;
   /** The climber approved consent in this request, so a disconnected connection may reconnect. */
   consentApproved: boolean;
+  /** Set only by the consent guard, after it has checked and spent the climber's consent link. */
+  consent: PartnerConsentDecision | null;
+  /** The connection whose code this token request redeems, set once the fence holds its lock. */
+  redemption: { userId: string; clientId: string } | null;
 }
 
 interface ActivePartnerTransaction {
@@ -35,6 +51,13 @@ export class PartnerResponseRollback extends Error {
     super('Roll back the failed partner OAuth request');
   }
 }
+
+/**
+ * A refusal that must leave nothing behind, such as a connection cap reached
+ * after the provider has already written the consent and the code. Rolls the
+ * request back and answers with `response`, logged as an outcome, not a failure.
+ */
+export class PartnerRefusal extends PartnerResponseRollback {}
 
 export function rejectPartnerServerFailure(response: Response): Response {
   if (response.status >= 500) throw new PartnerResponseRollback(response);
@@ -90,7 +113,7 @@ export async function runInPartnerTransaction<Result>(
   root: PartnerDatabase,
   work: (transaction: PartnerDatabase, state: PartnerRequestState) => Promise<Result>,
 ): Promise<Result> {
-  const state: PartnerRequestState = { databaseBusy: false, consentApproved: false };
+  const state: PartnerRequestState = { databaseBusy: false, consentApproved: false, consent: null, redemption: null };
   return root.transaction(async (transaction) => {
     // Written to pg_settings for this transaction only. SET cannot take bind
     // parameters, and these are constants, so this stays a single round trip.
@@ -135,6 +158,10 @@ export async function handlePartnerRequest(
     });
   } catch (error) {
     if (requestState?.databaseBusy || isPartnerDatabaseBusy(error)) return partnerBusyResponse();
+    if (error instanceof PartnerRefusal) {
+      logger.info('Partner OAuth request refused', { ...logContext, status: error.response.status });
+      return error.response;
+    }
     if (error instanceof PartnerResponseRollback) {
       logger.error('Partner OAuth request failed', { ...logContext, status: error.response.status });
       return error.response;
