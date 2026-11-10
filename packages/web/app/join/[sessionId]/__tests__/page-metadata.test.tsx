@@ -59,7 +59,8 @@ function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | unde
   return typeof image.url === 'string' ? image.url : image.url.toString();
 }
 
-const JOIN_CARD_URL = /^https:\/\/ws\.boardsesh\.com\/og\/session\?sessionId=session-123&variant=join&v=[0-9a-z]+$/;
+const JOIN_CARD_URL =
+  /^https:\/\/ws\.boardsesh\.com\/og\/session\?sessionId=session-123&variant=join&v=[0-9a-f]{12}-[0-9a-z]+$/;
 
 async function joinMetadata(sessionId = 'session-123') {
   const metadata = await pageModule.generateMetadata({ params: Promise.resolve({ sessionId }) });

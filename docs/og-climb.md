@@ -404,7 +404,10 @@ gets it with the package source and no card resamples the 512px original. It is
 decoded and rounded once per process. Both it and `og-family.ts` are in
 `OPAQUE_RENDER_INPUTS`, so moving or redrawing it moves every climb card URL. A test
 fails when the app icon changes and the committed copy does not; regenerate it with
-sharp's default `resize(30, 30)`. Family cards are JPEG only: a PNG option cost 397 KB per entry in the byte cache
+sharp's default `resize(30, 30)`. If the icon cannot be read, every card still draws
+its words and the wordmark alone, warns once, and retries the read on the next card.
+Such a card is never the final drawing: it stays out of the byte caches, and
+`/og/climb` answers it `no-store`. Family cards are JPEG only: a PNG option cost 397 KB per entry in the byte cache
 shared with climb renders. The climb and spray cards are the exception, because
 `/og/climb` has always honoured `format`. Grade colour comes from `FONT_GRADE_COLORS` with one shared lift
 (`liftGradeColorForCard`) so V8 and up clear contrast on dark without changing hue.
@@ -576,11 +579,13 @@ URL carries a public id or slug and its `v` token only, so `?invite=` and `?wall
 never reach an image URL, and an unlisted wall keeps the default card. A climb
 on a spray wall keeps its own climb card.
 
-The `v` token follows the data the card draws: a hash of the numbers and names on
-it where there is no single timestamp (`buildOgContentVersion`), including the
-playlist's grade band and the setter's send total and top climb. The backend ignores
-it; it is there so a chat app that caches previews by URL asks again once the card
-has changed.
+The `v` token is `BOARD_RENDER_VERSION`, a dash, then a token for the data the card
+draws: a hash of the numbers and names on it where there is no single timestamp
+(`buildOgContentVersion`), including the playlist's grade band and the setter's send
+total and top climb. `buildOgFamilyImageUrl` adds the render half, so a change to the
+drawing moves every family card URL the way it moves every climb card URL. The
+backend ignores it; it is there so a chat app that caches previews by URL asks again
+once the card has changed.
 
 `og:title` and `og:description` are the share copy from the design doc, translated
 in all five locales, and set separately from `<title>` and the meta description so

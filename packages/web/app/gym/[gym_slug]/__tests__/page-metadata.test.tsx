@@ -180,7 +180,7 @@ function serveGym(gymRow: Gym, boards: Array<{ boardType: string; angle: number 
 }
 
 const CARD_URL = (slug: string) =>
-  new RegExp(`^https://ws\\.boardsesh\\.com/og/place\\?kind=gym&slug=${slug}&v=[0-9a-z]+$`);
+  new RegExp(`^https://ws\\.boardsesh\\.com/og/place\\?kind=gym&slug=${slug}&v=[0-9a-f]{12}-[0-9a-z]+$`);
 
 describe('gym page share card', () => {
   it('points a public gym at the backend place card, which draws its photo itself', async () => {

@@ -1,3 +1,4 @@
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 
 /**
@@ -11,9 +12,12 @@ export type OgFamilySurface = 'playlist' | 'profile' | 'setter' | 'session' | 'p
  * Absolute URL of a family card on the backend origin, or `null` when this
  * deployment has no public backend origin to point at.
  *
- * The same origin `buildOgBoardRenderUrl` uses for the climb card. `version`
- * is the data token: the backend ignores it, and it exists so a chat app that
- * caches previews by URL asks again once the content has changed.
+ * The same origin `buildOgBoardRenderUrl` uses for the climb card. The backend
+ * ignores `v`; it exists so a chat app that caches previews by URL asks again.
+ * It is `BOARD_RENDER_VERSION` then the caller's content token, so the URL moves
+ * when the data changes and also when the drawing does (a new icon, a new
+ * layout), the way a climb card's URL does. Both halves are pure functions of
+ * the build and the content, so the token is stable between requests.
  *
  * Every parameter is a public id or slug. Never pass a capability (`?wall=`,
  * `?invite=`) here: an og:image URL is published in the page's HTML.
@@ -26,8 +30,13 @@ export function buildOgFamilyImageUrl(
   const origin = getPublicBackendHttpUrl();
   if (!origin) return null;
   const query = new URLSearchParams(params);
-  query.set('v', version);
+  query.set('v', buildOgFamilyVersion(version));
   return `${origin}/og/${surface}?${query}`;
+}
+
+/** The `v` a family card URL carries: the drawing's version, then the content's. */
+export function buildOgFamilyVersion(contentVersion: string): string {
+  return `${BOARD_RENDER_VERSION}-${contentVersion}`;
 }
 
 /**

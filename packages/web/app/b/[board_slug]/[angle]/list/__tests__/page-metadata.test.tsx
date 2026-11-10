@@ -207,7 +207,7 @@ describe('board slug list share preview', () => {
     const metadata = await generateMetadata();
 
     expect(imageUrlOf(metadata)).toMatch(
-      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=my-board&v=[0-9a-z]+$/,
+      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=my-board&v=[0-9a-f]{12}-[0-9a-z]+$/,
     );
     expect(metadata.openGraph?.title).toBe('metadata.list.ogTitle(name=Backspace,angle=40)');
     expect(metadata.openGraph?.description).toBe('metadata.list.ogDescription');

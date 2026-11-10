@@ -1,6 +1,8 @@
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import {
   OG_FAMILY_GROUND,
@@ -15,7 +17,9 @@ import {
   liftGradeColorForCard,
   ogFamilyGradeColor,
   renderOgFamilyTextLayers,
+  resetOgFamilyIcon,
 } from '../og-family';
+import { renderOgCardText } from '../og-card';
 
 const APP_ICON_PATH = join(dirname(fileURLToPath(import.meta.url)), '../../../../web/app/icon.png');
 
@@ -103,6 +107,64 @@ describe('place card text', () => {
     }
     expect(alphaAt(info.width / 2, info.height / 2)).toBe(255);
     expect(alphaAt(info.width / 2, 0)).toBe(255);
+  });
+
+  describe('when the icon cannot be read', () => {
+    afterEach(() => resetOgFamilyIcon());
+
+    it('keeps every word, draws the wordmark alone and says why the icon is missing', async () => {
+      const content = {
+        slot: 'full' as const,
+        fontFamily: 'Noto Sans',
+        hero: hero('Kaserne'),
+        rows: [row('Kilter 40°')],
+      };
+      const withIcon = await renderOgFamilyTextLayers(content);
+      resetOgFamilyIcon(join(dirname(OG_FAMILY_ICON_PATH), 'no-such-icon.png'));
+
+      const withoutIcon = await renderOgFamilyTextLayers(content);
+
+      expect(withIcon.iconError).toBeNull();
+      expect(withoutIcon.iconError).toEqual(expect.any(String));
+      // Every layer but the icon, in the same place: the words never pay for it.
+      expect(withoutIcon.layers.map(({ left, top }) => ({ left, top }))).toEqual(
+        withIcon.layers
+          .filter((_layer, index) => index !== withIcon.layers.length - 2)
+          .map(({ left, top }) => ({ left, top })),
+      );
+      const wordmark = withoutIcon.layers.at(-1)!;
+      expect(wordmark.left + ((await sharp(wordmark.input).metadata()).width ?? 0)).toBe(OG_FAMILY_WORDMARK_RIGHT);
+    });
+
+    it('keeps the words on a climb card and reports the missing icon to the caller', async () => {
+      resetOgFamilyIcon(join(dirname(OG_FAMILY_ICON_PATH), 'no-such-icon.png'));
+
+      const { layers, iconError } = await renderOgCardText({
+        grade: '7a/V6',
+        name: 'Kiel training 1:4',
+        setter: 'KilterStudio',
+        angle: 40,
+      });
+
+      expect(iconError).toEqual(expect.any(String));
+      // Grade, name, setter, angle line and the wordmark.
+      expect(layers).toHaveLength(5);
+    });
+
+    it('does not remember a failed read: the next card draws the icon once the file is back', async () => {
+      const scratch = await mkdtemp(join(tmpdir(), 'og-icon-'));
+      const laterIconPath = join(scratch, 'og-app-icon.png');
+      resetOgFamilyIcon(laterIconPath);
+      const content = { slot: 'none' as const, fontFamily: 'Noto Sans', hero: hero('Pinnacle'), rows: [] };
+      expect((await renderOgFamilyTextLayers(content)).iconError).not.toBeNull();
+
+      await copyFile(OG_FAMILY_ICON_PATH, laterIconPath);
+      const recovered = await renderOgFamilyTextLayers(content);
+      await rm(scratch, { recursive: true });
+
+      expect(recovered.iconError).toBeNull();
+      expect((await sharp(recovered.layers.at(-2)!.input).metadata()).width).toBe(OG_FAMILY_ICON_SIZE);
+    });
   });
 
   it('draws the committed icon, which is the app icon at card size', async () => {

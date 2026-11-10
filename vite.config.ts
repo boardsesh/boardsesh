@@ -217,7 +217,7 @@ export default defineConfig({
     // seam crossfade, the veil buckets), and the traced-art shards are hashed
     // into the version directly — both change pixels without touching anything
     // else listed here.
-    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/src/**,packages/shared/frosted-bokeh/{src/**,assets/**},packages/backend/src/services/spray-og-card.ts,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
+    '{packages/board-renderer/wasm/pkg/**,packages/shared/board-look/src/**,packages/shared/board-art-geometry/src/generated/**,packages/shared/board-render/{src/**,assets/**},packages/shared/frosted-bokeh/{src/**,assets/**},packages/backend/src/services/spray-og-card.ts,packages/shared/board-config/src/**,packages/board-constants/src/**,packages/web/public/images/**}':
       () => 'vp run check:board-render-version',
   },
   run: {

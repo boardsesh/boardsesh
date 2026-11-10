@@ -97,6 +97,7 @@ describe('handleOgClimb', () => {
       contentType: 'image/jpeg',
       cache: 'miss',
       timings: { wasmMs: 12, baseMs: 8, encodeMs: 4 },
+      iconMissing: false,
     });
   });
 
@@ -386,12 +387,27 @@ describe('handleOgClimb', () => {
       expect(vi.mocked(renderOgClimb).mock.calls[0][0].format).toBe('png');
     });
 
+    it('lets nobody keep a card drawn without its app icon', async () => {
+      vi.mocked(renderOgClimb).mockResolvedValueOnce({
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        cache: 'miss',
+        timings: { wasmMs: 12, baseMs: 8, encodeMs: 4 },
+        iconMissing: true,
+      });
+      const res = await run(validParams);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(res.headers['CDN-Cache-Control']).toBe('no-store');
+    });
+
     it('surfaces a byte-cache hit in Server-Timing', async () => {
       vi.mocked(renderOgClimb).mockResolvedValueOnce({
         buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
         contentType: 'image/jpeg',
         cache: 'hit',
         timings: { wasmMs: 0, baseMs: 0, encodeMs: 0 },
+        iconMissing: false,
       });
       const res = await run(validParams);
       expect(res.statusCode).toBe(200);
@@ -431,6 +447,7 @@ describe('handleOgClimb', () => {
         buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
         contentType: 'image/jpeg',
         timings: { photoMs: 30, composeMs: 60 },
+        iconMissing: false,
       });
 
       const res = await run(sprayParams);
@@ -445,6 +462,21 @@ describe('handleOgClimb', () => {
       expect(String(res.headers['Server-Timing'])).toContain('photo;dur=');
       // The catalogue renderer has no part in this.
       expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
+    it('lets nobody keep a wall card drawn without its app icon', async () => {
+      vi.mocked(renderSprayOgCard).mockResolvedValueOnce({
+        kind: 'card',
+        buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
+        contentType: 'image/jpeg',
+        timings: { photoMs: 30, composeMs: 60 },
+        iconMissing: true,
+      });
+
+      const res = await run(sprayParams);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['Cache-Control']).toBe('no-store');
+      expect(res.headers['CDN-Cache-Control']).toBe('no-store');
     });
 
     it('answers a private wall with an uncacheable 404, not a 403', async () => {
@@ -465,6 +497,7 @@ describe('handleOgClimb', () => {
         buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
         contentType: 'image/jpeg',
         timings: { photoMs: 1, composeMs: 2 },
+        iconMissing: false,
       });
 
       const res = await run(sprayParams);
@@ -477,6 +510,7 @@ describe('handleOgClimb', () => {
         buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
         contentType: 'image/png',
         timings: { photoMs: 1, composeMs: 2 },
+        iconMissing: false,
       });
 
       await run({ ...sprayParams, format: 'png' });
@@ -636,6 +670,7 @@ describe('handleOgClimb cache tier for version mismatches', () => {
       contentType: 'image/jpeg',
       cache: 'miss',
       timings: { wasmMs: 12, baseMs: 8, encodeMs: 4 },
+      iconMissing: false,
     });
   });
 

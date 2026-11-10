@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi, beforeEach } from 'vite-plus/test';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 vi.mock('server-only', () => ({}));
@@ -90,8 +91,10 @@ describe('generatePlaylistMetadata share preview', () => {
     const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
     const [image] = (metadata.openGraph?.images ?? []) as Array<{ url: string }>;
 
-    expect(image.url).toBe('https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=v1');
-    expect(metadata.twitter?.images).toEqual(['https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=v1']);
+    expect(image.url).toBe(`https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=${BOARD_RENDER_VERSION}-v1`);
+    expect(metadata.twitter?.images).toEqual([
+      `https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=${BOARD_RENDER_VERSION}-v1`,
+    ]);
   });
 
   it('leads with the grade band, as the card does, and keeps the creator off both lines', async () => {
