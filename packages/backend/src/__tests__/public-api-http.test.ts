@@ -139,6 +139,39 @@ describe('avatar URLs', () => {
   it('maps an uploaded avatar to null when no media host is configured', () => {
     expect(publicAvatarUrl('/static/avatars/abc.webp?v=3', null)).toBeNull();
   });
+
+  it('sends the URL as it was checked, so curl and Python read the same host', () => {
+    // WHATWG reads lh3.googleusercontent.com here; curl and Python's urllib read 169.254.169.254.
+    expect(publicAvatarUrl('https://lh3.googleusercontent.com\\@169.254.169.254/latest/meta-data/', MEDIA)).toBe(
+      'https://lh3.googleusercontent.com/@169.254.169.254/latest/meta-data/',
+    );
+  });
+
+  const ALLOWED_HOSTS =
+    /^(lh\d+\.googleusercontent\.com|platform-lookaside\.fbsbx\.com|.+\.fbcdn\.net|media\.boardsesh\.test)$/;
+  const hosts = [
+    'lh3.googleusercontent.com',
+    'scontent.xx.fbcdn.net',
+    'media.boardsesh.test',
+    '169.254.169.254',
+    'evil.example',
+  ];
+  const separators = ['\\', '\\\\', '@', '\\@', '@\\', '%5C', '%40', '%5C@', '/\\@', ':@', '#@', '?@'];
+  const sweep = hosts.flatMap((first) =>
+    hosts.flatMap((second) => separators.map((separator) => `https://${first}${separator}${second}/x.png`)),
+  );
+
+  it.each(sweep)('never sends an ambiguous URL for %j', (stored) => {
+    const sent = publicAvatarUrl(stored, MEDIA);
+    if (sent === null) return;
+    expect(sent).not.toContain('\\');
+    expect(new URL(sent).href).toBe(sent);
+    // No userinfo: everything between `//` and the first `/` is the host.
+    const authority = sent.slice('https://'.length).split('/')[0];
+    expect(authority).not.toContain('@');
+    expect(authority).toBe(new URL(sent).hostname);
+    expect(new URL(sent).hostname).toMatch(ALLOWED_HOSTS);
+  });
 });
 
 describe('the /v1/me body', () => {
@@ -252,7 +285,74 @@ describe('the bearer verdict', () => {
 });
 
 describe('the admission gate', () => {
-  const limits = { permits: 3, authorizePermits: 1, apiPermits: 2, queueLimitPerLane: 16, queueDeadlineMs: 1000 };
+  const limits = {
+    permits: 3,
+    authorizePermits: 1,
+    apiPermits: 2,
+    flaggedApiPermits: 1,
+    flaggedApiQueueLimit: 4,
+    queueLimitPerLane: 16,
+    queueDeadlineMs: 1000,
+  };
+
+  const settledFlag = (pending: Promise<unknown>) => {
+    const state = { settled: false };
+    void pending.then(() => {
+      state.settled = true;
+    });
+    return state;
+  };
+
+  it('gives a flagged address one permit and a queue of four, then refuses at once', async () => {
+    const gate = createPartnerAdmissionGate(limits);
+    const running = await gate.acquire('api-flagged');
+    expect(running).not.toBeNull();
+    const queued = Array.from({ length: 4 }, () => gate.acquire('api-flagged'));
+    // Refused at once, not after the 1 s deadline.
+    const sixth = gate.acquire('api-flagged');
+    const sixthState = settledFlag(sixth);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sixthState.settled).toBe(true);
+    expect(await sixth).toBeNull();
+    // The shared /v1 lane still has its other permit.
+    const shared = await gate.acquire('api');
+    expect(shared).not.toBeNull();
+    shared?.release();
+    running?.release();
+    for (const permit of await Promise.all(queued)) permit?.release();
+  });
+
+  it('counts flagged work against the two /v1 permits, so token work keeps the third', async () => {
+    const gate = createPartnerAdmissionGate(limits);
+    const flagged = await gate.acquire('api-flagged');
+    const shared = await gate.acquire('api');
+    const secondShared = gate.acquire('api');
+    const waiting = settledFlag(secondShared);
+    const token = await gate.acquire('token');
+    expect(token).not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(waiting.settled).toBe(false);
+    token?.release();
+    flagged?.release();
+    (await secondShared)?.release();
+    shared?.release();
+  });
+
+  it('gives a freed /v1 permit to the shared lane before a flagged address', async () => {
+    const gate = createPartnerAdmissionGate(limits);
+    const held = await Promise.all([gate.acquire('api'), gate.acquire('api')]);
+    const queuedFlagged = gate.acquire('api-flagged');
+    const queuedShared = gate.acquire('api');
+    const flaggedState = settledFlag(queuedFlagged);
+    held[0]?.release();
+    const sharedPermit = await queuedShared;
+    expect(sharedPermit).not.toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(flaggedState.settled).toBe(false);
+    held[1]?.release();
+    (await queuedFlagged)?.release();
+    sharedPermit?.release();
+  });
 
   it('keeps one permit free of /v1 work, for a refresh', async () => {
     const gate = createPartnerAdmissionGate(limits);

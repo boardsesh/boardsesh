@@ -463,7 +463,9 @@ Availability is protected before any transaction opens:
 - At most 3 requests run at once, one for an authorize and two for `/v1`, with token
   work first, then `/v1`, then authorize. 16 more wait per kind, for at most 1
   second. Anything else gets `503` and `Retry-After` at once. `/v1` never holds the
-  third permit, so an app's polling always leaves one for its refreshes.
+  third permit, so an app's polling always leaves one for its refreshes. Of the two
+  `/v1` permits, addresses with many failed token lookups share one, with 4 waiting
+  (below).
 - Discovery and a signed-out authorize take no transaction.
 - Rate limits use the table under Operations and run first. Per-connection refresh
   and the app limits never reach a lock. The first replay of a spent code closes
@@ -497,14 +499,25 @@ For `/v1`, in this order:
 1. No `Authorization: Bearer` header is a `401` at once, with no lookup.
 2. A `/v1` admission permit, then the token lookup on the primary. The two `/v1`
    permits, 16 waiting and the 1 s deadline are what bound the database work junk
-   tokens can cause.
+   tokens can cause. An address with 30 or more failed lookups this minute waits in
+   its own lane instead: one of the two permits and a queue of 4, behind the shared
+   lane. That is routing, not refusal: its junk can never fill the lane everyone
+   else uses, and a valid token from it is still served there, only slower. The
+   threshold sits far below the 429 limit because a junk sender fills the shared
+   lane long before it has failed 600 times.
 3. A lookup that finds no usable token is charged to the address: 600 a minute, the
    sizing of the token endpoint's per-address refresh bound. Past that the address
-   gets `429` instead of `401`. The count is never read before a lookup, and a
-   valid token never sees it. Many partners share one address (every Cloudflare
-   Worker reaches us as the same `CF-Connecting-IP`; carrier NAT, cloud NAT
-   gateways and shared hosting do the same), so a check before the lookup would let
-   one sender of junk lock all of them out.
+   gets `429` instead of `401`. Only a failed lookup is ever refused for this count;
+   a valid token never sees it, in a status or a `RateLimit-*` header. Many partners
+   share one address (every Cloudflare Worker reaches us as the same
+   `CF-Connecting-IP`; carrier NAT, cloud NAT gateways and shared hosting do the
+   same), so refusing on the count before a lookup would let one sender of junk lock
+   all of them out.
+
+Measured on a laptop with 48 concurrent junk loops from one address for 2 s, and a
+valid token sent from another address every 20 ms: before the separate lane it got
+`503` on 19 of 27 attempts; with it, `503` on 2 of 57. The flooding address's own
+valid token got 14 of 61 through, and never a `429`.
 4. Only once a token has passed are the connection (120 a minute,
    `api-connection`) and the app (6,000 a minute, `api-app`) charged. A caller
    without a valid token for them cannot spend either.

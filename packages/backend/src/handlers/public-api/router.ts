@@ -8,7 +8,12 @@ import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { isApiHost } from '../api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders } from '../partner-cors';
-import { PartnerRateLimited, partnerRateLimitedHeaders, RateLimitLedger } from '../partner-rate-limits';
+import {
+  isPartnerLimitReached,
+  PartnerRateLimited,
+  partnerRateLimitedHeaders,
+  RateLimitLedger,
+} from '../partner-rate-limits';
 import {
   apiErrorBody,
   matchPublicApiPreflight,
@@ -37,6 +42,15 @@ const API_PER_APP = 6000;
  * serves 36,000 climbers, the sizing of the token endpoint's refresh bound.
  */
 const INVALID_TOKENS_PER_IP = 600;
+/**
+ * Failed lookups in the current minute after which an address's `/v1` requests
+ * wait in the `api-flagged` lane: one permit and a queue of four, so its junk
+ * can never fill the lane everyone else uses. Routing, not refusal: a valid
+ * token from that address is still served there. Far below the 429 limit on
+ * purpose, because a junk sender fills the shared lane long before it has
+ * failed 600 times: about 30 lookups and the 16 already queued reach it first.
+ */
+const FAILED_LOOKUPS_BEFORE_OWN_LANE = 30;
 
 const HOLD_RETRY_AFTER_SECONDS = '60';
 const UNAVAILABLE_RETRY_AFTER_SECONDS = '2';
@@ -141,10 +155,13 @@ export function createPublicApiHandler({
 
   /**
    * The order matters for who can spend what. The lookup runs inside the
-   * two-permit `/v1` lane, which bounds what junk can cost the database. A
-   * failed lookup charges its address; a passed one never reads that count.
-   * An app's and a connection's budgets are charged only once a token for
-   * them has passed, so a caller without one cannot spend either.
+   * two-permit `/v1` lanes, which bound what junk can cost the database. An
+   * address with many failed lookups waits in its own one-permit lane, so its
+   * junk cannot fill the lane everyone else uses; its valid tokens still pass.
+   * A failed lookup charges its address, and only a failed lookup can be
+   * refused for that count. An app's and a connection's budgets are charged
+   * only once a token for them has passed, so a caller without one cannot
+   * spend either.
    */
   async function serveRequest(
     req: IncomingMessage,
@@ -161,7 +178,8 @@ export function createPublicApiHandler({
       return unauthorized(requestId, challenge, bearer.problem);
     }
 
-    const permit = await runtime.admission.acquire('api');
+    const flagged = await isPartnerLimitReached(clientIp, 'api-invalid-token-ip', FAILED_LOOKUPS_BEFORE_OWN_LANE);
+    const permit = await runtime.admission.acquire(flagged ? 'api-flagged' : 'api');
     if (!permit) return unavailable(requestId);
     try {
       const result = await runtime.api.authenticate(bearer.token);

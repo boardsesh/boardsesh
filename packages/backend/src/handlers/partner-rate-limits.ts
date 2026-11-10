@@ -32,6 +32,24 @@ export function partnerRateLimitedHeaders({ limit, retryAfterSeconds }: PartnerR
   };
 }
 
+/**
+ * Whether a window has reached `maxRequests`, without counting this call or
+ * refusing anything. For routing a request, never for answering it.
+ */
+export async function isPartnerLimitReached(
+  identity: string,
+  operation: string,
+  maxRequests: number,
+): Promise<boolean> {
+  try {
+    await peekRateLimitRedis(identity, operation, maxRequests, PARTNER_LIMIT_WINDOW_MS);
+    return false;
+  } catch (error) {
+    if (error instanceof RateLimitError) return true;
+    throw error;
+  }
+}
+
 /** Adds one to a window without checking it, for work that has already happened. */
 export function chargePartnerLimit(identity: string, operation: string): Promise<void> {
   return countRateLimitRedis(identity, operation, PARTNER_LIMIT_WINDOW_MS);

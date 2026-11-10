@@ -904,6 +904,86 @@ describe('the public /v1 API', () => {
       }
     });
 
+    it(
+      "keeps a flooding address's junk in its own lane: others are served, and so is its valid token",
+      async () => {
+        await enoughWindowLeft();
+        const floodingAddress = randomClientIp();
+        const otherAddress = randomClientIp();
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        // Past the routing threshold (30), far below the 429 limit (600).
+        await seedLimiter(floodingAddress, 'api-invalid-token-ip', 30);
+
+        const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
+        let releaseJunk: () => void = () => {};
+        const junkMayFinish = new Promise<void>((resolve) => {
+          releaseJunk = resolve;
+        });
+        let junkInFlight = 0;
+        const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
+          if (!token.startsWith('junk')) return realAuthenticate(token);
+          junkInFlight += 1;
+          try {
+            // Junk holds its permit until the test lets it go: no timers decide the outcome.
+            await junkMayFinish;
+            return await realAuthenticate(token);
+          } finally {
+            junkInFlight -= 1;
+          }
+        });
+        const lanes: string[] = [];
+        const realAcquire = runtime.admission.acquire.bind(runtime.admission);
+        const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane) => {
+          lanes.push(lane);
+          return realAcquire(lane);
+        });
+        try {
+          const answeredJunk: number[] = [];
+          const junk = Array.from({ length: 8 }, () =>
+            getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp: floodingAddress }).then((answer) => {
+              answeredJunk.push(answer.status);
+              return answer.status;
+            }),
+          );
+          // One running and four queued in the flagged lane; the other three are refused at once.
+          const deadline = Date.now() + 3000;
+          while (answeredJunk.length < 3 && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          expect(answeredJunk).toEqual([503, 503, 503]);
+          expect(junkInFlight).toBe(1);
+
+          // Another address is served while every junk lookup is still held.
+          const fromElsewhere = await getMe(issued.access_token, { clientIp: otherAddress });
+          expect(fromElsewhere.status).toBe(200);
+          expect(junkInFlight).toBe(1);
+          expect(answeredJunk).toHaveLength(3);
+          expect(lanes.filter((lane) => lane === 'api-flagged')).toHaveLength(8);
+
+          releaseJunk();
+          const junkStatuses = await Promise.all(junk);
+          // The held one fails its lookup; a queued one may also have passed its 1 s deadline.
+          expect(junkStatuses).toContain(401);
+          expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+
+          // The flooding address's own valid token is still served, in its lane, and never 429.
+          lanes.length = 0;
+          const fromFloodingAddress = await getMe(issued.access_token, { clientIp: floodingAddress });
+          expect(fromFloodingAddress.status).toBe(200);
+          expect(lanes).toEqual(['api-flagged']);
+          lanes.length = 0;
+          expect((await getMe(issued.access_token, { clientIp: otherAddress })).status).toBe(200);
+          expect(lanes).toEqual(['api']);
+        } finally {
+          releaseJunk();
+          authenticate.mockRestore();
+          acquire.mockRestore();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
     it('answers 401 when the climber is deleted between the profile read and the subject insert', async () => {
       const developer = await environment.createClimber();
       const client = await environment.createClient({ owner: developer });

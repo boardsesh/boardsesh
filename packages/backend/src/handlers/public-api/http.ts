@@ -116,7 +116,12 @@ export function publicAvatarUrl(stored: string | null, mediaBaseUrl: string | nu
     candidate = staticPathToMediaRedirect(relative.pathname, relative.searchParams, mediaBaseUrl);
   }
   if (!candidate || !isServableAvatarUrl(candidate, mediaBaseUrl)) return null;
-  return MeResponseSchema.shape.avatarUrl.safeParse(candidate).success ? candidate : null;
+  // Send the URL as this parser understood it, never the raw string. Parsers
+  // disagree on oddities such as `https://good.host\@other.host/`: WHATWG reads
+  // good.host, curl and Python read other.host. The serialized form
+  // (`https://good.host/@other.host/`) reads the same everywhere.
+  const serialized = new URL(candidate).href;
+  return MeResponseSchema.shape.avatarUrl.safeParse(serialized).success ? serialized : null;
 }
 
 export interface ClimberRecord {

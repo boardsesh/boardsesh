@@ -68,6 +68,8 @@ export const PARTNER_ADMISSION_LIMITS: PartnerAdmissionLimits = {
   permits: PARTNER_POOL_MAX,
   authorizePermits: 1,
   apiPermits: PARTNER_POOL_MAX - 1,
+  flaggedApiPermits: 1,
+  flaggedApiQueueLimit: 4,
   queueLimitPerLane: 16,
   queueDeadlineMs: 1000,
 };
