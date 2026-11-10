@@ -1563,6 +1563,15 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Partner OAuth journey (#6981 F18): starts its own backend and www with
+      // partner OAuth on, behind a local edge that answers as the production
+      // hosts, and drives register → consent → sync → disconnect in Chromium.
+      // See docs/integration-platform.md, "End-to-end journey".
+      'test:e2e:partner-oauth': {
+        command: 'cd packages/web && vp exec playwright test --config=playwright.partner-oauth.config.ts',
+        dependsOn: ['db:up'],
+        cache: false,
+      },
       // Expo-web smoke: boots the full expo-web stack (backend + Next proxy +
       // Metro web) via the dev orchestrator and runs the `expo-web-smoke`
       // Playwright project against it. See scripts/expo-web-e2e.ts.
