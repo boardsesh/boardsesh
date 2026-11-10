@@ -2776,10 +2776,14 @@ bug: fix it and rerun.
 - **`source` on a tick** (`boardsesh` vs `imported`): left out; an app
   that also imports from Kilter directly could use it to de-duplicate. Add
   when one asks.
-- **New-connection cap**: is 200/day right for an app that launches with a
-  big audience? It is a column; the question is the default.
-- **Who reads the console's "more limits" requests**, and how fast. The goal
-  is that nobody has to, ordinarily.
+- **Connection caps after stage D**: every app starts at 25 live and 20 new
+  connections a day (the `oauth_app_policy` defaults). What the default becomes
+  when registration opens, for an app that launches with a big audience, is
+  open; 200 new a day was the proposal. It is a column; the question is the
+  default.
+- **How a developer asks for higher caps.** There is no request form in the
+  console; today the owner raises an app's caps in its policy row. Who handles
+  such requests once registration opens, and how fast, is open.
 
 ## Related docs
 
