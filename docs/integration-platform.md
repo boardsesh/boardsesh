@@ -1146,8 +1146,13 @@ twice. A URI must be written exactly as a URL parser writes it back
 is what the exact comparison sees. Homepage and privacy policy URLs must be
 `https://` and not on `boardsesh.com`. Names are refused if, after folding case,
 accents, spacing, punctuation and lookalike characters (`0` for `o`, `1` or `i` for
-`l`, Cyrillic letters), they contain Boardsesh, Aurora, Moon Climbing or a board
-brand. Publisher names follow the same rules.
+`l`, Cyrillic letters, `ı`, `ʙ` and other Latin small capitals), they contain
+Boardsesh, Aurora, Moon Climbing or a board brand. A name that mixes Latin letters
+with Greek, Cyrillic, Armenian or Cherokee ones is refused outright, because the
+fold only knows the lookalikes it lists and drops every other letter outside a-z
+(`Κilter` with a Greek Κ would otherwise reach the denylist as `lter`). A name
+written entirely in one of those scripts is allowed. Publisher names follow the
+same rules.
 
 **Admin commands** (`packages/backend/src/scripts/partner-app-admin.ts`). Each
 acts on exactly one id given on the command line and writes nothing without
