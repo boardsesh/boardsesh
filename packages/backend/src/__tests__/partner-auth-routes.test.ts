@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import { connect as openTcpConnection, type AddressInfo, type Socket } from 'node:net';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { oauthRefreshToken } from '@boardsesh/db/schema/auth';
+import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../auth/partner/authority';
 import { PARTNER_DISABLED_PATHS, PARTNER_ROUTES } from '../auth/partner/routes';
 import { createPartnerDatabaseHandle, PARTNER_POOL_MAX } from '../auth/partner/transaction';
@@ -223,6 +223,14 @@ describe('partner OAuth routes on the API host', () => {
     await partnerHost?.close();
     await environment?.close();
   });
+
+  async function connectionIdFor(client: TestClient): Promise<string> {
+    const [connection] = await db
+      .select({ id: oauthConnections.id })
+      .from(oauthConnections)
+      .where(eq(oauthConnections.clientId, client.clientId));
+    return connection.id;
+  }
 
   async function transactionsDuring(work: () => Promise<unknown>): Promise<number> {
     const before = transactionSpy.calls;
@@ -1148,31 +1156,62 @@ describe('partner OAuth routes on the API host', () => {
     );
 
     it(
-      'counts a replayed spent token against its connection, not only its address',
+      'does not let an old token, sent without the secret, spend the connection limit',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const rotated = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(rotated.status).toBe(200);
+        const current = JSON.parse(rotated.body) as typeof issued;
+        const connectionId = await connectionIdFor(client);
+
+        // The consumed token, 12 times, naming the app but without its secret.
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const replay = await sendToken({
+            grant_type: 'refresh_token',
+            refresh_token: issued.refresh_token!,
+            client_id: client.clientId,
+          });
+          expect(replay.status).not.toBe(429);
+          expect(JSON.parse(replay.body).error).toBe('invalid_client');
+        }
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(1);
+
+        const realRefresh = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: current.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(realRefresh.status).toBe(200);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(2);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'does not let an expired token spend the connection limit either',
       async () => {
         const client = await environment.createClient({ publicClient: true });
-        const issued = await environment.issueTokens(client);
-        const firstRefreshToken = issued.refresh_token!;
-        let current = issued;
-        for (let attempt = 0; attempt < 10; attempt += 1) {
-          const rotated = await sendToken({
+        await environment.issueTokens(client);
+        const expired = await environment.issueTokens(client);
+        await db
+          .update(oauthRefreshToken)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(oauthRefreshToken.token, createHash('sha256').update(expired.refresh_token!).digest('base64url')));
+        const connectionId = await connectionIdFor(client);
+        for (let attempt = 0; attempt < 11; attempt += 1) {
+          const answered = await sendToken({
             grant_type: 'refresh_token',
-            refresh_token: current.refresh_token!,
+            refresh_token: expired.refresh_token!,
             ...clientCredentials(client),
           });
-          expect(rotated.status).toBe(200);
-          current = JSON.parse(rotated.body) as typeof issued;
+          expect(answered.status).not.toBe(429);
         }
-        // The spent token still has its ancestor row, and 10 rotations used up the bucket.
-        const transactions = await transactionsDuring(async () => {
-          const limited = await sendToken({
-            grant_type: 'refresh_token',
-            refresh_token: firstRefreshToken,
-            ...clientCredentials(client),
-          });
-          expect(limited.status).toBe(429);
-        });
-        expect(transactions).toBe(0);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(0);
       },
       TEST_DEADLINE_MS,
     );

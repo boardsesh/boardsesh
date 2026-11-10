@@ -137,6 +137,8 @@ export interface PartnerTestEnvironment {
     owner?: TestClimber;
     linkResource?: boolean;
     redirectOrigin?: string;
+    /** For a confidential client. Defaults to `client_secret_post`. */
+    secretMethod?: 'client_secret_post' | 'client_secret_basic';
   }): Promise<TestClient>;
   authorize(
     client: TestClient,
@@ -259,7 +261,7 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
         body: {
           client_name: 'Partner authority fixture',
           redirect_uris: [redirectUri],
-          token_endpoint_auth_method: options.publicClient ? 'none' : 'client_secret_post',
+          token_endpoint_auth_method: options.publicClient ? 'none' : (options.secretMethod ?? 'client_secret_post'),
           grant_types: ['authorization_code', 'refresh_token'],
           response_types: ['code'],
           scope: TEST_OAUTH_OPTIONS.scopes.join(' '),

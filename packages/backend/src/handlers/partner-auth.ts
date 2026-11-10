@@ -431,8 +431,11 @@ export function createPartnerAuthHandler({
     if (!permit) return { response: unavailableResponse(), clientId };
     let response: Response;
     try {
-      // Keyed by the connection the token belongs to, so a spent token cannot
-      // queue on a climber's row. Before the transaction, inside the permit.
+      // Keyed by the connection of a current token, before the transaction and
+      // inside the permit. The request is not authenticated yet, so a consumed
+      // token gets only the address bound: charging its connection would let
+      // anyone holding an old token freeze the app's real refreshes. The first
+      // authenticated replay of it closes the family anyway.
       if (route.kind === 'token' && fields.grant_type === 'refresh_token' && fields.refresh_token) {
         const connection = await findRefreshConnectionSafely(runtime, fields.refresh_token, requestId);
         if (connection === 'unavailable') return { response: unavailableResponse(), clientId };

@@ -7,10 +7,10 @@ import {
 } from 'better-auth';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import { getOAuthProviderApi, oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
-import { oauthConnections, oauthRefreshAncestors, oauthRefreshToken } from '@boardsesh/db/schema/auth';
+import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { guardPartnerAdapter } from './adapter-guard';
 import { createPartnerAdmissionGate, type PartnerAdmissionGate, type PartnerAdmissionLimits } from './admission';
 import {
@@ -52,6 +52,11 @@ export interface PartnerAuthorityRuntime {
   handleRequest(request: Request, options?: PartnerRequestOptions): Promise<Response>;
   /** The published RFC 8414 document, built once. Reads no table. */
   discoveryResponse(logContext?: PartnerRequestOptions['logContext']): Promise<Response>;
+  /**
+   * The connection of a refresh token that can still be used: not consumed and
+   * not expired. A consumed one has no connection here, so presenting an old
+   * token, with or without the client secret, cannot spend that connection's limit.
+   */
   findRefreshConnection(refreshToken: string): Promise<PartnerRefreshConnection | null>;
   close(): Promise<void>;
 }
@@ -228,20 +233,14 @@ export async function createPartnerAuthorityRuntime(
             eq(oauthConnections.userId, oauthRefreshToken.userId),
           ),
         )
-        .where(eq(oauthRefreshToken.token, tokenHash));
-      if (current) return current;
-      const [ancestor] = await database
-        .select({ clientId: oauthConnections.clientId, connectionId: oauthConnections.id })
-        .from(oauthRefreshAncestors)
-        .innerJoin(
-          oauthConnections,
+        .where(
           and(
-            eq(oauthConnections.clientId, oauthRefreshAncestors.clientId),
-            eq(oauthConnections.userId, oauthRefreshAncestors.userId),
+            eq(oauthRefreshToken.token, tokenHash),
+            isNull(oauthRefreshToken.revoked),
+            gt(oauthRefreshToken.expiresAt, new Date()),
           ),
-        )
-        .where(eq(oauthRefreshAncestors.tokenHash, tokenHash));
-      return ancestor ?? null;
+        );
+      return current ?? null;
     },
     close,
   };

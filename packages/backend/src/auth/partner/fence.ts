@@ -195,6 +195,17 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (typeof code !== 'string' || !code) return;
             const provider = getOAuthProviderApi(context, oauthOptions, 'authorization_code');
             const client = await provider.authenticateClient({ requireCredentials: false });
+            // The provider's own first check: with neither a code_verifier nor a
+            // client secret it refuses before consuming anything, so taking the
+            // lock first would let one live code hold it again on every request.
+            const codeVerifier: unknown = context.body?.code_verifier;
+            const hasCodeVerifier = typeof codeVerifier === 'string' && codeVerifier.length > 0;
+            if (!hasCodeVerifier && (client.method === undefined || client.method === 'none')) {
+              return context.json(
+                { error: 'invalid_request', error_description: 'Either code_verifier or client_secret is required' },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            }
             const { transaction } = currentPartnerTransaction();
             const authorizationCodeId = await provider.hashToken(code, 'authorization_code');
             const [grant] = await transaction

@@ -1175,5 +1175,112 @@ describe('partner fence', () => {
       },
       TEST_DEADLINE_MS,
     );
+
+    const PRECONDITION_DESCRIPTION = 'Either code_verifier or client_secret is required';
+
+    /** A token request with a Basic credential, which `postForm` cannot send. */
+    async function postWithBasic(client: TestClient, fields: Record<string, string>) {
+      const encode = (value: string) => new URLSearchParams({ value }).toString().slice('value='.length);
+      const credential = Buffer.from(`${encode(client.clientId)}:${encode(client.clientSecret!)}`).toString('base64');
+      const response = await environment.instance.handler(
+        new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Basic ${credential}` },
+          body: new URLSearchParams(fields),
+        }),
+      );
+      return { response, body: (await response.json()) as { error?: string; error_description?: string } };
+    }
+
+    const codeOf = (authorization: { location: string | null }) =>
+      new URL(authorization.location!).searchParams.get('code')!;
+
+    it.each([
+      ['no code_verifier', {}],
+      ['an empty code_verifier', { code_verifier: '' }],
+    ])(
+      'refuses a public app with %s before the lock, and leaves the code usable',
+      async (_label, verifierField) => {
+        const client = await environment.createClient({ publicClient: true });
+        const authorization = await environment.authorize(client);
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await postForm(environment.instance, '/oauth2/token', {
+            grant_type: 'authorization_code',
+            code: codeOf(authorization),
+            redirect_uri: client.redirectUri,
+            client_id: client.clientId,
+            ...verifierField,
+          });
+          // Queuing behind the row lock would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.response.status).toBe(400);
+          expect(refused.body).toMatchObject({ error: 'invalid_request', error_description: PRECONDITION_DESCRIPTION });
+        } finally {
+          await release();
+        }
+        expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'lets a confidential app sending its secret in the form reach the provider without a verifier',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const answered = await postForm(environment.instance, '/oauth2/token', {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          redirect_uri: client.redirectUri,
+          ...clientCredentials(client),
+        });
+        // The provider decides, and asks for PKCE because every app registers with it.
+        expect(answered.body.error).toBe('invalid_request');
+        expect(answered.body.error_description).not.toBe(PRECONDITION_DESCRIPTION);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'lets a confidential app sending its secret by Basic reach the provider without a verifier',
+      async () => {
+        const client = await environment.createClient({ secretMethod: 'client_secret_basic' });
+        const authorization = await environment.authorize(client);
+        const answered = await postWithBasic(client, {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          redirect_uri: client.redirectUri,
+        });
+        expect(answered.body.error).toBe('invalid_request');
+        expect(answered.body.error_description).not.toBe(PRECONDITION_DESCRIPTION);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still accepts every legitimate exchange: public, secret in the form, and secret by Basic',
+      async () => {
+        const publicClient = await environment.createClient({ publicClient: true });
+        expect(
+          (await environment.exchange(publicClient, await environment.authorize(publicClient))).response.status,
+        ).toBe(200);
+        const postClient = await environment.createClient();
+        expect((await environment.exchange(postClient, await environment.authorize(postClient))).response.status).toBe(
+          200,
+        );
+        const basicClient = await environment.createClient({ secretMethod: 'client_secret_basic' });
+        const authorization = await environment.authorize(basicClient);
+        const answered = await postWithBasic(basicClient, {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          code_verifier: authorization.verifier,
+          redirect_uri: basicClient.redirectUri,
+        });
+        expect(answered.response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
   });
 });
