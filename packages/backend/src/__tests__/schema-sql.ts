@@ -66,6 +66,11 @@ const logbookSnapshotsSchema = readFileSync(
   new URL('../../../db/drizzle/0299_logbook_snapshots.sql', import.meta.url),
   'utf8',
 );
+// The password-write trigger that ends partner connections, straight from the migration.
+const partnerRevocationTriggerSchema = readFileSync(
+  new URL('../../../db/drizzle/0300_partner_revocation_trigger.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2330,4 +2335,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS logbook_snapshot_chunks;
   DROP TABLE IF EXISTS logbook_snapshots;
   ${logbookSnapshotsSchema};
+  ${partnerRevocationTriggerSchema}
 `;

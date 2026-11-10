@@ -37,6 +37,13 @@ import * as postgresErrors from '../../../utils/postgres-errors';
 import * as userActivity from '../../../services/user-activity';
 import * as posthogPersonDeletion from '../../../services/analytics/posthog-person-deletion';
 import { lockSprayWallAccount } from '../../../services/spray-account-lock';
+import {
+  attachPartnerState,
+  countsOf,
+  createApp,
+  INTACT_COUNTS,
+  readPartnerState,
+} from '../../partner/__tests__/revocation-fixtures';
 import { normalizeAccountEmail } from '../../normalize-email';
 import { preflight } from '../command-context';
 import { prepareProjectionUnderUsersTableLock } from '../email-reservations';
@@ -655,6 +662,33 @@ describe('mounted account deletion and current-store authority', () => {
         release.release();
         await bounded(held);
       }
+    },
+  );
+
+  it.each(['legacy', 'reserved-staging'])(
+    'ends partner connections through the cascade when %s deletion commits, and leaves other climbers',
+    async (mode) => {
+      await seedPair();
+      vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', mode);
+      const clientId = await createApp(otherId);
+      const ownerRows = await attachPartnerState(ownerId, clientId);
+      const bystander = await attachPartnerState(otherId, clientId);
+
+      expect(await remove()).toBe(true);
+
+      expect(countsOf(await readPartnerState(ownerRows))).toEqual({
+        connections: 0,
+        subjects: 0,
+        sessions: 0,
+        grants: 0,
+        pendingCodes: 1, // Keyed by the grant, not the user: unredeemable once its session is gone.
+        refreshTokens: 0,
+        accessTokens: 0,
+        consents: 0,
+        ancestors: 0,
+        interactions: 0,
+      });
+      expect(countsOf(await readPartnerState(bystander))).toEqual(INTACT_COUNTS);
     },
   );
 
