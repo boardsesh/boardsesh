@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "date": "2026-11-10",
+      "documentSha256": "af95ddef79eac4f661e9c4c425d430bd4a6b272b24ef2041ff09ba0aaf806895",
+      "changes": [
+        "Grade examples show the board's own label as its grade table spells it (6b+/V4).",
+        "climb.boardseshGrade is documented as always null for now: its V-scale form is not published yet."
+      ]
+    },
+    {
+      "date": "2026-11-10",
+      "documentSha256": "3b0d4a2552d2ff760d610512861aee365a9f07b5f576fc88b3eb8b34d9dc641e",
+      "changes": [
+        "First draft of v1: GET /v1/me, DELETE /v1/connection, GET /v1/logbook/changes and GET /v1/logbook/ticks/{id}, with the logbook:read, profile:read and offline_access scopes."
+      ]
+    }
+  ]
+}

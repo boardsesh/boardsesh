@@ -125,6 +125,7 @@ const GUARD_STEPS = [
   'changelog-owned',
   'board-render-version',
   'public-api-openapi',
+  'public-api-changelog',
   'i18n',
   'deploy-config',
   'listing-guards',

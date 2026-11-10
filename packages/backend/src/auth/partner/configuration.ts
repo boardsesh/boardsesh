@@ -6,17 +6,27 @@ export const PARTNER_RESOURCE = 'https://api.boardsesh.com/v1';
 export const PARTNER_WEB_ORIGIN = 'https://www.boardsesh.com';
 
 /**
- * Scopes a partner app may request. `openid` stays out because OIDC discovery is
- * not offered. `logbook:read` joins when GET /v1/logbook/changes ships (L4), so
- * the discovery document only publishes what exists.
+ * Scopes a partner app may request, and what discovery publishes: only scopes
+ * whose routes exist (launch gate 10). `logbook:read` reads
+ * `GET /v1/logbook/changes` and `GET /v1/logbook/ticks/{id}`, "only me" ticks
+ * included (decision 21), which the consent screen says. `openid` stays out
+ * because OIDC discovery is not offered.
  */
-export const PARTNER_SCOPES = ['profile:read', 'offline_access'];
+export const PARTNER_SCOPES = ['logbook:read', 'profile:read', 'offline_access'];
 
 /** The consent link is signed with `codeExpiresIn`, so it stays 600 and the code row is cut to 60 s at issuance. */
 export const PARTNER_SIGNED_QUERY_LIFETIME_SECONDS = 600;
 export const PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS = 60;
 
 const MINIMUM_SECRET_LENGTH = 32;
+/**
+ * The highest secret version accepted. Logbook cursors name the version they
+ * were sealed under in nine digits (`handlers/public-api/logbook-cursor.ts`),
+ * so a larger one, such as an epoch-seconds version, would make every cursor
+ * this server issues unreadable to it. Refused at startup instead, so client
+ * secrets and cursors always agree.
+ */
+export const PARTNER_SECRET_MAX_VERSION = 999_999_999;
 
 export interface PartnerSecret {
   version: number;
@@ -54,6 +64,11 @@ export function parsePartnerSecrets(rawSecrets: string | undefined): PartnerSecr
     const value = entry.slice(separatorIndex + 1).trim();
     if (separatorIndex < 1 || !Number.isInteger(version) || version < 0 || !value) {
       throw new PartnerAuthorityConfigurationError('PARTNER_OAUTH_SECRETS entries must be "version:value".');
+    }
+    if (version > PARTNER_SECRET_MAX_VERSION) {
+      throw new PartnerAuthorityConfigurationError(
+        `PARTNER_OAUTH_SECRETS version ${version} is above ${PARTNER_SECRET_MAX_VERSION}: logbook cursors carry at most nine digits of version.`,
+      );
     }
     if (value.length < MINIMUM_SECRET_LENGTH) {
       throw new PartnerAuthorityConfigurationError(

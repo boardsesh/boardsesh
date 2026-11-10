@@ -466,12 +466,14 @@ against what the client sent, so a trailing slash, a doubled slash, different ca
 a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
 stock routes inside Better Auth, except the two with path parameters.
 
-The `/v1` API adds `GET /v1/me` and `DELETE /v1/connection`, matched the same way,
-plus their CORS preflights. Under `hold` they answer `503` with `Retry-After: 60` in
-the API error shape. `GET /v1/openapi.json` and the logbook routes are not served
-yet: the generated document already describes `/v1/logbook/*` and `logbook:read`,
-and publishing it before those routes exist would advertise what is not there
-(launch gate 10). Both arrive with the logbook routes (L4).
+The `/v1` API adds `GET /v1/me`, `DELETE /v1/connection`, `GET /v1/logbook/changes`
+and `GET /v1/logbook/ticks/{id}`, matched the same way (the tick id is one path
+segment), plus their CORS preflights, and `GET /v1/openapi.json`. Under `hold`
+every one of them answers `503` with `Retry-After: 60` in the API error shape.
+
+`GET /v1/openapi.json` is the committed `generated/openapi.json` byte for byte. It
+needs no token, reads no database and answers any origin
+(`Access-Control-Allow-Origin: *`, nothing credentialed), cached for 5 minutes.
 
 Availability is protected before any transaction opens:
 
@@ -665,8 +667,8 @@ checks as the post, without spending it:
 
 Facts only; the page words them in the climber's language. `includesOnlyMeTicks`
 is true for `logbook:read` (decision 21), so the screen can say that approving
-shares ticks the climber keeps to "only me". `logbook:read` cannot be requested
-until its route ships (L4); until then no response lists it. Nothing about the
+shares ticks the climber keeps to "only me". `logbook:read` is in the scope list
+(`PARTNER_SCOPES`) and in discovery since its routes shipped (L4). Nothing about the
 account that registered the app is sent: its display or account name is the
 developer's own, not something a climber should see. A `publisherName` from the
 registration record joins `client` once that column exists (F12); until then the
@@ -1130,15 +1132,15 @@ One shape everywhere a tick appears (logbook, workout results, later webhooks):
   "angle": 40,
   "mirrored": false,
   "stars": 4,
-  "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+  "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
   "benchmark": false,
   "comment": "Finally stuck the cross-through",
   "climb": {
     "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
     "name": "Slopey Business",
     "board": { "type": "kilter", "layout": "Kilter Board Original" },
-    "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
-    "boardseshGrade": 4.2
+    "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
+    "boardseshGrade": null
   },
   "createdAt": "2026-10-20T18:42:15Z",
   "updatedAt": "2026-10-20T18:42:15Z"
@@ -1157,7 +1159,7 @@ Mapping from `boardsesh_ticks` (semantics in [ascents-and-attempts.md](./ascents
 | `comment` | `comment` | The climber's note. The column defaults to `''`; an empty string is served as `null` |
 | `climb.id` | `COALESCE(board_climb_aliases.canonical_uuid, climb_uuid)`, joined on `(board_type, alias_uuid)` | Canonical at read time. A catalog merge writes a change row for every affected tick (trigger 4 below), so apps see the new id |
 | `climb.grade` | `board_climb_stats.display_difficulty` at the tick's angle | Community grade at read time. It drifts without a tick change; documented |
-| `climb.boardseshGrade` | `board_climb_grades.universal_grade` | Optional decimal on the V scale, `null` when not anchored |
+| `climb.boardseshGrade` | Not read yet | Always `null`: the Boardsesh grade is kept on the difficulty-id scale and no V-scale conversion is documented (see "The routes, as built (L4)") |
 | `climb.board.type` | `board_type` | `kilter`, `tension`, `moonboard`, `spray`, … Clients must tolerate new values |
 
 Deliberately left out: `origin` (which sync wrote the row), Aurora and Kilter
@@ -1190,6 +1192,19 @@ renaming anything is `v2`, with `v1` kept for at least six months and a
 `Sunset` header on its responses for the whole period. A public changelog
 page lists every contract change; CI fails a PR that changes `openapi.json`
 without a changelog entry.
+
+The changelog is `packages/shared/public-api/src/changelog.json`, newest entry
+first, each with the date, what changed, and the SHA-256 of the committed
+`openapi.json` it describes (`PUBLIC_API_CHANGELOG`, which the changelog page will
+render). The `public-api-changelog` step in the CI `guards` job
+(`vp run check:public-api-changelog`, `scripts/check-public-api-changelog.ts`)
+fails when the newest entry does not name the committed document's hash, on
+every run, so a document change needs a new entry. On a PR it also fails when an
+entry already on the base branch changed or went missing, so an old entry cannot
+be re-pointed at the new document instead. Two neighbouring entries may not name
+the same document, since an entry records a change; a document may come back
+further down, so reverting a change is a new entry naming the older hash. The
+package's own test checks the hash against the generated document locally.
 
 ---
 
@@ -1257,9 +1272,10 @@ only once the new one is certain, so a capacity refusal leaves it in place.
 This is a server-side copy, not an open database transaction held across HTTP
 requests. Pages are read at different points in time; the hand-off below is why
 that is still exact. `services/logbook-snapshot.ts` is the implementation and
-the costs are under [What it costs](#what-it-costs). The route needs a small
-dedicated connection pool (build slots plus one or two), so a cold chunk cannot
-hold a connection first-party queries need.
+the costs are under [What it costs](#what-it-costs). The route runs it on a small
+dedicated connection pool, two per backend process (one build, one for starts
+and page reads), so a cold chunk cannot hold a connection first-party queries or
+token refreshes need ([db-connectivity.md](./db-connectivity.md#dedicated-pools)).
 
 Bounds, none of them silent:
 
@@ -1340,6 +1356,97 @@ the final cursor. A crash leaves its old copy intact and a durable full-sync
 requirement, so retry starts a fresh snapshot. The public example specifies
 these storage operations and does not keep reconciliation markers only in
 memory.
+
+### The routes, as built (L4)
+
+Code: `handlers/public-api/logbook.ts` (the routes), `logbook-cursor.ts` (the
+cursor), `services/logbook-tick-serializer.ts` (the tick) and
+`auth/partner/logbook-access.ts` (pools, admission, the page check). Tests:
+`partner-logbook-api.test.ts` through HTTP, `partner-logbook-units.test.ts` for
+the pure parts.
+
+**Checks, in order.** The token check, limits and admission of every `/v1` route
+come first (Availability above), so nothing below runs or is charged before a
+token has passed. Then: no `logbook:read` is `403 insufficient_scope` with
+`WWW-Authenticate: Bearer error="insufficient_scope", scope="logbook:read"`; a bad
+`limit` (or an empty `cursor`) is `400 invalid_request` with `field`; a cursor this
+API did not issue is `400 invalid_cursor`; `c3.expired`, a cursor sealed under a
+retired secret, and a cursor of another app's connection or from before a
+reconnect are `410 cursor_expired`. A climber's own ticks are the only ones read:
+every read is keyed by the token's connection, never by anything the app sends,
+and no response or cursor carries `users.id`.
+
+**The cursor** is `c3.<secret version>.<sealed>`: AES-256-GCM over its kind, the
+connection id and generation it is bound to, the position (`(txid, seq)` and the
+feed generation for a change cursor, snapshot id and offset for a snapshot
+cursor) and an issue time kept for diagnosis. The key is derived from the
+`PARTNER_OAUTH_SECRETS` entry of that version, so an app cannot read or build a
+cursor, and rotating the secret keeps old cursors working while the old version
+is still listed. The version is at most nine digits, and the authority refuses
+to start with a larger one (`PARTNER_SECRET_MAX_VERSION`), so an epoch-seconds
+version cannot quietly turn every cursor into `400 invalid_cursor`.
+
+**A change cursor** reads one feed page on the partner pool, inside the `/v1`
+admission permit the token check holds, bounded at 5 s per statement and 2 s per
+lock wait.
+
+**No cursor, or a snapshot cursor,** gives that permit back first and runs on the
+snapshot pool (Database load below), so a build never holds one of the two `/v1`
+connections:
+
+1. No cursor starts or joins the connection's snapshot. Only a real creation is
+   counted against the creation limit (2 a minute per connection,
+   `api-snapshot-create`): with the limit spent, a request that would join still
+   joins, and only one that would create answers `429`. At the storage cap the
+   answer is `503` with `Retry-After: 900`, the reclaim job's interval; a start
+   that cannot get its locks is `503` with `Retry-After: 2`.
+2. While the snapshot builds, the request drives it for up to a second, if this
+   process's one build permit is free (it never waits for one), and answers an
+   empty page with the snapshot cursor and `hasMore: true`. If the build finished
+   in that second, the first page is served at once instead.
+3. A build that ended `too_large` or `stalled` is over: nothing resumes it, and
+   both its cursor and a restart answer `503` with `Retry-After` set to the
+   seconds until its one-hour verdict lapses.
+4. A gone, expired or other-generation snapshot is `410`.
+
+A statement timeout or lock timeout (57014, 55P03) on either path is an empty
+page at the same cursor with `hasMore: true`, so the app simply asks again. A
+single tick has no empty page to give, so there it is `503` with `Retry-After`.
+
+**At delivery**, inside each page's read transaction, the connection row is read
+again (same id, climber, app and generation, not revoked), so a Disconnect or a
+password reset that committed after the token check ends that page with `401`;
+then the climbs' public metadata is read in the same snapshot as the ticks. A
+snapshot stores ticks, not names, so a spray wall made private after the
+snapshot was built never serves its old names.
+
+**The tick** follows the table in "The tick" above, with these details:
+
+- A spray climb's name and wall name show to the wall's owner's apps and for a
+  public wall: the by-layout rule with no viewer, so a gym membership, follow or
+  grant the climber holds is not passed on to apps. A spray tick whose climb row
+  is gone withholds both.
+- A connected app sees every climb the climber has logged, including drafts and
+  unlisted climbs set by others, in full: id, name, layout and grades, the same
+  as any published climb (owner decision, 2026-11-10). The climber's logbook is
+  their data. Whether a climb is a draft, unlisted, or set by a private account
+  changes nothing here; only the spray-wall rule above withholds anything.
+  Explaining this to the climber at consent is a separate follow-up.
+- `grade` and `climb.grade` use the board's own grade table: `v` from its V grade,
+  `font` upper-cased, `label` its `boulder_name` (MoonBoard's 6A is V2). A
+  difficulty off the table is `null`.
+- `climb.boardseshGrade` is always `null`. The model keeps the Boardsesh grade on
+  the shared difficulty-id scale (10 is 4a/V0), and clients surface it as
+  `universal_grade ?? local_grade` rounded to a grade id and labelled by the
+  board's table, never for a `setter_only` row ([boardsesh-grade.md](./boardsesh-grade.md),
+  "Which grade a client surfaces"). Nothing documents a decimal V-scale form, so
+  none is invented. Publishing it needs that decision first, for example a grade
+  object built the way clients build theirs.
+- Timestamps are the stored UTC values to the millisecond. A star rating outside
+  1 to 5 is `null`.
+
+`GET /v1/logbook/ticks/{id}` answers `404 not_found` for a deleted tick, a
+hidden twin, another climber's tick and anything that is not a tick id alike.
 
 ### The change log
 
@@ -1648,7 +1755,7 @@ Three kinds of data, three answers:
 | Kind | Examples | Through the API |
 | --- | --- | --- |
 | The climber's own activity | Ticks, their grades, stars, comments, workout results | Yes, with their consent, scoped |
-| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, only attached to a tick the climber logged |
+| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, only attached to a tick the climber logged, including a draft or unlisted climb someone else set |
 | Catalogs and community data | Hold positions, full climb lists, setter lists, stats, other climbers' ticks, beta videos | No. Catalogs are already public as nightly snapshots; the API is not a second, authenticated way to scrape them |
 
 What LEGAL.md implies:
@@ -1661,6 +1768,10 @@ What LEGAL.md implies:
 - **Climb names and grades are factual data** under LEGAL.md's own position,
   and for catalog boards already public through `/api/v1` and the snapshots.
   Attaching them to a tick adds no exposure.
+- **A logged climb is part of the logbook, whoever set it.** A tick on a draft
+  or an unlisted climb someone else set carries that climb's id, name, layout
+  and grade like any other: the climber logged it, and the logbook is theirs to
+  share with the apps they connect.
 - **Spray walls are the exception.** Their climbs are `is_listed = false` and
   kept out of the snapshots ([spray-walls.md](./spray-walls.md)), and a wall
   can be private or link-only. A tick on a spray wall the climber owns carries
@@ -1741,8 +1852,11 @@ Every logbook read is scoped by `user_id` on an index that leads with it; there 
 no query in the API whose cost grows with the size of the catalog or the
 number of climbers. Bootstrap also makes a temporary complete snapshot: 10,000
 ticks is 50 pages and 50 short build transactions. The bounds and the cost of a
-100,000-tick account are in [What it costs](#what-it-costs). Per-page climb
-lookups are batched. Measure p95 per route
+100,000-tick account are in [What it costs](#what-it-costs). Snapshot work runs on
+its own pool of two connections per process and feed pages on the partner pool;
+the arithmetic is in [db-connectivity.md](./db-connectivity.md#dedicated-pools).
+Per-page climb lookups are batched: one read for the climbs and two for their
+grades at the page's angles, never one per tick. Measure p95 per route
 before milestone 2 opens registration, against the read replica numbers in
 [postgres-query-costs.md](./postgres-query-costs.md).
 

@@ -77,6 +77,7 @@ describe('partner app registration', () => {
     const runtimeDatabase = createAuthorityDatabase('partner-registration-test');
     closeRuntimeDatabase = () => runtimeDatabase.close();
     runtime = await createPartnerAuthorityRuntime(runtimeDatabase.database, TEST_CONFIGURATION, {
+      logbook: { feed: db, snapshots: db },
       close: () => runtimeDatabase.close(),
     });
   });

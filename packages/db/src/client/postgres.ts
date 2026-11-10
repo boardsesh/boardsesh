@@ -283,6 +283,15 @@ export function createDedicatedPool(max: number, overrides: DedicatedPoolOverrid
   });
 }
 
+/**
+ * The full-schema drizzle handle `createDb()` builds, over a pool the caller
+ * owns (usually a `createDedicatedPool`), with the same connect retry. Closing
+ * the pool is still the caller's job.
+ */
+export function createDbOnPool(pool: PoolInstance): DbInstance {
+  return drizzle(withConnectRetry(pool), { schema: fullSchema, logger: sqlLogger });
+}
+
 export async function closePool(): Promise<void> {
   try {
     if (cache.client) {

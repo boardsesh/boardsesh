@@ -11,6 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { oauthConnections } from '../auth/partner-oauth';
 import { users } from '../auth/users';
 import { xid8 } from './logbook-changes';
 
@@ -56,11 +57,10 @@ export type LogbookSnapshotStatus = 'building' | 'ready' | 'too_large' | 'stalle
  * account's copy goes with it. `expires_at` is the build deadline until the copy
  * finishes, then one hour.
  *
- * `connection_id` has no foreign key yet: `oauth_connections` lands with the
- * partner OAuth schema (#7361), which is not in this stack. That rebase adds
- * `connection_id -> oauth_connections(id) ON DELETE CASCADE` with the 3 s lock
- * guard. A snapshot is already unreadable once its connection generation moves
- * on, whether or not the row is still here.
+ * `connection_id` cascades from `oauth_connections`, so deleting a connection
+ * row (its app deleted, or its climber's account) takes the copy with it. A
+ * Disconnect keeps the row and moves its generation on, which already makes
+ * every snapshot of the old generation unreadable.
  */
 export const logbookSnapshots = pgTable(
   'logbook_snapshots',
@@ -69,7 +69,9 @@ export const logbookSnapshots = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    connectionId: text('connection_id').notNull(),
+    connectionId: text('connection_id')
+      .notNull()
+      .references(() => oauthConnections.id, { onDelete: 'cascade' }),
     connectionGeneration: integer('connection_generation').notNull(),
     /** Feed generation when the snapshot started: every page and the final cursor carry it. */
     feedGeneration: uuid('feed_generation').notNull(),

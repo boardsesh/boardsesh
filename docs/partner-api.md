@@ -11,8 +11,8 @@ OAuth consent screen, and then:
 There is no application process and no commercial agreement. Every app gets
 the same API, the same scopes and the same limits.
 
-Status: draft v1, written before the endpoints exist. Field names and
-semantics here are what we intend to ship. Questions go to the Boardsesh team
+Status: draft v1. The milestone 1 endpoints are built and not yet open to
+apps. Field names and semantics here are what we intend to ship. Questions go to the Boardsesh team
 until milestone 2 publishes a support channel with the docs. Each section says which milestone
 of [integration-platform.md](./integration-platform.md) delivers it: the
 logbook first (milestone 1), workouts next (milestone 3), webhooks after that
@@ -412,6 +412,12 @@ async function sync(climber) {
   Cursors are opaque: do not parse or build them.
 - Sync when the climber opens your app, and in the background no more often
   than every 15 minutes per climber.
+- A `503` with `Retry-After` when you start or continue a full sync means the
+  snapshot cannot be made now: downloads are at capacity, or the logbook is too
+  large to download as one snapshot. Wait at least `Retry-After` seconds, which
+  can be an hour, before starting again. Starting a full sync more than twice a
+  minute for one climber answers `429`; following a sync already in progress is
+  never limited that way.
 
 What the feed guarantees:
 
@@ -436,9 +442,10 @@ What the feed guarantees:
 ### Expired cursors
 
 Incremental change history is retained for 90 days. Cursors outside retained
-history, expired snapshot cursors, or a cursor from before a database recovery
-answer `410` with `error: "cursor_expired"`. This can happen during a long
-bootstrap too; implement recovery even when syncing frequently.
+history, expired snapshot cursors, a cursor from before a database recovery,
+and a cursor from before the climber reconnected your app answer `410` with
+`error: "cursor_expired"`. This can happen during a long bootstrap too;
+implement recovery even when syncing frequently.
 
 Persist that a full sync is required, then start without a cursor. Stage and
 publish the completed replacement as above so ticks absent from the new
@@ -466,15 +473,15 @@ climber's.
   "angle": 40,
   "mirrored": false,
   "stars": 4,
-  "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+  "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
   "benchmark": false,
   "comment": "Finally stuck the cross-through",
   "climb": {
     "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
     "name": "Slopey Business",
     "board": { "type": "kilter", "layout": "Kilter Board Original" },
-    "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
-    "boardseshGrade": 4.2
+    "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
+    "boardseshGrade": null
   },
   "createdAt": "2026-10-20T18:42:15Z",
   "updatedAt": "2026-10-20T18:42:15Z"
@@ -498,12 +505,18 @@ climber's.
 | `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
 | `climb.board.layout` | Layout name, for display (`"Spray wall"` when the name is withheld) |
 | `climb.grade` | The community grade at this angle when you read it, or `null` when the climb has none at this angle. Check for `null` before reading `climb.grade.font` or `climb.grade.v`: a sync that throws on it fails on the same tick every time it retries. It drifts over time without the tick changing |
-| `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional; the model behind it may change |
+| `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Always `null` for now: its V-scale form is not published yet. Optional; the model behind it may change |
 
-A grade object is `{ "v": 4, "font": "6B+", "label": "6B+/V4" }`: `v` is an
+A grade object is `{ "v": 4, "font": "6B+", "label": "6b+/V4" }`: `v` is an
 integer or `null` where the board grade has no V equivalent, `font` the
-Fontainebleau grade, `label` the board's own label. Use whichever scale your
-climber prefers.
+Fontainebleau grade in capitals, `label` the board's own label as its grade
+table spells it. Use whichever scale your climber prefers.
+
+Your app sees every climb the climber has logged, including drafts and
+unlisted climbs set by others, with the same id, name, layout and grade as any
+other climb. The climber's logbook is theirs to share. The one exception is a
+climb on someone else's spray wall that is not public, described under
+`climb.name` above.
 
 The API does not include hold positions, other climbers' ticks or full board
 catalogs. If you need a catalog, the public nightly snapshots are documented

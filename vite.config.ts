@@ -763,6 +763,12 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-public-api-openapi.ts --check',
         cache: false,
       },
+      // A change to that document needs a changelog entry: the newest entry names
+      // its hash, and on a PR (PR_BASE_SHA) published entries may not change.
+      'check:public-api-changelog': {
+        command: 'node --import tsx scripts/check-public-api-changelog.ts',
+        cache: false,
+      },
       'check:changelog': {
         command: 'node --import tsx scripts/generate-changelog.ts --check',
         cache: false,

@@ -71,6 +71,11 @@ const partnerRevocationTriggerSchema = readFileSync(
   new URL('../../../db/drizzle/0300_partner_revocation_trigger.sql', import.meta.url),
   'utf8',
 );
+// Binds snapshots to their partner connection; needs both tables above.
+const logbookSnapshotsConnectionSchema = readFileSync(
+  new URL('../../../db/drizzle/0301_logbook_snapshots_connection_fk.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2336,4 +2341,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS logbook_snapshots;
   ${logbookSnapshotsSchema};
   ${partnerRevocationTriggerSchema}
+  ${logbookSnapshotsConnectionSchema};
 `;

@@ -244,6 +244,7 @@ describe('partner OAuth routes on the API host', () => {
     environment = await createPartnerTestEnvironment();
     runtime = await createPartnerAuthorityRuntime(environment.database, TEST_CONFIGURATION, {
       plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+      logbook: { feed: db, snapshots: db },
       close: async () => {},
     });
     const realTransaction = environment.database.transaction.bind(environment.database);
@@ -534,7 +535,7 @@ describe('partner OAuth routes on the API host', () => {
         authorization_endpoint: `${TEST_ISSUER}/oauth2/authorize`,
         token_endpoint: `${TEST_ISSUER}/oauth2/token`,
         revocation_endpoint: `${TEST_ISSUER}/oauth2/revoke`,
-        scopes_supported: ['profile:read', 'offline_access'],
+        scopes_supported: ['logbook:read', 'profile:read', 'offline_access'],
         response_types_supported: ['code'],
         response_modes_supported: ['query'],
         grant_types_supported: ['authorization_code', 'refresh_token'],

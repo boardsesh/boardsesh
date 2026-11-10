@@ -169,7 +169,7 @@
           "grade": {
             "v": 4,
             "font": "6B+",
-            "label": "6B+/V4"
+            "label": "6b+/V4"
           },
           "benchmark": false,
           "comment": "Finally stuck the cross-through",
@@ -183,9 +183,9 @@
             "grade": {
               "v": 4,
               "font": "6B+",
-              "label": "6B+/V4"
+              "label": "6b+/V4"
             },
-            "boardseshGrade": 4.2
+            "boardseshGrade": null
           },
           "createdAt": "2026-10-20T18:42:15Z",
           "updatedAt": "2026-10-20T18:42:15Z"
@@ -211,8 +211,8 @@
           "label": {
             "type": "string",
             "minLength": 1,
-            "description": "The board's own label for this grade.",
-            "example": "6B+/V4"
+            "description": "The board's own label for this grade, as its grade table spells it.",
+            "example": "6b+/V4"
           }
         },
         "required": [
@@ -224,7 +224,7 @@
         "example": {
           "v": 4,
           "font": "6B+",
-          "label": "6B+/V4"
+          "label": "6b+/V4"
         }
       },
       "TickClimb": {
@@ -280,8 +280,8 @@
               "number",
               "null"
             ],
-            "description": "The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional reading; the model may change.",
-            "example": 4.2
+            "description": "The Boardsesh universal grade, a decimal on the V scale, or `null`. Always `null` for now: its V-scale form is not published yet. Optional reading; the model may change.",
+            "example": null
           }
         },
         "required": [
@@ -302,9 +302,9 @@
           "grade": {
             "v": 4,
             "font": "6B+",
-            "label": "6B+/V4"
+            "label": "6b+/V4"
           },
-          "boardseshGrade": 4.2
+          "boardseshGrade": null
         }
       },
       "TickChange": {
@@ -340,7 +340,7 @@
             "grade": {
               "v": 4,
               "font": "6B+",
-              "label": "6B+/V4"
+              "label": "6b+/V4"
             },
             "benchmark": false,
             "comment": "Finally stuck the cross-through",
@@ -354,9 +354,9 @@
               "grade": {
                 "v": 4,
                 "font": "6B+",
-                "label": "6B+/V4"
+                "label": "6b+/V4"
               },
-              "boardseshGrade": 4.2
+              "boardseshGrade": null
             },
             "createdAt": "2026-10-20T18:42:15Z",
             "updatedAt": "2026-10-20T18:42:15Z"

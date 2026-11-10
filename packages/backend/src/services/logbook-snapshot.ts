@@ -8,23 +8,26 @@ import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
   LOGBOOK_FEED_MAX_PAGE_SIZE,
   LOGBOOK_FEED_MIN_PAGE_SIZE,
+  boundLogbookReadTransaction,
   logbookFeedAliasJoin,
   logbookFeedTickColumns,
   logbookVisibleTicksFilter,
   positionIsBefore,
   readLogbookFeedState,
+  ticksOf,
   type FeedTransaction,
   type LogbookFeedCursor,
   type LogbookFeedEntry,
   type LogbookFeedState,
   type LogbookFeedTick,
+  type LogbookPageReader,
 } from './logbook-feed';
 
 /**
  * The complete logbook snapshot a partner app downloads before following the
  * change feed. Design and proof: docs/integration-platform.md, "Complete
- * bootstrap and transition". Nothing calls this yet; L4's
- * `GET /v1/logbook/changes` will.
+ * bootstrap and transition". `GET /v1/logbook/changes` without a cursor, or
+ * with a snapshot cursor, drives it (handlers/public-api/logbook.ts).
  *
  * Hand-off. A snapshot captures the horizon H first, in its own transaction,
  * then copies the ticks over many short transactions. Every copied page reads
@@ -40,9 +43,9 @@ import {
  * request never holds a transaction across the build and an abandoned build
  * resumes from where it stopped.
  *
- * L4 must run these on a small dedicated pool, as many connections as there are
- * build slots plus one or two, so a cold chunk cannot hold a connection the
- * first-party queries need (`DB_POOL_MAX` defaults to 5).
+ * The API runs these on a small dedicated pool (`LOGBOOK_SNAPSHOT_POOL_MAX` in
+ * auth/partner/logbook-access.ts), so a cold chunk cannot hold a connection
+ * the first-party queries need (`DB_POOL_MAX` defaults to 5).
  */
 
 /** Readable for one hour from the moment the copy finishes, whether or not the reclaim job has run. */
@@ -117,6 +120,9 @@ export type LogbookSnapshotBinding = {
 
 export type LogbookSnapshotCursor = { snapshotId: string; position: number };
 
+/** A build that ended this way stays refused until its verdict expires, this many seconds from now. */
+export type LogbookSnapshotVerdict = { reason: 'too_large' | 'stalled'; retryAfterSeconds: number };
+
 export type LogbookSnapshotStart =
   | {
       status: 'started';
@@ -124,7 +130,12 @@ export type LogbookSnapshotStart =
       /** False when the call joined a snapshot that already existed: only real creations spend the rate limit. */
       created: boolean;
     }
-  | { status: 'unavailable'; reason: 'capacity' | 'too_large' | 'stalled' | 'busy' };
+  /**
+   * `creation_limited`: the caller said a new snapshot may not be created now
+   * (its creation limit is spent) and there was none to join.
+   */
+  | { status: 'unavailable'; reason: 'capacity' | 'busy' | 'creation_limited' }
+  | ({ status: 'unavailable' } & LogbookSnapshotVerdict);
 
 export type LogbookSnapshotBuildProgress =
   | { status: 'building' }
@@ -150,7 +161,8 @@ export type LogbookSnapshotPage =
       hasMore: true;
     }
   | { status: 'building' }
-  | { status: 'expired'; reason: LogbookSnapshotExpiredReason };
+  | { status: 'expired'; reason: Exclude<LogbookSnapshotExpiredReason, LogbookSnapshotVerdict['reason']> }
+  | ({ status: 'expired' } & LogbookSnapshotVerdict);
 
 export type LogbookSnapshotReclaimResult = {
   snapshotsRemoved: number;
@@ -162,6 +174,9 @@ export type LogbookSnapshotReclaimResult = {
 function snapshotIsLive(): SQL {
   return gt(logbookSnapshots.expiresAt, sql`now()`);
 }
+
+/** Whole seconds until the row expires, by the database clock, at least 1. */
+const secondsUntilExpiry = sql<number>`GREATEST(1, CEIL(EXTRACT(EPOCH FROM ${logbookSnapshots.expiresAt} - now())))::int`;
 
 /** The one rule that keeps a snapshot private to its connection. */
 function snapshotBelongsTo(binding: LogbookSnapshotBinding): SQL {
@@ -236,13 +251,17 @@ function snapshotCanBeJoined(
  * Nothing is retired until the new snapshot is certain to be created, so a
  * capacity refusal leaves the old one readable.
  *
+ * `createAllowed: false` still joins, and answers `creation_limited` where it
+ * would have created: the API passes it once the connection has spent its
+ * creation limit, so a retry that joins is never refused for that limit.
+ *
  * H is read before the row exists, and the row commits before any tick is
  * copied, so every copied page is read after H.
  */
 export async function startLogbookSnapshot(
   database: Database,
   binding: LogbookSnapshotBinding,
-  options: { maxStoredTicks?: number } = {},
+  options: { maxStoredTicks?: number; createAllowed?: boolean } = {},
 ): Promise<LogbookSnapshotStart> {
   try {
     return await createOrJoinSnapshot(database, binding, options);
@@ -257,7 +276,10 @@ export async function startLogbookSnapshot(
 async function createOrJoinSnapshot(
   database: Database,
   binding: LogbookSnapshotBinding,
-  { maxStoredTicks = LOGBOOK_SNAPSHOT_MAX_STORED_TICKS }: { maxStoredTicks?: number },
+  {
+    maxStoredTicks = LOGBOOK_SNAPSHOT_MAX_STORED_TICKS,
+    createAllowed = true,
+  }: { maxStoredTicks?: number; createAllowed?: boolean },
 ): Promise<LogbookSnapshotStart> {
   return database.transaction(async (transaction): Promise<LogbookSnapshotStart> => {
     await boundThisTransaction(transaction);
@@ -274,16 +296,19 @@ async function createOrJoinSnapshot(
         status: logbookSnapshots.status,
         feedGeneration: logbookSnapshots.feedGeneration,
         horizonTxid: logbookSnapshots.horizonTxid,
+        retryAfterSeconds: secondsUntilExpiry,
       })
       .from(logbookSnapshots)
       .where(and(snapshotBelongsTo(binding), ne(logbookSnapshots.status, 'retired'), snapshotIsLive()));
 
     if (existing && snapshotCanBeJoined(existing, feedState)) {
       if (existing.status === 'too_large' || existing.status === 'stalled') {
-        return { status: 'unavailable', reason: existing.status };
+        return { status: 'unavailable', reason: existing.status, retryAfterSeconds: existing.retryAfterSeconds };
       }
       return { status: 'started', cursor: { snapshotId: existing.id, position: 0 }, created: false };
     }
+
+    if (!createAllowed) return { status: 'unavailable', reason: 'creation_limited' };
 
     if ((await storedTicksAcrossSnapshots(transaction)) >= maxStoredTicks) {
       return { status: 'unavailable', reason: 'capacity' };
@@ -523,10 +548,24 @@ export async function advanceLogbookSnapshotBuild(
  *
  * The last page returns the feed cursor `(H, 0)` and `hasMore: true` so the app
  * keeps going into catch-up.
+ *
+ * A build that ended `too_large` or `stalled` answers `expired` with that
+ * reason and the seconds until its verdict lapses. `withinRead` runs for a page
+ * that serves ticks, in the page's transaction.
  */
 export async function readLogbookSnapshotPage(
   database: Database,
-  { binding, cursor, limit }: { binding: LogbookSnapshotBinding; cursor: LogbookSnapshotCursor; limit: number },
+  {
+    binding,
+    cursor,
+    limit,
+    withinRead,
+  }: {
+    binding: LogbookSnapshotBinding;
+    cursor: LogbookSnapshotCursor;
+    limit: number;
+    withinRead?: LogbookPageReader;
+  },
 ): Promise<LogbookSnapshotPage> {
   if (!Number.isInteger(limit) || limit < LOGBOOK_FEED_MIN_PAGE_SIZE || limit > LOGBOOK_FEED_MAX_PAGE_SIZE) {
     throw new RangeError(`Logbook feed limit must be ${LOGBOOK_FEED_MIN_PAGE_SIZE}-${LOGBOOK_FEED_MAX_PAGE_SIZE}`);
@@ -537,6 +576,7 @@ export async function readLogbookSnapshotPage(
 
   return database.transaction(
     async (transaction): Promise<LogbookSnapshotPage> => {
+      await boundLogbookReadTransaction(transaction);
       const feedState = await readLogbookFeedState(transaction);
       const [snapshot] = await transaction
         .select({
@@ -544,13 +584,14 @@ export async function readLogbookSnapshotPage(
           feedGeneration: logbookSnapshots.feedGeneration,
           horizonTxid: logbookSnapshots.horizonTxid,
           tickCount: logbookSnapshots.tickCount,
+          retryAfterSeconds: secondsUntilExpiry,
         })
         .from(logbookSnapshots)
         .where(and(eq(logbookSnapshots.id, cursor.snapshotId), snapshotBelongsTo(binding), snapshotIsLive()));
 
       if (!snapshot || snapshot.status === 'retired') return { status: 'expired', reason: 'snapshot_not_found' };
       if (snapshot.status === 'too_large' || snapshot.status === 'stalled') {
-        return { status: 'expired', reason: snapshot.status };
+        return { status: 'expired', reason: snapshot.status, retryAfterSeconds: snapshot.retryAfterSeconds };
       }
       if (snapshot.feedGeneration !== feedState.generation) {
         return { status: 'expired', reason: 'generation_mismatch' };
@@ -565,6 +606,7 @@ export async function readLogbookSnapshotPage(
       const ticks = end > start ? await readTickRange(transaction, cursor.snapshotId, start, end) : [];
 
       const entries = ticks.map((tick): LogbookFeedEntry => ({ type: 'tick', tick }));
+      await withinRead?.(transaction, ticksOf(entries));
       const next: Extract<LogbookSnapshotPage, { status: 'ok' }>['next'] =
         end < snapshot.tickCount
           ? { kind: 'snapshot', cursor: { snapshotId: cursor.snapshotId, position: end } }

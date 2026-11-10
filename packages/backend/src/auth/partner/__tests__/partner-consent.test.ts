@@ -811,7 +811,9 @@ describe('partner consent', () => {
         sql`update oauth_client set name = 'Sequence', uri = 'https://sequence.example', policy = 'https://sequence.example/privacy' where client_id = ${client.clientId}`,
       );
       const climber = await webClimber();
-      const authorization = await authorize(instance, client, climber.cookie);
+      const authorization = await authorize(instance, client, climber.cookie, {
+        scope: 'logbook:read profile:read offline_access',
+      });
       const details = await postJson(instance, '/oauth2/consent-details', climber.cookie, {
         oauth_query: authorization.oauthQuery,
       });
@@ -827,7 +829,9 @@ describe('partner consent', () => {
           termsUrl: null,
           redirectHost: new URL(client.redirectUri).host,
         },
+        // Decision 21: the one scope that reads "only me" ticks says so.
         scopes: [
+          { scope: 'logbook:read', includesOnlyMeTicks: true },
           { scope: 'profile:read', includesOnlyMeTicks: false },
           { scope: 'offline_access', includesOnlyMeTicks: false },
         ],
@@ -841,16 +845,17 @@ describe('partner consent', () => {
       expect(JSON.stringify(details.body)).not.toContain(client.owner.userId);
       // Reading them spends nothing.
       expect((await interactionFor(authorization.oauthQuery)).consumedAt).toBeNull();
-      // Decision 21, ready for L4: the one scope that reads "only me" ticks says so.
       expect(describeConsentScopes(['logbook:read'])).toEqual([{ scope: 'logbook:read', includesOnlyMeTicks: true }]);
     });
 
-    it('offer only published scopes: logbook:read cannot be asked for until its route ships', async () => {
-      expect(PARTNER_SCOPES).not.toContain('logbook:read');
+    it('offer only published scopes: logbook:read now that its routes ship, never a workout scope', async () => {
+      expect(PARTNER_SCOPES).toContain('logbook:read');
       const client = await consentClient();
       const climber = await webClimber();
-      const authorization = await authorize(instance, client, climber.cookie, { scope: 'logbook:read' });
-      expect(new URL(authorization.location).searchParams.get('error')).toBe('invalid_scope');
+      const logbook = await authorize(instance, client, climber.cookie, { scope: 'logbook:read' });
+      expect(new URL(logbook.location).pathname).toBe('/oauth/consent');
+      const workouts = await authorize(instance, client, climber.cookie, { scope: 'workouts:write' });
+      expect(new URL(workouts.location).searchParams.get('error')).toBe('invalid_scope');
     });
 
     it('say when approving reconnects an app the climber disconnected', async () => {

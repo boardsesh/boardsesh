@@ -11,12 +11,15 @@ import type { Database } from '../db/client';
 
 /**
  * Reads the logbook change feed: the proof and the protocol are in
- * docs/integration-platform.md, "Incremental sync". Nothing calls this yet; the
- * snapshot bootstrap and the HTTP routes (`/v1/logbook/changes`) build on it.
+ * docs/integration-platform.md, "Incremental sync". `GET /v1/logbook/changes`
+ * (handlers/public-api/logbook.ts) and the snapshot bootstrap build on it.
  *
  * Every step of one page runs in a single read-only REPEATABLE READ
  * transaction, so the horizon, the feed generation, the watermark and the rows
- * all come from the same snapshot.
+ * all come from the same snapshot. The transaction is bounded like the partner
+ * OAuth ones (5 s per statement, 2 s per lock wait, 10 s idle), so a slow page
+ * cannot hold a pool connection; a caller answers 57014 and 55P03 as an empty
+ * page at the same cursor.
  */
 
 /** A point in the change stream. Decimal strings: `xid8` overflows a JS number. */
@@ -74,6 +77,30 @@ export type LogbookFeedState = {
 };
 
 export type FeedTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * Runs inside a page's read transaction, after the rows are read and before it
+ * ends, with the ticks the page serves (in order). The API uses it to check the
+ * connection again and to read the climbs' public metadata under the privacy
+ * rules as they stand at delivery, in the same snapshot as the ticks. Throwing
+ * from it fails the page.
+ */
+export type LogbookPageReader = (transaction: FeedTransaction, ticks: LogbookFeedTick[]) => Promise<void>;
+
+const STATEMENT_TIMEOUT = '5000ms';
+const LOCK_TIMEOUT = '2000ms';
+const IDLE_IN_TRANSACTION_TIMEOUT = '10s';
+
+/**
+ * Scoped to the caller's transaction. In REPEATABLE READ this statement takes
+ * the transaction snapshot, which every later statement shares, so the horizon
+ * argument is unchanged.
+ */
+export async function boundLogbookReadTransaction(transaction: FeedTransaction): Promise<void> {
+  await transaction.execute(
+    sql`SELECT set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true), set_config('lock_timeout', ${LOCK_TIMEOUT}, true), set_config('idle_in_transaction_session_timeout', ${IDLE_IN_TRANSACTION_TIMEOUT}, true)`,
+  );
+}
 
 const ROW_COUNT_DIGITS = /^\d+$/;
 
@@ -184,7 +211,12 @@ async function loadVisibleTicks(
  */
 export async function readLogbookFeedPage(
   database: Database,
-  { userId, cursor, limit }: { userId: string; cursor: LogbookFeedCursor; limit: number },
+  {
+    userId,
+    cursor,
+    limit,
+    withinRead,
+  }: { userId: string; cursor: LogbookFeedCursor; limit: number; withinRead?: LogbookPageReader },
 ): Promise<LogbookFeedPage> {
   if (!Number.isInteger(limit) || limit < LOGBOOK_FEED_MIN_PAGE_SIZE || limit > LOGBOOK_FEED_MAX_PAGE_SIZE) {
     throw new RangeError(`Logbook feed limit must be ${LOGBOOK_FEED_MIN_PAGE_SIZE}-${LOGBOOK_FEED_MAX_PAGE_SIZE}`);
@@ -193,6 +225,7 @@ export async function readLogbookFeedPage(
 
   return database.transaction(
     async (transaction): Promise<LogbookFeedPage> => {
+      await boundLogbookReadTransaction(transaction);
       const state = await readLogbookFeedState(transaction);
 
       if (cursor.generation !== state.generation) {
@@ -232,6 +265,7 @@ export async function readLogbookFeedPage(
         const tick = visibleTicks.get(tickUuid);
         return tick ? { type: 'tick', tick } : { type: 'tick.deleted', id: tickUuid };
       });
+      await withinRead?.(transaction, ticksOf(entries));
 
       const hasMore = changes.length === limit;
       // A full page resumes after its last row. A short one has read everything
@@ -242,6 +276,32 @@ export async function readLogbookFeedPage(
         : { txid: state.horizon, seq: '0' };
 
       return { status: 'ok', generation: state.generation, horizon: state.horizon, entries, next, hasMore };
+    },
+    { isolationLevel: 'repeatable read', accessMode: 'read only' },
+  );
+}
+
+/** The ticks a page serves, in entry order. */
+export function ticksOf(entries: readonly LogbookFeedEntry[]): LogbookFeedTick[] {
+  return entries.flatMap((entry) => (entry.type === 'tick' ? [entry.tick] : []));
+}
+
+/**
+ * One of a climber's visible ticks by its uuid, through the same twin rule and
+ * columns as the feed, or null when it is gone, hidden as a twin, or another
+ * climber's: the API answers `404` for all three, so a caller cannot tell them
+ * apart. Bounded and read-only like a feed page, with the same `withinRead`.
+ */
+export async function readLogbookTick(
+  database: Database,
+  { userId, tickUuid, withinRead }: { userId: string; tickUuid: string; withinRead?: LogbookPageReader },
+): Promise<LogbookFeedTick | null> {
+  return database.transaction(
+    async (transaction): Promise<LogbookFeedTick | null> => {
+      await boundLogbookReadTransaction(transaction);
+      const tick = (await loadVisibleTicks(transaction, userId, [tickUuid])).get(tickUuid) ?? null;
+      await withinRead?.(transaction, tick ? [tick] : []);
+      return tick;
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );
