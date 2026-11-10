@@ -316,7 +316,7 @@ export function createPartnerRegistration({
     },
 
     async createApp(database, developerId, rawInput) {
-      const input = normalizePartnerAppInput(rawInput);
+      const input = normalizePartnerAppInput(rawInput, configuration.developerTermsVersion);
       const created = await inRegistrationTransaction(database, async (transaction) => {
         // Serializes this developer's registrations, so the app count below holds under a race.
         await lockDeveloper(transaction, developerId);

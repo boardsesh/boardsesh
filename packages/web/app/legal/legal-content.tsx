@@ -82,7 +82,6 @@ export default function LegalContent() {
           </MuiLink>{' '}
           {t('legal.hostedService.p2End')}
         </Prose>
-        {/* DRAFT (#6981): p3's integration sentence mirrors LEGAL.md and waits for the owner's approval. */}
         <Prose>{t('legal.hostedService.p3')}</Prose>
         <Prose>
           {t('legal.hostedService.p4Start')}{' '}

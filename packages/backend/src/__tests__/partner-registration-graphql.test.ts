@@ -1,4 +1,3 @@
-import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { randomInt, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request } from 'node:http';
@@ -49,6 +48,9 @@ const LIST_QUERY = /* GraphQL */ `
     }
   }
 `;
+/** A published terms version for this deployment; the shipped one may still be a draft. */
+const TERMS_VERSION = 'graphql-test-terms-1';
+
 const APP_INPUT: CreateOAuthClientInput = {
   name: 'Hangboard Planner',
   publisherName: 'Planner Labs',
@@ -57,7 +59,7 @@ const APP_INPUT: CreateOAuthClientInput = {
   applicationType: 'WEB',
   tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
   redirectUris: ['https://planner.example.test/oauth/boardsesh'],
-  acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+  acceptedTermsVersion: TERMS_VERSION,
 };
 
 interface GraphQLReply {
@@ -276,6 +278,7 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       PARTNER_OAUTH_MODE: 'allowlist',
       PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId}`,
       PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
+      PARTNER_DEVELOPER_TERMS_VERSION: TERMS_VERSION,
     });
   }, TEST_DEADLINE_MS);
 

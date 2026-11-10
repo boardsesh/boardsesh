@@ -11,6 +11,9 @@ import type { PartnerAuthorityConfiguration } from '../configuration';
 import { createPartnerDatabaseHandle, handlePartnerRequest } from '../transaction';
 import { partnerAdapterSchema, type PartnerDatabase } from '../tables';
 
+/** A published (non-draft) terms version, so tests can register apps whatever the shipped terms say. */
+export const TEST_DEVELOPER_TERMS_VERSION = 'test-terms-2026-11-10';
+
 export const TEST_CONFIGURATION: PartnerAuthorityConfiguration = {
   issuer: 'https://api.boardsesh.test/api/auth',
   resource: 'https://api.boardsesh.test/v1',
@@ -19,6 +22,7 @@ export const TEST_CONFIGURATION: PartnerAuthorityConfiguration = {
   // The backend test setup sets NEXTAUTH_SECRET to this, so cookies the real
   // NextAuth encoder writes in a test decrypt here too.
   nextAuthSecret: process.env.NEXTAUTH_SECRET ?? 'boardsesh-test-session-identity-secret',
+  developerTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
 export const TEST_OAUTH_OPTIONS = partnerOAuthOptions(TEST_CONFIGURATION);

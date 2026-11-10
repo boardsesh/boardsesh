@@ -1,4 +1,3 @@
-import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -37,6 +36,7 @@ import {
   freshClientIp,
   ISSUER,
   nowSeconds,
+  LAUNCH_TERMS_VERSION,
   PARTNER_SECRET,
   REGISTER_MUTATION,
   RESOURCE,
@@ -297,6 +297,7 @@ const MAIN_DEPLOYMENT = {
   PARTNER_OAUTH_MODE: 'allowlist',
   PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
   PARTNER_OAUTH_DEVELOPER_ALLOWLIST: developerPool.join(','),
+  PARTNER_DEVELOPER_TERMS_VERSION: LAUNCH_TERMS_VERSION,
 };
 let appCounter = 0;
 
@@ -333,7 +334,7 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
         applicationType: native ? 'NATIVE' : 'WEB',
         tokenEndpointAuthMethod: authMethod,
         redirectUris,
-        acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+        acceptedTermsVersion: LAUNCH_TERMS_VERSION,
       },
     },
     { bearer: await firstPartyToken(developerId) },
@@ -687,7 +688,7 @@ describe('partner OAuth on, in the real server', () => {
             applicationType: 'WEB',
             tokenEndpointAuthMethod: 'NONE',
             redirectUris: ['https://outside.example.test/cb'],
-            acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+            acceptedTermsVersion: LAUNCH_TERMS_VERSION,
           },
         },
         { bearer: await firstPartyToken(outsider) },
@@ -936,7 +937,7 @@ describe('partner OAuth on, in the real server', () => {
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',
                 redirectUris: ['https://token.example.test/cb'],
-                acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+                acceptedTermsVersion: LAUNCH_TERMS_VERSION,
               },
             },
             { bearer },
@@ -2555,7 +2556,7 @@ describe('partner OAuth on, in the real server', () => {
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',
                 redirectUris: ['https://outside.example.test/cb'],
-                acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+                acceptedTermsVersion: LAUNCH_TERMS_VERSION,
               },
             },
             { bearer: await firstPartyToken(outsider) },

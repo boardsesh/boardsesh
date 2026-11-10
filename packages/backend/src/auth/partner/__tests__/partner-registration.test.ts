@@ -1,4 +1,3 @@
-import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { createHash, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
@@ -35,6 +34,7 @@ import {
   createAuthorityDatabase,
   createPartnerTestEnvironment,
   TEST_CONFIGURATION,
+  TEST_DEVELOPER_TERMS_VERSION,
   TEST_OAUTH_OPTIONS,
   TEST_RESOURCE,
   type PartnerTestEnvironment,
@@ -53,7 +53,7 @@ const APP_INPUT = {
   applicationType: 'web',
   tokenEndpointAuthMethod: 'client_secret_post',
   redirectUris: ['https://planner.example.test/oauth/boardsesh'],
-  acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+  acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
 const NATIVE_PUBLIC_INPUT = {
@@ -64,7 +64,7 @@ const NATIVE_PUBLIC_INPUT = {
   applicationType: 'native',
   tokenEndpointAuthMethod: 'none',
   redirectUris: ['http://127.0.0.1/callback', 'com.example.cli:/oauth/boardsesh'],
-  acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+  acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
 async function refusal(promise: Promise<unknown>): Promise<PartnerRegistrationError> {
@@ -179,7 +179,7 @@ describe('partner app registration', () => {
         maxActiveConnections: 25,
         maxNewConnectionsPerDay: 20,
         suspendedAt: null,
-        termsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
+        termsVersion: TEST_DEVELOPER_TERMS_VERSION,
       });
       // Accepted during this registration, by the database row's own account.
       expect(policy.termsAcceptedAt).toBeInstanceOf(Date);
@@ -213,6 +213,29 @@ describe('partner app registration', () => {
         expect(refused.message).toMatch(/Accept the current Boardsesh developer terms/);
       }
       expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
+    });
+
+    it("registers nothing while the deployment's developer terms are a draft", async () => {
+      const draftDatabase = createAuthorityDatabase('partner-registration-draft-terms');
+      try {
+        const draftRuntime = await createPartnerAuthorityRuntime(
+          draftDatabase.database,
+          { ...TEST_CONFIGURATION, developerTermsVersion: '2026-11-10-draft' },
+          { logbook: { feed: db, snapshots: db }, close: () => draftDatabase.close() },
+        );
+        const developerId = await createDeveloper();
+        const refused = await refusal(
+          draftRuntime.registration.createApp(consoleDatabase, developerId, {
+            ...APP_INPUT,
+            acceptedTermsVersion: '2026-11-10-draft',
+          }),
+        );
+        expect(refused.reason).toBe('terms_unpublished');
+        expect(refused.message).toMatch(/^Developer terms are not published yet/);
+        expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
+      } finally {
+        await draftDatabase.close();
+      }
     });
 
     it('ignores every hazard a caller slips into the input, and refuses private_key_jwt', async () => {

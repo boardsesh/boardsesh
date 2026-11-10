@@ -1,4 +1,4 @@
-import { PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+import { PARTNER_DEVELOPER_TERMS_VERSION, PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
 
 /** Shared with the www consent pages, which send the browser back to it. */
 export const PARTNER_ISSUER = PARTNER_OAUTH_ISSUER;
@@ -44,6 +44,12 @@ export interface PartnerAuthorityConfiguration {
    * climber here. Read-only: the authority never writes that cookie.
    */
   nextAuthSecret: string;
+  /**
+   * The developer terms a registration must accept. Registration is refused
+   * while it is a draft (ends in `-draft`), so no app registers against text
+   * the owner has not approved.
+   */
+  developerTermsVersion: string;
 }
 
 export class PartnerAuthorityConfigurationError extends Error {
@@ -92,6 +98,9 @@ export function readPartnerAuthorityConfiguration(
     webOrigin: PARTNER_WEB_ORIGIN,
     secrets: parsePartnerSecrets(environment.PARTNER_OAUTH_SECRETS),
     nextAuthSecret: requireNextAuthSecret(environment.NEXTAUTH_SECRET),
+    // The shared version the console shows. Production leaves the variable unset;
+    // tests set their own published version, since the shipped one may be a draft.
+    developerTermsVersion: environment.PARTNER_DEVELOPER_TERMS_VERSION?.trim() || PARTNER_DEVELOPER_TERMS_VERSION,
   };
 }
 

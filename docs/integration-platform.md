@@ -1399,11 +1399,16 @@ component state only: never in the React Query cache, a URL or a log.
 Registering needs the developer terms box ticked; the form links to
 `/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
 `PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.
-The backend refuses any other value with `BAD_USER_INPUT`, so a console left
-open across a terms change asks the developer to reload, and writes the version
-and the time to `oauth_app_policy.terms_version` and `terms_accepted_at`. An edit
-does not ask again, and apps registered before this have both columns empty. The
-route
+The backend takes its own copy of the version
+(`PartnerAuthorityConfiguration.developerTermsVersion`: the shared constant,
+unless `PARTNER_DEVELOPER_TERMS_VERSION` is set in its environment, which only
+tests do). While that version ends in `-draft` it refuses every registration with
+`BAD_USER_INPUT`, reason `TERMS_UNPUBLISHED`, "Developer terms are not published
+yet", in every mode that reaches registration. Otherwise it refuses any other
+accepted value with `BAD_USER_INPUT`, so a console left open across a terms change
+asks the developer to reload, and writes the version and the time to
+`oauth_app_policy.terms_version` and `terms_accepted_at`. An edit does not ask
+again, and apps registered before this have both columns empty. The route
 sends `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `no-referrer` and
 `no-store`, and loads no ad pixel. PostHog on www is the lite SDK with no
 autocapture or replay, so it never sees the page's text.
@@ -2206,14 +2211,15 @@ What LEGAL.md implies:
   its service needs our written permission, and we do not currently grant it".
   Read literally, that covers DivePeaks. The intent (the Boardz decision,
   October 2026) is about apps that run *on* Boardsesh: forks and alternative
-  clients. The paragraph now names those (accounts, climbing, board control or
-  sessions on Boardsesh's servers) and says that connecting a climber's account
-  through the OAuth API, within the published scopes and under the developer
-  terms, is an integration that needs no further permission. The www `/legal`
-  page carries the same paragraph in every locale (`legal.hostedService.p3`).
-  The scope list enforces that line technically: nothing on it lets an app
-  control a board, run a session or browse the catalog. **Draft until the owner
-  approves it**; an HTML comment in LEGAL.md marks it.
+  clients. Proposed wording, waiting for the owner: name those (accounts,
+  climbing, board control or sessions on Boardsesh's servers) and say that
+  connecting a climber's account through the OAuth API, within the published
+  scopes and under the developer terms, is an integration that needs no further
+  permission. The www `/legal` page carries the same paragraph in every locale
+  (`legal.hostedService.p3`). The scope list enforces that line technically:
+  nothing on it lets an app control a board, run a session or browse the
+  catalog. **Neither LEGAL.md nor `/legal` changes until the owner approves the
+  text**; the proposal for both is in the description of #7411.
 - **Developer terms** at www `/developers/terms`, behind the same
   `developer-console` flag as the console, English in every locale. They cover:
   use data only for what the climber connected the app for; no sale, rental,
@@ -2224,19 +2230,22 @@ What LEGAL.md implies:
   hours; rate limits and scopes respected; no catalog copying; compatibility
   wording, not endorsement ("Works with Boardsesh"), and board brands only to
   name boards; and Boardsesh may suspend or delete an app that breaks them.
-  Registration requires the current version (below). **Draft until the owner
-  approves it**: the page shows "Draft, not in force" and the version ends in
-  `-draft`.
+  Registration requires the current version (below), and **refuses every app
+  while that version is a draft**: the shipped `PARTNER_DEVELOPER_TERMS_VERSION`
+  ends in `-draft` until the owner approves the text, the page shows "Draft, not
+  in force", and the console's register form answers "Developer terms are not
+  published yet".
 - **Privacy policy**: an "Apps you connect" section on www `/privacy`, shown
   only while the web's `PARTNER_OAUTH_MODE` is not `off`, in every locale. It
   says what an app can receive (display name and photo; every tick, "Only me"
   ones included; each tick's climb with name, grade, board and layout, also when
   someone else set it and it is a draft or unlisted; but on someone else's
   non-public Spraywall neither the climb's name nor the Spraywall's), that the
-  app's own policy governs the data afterwards, how to disconnect, that a
-  password reset disconnects every app, and that disconnecting or deleting the
-  account does not delete copies an app already holds. **Draft until the owner
-  approves it.**
+  app's own policy governs the data afterwards, how to disconnect, that any
+  password change (a reset, or setting one for the first time) disconnects
+  every app, and that disconnecting or deleting the account does not delete
+  copies an app already holds. **Draft until the owner approves it**; it shows
+  only once partner apps are on, which itself waits for that approval (gate 9).
 - **Trademarks**: the docs say "Kilter", "Tension", "MoonBoard" only to name
   board types, never to suggest the API is an official channel for them.
 
@@ -2353,7 +2362,7 @@ stays `off` until step 1 of stage A.
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
-| 9 | The owner has approved the `LEGAL.md` sentence, the developer terms and the privacy paragraph, removed the draft markers and set `PARTNER_DEVELOPER_TERMS_VERSION` to the approval date | The terms page no longer says "Draft, not in force" |
+| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and set `PARTNER_DEVELOPER_TERMS_VERSION` to the approval date, which opens registration | The terms page no longer says "Draft, not in force"; the console registers an app |
 
 ### Turning it on and off
 

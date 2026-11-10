@@ -102,6 +102,8 @@ const REFUSAL_CODES: Record<PartnerRegistrationRefusal, string> = {
   invalid_input: 'BAD_USER_INPUT',
   app_limit_reached: 'BAD_USER_INPUT',
   no_secret: 'BAD_USER_INPUT',
+  // The console shows the message in the form: registration waits for the terms.
+  terms_unpublished: 'BAD_USER_INPUT',
   email_not_verified: 'FORBIDDEN',
   suspended: 'FORBIDDEN',
   not_found: 'NOT_FOUND',
