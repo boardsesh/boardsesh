@@ -711,9 +711,10 @@ the backend, so the pages need no database or backend call to render.
   once, on the response that starts the provider round trip (`POST
   /api/auth/signin/<provider>`, redirect or JSON `url`) or ends it
   (`/api/auth/callback/<provider>`), by that flow's own callback URL: a callback-url
-  cookie the same response sets, else the `<callback-url>.<scope>` cookie a
-  `backend-staging` flow retires, else, only when no scoped cookie exists, the base
-  cookie the legacy start wrote. The later hops (`/api/auth/error`,
+  cookie the same response sets; else, at a start, the `callbackUrl` the request
+  posted (a start refused before NextAuth runs sets no cookie); else, at a
+  callback, the `<callback-url>.<scope>` cookie a `backend-staging` flow retires,
+  or, only when no scoped cookie exists, the base cookie the legacy start wrote. The later hops (`/api/auth/error`,
   `/api/auth/signin`) are never rewritten, because by then the base cookie may be a
   stale one, such as the partner page kept from "Not you? Sign out". Only the
   partner page's path is ever written, never an origin.

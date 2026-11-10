@@ -422,6 +422,24 @@ describe('POST /api/auth/[...nextauth]', () => {
       expect(response.headers.get('Location')).toBe('https://www.boardsesh.com/api/auth/error?error=OAuthSignin');
     });
 
+    it('judges a refused sign-in start by the callbackUrl it posted, not the stale partner cookie', async () => {
+      const refused = { url: 'https://www.boardsesh.com/auth/error?error=AuthBackendUnavailable' };
+      nextAuthHandlerMock.mockResolvedValueOnce(Response.json(refused, { status: 503 }));
+      const startRequest = new NextRequest('https://www.boardsesh.com/api/auth/signin/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: callbackCookie },
+        body: new URLSearchParams({
+          csrfToken: 'csrf-token',
+          callbackUrl: 'https://www.boardsesh.com/auth/login',
+          json: 'true',
+        }),
+      });
+
+      const response = await POST(startRequest, routeContext(startRequest));
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual(refused);
+    });
+
     it('lets a successful callback continue to the page as NextAuth sends it', async () => {
       nextAuthHandlerMock.mockResolvedValueOnce(
         new Response(null, { status: 302, headers: { Location: partnerReturn } }),

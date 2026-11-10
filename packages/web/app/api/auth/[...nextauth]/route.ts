@@ -5,7 +5,10 @@ import { getToken } from 'next-auth/jwt';
 import { type NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
-import { withPartnerSignInFailureReturn } from '@/app/lib/partner-oauth/sign-in-failure-return';
+import {
+  readSignInStartCallbackUrl,
+  withPartnerSignInFailureReturn,
+} from '@/app/lib/partner-oauth/sign-in-failure-return';
 import {
   createPasswordCommandAuthRequest,
   limitPasswordLoginPerClient,
@@ -255,5 +258,7 @@ export async function GET(request: NextRequest, context: NextAuthRouteContext): 
 }
 
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context));
+  // A sign-in start's own callbackUrl, read before NextAuth consumes the body.
+  const startCallbackUrl = await readSignInStartCallbackUrl(request);
+  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context), startCallbackUrl);
 }
