@@ -115,7 +115,7 @@ export default function AppCard({ app, locale, onEdit, onRotate, onDelete, onCop
         </Box>
 
         <Box component="dl" sx={{ m: 0 }}>
-          <DetailRow term={t('form.clientType')}>
+          <DetailRow term={t('app.clientTypeTerm')}>
             <Typography variant="body2">{t(`app.auth.${app.tokenEndpointAuthMethod}`)}</Typography>
           </DetailRow>
           <DetailRow term={t('app.redirectUris')}>

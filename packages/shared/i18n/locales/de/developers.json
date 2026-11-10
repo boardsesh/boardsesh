@@ -43,6 +43,7 @@
       "WEB": "Web-App",
       "NATIVE": "Native App"
     },
+    "clientTypeTerm": "Client-Typ",
     "auth": {
       "NONE": "Öffentlich: kein Secret, nur PKCE",
       "CLIENT_SECRET_BASIC": "Vertraulich: Secret in einem HTTP-Basic-Header",
