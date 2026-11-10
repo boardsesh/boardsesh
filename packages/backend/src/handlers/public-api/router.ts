@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { renderPublicApiDocument } from '@boardsesh/public-api';
 import { loadPartnerAuthority } from '../../auth/partner/load-authority';
 import { readPartnerOAuthMode, type PartnerOAuthMode } from '../../auth/partner/mode';
 import { getMediaPublicBaseUrl } from '../../storage/s3';
@@ -15,16 +16,24 @@ import {
   RateLimitLedger,
 } from '../partner-rate-limits';
 import {
-  apiErrorBody,
   matchPublicApiPreflight,
   matchPublicApiRoute,
   parseBearerAuthorization,
   presentMe,
-  type PublicApiErrorCode,
-  type PublicApiRoute,
+  type PublicApiRequestRoute,
 } from './http';
+import { serveLogbookChanges, serveLogbookTick } from './logbook';
+import {
+  CHALLENGE_INVALID_TOKEN,
+  CHALLENGE_NO_TOKEN,
+  errorOutcome,
+  serverError,
+  unauthorized,
+  unavailable,
+  type ApiOutcome,
+} from './outcome';
 
-type PartnerRuntime = NonNullable<Awaited<ReturnType<typeof loadPartnerAuthority>>>;
+export type PartnerRuntime = NonNullable<Awaited<ReturnType<typeof loadPartnerAuthority>>>;
 type PartnerRuntimeLoader = (mode: PartnerOAuthMode) => Promise<PartnerRuntime | null>;
 type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 
@@ -52,53 +61,10 @@ const INVALID_TOKENS_PER_IP = 600;
  */
 const FAILED_LOOKUPS_BEFORE_OWN_LANE = 30;
 
-const HOLD_RETRY_AFTER_SECONDS = '60';
-const UNAVAILABLE_RETRY_AFTER_SECONDS = '2';
-
-/** RFC 6750 section 3. A request with no credentials gets the scheme alone. */
-const CHALLENGE_NO_TOKEN = 'Bearer';
-const CHALLENGE_INVALID_TOKEN = 'Bearer error="invalid_token"';
-
-interface ApiOutcome {
-  status: number;
-  /** Already checked against the contract. Absent for a 204. */
-  body?: object;
-  headers?: Record<string, string>;
-  /** For the log line only. */
-  refusal?: string;
-}
-
-function errorOutcome(
-  status: number,
-  error: PublicApiErrorCode,
-  message: string,
-  requestId: string,
-  headers: Record<string, string> = {},
-  refusal?: string,
-): ApiOutcome {
-  return { status, body: apiErrorBody(error, message, requestId), headers, refusal };
-}
-
-function unauthorized(requestId: string, challenge: string, refusal: string): ApiOutcome {
-  return errorOutcome(
-    401,
-    'invalid_token',
-    'The access token is missing, expired or revoked. Refresh once and retry.',
-    requestId,
-    { 'www-authenticate': challenge },
-    refusal,
-  );
-}
-
-function unavailable(requestId: string, retryAfterSeconds = UNAVAILABLE_RETRY_AFTER_SECONDS): ApiOutcome {
-  return errorOutcome(503, 'server_error', 'The server is busy. Try again shortly.', requestId, {
-    'retry-after': retryAfterSeconds,
-  });
-}
-
-function serverError(requestId: string): ApiOutcome {
-  return errorOutcome(500, 'server_error', 'Something went wrong on our side. Retry with backoff.', requestId);
-}
+const HOLD_RETRY_AFTER_SECONDS = 60;
+const RUNTIME_UNAVAILABLE_RETRY_AFTER_SECONDS = '2';
+/** The document changes only with a deploy. */
+const OPENAPI_CACHE_CONTROL = 'public, max-age=300';
 
 function requestHasBody(req: IncomingMessage): boolean {
   const declaredLength = Number(req.headers['content-length'] ?? 0);
@@ -115,11 +81,13 @@ export interface PublicApiHandlerOptions {
 export type PublicApiHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 
 /**
- * Serves the public `/v1` API on the API host: `GET /v1/me` and
- * `DELETE /v1/connection`. Shares `PARTNER_OAUTH_MODE` with the OAuth routes,
- * read once here from the environment. With `off` the returned handler only
- * ever answers `false`, and nothing has loaded Better Auth or opened a pool.
- * Answers `false` for anything else, so the API host's 404 stands.
+ * Serves the public `/v1` API on the API host: `GET /v1/me`,
+ * `DELETE /v1/connection`, `GET /v1/logbook/changes`,
+ * `GET /v1/logbook/ticks/{id}` and the OpenAPI document. Shares
+ * `PARTNER_OAUTH_MODE` with the OAuth routes, read once here from the
+ * environment. With `off` the returned handler only ever answers `false`, and
+ * nothing has loaded Better Auth or opened a pool. Answers `false` for anything
+ * else, so the API host's 404 stands.
  */
 export function createPublicApiHandler({
   mode = readPartnerOAuthMode(),
@@ -127,6 +95,8 @@ export function createPublicApiHandler({
   mediaBaseUrl = getMediaPublicBaseUrl,
 }: PublicApiHandlerOptions = {}): PublicApiHandler {
   if (mode === 'off') return async () => false;
+
+  let openApiDocument: string | undefined;
 
   async function loadRuntimeForRequest(): Promise<PartnerRuntime | null> {
     try {
@@ -138,19 +108,31 @@ export function createPublicApiHandler({
   }
 
   async function serveForPrincipal(
-    route: PublicApiRoute,
+    req: IncomingMessage,
+    route: PublicApiRequestRoute,
     runtime: PartnerRuntime,
     principal: PartnerApiPrincipal,
     requestId: string,
+    releaseApiPermit: () => void,
   ): Promise<ApiOutcome> {
-    if (route.kind === 'me') {
-      const climber = await runtime.api.readClimber(principal);
-      if (!climber) return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, 'climber_gone');
-      return { status: 200, body: presentMe(climber, mediaBaseUrl()) };
+    switch (route.kind) {
+      case 'me': {
+        const climber = await runtime.api.readClimber(principal);
+        if (!climber) return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, 'climber_gone');
+        return { status: 200, body: presentMe(climber, mediaBaseUrl()) };
+      }
+      case 'connection': {
+        const outcome = await runtime.api.disconnect(principal);
+        if (outcome === 'token_invalid') return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, 'changed_under_lock');
+        return { status: 204 };
+      }
+      case 'logbook-changes':
+        return serveLogbookChanges({ logbook: runtime.logbook, principal, requestId, releaseApiPermit }, req.url ?? '');
+      case 'logbook-tick':
+        return serveLogbookTick({ logbook: runtime.logbook, principal, requestId, releaseApiPermit }, route.tickId);
+      case 'openapi':
+        throw new Error('The OpenAPI document is served without a token.');
     }
-    const outcome = await runtime.api.disconnect(principal);
-    if (outcome === 'token_invalid') return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, 'changed_under_lock');
-    return { status: 204 };
   }
 
   /**
@@ -161,11 +143,12 @@ export function createPublicApiHandler({
    * A failed lookup charges its address, and only a failed lookup can be
    * refused for that count. An app's and a connection's budgets are charged
    * only once a token for them has passed, so a caller without one cannot
-   * spend either.
+   * spend either. Snapshot work hands the permit back before it starts and
+   * runs on its own pool, so a build never holds a `/v1` connection.
    */
   async function serveRequest(
     req: IncomingMessage,
-    route: PublicApiRoute,
+    route: PublicApiRequestRoute,
     runtime: PartnerRuntime,
     clientIp: string,
     ledger: RateLimitLedger,
@@ -192,7 +175,7 @@ export function createPublicApiHandler({
       authenticated(principal.clientId);
       await ledger.consume(`${principal.clientId}:${principal.userId}`, 'api-connection', API_PER_CONNECTION);
       await ledger.consume(principal.clientId, 'api-app', API_PER_APP);
-      return await serveForPrincipal(route, runtime, principal, requestId);
+      return await serveForPrincipal(req, route, runtime, principal, requestId, () => permit.release());
     } catch (error) {
       if (error instanceof PartnerRateLimited) throw error;
       if (runtime.api.isDatabaseBusy(error)) return unavailable(requestId);
@@ -254,7 +237,7 @@ export function createPublicApiHandler({
     res.end(JSON.stringify(outcome.body));
   }
 
-  async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PublicApiRoute): Promise<void> {
+  async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PublicApiRequestRoute): Promise<void> {
     const requestId = `req_${randomBytes(12).toString('base64url')}`;
     const ledger = new RateLimitLedger();
     const clientIp = getTrustedClientIp(req);
@@ -271,13 +254,9 @@ export function createPublicApiHandler({
         : unavailable(requestId);
     } catch (error) {
       if (error instanceof PartnerRateLimited) {
-        outcome = errorOutcome(
-          429,
-          'rate_limited',
-          'Too many requests. Wait for Retry-After.',
-          requestId,
-          partnerRateLimitedHeaders(error),
-        );
+        outcome = errorOutcome(429, 'rate_limited', 'Too many requests. Wait for Retry-After.', requestId, {
+          headers: partnerRateLimitedHeaders(error),
+        });
       } else {
         logger.error('Partner API request failed', {
           requestId,
@@ -298,10 +277,28 @@ export function createPublicApiHandler({
     });
   }
 
+  /**
+   * The published contract, the committed `openapi.json` byte for byte. Public
+   * and credential-free, so any origin may read it; it needs no runtime and
+   * touches no database.
+   */
+  function serveOpenApiDocument(req: IncomingMessage, res: ServerResponse): void {
+    openApiDocument ??= renderPublicApiDocument();
+    const headers: Record<string, string> = {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': OPENAPI_CACHE_CONTROL,
+      'access-control-allow-origin': '*',
+      'x-content-type-options': 'nosniff',
+    };
+    if (requestHasBody(req)) headers.connection = 'close';
+    res.writeHead(200, headers);
+    res.end(openApiDocument);
+  }
+
   async function servePreflight(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const runtime = await loadRuntimeForRequest();
     if (!runtime) {
-      res.writeHead(503, { 'Cache-Control': 'no-store', 'Retry-After': UNAVAILABLE_RETRY_AFTER_SECONDS });
+      res.writeHead(503, { 'Cache-Control': 'no-store', 'Retry-After': RUNTIME_UNAVAILABLE_RETRY_AFTER_SECONDS });
       res.end();
       return;
     }
@@ -323,14 +320,16 @@ export function createPublicApiHandler({
 
     if (mode === 'hold') {
       const requestId = `req_${randomBytes(12).toString('base64url')}`;
-      const held = errorOutcome(503, 'server_error', 'The API is paused. Try again shortly.', requestId, {
-        'retry-after': HOLD_RETRY_AFTER_SECONDS,
+      const held = unavailable(requestId, {
+        retryAfterSeconds: HOLD_RETRY_AFTER_SECONDS,
+        message: 'The API is paused. Try again shortly.',
       });
       await writeOutcome(req, res, held, { runtime: null, clientId: undefined, requestId, rateLimitHeaders: {} });
       return true;
     }
 
-    if (route) await serveRoute(req, res, route);
+    if (route?.kind === 'openapi') serveOpenApiDocument(req, res);
+    else if (route) await serveRoute(req, res, route);
     else await servePreflight(req, res);
     return true;
   };

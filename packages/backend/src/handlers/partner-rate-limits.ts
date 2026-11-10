@@ -50,6 +50,25 @@ export async function isPartnerLimitReached(
   }
 }
 
+/**
+ * The refusal a full window would give, without counting this call or
+ * refusing anything yet. For work that is limited only when it actually
+ * happens, decided after the check: the caller throws it or ignores it.
+ */
+export async function peekPartnerLimit(
+  identity: string,
+  operation: string,
+  maxRequests: number,
+): Promise<PartnerRateLimited | null> {
+  try {
+    await peekRateLimitRedis(identity, operation, maxRequests, PARTNER_LIMIT_WINDOW_MS);
+    return null;
+  } catch (error) {
+    if (error instanceof RateLimitError) return new PartnerRateLimited(maxRequests, error.retryAfterSeconds);
+    throw error;
+  }
+}
+
 /** Adds one to a window without checking it, for work that has already happened. */
 export function chargePartnerLimit(identity: string, operation: string): Promise<void> {
   return countRateLimitRedis(identity, operation, PARTNER_LIMIT_WINDOW_MS);

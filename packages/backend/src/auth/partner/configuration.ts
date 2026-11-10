@@ -6,11 +6,13 @@ export const PARTNER_RESOURCE = 'https://api.boardsesh.com/v1';
 export const PARTNER_WEB_ORIGIN = 'https://www.boardsesh.com';
 
 /**
- * Scopes a partner app may request. `openid` stays out because OIDC discovery is
- * not offered. `logbook:read` joins when GET /v1/logbook/changes ships (L4), so
- * the discovery document only publishes what exists.
+ * Scopes a partner app may request, and what discovery publishes: only scopes
+ * whose routes exist (launch gate 10). `logbook:read` reads
+ * `GET /v1/logbook/changes` and `GET /v1/logbook/ticks/{id}`, "only me" ticks
+ * included (decision 21), which the consent screen says. `openid` stays out
+ * because OIDC discovery is not offered.
  */
-export const PARTNER_SCOPES = ['profile:read', 'offline_access'];
+export const PARTNER_SCOPES = ['logbook:read', 'profile:read', 'offline_access'];
 
 /** The consent link is signed with `codeExpiresIn`, so it stays 600 and the code row is cut to 60 s at issuance. */
 export const PARTNER_SIGNED_QUERY_LIFETIME_SECONDS = 600;

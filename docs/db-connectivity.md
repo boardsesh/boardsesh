@@ -601,6 +601,7 @@ the projection below counts both pools as 5 + 3.
 | backend postgres.js, 2 replicas          |                       2 x 5 |          2 x 5 |                      2 x 5 |
 | backend admission pool, 2 replicas       |                       2 x 2 |          2 x 2 |                      2 x 2 |
 | backend partner OAuth pool, 2 replicas   |                       2 x 3 |          2 x 3 |                      2 x 3 |
+| backend logbook snapshot pool, 2 replicas |                      2 x 2 |          2 x 2 |                      2 x 2 |
 | backend pg-boss, 2 replicas              |                       2 x 2 |          2 x 2 |                      2 x 2 |
 | web postgres.js (explicit env)           |                          10 |             4 |                         4 |
 | hold detector                            |                           8 |             8 |                         8 |
@@ -608,20 +609,48 @@ the projection below counts both pools as 5 + 3.
 | background workers, 4 roles              |                   4 x (2+1) |      4 x (2+1) |                  4 x (2+1) |
 | `boardsesh_readonly` (role cap)          |                         <=5 |           <=5 |                       <=5 |
 | migrator, during a deploy                |                           1 |             1 |                         1 |
-| **steady ceiling (one migrator counted)**|                     **<=75** |       **<=69** |                   **<=63** |
-| **+ old backend fleet draining (15 s)**  |                     **<=99** |       **<=93** |                   **<=87** |
+| **steady ceiling (one migrator counted)**|                     **<=79** |       **<=73** |                   **<=67** |
+| **+ old backend fleet draining (15 s)**  |                    **<=107** |      **<=101** |                   **<=95** |
 
-The partner OAuth pool (`PARTNER_POOL_MAX = 3`, `auth/partner/authority.ts`) is a
-`createDedicatedPool` that opens on the first partner request, so with
-`PARTNER_OAUTH_MODE=off`, the default, it costs nothing and every total above is 6
-lower at steady state and 12 lower while a fleet drains. It serves the partner
-OAuth routes and the `/v1` API together. Once the auth admission pool (2 per
-replica, PR #7381) is also in, the code-default drain becomes 91 + 8 = **99 of the
-97 application slots**, and an admission connection refused with `53300` is not
-retried. Before leaving mode `off`, do one of these: apply the web cap to 4 (drain
-93), or lower `PARTNER_POOL_MAX` to 2 (drain 95, but the authorize, `/v1` and
-token lanes then share two connections), or raise `max_connections`. The web cap
-is the cheapest, and it is already an owner step below.
+### Dedicated pools
+
+Every `createDedicatedPool` caller, and what it costs. A new one adds a row here and
+a row to the budget table above. Its steady cost is 2 × its size (two backend
+replicas) and 4 × its size while an old fleet drains. Both partner pools are built
+only when `PARTNER_OAUTH_MODE` is not `off`, and postgres.js connects on first use,
+so with the mode `off`, the default, neither costs anything.
+
+| pool | connections per replica | opens | steady / draining |
+| --- | --- | --- | --- |
+| `auth/partner/authority.ts` (`PARTNER_POOL_MAX`) | 3 | first partner OAuth or `/v1` request | 6 / 12 |
+| `auth/partner/logbook-access.ts` (`LOGBOOK_SNAPSHOT_POOL_MAX`) | 2 | first logbook snapshot start, build or page read | 4 / 8 |
+
+The partner OAuth pool serves the OAuth routes and the `/v1` API together,
+including logbook feed pages and single ticks, which are short indexed reads run
+inside the `/v1` admission permit the token check already holds.
+
+The logbook snapshot pool (L4) keeps the bootstrap's build off every other pool:
+a fully cold build chunk can take the whole 5 s statement timeout. Two connections
+per replica, because one may build and one serves snapshot starts and page reads,
+so a build never queues a page read. The two cluster-wide build slots
+(`LOGBOOK_SNAPSHOT_BUILD_SLOTS`) still both get used, one per replica. A request
+never waits for a build permit (it answers an empty page instead), and a start or
+page read waits at most 1 s in a queue of 8, then answers `503`.
+
+With partner OAuth on, the two pools add 10 at steady state and 20 while a fleet
+drains, so with the mode `off` every total above is that much lower: 69 and 87 at
+code defaults. The table above already counts the auth admission pool (2 per
+replica, #7381), so the drain is 107 at code defaults, 101 with the web cap to 4
+and 95 with the daemon cap to 3.
+
+Against the 97 application slots, and an admission connection refused with
+`53300` is not retried. Before leaving mode `off`, do one of these: apply both
+the web cap to 4 and the daemon cap to 3 (drain 95), or set
+`LOGBOOK_SNAPSHOT_POOL_MAX` to 1 (drain 97 with only the web cap: then a cold
+build on a replica makes that replica's snapshot page reads wait, and answer
+`503` after 1 s), or lower `PARTNER_POOL_MAX` to 2 (another 4 off the drain, but
+the authorize, `/v1` and token lanes then share two connections), or raise
+`max_connections`.
 
 The code-only budget uses the unchanged web setting of 10. The web cap to 4 is
 an operator step after this change deploys. The daemon cap column is a later
@@ -629,7 +658,7 @@ source change, because those runners currently ignore `DB_POOL_MAX`. The
 admission pool adds 2 per backend replica, 4 at steady state and 8 while an old
 fleet drains ("Admission reads have their own pool" above); production had 43
 of 100 in use when it was added. Do not lower `max_connections` to 60 while the
-drain projection is 75 or higher (87 with partner OAuth on): 60 leaves 57
+drain projection is 75 or higher (95 with partner OAuth on): 60 leaves 57
 application slots, below even the later-cap projection. The original C15 order still applies — cap every
 client, watch a week of deploy peaks under 45, then consider the restart-window
 change. If those conditions are not met, keep `max_connections=100`.
@@ -638,8 +667,8 @@ change. If those conditions are not met, keep `max_connections=100`.
 
 PgBouncer remains parked as described above. If the backend and web are later
 moved behind its 45-server cap, the code defaults make them 18 clients at
-steady state (web 4 plus backend 14) or 32 during a backend deploy, plus 6 and 12
-with partner OAuth on. The direct
+steady state (web 4 plus backend 14) or 32 during a backend deploy, plus 10 and 20
+with partner OAuth on (its two dedicated pools). The direct
 clients (hold detector, sync daemons, background workers, the backend's two
 admission pools, `boardsesh_readonly`, and migrator) total at most 45 while the
 daemons remain at 5. This projected split fits under the 97 application slots; it
