@@ -80,8 +80,17 @@ export const PARTNER_ADMISSION_LIMITS: PartnerAdmissionLimits = {
   permits: PARTNER_POOL_MAX,
   authorizePermits: 1,
   apiPermits: PARTNER_POOL_MAX - 1,
-  flaggedApiPermits: 1,
-  flaggedApiQueueLimit: 4,
+  // A group gets 8 of the shared lane's 18 places and 8 of overflow's 13
+  // (1 running, 12 waiting): a burst of 16 from one address fits, and one
+  // flooding group always leaves overflow 5 places for everyone else.
+  apiPerAddressLimit: 8,
+  overflowApiPermits: 1,
+  overflowApiQueueLimit: 12,
+  overflowApiPerAddressLimit: 8,
+  // Every Worker zone together, forged or not, leaves the shared lane 6 places
+  // and overflow 5 for everyone else.
+  apiPerEgressLimit: 12,
+  overflowApiPerEgressLimit: 8,
   queueLimitPerLane: 16,
   queueDeadlineMs: 1000,
 };

@@ -49,10 +49,33 @@ function limitIdentity(address: string): string {
   const groups = ipv6Groups(address);
   const isIpv4Mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
   if (isIpv4Mapped) return `${groups[6] >> 8}.${groups[6] & 255}.${groups[7] >> 8}.${groups[7] & 255}`;
+  return ipv6PrefixKey(groups, 4);
+}
+
+/** `a:b:c:d::/64` for four groups, `a:b:c::/48` for three. */
+function ipv6PrefixKey(groups: number[], prefixGroups: number): string {
   return `${groups
-    .slice(0, 4)
+    .slice(0, prefixGroups)
     .map((group) => group.toString(16))
-    .join(':')}::/64`;
+    .join(':')}::/${prefixGroups * 16}`;
+}
+
+const IPV6_LIMIT_SUFFIX = '::/64';
+
+/**
+ * The group a limit identity shares the `/v1` admission lane with
+ * (`auth/partner/admission.ts`): an IPv6 /64 becomes its /48, and anything else,
+ * an IPv4 address or a key that is not an address, is its own group. A /48 is
+ * what one site is routinely given, so a sender rotating through fresh /64s
+ * inside it still counts as one. The price is that every phone behind one
+ * carrier /48, like every phone behind one carrier-NAT IPv4 address, shares one
+ * group's places in the shared lane.
+ */
+export function apiLaneGroup(limitKey: string): string {
+  if (!limitKey.endsWith(IPV6_LIMIT_SUFFIX)) return limitKey;
+  const network = `${limitKey.slice(0, -IPV6_LIMIT_SUFFIX.length)}::`;
+  if (isIP(network) !== 6) return limitKey;
+  return ipv6PrefixKey(ipv6Groups(network), 3);
 }
 
 /**

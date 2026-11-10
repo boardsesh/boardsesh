@@ -29,6 +29,7 @@ import { API_HOSTNAME, rejectApiHostRequest } from '../handlers/api-host';
 import { createPublicApiHandler, type PublicApiHandlerOptions } from '../handlers/public-api/router';
 import { validateToken } from '../middleware/auth';
 import { redisClientManager } from '../redis/client';
+import { CLOUDFLARE_WORKER_EGRESS_ADDRESS } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import {
   createPartnerTestEnvironment,
@@ -1265,86 +1266,312 @@ describe('the public /v1 API', () => {
       }
     });
 
+    /**
+     * Records each `/v1` admission: the group the router named and the lane the
+     * gate granted (null when it refused). Lookups wait for `release()` until
+     * `expectedAcquisitions` requests have asked for a permit, so every request
+     * of a burst is admitted, queued or refused before any of them finishes.
+     */
+    function holdAdmissions(expectedAcquisitions: number, holdToken: (token: string) => boolean = () => true) {
+      const admissions: Array<{ group: string | undefined; lane: string | null }> = [];
+      let acquisitions = 0;
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const realAcquire = runtime.admission.acquire.bind(runtime.admission);
+      const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane, group, egress) => {
+        acquisitions += 1;
+        return realAcquire(lane, group, egress).then((permit) => {
+          admissions.push({ group, lane: permit?.lane ?? null });
+          return permit;
+        });
+      });
+      const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
+      const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
+        if (holdToken(token)) await released;
+        return realAuthenticate(token);
+      });
+      return {
+        admissions,
+        async allAsked() {
+          const deadline = Date.now() + 3000;
+          while (acquisitions < expectedAcquisitions && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+          expect(acquisitions).toBe(expectedAcquisitions);
+        },
+        release,
+        restore() {
+          release();
+          acquire.mockRestore();
+          authenticate.mockRestore();
+        },
+      };
+    }
+
     it(
-      "keeps a flooding address's junk in its own lane: others are served, and so is its valid token",
+      'serves a burst of 16 valid requests from an address with 31 legitimate 401s this minute',
+      async () => {
+        await inOneLimitWindow(async () => {
+          // About what 2,000 climbers' expired tokens produce in a minute: under the
+          // old failure-count routing this address was sidelined into one permit
+          // and a queue of 4, and 11 of these 16 answered 503.
+          const clientIp = randomClientIp();
+          await seedLimiter(clientIp, 'api-invalid-token-ip', 31);
+          const client = await environment.createClient();
+          const issued = await environment.issueTokens(client);
+          const held = holdAdmissions(16);
+          try {
+            const burst = Array.from({ length: 16 }, () => getMe(issued.access_token, { clientIp }));
+            await held.allAsked();
+            held.release();
+            const statuses = (await Promise.all(burst)).map((answer) => answer.status);
+            expect(statuses).toEqual(Array(16).fill(200));
+            // 8 places in the shared lane; the other 8 overflow and are served there.
+            const lanes = held.admissions.map(({ lane }) => lane);
+            expect(lanes.filter((lane) => lane === 'api')).toHaveLength(8);
+            expect(lanes.filter((lane) => lane === 'api-overflow')).toHaveLength(8);
+          } finally {
+            held.restore();
+          }
+        });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      "holds a flooding address to 8 of the shared lane's places, so another address is still queued and served",
       async () => {
         await inOneLimitWindow(async () => {
           const floodingAddress = randomClientIp();
           const otherAddress = randomClientIp();
           const client = await environment.createClient();
           const issued = await environment.issueTokens(client);
-          // Past the routing threshold (30), far below the 429 limit (600).
-          await seedLimiter(floodingAddress, 'api-invalid-token-ip', 30);
-
-          const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
-          let releaseJunk: () => void = () => {};
-          const junkMayFinish = new Promise<void>((resolve) => {
-            releaseJunk = resolve;
-          });
-          let junkInFlight = 0;
-          const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
-            if (!token.startsWith('junk')) return realAuthenticate(token);
-            junkInFlight += 1;
-            try {
-              // Junk holds its permit until the test lets it go: no timers decide the outcome.
-              await junkMayFinish;
-              return await realAuthenticate(token);
-            } finally {
-              junkInFlight -= 1;
-            }
-          });
-          const lanes: string[] = [];
-          const realAcquire = runtime.admission.acquire.bind(runtime.admission);
-          const acquire = vi.spyOn(runtime.admission, 'acquire').mockImplementation((lane) => {
-            lanes.push(lane);
-            return realAcquire(lane);
-          });
+          // Junk lookups hold their permits until the test lets them go: no timers decide the outcome.
+          const held = holdAdmissions(24, (token) => token.startsWith('junk'));
           try {
             const answeredJunk: number[] = [];
-            const junk = Array.from({ length: 8 }, () =>
+            const junk = Array.from({ length: 24 }, () =>
               getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp: floodingAddress }).then((answer) => {
                 answeredJunk.push(answer.status);
                 return answer.status;
               }),
             );
-            // One running and four queued in the flagged lane; the other three are refused at once.
+            await held.allAsked();
+            // 2 running and 6 waiting in the shared lane, 8 waiting in overflow, 8 refused at once.
             const deadline = Date.now() + 3000;
-            while (answeredJunk.length < 3 && Date.now() < deadline) {
+            while (answeredJunk.length < 8 && Date.now() < deadline) {
               await new Promise((resolve) => setTimeout(resolve, 10));
             }
-            expect(answeredJunk).toEqual([503, 503, 503]);
-            expect(junkInFlight).toBe(1);
+            expect(answeredJunk).toEqual(Array(8).fill(503));
 
-            // Another address is served while every junk lookup is still held.
-            const fromElsewhere = await getMe(issued.access_token, { clientIp: otherAddress });
-            expect(fromElsewhere.status).toBe(200);
-            expect(junkInFlight).toBe(1);
-            expect(answeredJunk).toHaveLength(3);
-            expect(lanes.filter((lane) => lane === 'api-flagged')).toHaveLength(8);
+            // The shared lane has 10 places left, so another address waits there
+            // instead of being refused, and is served once the lookups ahead finish.
+            let otherAnswered = false;
+            const fromElsewhere = getMe(issued.access_token, { clientIp: otherAddress }).then((answer) => {
+              otherAnswered = true;
+              return answer;
+            });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(otherAnswered).toBe(false);
+            expect(answeredJunk).toHaveLength(8);
 
-            releaseJunk();
+            held.release();
+            expect((await fromElsewhere).status).toBe(200);
             const junkStatuses = await Promise.all(junk);
-            // The held one fails its lookup; a queued one may also have passed its 1 s deadline.
-            expect(junkStatuses).toContain(401);
             expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+            expect(junkStatuses.filter((status) => status === 401).length).toBeGreaterThanOrEqual(8);
 
-            // The flooding address's own valid token is still served, in its lane, and never 429.
-            lanes.length = 0;
-            const fromFloodingAddress = await getMe(issued.access_token, { clientIp: floodingAddress });
-            expect(fromFloodingAddress.status).toBe(200);
-            expect(lanes).toEqual(['api-flagged']);
-            lanes.length = 0;
-            expect((await getMe(issued.access_token, { clientIp: otherAddress })).status).toBe(200);
-            expect(lanes).toEqual(['api']);
+            const floodingGroup = held.admissions.find(({ lane }) => lane !== null)?.group;
+            const sharedPlacesOfFlood = held.admissions.filter(
+              ({ group, lane }) => group === floodingGroup && lane === 'api',
+            );
+            expect(sharedPlacesOfFlood).toHaveLength(8);
+            expect(held.admissions.filter(({ group }) => group === otherAddress)).toEqual([
+              { group: otherAddress, lane: 'api' },
+            ]);
           } finally {
-            releaseJunk();
-            authenticate.mockRestore();
-            acquire.mockRestore();
+            held.restore();
           }
         });
       },
       TEST_DEADLINE_MS,
     );
+
+    it(
+      'counts fresh /64s inside one /48 as one address group, and the /48 next door apart',
+      async () => {
+        await inOneLimitWindow(async () => {
+          const site = `2001:db8:${Math.floor(Math.random() * 0xffff).toString(16)}`;
+          const neighbourSite = `2001:db9:${Math.floor(Math.random() * 0xffff).toString(16)}`;
+          const client = await environment.createClient();
+          const issued = await environment.issueTokens(client);
+          const held = holdAdmissions(10);
+          try {
+            // Nine requests, each from a /64 never seen before, all inside one /48.
+            const rotating = Array.from({ length: 9 }, (_, index) =>
+              getMe(issued.access_token, { clientIp: `${site}:${(index + 1).toString(16)}::1` }),
+            );
+            const neighbour = getMe(issued.access_token, { clientIp: `${neighbourSite}:1::1` });
+            await held.allAsked();
+            held.release();
+            const statuses = (await Promise.all([...rotating, neighbour])).map((answer) => answer.status);
+            expect(statuses).toEqual(Array(10).fill(200));
+
+            const siteAdmissions = held.admissions.filter(({ group }) => group === `${site}::/48`);
+            expect(siteAdmissions).toHaveLength(9);
+            expect(siteAdmissions.filter(({ lane }) => lane === 'api')).toHaveLength(8);
+            expect(siteAdmissions.filter(({ lane }) => lane === 'api-overflow')).toHaveLength(1);
+            expect(held.admissions.filter(({ group }) => group === `${neighbourSite}::/48`)).toEqual([
+              { group: `${neighbourSite}::/48`, lane: 'api' },
+            ]);
+          } finally {
+            held.restore();
+          }
+        });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'serves an honest address while three flooding addresses each keep 8 junk lookups waiting',
+      async () => {
+        await inOneLimitWindow(async () => {
+          const floodingAddresses = [randomClientIp(), randomClientIp(), randomClientIp()];
+          const honestAddress = randomClientIp();
+          const client = await environment.createClient();
+          const issued = await environment.issueTokens(client);
+          const held = holdAdmissions(24, (token) => token.startsWith('junk'));
+          try {
+            const junk = floodingAddresses.flatMap((clientIp) =>
+              Array.from({ length: 8 }, () => getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp })),
+            );
+            await held.allAsked();
+            // 24 for the shared lane's 18 places: before this change the honest
+            // address found the queue full and got 503 at once.
+            let honestAnswered = false;
+            const honest = getMe(issued.access_token, { clientIp: honestAddress }).then((answer) => {
+              honestAnswered = true;
+              return answer;
+            });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            expect(honestAnswered).toBe(false);
+            held.release();
+            expect((await honest).status).toBe(200);
+            expect(held.admissions.filter(({ group }) => group === honestAddress)).toEqual([
+              { group: honestAddress, lane: 'api' },
+            ]);
+            const junkStatuses = (await Promise.all(junk)).map((answer) => answer.status);
+            expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+          } finally {
+            held.restore();
+          }
+        });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    describe('Cloudflare Workers', () => {
+      // Our private ingress saw a Cloudflare edge, which reported Cloudflare's one Worker egress address.
+      const CLOUDFLARE_EDGE_HOP = '173.245.48.5';
+      const WORKER_ADDRESS_KEY = '2a06:98c0:3600:0::/64';
+      const randomZone = () => `app-${randomUUID().slice(0, 8)}.example`;
+      const fromWorker = (zone: string): SendOptions => ({
+        clientIp: CLOUDFLARE_EDGE_HOP,
+        headers: { 'CF-Connecting-IP': CLOUDFLARE_WORKER_EGRESS_ADDRESS, 'CF-Worker': zone },
+      });
+      const junkToken = () => `junk${randomUUID().replaceAll('-', '')}`;
+
+      it(
+        'gives each Worker zone its own lane group, so one zone overflows and another does not',
+        async () => {
+          await inOneLimitWindow(async () => {
+            const busyZone = randomZone();
+            const quietZone = randomZone();
+            const client = await environment.createClient();
+            const issued = await environment.issueTokens(client);
+            const held = holdAdmissions(10);
+            try {
+              const busy = Array.from({ length: 9 }, () => getMe(issued.access_token, fromWorker(busyZone)));
+              const quiet = getMe(issued.access_token, fromWorker(quietZone));
+              await held.allAsked();
+              held.release();
+              const statuses = (await Promise.all([...busy, quiet])).map((answer) => answer.status);
+              expect(statuses).toEqual(Array(10).fill(200));
+              const busyLanes = held.admissions.filter(({ group }) => group === `cf-worker:${busyZone}`);
+              expect(busyLanes.filter(({ lane }) => lane === 'api')).toHaveLength(8);
+              expect(busyLanes.filter(({ lane }) => lane === 'api-overflow')).toHaveLength(1);
+              expect(held.admissions.filter(({ group }) => group === `cf-worker:${quietZone}`)).toEqual([
+                { group: `cf-worker:${quietZone}`, lane: 'api' },
+              ]);
+            } finally {
+              held.restore();
+            }
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+
+      it(
+        "counts failed lookups per zone only, so no zone's junk turns another zone's 401s into 429s",
+        async () => {
+          await inOneLimitWindow(async () => {
+            const junkZone = randomZone();
+            const honestZone = randomZone();
+            await seedLimiter(`cf-worker:${junkZone}`, 'api-invalid-token-ip', 600);
+            expect((await getMe(junkToken(), fromWorker(junkZone))).status).toBe(429);
+            expectInvalidToken(await getMe(junkToken(), fromWorker(honestZone)));
+            expect(await limiterCount(`cf-worker:${honestZone}`, 'api-invalid-token-ip')).toBe(1);
+            // Nothing counts every zone together: such a count would be charged
+            // after the lookup, save no database work, and let one junk Worker
+            // turn every Worker partner's expired-token 401s into 429s.
+            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress')).toBe(0);
+            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip')).toBe(0);
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+
+      it(
+        'serves an honest zone while two junk zones hold every Worker place',
+        async () => {
+          await inOneLimitWindow(async () => {
+            const client = await environment.createClient();
+            const issued = await environment.issueTokens(client);
+            const [busyJunkZone, otherJunkZone, honestZone] = [randomZone(), randomZone(), randomZone()];
+            const held = holdAdmissions(20, (token) => token.startsWith('junk'));
+            try {
+              // 16 from one zone (8 shared, 8 overflow) and 4 from another: every one
+              // of the Worker share's 12 shared and 8 overflow places is junk.
+              const junk = [
+                ...Array.from({ length: 16 }, () => getMe(junkToken(), fromWorker(busyJunkZone))),
+                ...Array.from({ length: 4 }, () => getMe(junkToken(), fromWorker(otherJunkZone))),
+              ];
+              await held.allAsked();
+              let honestAnswered = false;
+              const honest = getMe(issued.access_token, fromWorker(honestZone)).then((answer) => {
+                honestAnswered = true;
+                return answer;
+              });
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              // Waiting for a place, not refused at once.
+              expect(honestAnswered).toBe(false);
+              held.release();
+              expect((await honest).status).toBe(200);
+              expect(held.admissions.filter(({ group }) => group === `cf-worker:${honestZone}`)).toEqual([
+                { group: `cf-worker:${honestZone}`, lane: 'api' },
+              ]);
+              const junkStatuses = (await Promise.all(junk)).map((answer) => answer.status);
+              expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
+            } finally {
+              held.restore();
+            }
+          });
+        },
+        TEST_DEADLINE_MS,
+      );
+    });
 
     it('answers 401 when the climber is deleted between the profile read and the subject insert', async () => {
       const developer = await environment.createClimber();
