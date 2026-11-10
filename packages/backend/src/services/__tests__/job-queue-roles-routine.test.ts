@@ -84,6 +84,8 @@ vi.mock('../../workers/families/provider-sync-batch', async (importOriginal) => 
 });
 
 const AURORA_USER = 'psync-rgrant-aurora';
+/** The app the logbook snapshot's connection belongs to. */
+const GRANT_TEST_APP = 'psync-rgrant-app';
 const AURORA_CLIMB = 'psync-climb-rgrant';
 const KILTER_USER = 'psync-rgrant-kilter';
 const KILTER_CLIMB = 'psync-kclimb-rgrant';
@@ -463,6 +465,8 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
   }
 
   const cleanup = async () => {
+    // Deleting the app cascades into its connection.
+    await database.execute(sql`DELETE FROM oauth_client WHERE client_id = ${GRANT_TEST_APP}`);
     await removeFixtures(
       database,
       [AURORA_USER, KILTER_USER, DONOR_USER, FOLLOWER_USER, HEAL_USER, FIRST_SYNC_USER],
@@ -761,6 +765,15 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
 
     // 6. The logbook snapshot reclaim, as the maintenance login: a row past its
     //    hour goes, with its chunk. The job never reads the chunk's ticks.
+    // A snapshot's connection_id references oauth_connections (migration 0301).
+    await database.execute(sql`
+      INSERT INTO oauth_client (id, client_id, redirect_uris)
+      VALUES (${GRANT_TEST_APP}, ${GRANT_TEST_APP}, ARRAY['https://app.example.test/callback'])
+      ON CONFLICT DO NOTHING`);
+    await database.execute(sql`
+      INSERT INTO oauth_connections (id, user_id, client_id, connected_at)
+      VALUES ('grant-test-connection', ${AURORA_USER}, ${GRANT_TEST_APP}, now())
+      ON CONFLICT DO NOTHING`);
     const [expiredSnapshot] = (await database.execute(sql`
       INSERT INTO logbook_snapshots
         (user_id, connection_id, connection_generation, feed_generation, horizon_txid, status, expires_at)
