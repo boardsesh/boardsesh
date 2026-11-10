@@ -233,7 +233,7 @@ export type BoardImageRenderParams = {
   isOgVariant: boolean;
   /** OG-only: fit the board into this box instead of the climb card's. */
   ogBox?: { width: number; height: number };
-  /** Climb identity drawn in an OG card's right-hand column; OG renders only. */
+  /** Climb identity drawn in an OG card's text column; OG renders only. */
   card?: OgCardContent;
 };
 
@@ -258,7 +258,7 @@ export type OgClimbRenderParams = Pick<
   | 'glyphs'
   | 'fieldColor'
 > & {
-  /** Climb identity drawn in the card's right-hand column. */
+  /** Climb identity drawn in the card's text column. */
   card?: OgCardContent;
 };
 
@@ -705,7 +705,7 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
     // A family card is mostly its words, so a Pango failure rejects here rather
     // than serving and caching a wordless card under this card's real key.
     const { layers: textLayers } = await renderOgFamilyTextLayers(content);
-    const background = await renderFrostedBokehBuffer({ ...bokeh, protectDetails: false });
+    const background = await renderFrostedBokehBuffer(bokeh);
     const encoded = await composeOgFamilyCard({ background, slot: content.slot, art: artLayers, textLayers });
     const composeMs = performance.now() - composeT0;
 

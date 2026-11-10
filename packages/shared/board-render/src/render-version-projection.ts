@@ -14,14 +14,7 @@ import {
 } from '@boardsesh/board-config';
 import { getBackgroundRelPaths } from './background';
 import { getBoardDetailsForBoard } from './board-details';
-import {
-  OG_IMAGE_HEIGHT,
-  OG_IMAGE_WIDTH,
-  OG_BOARD_PADDING_X,
-  OG_BOARD_PADDING_Y,
-  OG_CARD_COLUMN_GAP,
-  OG_CARD_TEXT_COLUMN_WIDTH,
-} from './headers';
+import { OG_CARD_BOARD_BOX, OG_CARD_COLUMN_LEFT, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import { buildRenderConfig } from './render-config';
 
 /**
@@ -227,9 +220,15 @@ function projectCatalogueEntry(entry: CatalogueEntry): Record<string, unknown> {
     // Pixel geometry the sharp half applies around the board photo. Implied by
     // `og_scale`, but that is a rounded ratio, so record the terms as well.
     og_canvas: [OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT],
-    // The text column is part of the board box, so it belongs in the version
-    // terms too: widening it moves every board's OG scale.
-    og_padding: [OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y, OG_CARD_TEXT_COLUMN_WIDTH, OG_CARD_COLUMN_GAP],
+    // The art slot and the text column it sits beside, so it belongs in the
+    // version terms too: moving either moves every board on every card.
+    og_layout: [
+      OG_CARD_BOARD_BOX.left,
+      OG_CARD_BOARD_BOX.top,
+      OG_CARD_BOARD_BOX.width,
+      OG_CARD_BOARD_BOX.height,
+      OG_CARD_COLUMN_LEFT,
+    ],
     // Which photos get composited, in order, for both the full and thumb paths.
     backgrounds_full: getBackgroundRelPaths(boardDetails, false),
     backgrounds_thumbnail: getBackgroundRelPaths(boardDetails, true),

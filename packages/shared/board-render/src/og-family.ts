@@ -1,8 +1,16 @@
 import sharp from 'sharp';
 import { FONT_GRADE_COLORS } from '@boardsesh/board-constants/grade-colors';
 import { createOgFrameBuffer } from './background';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
-import { OG_JPEG_OPTIONS } from './pipeline';
+import {
+  OG_CARD_ART_LEFT,
+  OG_CARD_ART_RIGHT,
+  OG_CARD_BOARD_BOX,
+  OG_CARD_COLUMN_LEFT,
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  placeOgBoard,
+} from './headers';
+import type { OutputFormat } from './types';
 import { escapePangoMarkup } from './validation';
 
 /**
@@ -11,10 +19,35 @@ import { escapePangoMarkup } from './validation';
  * card and survives a square crop at 110px. See docs/og-climb.md.
  *
  * The surface supplies an art slot and a stack of text; the ground, the scrim,
- * the column and the wordmark are fixed here. Deliberately NOT in
- * `OPAQUE_RENDER_INPUTS`: climb card URLs are `immutable` for a year and must not
- * move until the climb card itself joins this grid.
+ * the column and the wordmark are fixed here. The climb card draws through it
+ * too (`og-card.ts`), so this file is in `OPAQUE_RENDER_INPUTS`: an edit here
+ * moves `BOARD_RENDER_VERSION` and with it every climb card URL.
  */
+
+/**
+ * Share-card JPEG encode: mozjpeg at quality 85 with full chroma so hold rings
+ * stay crisp (~50–90KB at 1200×630).
+ */
+export const OG_JPEG_OPTIONS: sharp.JpegOptions = {
+  quality: 85,
+  chromaSubsampling: '4:4:4',
+  mozjpeg: true,
+};
+const OG_PNG_OPTIONS: sharp.PngOptions = { compressionLevel: 9, adaptiveFiltering: true };
+const OG_WEBP_OPTIONS: sharp.WebpOptions = { quality: 80 };
+
+/**
+ * Encode a finished card. JPEG is what every card is served as by default; PNG and
+ * WebP exist because `/og/climb` has always honoured `format`, and it still must.
+ */
+export async function encodeOgCard(
+  image: sharp.Sharp,
+  format: OutputFormat = 'jpeg',
+): Promise<{ buffer: Buffer; contentType: string }> {
+  if (format === 'png') return { buffer: await image.png(OG_PNG_OPTIONS).toBuffer(), contentType: 'image/png' };
+  if (format === 'webp') return { buffer: await image.webp(OG_WEBP_OPTIONS).toBuffer(), contentType: 'image/webp' };
+  return { buffer: await image.jpeg(OG_JPEG_OPTIONS).toBuffer(), contentType: 'image/jpeg' };
+}
 
 /** Canvas ground. Same colour the Aura veil washes toward on a dark field. */
 export const OG_FAMILY_GROUND = '#181225';
@@ -36,8 +69,8 @@ const COLUMN_RIGHT = OG_IMAGE_WIDTH - 24;
 export const OG_FAMILY_WORDMARK_RIGHT = 1160;
 export const OG_FAMILY_WORDMARK_TOP = 574;
 
-const BOARD_TOP_INSET = 14;
-const ART_HEIGHT = OG_IMAGE_HEIGHT - BOARD_TOP_INSET * 2;
+const BOARD_TOP_INSET = OG_CARD_BOARD_BOX.top;
+const ART_HEIGHT = OG_CARD_BOARD_BOX.height;
 
 /** The art slots. `none` draws no art and gives the text the width instead. */
 export type OgFamilySlot = 'full' | 'narrow' | 'none';
@@ -49,7 +82,7 @@ type SlotGeometry = {
 };
 
 const SLOTS: Record<OgFamilySlot, SlotGeometry> = {
-  full: { art: { left: 16, right: 560 }, columnLeft: 590 },
+  full: { art: { left: OG_CARD_ART_LEFT, right: OG_CARD_ART_RIGHT }, columnLeft: OG_CARD_COLUMN_LEFT },
   narrow: { art: { left: 0, right: 290 }, columnLeft: 322 },
   // No art: the text is centred across the whole crop rather than left-aligned on
   // an empty field, so `columnLeft` is the crop's own left edge.
@@ -118,9 +151,12 @@ export function placeOgFamilyBoard(
   const canvasTop = Math.max(0, BOARD_TOP_INSET + Math.round((ART_HEIGHT - boardHeight) / 2));
 
   if (slot === 'full') {
+    // The climb card's own placement, so a family board and a climb board sit in
+    // exactly the same spot.
+    const placed = placeOgBoard(boardWidth, boardHeight);
     return {
-      canvasLeft: Math.max(art.left, art.right - boardWidth),
-      canvasTop,
+      canvasLeft: placed.left,
+      canvasTop: placed.top,
       sourceLeft: boardWidth > slotWidth ? boardWidth - slotWidth : 0,
       sourceTop: 0,
       visibleWidth,
@@ -364,9 +400,7 @@ type TextLayer = { input: Buffer; left: number; top: number };
 type TextRaster = { buffer: Buffer; width: number; height: number };
 type TextAlign = 'left' | 'right' | 'centre';
 
-// Temporary copy of og-card.ts's renderText so this module can ship without
-// touching a file in OPAQUE_RENDER_INPUTS. Deleted when the climb card moves
-// onto this grid and the two text paths become one.
+/** The one Pango text path every share card draws through. */
 async function renderRaster(
   markup: string,
   options: { fontFamily?: string; width?: number; align?: TextAlign },
@@ -1068,8 +1102,10 @@ export async function composeOgFamilyCard(params: {
   slot: OgFamilySlot;
   art: OgFamilyArtLayers | null;
   textLayers: readonly sharp.OverlayOptions[];
+  /** JPEG unless a caller's URL contract says otherwise (`/og/climb`'s `format`). */
+  format?: OutputFormat;
 }): Promise<{ buffer: Buffer; contentType: string }> {
-  const { background, slot, art, textLayers } = params;
+  const { background, slot, art, textLayers, format } = params;
 
   const layers: sharp.OverlayOptions[] = [{ input: buildOgFamilyScrim(slot) }];
   if (art) {
@@ -1099,5 +1135,5 @@ export async function composeOgFamilyCard(params: {
     raw: { width: OG_IMAGE_WIDTH, height: OG_IMAGE_HEIGHT, channels: 4 },
   }).composite(layers);
 
-  return { buffer: await composited.jpeg(OG_JPEG_OPTIONS).toBuffer(), contentType: 'image/jpeg' };
+  return encodeOgCard(composited, format);
 }

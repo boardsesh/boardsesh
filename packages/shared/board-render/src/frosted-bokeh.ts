@@ -7,7 +7,7 @@ import {
   type BokehPoint,
   type BokehSize,
 } from '@boardsesh/frosted-bokeh';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, OG_CARD_BOARD_BOX, OG_CARD_COLUMN_GAP } from './headers';
+import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type { WasmRenderConfig } from './types';
 
 export type OgBokehInput = { points: readonly BokehPoint[]; source: BokehSize };
@@ -41,8 +41,6 @@ const OG_BOKEH_REFERENCE_WIDTH = 225;
 const OG_BOKEH_OPACITY = 0.45;
 const OG_FROST_ALPHA = 0.05;
 const OG_GRAIN_ALPHA = 0.03;
-const DETAILS_SCRIM_WIDTH = 240;
-const DETAILS_SCRIM_OPACITY = 0.9;
 
 function getGrainTile(): Promise<Buffer> {
   grainTile ??= sharp(require.resolve('@boardsesh/frosted-bokeh/grain.png'))
@@ -57,12 +55,12 @@ function getGrainTile(): Promise<Buffer> {
   return grainTile;
 }
 
-/** Raster adapter only: geometry, palette-independent falloff and texture are shared with native. */
-export async function renderFrostedBokehBuffer({
-  points,
-  source,
-  protectDetails = false,
-}: OgBokehInput & { protectDetails?: boolean }): Promise<Buffer> {
+/**
+ * Raster adapter only: geometry, palette-independent falloff and texture are shared with native.
+ * The scrim that protects a card's text is the share-card family's (`buildOgFamilyScrim`),
+ * composited by the caller.
+ */
+export async function renderFrostedBokehBuffer({ points, source }: OgBokehInput): Promise<Buffer> {
   const width = OG_IMAGE_WIDTH;
   const height = OG_IMAGE_HEIGHT;
   const blobs = buildBokehBlobs({
@@ -99,14 +97,6 @@ export async function renderFrostedBokehBuffer({
     input: { create: { width, height, channels: 4, background: { r: 255, g: 255, b: 255, alpha: OG_FROST_ALPHA } } },
   });
   composites.push({ input: await getGrainTile(), tile: true });
-  if (protectDetails) {
-    const columnLeft = OG_CARD_BOARD_BOX.left + OG_CARD_BOARD_BOX.width + OG_CARD_COLUMN_GAP;
-    composites.push({
-      input: Buffer.from(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><linearGradient id="scrim"><stop offset="0" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="0"/><stop offset="1" stop-color="${BOKEH_DARK_SURFACE.base}" stop-opacity="${DETAILS_SCRIM_OPACITY}"/></linearGradient></defs><rect x="${columnLeft - DETAILS_SCRIM_WIDTH}" width="${DETAILS_SCRIM_WIDTH}" height="${height}" fill="url(#scrim)"/><rect x="${columnLeft}" width="${width - columnLeft}" height="${height}" fill="${BOKEH_DARK_SURFACE.base}" fill-opacity="${DETAILS_SCRIM_OPACITY}"/></svg>`,
-      ),
-    });
-  }
   return sharp({ create: { width, height, channels: 4, background: BOKEH_DARK_SURFACE.base } })
     .composite(composites)
     .raw()

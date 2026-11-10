@@ -1,8 +1,10 @@
 import { BOARD_TYPE_LABELS, getLayoutName, getProductSize, type BoardName } from '@boardsesh/board-constants';
+import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-card';
 
 /**
  * The "which board is this" line under a climb name on an OG share card, e.g.
- * `Kilter · Original · 12 x 12 Square`.
+ * `Kilter · Original · 12 x 12 Square`. The brand comes first: a card with no
+ * grade and no name leads with it.
  *
  * Derived from the config params the URL already carries rather than taken as a
  * param of its own. Those params fully determine the board that gets drawn, so a
@@ -21,7 +23,7 @@ export function describeBoardConfig(boardName: string, layoutId: number, sizeId:
   const sizeName = safely(() => getProductSize(boardName as BoardName, sizeId)?.name);
   if (sizeName) parts.push(sizeName);
 
-  return parts.join(' · ');
+  return parts.join(OG_CARD_BOARD_LINE_SEPARATOR);
 }
 
 /**
