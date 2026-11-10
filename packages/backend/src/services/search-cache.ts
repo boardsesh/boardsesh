@@ -53,11 +53,13 @@ export const DEFAULT_SEARCH_CACHE_TTL = 86400;
  *
  * Not bumped for the removal of the holds-epoch rule (#6023) either. The rule
  * only changed per-viewer sent / attempted filters, which were never part of a
- * shared page, and search rows still carry the same two revision fields. No
- * board is cacheable at the moment in any case (`isCacheableBoard`).
+ * shared page, and search rows still carry the same two revision fields.
  */
 // v11: project frame-derived requiredSetIds so cached rows retain hold-set metadata.
-export const CACHE_VERSION = 'v11';
+// v12: Kilter's benchmark column now holds Kilter's own Verified list (#2493): about
+// 4,400 rows gained a mark and 61 lost one. A cached v11 Benchmarks/Verified page
+// kept serving the old list for the full 24h TTL; seen as an empty Verified page.
+export const CACHE_VERSION = 'v12';
 
 /**
  * Recursively sorts the keys of an object so that JSON.stringify produces
