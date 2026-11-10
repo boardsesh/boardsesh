@@ -919,9 +919,10 @@ Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `429` with `Retry-After` in seconds. If your app genuinely needs more, ask
 through the console.
 
-Keep at most 8 API requests in flight from one server address. More are
-still served, but they wait in a slower lane, and when that lane is full too
-the answer is `503` with `Retry-After: 2`. Retry after that many seconds.
+Keep at most 8 API requests in flight from one server address (one Worker
+zone on Cloudflare Workers). Up to 8 more are still served, but they wait in a
+slower lane; past 16, or when that lane is full too, the answer is `503` with
+`Retry-After: 2`. Retry after that many seconds.
 
 Every response carries `Boardsesh-Request-Id`. Quote it when something looks
 wrong.

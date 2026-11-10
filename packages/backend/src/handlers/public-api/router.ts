@@ -4,12 +4,17 @@ import { renderPublicApiDocument } from '@boardsesh/public-api';
 import { loadPartnerAuthority } from '../../auth/partner/load-authority';
 import { readPartnerOAuthMode, type PartnerOAuthMode } from '../../auth/partner/mode';
 import { getMediaPublicBaseUrl } from '../../storage/s3';
-import { apiLaneGroup, getTrustedClientIp } from '../../utils/client-ip';
+import { apiLaneGroup, getPartnerLimitIdentity, type PartnerLimitIdentity } from '../../utils/client-ip';
 import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { isApiHost } from '../api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders } from '../partner-cors';
-import { PartnerRateLimited, partnerRateLimitedHeaders, RateLimitLedger } from '../partner-rate-limits';
+import {
+  consumePerAddress,
+  PartnerRateLimited,
+  partnerRateLimitedHeaders,
+  RateLimitLedger,
+} from '../partner-rate-limits';
 import {
   matchPublicApiPreflight,
   matchPublicApiRoute,
@@ -36,12 +41,13 @@ type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 const API_PER_CONNECTION = 120;
 const API_PER_APP = 6000;
 /**
- * Token lookups that found nothing, per client address. Charged, and refused
- * with 429, only after a lookup has failed: never before one. Many partners
- * share one address (every Cloudflare Worker reaches us as the same
- * `CF-Connecting-IP`, and carrier and cloud NAT do the same), so a check before
- * the lookup would let one sender of junk lock every neighbour's valid token
- * out. The database work junk can cause is bounded by the `/v1` admission lanes
+ * Token lookups that found nothing, per client address (per zone for a
+ * Cloudflare Worker, `getPartnerLimitIdentity`, with every zone together held to
+ * ten times this on the Worker address, like the OAuth routes). Charged, and
+ * refused with 429, only after a lookup has failed: never before one. Many
+ * partners share one address (carrier and cloud NAT, and every Worker that
+ * sends no zone), so a check before the lookup would let one sender of junk
+ * lock every neighbour's valid token out. The database work junk can cause is bounded by the `/v1` admission lanes
  * instead, which route on how many requests an address has in flight, never on
  * how many failed. One address refreshing every climber's hourly token at this
  * rate serves 36,000 climbers, the sizing of the token endpoint's refresh bound.
@@ -126,9 +132,11 @@ export function createPublicApiHandler({
    * The order matters for who can spend what. The lookup runs inside the
    * two-permit `/v1` lanes, which bound what junk can cost the database. One
    * address group holds at most 8 places in the shared lane; its further
-   * requests wait in the one-permit overflow lane, so no single address, junk
-   * or valid, can fill the lane everyone else uses, and a burst of 16 valid
-   * requests from one address is still served, only slower.
+   * requests wait in the one-permit overflow lane, and a burst of 16 valid
+   * requests from one address is still served, only slower. When a lane's
+   * queue is full, the group holding the most places gives one up to a group
+   * holding fewer, so a few flooding addresses cannot fill it between them
+   * either (`auth/partner/admission.ts`).
    * A failed lookup charges its address, and only a failed lookup can be
    * refused for that count. An app's and a connection's budgets are charged
    * only once a token for them has passed, so a caller without one cannot
@@ -139,7 +147,7 @@ export function createPublicApiHandler({
     req: IncomingMessage,
     route: PublicApiRequestRoute,
     runtime: PartnerRuntime,
-    clientIp: string,
+    identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
     requestId: string,
     authenticated: (clientId: string) => void,
@@ -150,13 +158,13 @@ export function createPublicApiHandler({
       return unauthorized(requestId, challenge, bearer.problem);
     }
 
-    const permit = await runtime.admission.acquire('api', apiLaneGroup(clientIp));
+    const permit = await runtime.admission.acquire('api', apiLaneGroup(identity.key), identity.sharedEgress);
     if (!permit) return unavailable(requestId);
     try {
       const result = await runtime.api.authenticate(bearer.token);
       if (!result.principal) {
         // Counts this failure and refuses with 429 once the address is past its limit.
-        await ledger.consume(clientIp, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
+        await consumePerAddress(ledger, identity, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
         return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, result.refusal);
       }
       const { principal } = result;
@@ -230,7 +238,7 @@ export function createPublicApiHandler({
   async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PublicApiRequestRoute): Promise<void> {
     const requestId = `req_${randomBytes(12).toString('base64url')}`;
     const ledger = new RateLimitLedger();
-    const clientIp = getTrustedClientIp(req);
+    const identity = getPartnerLimitIdentity(req);
     let runtime: PartnerRuntime | null = null;
     let clientId: string | undefined;
 
@@ -238,7 +246,7 @@ export function createPublicApiHandler({
     try {
       runtime = await loadRuntimeForRequest();
       outcome = runtime
-        ? await serveRequest(req, route, runtime, clientIp, ledger, requestId, (authenticatedClientId) => {
+        ? await serveRequest(req, route, runtime, identity, ledger, requestId, (authenticatedClientId) => {
             clientId = authenticatedClientId;
           })
         : unavailable(requestId);
