@@ -123,13 +123,18 @@ describe('myConnectedApps', () => {
     const developerId = await createUser('developer');
     const newer = await attachPartnerState(older.climberId, await createApp(developerId));
     await nameApp(newer.clientId, 'DivePeaks');
+    // The newer app's registration names its maker; the older one predates the column.
+    await db
+      .insert(oauthAppPolicy)
+      .values({ clientId: newer.clientId, ownerUserId: developerId, publisherName: '  DivePeaks Labs  ' })
+      .onConflictDoUpdate({ target: oauthAppPolicy.clientId, set: { publisherName: '  DivePeaks Labs  ' } });
 
     const listed = await appsOf(older.climberId);
     expect(listed.apps).toEqual([
       {
         connectionId: newer.connectionId,
         name: 'DivePeaks',
-        publisherName: null,
+        publisherName: 'DivePeaks Labs',
         scopes: ['offline_access'],
         connectedAt: expect.any(String),
         lastUsedAt: null,
