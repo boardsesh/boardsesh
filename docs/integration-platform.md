@@ -458,9 +458,10 @@ value is `off`.
 environment to decide whether to guard OAuth account links and to mark new
 sign-ins `link_guarded` (see [Consent and the www session](#consent-and-the-www-session)).
 Turn the web on first, then the backend; turn the backend off first. A mismatch
-fails closed rather than open: while the web reads `off`, no sign-in carries
-`link_guarded`, so a backend serving consent asks every climber to sign in, and
-signing in does not help. `infra/railway/config.ts` refuses any web value but
+fails closed rather than open: while the web reads `off`, its sign-in and consent
+pages show "isn't available" whatever the backend serves, and a sign-in made
+meanwhile carries no `link_guarded`, so it cannot approve an app after the web is
+switched on either. `infra/railway/config.ts` refuses any web value but
 `off`, `hold`, `allowlist` or `open`, since the web would read a typo as `off`. It
 cannot compare the web's value with the backend's: the plan reads one service at
 a time, and the backend is inventory-only there.
@@ -2237,15 +2238,15 @@ What LEGAL.md implies:
 | API, in flight | 8 places in the shared `/v1` lane and 8 in overflow per address, per instance | IPv4 address, IPv6 /48 or Worker zone, counted in the admission gate; the 9th waits in the overflow lane. All Worker zones together: 12 shared, 8 overflow. A full queue takes a place from the address holding the most |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
-| New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |
+| Connections per app | 25 live and 20 new in any 24 hours (`oauth_app_policy`) | Postgres count, not Redis, so it cannot fail open. Charged at the first code exchange |
 | Request body | 64 KB | |
 
 `429` carries `Retry-After` (seconds) and `RateLimit-Limit`,
 `RateLimit-Remaining`, `RateLimit-Reset` on every response so a well-written
 client never sees a 429. Limits use `checkRateLimitRedis`, which falls back to
 per-instance memory when Redis is down: still a limit, just a looser one.
-Higher per-app limits are stored on the application-owned app policy, raised
-through the console request form; ordinary use never needs it.
+Higher per-app limits are stored on the application-owned app policy. The owner
+raises them there; there is no request form in the console.
 
 The token limits are keyed per connection and per IP, not only per app,
 because a public app's `client_id` is public: anyone could otherwise drain one
@@ -2267,7 +2268,7 @@ number of climbers. Bootstrap also makes a temporary complete snapshot: 10,000
 ticks is 50 pages and 50 short build transactions. The bounds and the cost of a
 100,000-tick account are in [What it costs](#what-it-costs). Snapshot work runs on
 its own pool of two connections per process and feed pages on the partner pool;
-the arithmetic is in [db-connectivity.md](./db-connectivity.md#dedicated-pools).
+the arithmetic is in [db-connectivity.md](./db-connectivity.md#dedicated-pools-1).
 Per-page climb lookups are batched: one read for the climbs and two for their
 grades at the page's angles, never one per tick. Measure p95 per route
 before milestone 2 opens registration, against the read replica numbers in
@@ -2329,7 +2330,7 @@ stays `off` until step 1 of stage A.
 | 3 | AASA has excluded `/oauth` and `/developers` for at least 7 days, so installed iPhones have refreshed it | `curl -sS https://www.boardsesh.com/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*` |
 | 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
 | 5 | `idle_in_transaction_session_timeout` is set on the application roles ([below](#idle-transactions)) | |
-| 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; a later key goes beside it as `2:…`) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
+| 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
 | 9 | The owner has approved the `LEGAL.md` sentence, the developer terms and the privacy paragraph | |
@@ -2344,7 +2345,9 @@ changes:
 
 While the web reads `off` it neither guards OAuth account links nor marks new
 sign-ins `link_guarded`, and consent requires that mark. So a mismatch fails
-closed: every climber is asked to sign in, and signing in does not help.
+closed: the www sign-in and consent pages show "isn't available" to every climber,
+and a sign-in made in that window cannot approve an app later either; that
+climber has to sign in once more after the web is on.
 `infra/railway/config.ts` refuses a web value other than `off`, `hold`,
 `allowlist` or `open`, but it cannot compare the web's value with the backend's.
 
@@ -2375,7 +2378,7 @@ a sign-in older than 30 days never counts.
 | --- | --- | --- | --- | --- | --- |
 | A | `allowlist` | The owner's test app, test accounts only | 25 live, 20 new in 24 hours | Everything in "Before the first switch-on" is done | 3 days |
 | B | `allowlist` | Sequence and DivePeaks developers, their own accounts only | 25 live, 20 new in 24 hours | Stage A clean | 7 days |
-| C | `allowlist` | Real climbers | Raised per app in `oauth_app_policy` | Stage B clean | Until stage D |
+| C | `allowlist` | Real climbers | 25 live, 20 new in 24 hours | Stage B clean | Until stage D |
 | D | `open` | Any developer with a verified email | The stage D default, still open (200 new a day was the proposal) | BA-02 ships or registration proves the email itself; milestone 2 docs; a second independent agent review; emailing climbers when an app connects (decision 8) | |
 
 Until stage D's email proof exists, `open` registers only the allowlisted
@@ -2408,8 +2411,11 @@ the two developers' ids to `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` and to the
 `developer-console` flag, send them [partner-api.md](./partner-api.md), ask them
 to connect only their own accounts, and turn every question into a doc fix.
 
-**Stage C.** Raise one app's caps in its policy row. The numbers here are an
-example:
+**Stage C.** The caps stay at 25 live and 20 new a day. Emailing climbers when
+an app connects (decision 8) is deferred on the strength of those caps, so
+raising an app's caps is a stage D step, or an owner decision that brings
+decision 8 forward with it. When that time comes, in the app's policy row (the
+numbers here are an example):
 
 ```sql
 UPDATE oauth_app_policy
@@ -2419,7 +2425,7 @@ WHERE client_id = '<the app''s client id>';
 
 Caps count from the first code exchange, not the approval. A public app can
 still be filled by someone with many accounts, since anyone can run its flow to
-their own loopback redirect: raise its caps, or `revoke-user` the accounts.
+their own loopback redirect: `revoke-user` the accounts.
 
 ### The connection budget
 
@@ -2428,7 +2434,7 @@ pool (2 per replica) add 10 connections at steady state and 20 while an old
 backend fleet drains. At code defaults a drain then needs about 107
 connections, against 97 application slots, and an admission connection refused
 with `53300` is not retried. Pick one before leaving `off`
-([db-connectivity.md](./db-connectivity.md#dedicated-pools) has the arithmetic):
+([db-connectivity.md](./db-connectivity.md#dedicated-pools-1) has the arithmetic):
 
 | Option | Drain | Cost |
 | --- | --- | --- |
