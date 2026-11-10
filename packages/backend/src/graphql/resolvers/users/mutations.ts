@@ -406,6 +406,14 @@ export const userMutations = {
           // boardClimbs.userId has onDelete: 'set null', so published climbs
           // will have their userId set to null (preserved).
           await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+
+          // logbook_changes has no users FK, so the cascade leaves it alone, and
+          // the cascaded tick deletes just wrote one row per tick naming this
+          // account. This must follow the users delete: run earlier, those rows
+          // would be written after it and survive. It stays ahead of the manifest
+          // below because a heavy climber's purge is a long statement too.
+          await tx.delete(dbSchema.logbookChanges).where(eq(dbSchema.logbookChanges.userId, userId));
+
           // After the cascade, the longest statement here, so the manifest
           // every staged auth command queues on is held for bookkeeping only.
           if (deletionCommand && deletionSubject) {

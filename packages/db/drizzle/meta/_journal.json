@@ -2080,6 +2080,20 @@
       "when": 1794239487648,
       "tag": "0296_partner_oauth_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 297,
+      "version": "7",
+      "when": 1794299995530,
+      "tag": "0297_logbook_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1794299995531,
+      "tag": "0298_logbook_change_triggers",
+      "breakpoints": true
     }
   ]
 }

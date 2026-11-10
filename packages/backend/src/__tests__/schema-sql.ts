@@ -51,6 +51,17 @@ const partnerOAuthSchema = readFileSync(
   new URL('../../../db/drizzle/0296_partner_oauth_schema.sql', import.meta.url),
   'utf8',
 );
+// The logbook change feed, straight from the migrations so the tests run the
+// triggers production runs. They are applied at the schema tail: the triggers
+// need boardsesh_ticks and board_climb_aliases to exist.
+const logbookChangesSchema = readFileSync(
+  new URL('../../../db/drizzle/0297_logbook_changes.sql', import.meta.url),
+  'utf8',
+);
+const logbookChangeTriggersSchema = readFileSync(
+  new URL('../../../db/drizzle/0298_logbook_change_triggers.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2305,4 +2316,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${authWebOAuthIdentitySchema}
   DROP TABLE IF EXISTS oauth_consent_interactions, oauth_refresh_ancestors, oauth_grants, oauth_subjects, oauth_connections, oauth_app_policy, oauth_consent, oauth_access_token, oauth_refresh_token, oauth_client_assertion, oauth_client_resource, oauth_resource, oauth_client, oauth_verification, oauth_session CASCADE;
   ${partnerOAuthSchema}
+  DROP TABLE IF EXISTS logbook_changes;
+  DROP TABLE IF EXISTS logbook_change_watermark;
+  ${logbookChangesSchema};
+  ${logbookChangeTriggersSchema};
+  -- Test fixtures reset boardsesh_ticks with TRUNCATE; the guard against that
+  -- is covered by logbook-changes.test.ts, which enables it for its own test.
+  ALTER TABLE boardsesh_ticks DISABLE TRIGGER trg_boardsesh_ticks_logbook_truncate;
 `;

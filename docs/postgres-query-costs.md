@@ -227,6 +227,10 @@ Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCa
 - **Not measured:** the full statement cold after the collision filter was added in review; the filter changes CPU, not page reads. `followingClimbAscents` at hundreds of follows.
 - **Caveats:** the remaining reads are the climb's own log pages and the joins for the page of rows. `ticks` and `userTicks` keep the per-row rule: one climber's rows, where the probe lands on pages already read.
 
+## Write-path additions
+
+**`logbook_changes` (partner logbook feed).** Every tick insert, delete and public-column update now also appends one row in the same transaction, through a trigger on `boardsesh_ticks`. Measured locally on PostgreSQL 18.6 against 3M synthetic ticks with all 15 production indexes (E; see [What it costs](./integration-platform.md#what-it-costs) for the method): the trigger takes p50 113 µs on a native insert, 153 µs on a public-column update and 151 µs on an Aurora-pull insert, which adds the twin lookup. A bookkeeping-only update (a Kilter PowerSync redelivery) stops at the trigger's `WHEN` clause and calls nothing. About 275 bytes per change row including its indexes with 36-character ids (E). A native tick that later joins an inferred session writes two rows, because `session_id` advances the public `updated_at`, so 90 days at 11,000 ticks a day is 270 to 545 MB (E). WAL: about +0.2 to 1.0 KB per write on 15 to 21 KB, at most about 22 MB a day (E). Rows are pruned after 90 days by the partner-feed prune job (not yet shipped).
+
 ## Offline-only candidates
 
 Every move here is JS-only and ships by OTA from `main`. New data must go in a side artifact, not the main per-layout artifact, because shipped binaries reject unknown tables. Downloads are opt-in (`autoOfflineBoards=false`). The share of users with downloads is unknown. Measure it with `Offline Board Download Completed` against native DAU. The Expo browser app and www have no SQLite.

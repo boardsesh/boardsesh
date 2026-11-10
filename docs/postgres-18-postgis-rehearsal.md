@@ -183,6 +183,21 @@ two, or any partial reload that touches `votes` after `vote_counts`, brings it b
 `--disable-triggers` (or `session_replication_role = replica`) avoids both problems, and it remains
 the faithful model of logical-replication apply.
 
+`logbook_changes` has the same hazard, and it does fire. `boardsesh_ticks` sorts first, so
+`COPY boardsesh_ticks` fills the log through its trigger and the later `COPY logbook_changes` collides
+on `seq`:
+
+```
+pg_restore: error: COPY failed for table "logbook_changes": ERROR:  duplicate key value violates unique constraint "logbook_changes_pkey"
+```
+
+`--disable-triggers` clears that one, but not its neighbour: a fully migrated target already holds
+the seeded `logbook_change_watermark` row, so that `COPY` fails on `logbook_change_watermark_pkey`
+either way. `pg_restore` reports it and carries on unless `--exit-on-error` is set, and the target
+keeps its own feed generation. Both reproduced on PostgreSQL 18.6. Neither table's rows mean anything
+in another cluster, because `xid8` values belong to one cluster, so after a logical move clear the log
+and rotate the generation ([integration-platform.md](./integration-platform.md#retention-cursor-validity-and-moving-the-database)).
+
 Two guards keep the invariant from decaying: `scripts/__tests__/db-trigger-search-path.test.ts` reads the
 migration folder in the `db-migrations` CI job, and `scripts/dev-db-image-smoke.sh` asserts
 `pg_proc.proconfig` against the fully-migrated dev-db image in `test-dev-db`.

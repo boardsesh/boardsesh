@@ -811,12 +811,15 @@ see the backend test-DDL notes):
    `kilter_id` (it never hides a row when both carry one), so those count
    too: the pull's `toClear` path, a JSON re-import restamping
    `aurora_synced_at` and Kilter push-back stamping `kilter_id` all change
-   what an app should see without touching a serialized field. Only
+   what an app should see without touching a serialized field. Changing only
    `aurora_sync_error`, `kilter_type`, `kilter_synced_at`,
-   `kilter_sync_error`, `kilter_detached_at`, `board_id`, `session_id` and
-   `climb_revision` are left out, which still keeps no-op Kilter PowerSync
-   redeliveries out of the feed. A `user_id` change writes a row for both
-   climbers.
+   `kilter_sync_error` or `board_id` writes nothing, which keeps no-op Kilter
+   PowerSync redeliveries out of the feed. `session_id`, `climb_revision` and
+   `kilter_detached_at` have no comparison of their own but still write a row,
+   because `trg_boardsesh_ticks_set_updated_at` advances `updated_at` for them
+   and `updated_at` is public and feeds the twin rule. A tick joining an
+   inferred session therefore writes a second row. A `user_id` change writes a
+   row for both climbers.
 3. Twins: when the OLD or the NEW row is an Aurora-pull row with a real
    `aurora_id`, the trigger also writes a row for every other Aurora-pull row
    of that climber under the OLD natural key and under the NEW one (same
@@ -837,6 +840,26 @@ see the backend test-DDL notes):
    `TRUNCATE` fires no row triggers, so it would silently bypass the log. No
    production path truncates ticks today; tests that need to can disable the
    trigger explicitly.
+
+As built:
+
+- The tick and alias trigger functions are `SECURITY DEFINER` with a pinned
+  `search_path`. The production deploy commits a migration's DDL before
+  `reconcileMigrationRuntimeAcl` grants `boardsesh_runtime` on the new table, so
+  a trigger running as the writer would fail every tick saved in that gap.
+- Nothing in the tick trigger can fail for a valid row: its two columns are NOT
+  NULL on `boardsesh_ticks`, the log has no foreign key and no unique key beyond
+  the generated `seq`, and permissions are the owner's. It uses no `EXCEPTION`
+  block on purpose: one per row is one subtransaction per row, which during a
+  bulk import overflows the per-backend subtransaction cache and slows every
+  snapshot in the cluster.
+- The alias trigger is deferred to commit, so a tick committed while a catalog
+  merge is in flight is picked up by that merge's fan-out instead of being
+  served with the old `climb.id` forever. The window that remains is the gap
+  between the deferred fan-out's snapshot and the commit, which is microseconds.
+- `logbook_change_watermark` holds the one row that carries the feed generation
+  and the retention watermark. The read path is
+  `packages/backend/src/services/logbook-feed.ts`.
 
 A trigger, not application code, because ticks are written by GraphQL
 mutations, offline-sync pushes, the Aurora and Kilter sync daemons, JSON and
@@ -991,8 +1014,33 @@ One narrow row per public tick change, plus the twin and alias fan-out
 (bounded by the twins of one ascent and the ticks of one merged climb). The
 feed query is an index range scan on `(user_id, txid, seq)` plus one batched
 tick lookup per page. Ninety days of rows for every write is a small fraction
-of `boardsesh_ticks` itself; measure it in the milestone 1 PR against
-[postgres-query-costs.md](./postgres-query-costs.md).
+of `boardsesh_ticks` itself.
+
+Measured on PostgreSQL 18.6 against a synthetic table of 3M ticks with all 15
+production indexes and 1M rows already in the log, on a heavily loaded machine
+(load average about 60, so treat the wall-clock numbers as upper bounds):
+
+| Write | Trigger time per row (EXPLAIN `Trigger` line) |
+| --- | --- |
+| Native tick insert | p50 113 µs, p95 590 µs |
+| Aurora-pull insert (adds the twin lookup) | p50 151 µs, p95 561 µs |
+| Public-column update | p50 153 µs, p95 688 µs |
+| Bookkeeping-only update (Kilter redelivery) | No function call; the `WHEN` clause rejects it |
+
+The trigger's first call in a new connection cost 2.3 ms for plan compilation
+and is not repeated. Backend CPU per row rose about 20 µs on a native insert
+(313 µs to 332 µs on the same run), within the noise of a shared machine. A 5,000-tick
+catalog merge wrote its fan-out in 32 ms at commit.
+
+A change row takes about 275 bytes including its indexes with 36-character ids
+(heap 134, `(user_id, txid, seq)` 117, primary key 24). A native tick that later
+joins an inferred session writes two rows, so 90 days at 11,000 ticks a day is
+270 to 545 MB, against 574 MB for a 658,000-tick `boardsesh_ticks` with its
+indexes. Each write adds about 0.2 to 1.0 KB of WAL on top of the 15 to 21 KB a
+tick write already produces, at most about 22 MB a day.
+
+Account deletion removes the climber's rows in its own transaction, after the
+cascade into `boardsesh_ticks` has written them.
 
 The phone's own sync (`syncTicks`, `syncDeletions`) is untouched. It could
 move onto the same log later and lose its own long-transaction hole; that is
