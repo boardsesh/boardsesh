@@ -15,6 +15,7 @@ vi.mock('react-i18next', () => ({
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   showMessage: vi.fn(),
+  writeText: vi.fn(),
   token: { current: 'developer-token' as string | null },
 }));
 
@@ -84,7 +85,7 @@ beforeEach(() => {
   mocks.showMessage.mockReset();
   mocks.token.current = 'developer-token';
   Object.defineProperty(navigator, 'clipboard', {
-    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    value: { writeText: mocks.writeText.mockReset().mockResolvedValue(undefined) },
     configurable: true,
   });
 });
@@ -150,7 +151,7 @@ describe('DeveloperAppsContent', () => {
     expect(within(reveal).getByText("Copy the client secret now. Boardsesh won't show it again.")).toBeTruthy();
     expect(within(reveal).getByRole('textbox', { name: 'Client secret' }).textContent).toBe(SECRET);
     fireEvent.click(within(reveal).getAllByRole('button', { name: 'Copy' })[1]);
-    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(SECRET));
+    await waitFor(() => expect(mocks.writeText).toHaveBeenCalledWith(SECRET));
     // Neither the query cache nor the address bar ever holds it.
     expect(
       JSON.stringify(
