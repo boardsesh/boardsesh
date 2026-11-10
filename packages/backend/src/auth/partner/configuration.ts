@@ -1,4 +1,7 @@
-export const PARTNER_ISSUER = 'https://api.boardsesh.com/api/auth';
+import { PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+
+/** Shared with the www consent pages, which send the browser back to it. */
+export const PARTNER_ISSUER = PARTNER_OAUTH_ISSUER;
 export const PARTNER_RESOURCE = 'https://api.boardsesh.com/v1';
 export const PARTNER_WEB_ORIGIN = 'https://www.boardsesh.com';
 

@@ -10,6 +10,7 @@ import {
   oauthVerification,
 } from '@boardsesh/db/schema/auth';
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import { checkConnectionCaps, type ConnectionCapRefusal } from './connection-caps';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
 import {
@@ -253,7 +254,7 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
               // hook runs. Without its decision, nothing here approves anything.
               if (!state.consent) {
                 throw new APIError('BAD_REQUEST', {
-                  error: 'invalid_request',
+                  error: PARTNER_CONSENT_ERRORS.linkSpent,
                   error_description: 'This consent link is no longer valid.',
                 });
               }
@@ -370,7 +371,10 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (state.consentApproved && state.consent && connection.generation !== state.consent.generation) {
               throw new PartnerRefusal(
                 Response.json(
-                  { error: 'invalid_request', error_description: 'This consent link is no longer valid.' },
+                  {
+                    error: PARTNER_CONSENT_ERRORS.linkSpent,
+                    error_description: 'This consent link is no longer valid.',
+                  },
                   { status: 400, headers: { 'cache-control': 'no-store' } },
                 ),
               );

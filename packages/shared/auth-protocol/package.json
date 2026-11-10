@@ -17,6 +17,11 @@
       "import": "./src/auth-time.ts",
       "default": "./src/auth-time.ts"
     },
+    "./partner-oauth": {
+      "types": "./src/partner-oauth.ts",
+      "import": "./src/partner-oauth.ts",
+      "default": "./src/partner-oauth.ts"
+    },
     "./partner-oauth-mode": {
       "types": "./src/partner-oauth-mode.ts",
       "import": "./src/partner-oauth-mode.ts",

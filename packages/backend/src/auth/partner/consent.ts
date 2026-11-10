@@ -3,14 +3,8 @@ import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthEndpoint, createAuthMiddleware } from 'better-auth/api';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
-import {
-  oauthAppPolicy,
-  oauthClient,
-  oauthConnections,
-  oauthConsentInteractions,
-  userProfiles,
-  users,
-} from '@boardsesh/db/schema/auth';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
+import { oauthClient, oauthConnections, oauthConsentInteractions } from '@boardsesh/db/schema/auth';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { authorizeRedirectTarget } from './fence';
 import { resolveFirstPartySession } from './first-party-session';
@@ -41,7 +35,9 @@ export interface PartnerConsentDetails {
     homepageUrl: string | null;
     privacyPolicyUrl: string | null;
     termsUrl: string | null;
-    developerName: string | null;
+    // No developer name: the account's own name never reaches a climber. A
+    // `publisherName` from the registration record joins here once that column
+    // exists (BA-07/08 fast path, "From F12"); until then there is no "Made by".
     /** Where the browser goes after Allow: a host, or a native app's scheme. */
     redirectHost: string | null;
   };
@@ -82,6 +78,20 @@ function bridgedSession(candidate: unknown): BridgedSession | null {
   const { session, user } = candidate as { session?: { id?: unknown; userId?: unknown }; user?: { id?: unknown } };
   if (typeof session?.id !== 'string' || typeof user?.id !== 'string' || session.userId !== user.id) return null;
   return candidate as BridgedSession;
+}
+
+/** The app a consent link names. The link is signed, so this is the app that asked. */
+function signedClientId(oauthQuery: unknown): string | null {
+  return typeof oauthQuery === 'string' ? new URLSearchParams(oauthQuery).get('client_id') : null;
+}
+
+/** Whether nobody may connect this app now: suspended (`disabled`), or gone. */
+async function appSuspended(transaction: PartnerDatabase, clientId: string): Promise<boolean> {
+  const [client] = await transaction
+    .select({ disabled: oauthClient.disabled })
+    .from(oauthClient)
+    .where(eq(oauthClient.clientId, clientId));
+  return !client || client.disabled === true;
 }
 
 type InteractionCheck =
@@ -196,21 +206,25 @@ function refusalError({ status, body }: ConsentRefusal): APIError {
   return new APIError(API_ERROR_STATUS[status], body, { 'cache-control': 'no-store' });
 }
 
+// The `error` codes are PARTNER_CONSENT_ERRORS, which the www consent pages switch on.
 const LOGIN_REQUIRED: ConsentRefusal = {
   status: 401,
-  body: { error: 'login_required', error_description: 'Sign in to Boardsesh again to continue.' },
+  body: { error: PARTNER_CONSENT_ERRORS.loginRequired, error_description: 'Sign in to Boardsesh again to continue.' },
 };
 const CROSS_SITE: ConsentRefusal = {
   status: 403,
-  body: { error: 'invalid_request', error_description: 'Consent is answered only from the Boardsesh website.' },
+  body: {
+    error: PARTNER_CONSENT_ERRORS.crossSite,
+    error_description: 'Consent is answered only from the Boardsesh website.',
+  },
 };
 const LINK_SPENT: ConsentRefusal = {
   status: 400,
-  body: { error: 'invalid_request', error_description: 'This consent link is no longer valid.' },
+  body: { error: PARTNER_CONSENT_ERRORS.linkSpent, error_description: 'This consent link is no longer valid.' },
 };
-const APP_UNAVAILABLE: ConsentRefusal = {
-  status: 400,
-  body: { error: 'invalid_request', error_description: 'This app cannot be connected.' },
+const APP_SUSPENDED: ConsentRefusal = {
+  status: 403,
+  body: { error: PARTNER_CONSENT_ERRORS.appSuspended, error_description: 'This app cannot be connected.' },
 };
 const NO_STORE = { 'cache-control': 'no-store' };
 
@@ -238,11 +252,14 @@ export function partnerConsentGuard(
           const climber = bridgedSession(context.context.session);
           if (!climber) throw refusalError(LOGIN_REQUIRED);
           const { transaction } = currentPartnerTransaction();
+          const linkClientId = signedClientId(context.body.oauth_query);
+          if (linkClientId && (await appSuspended(transaction, linkClientId))) throw refusalError(APP_SUSPENDED);
           const interaction = await checkConsentInteraction(transaction, context.body.oauth_query, climber, {
             spend: false,
           });
           if (interaction.status !== 'open') throw refusalError(LINK_SPENT);
           const clientId = interaction.query.get('client_id') ?? '';
+          // The app's own published fields only: nothing about the account that registered it.
           const [client] = await transaction
             .select({
               clientId: oauthClient.clientId,
@@ -251,15 +268,10 @@ export function partnerConsentGuard(
               policy: oauthClient.policy,
               tos: oauthClient.tos,
               disabled: oauthClient.disabled,
-              developerName: users.name,
-              developerDisplayName: userProfiles.displayName,
             })
             .from(oauthClient)
-            .leftJoin(oauthAppPolicy, eq(oauthAppPolicy.clientId, oauthClient.clientId))
-            .leftJoin(users, eq(users.id, oauthAppPolicy.ownerUserId))
-            .leftJoin(userProfiles, eq(userProfiles.userId, oauthAppPolicy.ownerUserId))
             .where(eq(oauthClient.clientId, clientId));
-          if (!client || client.disabled) throw refusalError(APP_UNAVAILABLE);
+          if (!client || client.disabled) throw refusalError(APP_SUSPENDED);
           const details: PartnerConsentDetails = {
             client: {
               clientId: client.clientId,
@@ -267,7 +279,6 @@ export function partnerConsentGuard(
               homepageUrl: client.uri,
               privacyPolicyUrl: client.policy,
               termsUrl: client.tos,
-              developerName: client.developerDisplayName ?? client.developerName,
               redirectHost: redirectHost(interaction.query.get('redirect_uri')),
             },
             scopes: describeConsentScopes(promptTokens(interaction.query.get('scope') ?? '')),
@@ -318,6 +329,12 @@ export function partnerConsentGuard(
             if (!climber)
               return context.json(LOGIN_REQUIRED.body, { status: LOGIN_REQUIRED.status, headers: NO_STORE });
             const { transaction, state } = currentPartnerTransaction();
+            // A suspended app answers as such, and spends nothing: the link may
+            // work again if the app is reinstated before it expires.
+            const linkClientId = signedClientId(context.body?.oauth_query);
+            if (linkClientId && (await appSuspended(transaction, linkClientId))) {
+              return context.json(APP_SUSPENDED.body, { status: APP_SUSPENDED.status, headers: NO_STORE });
+            }
             const interaction = await checkConsentInteraction(transaction, context.body?.oauth_query, climber, {
               spend: true,
             });
