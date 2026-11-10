@@ -12,6 +12,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./auth-time": {
+      "types": "./src/auth-time.ts",
+      "import": "./src/auth-time.ts",
+      "default": "./src/auth-time.ts"
+    },
     "./client-errors": {
       "types": "./src/client-errors.ts",
       "import": "./src/client-errors.ts",
