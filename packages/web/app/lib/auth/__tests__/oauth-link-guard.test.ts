@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import type { Adapter, AdapterAccount, AdapterUser } from 'next-auth/adapters';
 import { decode, encode, type JWT } from 'next-auth/jwt';
@@ -164,27 +164,45 @@ afterAll(() => {
   vi.restoreAllMocks();
 });
 
-describe('linking a provider account into a live web session', () => {
-  it.each([
-    ['from before the auth_time claim', {}],
-    ['40 days old', { auth_time: NOW_SECONDS - 40 * DAY_SECONDS }],
-    ['exactly 30 days old', { auth_time: NOW_SECONDS - 30 * DAY_SECONDS }],
-    ['with a fractional sign-in time', { auth_time: NOW_SECONDS - 0.5 }],
-    ['with a sign-in time in the future', { auth_time: NOW_SECONDS + 3600 }],
-    ['with a sign-in time that is not a number', { auth_time: String(NOW_SECONDS) }],
-    ['with a non-positive sign-in time', { auth_time: 0 }],
-  ])('is refused for a session %s, and mints no sign-in time', async (_label, claims) => {
-    const response = await providerCallback(await sessionCookie(claims));
+const STALE_SESSIONS: Array<[string, Record<string, unknown>]> = [
+  ['from before the auth_time claim', {}],
+  ['40 days old', { auth_time: NOW_SECONDS - 40 * DAY_SECONDS }],
+  ['exactly 30 days old', { auth_time: NOW_SECONDS - 30 * DAY_SECONDS }],
+  ['with a fractional sign-in time', { auth_time: NOW_SECONDS - 0.5 }],
+  ['with a sign-in time in the future', { auth_time: NOW_SECONDS + 3600 }],
+  ['with a sign-in time that is not a number', { auth_time: String(NOW_SECONDS) }],
+  ['with a non-positive sign-in time', { auth_time: 0 }],
+];
 
-    expect(response.status).toBe(302);
-    expect(new URL(response.headers.get('location')!).searchParams.get('error')).toBe('Callback');
-    expect(linkAccount).not.toHaveBeenCalled();
-    expect(links.size).toBe(0);
-    expect(issuedSession(response)).toBeNull();
+/** Partner OAuth modes the backend could be in, as the web reads them. */
+const MODES_OFF: Array<[string, string | undefined]> = [
+  ['unset', undefined],
+  ['off', 'off'],
+  ['empty', ''],
+  ['misspelled', 'allowlst'],
+];
+const MODES_ON: Array<[string, string]> = [
+  ['allowlist', 'allowlist'],
+  ['hold', 'hold'],
+  ['open', 'Open '],
+];
+
+function withPartnerMode(rawMode: string | undefined) {
+  beforeEach(() => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', rawMode);
   });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+}
 
-  it('is allowed for a session signed in under 30 days ago, as today', async () => {
-    const response = await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 29 * DAY_SECONDS }));
+// Every cookie from before F5 lacks auth_time, so the guard waits for partner
+// consent to exist. Until then a link behaves exactly as it always has.
+describe.each(MODES_OFF)('with partner OAuth %s', (_label, rawMode) => {
+  withPartnerMode(rawMode);
+
+  it.each(STALE_SESSIONS)('links into a session %s, as today', async (_session, claims) => {
+    const response = await providerCallback(await sessionCookie(claims));
 
     expect(linkAccount).toHaveBeenCalledWith(
       expect.objectContaining({ userId: climber.id, provider: 'google', providerAccountId: providerProfile.sub }),
@@ -195,41 +213,71 @@ describe('linking a provider account into a live web session', () => {
   });
 });
 
-describe('first-party OAuth sign-in stays as it was', () => {
-  it('signs in a provider account already linked to the climber, even from an old session', async () => {
-    links.set(`google:${providerProfile.sub}`, climber.id);
-    const response = await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 40 * DAY_SECONDS }));
+describe.each(MODES_ON)('with partner OAuth %s', (_label, rawMode) => {
+  withPartnerMode(rawMode);
 
+  it.each(STALE_SESSIONS)('refuses a link into a session %s, and mints no sign-in time', async (_session, claims) => {
+    const response = await providerCallback(await sessionCookie(claims));
+
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get('location')!).searchParams.get('error')).toBe('Callback');
     expect(linkAccount).not.toHaveBeenCalled();
-    const session = await issuedSession(response);
-    expect(session?.sub).toBe(climber.id);
-    expect(session?.auth_time).toBe(NOW_SECONDS);
-  });
-
-  it('creates and links a new account when no one is signed in', async () => {
-    const response = await providerCallback();
-
-    expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: 'created-1' }));
-    const session = await issuedSession(response);
-    expect(session?.sub).toBe('created-1');
-    expect(session?.auth_time).toBe(NOW_SECONDS);
-  });
-
-  it('links by verified provider email when no one is signed in', async () => {
-    providerProfile = { sub: 'climbers-own-google-account', email: climber.email, name: 'Climber' };
-    const response = await providerCallback();
-
-    expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: climber.id }));
-    expect((await issuedSession(response))?.sub).toBe(climber.id);
-  });
-
-  it('treats an expired session cookie as no session, as NextAuth does', async () => {
-    vi.setSystemTime(NOW_MS - 31 * DAY_SECONDS * 1000);
-    const expired = await sessionCookie({ auth_time: NOW_SECONDS - 31 * DAY_SECONDS });
-    vi.setSystemTime(NOW_MS);
-    const response = await providerCallback(expired);
-
-    expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: 'created-1' }));
-    expect((await issuedSession(response))?.sub).toBe('created-1');
+    expect(links.size).toBe(0);
+    expect(issuedSession(response)).toBeNull();
   });
 });
+
+describe.each([...MODES_OFF.slice(0, 1), ...MODES_ON.slice(0, 1)])(
+  'first-party OAuth sign-in with partner OAuth %s',
+  (_label, rawMode) => {
+    withPartnerMode(rawMode);
+
+    it('links into a session signed in under 30 days ago', async () => {
+      const response = await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 29 * DAY_SECONDS }));
+
+      expect(linkAccount).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: climber.id, provider: 'google', providerAccountId: providerProfile.sub }),
+      );
+      const session = await issuedSession(response);
+      expect(session?.sub).toBe(climber.id);
+      expect(session?.auth_time).toBe(NOW_SECONDS);
+    });
+
+    it('signs in a provider account already linked to the climber, even from an old session', async () => {
+      links.set(`google:${providerProfile.sub}`, climber.id);
+      const response = await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 40 * DAY_SECONDS }));
+
+      expect(linkAccount).not.toHaveBeenCalled();
+      const session = await issuedSession(response);
+      expect(session?.sub).toBe(climber.id);
+      expect(session?.auth_time).toBe(NOW_SECONDS);
+    });
+
+    it('creates and links a new account when no one is signed in', async () => {
+      const response = await providerCallback();
+
+      expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: 'created-1' }));
+      const session = await issuedSession(response);
+      expect(session?.sub).toBe('created-1');
+      expect(session?.auth_time).toBe(NOW_SECONDS);
+    });
+
+    it('links by verified provider email when no one is signed in', async () => {
+      providerProfile = { sub: 'climbers-own-google-account', email: climber.email, name: 'Climber' };
+      const response = await providerCallback();
+
+      expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: climber.id }));
+      expect((await issuedSession(response))?.sub).toBe(climber.id);
+    });
+
+    it('treats an expired session cookie as no session, as NextAuth does', async () => {
+      vi.setSystemTime(NOW_MS - 31 * DAY_SECONDS * 1000);
+      const expired = await sessionCookie({ auth_time: NOW_SECONDS - 31 * DAY_SECONDS });
+      vi.setSystemTime(NOW_MS);
+      const response = await providerCallback(expired);
+
+      expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: 'created-1' }));
+      expect((await issuedSession(response))?.sub).toBe('created-1');
+    });
+  },
+);
