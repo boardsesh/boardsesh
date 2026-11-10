@@ -20,7 +20,7 @@ const STATEMENT_TIMEOUT = '5s';
 const IDLE_IN_TRANSACTION_TIMEOUT = `${PARTNER_IDLE_IN_TRANSACTION_TIMEOUT_MS}ms`;
 const BUSY_RETRY_AFTER_SECONDS = '2';
 
-/** Startup parameters for the partner pool, passed to `createDedicatedPool`. */
+/** Startup parameters for the partner and logbook snapshot pools, passed to `createDedicatedPool`. */
 export function partnerPoolOverrides(): DedicatedPoolOverrides {
   return { connection: { idle_in_transaction_session_timeout: PARTNER_IDLE_IN_TRANSACTION_TIMEOUT_MS } };
 }

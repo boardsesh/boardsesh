@@ -394,14 +394,14 @@ postgres.js pool the process builds afterwards sends
 
 | process | where | pools covered |
 | --- | --- | --- |
-| backend HTTP/GraphQL server | `src/index.ts` imports `src/request-pool-defaults.ts` straight after `./instrument` | shared primary, read replica, admission pool (60 s); partner pool (10 s, see below); a `createDedicatedPool` added later inherits 60 s unless it passes its own value |
+| backend HTTP/GraphQL server | `src/index.ts` imports `src/request-pool-defaults.ts` straight after `./instrument` | shared primary, read replica, admission pool (60 s); partner and logbook snapshot pools (10 s, see below); a `createDedicatedPool` added later inherits 60 s unless it passes its own value |
 | web server | `app/lib/db/db.ts`, the only module that builds the web's pools | shared primary and read replica |
 
-The partner pool passes its own 10 s (`partnerPoolOverrides()`), the same limit
-each partner transaction already sets for itself with `set_config(..., true)`, so a
-transaction opened on that pool any other way gets it too. A transaction-local
-`set_config` always beats the startup parameter, so the logbook snapshot's chunk
-transactions keep their own 10 s on whichever pool runs them.
+The partner and logbook snapshot pools pass 10 s (`partnerPoolOverrides()`), the
+same limit partner transactions and snapshot chunk transactions already set for
+themselves with `set_config(..., true)`, so a transaction opened on those pools any
+other way gets it too. A transaction-local `set_config` always beats the startup
+parameter.
 
 The backend server also runs pg-boss consumers in the same process (push
 delivery, spray detection and background-job maintenance, the popularity, grade

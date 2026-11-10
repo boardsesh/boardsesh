@@ -2367,7 +2367,7 @@ stays `off` until step 1 of stage A.
 | 2 | `api.boardsesh.com` answers through Cloudflare | `curl -sS -o /dev/null -w '%{http_code}' https://api.boardsesh.com/health` prints `200` |
 | 3 | AASA has excluded `/oauth` and `/developers` for at least 7 days, so installed iPhones have refreshed it | `curl -sS https://www.boardsesh.com/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*` |
 | 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
-| 5 | `idle_in_transaction_session_timeout` is set on the application roles ([below](#idle-transactions)) | |
+| 5 | The backend and web deploys send `idle_in_transaction_session_timeout` (code since #7415, nothing to set), and the oldest-write-transaction alert exists ([below](#idle-transactions)) | The query in [Idle transactions](#idle-transactions) |
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
@@ -2488,12 +2488,15 @@ variable. The recommendation is the first option, or raising `max_connections`.
 
 The logbook feed serves only changes below the oldest write transaction still
 open, so one session left idle inside a transaction holds every app's feed back
-until it ends. Partner transactions set their own 10-second limit; the rest of
-the application does not. Before the first switch-on, set
-`idle_in_transaction_session_timeout` on every login that writes ticks:
-`boardsesh_runtime` (backend and web) and the worker logins.
+until it ends. The backend server and the web server end such a session in code:
+their pools send `idle_in_transaction_session_timeout` as a startup parameter,
+60 s on the shared pools and 10 s on the partner and snapshot pools
+([db-connectivity.md](./db-connectivity.md), "Idle transactions end after 60 s on
+request pools", has which pools, why 60 s, and what a cut request sees). There is
+no `ALTER ROLE` to run for `boardsesh_runtime`.
 
-1. See what sits idle in a transaction today, a few times over a day:
+1. After the first deploy that carries it, see what sits idle in a transaction,
+   a few times over a day:
 
    ```sql
    SELECT usename, application_name, count(*), max(now() - state_change) AS longest
@@ -2502,21 +2505,16 @@ the application does not. Before the first switch-on, set
    GROUP BY usename, application_name;
    ```
 
-2. Pick a value above the longest legitimate one. It cuts only sessions that sit
-   idle inside a transaction, not long statements, so kilter-sync's 80 to 135
-   second upserts (the reason `statement_timeout` is never set on
-   `boardsesh_runtime`) are not affected.
-3. As the database admin (the migration role cannot alter application roles),
-   with the value you picked:
-
-   ```sql
-   ALTER ROLE boardsesh_runtime SET idle_in_transaction_session_timeout = '60s';
-   ```
-
-   Repeat for each worker login. New sessions pick it up; pooled connections keep
-   the old value until they reconnect, which the next deploy does.
-4. Alert when the oldest running write transaction is over 5 minutes old
+   A backend or web session never stays past a minute. Anything longer comes
+   from a worker, a sync daemon or a script, which are not covered.
+2. Leave the worker logins alone unless their long transactions have been
+   checked first: the board-snapshot export holds one REPEATABLE READ
+   transaction for a whole export, and a role-level value would apply to it.
+3. Alert when the oldest running write transaction is over 5 minutes old
    ([Observability](#observability)).
+
+To change the value, set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (milliseconds,
+digits only) on `boardsesh-backend` or `boardsesh-web`; `0` turns it off.
 
 ### Admin commands
 
