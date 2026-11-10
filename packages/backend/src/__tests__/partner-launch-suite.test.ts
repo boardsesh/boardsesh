@@ -1199,27 +1199,104 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      "keeps the grant's audience on a refresh that leaves the resource out, and never a wider one (RFC 8707 2.2)",
+      'makes an API token when the authorization or the code exchange names the API',
+      async () => {
+        const app = await registerApp();
+        const climber = await newClimber();
+        const outcomes: Record<string, unknown> = {};
+        for (const [label, atAuthorize, atExchange] of [
+          ['authorize only', RESOURCE, null],
+          ['exchange only', null, RESOURCE],
+        ] as const) {
+          const authorization = await startAuthorization(app, { resource: atAuthorize });
+          const parameters = oauth.validateAuthResponse(
+            metadata,
+            app.client,
+            new URL(await callbackFor(authorization, climber)),
+            authorization.state,
+          );
+          const response = await oauth.authorizationCodeGrantRequest(
+            metadata,
+            app.client,
+            app.auth,
+            parameters,
+            authorization.redirectUri,
+            authorization.verifier,
+            { ...(atExchange ? { additionalParameters: { resource: atExchange } } : {}), ...oauthOptions(app.ip) },
+          );
+          const body = (await response.json()) as { access_token?: string; error?: string };
+          remember(body.access_token);
+          outcomes[label] = {
+            status: response.status,
+            error: body.error ?? null,
+            api: body.access_token ? (await callMe(app, body.access_token)).status : null,
+          };
+        }
+        // Either step is enough. A grant that named it at neither is refused above.
+        expect(outcomes).toEqual({
+          'authorize only': { status: 200, error: null, api: 200 },
+          'exchange only': { status: 200, error: null, api: 200 },
+        });
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      "carries the grant's audience through every refresh: left out it is kept (RFC 8707 2.2), and no other is ever issued",
       async () => {
         const app = await registerApp();
         const connection = await connect(app, await newClimber());
-        const response = await oauth.refreshTokenGrantRequest(
+        const elsewhere = 'https://api.boardsesh.com/v2';
+
+        // Another resource, alone or beside the API's, is refused, and the refresh token is not spent.
+        for (const resources of [[elsewhere], [RESOURCE, elsewhere]]) {
+          const parameters = new URLSearchParams();
+          for (const resource of resources) parameters.append('resource', resource);
+          const refused = await oauth.refreshTokenGrantRequest(
+            metadata,
+            app.client,
+            app.auth,
+            connection.tokens.refresh_token,
+            { additionalParameters: parameters, ...oauthOptions(app.ip) },
+          );
+          expect({ resources, status: refused.status, body: await refused.json() }).toMatchObject({
+            resources,
+            status: 400,
+            body: { error: 'invalid_target' },
+          });
+        }
+
+        // Left out, the grant's audience is kept, and the token reads the API.
+        const refreshed = await oauth.processRefreshTokenResponse(
           metadata,
           app.client,
-          app.auth,
-          connection.tokens.refresh_token,
-          oauthOptions(app.ip),
+          await oauth.refreshTokenGrantRequest(
+            metadata,
+            app.client,
+            app.auth,
+            connection.tokens.refresh_token,
+            oauthOptions(app.ip),
+          ),
         );
-        const refreshed = await oauth.processRefreshTokenResponse(metadata, app.client, response);
         remember(refreshed.access_token, refreshed.refresh_token);
         expect((await callMe(app, refreshed.access_token)).status).toBe(200);
-        const audiences = await db
+
+        // No token this connection ever got names anything but the API.
+        const accessTokens = await db
           .select({ resources: oauthAccessToken.resources })
           .from(oauthAccessToken)
           .where(
             and(eq(oauthAccessToken.userId, connection.climber.userId), eq(oauthAccessToken.clientId, app.clientId)),
           );
-        for (const { resources } of audiences) expect(resources).toEqual([RESOURCE]);
+        const refreshTokens = await db
+          .select({ resources: oauthRefreshToken.resources })
+          .from(oauthRefreshToken)
+          .where(
+            and(eq(oauthRefreshToken.userId, connection.climber.userId), eq(oauthRefreshToken.clientId, app.clientId)),
+          );
+        const issued = [...accessTokens, ...refreshTokens];
+        expect(issued.length).toBeGreaterThanOrEqual(4);
+        for (const { resources } of issued) expect(resources).toEqual([RESOURCE]);
       },
       SUITE_DEADLINE_MS,
     );

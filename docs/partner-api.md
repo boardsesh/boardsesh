@@ -97,7 +97,12 @@ The API's resource identifier is exactly `https://api.boardsesh.com/v1`, without
 a trailing slash. Every registered app is authorized to request it. Send this
 `resource` parameter when authorizing, exchanging a code and refreshing; it
 is distinct from the issuer and redirect URI. Tokens without that audience
-cannot call the API.
+cannot call the API: a connection that names the resource at neither the
+authorization nor the code exchange gets tokens the API refuses. A refresh keeps
+the audience the connection was granted. Leave `resource` out of a refresh and
+the new tokens still call the API (RFC 8707 section 2.2); name any other
+resource, alone or beside this one, and the refresh is refused with
+`invalid_target`, leaving your refresh token unspent.
 
 ### Scopes
 
@@ -132,9 +137,11 @@ GET https://api.boardsesh.com/api/auth/oauth2/authorize
 ```
 
 PKCE is required for every client, confidential ones included. Only `S256` is
-accepted. A missing challenge, a `plain` method, an unknown client or an
-unregistered redirect URI shows an error page on boardsesh.com and never
-redirects anywhere.
+accepted. A missing challenge or a `plain` method sends the browser back to your
+registered redirect URI with `error=invalid_request` and your `state`, and no
+code. An unknown client or an unregistered redirect URI shows an error page on
+boardsesh.com and never redirects anywhere, because there is no redirect URI
+Boardsesh can trust.
 
 Boardsesh sends the browser on to the consent screen on `www.boardsesh.com`.
 If the climber is not signed in, or last signed in more than 30 days ago, they
