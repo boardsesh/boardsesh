@@ -731,6 +731,98 @@ describe('the public /v1 API', () => {
     );
 
     it(
+      'skips a consent link being answered, without waiting, and that link can never approve after',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const connection = await connectionOf(client);
+        const linkExpiry = { expiresAt: new Date(Date.now() + 10 * 60_000) };
+        const answeredLink = `answered-${randomUUID()}`;
+        const idleLink = `idle-${randomUUID()}`;
+        for (const digest of [answeredLink, idleLink]) {
+          await db.insert(oauthConsentInteractions).values({
+            digest,
+            userId: client.owner.userId,
+            authSessionId: randomUUID(),
+            clientId: client.clientId,
+            connectionGeneration: connection.generation,
+            ...linkExpiry,
+          });
+        }
+        const consentAnswer = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+        try {
+          let lockedLink: () => void = () => {};
+          const linkLocked = new Promise<void>((resolve) => {
+            lockedLink = resolve;
+          });
+          let disconnectHasRun: () => void = () => {};
+          const mayLockConnection = new Promise<void>((resolve) => {
+            disconnectHasRun = resolve;
+          });
+          // F13's consent answer, in its order: users FOR SHARE, the link, then the
+          // connection, where it re-checks the generation the link was opened against.
+          const answer = consentAnswer.begin(async (transaction) => {
+            await transaction`select id from users where id = ${client.owner.userId} for share`;
+            const [link] = await transaction`
+              select connection_generation from oauth_consent_interactions where digest = ${answeredLink} for update`;
+            lockedLink();
+            await mayLockConnection;
+            const [current] = await transaction`
+              select generation, revoked_at from oauth_connections where id = ${connection.id} for update`;
+            return { linkGeneration: link.connection_generation as number, current };
+          });
+          await linkLocked;
+
+          let settled = false;
+          const disconnecting = disconnect(issued.access_token).then((answered) => {
+            settled = true;
+            return answered;
+          });
+          // Done, or stuck behind the link lock: whichever comes first.
+          const waitingOnLink = async () =>
+            (
+              await db.execute(sql`
+                select 1 from pg_stat_activity
+                where datname = current_database() and wait_event_type = 'Lock'
+                  and query ilike 'delete from "oauth_consent_interactions"%'
+              `)
+            ).length > 0;
+          const deadline = Date.now() + 5000;
+          while (!settled && !(await waitingOnLink()) && Date.now() < deadline) {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          // Disconnect finished while the link was still locked: it never waited for it.
+          expect(settled).toBe(true);
+          expect((await disconnecting).status).toBe(204);
+
+          // The answer now takes the connection and finds the generation moved on.
+          disconnectHasRun();
+          const { linkGeneration, current } = await answer;
+          expect(current.revoked_at).not.toBeNull();
+          expect(current.generation).toBe(connection.generation + 1);
+          expect(linkGeneration).not.toBe(current.generation);
+
+          // The idle link went with the connection; the one being answered was skipped.
+          const remaining = await db
+            .select({ digest: oauthConsentInteractions.digest })
+            .from(oauthConsentInteractions)
+            .where(eq(oauthConsentInteractions.clientId, client.clientId));
+          expect(remaining.map((link) => link.digest)).toEqual([answeredLink]);
+
+          // A reconnect keeps the raised generation, so the skipped link still cannot match.
+          await reconnect(client);
+          const afterReconnect = await connectionOf(client);
+          expect(afterReconnect.revokedAt).toBeNull();
+          expect(afterReconnect.generation).toBe(connection.generation + 1);
+          expect(afterReconnect.generation).not.toBe(linkGeneration);
+        } finally {
+          await consentAnswer.end({ timeout: 5 });
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
       'answers 503 with Retry-After when the lock does not come within the timeout',
       async () => {
         const client = await environment.createClient();

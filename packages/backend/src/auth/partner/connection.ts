@@ -49,9 +49,23 @@ export async function endPartnerConnection(
   await transaction
     .delete(oauthRefreshAncestors)
     .where(and(eq(oauthRefreshAncestors.userId, userId), eq(oauthRefreshAncestors.clientId, clientId)));
-  await transaction
-    .delete(oauthConsentInteractions)
-    .where(and(eq(oauthConsentInteractions.userId, userId), eq(oauthConsentInteractions.clientId, clientId)));
+  // A consent answer locks its link, then this connection, the opposite of
+  // this function's order, so a link locked now is skipped rather than waited
+  // for. Skipping is safe: that answer is waiting on this connection's lock,
+  // and once this commits it reads the raised generation, which no longer
+  // matches the one its link was opened against, so it approves nothing. The
+  // skipped link stays behind with that old generation. A generation only
+  // ever rises, so the link can never match again and is only swept on expiry.
+  await transaction.delete(oauthConsentInteractions).where(
+    inArray(
+      oauthConsentInteractions.digest,
+      transaction
+        .select({ digest: oauthConsentInteractions.digest })
+        .from(oauthConsentInteractions)
+        .where(and(eq(oauthConsentInteractions.userId, userId), eq(oauthConsentInteractions.clientId, clientId)))
+        .for('update', { skipLocked: true }),
+    ),
+  );
 
   const grants = await transaction
     .select({ authorizationCodeId: oauthGrants.authorizationCodeId })

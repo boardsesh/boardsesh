@@ -649,6 +649,16 @@ gap (revoked, or from before a reconnect) answers `401` and ends nothing, so an 
 token can never end a connection the climber has made again. A lock that does not
 come within 2 s answers `503` with `Retry-After: 2`.
 
+One row is the exception to that lock order. A consent answer locks its consent
+link before the connection, the other way round, so Disconnect deletes consent
+links with `FOR UPDATE SKIP LOCKED` instead of waiting, which would deadlock. A link
+skipped that way is one being answered at that moment. Its answer is waiting on
+the connection lock, and once Disconnect commits it reads the raised generation,
+which no longer matches the generation the link was opened against, so it approves
+nothing. The link stays until it expires, and it can never match again, because a
+generation only rises, a reconnect keeps it, and the link is deleted with the
+climber or the app.
+
 ### Test suite required before launch
 
 The OAuth launch gate is separate from the first-party migration gate.
