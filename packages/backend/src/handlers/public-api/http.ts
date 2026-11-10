@@ -13,7 +13,7 @@ import { staticPathToMediaRedirect } from '../../lib/media-url';
  * database or the partner authority.
  */
 
-export type PublicApiRouteKind = 'me' | 'connection';
+export type PublicApiRouteKind = 'me' | 'connection' | 'logbook-changes' | 'logbook-tick' | 'openapi';
 
 export interface PublicApiRoute {
   method: 'GET' | 'DELETE';
@@ -22,11 +22,23 @@ export interface PublicApiRoute {
   kind: PublicApiRouteKind;
 }
 
-/** Everything `/v1` serves today. `GET /v1/openapi.json` and the logbook routes arrive with L4. */
+/** A matched `/v1` request: the route, and the tick id for `GET /v1/logbook/ticks/{id}`. */
+export interface PublicApiRequestRoute extends PublicApiRoute {
+  /** The raw path segment after `/v1/logbook/ticks/`. Validated by the route, which answers 404 for anything else. */
+  tickId?: string;
+}
+
+/** Everything `/v1` serves with a fixed path. */
 export const PUBLIC_API_ROUTES: readonly PublicApiRoute[] = [
   { method: 'GET', pathname: '/v1/me', kind: 'me' },
   { method: 'DELETE', pathname: '/v1/connection', kind: 'connection' },
+  { method: 'GET', pathname: '/v1/logbook/changes', kind: 'logbook-changes' },
+  { method: 'GET', pathname: '/v1/openapi.json', kind: 'openapi' },
 ];
+
+/** `GET /v1/logbook/ticks/{id}`: one non-empty path segment after the prefix. */
+const TICK_PATH_PREFIX = '/v1/logbook/ticks/';
+const TICK_ROUTE: PublicApiRoute = { method: 'GET', pathname: `${TICK_PATH_PREFIX}{id}`, kind: 'logbook-tick' };
 
 /** The path exactly as sent: a trailing slash, different case or encoded byte is another path. */
 function requestTargetPath(requestTarget: string | undefined): string {
@@ -35,22 +47,36 @@ function requestTargetPath(requestTarget: string | undefined): string {
   return queryStart === -1 ? requestTarget : requestTarget.slice(0, queryStart);
 }
 
+function tickIdSegment(pathname: string): string | undefined {
+  if (!pathname.startsWith(TICK_PATH_PREFIX)) return undefined;
+  const segment = pathname.slice(TICK_PATH_PREFIX.length);
+  return segment.length > 0 && !segment.includes('/') ? segment : undefined;
+}
+
 export function matchPublicApiRoute(
   method: string | undefined,
   requestTarget: string | undefined,
-): PublicApiRoute | undefined {
+): PublicApiRequestRoute | undefined {
   const pathname = requestTargetPath(requestTarget);
-  return PUBLIC_API_ROUTES.find((route) => route.method === method && route.pathname === pathname);
+  const fixed = PUBLIC_API_ROUTES.find((route) => route.method === method && route.pathname === pathname);
+  if (fixed) return fixed;
+  const tickId = method === TICK_ROUTE.method ? tickIdSegment(pathname) : undefined;
+  return tickId === undefined ? undefined : { ...TICK_ROUTE, tickId };
 }
 
-/** A CORS preflight for a `/v1` route. Answered without reading any token. */
+/**
+ * A CORS preflight for a `/v1` route an app calls with a token. Answered
+ * without reading any token. The OpenAPI document needs none: it is a plain GET.
+ */
 export function matchPublicApiPreflight(
   method: string | undefined,
   requestTarget: string | undefined,
 ): PublicApiRoute | undefined {
   if (method !== 'OPTIONS') return undefined;
   const pathname = requestTargetPath(requestTarget);
-  return PUBLIC_API_ROUTES.find((route) => route.pathname === pathname);
+  const fixed = PUBLIC_API_ROUTES.find((route) => route.kind !== 'openapi' && route.pathname === pathname);
+  if (fixed) return fixed;
+  return tickIdSegment(pathname) === undefined ? undefined : TICK_ROUTE;
 }
 
 /**
@@ -141,7 +167,12 @@ export function presentMe(record: ClimberRecord, mediaBaseUrl: string | null): M
 
 export type PublicApiErrorCode = ApiErrorResponse['error'];
 
-/** The documented error body. Never a stack trace, a query or a token. */
-export function apiErrorBody(error: PublicApiErrorCode, message: string, requestId: string): ApiErrorResponse {
-  return ApiErrorResponseSchema.parse({ error, message, requestId });
+/** The documented error body. Never a stack trace, a query or a token. `field` names the parameter that failed validation. */
+export function apiErrorBody(
+  error: PublicApiErrorCode,
+  message: string,
+  requestId: string,
+  field?: string,
+): ApiErrorResponse {
+  return ApiErrorResponseSchema.parse({ error, message, requestId, ...(field ? { field } : {}) });
 }

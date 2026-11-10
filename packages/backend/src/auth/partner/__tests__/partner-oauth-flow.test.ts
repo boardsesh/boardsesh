@@ -69,7 +69,7 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
       expect(metadata.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
       expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
       // Discovery only publishes scopes whose routes exist.
-      expect(metadata.scopes_supported).toEqual(['profile:read', 'offline_access']);
+      expect(metadata.scopes_supported).toEqual(['logbook:read', 'profile:read', 'offline_access']);
     }
     const oidc = await environment.auth.handler(new Request(`${TEST_ISSUER}/.well-known/openid-configuration`));
     expect(oidc.status).toBe(404);
@@ -154,7 +154,7 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
       disableJwtPlugin: true,
       grantTypes: ['authorization_code', 'refresh_token'],
     });
-    expect(PARTNER_SCOPES).toEqual(['profile:read', 'offline_access']);
+    expect(PARTNER_SCOPES).toEqual(['logbook:read', 'profile:read', 'offline_access']);
     expect(PARTNER_SIGNED_QUERY_LIFETIME_SECONDS).toBe(600);
     expect(PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS).toBe(60);
     expect(PARTNER_POOL_MAX).toBe(3);

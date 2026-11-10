@@ -129,6 +129,7 @@ describe('partner OAuth availability', () => {
     environment = await createPartnerTestEnvironment();
     runtime = await createPartnerAuthorityRuntime(environment.database, TEST_CONFIGURATION, {
       plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+      logbook: { feed: db, snapshots: db },
       close: async () => {},
     });
     host = await startFloodableHost(runtime);

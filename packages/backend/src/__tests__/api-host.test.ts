@@ -255,6 +255,12 @@ describe('the running server on the API host', () => {
     ['OPTIONS', '/v1/me'],
     ['OPTIONS', '/v1/connection'],
     ['GET', '/v1/openapi.json'],
+    // So are the logbook routes (L4).
+    ['GET', '/v1/logbook/changes'],
+    ['GET', '/v1/logbook/changes?cursor=c3.expired'],
+    ['GET', '/v1/logbook/ticks/0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77'],
+    ['OPTIONS', '/v1/logbook/changes'],
+    ['OPTIONS', '/v1/logbook/ticks/0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77'],
   ])('answers %s %s with 404', async (method, path) => {
     expect(await send(method, path, API_HOSTNAME)).toEqual({
       status: 404,

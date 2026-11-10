@@ -9,7 +9,7 @@ import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import { getOAuthProviderApi, oauthProvider, type OAuthOptions } from '@better-auth/oauth-provider';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
+import { createDbOnPool, createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
 import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { guardPartnerAdapter } from './adapter-guard';
 import { createPartnerAdmissionGate, type PartnerAdmissionGate, type PartnerAdmissionLimits } from './admission';
@@ -23,6 +23,12 @@ import {
 } from './configuration';
 import { partnerConsentGuard, partnerSessionBridge } from './consent';
 import { partnerFencePlugin } from './fence';
+import {
+  createPartnerLogbookAccess,
+  LOGBOOK_SNAPSHOT_POOL_MAX,
+  type PartnerLogbookAccess,
+  type PartnerLogbookDatabases,
+} from './logbook-access';
 import { createPartnerOriginDirectory, type PartnerRegisteredOrigins } from './registered-origins';
 import { createPartnerRegistration, partnerRegistrationActorPlugin, type PartnerRegistration } from './registration';
 import { PARTNER_DISABLED_PATHS } from './routes';
@@ -65,6 +71,8 @@ export interface PartnerAuthorityRuntime {
   findRefreshConnection(refreshToken: string): Promise<PartnerRefreshConnection | null>;
   /** The `/v1` resource server: bearer check, `/v1/me` and `DELETE /v1/connection`. */
   api: PartnerApiAccess;
+  /** The logbook routes' databases, snapshot admission and cursor secrets. */
+  logbook: PartnerLogbookAccess;
   close(): Promise<void>;
 }
 
@@ -212,7 +220,11 @@ interface PartnerAuthorityBuildOptions {
 export async function createPartnerAuthorityRuntime(
   database: PartnerDatabase,
   configuration: PartnerAuthorityConfiguration,
-  { close, ...buildOptions }: PartnerAuthorityBuildOptions & { close: () => Promise<void> },
+  {
+    close,
+    logbook,
+    ...buildOptions
+  }: PartnerAuthorityBuildOptions & { close: () => Promise<void>; logbook: PartnerLogbookDatabases },
 ): Promise<PartnerAuthorityRuntime> {
   const authority = createPartnerAuthority(database, configuration, buildOptions);
   await authority.$context;
@@ -268,6 +280,7 @@ export async function createPartnerAuthorityRuntime(
       resource: configuration.resource,
       hashAccessToken: async (accessToken) => tokenHasher.hashToken(accessToken, 'access_token'),
     }),
+    logbook: createPartnerLogbookAccess(logbook, configuration.secrets),
     close,
   };
 }
@@ -276,7 +289,15 @@ async function buildPartnerAuthorityRuntime(): Promise<PartnerAuthorityRuntime> 
   const configuration = readPartnerAuthorityConfiguration();
   const pool = createDedicatedPool(PARTNER_POOL_MAX);
   const database = drizzle(withConnectRetry(pool), { schema: partnerAdapterSchema });
-  return createPartnerAuthorityRuntime(database, configuration, { close: () => pool.end() });
+  // postgres.js connects on first use, so the snapshot pool costs nothing until
+  // an app first starts a logbook download.
+  const snapshotPool = createDedicatedPool(LOGBOOK_SNAPSHOT_POOL_MAX);
+  return createPartnerAuthorityRuntime(database, configuration, {
+    logbook: { feed: createDbOnPool(pool), snapshots: createDbOnPool(snapshotPool) },
+    close: async () => {
+      await Promise.all([pool.end(), snapshotPool.end()]);
+    },
+  });
 }
 
 let runtime: Promise<PartnerAuthorityRuntime> | undefined;

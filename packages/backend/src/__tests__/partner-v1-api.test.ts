@@ -189,6 +189,7 @@ describe('the public /v1 API', () => {
     environment = await createPartnerTestEnvironment();
     runtime = await createPartnerAuthorityRuntime(environment.database, TEST_CONFIGURATION, {
       plugins: [testSessionBridge(createPartnerDatabaseHandle(environment.database))],
+      logbook: { feed: db, snapshots: db },
       close: async () => {},
     });
     apiHost = await startApiHost({
@@ -1199,8 +1200,13 @@ describe('the public /v1 API', () => {
       ['POST on /v1/me', 'POST', ME_PATH],
       ['GET on /v1/connection', 'GET', CONNECTION_PATH],
       ['an encoded letter', 'GET', '/v1/m%65'],
-      ['the OpenAPI document, which arrives with L4', 'GET', '/v1/openapi.json'],
-      ['a logbook route, which arrives with L4', 'GET', '/v1/logbook/changes'],
+      ['POST on the logbook feed', 'POST', '/v1/logbook/changes'],
+      ['the logbook feed with a trailing slash', 'GET', '/v1/logbook/changes/'],
+      ['the tick route with no id', 'GET', '/v1/logbook/ticks/'],
+      ['the tick route with two segments', 'GET', '/v1/logbook/ticks/a/b'],
+      ['DELETE on a tick', 'DELETE', '/v1/logbook/ticks/a'],
+      ['POST on the OpenAPI document', 'POST', '/v1/openapi.json'],
+      ['a route that does not exist yet', 'GET', '/v1/workouts'],
     ])('refuses %s with the API host 404', async (_label, method, path) => {
       const refused = await apiHost.send(method, path, { token: 'whatever' });
       expect(refused.status).toBe(404);

@@ -10,10 +10,13 @@ import {
   logbookChangeWatermark,
   logbookSnapshotChunks,
   logbookSnapshots,
+  oauthClient,
+  oauthConnections,
   users,
 } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { readLogbookFeedPage, type LogbookFeedCursor, type LogbookFeedTick } from '../services/logbook-feed';
 import {
   LOGBOOK_SNAPSHOT_BUILD_SLOT_LOCK_CLASS,
@@ -41,6 +44,7 @@ import { getWorkerDatabaseUrl } from './worker-db';
  * - drop `snapshotBelongsTo` from the read: the binding test fails.
  * - drop the twin filter: the twin tests fail.
  * - drop `ON DELETE CASCADE` on `user_id`: the account-deletion test fails.
+ * - drop the `connection_id` foreign key or its cascade: the connection tests fail.
  * - ignore `expires_at` in the reclaim scan: the reclaim test fails.
  * - wait for row locks in reclaim: the in-flight build test fails.
  * - remove the planner settings or timeouts: the chunk-settings test fails.
@@ -125,7 +129,25 @@ async function seedTicks(count: number, overrides: TickOverrides = {}): Promise<
   return rows.map((row) => row.uuid);
 }
 
+/**
+ * A snapshot's `connection_id` references `oauth_connections`, so every binding
+ * a test starts a snapshot under needs its connection row. A climber has one
+ * connection per app, so each connection gets an app of its own. Idempotent.
+ */
+async function ensureConnection(binding: LogbookSnapshotBinding): Promise<void> {
+  const clientId = `app-of-${binding.connectionId}`;
+  await db
+    .insert(oauthClient)
+    .values({ id: clientId, clientId, redirectUris: ['https://app.example.test/callback'] })
+    .onConflictDoNothing();
+  await db
+    .insert(oauthConnections)
+    .values({ id: binding.connectionId, userId: binding.userId, clientId, connectedAt: new Date() })
+    .onConflictDoNothing();
+}
+
 async function startSnapshot(binding: LogbookSnapshotBinding = BINDING): Promise<LogbookSnapshotCursor> {
+  await ensureConnection(binding);
   const started = await startLogbookSnapshot(db, binding);
   if (started.status !== 'started') throw new Error('snapshot did not start');
   return started.cursor;
@@ -278,6 +300,8 @@ beforeEach(async () => {
       { id: CLIMBER_B, email: 'b@example.com' },
     ])
     .onConflictDoNothing();
+  await ensureConnection(BINDING);
+  await ensureConnection({ userId: CLIMBER_B, connectionId: 'connection-b', connectionGeneration: 0 });
 });
 
 describe('hand-off from snapshot to feed', { timeout: 120_000 }, () => {
@@ -784,12 +808,19 @@ describe('bounded build', { timeout: 60_000 }, () => {
       maxTicks: LOGBOOK_SNAPSHOT_CHUNK_TICKS,
     });
     expect(second).toEqual({ status: 'too_large' });
+    // Terminal, with the seconds until the one-hour verdict lapses.
+    const verdictSeconds = expect.toSatisfy((seconds: number) => seconds > 3500 && seconds <= 3600);
     expect(await readLogbookSnapshotPage(db, { binding: BINDING, cursor, limit: 10 })).toEqual({
       status: 'expired',
       reason: 'too_large',
+      retryAfterSeconds: verdictSeconds,
     });
 
-    expect(await startLogbookSnapshot(db, BINDING)).toEqual({ status: 'unavailable', reason: 'too_large' });
+    expect(await startLogbookSnapshot(db, BINDING)).toEqual({
+      status: 'unavailable',
+      reason: 'too_large',
+      retryAfterSeconds: verdictSeconds,
+    });
     expect(await db.select().from(logbookSnapshots)).toHaveLength(1);
     expect(await secondsUntilExpiry(cursor)).toBeGreaterThan(3500);
     expect(await secondsUntilExpiry(cursor)).toBeLessThanOrEqual(3600);
@@ -1129,11 +1160,17 @@ describe('bounded build', { timeout: 60_000 }, () => {
       await clearCooldown(cursor);
       expect(await advanceThrough(db, cursor)).toEqual({ status: 'stalled' });
       expect(await db.select().from(logbookSnapshotChunks)).toHaveLength(0);
+      const verdictSeconds = expect.toSatisfy((seconds: number) => seconds > 3500 && seconds <= 3600);
       expect(await readLogbookSnapshotPage(db, { binding: BINDING, cursor, limit: 10 })).toEqual({
         status: 'expired',
         reason: 'stalled',
+        retryAfterSeconds: verdictSeconds,
       });
-      expect(await startLogbookSnapshot(db, BINDING)).toEqual({ status: 'unavailable', reason: 'stalled' });
+      expect(await startLogbookSnapshot(db, BINDING)).toEqual({
+        status: 'unavailable',
+        reason: 'stalled',
+        retryAfterSeconds: verdictSeconds,
+      });
       expect(await db.select().from(logbookSnapshots)).toHaveLength(1);
 
       await db
@@ -1253,6 +1290,23 @@ describe('starting snapshots', { timeout: 60_000 }, () => {
     expect(started).toMatchObject({ status: 'started', created: true });
     if (started.status !== 'started') throw new Error('expected a start');
     expect(started.cursor.snapshotId).not.toBe(stale.snapshotId);
+  });
+
+  it('still joins when creation is not allowed, and refuses only what would create', async () => {
+    await seedTicks(2);
+    const cursor = await startSnapshot();
+    expect(await startLogbookSnapshot(db, BINDING, { createAllowed: false })).toEqual({
+      status: 'started',
+      cursor: { snapshotId: cursor.snapshotId, position: 0 },
+      created: false,
+    });
+    expect(await startLogbookSnapshot(db, { ...BINDING, connectionGeneration: 1 }, { createAllowed: false })).toEqual({
+      status: 'unavailable',
+      reason: 'creation_limited',
+    });
+    const [row] = await db.select().from(logbookSnapshots);
+    expect(row.status).toBe('building');
+    expect(await db.select().from(logbookSnapshots)).toHaveLength(1);
   });
 
   it('allows one active build per connection in the database, not just in the code', async () => {
@@ -1564,6 +1618,34 @@ describe('privacy and binding', { timeout: 60_000 }, () => {
 
     expect(await db.select().from(logbookSnapshots)).toHaveLength(0);
     expect(await db.select().from(logbookSnapshotChunks)).toHaveLength(0);
+  });
+
+  it("deletes a connection's snapshots and chunks with its connection row, and leaves other connections' alone", async () => {
+    await seedTicks(2);
+    const other = { userId: CLIMBER_A, connectionId: 'connection-other-app', connectionGeneration: 0 };
+    const kept = await startSnapshot(other);
+    await buildChunkByChunk(other, kept);
+    const cursor = await startSnapshot();
+    await buildChunkByChunk(BINDING, cursor);
+    expect(await db.select().from(logbookSnapshots)).toHaveLength(2);
+
+    // What deleting the app or the connection does to the row.
+    await db.delete(oauthConnections).where(eq(oauthConnections.id, BINDING.connectionId));
+
+    const remaining = await db.select({ id: logbookSnapshots.id }).from(logbookSnapshots);
+    expect(remaining.map((row) => row.id)).toEqual([kept.snapshotId]);
+    const chunks = await db.select({ snapshotId: logbookSnapshotChunks.snapshotId }).from(logbookSnapshotChunks);
+    expect(chunks.map((chunk) => chunk.snapshotId)).toEqual([kept.snapshotId]);
+  });
+
+  it('refuses a snapshot for a connection that does not exist', async () => {
+    await seedTicks(1);
+    const failure = await startLogbookSnapshot(db, {
+      userId: CLIMBER_A,
+      connectionId: 'no-such-connection',
+      connectionGeneration: 0,
+    }).catch((error: unknown) => error);
+    expect(getPostgresErrorCode(failure)).toBe('23503');
   });
 
   it('expires a snapshot and the final cursor when the feed generation rotates', async () => {

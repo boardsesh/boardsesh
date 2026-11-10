@@ -19,8 +19,17 @@ describe('public API routes', () => {
     ['GET', '/v1/me', 'me'],
     ['GET', '/v1/me?fields=all', 'me'],
     ['DELETE', '/v1/connection', 'connection'],
+    ['GET', '/v1/logbook/changes', 'logbook-changes'],
+    ['GET', '/v1/logbook/changes?cursor=c3.expired&limit=5', 'logbook-changes'],
+    ['GET', '/v1/logbook/ticks/0d6c4a2e-8f1b-4b7e-9c3a-5e2f1d0a9b77', 'logbook-tick'],
+    ['GET', '/v1/openapi.json', 'openapi'],
   ])('matches %s %s', (method, target, kind) => {
     expect(matchPublicApiRoute(method, target)?.kind).toBe(kind);
+  });
+
+  it('hands the tick route its raw id segment', () => {
+    expect(matchPublicApiRoute('GET', '/v1/logbook/ticks/abc-123?x=1')?.tickId).toBe('abc-123');
+    expect(matchPublicApiRoute('GET', '/v1/logbook/ticks/not%20an%20id')?.tickId).toBe('not%20an%20id');
   });
 
   it.each([
@@ -33,8 +42,13 @@ describe('public API routes', () => {
     ['GET', '/v1/./me'],
     ['GET', '/v1/connection'],
     ['POST', '/v1/connection'],
-    ['GET', '/v1/openapi.json'],
-    ['GET', '/v1/logbook/changes'],
+    ['POST', '/v1/openapi.json'],
+    ['POST', '/v1/logbook/changes'],
+    ['GET', '/v1/logbook/changes/'],
+    ['GET', '/v1/logbook/ticks/'],
+    ['GET', '/v1/logbook/ticks/a/b'],
+    ['DELETE', '/v1/logbook/ticks/a'],
+    ['GET', '/v1/logbook/tick/a'],
     ['GET', '/api/v1/me'],
   ])('refuses %s %s', (method, target) => {
     expect(matchPublicApiRoute(method, target)).toBeUndefined();
@@ -43,7 +57,12 @@ describe('public API routes', () => {
   it('answers a preflight only for a route it serves', () => {
     expect(matchPublicApiPreflight('OPTIONS', '/v1/me')?.kind).toBe('me');
     expect(matchPublicApiPreflight('OPTIONS', '/v1/connection')?.kind).toBe('connection');
-    expect(matchPublicApiPreflight('OPTIONS', '/v1/logbook/changes')).toBeUndefined();
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/logbook/changes')?.kind).toBe('logbook-changes');
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/logbook/ticks/abc')?.kind).toBe('logbook-tick');
+    // A plain GET needs no preflight, so the public document answers none.
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/openapi.json')).toBeUndefined();
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/logbook/ticks/')).toBeUndefined();
+    expect(matchPublicApiPreflight('OPTIONS', '/v1/workouts')).toBeUndefined();
     expect(matchPublicApiPreflight('GET', '/v1/me')).toBeUndefined();
   });
 });
