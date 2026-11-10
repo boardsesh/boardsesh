@@ -9,10 +9,12 @@ import { authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { getWorkerDatabaseUrl } from '../../__tests__/worker-db';
 import { db } from '../../db/client';
 import { validateToken } from '../../middleware/auth';
+import { logger } from '../../utils/logger';
 import {
   AUTH_ADMISSION_APPLICATION_NAME,
   AUTH_ADMISSION_CONNECT_RETRY_BUDGET_MS,
   AUTH_ADMISSION_CONNECT_TIMEOUT_S,
+  AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS,
   AUTH_ADMISSION_POOL_MAX_CONNECTIONS,
   AUTH_ADMISSION_RECYCLE_BACKOFF_MS,
   AUTH_ADMISSION_READ_WATCHDOG_MS,
@@ -86,11 +88,19 @@ async function startPostgresProxy() {
   const forwarded: Array<{ clientSide: Socket; databaseSide: Socket }> = [];
   let shouldSwallowNewConnections = false;
   let openDelayMs = 0;
+  let shouldFreezeNewConnections = false;
 
   function track(socket: Socket) {
     openSockets.add(socket);
     socket.on('error', () => {});
     socket.once('close', () => openSockets.delete(socket));
+  }
+
+  function hang({ clientSide, databaseSide }: { clientSide: Socket; databaseSide: Socket }) {
+    clientSide.unpipe(databaseSide);
+    databaseSide.unpipe(clientSide);
+    clientSide.pause();
+    databaseSide.pause();
   }
 
   function forward(clientSide: Socket) {
@@ -99,7 +109,10 @@ async function startPostgresProxy() {
     track(databaseSide);
     clientSide.pipe(databaseSide);
     databaseSide.pipe(clientSide);
-    forwarded.push({ clientSide, databaseSide });
+    const pair = { clientSide, databaseSide };
+    forwarded.push(pair);
+    // Answers for 0.1-0.3 s, then goes silent with its sockets open.
+    if (shouldFreezeNewConnections) setTimeout(() => hang(pair), 100 + Math.random() * 200);
   }
 
   const server = createServer((clientSide) => {
@@ -116,12 +129,14 @@ async function startPostgresProxy() {
   return {
     url: getWorkerDatabaseUrl().replace(/@[^/]+\//, `@127.0.0.1:${port}/`),
     hangExistingConnections() {
-      for (const { clientSide, databaseSide } of forwarded.splice(0)) {
-        clientSide.unpipe(databaseSide);
-        databaseSide.unpipe(clientSide);
-        clientSide.pause();
-        databaseSide.pause();
-      }
+      for (const pair of forwarded.splice(0)) hang(pair);
+    },
+    hangFirstConnection() {
+      const [first] = forwarded.splice(0, 1);
+      hang(first);
+    },
+    setFreezeNewConnections(shouldFreeze: boolean) {
+      shouldFreezeNewConnections = shouldFreeze;
     },
     severExistingConnections() {
       for (const { clientSide, databaseSide } of forwarded.splice(0)) {
@@ -311,7 +326,10 @@ describe('auth admission pool', () => {
 
   it('gives up on an unanswered read a second after the statement timeout, and backs off replacing the pool', () => {
     expect(AUTH_ADMISSION_READ_WATCHDOG_MS).toBe(AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 1000);
-    expect(AUTH_ADMISSION_RECYCLE_BACKOFF_MS).toEqual([5000, 10_000, 20_000, 60_000]);
+    expect(AUTH_ADMISSION_RECYCLE_BACKOFF_MS).toEqual([5000, 10_000, 20_000]);
+    expect(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS).toBe(
+      AUTH_ADMISSION_CONNECT_TIMEOUT_S * 1000 + AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 2000,
+    );
   });
 
   it('lets a dial outlive one read but end before the pool can be replaced again', () => {
@@ -429,6 +447,64 @@ describe('auth admission pool', () => {
         await waitForAnAnswer(sinceSlowed, 12000);
         expect(sinceSlowed.runningMs()).toBeLessThan(10000);
       } finally {
+        await closeAdmissionPool();
+        await proxy.close();
+      }
+    });
+
+    it('replaces a pool with one dead connection beside a healthy one', { timeout: 40000 }, async () => {
+      const proxy = await startPostgresProxy();
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        const slowRead = () =>
+          readOnAdmissionConnection(
+            () => {},
+            (database) => database.execute(sql`select pg_sleep(0.4)`),
+          );
+        await Promise.all([slowRead(), slowRead()]);
+        const poolWithDeadConnection = getAdmissionPool();
+
+        proxy.hangFirstConnection();
+        const sinceFrozen = pauses.stopwatch();
+        // Traffic keeps the healthy connection answering, which is what used to hide the dead one.
+        while (getAdmissionPool() === poolWithDeadConnection && sinceFrozen.runningMs() < 12000) {
+          await Promise.allSettled([slowRead(), slowRead()]);
+        }
+
+        expect(getAdmissionPool()).not.toBe(poolWithDeadConnection);
+        expect(sinceFrozen.wallMs()).toBeGreaterThanOrEqual(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS - 100);
+        expect(sinceFrozen.runningMs()).toBeLessThan(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS + 3000);
+        await Promise.all([slowRead(), slowRead()]);
+      } finally {
+        await closeAdmissionPool();
+        await proxy.close();
+      }
+    });
+
+    it('keeps backing off while each new connection answers briefly and then hangs', { timeout: 40000 }, async () => {
+      const proxy = await startPostgresProxy();
+      const backoffSteps: number[] = [];
+      vi.spyOn(logger, 'warn').mockImplementation((_message: unknown, fields?: unknown) => {
+        const step = (fields as { replacementsInSequence?: unknown } | undefined)?.replacementsInSequence;
+        if (typeof step === 'number') backoffSteps.push(step);
+        return logger;
+      });
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        await activeHumanSubjectIds([activeUserId]);
+
+        proxy.setFreezeNewConnections(true);
+        proxy.hangExistingConnections();
+        const sinceFault = pauses.stopwatch();
+        while (sinceFault.runningMs() < 12000) {
+          await activeHumanSubjectIds([activeUserId]).catch(() => undefined);
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+
+        // Answers on each fresh pool used to restart the schedule, so every replacement was the first.
+        expect(Math.max(...backoffSteps)).toBeGreaterThanOrEqual(2);
+      } finally {
+        vi.mocked(logger.warn).mockRestore();
         await closeAdmissionPool();
         await proxy.close();
       }

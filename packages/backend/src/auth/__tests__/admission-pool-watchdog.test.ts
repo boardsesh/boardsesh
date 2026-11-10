@@ -3,8 +3,10 @@ import type { PoolInstance } from '@boardsesh/db/client';
 import { logger } from '../../utils/logger';
 import {
   AdmissionReadStalledError,
+  AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS,
   AUTH_ADMISSION_READ_WATCHDOG_MS,
   AUTH_ADMISSION_RECYCLE_BACKOFF_MS,
+  AUTH_ADMISSION_REPLACEMENT_GRACE_S,
   closeAdmissionPool,
   readOnAdmissionConnection,
 } from '../admission-pool';
@@ -122,6 +124,48 @@ describe('admission read watchdog', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  /** A read that stalls while another on the same pool answers half a second later. */
+  async function stallBesideAnAnswer(stalledRead: () => Promise<unknown> = hangOneRead) {
+    const stalledOutcome = stalledRead();
+    await Promise.resolve();
+    await advance(500);
+    await readOnAdmissionConnection(
+      () => {},
+      async () => 'answered',
+    );
+    await advance(AUTH_ADMISSION_READ_WATCHDOG_MS - 500);
+    await expect(stalledOutcome).resolves.toBeInstanceOf(AdmissionReadStalledError);
+  }
+
+  it('replaces that pool, with grace, if the stalled read is still unsettled at the dead-socket limit', async () => {
+    expect(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS).toBe(7000);
+    await stallBesideAnAnswer();
+    expect(fakePools[0].end).not.toHaveBeenCalled();
+
+    await advance(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS - AUTH_ADMISSION_READ_WATCHDOG_MS - 1);
+    expect(fakePools[0].end).not.toHaveBeenCalled();
+    await advance(1);
+    expect(fakePools[0].end).toHaveBeenCalledOnce();
+    expect(fakePools[0].end).toHaveBeenCalledWith({ timeout: AUTH_ADMISSION_REPLACEMENT_GRACE_S });
+  });
+
+  it('leaves it when the stalled read settles before then, as a slow dial does', async () => {
+    let finishSlowRead = () => {};
+    await stallBesideAnAnswer(() =>
+      readOnAdmissionConnection(
+        () => {},
+        () =>
+          new Promise<string>((resolve) => {
+            finishSlowRead = () => resolve('answered late');
+          }),
+      ).catch((error: unknown) => error),
+    );
+    await advance(2500);
+    finishSlowRead();
+    await advance(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS);
+    expect(fakePools[0].end).not.toHaveBeenCalled();
+  });
+
   it('still replaces it when the only answer came before the stalled read began', async () => {
     await readOnAdmissionConnection(
       () => {},
@@ -159,28 +203,62 @@ describe('admission read watchdog', () => {
     return replacedAt;
   }
 
-  it('backs off replacements to 5, 10, 20 and then 60 s while no read answers', async () => {
-    expect(AUTH_ADMISSION_RECYCLE_BACKOFF_MS).toEqual([5000, 10_000, 20_000, 60_000]);
-    const replacedAt = await replacementTimesWhileEveryReadHangs(160_000);
+  it('backs off replacements to 5, 10 and then 20 s while reads keep stalling', async () => {
+    expect(AUTH_ADMISSION_RECYCLE_BACKOFF_MS).toEqual([5000, 10_000, 20_000]);
+    const replacedAt = await replacementTimesWhileEveryReadHangs(80_000);
 
     // Reads expire every 2 s, so each replacement lands on the first expiry past its gap.
-    expect(replacedAt).toEqual([2000, 8000, 18_000, 38_000, 98_000, 158_000]);
-    // A minute of hanging replaces the pool four times, where a fixed 5 s gap allowed ten.
-    expect(replacedAt.filter((replacedAtMs) => replacedAtMs <= 60_000)).toHaveLength(4);
+    expect(replacedAt).toEqual([2000, 8000, 18_000, 38_000, 58_000, 78_000]);
   });
 
-  it('starts the schedule again at 5 s once a read answers', async () => {
-    expect(await replacementTimesWhileEveryReadHangs(40_000)).toEqual([2000, 8000, 18_000, 38_000]);
-
-    await expect(
-      readOnAdmissionConnection(
+  it('keeps backing off while each new pool answers for a moment and then hangs', async () => {
+    const replacedAt: number[] = [];
+    while (clock < 40_000) {
+      const replacementsBefore = warn.mock.calls.length;
+      await readOnAdmissionConnection(
         () => {},
         async () => 'answered',
-      ),
-    ).resolves.toBe('answered');
+      );
+      const outcome = hangOneRead();
+      await Promise.resolve();
+      await advance(AUTH_ADMISSION_READ_WATCHDOG_MS);
+      await outcome;
+      if (warn.mock.calls.length > replacementsBefore) replacedAt.push(clock);
+    }
+    // Restarting at every answer replaced the pool every 6 s here: 2, 8, 14, 20, 26, 32 and 38 s.
+    expect(replacedAt).toEqual([2000, 8000, 18_000, 38_000]);
+  });
 
-    // Without the answer the next gap would be 60 s, at 98 s.
-    expect((await replacementTimesWhileEveryReadHangs(50_000))[0]).toBe(44_000);
+  it('starts the schedule again at 5 s after a whole gap with no stalled read', async () => {
+    expect(await replacementTimesWhileEveryReadHangs(20_000)).toEqual([2000, 8000, 18_000]);
+    await advance(AUTH_ADMISSION_RECYCLE_BACKOFF_MS[2]);
+
+    // Without the reset the gap after 42 s would be 20 s, at 62 s.
+    expect(await replacementTimesWhileEveryReadHangs(50_000)).toEqual([42_000, 48_000]);
+  });
+
+  it('counts a dead socket still waiting as a stall, so the schedule cannot restart under it', async () => {
+    expect(await replacementTimesWhileEveryReadHangs(18_000)).toEqual([2000, 8000, 18_000]);
+    await stallBesideAnAnswer();
+
+    // Its check at 25 s waits out the 20 s gap and replaces the pool at 38 s.
+    await advance(38_000 - clock);
+    expect(warn).toHaveBeenCalledTimes(4);
+
+    // The next stall finds the gap still at 20 s: no reset to 5 s, so nothing before 58 s.
+    expect(await replacementTimesWhileEveryReadHangs(58_000)).toEqual([58_000]);
+  });
+
+  it('checks a dead socket again once the backoff allows a replacement', async () => {
+    expect(await replacementTimesWhileEveryReadHangs(8000)).toEqual([2000, 8000]);
+    await stallBesideAnAnswer();
+    const besideTheAnswer = fakePools[2];
+
+    // The dead-socket limit lands at 15 s, inside the 10 s gap after 8 s.
+    await advance(AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS - AUTH_ADMISSION_READ_WATCHDOG_MS);
+    expect(besideTheAnswer.end).not.toHaveBeenCalled();
+    await advance(18_000 - clock);
+    expect(besideTheAnswer.end).toHaveBeenCalledWith({ timeout: AUTH_ADMISSION_REPLACEMENT_GRACE_S });
   });
 
   it('logs each replacement once, with no identifying detail', async () => {
@@ -191,7 +269,7 @@ describe('admission read watchdog', () => {
     expect(warn).toHaveBeenCalledOnce();
     expect(warn).toHaveBeenCalledWith('[auth-admission] replaced the pool after a read stopped answering', {
       watchdogMs: AUTH_ADMISSION_READ_WATCHDOG_MS,
-      replacementsSinceAnswer: 1,
+      replacementsInSequence: 1,
     });
   });
 

@@ -406,19 +406,31 @@ connections per backend replica, used for nothing else:
 - **A watchdog on each read, at 2,000 ms.** The statement timeout needs a server that
   is still answering, and `max: 2` stops a third connection opening. A read with no
   reply this long after reaching a connection fails. If no other read on the pool has
-  answered since it began, the pool is severed and replaced. That check matters
-  because postgres.js opens the second connection only when the first is busy: a
-  read waiting on a slow dial outlives the watchdog while the first connection keeps
-  answering, and severing would cut both. An event-loop stall of 2 s or more can
-  also fire the watchdog; that costs one reconnect, and those reads were past their
-  deadline anyway.
-- **Replacements back off: 5 s, then 10, 20 and 60 s** between them while no read
-  answers, back to 5 s after one does. Each replacement can leave two hung backends
-  on the server until they die. With every new connection hanging, a replica now
-  replaces its pool 4 times in the first minute (at 2, 8, 18 and 38 s), where a fixed
-  5 s gap allowed 10 and left 22 backends behind. Two replicas at that old rate
-  would fill the roughly 28 free slots in about 40 s, and every client's reconnect
-  would fail with `53300`.
+  answered since it began, the pool is severed and replaced. If one has, the stalled
+  read may be waiting on a slow dial: postgres.js opens the second connection only
+  when the first is busy, so that read outlives the watchdog while the first
+  connection keeps answering, and severing then would cut both. A dial settles
+  within the connect timeout plus the statement timeout, so the read gets until 7 s
+  (4 + 1 + 2 s to spare). Still unsettled then, it is on a dead socket beside a
+  healthy one, and the pool is replaced with 1 s of grace so reads on the healthy
+  connection finish. Before that rule a pool with one frozen connection kept it for
+  good: at a 400 ms statement, 20.7% of requests failed and the pool was never
+  replaced. Now it is replaced at 7.0 s, and nothing fails after 10 s. An event-loop
+  stall of 2 s or more can also fire the watchdog; that costs one reconnect, and
+  those reads were past their deadline anyway.
+- **Replacements back off: 5 s, then 10 s, then 20 s** between them for as long as
+  reads keep stalling. The schedule starts again at 5 s only after a whole gap with
+  no stalled read. An answered read does not restart it, and neither does a
+  connection that opens: a server whose new connections answer for a moment and
+  then hang does both, and restarting on answers kept the gap at 5 s there (7
+  replacements in 40 s, 16 backends on the server). Now it is 4 replacements at 2.5,
+  8.8, 19.0 and 39.0 s, with 10 backends. Each replacement can leave two hung
+  backends until they die; at a fixed 5 s gap one replica left 22 in a minute, and
+  two replicas at that rate would fill the roughly 28 free slots in about 40 s, after
+  which every client's reconnect fails with `53300`. 20 s is the cap because it is
+  also the longest a path that has healed can wait behind a pool that hung before it
+  healed: a 60 s step refused every request for 50.1 s after such a heal, and the
+  cap brings that to 10.1 s, at most 20 s plus the watchdog.
 - **`connect_timeout` of 4 s**, against the shared 30 s. It has to be longer than the
   watchdog, or a primary that takes more than 2 s to open a connection can never be
   reached: at 2 s, 492 of 492 requests failed for as long as opens were slow. It has

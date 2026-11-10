@@ -21,12 +21,17 @@ export const AUTH_ADMISSION_STATEMENT_TIMEOUT_MS = AUTH_ADMISSION_RESPONSE_DEADL
 export const AUTH_ADMISSION_READ_WATCHDOG_MS = AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 1000;
 
 /**
- * Least time between replacing the pool: 5 s, then 10, 20 and 60 s while no read
- * has answered. Each replacement can leave two hung backends on the server, so a
- * server whose new connections hang too gets fewer of them and cannot be pushed
- * to `max_connections`. An answered read starts the schedule again at 5 s.
+ * Least time between replacing the pool: 5 s, then 10 s, then 20 s for as long as
+ * reads keep stalling. Each replacement can leave two hung backends on the
+ * server, so a server whose new connections hang too gets fewer of them and
+ * cannot be pushed to `max_connections`. 20 s is also the longest a path that
+ * has healed can wait behind a pool that hung before it healed.
+ *
+ * The schedule starts again at 5 s only after a whole gap with no stalled read.
+ * Neither an answered read nor a connection that opens counts: a server whose
+ * new connections answer for a moment and then hang does both.
  */
-export const AUTH_ADMISSION_RECYCLE_BACKOFF_MS = [5000, 10_000, 20_000, 60_000] as const;
+export const AUTH_ADMISSION_RECYCLE_BACKOFF_MS = [5000, 10_000, 20_000] as const;
 
 /**
  * Seconds to open a connection. Longer than the watchdog, so a primary that is
@@ -42,6 +47,17 @@ export const AUTH_ADMISSION_CONNECT_TIMEOUT_S = 4;
  * to a primary that is struggling to open them.
  */
 export const AUTH_ADMISSION_CONNECT_RETRY_BUDGET_MS = AUTH_ADMISSION_RESPONSE_DEADLINE_MS;
+
+/**
+ * A read waiting on a slow dial settles within the connect timeout plus the
+ * statement timeout. One still unsettled this long after it began, on a pool that
+ * kept answering other reads, is on a dead socket beside a healthy one.
+ */
+export const AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS =
+  AUTH_ADMISSION_CONNECT_TIMEOUT_S * 1000 + AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 2000;
+
+/** Seconds a pool replaced for one dead socket keeps going, so reads on its healthy connection finish. */
+export const AUTH_ADMISSION_REPLACEMENT_GRACE_S = 1;
 
 /** Lets the "count connections" query in docs/db-connectivity.md see this pool. */
 export const AUTH_ADMISSION_APPLICATION_NAME = 'boardsesh-auth-admission';
@@ -65,9 +81,13 @@ type AdmissionConnections = {
   lastAnsweredAt: number;
 };
 
+/** A read on a connection, tracked past its caller's watchdog. */
+type ReadProgress = { startedAt: number; isSettled: boolean };
+
 let connections: AdmissionConnections | undefined;
 let lastRecycledAt = Number.NEGATIVE_INFINITY;
-let replacementsSinceAnswer = 0;
+let lastStalledAt = Number.NEGATIVE_INFINITY;
+let replacementsInSequence = 0;
 
 /**
  * Opened on the first read, so a process that imports this module and never
@@ -100,32 +120,66 @@ export async function closeAdmissionPool(): Promise<void> {
   const closingPool = connections?.pool;
   connections = undefined;
   lastRecycledAt = Number.NEGATIVE_INFINITY;
-  replacementsSinceAnswer = 0;
+  lastStalledAt = Number.NEGATIVE_INFINITY;
+  replacementsInSequence = 0;
   await closingPool?.end({ timeout: AUTH_ADMISSION_POOL_CLOSE_TIMEOUT_S });
 }
 
+function replacementGapMs(): number {
+  const step = Math.min(Math.max(replacementsInSequence - 1, 0), AUTH_ADMISSION_RECYCLE_BACKOFF_MS.length - 1);
+  return AUTH_ADMISSION_RECYCLE_BACKOFF_MS[step];
+}
+
+/** A whole gap with no stalled read means the path recovered, so the schedule starts again. */
+function noteStalledRead(now: number): void {
+  if (now - lastStalledAt >= replacementGapMs()) replacementsInSequence = 0;
+  lastStalledAt = now;
+}
+
 /**
- * Severs a pool whose read stopped answering, so the next read dials afresh.
- * Reads already on it fail, and they are past their deadline by now.
+ * Severs a pool so the next read dials afresh, unless the backoff says wait.
+ * Reads still on it fail once the grace runs out.
  */
-function recycleStalledPool(stalled: AdmissionConnections, stalledReadStartedAt: number): void {
-  // Another read on the same pool, or a shutdown, already dealt with it.
-  if (connections !== stalled) return;
-  // postgres.js opens the second connection only when the first is busy. A read
-  // waiting on that dial outlives the watchdog when opening is slow, while the
-  // first connection keeps answering. Severing would cut both.
-  if (stalled.lastAnsweredAt >= stalledReadStartedAt) return;
+function replacePool(stalled: AdmissionConnections, graceSeconds: number): boolean {
   const now = performance.now();
-  const backoffStep = Math.min(Math.max(replacementsSinceAnswer - 1, 0), AUTH_ADMISSION_RECYCLE_BACKOFF_MS.length - 1);
-  if (now - lastRecycledAt < AUTH_ADMISSION_RECYCLE_BACKOFF_MS[backoffStep]) return;
+  if (now - lastRecycledAt < replacementGapMs()) return false;
   lastRecycledAt = now;
-  replacementsSinceAnswer += 1;
+  replacementsInSequence += 1;
   connections = undefined;
-  stalled.pool.end({ timeout: 0 }).catch(() => undefined);
+  stalled.pool.end({ timeout: graceSeconds }).catch(() => undefined);
   logger.warn('[auth-admission] replaced the pool after a read stopped answering', {
     watchdogMs: AUTH_ADMISSION_READ_WATCHDOG_MS,
-    replacementsSinceAnswer,
+    replacementsInSequence,
   });
+  return true;
+}
+
+function handleStalledRead(stalled: AdmissionConnections, read: ReadProgress): void {
+  noteStalledRead(performance.now());
+  // Another read on the same pool, or a shutdown, already dealt with it.
+  if (connections !== stalled) return;
+  // Nothing on this pool has answered since the read began: nothing on it reaches Postgres.
+  if (stalled.lastAnsweredAt <= read.startedAt) {
+    replacePool(stalled, 0);
+    return;
+  }
+  // postgres.js opens the second connection only when the first is busy, so the
+  // read may be waiting on a slow dial while the first connection answers, and
+  // severing now would cut both. Give the dial the time it can take.
+  checkForDeadSocket(stalled, read, read.startedAt + AUTH_ADMISSION_DEAD_SOCKET_AFTER_MS - performance.now());
+}
+
+function checkForDeadSocket(stalled: AdmissionConnections, read: ReadProgress, delayMs: number): void {
+  setTimeout(
+    () => {
+      if (read.isSettled || connections !== stalled) return;
+      const now = performance.now();
+      noteStalledRead(now);
+      if (replacePool(stalled, AUTH_ADMISSION_REPLACEMENT_GRACE_S)) return;
+      checkForDeadSocket(stalled, read, lastRecycledAt + replacementGapMs() - now);
+    },
+    Math.max(0, delayMs),
+  ).unref();
 }
 
 let busyConnections = 0;
@@ -158,19 +212,23 @@ export async function readOnAdmissionConnection<Result>(
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   try {
     onConnection();
-    const readStartedAt = performance.now();
+    const progress: ReadProgress = { startedAt: performance.now(), isSettled: false };
     const readConnections = admissionConnections();
+    const pendingRead = Promise.resolve(read(readConnections.database));
+    const markSettled = () => {
+      progress.isSettled = true;
+    };
+    pendingRead.then(markSettled, markSettled);
     const answer = await Promise.race([
-      read(readConnections.database),
+      pendingRead,
       new Promise<never>((_resolve, reject) => {
         watchdog = setTimeout(() => {
-          recycleStalledPool(readConnections, readStartedAt);
+          handleStalledRead(readConnections, progress);
           reject(new AdmissionReadStalledError());
         }, AUTH_ADMISSION_READ_WATCHDOG_MS);
       }),
     ]);
     readConnections.lastAnsweredAt = performance.now();
-    replacementsSinceAnswer = 0;
     return answer;
   } finally {
     clearTimeout(watchdog);
