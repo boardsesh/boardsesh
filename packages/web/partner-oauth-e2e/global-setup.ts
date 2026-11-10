@@ -16,6 +16,7 @@ import {
 } from './server-environment';
 import {
   API_HOST,
+  E2E_DEVELOPER_TERMS_VERSION,
   SEED_OUTPUT_PREFIX,
   STACK_ENVIRONMENT_VARIABLE,
   WS_HOST,
@@ -278,6 +279,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
         PORT: String(backendPort),
         PARTNER_OAUTH_SECRETS: `1:${randomBytes(32).toString('base64url')}`,
         PARTNER_OAUTH_DEVELOPER_ALLOWLIST: seeded.developer.userId,
+        PARTNER_DEVELOPER_TERMS_VERSION: E2E_DEVELOPER_TERMS_VERSION,
         BOARDSESH_WEB_URL: `http://127.0.0.1:${webPort}`,
         // As in packages/backend/.env.development: no background job families on a test run.
         BATCH_FAMILIES_DISABLED: 'all',

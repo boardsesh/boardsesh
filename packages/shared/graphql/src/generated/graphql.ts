@@ -2220,6 +2220,8 @@ export type CreateGymKioskInput = {
 };
 
 export type CreateOAuthClientInput = {
+  /** The developer terms version the developer accepted. Must equal the current version, or registration is refused. */
+  acceptedTermsVersion: Scalars['String']['input'];
   applicationType: OAuthClientApplicationType;
   /** https:// only. */
   homepageUrl?: InputMaybe<Scalars['String']['input']>;

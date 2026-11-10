@@ -1098,6 +1098,13 @@
       "body4": "Switching it off, deleting the Spraywall, or deleting your account takes the Spraywall out of our stored training set within 24 hours. A copy already downloaded for a training run can be used for up to 7 more days, and is deleted the next time we fetch the set. Models we already trained keep what they learned, but they hold no copy of your photo.",
       "body5": "If a Spraywall is reported, a Boardsesh admin can see its photo to review the report, whatever the switch says. When you delete a Spraywall, we delete its photo after 30 days. When you delete your account, your Spraywall photos are deleted with it; a training copy leaves on the timing above. Resetting a Spraywall keeps the old one, photo included, as an archived Spraywall until you delete it too. Turning the switch off on either Spraywall covers both."
     },
+    "connectedApps": {
+      "title": "Apps you connect",
+      "intro": "You can connect another app to your Boardsesh account, such as a training planner. Before anything is shared, Boardsesh shows you the app, who makes it, a link to its privacy policy and what it asks to see. Nothing is shared until you choose Allow.",
+      "whatItGets": "Depending on what you allow, the app can see your display name and profile photo, and every tick in your logbook, including ticks you keep to “Only me”. Each tick comes with the climb it is on: its name, grade, board and layout. That includes a climb someone else set that is still a draft or unlisted, because the tick is part of your logbook. On someone else’s Spraywall that isn’t public, the app gets your tick but not the climb’s name or the Spraywall’s name.",
+      "afterSharing": "Once the app has your data, the app’s own privacy policy covers what it does with it.",
+      "disconnect": "You can disconnect an app at any time in your Boardsesh settings. Any change to your password, including resetting it or setting one for the first time, disconnects every app. After that the app can’t read anything new. Disconnecting, or deleting your Boardsesh account, does not delete what the app already copied: ask the app to delete it."
+    },
     "thirdParty": {
       "title": "Third-party services",
       "posthogLabel": "PostHog.",

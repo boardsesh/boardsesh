@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
+import { readPartnerAuthorityConfiguration } from '../configuration';
 import {
+  isDraftDeveloperTermsVersion,
   normalizePartnerAppInput,
   normalizePartnerAppPatch,
   PARTNER_APP_NAME_DENYLIST,
@@ -279,6 +282,8 @@ describe('consent screen links', () => {
 });
 
 describe('a registration request', () => {
+  const TERMS = 'test-terms-2026-11-10';
+  const normalize = (raw: Record<string, unknown>) => normalizePartnerAppInput(raw, TERMS);
   const valid = {
     name: 'Crimp Lab',
     publisherName: 'Crimp Labs',
@@ -287,10 +292,11 @@ describe('a registration request', () => {
     applicationType: 'native',
     tokenEndpointAuthMethod: 'none',
     redirectUris: ['com.example.crimp:/oauth/boardsesh'],
+    acceptedTermsVersion: TERMS,
   };
 
   it('keeps only the fields the rules know', () => {
-    expect(normalizePartnerAppInput({ ...valid, skip_consent: true, require_pkce: false, jwks_uri: 'x' })).toEqual({
+    expect(normalize({ ...valid, skip_consent: true, require_pkce: false, jwks_uri: 'x' })).toEqual({
       name: 'Crimp Lab',
       publisherName: 'Crimp Labs',
       homepageUrl: 'https://crimp.example.com/',
@@ -298,26 +304,65 @@ describe('a registration request', () => {
       applicationType: 'native',
       tokenEndpointAuthMethod: 'none',
       redirectUris: ['com.example.crimp:/oauth/boardsesh'],
+      acceptedTermsVersion: TERMS,
     });
   });
+
+  it('takes the shared terms version, and a variable may name another only outside production', () => {
+    const base = { PARTNER_OAUTH_SECRETS: `1:${'s'.repeat(40)}`, NEXTAUTH_SECRET: 'next-auth-secret' };
+    const read = (environment: Record<string, string>, production: boolean) =>
+      readPartnerAuthorityConfiguration(environment as unknown as NodeJS.ProcessEnv, { production })
+        .developerTermsVersion;
+    const named = { ...base, PARTNER_DEVELOPER_TERMS_VERSION: ' 2026-12-01 ' };
+    expect(read(base, false)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    expect(read(named, false)).toBe('2026-12-01');
+    // Production: publishing terms is a code change, never an environment flip.
+    expect(read(base, true)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    expect(read(named, true)).toBe(PARTNER_DEVELOPER_TERMS_VERSION);
+    // This test process is not production, which is how the suites publish their own version.
+    expect(readPartnerAuthorityConfiguration(named as unknown as NodeJS.ProcessEnv).developerTermsVersion).toBe(
+      '2026-12-01',
+    );
+  });
+
+  it('refuses every registration while the terms are a draft, before any other check', () => {
+    expect(isDraftDeveloperTermsVersion('2026-11-10-draft')).toBe(true);
+    expect(isDraftDeveloperTermsVersion(TERMS)).toBe(false);
+    for (const raw of [{ ...valid, acceptedTermsVersion: '2026-11-10-draft' }, { name: 'x' }]) {
+      let refused: unknown;
+      try {
+        normalizePartnerAppInput(raw, '2026-11-10-draft');
+      } catch (error) {
+        refused = error;
+      }
+      expect(refused).toBeInstanceOf(PartnerRegistrationError);
+      expect(refused).toMatchObject({ reason: 'terms_unpublished' });
+      expect((refused as Error).message).toMatch(/^Developer terms are not published yet/);
+    }
+  });
+
+  it.each([undefined, null, '', 'yes', true, '2026-01-01', ` ${TERMS}`])(
+    'refuses a registration that did not accept the current developer terms (%j)',
+    (acceptedTermsVersion) => {
+      expect(refusalMessage(() => normalize({ ...valid, acceptedTermsVersion }))).toMatch(
+        /Accept the current Boardsesh developer terms/,
+      );
+    },
+  );
 
   it.each(['private_key_jwt', 'client_secret_jwt', 'tls_client_auth', 'self_signed_tls_client_auth', 'NONE', ''])(
     'refuses the token endpoint method %j',
     (tokenEndpointAuthMethod) => {
-      expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, tokenEndpointAuthMethod }))).toMatch(
+      expect(refusalMessage(() => normalize({ ...valid, tokenEndpointAuthMethod }))).toMatch(
         /none, client_secret_basic or client_secret_post/,
       );
     },
   );
 
   it('requires a publisher, under the same rules as the app name', () => {
-    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: undefined }))).toMatch(
-      /who makes the app/,
-    );
-    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: '' }))).toMatch(/3 to 50/);
-    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: 'Aurora Labs' }))).toMatch(
-      /imitate "Aurora"/,
-    );
+    expect(refusalMessage(() => normalize({ ...valid, publisherName: undefined }))).toMatch(/who makes the app/);
+    expect(refusalMessage(() => normalize({ ...valid, publisherName: '' }))).toMatch(/3 to 50/);
+    expect(refusalMessage(() => normalize({ ...valid, publisherName: 'Aurora Labs' }))).toMatch(/imitate "Aurora"/);
   });
 
   it('lets an edit change the publisher but never clear it', () => {
@@ -335,12 +380,8 @@ describe('a registration request', () => {
   });
 
   it('refuses an unknown app type and a missing privacy policy', () => {
-    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, applicationType: 'spa' }))).toMatch(
-      /web or native/,
-    );
-    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, privacyPolicyUrl: undefined }))).toMatch(
-      /privacy policy URL/,
-    );
+    expect(refusalMessage(() => normalize({ ...valid, applicationType: 'spa' }))).toMatch(/web or native/);
+    expect(refusalMessage(() => normalize({ ...valid, privacyPolicyUrl: undefined }))).toMatch(/privacy policy URL/);
   });
 
   it('checks an edit against the stored app type', () => {

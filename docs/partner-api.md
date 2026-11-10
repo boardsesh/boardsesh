@@ -12,7 +12,9 @@ There is no application process and no commercial agreement. Every app gets
 the same API, the same scopes and the same limits.
 
 Status: draft v1. The milestone 1 endpoints are built and not yet open to
-apps. Field names and semantics here are what we intend to ship. Questions go to the Boardsesh team
+apps. Early access is by invitation: registration is open only to developer
+accounts the Boardsesh team has added, and each app starts with small connection
+caps (section 1). Field names and semantics here are what we intend to ship. Questions go to the Boardsesh team
 until milestone 2 publishes a support channel with the docs. Each section says which milestone
 of [integration-platform.md](./integration-platform.md) delivers it: the
 logbook first (milestone 1), workouts next (milestone 3), webhooks after that
@@ -52,7 +54,12 @@ Everything is HTTPS.
 ## 1. Registering your app
 
 Sign in at `https://www.boardsesh.com/developers/apps` with a Boardsesh
-account whose email is verified, and create an app. It is usable immediately.
+account whose email is verified, accept the developer terms
+(`https://www.boardsesh.com/developers/terms`), and create an app. It is usable
+immediately. Registration opens once the terms are published; until then the
+console answers "Developer terms are not published yet".
+During early access the console only lets in developer accounts the Boardsesh
+team has invited; anyone else sees "App registration is invite-only for now".
 
 | Field | Notes |
 | --- | --- |
@@ -71,8 +78,10 @@ old one stops working immediately. Coordinate the change with your token-exchang
 Limits that apply to every app (see section 6 for request rates):
 
 - 10 apps per developer account.
-- 200 new climber connections per app per day. If your app needs more, ask
-  through the form in the console.
+- During early access, 25 climbers connected to an app at once, and 20 new
+  connections in any 24 hours. A reconnect counts as new. The console shows both
+  numbers on each app. If your app needs more, ask the Boardsesh team; there is
+  no request form yet.
 - The consent screen tells climbers that Boardsesh has not reviewed your app.
   That is true of every app; it is not a warning about yours.
 - Browser-only apps work: the token, revoke and API endpoints answer CORS for
@@ -141,13 +150,16 @@ PKCE is required for every client, confidential ones included. Only `S256` is
 accepted. A missing challenge or a `plain` method sends the browser back to your
 registered redirect URI with `error=invalid_request` and your `state`, and no
 code. An unknown client or an unregistered redirect URI shows an error page on
-boardsesh.com and never redirects anywhere, because there is no redirect URI
-Boardsesh can trust.
+`api.boardsesh.com` and never redirects anywhere, because there is no redirect
+URI Boardsesh can trust.
 
 Boardsesh sends the browser on to the consent screen on `www.boardsesh.com`.
-If the climber is not signed in, or last signed in more than 30 days ago, they
-sign in first, then see it. `prompt=login` is accepted and changes nothing on top
-of that. Once they approve:
+If the climber is not signed in, last signed in more than 30 days ago, or last
+signed in before their password changed, they sign in first, then see it. The
+same applies to a climber who has not signed in since Boardsesh switched app
+connections on, so expect your first testers to be asked to sign in once.
+`prompt=login` is accepted and changes nothing on top of that. Once they
+approve:
 
 ```
 com.example.app:/oauth/boardsesh?code=SplxlOBeZQQYbYS6WxSbIA&state=8f3c...&iss=https%3A%2F%2Fapi.boardsesh.com%2Fapi%2Fauth
@@ -241,8 +253,9 @@ method. Revoking an opaque access token invalidates that token only; its
 refresh token can still work. Revoking a refresh token invalidates it and
 its associated access tokens, not every independently issued family or
 remembered consent. Unknown/already-invalid tokens return `200`; invalid
-client authentication returns `invalid_client` (`401` with a Basic challenge
-for `client_secret_basic`, `400` for `client_secret_post`).
+client authentication returns `invalid_client`: `401` with a Basic challenge
+when the request sent HTTP Basic credentials, `400` when it sent the secret in
+the body. The token endpoint answers the same way.
 
 Use this endpoint to discard a credential. Use Disconnect below to end the
 entire app/climber connection.
@@ -295,6 +308,9 @@ GET /v1/me
 for every app, and not the id Boardsesh uses anywhere else. Use it to tell
 whether a reconnect is the same climber. `displayName` and `avatarUrl` are sent
 only with `profile:read`, and either can be `null` when the climber has none.
+`avatarUrl` is always an `https` URL on Boardsesh's media host or a sign-in
+provider's image host (Google, Facebook); anything else a profile holds comes
+through as `null`.
 
 ### Syncing
 
@@ -904,20 +920,30 @@ still readable through the API.
 | Token endpoint, whole app        | 6,000 requests per minute           |
 | API, per climber                 | 120 requests per minute per app per climber |
 | API, per app                     | 6,000 requests per minute across all your climbers |
+| API, failed token lookups        | 600 per minute per client IP; past that, `429` instead of `401` |
+| Starting a full sync             | 2 per minute per connected climber  |
+| Connected climbers (early access) | 25 at once, 20 new in any 24 hours, per app |
 | Page size (`limit`)              | 200                                 |
 | Unfinished workouts per climber  | 20 per app                          |
 | Blocks per workout               | 12                                  |
-| Request body                     | 64 KB                               |
+| Request body                     | 64 KB, sent within 5 seconds        |
 
 A limit "per client IP" counts an IPv6 client as its /64. An app on Cloudflare
 Workers counts per Worker zone (the `CF-Worker` header Cloudflare adds), because
-every Worker reaches us from the same address; all Worker zones together share 10
-times each per-IP limit.
+every Worker reaches us from the same address; on the OAuth routes all Worker
+zones together share 10 times each per-IP limit. Failed token lookups on the API
+count per zone only.
 
 Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset` for the tightest limit that applies. Over the limit returns
-`429` with `Retry-After` in seconds. If your app genuinely needs more, ask
-through the console.
+`429` with `Retry-After` in seconds. If your app genuinely needs more, ask the
+Boardsesh team.
+
+A `503` with `Retry-After` from any OAuth or API route means Boardsesh is busy
+or has paused app access for a moment. Wait and retry. It never means the
+climber disconnected, so do not drop their tokens on it. A body larger than
+64 KB answers `413`, and one that takes longer than 5 seconds to arrive answers
+`408`.
 
 Keep at most 8 API requests in flight from one server address (one Worker
 zone on Cloudflare Workers). Up to 8 more are still served, but they wait in a
@@ -966,7 +992,8 @@ fields, new routes, new scopes, new event types, new enum values. Read what
 you know and ignore the rest. Anything that removes or renames a field becomes
 `v2`, with `v1` kept running for at least six months and a `Sunset` header on
 its responses for that whole time. Every contract change is listed on the
-changelog page at `https://www.boardsesh.com/developers/changelog`.
+changelog page at `https://www.boardsesh.com/developers/changelog`, which
+arrives with the public developer docs in milestone 2.
 
 ## Later
 

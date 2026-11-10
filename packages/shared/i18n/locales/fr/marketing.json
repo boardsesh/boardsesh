@@ -1098,6 +1098,13 @@
       "body4": "Si tu le désactives, supprimes le Spraywall ou supprimes ton compte, le Spraywall sort sous 24 heures du jeu de données d'entraînement que nous stockons. Une copie déjà téléchargée pour un entraînement peut encore servir pendant 7 jours au plus, et elle est supprimée au prochain téléchargement de ce jeu de données. Les modèles déjà entraînés gardent ce qu'ils ont appris, mais n'ont aucune copie de ta photo.",
       "body5": "Si un Spraywall est signalé, un admin Boardsesh peut voir sa photo pour traiter le signalement, quel que soit le réglage de l'interrupteur. Quand tu supprimes un Spraywall, nous supprimons sa photo au bout de 30 jours. Quand tu supprimes ton compte, les photos de tes Spraywalls sont supprimées avec lui ; la copie d'entraînement sort dans les délais indiqués plus haut. Quand tu réinitialises un Spraywall, l'ancien est conservé avec sa photo comme Spraywall archivé jusqu'à ce que tu le supprimes aussi. Désactiver l'interrupteur sur l'un des deux vaut pour les deux."
     },
+    "connectedApps": {
+      "title": "Les apps que tu connectes",
+      "intro": "Tu peux connecter une autre app à ton compte Boardsesh, par exemple un planificateur d'entraînement. Avant tout partage, Boardsesh te montre l'app, qui la fait, un lien vers sa politique de confidentialité et ce qu'elle demande à voir. Rien n'est partagé tant que tu n'as pas choisi Autoriser.",
+      "whatItGets": "Selon ce que tu autorises, l'app peut voir ton nom affiché et ta photo de profil, et toutes les entrées de ton carnet, y compris celles que tu gardes en « Moi uniquement ». Chaque entrée est accompagnée du bloc concerné : son nom, sa cotation, la board et le layout. Cela vaut aussi pour un bloc ouvert par quelqu'un d'autre qui est encore un brouillon ou non répertorié, car l'entrée fait partie de ton carnet. Sur le Spraywall de quelqu'un d'autre qui n'est pas public, l'app reçoit ton entrée, mais ni le nom du bloc ni celui du Spraywall.",
+      "afterSharing": "Une fois que l'app a tes données, ce qu'elle en fait relève de sa propre politique de confidentialité.",
+      "disconnect": "Tu peux déconnecter une app à tout moment dans les réglages de Boardsesh. Tout changement de mot de passe, y compris une réinitialisation ou la création d'un premier mot de passe, déconnecte toutes les apps. Ensuite, l'app ne peut plus rien lire de nouveau. La déconnecter, ou supprimer ton compte Boardsesh, ne supprime pas ce qu'elle a déjà copié : demande à l'app de le supprimer."
+    },
     "thirdParty": {
       "title": "Services tiers",
       "posthogLabel": "PostHog.",

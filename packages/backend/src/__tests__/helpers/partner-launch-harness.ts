@@ -24,6 +24,8 @@ export const WEB_ORIGIN = 'https://www.boardsesh.com';
 export const CONSENT_PAGE = `${WEB_ORIGIN}/oauth/consent`;
 export const SIGN_IN_PAGE = `${WEB_ORIGIN}/oauth/sign-in`;
 export const PARTNER_SECRET = '1:partner-oauth-launch-suite-secret-never-deployed-0123456789';
+/** The developer terms this deployment publishes; the shipped version may still be a draft. */
+export const LAUNCH_TERMS_VERSION = 'launch-suite-terms-1';
 /** The cookie name www sets on `.boardsesh.com` in production. */
 export const WWW_SESSION_COOKIE = '__Secure-next-auth.session-token';
 

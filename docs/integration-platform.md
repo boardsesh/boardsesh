@@ -6,9 +6,14 @@ project all connect the same way: register an app, send the climber through
 OAuth, read what the climber allowed, keep it in sync. No app gets a private
 endpoint, a hand-made client row or a scope nobody else can ask for.
 
-Status: design, nothing built. Written 2026-10-27, after the Sequence workout
-spec (#5530) and the DivePeaks logbook request. The target is that the cost of
-one more ordinary integration is zero engineering time on our side.
+Written 2026-10-27, after the Sequence workout spec (#5530) and the DivePeaks
+logbook request. The target is that the cost of one more ordinary integration is
+zero engineering time on our side.
+
+Status, 2026-11-10: milestone 1 is built behind `PARTNER_OAUTH_MODE`, which is
+`off` in production. It shipped on the fast path: on today's identity system,
+ahead of the Better Auth migration (see [Roadmap](#roadmap)). Turning it on, and
+the stages that follow, are in [Running partner OAuth](#running-partner-oauth).
 
 | Doc | What it holds |
 | --- | --- |
@@ -37,11 +42,12 @@ the **climber**, and a climber's approval of one app is a **connection**
 7. [Incremental sync](#incremental-sync)
 8. [Data boundaries and LEGAL.md](#data-boundaries-and-legalmd)
 9. [Operations](#operations)
-10. [Webhooks (later)](#webhooks-later)
-11. [Developer experience](#developer-experience)
-12. [Roadmap](#roadmap)
-13. [Acceptance test: an agent integrates alone](#acceptance-test-an-agent-integrates-alone)
-14. [Open questions](#open-questions)
+10. [Running partner OAuth](#running-partner-oauth): the owner's runbook
+11. [Webhooks (later)](#webhooks-later)
+12. [Developer experience](#developer-experience)
+13. [Roadmap](#roadmap)
+14. [Acceptance test: an agent integrates alone](#acceptance-test-an-agent-integrates-alone)
+15. [Open questions](#open-questions)
 
 ---
 
@@ -99,6 +105,13 @@ sessions and includes a maintained compatibility API for old native apps and
 Garmin watches, all backed by the same identity authority. Security events may
 require real reauthentication. The partner API does not ship merely because
 the identity migration has shipped, or vice versa.
+
+Partner OAuth ships first, on the fast path. Better Auth runs only as the OAuth
+server: it reads `users` and never writes it, email and social sign-in are off,
+and NextAuth keeps first-party sign-in. Consent reads the www NextAuth cookie on
+every request, and a database trigger on `user_credentials` ends connections
+when a password changes. The rest of this decision, moving first-party identity
+to Better Auth, follows on its own schedule ([Roadmap](#roadmap)).
 
 | Option | Assessment |
 | --- | --- |
@@ -445,9 +458,10 @@ value is `off`.
 environment to decide whether to guard OAuth account links and to mark new
 sign-ins `link_guarded` (see [Consent and the www session](#consent-and-the-www-session)).
 Turn the web on first, then the backend; turn the backend off first. A mismatch
-fails closed rather than open: while the web reads `off`, no sign-in carries
-`link_guarded`, so a backend serving consent asks every climber to sign in, and
-signing in does not help. `infra/railway/config.ts` refuses any web value but
+fails closed rather than open: while the web reads `off`, its sign-in and consent
+pages show "isn't available" whatever the backend serves, and a sign-in made
+meanwhile carries no `link_guarded`, so it cannot approve an app after the web is
+switched on either. `infra/railway/config.ts` refuses any web value but
 `off`, `hold`, `allowlist` or `open`, since the web would read a typo as `off`. It
 cannot compare the web's value with the backend's: the plan reads one service at
 a time, and the backend is inventory-only there.
@@ -1266,7 +1280,8 @@ A developer console at `https://www.boardsesh.com/developers/apps`
 `packages/backend` (`createOAuthClient`, `updateOAuthClient`,
 `rotateOAuthClientSecret`, `deleteOAuthClient`, `myOAuthClients`).
 
-Form fields: name, publisher name, homepage URL, privacy policy URL, client
+Form fields: name, publisher name, homepage URL, privacy policy URL, the
+developer terms box (registration only), client
 authentication type, web/native application topology and redirect URIs. Registration binds
 the client to the published `https://api.boardsesh.com/v1` resource; developers
 cannot expand its resource permissions. The secret (confidential clients) is shown once. No icon upload in the
@@ -1277,13 +1292,13 @@ Rules enforced without a human:
 
 | Rule | Value | Why |
 | --- | --- | --- |
-| Developer account | Signed in, email verified | Accountability without paperwork |
+| Developer account | Signed in, email verified, and listed in `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` until stage D | Accountability without paperwork |
 | Apps per developer | 10 | Bounds a single bad actor |
 | Redirect URIs per app | 10 | |
 | Redirect URI forms | `https://…` (any host); `http://127.0.0.1:{any port}/…` and `http://[::1]…` (loopback, RFC 8252 §7.3, port ignored when matching); private-use schemes with a dot, `com.example.app:/…` (RFC 8252 §7.1). Rejected: `http://` elsewhere, `javascript:`, `data:`, `file:`, fragments, wildcards, any URI on a `boardsesh.com` host, and the schemes `boardsesh` and `com.boardsesh*` (our own app's) | Loopback lets scripts and local AI-built tools integrate with no hosting |
 | Matching | Exact string, except the loopback port | |
 | Names | App and publisher names alike. Case-insensitive denylist: Boardsesh, Aurora, Moon Climbing, every board brand in `BOARD_TYPE_LABELS` (Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Woods), and lookalikes | Consent phishing |
-| New connections per app per day | 200 by default; a developer can ask for more through the console form | Bounds the damage of a phishing app; ordinary apps never hit it |
+| Connections per app | 25 live and 20 new in any 24 hours while registration is allowlisted (decision 22, the `oauth_app_policy` defaults). The owner raises one app's caps in its policy row; there is no request form in the console yet. The default for stage D is still open (200 new a day was the proposal) | Bounds the damage of a phishing app |
 | Scopes | Any app may request any published scope. The consent page lists them | No approval tier |
 
 The consent screen shows: the app name, "Made by {publisher name}" when the app
@@ -1380,7 +1395,24 @@ through the operations above. `OAuthClient.activeConnections` is the number of
 climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
 is shown once in a dialog that closes only from its own button. It lives in
-component state only: never in the React Query cache, a URL or a log. The route
+component state only: never in the React Query cache, a URL or a log.
+Registering needs the developer terms box ticked; the form links to
+`/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
+`PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.
+The backend takes its own copy of the version
+(`PartnerAuthorityConfiguration.developerTermsVersion`): always the shared
+constant in production, so publishing terms is a reviewed code change and never
+an environment flip. Outside production (the backend's own test, the one its
+Sentry gate uses, since Railway leaves `NODE_ENV` unset) a
+`PARTNER_DEVELOPER_TERMS_VERSION` variable may name another version, which is how
+the tests and the end-to-end journey register apps while the shipped terms are a
+draft. While that version ends in `-draft` it refuses every registration with
+`BAD_USER_INPUT`, reason `TERMS_UNPUBLISHED`, "Developer terms are not published
+yet", in every mode that reaches registration. Otherwise it refuses any other
+accepted value with `BAD_USER_INPUT`, so a console left open across a terms change
+asks the developer to reload, and writes the version and the time to
+`oauth_app_policy.terms_version` and `terms_accepted_at`. An edit does not ask
+again, and apps registered before this have both columns empty. The route
 sends `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `no-referrer` and
 `no-store`, and loads no ad pixel. PostHog on www is the lite SDK with no
 autocapture or replay, so it never sees the page's text.
@@ -2178,31 +2210,46 @@ What LEGAL.md implies:
   not public carries `climb.name: null` and `climb.board.layout: "Spray wall"`:
   the owner shared the wall with the climber, not with the climber's apps. The
   tick itself (date, status, attempts, angle, grade) is still the climber's.
-- **The "Hosted Service & API Access" section needs one clarifying sentence
-  before the first outside app ships against milestone 1.** It says a "publicly distributed
-  app … that uses Boardsesh accounts, data or servers as its service needs our
-  written permission, and we do not currently grant it". Read literally, that
-  covers DivePeaks. The intent (the Boardz decision, October 2026) is about
-  apps that run *on* Boardsesh: forks and alternative clients. Proposed wording
-  for Marco to approve:
-
-  > Connecting a climber's Boardsesh account to your app with their
-  > permission, through the OAuth API and the scopes in the developer docs, is
-  > an integration and needs no permission from us. Building an app whose
-  > accounts, climbing, board control or sessions run on Boardsesh's servers
-  > is not an integration, and the paragraph above applies.
-
-  The scope list enforces that line technically: nothing on it lets an app
-  control a board, run a session or browse the catalog.
-- **Developer terms** (short, linked from the console and LEGAL.md): use data
-  only for what the climber connected the app for, delete it when the climber
-  disconnects or asks, no resale, no re-publishing other climbers' data (there
-  is none in the API anyway), respect rate limits, describe compatibility not
-  endorsement ("Works with Boardsesh"), and we can suspend apps that break
-  this. Draft in milestone 2, Marco signs off.
-- **Privacy policy**: one paragraph on connected apps: what leaves, that the
-  app's own policy governs it afterwards, how to disconnect, and that deleting
-  a Boardsesh account does not delete copies an app already holds.
+- **The "Hosted Service & API Access" section of LEGAL.md.** It said a
+  "publicly distributed app … that uses Boardsesh accounts, data or servers as
+  its service needs our written permission, and we do not currently grant it".
+  Read literally, that covers DivePeaks. The intent (the Boardz decision,
+  October 2026) is about apps that run *on* Boardsesh: forks and alternative
+  clients. Proposed wording, waiting for the owner: name those (accounts,
+  climbing, board control or sessions on Boardsesh's servers) and say that
+  connecting a climber's account through the OAuth API, within the published
+  scopes and under the developer terms, is an integration that needs no further
+  permission. The www `/legal` page carries the same paragraph in every locale
+  (`legal.hostedService.p3`). The scope list enforces that line technically:
+  nothing on it lets an app control a board, run a session or browse the
+  catalog. **Neither LEGAL.md nor `/legal` changes until the owner approves the
+  text**; the proposal for both is in the description of #7411.
+- **Developer terms** at www `/developers/terms`, behind the same
+  `developer-console` flag as the console, English in every locale. They cover:
+  use data only for what the climber connected the app for; no sale, rental,
+  advertising or data brokering; the climb details a tick carries, including
+  someone else's draft or unlisted climb, are for the climber's own logbook and
+  are never re-published or collected into a list; delete on disconnect or
+  request; a privacy policy; secrets kept safe and leaks reported within 72
+  hours; rate limits and scopes respected; no catalog copying; compatibility
+  wording, not endorsement ("Works with Boardsesh"), and board brands only to
+  name boards; and Boardsesh may suspend or delete an app that breaks them.
+  Registration requires the current version (below), and **refuses every app
+  while that version is a draft**: the shipped `PARTNER_DEVELOPER_TERMS_VERSION`
+  ends in `-draft` until the owner approves the text, the page shows "Draft, not
+  in force", and the console's register form answers "Developer terms are not
+  published yet".
+- **Privacy policy**: an "Apps you connect" section on www `/privacy`, shown
+  only while the web's `PARTNER_OAUTH_MODE` is not `off`, in every locale. It
+  says what an app can receive (display name and photo; every tick, "Only me"
+  ones included; each tick's climb with name, grade, board and layout, also when
+  someone else set it and it is a draft or unlisted; but on someone else's
+  non-public Spraywall neither the climb's name nor the Spraywall's), that the
+  app's own policy governs the data afterwards, how to disconnect, that any
+  password change (a reset, or setting one for the first time) disconnects
+  every app, and that disconnecting or deleting the account does not delete
+  copies an app already holds. **Draft until the owner approves it**; it shows
+  only once partner apps are on, which itself waits for that approval (gate 9).
 - **Trademarks**: the docs say "Kilter", "Tension", "MoonBoard" only to name
   board types, never to suggest the API is an official channel for them.
 
@@ -2224,15 +2271,15 @@ What LEGAL.md implies:
 | API, in flight | 8 places in the shared `/v1` lane and 8 in overflow per address, per instance | IPv4 address, IPv6 /48 or Worker zone, counted in the admission gate; the 9th waits in the overflow lane. All Worker zones together: 12 shared, 8 overflow. A full queue takes a place from the address holding the most |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
-| New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |
+| Connections per app | 25 live and 20 new in any 24 hours (`oauth_app_policy`) | Postgres count, not Redis, so it cannot fail open. Charged at the first code exchange |
 | Request body | 64 KB | |
 
 `429` carries `Retry-After` (seconds) and `RateLimit-Limit`,
 `RateLimit-Remaining`, `RateLimit-Reset` on every response so a well-written
 client never sees a 429. Limits use `checkRateLimitRedis`, which falls back to
 per-instance memory when Redis is down: still a limit, just a looser one.
-Higher per-app limits are stored on the application-owned app policy, raised
-through the console request form; ordinary use never needs it.
+Higher per-app limits are stored on the application-owned app policy. The owner
+raises them there; there is no request form in the console.
 
 The token limits are keyed per connection and per IP, not only per app,
 because a public app's `client_id` is public: anyone could otherwise drain one
@@ -2254,7 +2301,7 @@ number of climbers. Bootstrap also makes a temporary complete snapshot: 10,000
 ticks is 50 pages and 50 short build transactions. The bounds and the cost of a
 100,000-tick account are in [What it costs](#what-it-costs). Snapshot work runs on
 its own pool of two connections per process and feed pages on the partner pool;
-the arithmetic is in [db-connectivity.md](./db-connectivity.md#dedicated-pools).
+the arithmetic is in [db-connectivity.md](./db-connectivity.md#dedicated-pools-1).
 Per-page climb lookups are batched: one read for the climbs and two for their
 grades at the page's angles, never one per tick. Measure p95 per route
 before milestone 2 opens registration, against the read replica numbers in
@@ -2298,6 +2345,207 @@ before milestone 2 opens registration, against the read replica numbers in
   exemptions too. `/auth/error` is also in `WEB_ONLY_EXACT_PATHS`, because
   NextAuth sends a failed social sign-in there and the app has no such screen.
   `/auth/login` stays claimed for the verify-email redirect.
+
+---
+
+## Running partner OAuth
+
+The owner's runbook. Every step here that changes production is the owner's:
+agents can prepare commands and read production, not change it. Partner OAuth
+stays `off` until step 1 of stage A.
+
+### Before the first switch-on
+
+| # | Step | How to check |
+| --- | --- | --- |
+| 1 | Every fast-path PR merged and deployed (F1 to F18, L1 to L4). A migration that locks an `oauth_` table deploys alone: a deploy holds its locks until the whole migration run commits, and password resets wait behind them | `vp run db:verify-journal` against production reports no missing migration |
+| 2 | `api.boardsesh.com` answers through Cloudflare | `curl -sS -o /dev/null -w '%{http_code}' https://api.boardsesh.com/health` prints `200` |
+| 3 | AASA has excluded `/oauth` and `/developers` for at least 7 days, so installed iPhones have refreshed it | `curl -sS https://www.boardsesh.com/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*` |
+| 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
+| 5 | `idle_in_transaction_session_timeout` is set on the application roles ([below](#idle-transactions)) | |
+| 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
+| 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
+| 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
+| 9 | The owner has approved the `LEGAL.md` sentence (then landed with `/legal`), the developer terms and the privacy paragraph, and changed the `PARTNER_DEVELOPER_TERMS_VERSION` constant to the approval date, which opens registration once deployed | The terms page no longer says "Draft, not in force"; the console registers an app |
+
+### Turning it on and off
+
+Set `PARTNER_OAUTH_MODE` on the **web and the backend** services every time it
+changes:
+
+- **Turning on** (`off` to `allowlist`): the web first, then the backend.
+- **Turning off** (to `off`): the backend first, then the web.
+
+While the web reads `off` it neither guards OAuth account links nor marks new
+sign-ins `link_guarded`, and consent requires that mark. So a mismatch fails
+closed: the www sign-in and consent pages show "isn't available" to every climber,
+and a sign-in made in that window cannot approve an app later either; that
+climber has to sign in once more after the web is on.
+`infra/railway/config.ts` refuses a web value other than `off`, `hold`,
+`allowlist` or `open`, but it cannot compare the web's value with the backend's.
+
+| To stop | Do | What apps see |
+| --- | --- | --- |
+| Everything, for a while | Backend `hold`. The web can stay as it is: it reads `hold` as on and keeps guarding links | `503` with `Retry-After: 60` on every OAuth and `/v1` route and every console operation. Apps retry; nobody is disconnected. `DELETE /v1/connection` answers `503` too; Connected apps (#7406) keeps Disconnect working in every mode |
+| Everything, until further notice | Backend `off`, then web `off` | `404` everywhere, and Better Auth is not loaded. Refresh tokens are kept, so turning it back on brings connections back |
+| One app | `suspend` ([admin commands](#admin-commands)) | `invalid_client` from the token endpoint, `401` from the API. `unsuspend` brings it back with its tokens |
+| One climber's connections | `revoke-user` | Every connection of that climber ends, as after a password reset |
+| Password resets failing because of the revocation trigger | Mode `off` on both, then `ALTER TABLE user_credentials DISABLE TRIGGER trg_user_credentials_partner_revoke_insert;` and the same for `trg_user_credentials_partner_revoke_update` | Nothing: partner OAuth is off. Before turning it back on, enable both triggers and run `revoke-user` for every climber who reset or set a password meanwhile, or their old connections come back |
+
+### The switch-on day
+
+Every climber's www cookie is missing `link_guarded`, and most are missing
+`auth_time`: NextAuth re-issues a cookie on every use but writes those claims only
+at sign-in. So once the web leaves `off`, every climber is asked to sign in once
+before they can approve an app, or link a Google, Apple or Facebook account into
+their session. Signing in once clears both. This is expected, not a bug.
+
+Two smaller cases look the same to a climber. A sign-in within 60 seconds of a
+password write does not count yet, so after a reset, or for an account created
+inside the consent flow, the sign-in page can come back for up to a minute. And
+a sign-in older than 30 days never counts.
+
+### Stages
+
+| Stage | Mode | Who connects | Caps per app | Starts when | Lasts |
+| --- | --- | --- | --- | --- | --- |
+| A | `allowlist` | The owner's test app, test accounts only | 25 live, 20 new in 24 hours | Everything in "Before the first switch-on" is done | 3 days |
+| B | `allowlist` | Sequence and DivePeaks developers, their own accounts only | 25 live, 20 new in 24 hours | Stage A clean | 7 days |
+| C | `allowlist` | Real climbers | 25 live, 20 new in 24 hours | Stage B clean | Until stage D |
+| D | `open` | Any developer with a verified email | The stage D default, still open (200 new a day was the proposal) | BA-02 ships or registration proves the email itself; milestone 2 docs; a second independent agent review; emailing climbers when an app connects (decision 8) | |
+
+Until stage D's email proof exists, `open` registers only the allowlisted
+developers ([What the backend does today](#what-the-backend-does-today-f12)).
+
+**Stage A.**
+
+1. Web `allowlist`, then backend `allowlist`, with the owner's test account in
+   `PARTNER_OAUTH_DEVELOPER_ALLOWLIST`.
+2. Check the client address the backend sees. Production flag requests that
+   resolve to real countries, not `XX`, mean Railway's ingress peer is in a
+   private range. If they resolve to `XX`, every client shares one rate-limit
+   bucket and one client can lock out every partner: stop and fix that first.
+3. Register a test app in the console. Connect it from iOS Safari and Android
+   Chrome, signed in and signed out, with an Apple, a Google and a password
+   account (gate 5).
+4. Rehearse `hold` and `off` in the order above, and check that `/graphql` and
+   native sign-in keep working in both (gate 8).
+5. Take a log sample from the backend, Sentry and PostHog: no codes, tokens or
+   secrets (gate 7). Record the bearer check's p95 and the database load (gate 6).
+6. Set up alerts on per-app error and `429` ratios, cap hits and lock timeouts
+   (gate 7).
+
+**Stage B.** It relies on the Cloudflare Worker egress limits (#7403) and the
+`/v1` concurrency routing (#7404), both in the fast-path stack: every
+Worker-hosted partner reaches us from one `CF-Connecting-IP`, and without them
+they would share one bucket. Many separate /48s can still fill the shared `/v1`
+lane; that needs a Cloudflare rule, which is the owner's. Then add
+the two developers' ids to `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` and to the
+`developer-console` flag, send them [partner-api.md](./partner-api.md), ask them
+to connect only their own accounts, and turn every question into a doc fix.
+
+**Stage C.** The caps stay at 25 live and 20 new a day. Emailing climbers when
+an app connects (decision 8) is deferred on the strength of those caps, so
+raising an app's caps is a stage D step, or an owner decision that brings
+decision 8 forward with it. When that time comes, in the app's policy row (the
+numbers here are an example):
+
+```sql
+UPDATE oauth_app_policy
+SET max_active_connections = 500, max_new_connections_per_day = 100
+WHERE client_id = '<the app''s client id>';
+```
+
+Caps count from the first code exchange, not the approval. A public app can
+still be filled by someone with many accounts, since anyone can run its flow to
+their own loopback redirect: `revoke-user` the accounts.
+
+### The connection budget
+
+With partner OAuth on, the partner pool (3 per replica) and the logbook snapshot
+pool (2 per replica) add 10 connections at steady state and 20 while an old
+backend fleet drains. At code defaults a drain then needs about 107
+connections, against 97 application slots, and an admission connection refused
+with `53300` is not retried. Pick one before leaving `off`
+([db-connectivity.md](./db-connectivity.md#dedicated-pools-1) has the arithmetic):
+
+| Option | Drain | Cost |
+| --- | --- | --- |
+| Cap the web at 4 (a variable) and the sync daemons at 3 (a source change) | 95 | Two changes, one of them code |
+| Raise `max_connections` | 107, under the new limit | A Postgres restart |
+| `LOGBOOK_SNAPSHOT_POOL_MAX` to 1, with the web cap | 97 | No headroom at all; a cold snapshot build makes that replica's page reads wait |
+| `PARTNER_POOL_MAX` to 2 | 4 fewer than without it | Authorize, `/v1` and token requests share two connections |
+
+Both pool sizes are code constants, so the last two options are a deploy, not a
+variable. The recommendation is the first option, or raising `max_connections`.
+
+### Idle transactions
+
+The logbook feed serves only changes below the oldest write transaction still
+open, so one session left idle inside a transaction holds every app's feed back
+until it ends. Partner transactions set their own 10-second limit; the rest of
+the application does not. Before the first switch-on, set
+`idle_in_transaction_session_timeout` on every login that writes ticks:
+`boardsesh_runtime` (backend and web) and the worker logins.
+
+1. See what sits idle in a transaction today, a few times over a day:
+
+   ```sql
+   SELECT usename, application_name, count(*), max(now() - state_change) AS longest
+   FROM pg_stat_activity
+   WHERE state = 'idle in transaction'
+   GROUP BY usename, application_name;
+   ```
+
+2. Pick a value above the longest legitimate one. It cuts only sessions that sit
+   idle inside a transaction, not long statements, so kilter-sync's 80 to 135
+   second upserts (the reason `statement_timeout` is never set on
+   `boardsesh_runtime`) are not affected.
+3. As the database admin (the migration role cannot alter application roles),
+   with the value you picked:
+
+   ```sql
+   ALTER ROLE boardsesh_runtime SET idle_in_transaction_session_timeout = '60s';
+   ```
+
+   Repeat for each worker login. New sessions pick it up; pooled connections keep
+   the old value until they reconnect, which the next deploy does.
+4. Alert when the oldest running write transaction is over 5 minutes old
+   ([Observability](#observability)).
+
+### Admin commands
+
+`packages/backend/src/scripts/partner-app-admin.ts`, run with a `DATABASE_URL` for
+the `boardsesh_runtime` login. Each command acts on one id, prints the rows before
+and after, and writes nothing without `--apply`.
+
+```
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts suspend --client-id <id> --reason "<shown to the developer>"
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts unsuspend --client-id <id>
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts revoke-user --user-id <id>
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts set-publisher --client-id <id> --publisher "<shown to climbers>"
+```
+
+Add `--apply` once the dry run shows the right rows. `suspend` keeps the app's
+tokens, and other backend instances stop answering its browser origins within 60
+seconds. `revoke-user` runs `partner_revoke_user()`, the function the password
+trigger calls, in READ COMMITTED. Details are in
+[What the backend does today](#what-the-backend-does-today-f12).
+
+### Where each launch gate is tested
+
+| Gate | What | Where |
+| --- | --- | --- |
+| 1 | Every credential path ends connections | `auth/partner/__tests__/partner-revocation.test.ts` (one test per row of the revocation table); the launch suite's "the revocation table" and "races" |
+| 2 | The pinned provider, two instances, real Postgres and Redis, end to end | `__tests__/partner-launch-suite.test.ts` (the backend); `vp run test:e2e:partner-oauth` ([End-to-end journey](#end-to-end-journey): www and the backend in Chromium) |
+| 3 | Independent security review | Agents that did not write the code, before stage A and again before stage D. Not a test |
+| 4 | AASA live for 7 days; `api.boardsesh.com/health` through Cloudflare | `app/lib/__tests__/apple-app-site-association.test.ts` for the file; the 7 days and the `curl` are manual |
+| 5 | Consent in iOS Safari and Android Chrome, signed in and out, Apple, Google and password accounts | Manual, stage A step 3 |
+| 6 | Idle timeout set; bearer p95 and database load recorded | The owner, before the first switch-on; measured in stage A |
+| 7 | Alerts exist; no codes, tokens or secrets in logs | The launch suite's "the logs" for backend logs; alerts and the Sentry and PostHog sample are manual |
+| 8 | `hold` and `off` rehearsed; `/graphql` and native sign-in unaffected | The launch suite's "mode off", "mode hold" and "switching modes"; the rehearsal is stage A step 4 |
+| 9 | `LEGAL.md` sentence, developer terms and privacy paragraph approved | The owner |
+| 10 | Published scopes match shipped routes | The launch suite's "discovery" and "codes"; `check:public-api-openapi` in CI |
 
 ---
 
@@ -2383,12 +2631,29 @@ not enough.
 
 ## Roadmap
 
-The first-party identity migration and the partner platform have independent
-rollout flags and acceptance gates. The migration may ship before the API;
-the API needs the authority/compatibility slice it uses to be proven, but does
-not require retiring support for old native apps or Garmin watches. Neither
-gate is waived by the other succeeding. The migration roadmap lives in
-[better-auth-migration.md](./better-auth-migration.md).
+The partner platform ships first, on the fast path (decided 2026-11-09). It
+needs neither the email-uniqueness work (BA-02) nor any step of the
+identity-authority migration (BA-04):
+
+- Better Auth runs only as the OAuth server. It reads a climber by id from
+  `users`, never writes that table, and has email and social sign-in off, so
+  email case and uniqueness never reach it.
+- Consent identity is the www NextAuth cookie, checked on every request
+  (decision 19), with no new browser cookie.
+- Revocation lives in the database. A trigger on `user_credentials` calls
+  `partner_revoke_user()` on every password write, and foreign-key cascades
+  cover account deletion, so no first-party writer has to remember to call it.
+- Open registration (stage D) stays closed until BA-02 ships or registration
+  sends its own email proof, because `emailVerified` was stamped without proof
+  while verification was off.
+
+The first-party migration keeps its own flags and gates; neither gate is waived
+by the other succeeding. Two of its steps touch partner code later: BA-05's
+first cohort swaps the consent session reader to `readFirstPartySession`,
+accepting both cookie formats before any cohort moves, and moves
+`/oauth/sign-in` to the new login; BA-10, when it retires `user_credentials`,
+moves the revocation trigger to Better Auth's credential row in one migration.
+The migration roadmap lives in [better-auth-migration.md](./better-auth-migration.md).
 
 Each partner milestone is useful on its own. PRs inside a milestone are
 small enough to review in one sitting, and every PR touching the
@@ -2414,8 +2679,8 @@ it, the app syncs the logbook, the climber disconnects it.
 | --- | --- | --- |
 | 1.1 | `@boardsesh/public-api`: zod schemas, OpenAPI registry, committed `openapi.json`, CI diff check | — |
 | 1.2 | Complete snapshot bootstrap, `logbook_changes`, feed generation, watermark, triggers, atomic pruning and concurrency/recovery tests | — |
-| 1.3 | Generated provider Drizzle schema, app/connection policy, opaque introspection, `/v1` router and rate limits | D2 OAuth gate; required identity/compatibility slice proven |
-| 1.4 | Supported Better Auth consent/continuation UI, connection-generation enforcement, security-revocation integration | 1.3; migration security gate |
+| 1.3 | Generated provider Drizzle schema, app/connection policy, opaque introspection, `/v1` router and rate limits | D2 OAuth gate on the pinned version, with Better Auth reading `users` read-only (fast path F6, F7, F9, F10). No identity-migration step |
+| 1.4 | Supported Better Auth consent/continuation UI, connection-generation enforcement, security-revocation integration | 1.3; the `user_credentials` revocation trigger live, with one test per credential path (F8), and the www session bridge (F13). Not the migration's security gate |
 | 1.5 | `GET /v1/me`, `GET /v1/logbook/changes`, `GET /v1/logbook/ticks/{id}` | 1.1, 1.2, 1.3 |
 | 1.6 | Developer console (create, list, edit redirect URIs, rotate secret, delete) behind the web server flag `developer-console` | 1.3 |
 | 1.7 | Connected apps on mobile/web and `DELETE /v1/connection`; atomic disconnect, consent removal and reconnect tests | 1.3, 1.4 |
@@ -2544,10 +2809,14 @@ bug: fix it and rerun.
 - **`source` on a tick** (`boardsesh` vs `imported`): left out; an app
   that also imports from Kilter directly could use it to de-duplicate. Add
   when one asks.
-- **New-connection cap**: is 200/day right for an app that launches with a
-  big audience? It is a column; the question is the default.
-- **Who reads the console's "more limits" requests**, and how fast. The goal
-  is that nobody has to, ordinarily.
+- **Connection caps after stage D**: every app starts at 25 live and 20 new
+  connections a day (the `oauth_app_policy` defaults). What the default becomes
+  when registration opens, for an app that launches with a big audience, is
+  open; 200 new a day was the proposal. It is a column; the question is the
+  default.
+- **How a developer asks for higher caps.** There is no request form in the
+  console; today the owner raises an app's caps in its policy row. Who handles
+  such requests once registration opens, and how fast, is open.
 
 ## Related docs
 
