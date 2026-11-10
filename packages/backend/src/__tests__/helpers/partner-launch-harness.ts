@@ -127,7 +127,14 @@ export interface RunningServer {
   ): Promise<{ status: number; data?: Record<string, unknown> | null; errors?: GraphQLErrorBody[] }>;
   /** oauth4webapi's fetch: every `https://api.boardsesh.com` request lands on this server. */
   fetchFor(clientIp: string): (url: string, options: oauth.CustomFetchOptions<string, unknown>) => Promise<Response>;
+  /** Closes this server's listeners. The process-wide services stay up for the other servers. */
   stop(): Promise<void>;
+  /**
+   * Stops the services every server in this module graph shares (the event
+   * broker's Redis consumer, the room manager). Call once, last, before Redis
+   * disconnects, or the consumer loop logs errors and retries after it.
+   */
+  shutdownProcessServices(): Promise<void>;
 }
 
 export interface GraphQLErrorBody {
@@ -203,6 +210,7 @@ export async function startRealServer(environment: Record<string, string>): Prom
       await new Promise<void>((resolve) => server.wss.close(() => resolve()));
       await new Promise<void>((resolve) => server.httpServer.close(() => resolve()));
     },
+    shutdownProcessServices: () => server.shutdownServices(),
   };
 }
 

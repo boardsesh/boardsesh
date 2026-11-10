@@ -598,6 +598,7 @@ describe('partner OAuth on, in the real server', () => {
 
   afterAll(async () => {
     await server?.stop();
+    await server?.shutdownProcessServices();
     await closeMainRuntime?.();
     await rawSql?.end({ timeout: 5 });
   });
@@ -2178,6 +2179,7 @@ describe('partner OAuth on, in the real server', () => {
       const { closePool } = await import('@boardsesh/db/client');
       closeSecond = async () => {
         await second.stop();
+        await second.shutdownProcessServices();
         await (await getPartnerAuthorityRuntime()).close();
         await secondRedis.disconnect().catch(() => undefined);
         await closePool();
