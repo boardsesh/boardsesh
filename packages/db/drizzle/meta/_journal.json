@@ -2108,6 +2108,13 @@
       "when": 1794300273523,
       "tag": "0300_partner_revocation_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 301,
+      "version": "7",
+      "when": 1794327514980,
+      "tag": "0301_project_news_email_consent",
+      "breakpoints": true
     }
   ]
 }

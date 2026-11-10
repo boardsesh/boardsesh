@@ -39,6 +39,7 @@ import { sprayTrainingTypeDefs } from './spray-training';
 import { sessionWorkoutsTypeDefs } from './session-workouts';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
+import { projectNewsEmailTypeDefs } from './project-news-email';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 
@@ -88,4 +89,5 @@ export const typeDefs = [
   boardPresenceTypeDefs,
   userDataExportTypeDefs,
   analyticsConsentTypeDefs,
+  projectNewsEmailTypeDefs,
 ];
