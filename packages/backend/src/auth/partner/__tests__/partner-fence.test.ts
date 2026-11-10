@@ -1146,6 +1146,69 @@ describe('partner fence', () => {
     );
 
     it(
+      'refuses an expired refresh token without the lock',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        await db
+          .update(oauthRefreshToken)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(oauthRefreshToken.token, await hashForTest(issued.refresh_token!)));
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await environment.refresh(client, issued.refresh_token!, environment.instance);
+          // Queuing on the held row would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.body.error).toBe('invalid_grant');
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still lets an expired used token trip reuse, taking the lock only for the first replay',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const rotated = await environment.refresh(client, issued.refresh_token!, environment.instance);
+        expect(rotated.response.status).toBe(200);
+        const consumedHash = await hashForTest(issued.refresh_token!);
+        const pastExpiry = new Date(Date.now() - 1000);
+        await db
+          .update(oauthRefreshToken)
+          .set({ expiresAt: pastExpiry })
+          .where(eq(oauthRefreshToken.token, consumedHash));
+        await db
+          .update(oauthRefreshAncestors)
+          .set({ expiresAt: pastExpiry })
+          .where(eq(oauthRefreshAncestors.tokenHash, consumedHash));
+
+        // The first replay closes the family, as an unexpired replay would.
+        expect((await environment.refresh(client, issued.refresh_token!, environment.instance)).body.error).toBe(
+          'invalid_grant',
+        );
+        expect((await environment.refresh(client, rotated.body.refresh_token!, environment.instance)).body.error).toBe(
+          'invalid_grant',
+        );
+
+        // Its rows are gone, so a later replay takes no lock.
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await environment.refresh(client, issued.refresh_token!, environment.instance);
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.body.error).toBe('invalid_grant');
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
       'leaves no usable token when a redemption and a replay race',
       async () => {
         const client = await environment.createClient();

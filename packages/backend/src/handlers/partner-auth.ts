@@ -141,12 +141,25 @@ function claimedClientId(req: IncomingMessage, fields: Record<string, string>): 
   return clientId && CLIENT_ID_PATTERN.test(clientId) ? clientId : undefined;
 }
 
-/** Whether the provider refused the client's credentials, the one failure an outsider can cause. */
-async function answeredInvalidClient(response: Response): Promise<boolean> {
-  if (response.ok) return false;
+/**
+ * Refresh errors the provider only reaches after the client has authenticated
+ * and the family guard holds the lock. Everything else, a malformed request, a
+ * wrong media type or `invalid_client`, is refused before authentication and
+ * before any lock, so an outsider could send it at will.
+ */
+const ERRORS_AFTER_CLIENT_AUTHENTICATION: ReadonlySet<string> = new Set([
+  'invalid_grant',
+  'invalid_scope',
+  'invalid_target',
+]);
+
+/** Whether a refresh got far enough to have authenticated its client. */
+async function reachedAfterClientAuthentication(response: Response): Promise<boolean> {
+  if (response.ok) return true;
   try {
     const body: unknown = await response.clone().json();
-    return typeof body === 'object' && body !== null && (body as { error?: unknown }).error === 'invalid_client';
+    const error = typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined;
+    return typeof error === 'string' && ERRORS_AFTER_CLIENT_AUTHENTICATION.has(error);
   } catch {
     return false;
   }
@@ -447,24 +460,28 @@ export function createPartnerAuthHandler({
       // token gets only the address bound, because the first authenticated
       // replay of it closes the family anyway.
       let connectionBucket: string | undefined;
+      let tokenClientId: string | undefined;
       if (route.kind === 'token' && fields.grant_type === 'refresh_token' && fields.refresh_token) {
         const connection = await findRefreshConnectionSafely(runtime, fields.refresh_token, requestId);
         if (connection === 'unavailable') return { response: unavailableResponse(), clientId };
         if (connection) {
           connectionBucket = `${connection.clientId}:${connection.connectionId}`;
+          tokenClientId = connection.clientId;
           await ledger.check(connectionBucket, 'oauth-refresh', REFRESH_PER_CONNECTION);
         }
       }
       response = await runtime.handleRequest(buildPartnerRequest(req, route, runtime.configuration.issuer, body), {
         logContext: { requestId, clientId },
       });
-      // Charged unless the client failed to authenticate, so someone holding a
-      // confidential app's token without its secret cannot spend the
-      // connection's budget. A public app authenticates by client_id alone, so
-      // every attempt it makes is charged. Charged before the permit is
-      // released: at most PARTNER_POOL_MAX requests are ever between this
-      // check and their charge on one instance.
-      if (connectionBucket && !(await answeredInvalidClient(response))) {
+      // Charged only when the token's own app authenticated and the provider got
+      // past that, so someone holding a confidential app's token without its
+      // secret cannot spend the connection's budget: not with a malformed
+      // request, and not by naming some public app instead, which is refused
+      // before any lock. A public app authenticates by client_id alone, so
+      // every authenticated attempt it makes is charged. Charged before the
+      // permit is released: at most PARTNER_POOL_MAX requests are ever between
+      // this check and their charge on one instance.
+      if (connectionBucket && clientId === tokenClientId && (await reachedAfterClientAuthentication(response))) {
         await countRateLimitRedis(connectionBucket, 'oauth-refresh', MINUTE_MS);
       }
     } finally {

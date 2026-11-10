@@ -18,6 +18,7 @@ import { logger } from '../utils/logger';
 import {
   clientCredentials,
   createPartnerTestEnvironment,
+  READ_ONLY_PROOF_APPLICATION_NAME,
   TEST_CONFIGURATION,
   TEST_ISSUER,
   TEST_RESOURCE,
@@ -1237,6 +1238,51 @@ describe('partner OAuth routes on the API host', () => {
       TEST_DEADLINE_MS,
     );
 
+    it.each([
+      [
+        'a wrong media type',
+        { 'Content-Type': 'text/plain' },
+        (refreshToken: string, clientId: string) =>
+          new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: clientId,
+          }).toString(),
+        415,
+      ],
+      [
+        'a repeated parameter',
+        { 'Content-Type': 'application/x-www-form-urlencoded' },
+        (refreshToken: string, clientId: string) =>
+          `${new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: clientId }).toString()}&scope=profile%3Aread&scope=offline_access`,
+        400,
+      ],
+    ])(
+      'does not let the current token, in a request with %s, spend the connection limit',
+      async (_label, headers, buildBody, refusedWith) => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const refused = await partnerHost.send('POST', TOKEN_PATH, {
+            body: buildBody(issued.refresh_token!, client.clientId),
+            headers,
+          });
+          expect(refused.status).toBe(refusedWith);
+        }
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(0);
+
+        const realRefresh = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(realRefresh.status).toBe(200);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(1);
+      },
+      TEST_DEADLINE_MS,
+    );
+
     it(
       'does not let the current token, sent without the secret, spend the connection limit',
       async () => {
@@ -1264,6 +1310,101 @@ describe('partner OAuth routes on the API host', () => {
           ...clientCredentials(client),
         });
         expect(realRefresh.status).toBe(200);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(1);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'does not charge the connection when the token is sent under another app',
+      async () => {
+        const client = await environment.createClient();
+        const otherApp = await environment.createClient({ publicClient: true, owner: client.owner });
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const refused = await sendToken({
+            grant_type: 'refresh_token',
+            refresh_token: issued.refresh_token!,
+            client_id: otherApp.clientId,
+          });
+          expect(refused.status).not.toBe(429);
+          expect(JSON.parse(refused.body).error).toBe('invalid_grant');
+        }
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(0);
+        const realRefresh = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(realRefresh.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'charges a refresh that loses a race and gets invalid_grant',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        // Both requests find the token current, then queue on the connection row.
+        let releaseRow!: () => void;
+        const rowReleased = new Promise<void>((resolve) => {
+          releaseRow = resolve;
+        });
+        let rowHeld!: () => void;
+        const rowIsHeld = new Promise<void>((resolve) => {
+          rowHeld = resolve;
+        });
+        const holder = db.transaction(async (transaction) => {
+          await transaction
+            .select({ id: oauthConnections.id })
+            .from(oauthConnections)
+            .where(eq(oauthConnections.id, connectionId))
+            .for('update');
+          rowHeld();
+          await rowReleased;
+        });
+        await rowIsHeld;
+        const refreshForm = {
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        };
+        const racing = [sendToken(refreshForm), sendToken(refreshForm)];
+        await vi.waitFor(
+          async () => {
+            const blocked = await db.execute(
+              sql`select pid from pg_stat_activity where wait_event_type = 'Lock'
+                  and datname = current_database() and application_name = ${READ_ONLY_PROOF_APPLICATION_NAME}`,
+            );
+            expect(blocked.length).toBeGreaterThanOrEqual(2);
+          },
+          { timeout: 1500, interval: 20 },
+        );
+        releaseRow();
+        await holder;
+        const outcomes = (await Promise.all(racing)).map((answered) => JSON.parse(answered.body).error ?? 'ok');
+        expect(outcomes.sort((first, second) => first.localeCompare(second))).toEqual(['invalid_grant', 'ok']);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(2);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'charges an attempt the provider refuses for its resource',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        const refused = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          resource: 'https://elsewhere.example.test/v1',
+          ...clientCredentials(client),
+        });
+        expect(JSON.parse(refused.body).error).toBe('invalid_target');
         expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(1);
       },
       TEST_DEADLINE_MS,
