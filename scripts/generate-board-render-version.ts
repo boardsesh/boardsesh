@@ -90,6 +90,8 @@ export const OPAQUE_RENDER_INPUTS: readonly string[] = [
   // `og-family-blocks.ts`: the avatar, pill, dots and bars live there because the
   // climb card never draws them, so editing them must not turn over every URL.
   'packages/shared/board-render/src/og-family.ts',
+  // The app icon beside the wordmark. `og-family.ts` places it; these are its pixels.
+  'packages/shared/board-render/assets/og-app-icon.png',
   // The grade scale's colours behind the hero. The board line's words are not
   // here: the projection records the line itself for every catalogue entry.
   'packages/board-constants/src/grade-colors.ts',

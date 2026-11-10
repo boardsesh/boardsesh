@@ -89,11 +89,12 @@ describe('renderFrostedBokehBuffer', () => {
       boardLine: 'Kilter · 10x12',
       setter: 'KilterStudio',
     });
-    // Grade, name, setter, board line, wordmark.
-    expect(layers).toHaveLength(5);
+    // Grade, name, setter, board line, app icon, wordmark.
+    expect(layers).toHaveLength(6);
     // The grade keeps its semantic data colour. Every other label, including
-    // the setter and wordmark, must meet the normal-text AA threshold.
-    for (const layer of layers.slice(1)) {
+    // the setter and wordmark, must meet the normal-text AA threshold. The icon
+    // is a picture, not a label.
+    for (const layer of [...layers.slice(1, -2), layers.at(-1)!]) {
       const { data: textPixels, info: dimensions } = await sharp(layer.input)
         .ensureAlpha()
         .raw()
