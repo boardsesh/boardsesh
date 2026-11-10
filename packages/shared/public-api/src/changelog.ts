@@ -55,10 +55,15 @@ export function publicApiChangelogProblems({
       `generated/openapi.json changed (sha256 ${documentSha256}) without a changelog entry. Add one at the top of packages/shared/public-api/src/changelog.json with that documentSha256.`,
     );
   }
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    if (seen.has(entry.documentSha256)) problems.push(`Two changelog entries name document ${entry.documentSha256}.`);
-    seen.add(entry.documentSha256);
+  // Every entry records a change from the one below it, so neighbours name
+  // different documents. A document may come back further down: reverting a
+  // change restores an older hash, and that revert stays in the history.
+  for (let index = 1; index < entries.length; index += 1) {
+    if (entries[index - 1].documentSha256 === entries[index].documentSha256) {
+      problems.push(
+        `Two neighbouring changelog entries name document ${entries[index].documentSha256}: an entry needs a contract change.`,
+      );
+    }
   }
   for (let index = 1; index < entries.length; index += 1) {
     if (entries[index - 1].date < entries[index].date) {

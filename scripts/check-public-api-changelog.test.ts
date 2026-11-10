@@ -88,6 +88,27 @@ describe('the public API changelog gate', () => {
     expect(checkPublicApiChangelog({ cwd, baseSha })).toEqual([expect.stringContaining('never edit published ones')]);
   });
 
+  it('passes a PR that reverts the document to an older version with a new entry', () => {
+    const { cwd, write, commit } = fixture();
+    write(OPENAPI_DOCUMENT_FILE, 'document two');
+    write(
+      CHANGELOG_FILE,
+      changelog({ date: '2026-11-12', document: 'document two' }, { date: '2026-11-10', document: 'document one' }),
+    );
+    const changedSha = commit();
+    write(OPENAPI_DOCUMENT_FILE, 'document one');
+    write(
+      CHANGELOG_FILE,
+      changelog(
+        { date: '2026-11-13', document: 'document one', change: 'Reverted.' },
+        { date: '2026-11-12', document: 'document two' },
+        { date: '2026-11-10', document: 'document one' },
+      ),
+    );
+    commit();
+    expect(checkPublicApiChangelog({ cwd, baseSha: changedSha })).toEqual([]);
+  });
+
   it('accepts the first changelog, when the base has none', () => {
     const { cwd, write, commit } = fixture();
     const baseWithout = execFileSync(

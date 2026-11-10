@@ -1201,8 +1201,10 @@ render). The `public-api-changelog` step in the CI `guards` job
 fails when the newest entry does not name the committed document's hash, on
 every run, so a document change needs a new entry. On a PR it also fails when an
 entry already on the base branch changed or went missing, so an old entry cannot
-be re-pointed at the new document instead. The package's own test checks the
-hash against the generated document locally.
+be re-pointed at the new document instead. Two neighbouring entries may not name
+the same document, since an entry records a change; a document may come back
+further down, so reverting a change is a new entry naming the older hash. The
+package's own test checks the hash against the generated document locally.
 
 ---
 
@@ -1380,7 +1382,9 @@ feed generation for a change cursor, snapshot id and offset for a snapshot
 cursor) and an issue time kept for diagnosis. The key is derived from the
 `PARTNER_OAUTH_SECRETS` entry of that version, so an app cannot read or build a
 cursor, and rotating the secret keeps old cursors working while the old version
-is still listed.
+is still listed. The version is at most nine digits, and the authority refuses
+to start with a larger one (`PARTNER_SECRET_MAX_VERSION`), so an epoch-seconds
+version cannot quietly turn every cursor into `400 invalid_cursor`.
 
 **A change cursor** reads one feed page on the partner pool, inside the `/v1`
 admission permit the token check holds, bounded at 5 s per statement and 2 s per

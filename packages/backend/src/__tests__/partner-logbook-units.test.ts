@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { TickSchema } from '@boardsesh/public-api';
+import { PARTNER_SECRET_MAX_VERSION, parsePartnerSecrets } from '../auth/partner/configuration';
 import { createLogbookSnapshotAdmission } from '../auth/partner/logbook-access';
 import {
   TEST_EXPIRED_CURSOR,
@@ -93,6 +94,21 @@ describe('the logbook cursor', () => {
     const sealedUnderOne = encodeLogbookCursor(CHANGES_CURSOR, [sameValue[1]]);
     expect(decodeLogbookCursor(sealedUnderOne, sameValue)).toEqual({ status: 'ok', cursor: CHANGES_CURSOR });
     expect(decodeLogbookCursor(sealedUnderOne.replace(/^c3\.1\./, 'c3.2.'), sameValue)).toEqual({
+      status: 'invalid',
+    });
+  });
+
+  it('reads a cursor under every secret version the configuration accepts, and the first refused one would not fit', () => {
+    const value = 'partner-oauth-test-secret-largest-version-0123456789';
+    const [largest] = parsePartnerSecrets(`${PARTNER_SECRET_MAX_VERSION}:${value}`);
+    const sealed = encodeLogbookCursor(CHANGES_CURSOR, [largest]);
+    expect(sealed.startsWith(`c3.${PARTNER_SECRET_MAX_VERSION}.`)).toBe(true);
+    expect(decodeLogbookCursor(sealed, [largest])).toEqual({ status: 'ok', cursor: CHANGES_CURSOR });
+
+    expect(() => parsePartnerSecrets(`${PARTNER_SECRET_MAX_VERSION + 1}:${value}`)).toThrow(/above 999999999/);
+    // Had it been accepted, its cursors would read as junk: that is why it is refused at startup.
+    const tooLarge = { version: PARTNER_SECRET_MAX_VERSION + 1, value };
+    expect(decodeLogbookCursor(encodeLogbookCursor(CHANGES_CURSOR, [tooLarge]), [tooLarge])).toEqual({
       status: 'invalid',
     });
   });

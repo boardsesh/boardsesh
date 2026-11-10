@@ -402,6 +402,13 @@ describe('NEXTAUTH_SECRET', () => {
 });
 
 describe('PARTNER_OAUTH_SECRETS', () => {
+  it('accepts the largest version a logbook cursor can name', async () => {
+    const { parsePartnerSecrets, PARTNER_SECRET_MAX_VERSION } = await import('../configuration');
+    expect(parsePartnerSecrets(`${PARTNER_SECRET_MAX_VERSION}:${VALID_SECRET}`)).toEqual([
+      { version: 999_999_999, value: VALID_SECRET },
+    ]);
+  });
+
   it('parses newest-first versioned secrets', async () => {
     const { parsePartnerSecrets } = await import('../configuration');
     expect(parsePartnerSecrets(`2:${VALID_SECRET},1:${VALID_SECRET}-old`)).toEqual([
@@ -416,6 +423,8 @@ describe('PARTNER_OAUTH_SECRETS', () => {
     ['no-version-separator', /version:value/],
     ['x:not-numeric', /version:value/],
     ['1:too-short', /shorter than 32/],
+    // An epoch-seconds version: logbook cursors carry nine digits, so it is refused at startup.
+    [`1794292936:${VALID_SECRET}`, /above 999999999/],
     [`1:${VALID_SECRET},1:${VALID_SECRET}-other`, /repeats a version/],
   ])('refuses %j', async (rawSecrets, message) => {
     const { parsePartnerSecrets, PartnerAuthorityConfigurationError } = await import('../configuration');

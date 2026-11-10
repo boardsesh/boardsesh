@@ -18,6 +18,11 @@ import { z } from 'zod';
 export const TEST_EXPIRED_CURSOR = 'c3.expired';
 /** Far above any cursor this encodes (about 220 characters), far below anything worth decrypting. */
 const MAX_CURSOR_LENGTH = 1024;
+/**
+ * Nine digits of version: `parsePartnerSecrets` refuses a version above
+ * 999,999,999 at startup, so every configured secret fits. The two limits move
+ * together; partner-logbook-units.test.ts checks they agree.
+ */
 const CURSOR_FORMAT = /^c3\.(\d{1,9})\.([A-Za-z0-9_-]+)$/;
 const KEY_CONTEXT = 'boardsesh-logbook-cursor-v1';
 const IV_BYTES = 12;
