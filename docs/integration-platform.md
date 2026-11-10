@@ -706,11 +706,17 @@ the backend, so the pages need no database or backend call to render.
   authorize, rebuilt from the signed parameters without the signing fields. Without
   that marker it never forwards on its own, so a session the backend keeps refusing
   shows the form instead of bouncing between hosts.
-- A failed social sign-in that started there comes back there with `?error=`.
-  `sign-in-failure-return.ts` rewrites NextAuth's error redirects (`/api/auth/error`,
-  `/api/auth/signin`, `/auth/login`, `/auth/error`) to the page path that NextAuth's
-  `callbackUrl` or callback-url cookie names, because the iPhone app claims
-  `/auth/login`. Only that page's path is ever written, never an origin.
+- A failed social sign-in that started there comes back there with `?error=`,
+  because the iPhone app claims `/auth/login`. `sign-in-failure-return.ts` decides
+  once, on the response that starts the provider round trip (`POST
+  /api/auth/signin/<provider>`, redirect or JSON `url`) or ends it
+  (`/api/auth/callback/<provider>`), by that flow's own callback URL: a callback-url
+  cookie the same response sets, else the `<callback-url>.<scope>` cookie a
+  `backend-staging` flow retires, else, only when no scoped cookie exists, the base
+  cookie the legacy start wrote. The later hops (`/api/auth/error`,
+  `/api/auth/signin`) are never rewritten, because by then the base cookie may be a
+  stale one, such as the partner page kept from "Not you? Sign out". Only the
+  partner page's path is ever written, never an origin.
 - `/oauth/consent` calls both consent routes from the browser, with
   `credentials: 'include'`, so the browser supplies the exact `Origin` and each
   climber keeps their own rate-limit bucket. It posts only the signed parameters

@@ -405,6 +405,23 @@ describe('POST /api/auth/[...nextauth]', () => {
       expect(response.headers.get('Location')).toMatch(/^\/oauth\/sign-in\?.*error=Callback/);
     });
 
+    it('leaves a failed phone fallback start alone despite a stale partner cookie', async () => {
+      const nativeCallback =
+        'https://www.boardsesh.com/api/auth/native/callback?attemptId=0123456789abcdef0123456789abcdef';
+      const headers = new Headers({ Location: 'https://www.boardsesh.com/api/auth/error?error=OAuthSignin' });
+      headers.append('Set-Cookie', `__Secure-next-auth.callback-url=${encodeURIComponent(nativeCallback)}; Path=/`);
+      nextAuthHandlerMock.mockResolvedValueOnce(new Response(null, { status: 302, headers }));
+      // The /auth/native-start form POST, from a browser still holding an old partner callback.
+      const startRequest = new NextRequest('https://www.boardsesh.com/api/auth/signin/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: callbackCookie },
+        body: new URLSearchParams({ csrfToken: 'csrf-token', callbackUrl: nativeCallback }),
+      });
+
+      const response = await POST(startRequest, routeContext(startRequest));
+      expect(response.headers.get('Location')).toBe('https://www.boardsesh.com/api/auth/error?error=OAuthSignin');
+    });
+
     it('lets a successful callback continue to the page as NextAuth sends it', async () => {
       nextAuthHandlerMock.mockResolvedValueOnce(
         new Response(null, { status: 302, headers: { Location: partnerReturn } }),

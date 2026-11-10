@@ -251,9 +251,9 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
 // A failed social sign-in that started on the partner sign-in page goes back
 // there, not to /auth/login, which the iPhone app claims.
 export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return withPartnerSignInFailureReturn(request, await routeAuth(request, context));
+  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context));
 }
 
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return withPartnerSignInFailureReturn(request, await routeAuth(request, context));
+  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context));
 }
