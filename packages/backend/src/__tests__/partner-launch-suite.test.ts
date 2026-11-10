@@ -341,6 +341,11 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
     client: { clientId: string; redirectUris: string[] };
   };
   remember(created.clientSecret);
+  if (created.clientSecret) {
+    // What a Basic header carries (RFC 6749 2.3.1), whole and encoded, so a logged header is caught too.
+    const pair = `${encodeURIComponent(created.client.clientId)}:${encodeURIComponent(created.clientSecret)}`;
+    remember(pair, Buffer.from(pair).toString('base64'));
+  }
   const auth =
     kind === 'confidential-basic'
       ? oauth.ClientSecretBasic(created.clientSecret ?? '')
@@ -462,6 +467,36 @@ async function connect(
   const tokens = await redeem(app, authorization, await callbackFor(authorization, climber));
   if (!tokens.refresh_token) throw new Error('No refresh token was issued.');
   return { app, climber, tokens: { ...tokens, refresh_token: tokens.refresh_token } };
+}
+
+/**
+ * An authorize error the provider may send to the app: a 302 to the registered
+ * redirect URI carrying the error, the app's state and the issuer, and no code.
+ * oauth4webapi must read it as that error.
+ */
+function expectErrorAtApp(
+  opened: { reply: { status: number }; location: string },
+  app: PartnerApp,
+  authorization: Authorization,
+  error: string,
+): void {
+  expect(opened.reply.status).toBe(302);
+  const target = new URL(opened.location);
+  expect(`${target.origin}${target.pathname}`).toBe(app.redirectUri);
+  expect({
+    error: target.searchParams.get('error'),
+    state: target.searchParams.get('state'),
+    iss: target.searchParams.get('iss'),
+    code: target.searchParams.get('code'),
+  }).toEqual({ error, state: authorization.state, iss: ISSUER.href, code: null });
+  let thrown: unknown;
+  try {
+    oauth.validateAuthResponse(metadata, app.client, target, authorization.state);
+  } catch (caught) {
+    thrown = caught;
+  }
+  expect(thrown).toBeInstanceOf(oauth.AuthorizationResponseError);
+  expect((thrown as oauth.AuthorizationResponseError).error).toBe(error);
 }
 
 /** `/v1/me` as a real client calls it. A 401 comes back as its challenge. */
@@ -967,15 +1002,28 @@ describe('partner OAuth on, in the real server', () => {
     it.each([
       ['an unregistered redirect URI', { redirect_uri: 'https://elsewhere.example.test/cb' }],
       ['an unknown client', { client_id: 'not-a-registered-client' }],
-    ])('shows an error page and never redirects for %s', async (_label, overrides) => {
+    ])('shows an error page and never redirects for %s', async (label, overrides) => {
       const app = await registerApp('public-web');
       const climber = await newClimber();
       const authorization = await startAuthorization(app);
       for (const [name, value] of Object.entries(overrides)) authorization.url.searchParams.set(name, value);
-      const { location } = await openAuthorize(authorization.url, climber);
-      expect(location.startsWith(app.redirectUri)).toBe(false);
-      expect(location.startsWith('https://elsewhere.example.test')).toBe(false);
-      expect(new URL(location, ISSUER).searchParams.has('code')).toBe(false);
+      const { reply, location } = await openAuthorize(authorization.url, climber);
+      // Nowhere but the API host's own error page: no redirect URI can be trusted here.
+      expect(reply.status).toBe(302);
+      const target = new URL(location);
+      expect(`${target.origin}${target.pathname}`).toBe(`${ISSUER.href}/error`);
+      expect(target.searchParams.get('error')).toBe(
+        label === 'an unknown client' ? 'invalid_client' : 'invalid_redirect',
+      );
+      expect(target.searchParams.has('code')).toBe(false);
+      expect(target.searchParams.has('state')).toBe(false);
+      // The page itself: an error, never framed, never cached, never indexed.
+      const page = await server.send('GET', `${target.pathname}${target.search}`);
+      expect(page.status).toBe(400);
+      expect(page.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+      expect(page.headers['x-frame-options']).toBe('DENY');
+      expect(page.headers['cache-control']).toBe('no-store');
+      expect(page.headers['x-robots-tag']).toBe('noindex');
       expect(await db.$count(oauthConnections, eq(oauthConnections.userId, climber.userId))).toBe(0);
     });
 
@@ -985,11 +1033,7 @@ describe('partner OAuth on, in the real server', () => {
         const app = await registerApp();
         const climber = await newClimber();
         const authorization = await startAuthorization(app, { scopes: ['workouts:write', 'offline_access'] });
-        const { location } = await openAuthorize(authorization.url, climber);
-        expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(false);
-        const target = new URL(location, ISSUER);
-        expect(target.searchParams.has('code')).toBe(false);
-        if (location.startsWith(app.redirectUri)) expect(target.searchParams.get('error')).toBe('invalid_scope');
+        expectErrorAtApp(await openAuthorize(authorization.url, climber), app, authorization, 'invalid_scope');
       },
       SUITE_DEADLINE_MS,
     );
@@ -1005,16 +1049,8 @@ describe('partner OAuth on, in the real server', () => {
         if (value === null) authorization.url.searchParams.delete(name);
         else authorization.url.searchParams.set(name, value);
       }
-      const { location } = await openAuthorize(authorization.url, climber);
-      const target = new URL(location, ISSUER);
-      expect(target.searchParams.has('code')).toBe(false);
-      expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(false);
-      // docs/partner-api.md says an error page; the provider sends the error to the
-      // registered redirect instead (RFC 6749 4.1.2.1), which is safe: no code, the app's state.
-      if (location.startsWith(app.redirectUri)) {
-        expect(target.searchParams.get('error')).toBe('invalid_request');
-        expect(target.searchParams.get('state')).toBe(authorization.state);
-      }
+      // docs/partner-api.md: back to the registered redirect URI with invalid_request and the state.
+      expectErrorAtApp(await openAuthorize(authorization.url, climber), app, authorization, 'invalid_request');
       expect(await db.$count(oauthConnections, eq(oauthConnections.userId, climber.userId))).toBe(0);
     });
   });
@@ -1161,9 +1197,8 @@ describe('partner OAuth on, in the real server', () => {
         const climber = await newClimber();
         const elsewhere = 'https://api.boardsesh.com/v2';
 
-        const atAuthorize = await openAuthorize((await startAuthorization(app, { resource: elsewhere })).url, climber);
-        expect(atAuthorize.location.startsWith(`${CONSENT_PAGE}?`)).toBe(false);
-        expect(new URL(atAuthorize.location, ISSUER).searchParams.has('code')).toBe(false);
+        const wrongResource = await startAuthorization(app, { resource: elsewhere });
+        expectErrorAtApp(await openAuthorize(wrongResource.url, climber), app, wrongResource, 'invalid_target');
 
         const authorization = await startAuthorization(app);
         const parameters = oauth.validateAuthResponse(
@@ -1353,8 +1388,59 @@ describe('partner OAuth on, in the real server', () => {
 
         await revoke(app, rotated.tokens.refresh_token);
         expect(await refresh(app, rotated.tokens.refresh_token)).toMatchObject({ ok: false, error: 'invalid_grant' });
+        // docs/partner-api.md: revoking a refresh token also ends the access tokens issued with it.
+        expect(await callMe(app, rotated.tokens.access_token)).toEqual({
+          status: 401,
+          body: { challenge: 'invalid_token' },
+        });
         // Revoking a credential is not Disconnect: the connection is not ended.
         expect((await connectionRow(connection)).revokedAt).toBeNull();
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'holds each confidential app to the authentication method it registered',
+      async () => {
+        for (const kind of ['confidential-basic', 'confidential-post'] as const) {
+          const app = await registerApp(kind);
+          const secret = app.clientSecret ?? '';
+          const switched: PartnerApp = {
+            ...app,
+            auth: kind === 'confidential-basic' ? oauth.ClientSecretPost(secret) : oauth.ClientSecretBasic(secret),
+          };
+          const connection = await connect(app, await newClimber());
+          // The right secret by the other method: refused at refresh and at the code exchange.
+          expect({ kind, outcome: await refresh(switched, connection.tokens.refresh_token) }).toMatchObject({
+            kind,
+            outcome: { ok: false, error: 'invalid_client' },
+          });
+          const authorization = await startAuthorization(app);
+          const parameters = oauth.validateAuthResponse(
+            metadata,
+            app.client,
+            new URL(await callbackFor(authorization, connection.climber)),
+            authorization.state,
+          );
+          const exchange = await oauth.authorizationCodeGrantRequest(
+            metadata,
+            switched.client,
+            switched.auth,
+            parameters,
+            authorization.redirectUri,
+            authorization.verifier,
+            { additionalParameters: { resource: RESOURCE }, ...oauthOptions(app.ip) },
+          );
+          expect({
+            kind,
+            status: exchange.status,
+            error: ((await exchange.json()) as { error?: string }).error,
+          }).toEqual(
+            // partner-api.md: 401 with a Basic challenge when the request used Basic, 400 when it used the body.
+            { kind, status: kind === 'confidential-basic' ? 400 : 401, error: 'invalid_client' },
+          );
+          await expectAlive(connection);
+        }
       },
       SUITE_DEADLINE_MS,
     );
@@ -1395,17 +1481,51 @@ describe('partner OAuth on, in the real server', () => {
       async () => {
         const app = await registerApp();
         const climberId = await createAccount('reset');
+        // Every time here is fixed against one anchor, so a slow machine moves none of the gaps:
+        // the password changed ten minutes ago, and each sign-in sits 30 s or more from a boundary.
+        const passwordWrittenAt = nowSeconds() - 600;
         await db
           .insert(userCredentials)
-          .values({ userId: climberId, passwordHash: 'hash', updatedAt: new Date(Date.now() - 120_000) });
+          .values({ userId: climberId, passwordHash: 'hash', updatedAt: new Date(passwordWrittenAt * 1000) });
         const ip = freshClientIp();
         const at = async (authTime: number) => {
           const cookie = await signInOnWeb(climberId, { webMode: 'allowlist', authTime });
           return (await openAuthorize((await startAuthorization(app)).url, { ip, cookie })).location;
         };
-        expect((await at(nowSeconds() - 3600)).startsWith(`${SIGN_IN_PAGE}?`)).toBe(true);
-        expect((await at(nowSeconds() - 61)).startsWith(`${SIGN_IN_PAGE}?`)).toBe(true);
-        expect((await at(nowSeconds() - 50)).startsWith(`${CONSENT_PAGE}?`)).toBe(true);
+        expect((await at(passwordWrittenAt - 3000)).startsWith(`${SIGN_IN_PAGE}?`)).toBe(true);
+        expect((await at(passwordWrittenAt + 30)).startsWith(`${SIGN_IN_PAGE}?`)).toBe(true);
+        expect((await at(passwordWrittenAt + 120)).startsWith(`${CONSENT_PAGE}?`)).toBe(true);
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it.each([
+      ['without a sign-in time', { withoutAuthTime: true }],
+      ['without a login id', { withoutLoginId: true }],
+      ['without either', { withoutAuthTime: true, withoutLoginId: true }],
+    ])(
+      'sends a session carried over from before the sign-in claims (%s) to sign in, and its consent calls nowhere',
+      async (_label, migrated) => {
+        const app = await registerApp();
+        const userId = await createAccount('migrated');
+        const ip = freshClientIp();
+        // A link opened by a current sign-in of the same climber, then answered with the old cookie.
+        const current: Climber = { userId, ip, cookie: await signInOnWeb(userId, { webMode: 'allowlist' }) };
+        const { location: link } = await openAuthorize((await startAuthorization(app)).url, current);
+        expect(link.startsWith(`${CONSENT_PAGE}?`)).toBe(true);
+        const stale: Climber = { userId, ip, cookie: await signInOnWeb(userId, { webMode: 'allowlist', migrated }) };
+        remember(stale.cookie.split('=')[1]);
+        const { location } = await openAuthorize((await startAuthorization(app)).url, stale);
+        expect(location.startsWith(`${SIGN_IN_PAGE}?`)).toBe(true);
+        for (const path of [CONSENT_DETAILS_PATH, CONSENT_PATH]) {
+          const refused = await postConsentRoute(path, link, stale, { accept: true });
+          expect({ path, status: refused.reply.status, error: refused.body.error }).toEqual({
+            path,
+            status: 401,
+            error: 'login_required',
+          });
+        }
+        expect(await db.$count(oauthConnections, eq(oauthConnections.userId, userId))).toBe(0);
       },
       SUITE_DEADLINE_MS,
     );
@@ -1856,18 +1976,103 @@ describe('partner OAuth on, in the real server', () => {
    * Waits until this many sessions in this database wait on a lock, or until
    * `settled` says the request being waited for has already finished.
    */
-  async function waitForLockWaiters(minimum: number, settled: () => boolean = () => false): Promise<void> {
+  async function waitForLockWaiters(minimum: number, settled: () => boolean = () => false): Promise<boolean> {
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
-      if (settled()) return;
+      if (settled()) return false;
       const [row] = await rawSql<Array<{ waiting: number }>>`
         SELECT count(*)::int AS waiting FROM pg_stat_activity
         WHERE datname = current_database() AND wait_event_type = 'Lock'`;
-      if (row.waiting >= minimum) return;
+      if (row.waiting >= minimum) return true;
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     throw new Error(`Fewer than ${minimum} sessions ever waited on a lock`);
   }
+
+  /**
+   * A starting gun. Holds the climber's `users` row FOR UPDATE, which every
+   * issuer, refresh and Disconnect must take FOR SHARE first, starts the
+   * requests, waits until all of them are queued on that row, then lets them go
+   * at once. Fails if they did not all queue: a race that ran one after the
+   * other proves nothing.
+   */
+  async function releaseTogether<Outcomes extends readonly unknown[]>(
+    userId: string,
+    requests: () => { [Index in keyof Outcomes]: Promise<Outcomes[Index]> },
+  ): Promise<Outcomes> {
+    const holder = await rawSql.reserve();
+    try {
+      await holder`BEGIN`;
+      await holder`SELECT 1 FROM users WHERE id = ${userId} FOR UPDATE`;
+      const started = requests();
+      let settledCount = 0;
+      for (const request of started) {
+        void Promise.resolve(request).then(
+          () => (settledCount += 1),
+          () => (settledCount += 1),
+        );
+      }
+      const queued = await waitForLockWaiters(started.length, () => settledCount > 0);
+      await holder`COMMIT`;
+      const outcomes = (await Promise.allSettled(started)) as Array<PromiseSettledResult<unknown>>;
+      expect({ allQueuedBehindTheGun: queued }).toEqual({ allQueuedBehindTheGun: true });
+      return outcomes.map((outcome) => {
+        if (outcome.status === 'rejected') throw outcome.reason;
+        return outcome.value;
+      }) as unknown as Outcomes;
+    } finally {
+      holder.release();
+    }
+  }
+
+  describe('cleanup failure', () => {
+    it(
+      'a Disconnect whose cleanup fails ends nothing, answers an error, and a retry ends it',
+      async () => {
+        const app = await registerApp();
+        const connection = await connect(app, await newClimber());
+        const before = await connectionRow(connection);
+        const refreshRows = () =>
+          db.$count(
+            oauthRefreshToken,
+            and(eq(oauthRefreshToken.userId, connection.climber.userId), eq(oauthRefreshToken.clientId, app.clientId)),
+          );
+        const refreshRowsBefore = await refreshRows();
+        // A fault in the middle of the cleanup, for this climber only: deleting their refresh tokens fails.
+        const fault = `launch_suite_fault_${randomUUID().replaceAll('-', '')}`;
+        await rawSql.unsafe(`
+          CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql AS $fault$
+          BEGIN
+            IF OLD.user_id = '${connection.climber.userId}' THEN
+              RAISE EXCEPTION 'injected partner cleanup failure';
+            END IF;
+            RETURN OLD;
+          END;
+          $fault$`);
+        await rawSql.unsafe(
+          `CREATE TRIGGER ${fault} BEFORE DELETE ON oauth_refresh_token FOR EACH ROW EXECUTE FUNCTION ${fault}()`,
+        );
+        try {
+          const failed = await disconnectByApp(app, connection.tokens.access_token);
+          expect(failed.status).toBe(500);
+          // All or nothing: the generation, the revocation and every token are as they were.
+          const after = await connectionRow(connection);
+          expect({ generation: after.generation, revokedAt: after.revokedAt }).toEqual({
+            generation: before.generation,
+            revokedAt: null,
+          });
+          expect(await refreshRows()).toBe(refreshRowsBefore);
+          expect((await callMe(app, connection.tokens.access_token)).status).toBe(200);
+        } finally {
+          await rawSql.unsafe(`DROP TRIGGER IF EXISTS ${fault} ON oauth_refresh_token`);
+          await rawSql.unsafe(`DROP FUNCTION IF EXISTS ${fault}()`);
+        }
+        expect((await disconnectByApp(app, connection.tokens.access_token)).status).toBe(204);
+        await expectEnded(connection);
+      },
+      SUITE_DEADLINE_MS,
+    );
+  });
 
   describe('races', () => {
     it(
@@ -2065,7 +2270,14 @@ describe('partner OAuth on, in the real server', () => {
         expect((await refresh(app, connection.tokens.refresh_token)).ok).toBe(false);
         const afterSuspension = await openAuthorize((await startAuthorization(app)).url, climber);
         expect(afterSuspension.location.startsWith(CONSENT_PAGE)).toBe(false);
-        expect((await postConsentRoute(CONSENT_DETAILS_PATH, openScreen.location, climber)).reply.status).toBe(403);
+        for (const path of [CONSENT_DETAILS_PATH, CONSENT_PATH]) {
+          const refused = await postConsentRoute(path, openScreen.location, climber, { accept: true });
+          expect({ path, status: refused.reply.status, error: refused.body.error }).toEqual({
+            path,
+            status: 403,
+            error: 'app_suspended',
+          });
+        }
         // Suspension is not revocation.
         expect((await connectionRow(connection)).revokedAt).toBeNull();
 
@@ -2297,33 +2509,51 @@ describe('partner OAuth on, in the real server', () => {
       SUITE_DEADLINE_MS,
     );
 
+    /** The token endpoint's answer to a code, kept as status and error instead of thrown. */
+    async function redeemOutcome(
+      app: PartnerApp,
+      authorization: Authorization,
+      callback: string,
+      target: RunningServer,
+    ) {
+      try {
+        const tokens = await redeem(app, authorization, callback, target);
+        return { ok: true as const, tokens };
+      } catch (error) {
+        if (error instanceof oauth.ResponseBodyError) return { ok: false as const, error: error.error };
+        throw error;
+      }
+    }
+
     it(
-      'gives one token set when the same code reaches both at once',
+      'gives one token set when the same code reaches both at once, and leaves the other family alone',
       async () => {
         const app = await registerApp();
+        const climber = await newClimber();
+        const tablet = await connect(app, climber);
         const authorization = await startAuthorization(app);
-        const callback = await callbackFor(authorization, await newClimber());
-        const outcomes = await Promise.allSettled([
-          redeem(app, authorization, callback, server),
-          redeem(app, authorization, callback, second),
+        const callback = await callbackFor(authorization, climber);
+        const outcomes = await releaseTogether(climber.userId, () => [
+          redeemOutcome(app, authorization, callback, server),
+          redeemOutcome(app, authorization, callback, second),
         ]);
-        const issued = outcomes.filter((outcome) => outcome.status === 'fulfilled');
-        expect(issued).toHaveLength(1);
-        expect(outcomes.find((outcome) => outcome.status === 'rejected')).toMatchObject({
-          reason: { error: 'invalid_grant' },
-        });
+        expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+        expect(outcomes.find((outcome) => !outcome.ok)).toMatchObject({ error: 'invalid_grant' });
+        await expectAlive(tablet);
       },
       SUITE_DEADLINE_MS,
     );
 
     it(
-      'gives one successor when the same refresh token reaches both at once',
+      'gives one successor when the same refresh token reaches both at once, and the other family lives',
       async () => {
         const app = await registerApp();
-        const connection = await connect(app, await newClimber());
-        const outcomes = await Promise.all([
-          refresh(app, connection.tokens.refresh_token, server),
-          refresh(app, connection.tokens.refresh_token, second),
+        const climber = await newClimber();
+        const phone = await connect(app, climber);
+        const tablet = await connect(app, climber);
+        const outcomes = await releaseTogether(climber.userId, () => [
+          refresh(app, phone.tokens.refresh_token, server),
+          refresh(app, phone.tokens.refresh_token, second),
         ]);
         const winners = outcomes.filter((outcome) => outcome.ok);
         expect(winners).toHaveLength(1);
@@ -2332,6 +2562,56 @@ describe('partner OAuth on, in the real server', () => {
         const [winner] = winners;
         if (!winner?.ok) throw new Error('unreachable');
         expect((await refresh(app, winner.tokens.refresh_token, server)).ok).toBe(false);
+        expect((await callMe(app, winner.tokens.access_token, second)).status).toBe(401);
+        // Only that family: the other device on the same connection carries on.
+        await expectAlive(tablet);
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'leaves nothing usable when a refresh on one races a Disconnect on the other',
+      async () => {
+        const app = await registerApp();
+        const climber = await newClimber();
+        const connection = await connect(app, climber);
+        const [refreshed, disconnected] = await releaseTogether(climber.userId, () => [
+          refresh(app, connection.tokens.refresh_token, server),
+          disconnectByApp(app, connection.tokens.access_token, second),
+        ]);
+        expect(disconnected.status).toBe(204);
+        // Whichever won the connection lock, nothing issued before or during the Disconnect works after it.
+        if (refreshed.ok) {
+          expect((await callMe(app, refreshed.tokens.access_token, second)).status).toBe(401);
+          expect((await refresh(app, refreshed.tokens.refresh_token, second)).ok).toBe(false);
+        } else {
+          expect(refreshed).toMatchObject({ error: 'invalid_grant' });
+        }
+        await expectEnded(connection);
+      },
+      SUITE_DEADLINE_MS,
+    );
+
+    it(
+      'reconnects on one while the other is handed the old refresh token: the new generation works, the old stays dead',
+      async () => {
+        const app = await registerApp();
+        const climber = await newClimber();
+        const old = await connect(app, climber);
+        expect((await disconnectByApp(app, old.tokens.access_token)).status).toBe(204);
+        const again = await startAuthorization(app);
+        const callback = await callbackFor(again, climber);
+        // The old token was deleted with its connection, so it is refused before any lock: no gun here.
+        const [fresh, stale] = await Promise.all([
+          redeemOutcome(app, again, callback, server),
+          refresh(app, old.tokens.refresh_token, second),
+        ]);
+        expect(stale).toMatchObject({ ok: false, error: 'invalid_grant' });
+        if (!fresh.ok) throw new Error(`The reconnect failed: ${fresh.error}`);
+        expect((await callMe(app, fresh.tokens.access_token, second)).status).toBe(200);
+        expect((await callMe(app, old.tokens.access_token, second)).status).toBe(401);
+        const row = await connectionRow(old);
+        expect({ revokedAt: row.revokedAt, generation: row.generation }).toEqual({ revokedAt: null, generation: 1 });
       },
       SUITE_DEADLINE_MS,
     );
@@ -2365,6 +2645,13 @@ describe('partner OAuth on, in the real server', () => {
       expect(logLines.some((line) => line.includes('Partner OAuth request'))).toBe(true);
       const leaks = [...credentialsSeen].filter((credential) => logLines.some((line) => line.includes(credential)));
       expect(leaks).toEqual([]);
+      // And no line carries an Authorization header, or a Basic or Bearer credential,
+      // even one this file never saw whole (a truncated or re-encoded one).
+      const headerLines = logLines.filter(
+        (line) =>
+          /\bauthorization\b["']?\s*[:=]/i.test(line) || /\b(?:Basic|Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/.test(line),
+      );
+      expect(headerLines).toEqual([]);
     });
   });
 });

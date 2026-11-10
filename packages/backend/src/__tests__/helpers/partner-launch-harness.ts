@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request, type IncomingHttpHeaders } from 'node:http';
 import { createRequire } from 'node:module';
@@ -52,11 +52,13 @@ async function webGuardsLinks(webMode: string): Promise<boolean> {
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-let addressCounter = 0;
-/** A fresh documentation-range address per caller, so no Redis bucket is shared by accident. */
+// Redis limiter keys outlive a run by up to two minutes, so each run starts at
+// its own place in 198.19.0.0/16 (65,536 addresses) rather than at the first one.
+let addressCounter = randomInt(0, 65_536);
+/** A fresh address per caller, so no Redis bucket is shared with another test or run. */
 export function freshClientIp(): string {
-  addressCounter += 1;
-  return `198.19.${Math.floor(addressCounter / 250) % 250}.${(addressCounter % 250) + 1}`;
+  addressCounter = (addressCounter + 1) % 65_536;
+  return `198.19.${addressCounter >> 8}.${addressCounter & 255}`;
 }
 
 export interface SentResponse {
@@ -161,7 +163,11 @@ export async function useDeployment(environment: Record<string, string>): Promis
 export async function startRealServer(environment: Record<string, string>): Promise<RunningServer> {
   await useDeployment({ ...environment, PORT: '0' });
   const { startServer } = await import('../../server');
-  const server = await startServer();
+  // Loopback only. A server on the wildcard address shares its port with any
+  // process that binds 127.0.0.1 to the same number, which macOS allows, and a
+  // client on 127.0.0.1 then reaches that process instead: a partner test in
+  // another worker answered this suite's hold server with its own 401.
+  const server = await startServer({ host: '127.0.0.1' });
   if (!server.httpServer.listening) await once(server.httpServer, 'listening');
   const { port } = server.httpServer.address() as AddressInfo;
 
@@ -241,6 +247,12 @@ export interface WebSignIn {
   webMode: string;
   /** Seconds since the epoch. Defaults to now. */
   authTime?: number;
+  /**
+   * A cookie from before the sign-in claims: NextAuth re-issues an old session's
+   * cookie on every use without `auth_time` or a login id, which is how every
+   * climber's session looks until they next sign in.
+   */
+  migrated?: { withoutAuthTime?: boolean; withoutLoginId?: boolean };
 }
 
 /**
@@ -249,13 +261,16 @@ export interface WebSignIn {
  * `link_guarded` only when the web's own mode guards links, decided by the web's
  * own function.
  */
-export async function signInOnWeb(userId: string, { webMode, authTime = nowSeconds() }: WebSignIn): Promise<string> {
+export async function signInOnWeb(
+  userId: string,
+  { webMode, authTime = nowSeconds(), migrated = {} }: WebSignIn,
+): Promise<string> {
   const credential = await encodeNextAuthSession({
     token: {
       sub: userId,
       id: userId,
-      authSessionId: randomUUID(),
-      auth_time: authTime,
+      ...(migrated.withoutLoginId ? {} : { authSessionId: randomUUID() }),
+      ...(migrated.withoutAuthTime ? {} : { auth_time: authTime }),
       ...((await webGuardsLinks(webMode)) ? { link_guarded: true } : {}),
     },
     secret: process.env.NEXTAUTH_SECRET ?? '',
