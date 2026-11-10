@@ -426,18 +426,20 @@ native/watch aliases are owned by the migration doc, not this API contract.
 
 ### Routes and the mode switch
 
-`PARTNER_OAUTH_MODE` is read once at boot, from the environment. No request can
-choose it. `handlers/partner-auth.ts` (the OAuth routes) and
-`handlers/public-api/router.ts` (the `/v1` API) are the only production modules
-outside `auth/partner/` that may reach into that folder, and with the mode `off`
-both answer nothing. `scripts/__tests__/better-auth-boundary.test.ts` holds that
-list and what each may import.
+`PARTNER_OAUTH_MODE` is read once, from the environment. No request can
+choose it. Three production modules outside `auth/partner/` may reach into that
+folder: `handlers/partner-auth.ts` (these routes), `handlers/public-api/router.ts`
+(the `/v1` API) and `graphql/resolvers/oauth-clients/partner-registration.ts` (the
+developer console's operations, see [Self-service registration](#self-service-registration)).
+With the mode `off` none answers anything new, and none loads Better Auth.
+`scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
+may import.
 
-| Mode | What the API host does |
+| Mode | What the backend does |
 | --- | --- |
-| `off` (default, and any unrecognised value) | Every partner route is `404`, and Better Auth is never loaded |
-| `hold` | Every partner route answers `503` with `Retry-After: 60`, without loading Better Auth |
-| `allowlist`, `open` | The routes below are served. The two modes differ only in who can register an app |
+| `off` (default, and any unrecognised value) | Every partner route is `404`, every developer console operation answers `NOT_FOUND`, and Better Auth is never loaded |
+| `hold` | Every partner route answers `503` with `Retry-After: 60`, and every console operation `SERVICE_UNAVAILABLE`, without loading Better Auth |
+| `allowlist`, `open` | The routes below are served. The two modes are meant to differ only in who can register an app; for now both register only developers in `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (see below) |
 
 Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
 `GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
@@ -805,7 +807,116 @@ addition, not an approval queue.
 
 Admin tools: suspend an app (with a reason the developer sees), list an app's
 connection count and error rate. The first version is a backend script under
-`packages/backend/scripts/`, like the other ops tools.
+`packages/backend/src/scripts/`, like the other ops tools.
+
+### What the backend does today (F12)
+
+**Operations.** `myOAuthClients`, `createOAuthClient`, `updateOAuthClient`,
+`rotateOAuthClientSecret` and `deleteOAuthClient` in `@boardsesh/shared-schema`,
+served by `graphql/resolvers/oauth-clients/partner-registration.ts` on the
+ordinary GraphQL pool. Each checks, in this order: the mode (`off` answers
+`NOT_FOUND`, `hold` answers `SERVICE_UNAVAILABLE`, before anything else); a
+signed-in Boardsesh account (first-party credentials only: a partner token is
+opaque and never authenticates GraphQL); the developer's own rate limit;
+`PARTNER_OAUTH_DEVELOPER_ALLOWLIST`, comma-separated user ids, empty meaning
+nobody; then the per-address limit. Creating an app also needs `emailVerified`.
+
+**`open` still means the allowlist.** `emailVerified` was stamped without proof
+while verification was off (BA-02 D3), so the fast path keeps open registration
+closed until BA-02 ships or registration sends its own email proof. Until one of
+those lands, `open` registers the same allowlisted developers as `allowlist`.
+
+**Rate limits.** Writes: 10 a minute per developer and 30 per address. Reads:
+60 and 120. The developer's bucket is charged once the account is known, so only
+that account can spend it. The address bucket is charged only for an allowlisted
+developer, so throwaway accounts behind the same address cannot fill it and lock
+a listed developer out. It is keyed by `ConnectionContext.trustedClientIp`
+(`getTrustedClientIp`, the key the partner OAuth routes use): `cf-connecting-ip`
+counts only from a verified Cloudflare edge, otherwise the hop the private ingress
+appended, and an IPv6 client is its /64. GraphQL's older `clientIp` believes that
+header from anyone.
+
+**What registration fixes.** It uses the provider's managed registration
+(`adminCreateOAuthClient`) and writes every field but the developer's own:
+`skip_consent: false`, `require_pkce: true`, `grant_types` authorization code
+and refresh, `response_types: code`, the published scopes, and exactly the API
+resource. `token_endpoint_auth_method` is `none`, `client_secret_basic` or
+`client_secret_post`; `private_key_jwt` is refused, because its `jwks_uri` would
+be fetched inside the token transaction. After the provider writes the row, the
+same transaction reads it back and rolls back if any of those differ. Edits
+write only name, homepage, privacy policy and redirect URIs, never through the
+provider's update, which can also reach consent and PKCE. Each developer's
+writes take an advisory lock, so the 10-app cap holds under a race. Every new
+app gets an `oauth_app_policy` row with decision 22's launch caps: 25 active
+connections and 20 new a day. Consent enforces them (F13).
+
+**Secrets.** Generated by the provider (32 letters), returned once by create or
+rotate and never readable again, and stored the way the authority stores every
+client secret: encrypted with `PARTNER_OAUTH_SECRETS` (`storeClientSecret:
+'encrypted'`). Rotation replaces it in one write, so the old secret stops at
+commit.
+
+**Changing a suspended app.** Refused, delete included: the record stays for ops
+and still counts toward the developer's 10. Deleting any other app removes its
+connections first (waiting for an issuer holding one), then its pending codes,
+then the app, whose cascade takes tokens, consent, grants, subjects and policy.
+
+**What the consent screen can show.** The app name is `oauth_client.name`, the
+homepage `oauth_client.uri` and the privacy policy `oauth_client.policy`
+(`name`, `homepageUrl`, `privacyPolicyUrl` in GraphQL). This plan has no
+per-app terms URL; `oauth_client.tos` exists and stays empty. There is no
+publisher name yet, and "Made by" must not read the developer's `users.name`:
+that can be their Google full name, and anyone signed in can open a consent
+screen for any `client_id`. The smallest change is one nullable column,
+`oauth_app_policy.publisher_name` (`publisherName: text('publisher_name')` in
+`partner-oauth.ts`, generated as `ADD COLUMN`), which takes ACCESS EXCLUSIVE on an
+`oauth_` table and so uses the 3-second guard and deploys alone. Registration
+would then require it, under the same length and lookalike rules as the app name.
+
+**Exact redirect URI rule** (`partnerRedirectUriProblem` in `auth/partner/registration-rules.ts`):
+
+| Form | Web app | Native app |
+| --- | --- | --- |
+| `https://` on any host but `boardsesh.com` and its subdomains, never a loopback host | Yes | Yes |
+| `http://127.0.0.1` or `http://[::1]`, any port or none; the port is ignored when matching | No | Yes |
+| A private-use scheme with a dot and no `boardsesh` in it, as `scheme:/path` or `scheme://host/path` | No | Yes |
+
+Everything else is refused: `http://localhost`, other `http://` hosts, any
+fragment (even an empty `#`), any `*`, a user name or password, whitespace or
+control characters, more than 2048 characters, more than 10 URIs or the same URI
+twice. A URI must be written exactly as a URL parser writes it back
+(`https://app.example.com/`, not `https://App.Example.com`), so the stored string
+is what the exact comparison sees. Homepage and privacy policy URLs must be
+`https://` and not on `boardsesh.com`. Names are refused if, after folding case,
+accents, spacing, punctuation and lookalike characters (`0` for `o`, `1` or `i` for
+`l`, Cyrillic letters), they contain Boardsesh, Aurora or a board brand.
+
+**Admin commands** (`packages/backend/src/scripts/partner-app-admin.ts`). Each
+acts on exactly one id given on the command line and writes nothing without
+`--apply`; a dry run's transaction is read-only.
+
+```
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts suspend --client-id <id> --reason "<shown to the developer>" [--apply]
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts unsuspend --client-id <id> [--apply]
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts revoke-user --user-id <id> [--apply]
+```
+
+`suspend` sets `oauth_client.disabled`, which the provider checks on every
+authorize, token and revoke call, and records `suspended_at` and the reason on
+the policy row. Tokens are kept, so `unsuspend` brings the app back. Other
+backend instances drop its browser origins within the 60-second origin cache.
+`revoke-user` calls `public.partner_revoke_user()`, the function the password
+trigger calls, and reports the rows before and after.
+
+`partner_revoke_user` is `SECURITY INVOKER`. It locks the climber's `users` row
+`FOR NO KEY UPDATE`, which needs UPDATE on `users`, and needs SELECT, UPDATE and
+DELETE on the `oauth_` tables. Run the script with a `DATABASE_URL` for the
+`boardsesh_runtime` login, the backend service's own: the migration runner's ACL
+reconcile already grants it DML on every table and EXECUTE on every routine, so
+no production change is needed. The script opens every transaction as READ
+COMMITTED itself, because the function refuses any other isolation, whatever the
+login's default. A test runs it as a role with exactly those grants, and shows it
+fails with `42501` once UPDATE on `users` is taken away.
 
 ---
 

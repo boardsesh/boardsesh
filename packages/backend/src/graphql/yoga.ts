@@ -22,6 +22,7 @@ import { recordUserActivity, resolveActivityPlatform } from '../services/user-ac
 import { clientUsagePlugin, resolveClientIdentity } from '../services/client-usage';
 import { appleAdsTokenPrivacyPlugin, sanitizeAppleAdsLogArgument } from './apple-ads-token-privacy';
 import { resolveEdgeRegionCode, resolveFlagCountry } from '../utils/flag-country';
+import { getTrustedClientIp } from '../utils/client-ip';
 import { boardShareTokenPrivacyPlugin, sanitizeBoardShareLogArgument } from './board-share-token-privacy';
 
 function sanitizeTokenLogArgument(argument: unknown): unknown {
@@ -111,6 +112,8 @@ export async function buildHttpConnectionContext({
     isCronAuthenticated,
     clientIp,
     socketPeerIp: resolveWebSocketSocketPeerIp(req),
+    // Unlike clientIp, believes cf-connecting-ip only from a verified edge.
+    trustedClientIp: req ? getTrustedClientIp(req) : undefined,
     // The trusted-edge country decides whether the analytics prompt is shown
     // (consentRegion). Without the Node request there is no peer to trust.
     edgeCountry: req ? resolveFlagCountry(req) : undefined,

@@ -16,6 +16,7 @@ import { selectSweepBatches } from './admission-sweep-batches';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { isApiHost } from '../handlers/api-host';
 import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
+import { getTrustedClientIp } from '../utils/client-ip';
 import { tryAcquireAnonConnectionSlot, releaseAnonConnectionSlot } from './connection-cap';
 import {
   CLIENT_PLATFORM_CONNECTION_PARAM,
@@ -329,6 +330,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         const upgradeRequest = ctx.extra.request;
         const clientIp = resolveWebSocketClientIp(upgradeRequest);
         const socketPeerIp = resolveWebSocketSocketPeerIp(upgradeRequest);
+        const trustedClientIp = upgradeRequest ? getTrustedClientIp(upgradeRequest) : undefined;
 
         // Which client app this is (identification only, gates nothing).
         // Browsers cannot set headers on the upgrade request, so every platform
@@ -349,6 +351,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           controllerOwnerUserId,
           clientIp,
           socketPeerIp,
+          trustedClientIp,
           clientIdentity,
           clientIdentityRaw,
         });
