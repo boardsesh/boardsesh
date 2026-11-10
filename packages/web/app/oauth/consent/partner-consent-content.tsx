@@ -48,6 +48,11 @@ function appDisplayName(details: ConsentDetails, unnamed: string): string {
   return details.client.name?.trim() || unnamed;
 }
 
+/** The publisher the developer registered. Nothing stands in for a missing one, least of all their account name. */
+function publisherDisplayName(details: ConsentDetails): string | null {
+  return details.client.publisherName?.trim() || null;
+}
+
 function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][number]) {
   const { t } = useTranslation('oauth');
   const label = (() => {
@@ -128,6 +133,7 @@ type ConsentFormProps = {
 function ConsentForm({ view, details, sending, focusTitle, onAnswer }: ConsentFormProps) {
   const { t } = useTranslation('oauth');
   const appName = appDisplayName(details, t('consent.unnamedApp'));
+  const publisher = publisherDisplayName(details);
   const readOnly = details.scopes.length > 0 && details.scopes.every(({ scope }) => READ_ONLY_SCOPES.has(scope));
   const headingId = useId();
 
@@ -137,6 +143,14 @@ function ConsentForm({ view, details, sending, focusTitle, onAnswer }: ConsentFo
         <PartnerOAuthTitle focusOnMount={focusTitle}>
           {details.reconnect ? t('consent.titleReconnect', { app: appName }) : t('consent.title', { app: appName })}
         </PartnerOAuthTitle>
+        {publisher ? (
+          <Typography
+            variant="body1"
+            sx={{ overflowWrap: 'anywhere', fontWeight: themeTokens.typography.fontWeight.medium }}
+          >
+            {t('consent.publisher', { publisher })}
+          </Typography>
+        ) : null}
         {view.account ? (
           <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
             {t('consent.signedInAs', { account: view.account })}{' '}

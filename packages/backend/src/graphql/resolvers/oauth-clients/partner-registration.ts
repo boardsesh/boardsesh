@@ -196,6 +196,7 @@ function toOAuthClient(record: PartnerAppRecord): OAuthClient {
   return {
     clientId: record.clientId,
     name: record.name,
+    publisherName: record.publisherName,
     homepageUrl: record.homepageUrl,
     privacyPolicyUrl: record.privacyPolicyUrl,
     applicationType: APPLICATION_TYPES[record.applicationType],
@@ -237,6 +238,7 @@ export const oauthClientMutations = {
       toCredentials(
         await registration.createApp(database, developerId, {
           name: input.name,
+          publisherName: input.publisherName,
           homepageUrl: input.homepageUrl,
           privacyPolicyUrl: input.privacyPolicyUrl,
           applicationType: lowerCaseEnum(input.applicationType),
@@ -256,6 +258,7 @@ export const oauthClientMutations = {
       return toOAuthClient(
         await registration.updateApp(database, developerId, clientIdArgument(clientId), {
           ...('name' in patch ? { name: patch.name } : {}),
+          ...('publisherName' in patch ? { publisherName: patch.publisherName } : {}),
           ...('homepageUrl' in patch ? { homepageUrl: patch.homepageUrl } : {}),
           ...('privacyPolicyUrl' in patch ? { privacyPolicyUrl: patch.privacyPolicyUrl } : {}),
           ...('redirectUris' in patch ? { redirectUris: patch.redirectUris } : {}),

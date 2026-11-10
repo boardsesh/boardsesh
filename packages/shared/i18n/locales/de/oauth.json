@@ -54,6 +54,7 @@
     "unnamedApp": "Unbenannte App",
     "title": "{{app}} mit deinem Boardsesh-Konto verbinden?",
     "titleReconnect": "{{app}} erneut verbinden?",
+    "publisher": "Entwickelt von {{publisher}}",
     "signedInAs": "Angemeldet als {{account}}.",
     "signOut": "Nicht du? Abmelden",
     "reconnect": "Du hast {{app}} schon einmal getrennt. Wenn du Erlauben wählst, wird die App wieder verbunden.",

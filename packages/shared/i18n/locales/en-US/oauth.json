@@ -54,6 +54,7 @@
     "unnamedApp": "Unnamed app",
     "title": "Connect {{app}} to your Boardsesh account?",
     "titleReconnect": "Connect {{app}} again?",
+    "publisher": "Made by {{publisher}}",
     "signedInAs": "Signed in as {{account}}.",
     "signOut": "Not you? Sign out",
     "reconnect": "You disconnected {{app}} before. Choosing Allow connects it again.",

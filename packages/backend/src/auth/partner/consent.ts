@@ -4,7 +4,7 @@ import { APIError, createAuthEndpoint, createAuthMiddleware } from 'better-auth/
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
-import { oauthClient, oauthConnections, oauthConsentInteractions } from '@boardsesh/db/schema/auth';
+import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsentInteractions } from '@boardsesh/db/schema/auth';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { authorizeRedirectTarget } from './fence';
 import { resolveFirstPartySession } from './first-party-session';
@@ -35,9 +35,13 @@ export interface PartnerConsentDetails {
     homepageUrl: string | null;
     privacyPolicyUrl: string | null;
     termsUrl: string | null;
-    // No developer name: the account's own name never reaches a climber. A
-    // `publisherName` from the registration record joins here once that column
-    // exists (BA-07/08 fast path, "From F12"); until then there is no "Made by".
+    /**
+     * "Made by": the publisher the developer named at registration
+     * (`oauth_app_policy.publisher_name`), or null for an app registered before
+     * publishers were recorded. Never the developer's account name: that can be
+     * their full name from Google, and anyone signed in can open this screen.
+     */
+    publisherName: string | null;
     /** Where the browser goes after Allow: a host, or a native app's scheme. */
     redirectHost: string | null;
   };
@@ -268,8 +272,10 @@ export function partnerConsentGuard(
               policy: oauthClient.policy,
               tos: oauthClient.tos,
               disabled: oauthClient.disabled,
+              publisherName: oauthAppPolicy.publisherName,
             })
             .from(oauthClient)
+            .leftJoin(oauthAppPolicy, eq(oauthAppPolicy.clientId, oauthClient.clientId))
             .where(eq(oauthClient.clientId, clientId));
           if (!client || client.disabled) throw refusalError(APP_SUSPENDED);
           const details: PartnerConsentDetails = {
@@ -279,6 +285,7 @@ export function partnerConsentGuard(
               homepageUrl: client.uri,
               privacyPolicyUrl: client.policy,
               termsUrl: client.tos,
+              publisherName: client.publisherName,
               redirectHost: redirectHost(interaction.query.get('redirect_uri')),
             },
             scopes: describeConsentScopes(promptTokens(interaction.query.get('scope') ?? '')),

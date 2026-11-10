@@ -2115,6 +2115,13 @@
       "when": 1794301080382,
       "tag": "0301_logbook_snapshots_connection_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 302,
+      "version": "7",
+      "when": 1794307774903,
+      "tag": "0302_oauth_app_publisher_name",
+      "breakpoints": true
     }
   ]
 }

@@ -76,6 +76,11 @@ const logbookSnapshotsConnectionSchema = readFileSync(
   new URL('../../../db/drizzle/0301_logbook_snapshots_connection_fk.sql', import.meta.url),
   'utf8',
 );
+// The publisher an app names at registration ("Made by"), with the migration's lock guard.
+const partnerPublisherNameSchema = readFileSync(
+  new URL('../../../db/drizzle/0302_oauth_app_publisher_name.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2342,4 +2347,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${logbookSnapshotsSchema};
   ${partnerRevocationTriggerSchema}
   ${logbookSnapshotsConnectionSchema};
+  ${partnerPublisherNameSchema}
 `;

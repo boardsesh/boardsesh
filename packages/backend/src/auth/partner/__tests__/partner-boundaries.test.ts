@@ -273,6 +273,7 @@ describe('the F12 entry point', () => {
           {
             input: {
               name: 'Crimp Lab',
+              publisherName: 'Crimp Labs',
               privacyPolicyUrl: 'https://crimp.example.test/privacy',
               applicationType: 'WEB',
               tokenEndpointAuthMethod: 'NONE',

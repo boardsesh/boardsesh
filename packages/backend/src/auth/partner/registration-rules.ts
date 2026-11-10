@@ -32,6 +32,8 @@ export type PartnerAppAuthMethod = (typeof PARTNER_APP_AUTH_METHODS)[number];
 
 export interface PartnerAppInput {
   name: string;
+  /** Who makes the app: "Made by" on the consent screen. Never the developer's account name. */
+  publisherName: string;
   homepageUrl: string | null;
   privacyPolicyUrl: string;
   applicationType: PartnerAppApplicationType;
@@ -42,6 +44,7 @@ export interface PartnerAppInput {
 /** An edit. A field left undefined keeps its value; `homepageUrl: null` clears it. */
 export interface PartnerAppPatch {
   name?: string;
+  publisherName?: string;
   homepageUrl?: string | null;
   privacyPolicyUrl?: string;
   redirectUris?: string[];
@@ -51,6 +54,8 @@ export interface PartnerAppPatch {
 export interface PartnerAppRecord {
   clientId: string;
   name: string;
+  /** Null only for an app registered before publishers were recorded. */
+  publisherName: string | null;
   homepageUrl: string | null;
   privacyPolicyUrl: string;
   applicationType: PartnerAppApplicationType;
@@ -234,12 +239,15 @@ function nameSkeleton(name: string): string {
 }
 
 /**
- * Names an app may not use or imitate: Boardsesh, Aurora and every board brand
- * in BOARD_TYPE_LABELS. "Spray wall" is a kind of wall, not a brand.
+ * Names an app or its publisher may not use or imitate: Boardsesh, Aurora, the
+ * MoonBoard's maker, and every board brand in BOARD_TYPE_LABELS. The other
+ * makers trade under their board's brand, so the brand covers them. "Spray wall"
+ * is a kind of wall, not a brand.
  */
 export const PARTNER_APP_NAME_DENYLIST: readonly string[] = [
   'Boardsesh',
   'Aurora',
+  'Moon Climbing',
   ...Object.entries(BOARD_TYPE_LABELS)
     .filter(([boardType]) => boardType !== 'spray')
     .map(([, label]) => label),
@@ -247,19 +255,36 @@ export const PARTNER_APP_NAME_DENYLIST: readonly string[] = [
 
 const DENIED_NAME_SKELETONS = PARTNER_APP_NAME_DENYLIST.map((term) => ({ term, skeleton: nameSkeleton(term) }));
 
-/** The cleaned name, or a refusal. A name containing a denied term, however disguised, is refused. */
-export function validatePartnerAppName(rawName: unknown): string {
-  if (typeof rawName !== 'string') invalid('Give the app a name.');
-  if (CONTROL_OR_FORMAT_CHARACTER.test(rawName)) invalid('The app name cannot contain control characters.');
+/**
+ * A name climbers read on the consent screen, cleaned, or a refusal: 3 to 50
+ * characters after trimming and collapsing spaces, at least one letter or
+ * number, no control characters, and nothing that contains a denied term,
+ * however disguised.
+ */
+function validateConsentScreenName(rawName: unknown, field: string, missing: string): string {
+  if (typeof rawName !== 'string') invalid(missing);
+  if (CONTROL_OR_FORMAT_CHARACTER.test(rawName)) invalid(`The ${field} cannot contain control characters.`);
   const name = rawName.normalize('NFKC').trim().replace(/\s+/g, ' ');
   if (name.length < NAME_MIN_LENGTH || name.length > NAME_MAX_LENGTH) {
-    invalid(`The app name must be ${NAME_MIN_LENGTH} to ${NAME_MAX_LENGTH} characters.`);
+    invalid(`The ${field} must be ${NAME_MIN_LENGTH} to ${NAME_MAX_LENGTH} characters.`);
   }
-  if (!/[\p{L}\p{N}]/u.test(name)) invalid('The app name needs at least one letter or number.');
+  if (!/[\p{L}\p{N}]/u.test(name)) invalid(`The ${field} needs at least one letter or number.`);
   const skeleton = nameSkeleton(name);
   const denied = DENIED_NAME_SKELETONS.find((entry) => skeleton.includes(entry.skeleton));
-  if (denied) invalid(`The app name cannot use or imitate "${denied.term}".`);
+  if (denied) invalid(`The ${field} cannot use or imitate "${denied.term}".`);
   return name;
+}
+
+export function validatePartnerAppName(rawName: unknown): string {
+  return validateConsentScreenName(rawName, 'app name', 'Give the app a name.');
+}
+
+/**
+ * The person or company that makes the app, shown as "Made by". Public, so it
+ * follows the app-name rules: a publisher cannot pass as Boardsesh or a board maker.
+ */
+export function validatePartnerPublisherName(rawName: unknown): string {
+  return validateConsentScreenName(rawName, 'publisher name', 'Say who makes the app: a person or a company.');
 }
 
 /** A link shown on the consent screen: https, no credentials, not on boardsesh.com. Returned as the parser writes it. */
@@ -293,6 +318,7 @@ export function normalizePartnerAppInput(raw: Record<string, unknown>): PartnerA
   const applicationType = validateApplicationType(raw.applicationType);
   return {
     name: validatePartnerAppName(raw.name),
+    publisherName: validatePartnerPublisherName(raw.publisherName),
     homepageUrl:
       raw.homepageUrl === undefined || raw.homepageUrl === null || raw.homepageUrl === ''
         ? null
@@ -311,6 +337,10 @@ export function normalizePartnerAppPatch(
 ): PartnerAppPatch {
   const patch: PartnerAppPatch = {};
   if (raw.name !== undefined && raw.name !== null) patch.name = validatePartnerAppName(raw.name);
+  // Required at registration, so an edit can change it but never clear it.
+  if (raw.publisherName !== undefined && raw.publisherName !== null) {
+    patch.publisherName = validatePartnerPublisherName(raw.publisherName);
+  }
   if (raw.homepageUrl !== undefined) {
     patch.homepageUrl =
       raw.homepageUrl === null || raw.homepageUrl === ''

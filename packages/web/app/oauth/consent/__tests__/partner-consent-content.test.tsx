@@ -104,6 +104,27 @@ describe('PartnerConsentContent', () => {
     expect(screen.getByText(/Settings › Connected apps/)).toBeTruthy();
   });
 
+  it('says who makes the app when the developer registered a publisher', async () => {
+    const heading = await renderReady(
+      details({ client: { ...details().client, publisherName: 'Sequence Climbing Ltd' } }),
+    );
+    expect(heading.textContent).toBe('Connect Sequence to your Boardsesh account?');
+    expect(screen.getByText('Made by Sequence Climbing Ltd')).toBeTruthy();
+  });
+
+  it('shows no "Made by" line, and nothing in its place, for an app without a publisher', async () => {
+    // Null from the backend, a blank one, and a backend too old to send the field.
+    for (const publisherName of [null, '   ', undefined]) {
+      fetchMock.mockReset();
+      const body = details({ client: { ...details().client, publisherName } });
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, body));
+      const view = render(<PartnerConsentContent view={CONSENT_VIEW} />);
+      await view.findByRole('heading', { level: 1 });
+      expect(view.queryByText(/^Made by/)).toBeNull();
+      view.unmount();
+    }
+  });
+
   it('links only ordinary web pages, each marked as opening a new tab', async () => {
     await renderReady();
     const links = within(screen.getByRole('navigation', { name: 'About Sequence' })).getAllByRole('link');

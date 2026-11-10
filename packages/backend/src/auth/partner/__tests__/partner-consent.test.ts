@@ -804,7 +804,7 @@ describe('partner consent', () => {
 
   describe('the consent details', () => {
     it('state what the climber is approving, and nothing about the account that registered the app', async () => {
-      const client = await consentClient();
+      const client = await consentClient({ policy: { publisherName: 'Sequence Climbing Ltd' } });
       await db.update(users).set({ name: 'Account name' }).where(eq(users.id, client.owner.userId));
       await db.insert(userProfiles).values({ userId: client.owner.userId, displayName: 'Sequence Labs' });
       await db.execute(
@@ -827,6 +827,8 @@ describe('partner consent', () => {
           homepageUrl: 'https://sequence.example',
           privacyPolicyUrl: 'https://sequence.example/privacy',
           termsUrl: null,
+          // The publisher the developer registered, not their account or profile name.
+          publisherName: 'Sequence Climbing Ltd',
           redirectHost: new URL(client.redirectUri).host,
         },
         // Decision 21: the one scope that reads "only me" ticks says so.
@@ -846,6 +848,21 @@ describe('partner consent', () => {
       // Reading them spends nothing.
       expect((await interactionFor(authorization.oauthQuery)).consumedAt).toBeNull();
       expect(describeConsentScopes(['logbook:read'])).toEqual([{ scope: 'logbook:read', includesOnlyMeTicks: true }]);
+    });
+
+    it('carry no publisher, and no stand-in for one, when the app never recorded one', async () => {
+      const client = await consentClient();
+      await db.update(users).set({ name: 'Account name' }).where(eq(users.id, client.owner.userId));
+      await db.insert(userProfiles).values({ userId: client.owner.userId, displayName: 'Profile name' });
+      const climber = await webClimber();
+      const authorization = await authorize(instance, client, climber.cookie);
+      const details = await postJson(instance, '/oauth2/consent-details', climber.cookie, {
+        oauth_query: authorization.oauthQuery,
+      });
+      expect(details.response.status).toBe(200);
+      expect(details.body.client).toMatchObject({ clientId: client.clientId, publisherName: null });
+      expect(JSON.stringify(details.body)).not.toContain('Account name');
+      expect(JSON.stringify(details.body)).not.toContain('Profile name');
     });
 
     it('offer only published scopes: logbook:read now that its routes ship, never a workout scope', async () => {
