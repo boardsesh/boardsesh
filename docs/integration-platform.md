@@ -1132,15 +1132,15 @@ One shape everywhere a tick appears (logbook, workout results, later webhooks):
   "angle": 40,
   "mirrored": false,
   "stars": 4,
-  "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+  "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
   "benchmark": false,
   "comment": "Finally stuck the cross-through",
   "climb": {
     "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
     "name": "Slopey Business",
     "board": { "type": "kilter", "layout": "Kilter Board Original" },
-    "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
-    "boardseshGrade": 4.2
+    "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
+    "boardseshGrade": null
   },
   "createdAt": "2026-10-20T18:42:15Z",
   "updatedAt": "2026-10-20T18:42:15Z"
@@ -1159,7 +1159,7 @@ Mapping from `boardsesh_ticks` (semantics in [ascents-and-attempts.md](./ascents
 | `comment` | `comment` | The climber's note. The column defaults to `''`; an empty string is served as `null` |
 | `climb.id` | `COALESCE(board_climb_aliases.canonical_uuid, climb_uuid)`, joined on `(board_type, alias_uuid)` | Canonical at read time. A catalog merge writes a change row for every affected tick (trigger 4 below), so apps see the new id |
 | `climb.grade` | `board_climb_stats.display_difficulty` at the tick's angle | Community grade at read time. It drifts without a tick change; documented |
-| `climb.boardseshGrade` | `board_climb_grades.universal_grade` | Optional decimal on the V scale, `null` when not anchored |
+| `climb.boardseshGrade` | Not read yet | Always `null`: the Boardsesh grade is kept on the difficulty-id scale and no V-scale conversion is documented (see "The routes, as built (L4)") |
 | `climb.board.type` | `board_type` | `kilter`, `tension`, `moonboard`, `spray`, … Clients must tolerate new values |
 
 Deliberately left out: `origin` (which sync wrote the row), Aurora and Kilter
@@ -1422,12 +1422,35 @@ snapshot was built never serves its old names.
   public wall: the by-layout rule with no viewer, so a gym membership, follow or
   grant the climber holds is not passed on to apps. A spray tick whose climb row
   is gone withholds both.
+- A tick on someone else's draft or unlisted climb (`is_draft IS TRUE` or
+  `is_listed IS NOT TRUE`, setter not the climber) is not served at all: the feed
+  and a snapshot page send `tick.deleted` for it and the tick route answers `404`,
+  checked at delivery like the spray rule. Those climbs go to their owner alone,
+  and the tick cannot be sent without `climb.id`, which the contract requires and
+  which, for an unlisted climb, is its link. The climber's own draft and unlisted
+  climbs are served. A published climb is served whatever its setter's account
+  privacy. A climb with no Boardsesh owner (upstream unlisted) goes to no one. A
+  tick whose climb row has not arrived yet is served as before, since nothing
+  says it is held out.
+- Serving those ticks with their climb withheld instead needs a contract change
+  in `@boardsesh/public-api`: `TickClimbSchema.id` becomes
+  `z.string().min(1).nullable()` ("`null` for a climb someone else keeps as a
+  draft or unlisted"), with `name` `null`, `board.layout` the board type's label,
+  and `grade` and `boardseshGrade` `null` for those climbs; then a regenerated
+  `openapi.json`, a changelog entry, and the `climb.id` row in partner-api.md.
+  Until then the cost is completeness: an app never sees those ticks, and one on
+  a climb that is published later reaches it only through a full sync or a later
+  edit of the tick, since publishing writes no change row.
 - `grade` and `climb.grade` use the board's own grade table: `v` from its V grade,
   `font` upper-cased, `label` its `boulder_name` (MoonBoard's 6A is V2). A
   difficulty off the table is `null`.
-- `climb.boardseshGrade` is `universal_grade` (difficulty-id scale) put on the V
-  scale linearly between neighbouring ids of the shared table, to one decimal,
-  clamped to V0 and V16.
+- `climb.boardseshGrade` is always `null`. The model keeps the Boardsesh grade on
+  the shared difficulty-id scale (10 is 4a/V0), and clients surface it as
+  `universal_grade ?? local_grade` rounded to a grade id and labelled by the
+  board's table, never for a `setter_only` row ([boardsesh-grade.md](./boardsesh-grade.md),
+  "Which grade a client surfaces"). Nothing documents a decimal V-scale form, so
+  none is invented. Publishing it needs that decision first, for example a grade
+  object built the way clients build theirs.
 - Timestamps are the stored UTC values to the millisecond. A star rating outside
   1 to 5 is `null`.
 
