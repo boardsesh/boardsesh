@@ -8,6 +8,8 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Verified climbs get their own quick filter, right after Grade ([#7388](https://github.com/boardsesh/boardsesh/pull/7388))
+  Combine Verified with Liked or My drafts; other boards call it Benchmarks
 - Links to Boardsesh pages now show a lit board in chat and social previews ([#7383](https://github.com/boardsesh/boardsesh/pull/7383))
 - Kilter climbs now carry Kilter's own Verified mark ([#7359](https://github.com/boardsesh/boardsesh/pull/7359))
   Find them in Filter under Collection, or use Verified only in a workout
