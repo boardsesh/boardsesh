@@ -24,6 +24,9 @@ declare module 'next-auth/jwt' {
   interface JWT {
     authSessionId?: string;
     nativeOAuthCreationProof?: NativeOAuthCreationProof;
+    // Epoch seconds of the sign-in that produced this cookie. Absent on cookies
+    // from before the claim and on native transfer sign-ins: age unknown.
+    auth_time?: number;
     // Cached userProfiles claims so the `session` callback doesn't run a DB
     // query on every /api/auth/session read. `null` means "fetched, but the
     // profile has none" (distinct from `undefined` = never fetched yet).
