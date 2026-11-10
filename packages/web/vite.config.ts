@@ -14,7 +14,7 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
     },
-    exclude: ['**/node_modules/**', '**/dist/**', 'backend/**', 'e2e/**', 'auth-prototype/**'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'backend/**', 'e2e/**', 'auth-prototype/**', 'partner-oauth-e2e/**'],
     coverage: {
       provider: 'v8',
       include: ['app/**/*.{ts,tsx}'],

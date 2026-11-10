@@ -1171,7 +1171,91 @@ seconds in the `backend` project.
 It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
 sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
 front of the API host, and Sentry and PostHog redaction. The logbook routes and
-Connected apps have their own suites (L4, F16).
+Connected apps have their own suites (L4, F16). The end-to-end journey below covers the www pages and the credentialed consent CORS in
+Chromium.
+
+#### End-to-end journey
+
+`packages/web/partner-oauth-e2e/` (#6981 F18) drives one app's whole life in
+Chromium, on the real www pages and the real backend:
+
+1. A developer signs in on www and registers a public native app with a loopback
+   redirect, through the console's own GraphQL operation (`CREATE_OAUTH_CLIENT`)
+   and with a publisher name.
+2. The app (oauth4webapi) discovers the issuer, which must advertise `iss` on
+   authorization responses (RFC 9207), and sends the climber's browser to
+   authorize. The climber signs in on `/oauth/sign-in`, then sees the consent
+   screen with the app name, "Made by", the scope lines and the unreviewed-app
+   line, and presses Allow.
+3. The app checks `state` and `iss`, and exchanges the code with PKCE and
+   `resource=https://api.boardsesh.com/v1`.
+4. It reads `/v1/me`, bootstraps the logbook (one seeded tick from 400 days
+   earlier), then finds a tick the climber logs through GraphQL afterwards on
+   `/v1/logbook/changes` and `/v1/logbook/ticks/{id}`.
+5. It refreshes, and the rotated pair works.
+6. The climber opens Connected apps on www `/settings`, opens the app (its scope
+   lines show), presses Disconnect and confirms, which sends the `disconnectApp`
+   mutation with their own session. The app's next call gets `401 invalid_token`
+   and its refresh `invalid_grant`.
+
+Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`. A warm run
+takes about 15 seconds; the first one waits for `next dev` to compile the pages
+(budget 5 minutes). It writes two accounts with `partner-e2e-` ids and
+`@example.invalid` emails to the dev database and deletes them at the end
+(`PARTNER_OAUTH_E2E_KEEP_DATA=1` keeps them). Server logs land in
+`packages/web/test-results/partner-oauth/`.
+
+How it fits together. The global setup starts `packages/backend/src/index.ts` and
+`next dev`, both with `PARTNER_OAUTH_MODE=allowlist` and one shared
+`NEXTAUTH_SECRET`, and gives www `NEXTAUTH_URL=https://www.boardsesh.com`, so
+NextAuth writes the production cookie: `__Secure-next-auth.session-token` on
+`.boardsesh.com`. The consent page calls `https://api.boardsesh.com` and needs the
+exact origin `https://www.boardsesh.com`, so the browser has to be on the
+production host names. `edge.ts` makes that true on one machine: Chromium's proxy
+tunnels only `www`, `api` and `ws.boardsesh.com` on port 443 into a TLS server with
+a throwaway certificate, which forwards to the two local servers and sets
+`X-Forwarded-For` the way the real ingress does. Every other host is refused. So
+are www's `/monitoring` and the backend's `/api/posthog`: the pages believe they
+are on production, and those two paths would forward the browser's Sentry and
+PostHog traffic to the real projects.
+
+Nothing else the servers run with can reach a service either
+(`server-environment.ts`). They inherit only what a shell needs to run `vp`,
+Node and Next (`PATH`, `HOME`, locale, temp and `VP_*`), never the rest of the
+caller's environment. The environment files each server reads by itself (Next's
+`.env*` in `packages/web`, the backend's `.env`, `.boardsesh/dev-db.env` and
+`.env.development.local`) are folded in the way the server would: a
+credential-looking name a file would supply (`*_KEY`, `*_SECRET`, `SMTP_*`,
+`POSTHOG_*` and the like) is set to an empty string, which beats the file, and
+setup refuses to start, naming only the variables, if any value left names a
+host that is not this machine or a private network. `NEXTAUTH_URL` and
+`NEXT_PUBLIC_APP_URL` are the two exceptions: they are links and cookie names,
+never fetched by a server, and `NEXTAUTH_URL_INTERNAL` keeps NextAuth's own
+calls local.
+
+Each server runs under `watchdog.mjs` as the leader of its own process group.
+Teardown always signals the whole group, and the watchdog ends the group within
+a second of the Playwright runner disappearing, even by `SIGKILL`, so a killed
+run never leaves `next dev` or the backend behind. Setup chooses the two account
+ids before it seeds, so a failure at any point after that still deletes them,
+and each seed first deletes this suite's accounts left over an hour ago by a run
+that was killed outright.
+
+The climber's browser declines the analytics prompt a signed-in account without
+an analytics choice sees once, as a climber would; the developer's and the
+climber's pages otherwise run untouched.
+
+What it does not prove:
+
+- Refusals. It walks the path that succeeds; a wrong verifier, a wrong or
+  missing audience, a replayed code or refresh token, a stale session and the
+  other negative cases are covered only by the launch suite.
+- The app's own `DELETE /v1/connection`; the launch suite covers it.
+- A production build, Cloudflare and Railway, Safari and Android browsers, social
+  sign-in, the developer console's screens, and a confidential client (the launch
+  suite covers secrets).
+- It is not in CI yet. It needs the dev database image, as the dispatch-only E2E
+  shards do.
 
 ---
 
