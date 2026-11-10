@@ -1129,9 +1129,12 @@ Deleting a developer's account cascades into their apps the same way, so
 `deleteAccount` calls `lockOwnedAppsForDeletion` (every app the account owns, in
 client id order) after it locks the account's own row and before the users
 delete, and `retryAccountDeletion` retries the NOWAIT refusal (55P03) as well as
-40P01. The launch suite races both deletions against a consent answer, a refresh
-and a Disconnect on the app; with the old order the consent answer was the
-deadlock victim.
+40P01. The launch suite races an app delete against a consent answer, a refresh
+and a Disconnect; with the old order the consent answer was the deadlock victim.
+For account deletion no deadlock has been reproduced without the lock step (the
+racing requests finish before the cascade), so there the step is a defensive
+guard that keeps both deletions in one order; its launch-suite test proves the
+requests queue behind the deletion, nothing more.
 
 **The console** (F15) is `/developers/apps` on www, behind the server flag
 `developer-console` (`packages/web/app/flags.ts`, fails closed; a signed-out
