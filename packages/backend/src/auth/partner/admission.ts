@@ -25,8 +25,10 @@
  * Worker's to write, so all zones behind the Worker egress address also share a
  * ceiling in each lane (`apiPerEgressLimit`, `overflowApiPerEgressLimit`), and
  * the fairness rule weighs a Worker request by that shared count. Forged zones
- * can fill the ceiling, stalling Worker-hosted apps, never the places left for
- * everyone else.
+ * can fill the ceiling, never the places left for everyone else. Inside a full
+ * ceiling the same rule runs among the zones: the zone holding the most places
+ * gives one up to a zone that would hold fewer, so junk zones cannot shut out
+ * an honest one.
  */
 export type PartnerAdmissionLane = 'token' | 'api' | 'api-overflow' | 'authorize';
 
@@ -137,6 +139,9 @@ export function createPartnerAdmissionGate(limits: PartnerAdmissionLimits): Part
   const placesOf = (lane: ApiLane, key: string) => placesByKey[lane].get(key) ?? 0;
   const hasShareLeft = (lane: ApiLane, places: readonly string[]) =>
     places.every((key) => placesOf(lane, key) < shareOf(lane, key));
+  /** Whether the request's own group, ignoring its Worker egress, may take one more place. */
+  const groupHasShareLeft = (lane: ApiLane, places: readonly string[]) =>
+    places.length > 0 && placesOf(lane, places[0]) < shareOf(lane, places[0]);
 
   function takePlaces(lane: PartnerAdmissionLane, places: readonly string[]) {
     if (!isApiLane(lane)) return;
@@ -200,20 +205,23 @@ export function createPartnerAdmissionGate(limits: PartnerAdmissionLimits): Part
   }
 
   /**
-   * Frees a place in a full `/v1` queue for a request holding `places`: the
-   * newest waiter of the group (or Worker egress) holding the most places gives
-   * its place up, but only if that group holds more places than the request's
-   * would after taking one. Returns whether a place was freed.
+   * Frees one place in `lane` for a newcomer: of the waiters `weigh` names a
+   * rival key for, the newest waiter of the rival holding the most places gives
+   * its place up, but only if that rival holds more places than `newcomerKey`
+   * would after taking one. A shared waiter that gives up moves to overflow when
+   * it has room there, and is refused otherwise. Returns whether a place was freed.
    */
-  function makeRoomFor(lane: ApiLane, places: readonly string[]): boolean {
-    const requester = fairnessKey(places);
-    if (requester === undefined) return false;
-    let mostPlaces = placesOf(lane, requester) + 1;
+  function giveUpPlaceTo(
+    lane: ApiLane,
+    newcomerKey: string,
+    weigh: (waiter: AdmissionWaiter) => string | undefined,
+  ): boolean {
+    let mostPlaces = placesOf(lane, newcomerKey) + 1;
     let newestOfLargest: AdmissionWaiter | undefined;
-    // Newest first, so of the largest group it is the newest waiter that goes.
+    // Newest first, so of the largest rival it is the newest waiter that goes.
     for (let index = queues[lane].length - 1; index >= 0; index -= 1) {
       const waiter = queues[lane][index];
-      const key = fairnessKey(waiter.places);
+      const key = weigh(waiter);
       if (key === undefined) continue;
       const held = placesOf(lane, key);
       if (held > mostPlaces) {
@@ -234,15 +242,38 @@ export function createPartnerAdmissionGate(limits: PartnerAdmissionLimits): Part
     return true;
   }
 
+  /**
+   * A full queue: weighs every request by its group, or by its Worker egress
+   * when it has one, so forged zones count as one.
+   */
+  function makeRoomFor(lane: ApiLane, places: readonly string[]): boolean {
+    const newcomer = fairnessKey(places);
+    return newcomer !== undefined && giveUpPlaceTo(lane, newcomer, (waiter) => fairnessKey(waiter.places));
+  }
+
+  /**
+   * A full Worker share: the same rule among the zones of one egress, so two
+   * junk zones holding every Worker place cannot shut a third zone out.
+   */
+  function makeRoomInEgress(lane: ApiLane, places: readonly string[]): boolean {
+    const [zone, egress] = places;
+    if (egress === undefined) return false;
+    return giveUpPlaceTo(lane, zone, (waiter) => (waiter.places[1] === egress ? waiter.places[0] : undefined));
+  }
+
+  /** Whether a request has, or can be given, a place within its shares of `lane`. */
+  const fitsShares = (lane: ApiLane, places: readonly string[]) =>
+    hasShareLeft(lane, places) || (groupHasShareLeft(lane, places) && makeRoomInEgress(lane, places));
+
   return {
     acquire(requestedLane, addressGroup, egressGroup) {
       // Decided and counted here, synchronously, so concurrent requests from one
       // group cannot all see a free share and pass together.
       let lane = requestedLane;
       const places = isApiLane(requestedLane) ? placeKeys(addressGroup, egressGroup) : [];
-      if (lane === 'api' && !hasShareLeft('api', places)) lane = 'api-overflow';
+      if (lane === 'api' && !fitsShares('api', places)) lane = 'api-overflow';
       // Refused without taking a place, so a refusal never counts against the group.
-      if (lane === 'api-overflow' && !hasShareLeft(lane, places)) return Promise.resolve(null);
+      if (lane === 'api-overflow' && !fitsShares(lane, places)) return Promise.resolve(null);
 
       if (canRun(lane) && queues[lane].length === 0) {
         takePlaces(lane, places);

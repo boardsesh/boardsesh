@@ -9,12 +9,7 @@ import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { isApiHost } from '../api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders } from '../partner-cors';
-import {
-  consumePerAddress,
-  PartnerRateLimited,
-  partnerRateLimitedHeaders,
-  RateLimitLedger,
-} from '../partner-rate-limits';
+import { PartnerRateLimited, partnerRateLimitedHeaders, RateLimitLedger } from '../partner-rate-limits';
 import {
   matchPublicApiPreflight,
   matchPublicApiRoute,
@@ -42,15 +37,22 @@ const API_PER_CONNECTION = 120;
 const API_PER_APP = 6000;
 /**
  * Token lookups that found nothing, per client address (per zone for a
- * Cloudflare Worker, `getPartnerLimitIdentity`, with every zone together held to
- * ten times this on the Worker address, like the OAuth routes). Charged, and
- * refused with 429, only after a lookup has failed: never before one. Many
- * partners share one address (carrier and cloud NAT, and every Worker that
- * sends no zone), so a check before the lookup would let one sender of junk
- * lock every neighbour's valid token out. The database work junk can cause is bounded by the `/v1` admission lanes
- * instead, which route on how many requests an address has in flight, never on
- * how many failed. One address refreshing every climber's hourly token at this
- * rate serves 36,000 climbers, the sizing of the token endpoint's refresh bound.
+ * Cloudflare Worker, `getPartnerLimitIdentity`). Charged, and refused with 429,
+ * only after a lookup has failed: never before one. Many partners share one
+ * address (carrier and cloud NAT, and every Worker that sends no zone), so a
+ * check before the lookup would let one sender of junk lock every neighbour's
+ * valid token out. The database work junk can cause is bounded by the `/v1`
+ * admission lanes instead, which route on how many requests an address has in
+ * flight, never on how many failed. One address refreshing every climber's
+ * hourly token at this rate serves 36,000 climbers, the sizing of the token
+ * endpoint's refresh bound.
+ *
+ * There is deliberately no ceiling across Worker zones, unlike the OAuth routes:
+ * this count is charged after the lookup, so it saves no database work, and a
+ * shared ceiling would only let one junk Worker turn every other Worker
+ * partner's expired-token 401s into 429s. A Worker that forges new zone names
+ * dodges its own 600; the lanes still hold every Worker zone together to its
+ * share of the database.
  */
 const INVALID_TOKENS_PER_IP = 600;
 
@@ -164,7 +166,7 @@ export function createPublicApiHandler({
       const result = await runtime.api.authenticate(bearer.token);
       if (!result.principal) {
         // Counts this failure and refuses with 429 once the address is past its limit.
-        await consumePerAddress(ledger, identity, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
+        await ledger.consume(identity.key, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
         return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, result.refusal);
       }
       const { principal } = result;
