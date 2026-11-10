@@ -271,6 +271,54 @@ describe('withPartnerSignInFailureReturn, flows scoped by backend-staging', () =
   });
 });
 
+describe('readSignInStartCallbackUrl, parsed as NextAuth parses it', () => {
+  const START_URL = 'https://www.boardsesh.com/api/auth/signin/google';
+  const post = (contentType: string, body: string, url = START_URL) =>
+    new NextRequest(url, { method: 'POST', headers: { 'Content-Type': contentType }, body });
+
+  it('gives up on a body that stalls, within the 2 s deadline', async () => {
+    // 30 bytes, then nothing: the stream never ends.
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('csrfToken=abc&callbackUrl=%2Fo'));
+      },
+    });
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: stalled,
+      duplex: 'half',
+    };
+    const started = Date.now();
+    expect(await readSignInStartCallbackUrl(new NextRequest(new Request(START_URL, init)))).toBeNull();
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(1900);
+    expect(elapsed).toBeLessThan(3000);
+  }, 4000);
+
+  it('takes the last of a repeated callbackUrl, as Object.fromEntries does', async () => {
+    const body = `callbackUrl=${encodeURIComponent('/gyms')}&callbackUrl=${encodeURIComponent(PARTNER_RETURN)}`;
+    expect(await readSignInStartCallbackUrl(post('application/x-www-form-urlencoded', body))).toBe(PARTNER_RETURN);
+  });
+
+  it('does not parse a form whose content type is upper-case, as NextAuth does not', async () => {
+    const body = `callbackUrl=${encodeURIComponent(PARTNER_RETURN)}`;
+    expect(await readSignInStartCallbackUrl(post('APPLICATION/X-WWW-FORM-URLENCODED', body))).toBeNull();
+  });
+
+  it('parses any content type that includes application/json as JSON, first', async () => {
+    const body = JSON.stringify({ callbackUrl: PARTNER_RETURN });
+    expect(await readSignInStartCallbackUrl(post('text/plain; x=application/json', body))).toBe(PARTNER_RETURN);
+  });
+
+  it('falls back to the query callbackUrl when the body has none, as NextAuth does', async () => {
+    const url = `${START_URL}?callbackUrl=${encodeURIComponent('/gyms')}&callbackUrl=${encodeURIComponent(PARTNER_RETURN)}`;
+    expect(await readSignInStartCallbackUrl(post('application/x-www-form-urlencoded', 'csrfToken=abc', url))).toBe(
+      PARTNER_RETURN,
+    );
+  });
+});
+
 describe('readSignInStartCallbackUrl', () => {
   it('reads a form or JSON start before NextAuth consumes the body, and leaves the body readable', async () => {
     const form = startRequest({}, PARTNER_RETURN);

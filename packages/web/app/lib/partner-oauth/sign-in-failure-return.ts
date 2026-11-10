@@ -146,43 +146,88 @@ function flowLeg(request: NextRequest): FlowLeg | null {
 
 /** Sign-in start bodies are a few hundred bytes; anything bigger is not one to read. */
 const MAX_START_BODY_BYTES = 16 * 1024;
+/** `boundedText` in web-oauth-request.server.ts: a body that stalls never holds the route. */
+const START_BODY_DEADLINE_MS = 2000;
 
-/**
- * The `callbackUrl` a sign-in start posted (form or JSON), read from a clone
- * before NextAuth consumes the body. Null for any other request, or a body that
- * is too big or unreadable.
- */
-export async function readSignInStartCallbackUrl(request: NextRequest): Promise<string | null> {
-  if (flowLeg(request) !== 'start' || !request.body) return null;
+const TIMED_OUT = Symbol('timed out');
+
+/** The body as text, or null when it is over the cap, stalls past the deadline or cannot be read. */
+async function boundedStartBody(request: NextRequest): Promise<string | null> {
   const declaredLength = Number(request.headers.get('Content-Length'));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_START_BODY_BYTES) return null;
-  const type = request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase();
-  if (type !== 'application/x-www-form-urlencoded' && type !== 'application/json') return null;
+  const reader = request.clone().body?.getReader();
+  if (!reader) return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), START_BODY_DEADLINE_MS);
+  });
+  // A tee branch's cancel settles only once NextAuth's branch ends too, so never wait on it.
+  const abandon = () => {
+    void reader.cancel().catch(() => {});
+    return null;
+  };
   try {
-    const reader = request.clone().body?.getReader();
-    if (!reader) return null;
     const chunks: Uint8Array[] = [];
     let bytes = 0;
     for (;;) {
-      const chunk = await reader.read();
+      const chunk = await Promise.race([reader.read(), deadline]);
+      if (chunk === TIMED_OUT) return abandon();
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
-      if (bytes > MAX_START_BODY_BYTES) {
-        // A tee branch's cancel settles only once NextAuth's branch ends too, so never wait on it.
-        void reader.cancel().catch(() => {});
-        return null;
-      }
+      if (bytes > MAX_START_BODY_BYTES) return abandon();
       chunks.push(chunk.value);
     }
-    const text = new TextDecoder().decode(Buffer.concat(chunks));
-    if (type === 'application/x-www-form-urlencoded') return new URLSearchParams(text).get('callbackUrl');
-    const parsed: unknown = JSON.parse(text);
-    if (typeof parsed !== 'object' || parsed === null) return null;
-    const { callbackUrl } = parsed as Record<string, unknown>;
-    return typeof callbackUrl === 'string' ? callbackUrl : null;
+    return new TextDecoder().decode(Buffer.concat(chunks));
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+/** `Object.fromEntries` keeps the last of a repeated name, and so does NextAuth. */
+function lastValue(search: URLSearchParams, name: string): string | undefined {
+  return search.getAll(name).at(-1);
+}
+
+/**
+ * The `callbackUrl` a sign-in start posted, read from a clone before NextAuth
+ * consumes the body, and parsed the way next-auth 4.24's App Router handler does
+ * so the two always agree: `getBody` (`next-auth/next/utils.js`) takes JSON when
+ * the content type `includes('application/json')`, else a form when it includes
+ * `application/x-www-form-urlencoded` (both case-sensitive, last duplicate wins),
+ * and `core/index.js` uses `body.callbackUrl ?? query.callbackUrl`. Null for any
+ * other request, or a body that is too big, stalls or does not parse.
+ */
+export async function readSignInStartCallbackUrl(request: NextRequest): Promise<string | null> {
+  if (flowLeg(request) !== 'start') return null;
+  const fromQuery = lastValue(request.nextUrl.searchParams, 'callbackUrl');
+  const contentType = request.headers.get('content-type');
+  const kind = contentType?.includes('application/json')
+    ? 'json'
+    : contentType?.includes('application/x-www-form-urlencoded')
+      ? 'form'
+      : null;
+
+  let fromBody: unknown;
+  if (request.body && kind) {
+    const text = await boundedStartBody(request);
+    if (text === null) return null;
+    if (kind === 'form') {
+      fromBody = lastValue(new URLSearchParams(text), 'callbackUrl');
+    } else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        // NextAuth's own `req.json()` throws here too: the start fails before any redirect.
+        return null;
+      }
+      if (typeof parsed === 'object' && parsed !== null) fromBody = (parsed as Record<string, unknown>).callbackUrl;
+    }
+  }
+  const callbackUrl = fromBody ?? fromQuery;
+  return typeof callbackUrl === 'string' && callbackUrl ? callbackUrl : null;
 }
 
 /** An error destination NextAuth names, or null. */
