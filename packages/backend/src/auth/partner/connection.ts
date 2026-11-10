@@ -3,6 +3,7 @@ import {
   oauthAccessToken,
   oauthConnections,
   oauthConsent,
+  oauthConsentInteractions,
   oauthGrants,
   oauthRefreshAncestors,
   oauthRefreshToken,
@@ -14,12 +15,62 @@ import type { PartnerDatabase } from './tables';
 
 export type PartnerDisconnectReason = 'climber_disconnect' | 'app_disconnect';
 
+type OAuthConnection = typeof oauthConnections.$inferSelect;
+
 /**
- * Ends one climber's connection to one app: the generation goes up, so nothing
- * issued under the old one can work again, and every token, remembered consent,
- * ancestor and pending code goes. Returns false when there was nothing to end.
- * Account-wide revocation does the same for every connection in the database
- * trigger (`partner_revoke_user`).
+ * Ends a connection the caller has already locked (`lockPartnerConnection`):
+ * the generation goes up, so nothing issued under the old one can work again,
+ * and every token, remembered consent, refresh ancestor, pending consent screen
+ * and pending code goes. Ancestry goes with the tokens: the family guard refuses
+ * a fenced grant without closing its family, so a leftover ancestor would make
+ * every replay of it take the climber's row lock. Account-wide revocation does
+ * the same for every connection in the database trigger (`partner_revoke_user`).
+ */
+export async function endPartnerConnection(
+  transaction: PartnerDatabase,
+  connection: OAuthConnection,
+  reason: PartnerDisconnectReason,
+): Promise<void> {
+  const { userId, clientId } = connection;
+  const revokedAt = new Date();
+  await transaction
+    .update(oauthConnections)
+    .set({ generation: connection.generation + 1, revokedAt, revocationReason: reason, updatedAt: revokedAt })
+    .where(eq(oauthConnections.id, connection.id));
+  await transaction
+    .delete(oauthAccessToken)
+    .where(and(eq(oauthAccessToken.userId, userId), eq(oauthAccessToken.clientId, clientId)));
+  await transaction
+    .delete(oauthRefreshToken)
+    .where(and(eq(oauthRefreshToken.userId, userId), eq(oauthRefreshToken.clientId, clientId)));
+  await transaction
+    .delete(oauthConsent)
+    .where(and(eq(oauthConsent.userId, userId), eq(oauthConsent.clientId, clientId)));
+  await transaction
+    .delete(oauthRefreshAncestors)
+    .where(and(eq(oauthRefreshAncestors.userId, userId), eq(oauthRefreshAncestors.clientId, clientId)));
+  await transaction
+    .delete(oauthConsentInteractions)
+    .where(and(eq(oauthConsentInteractions.userId, userId), eq(oauthConsentInteractions.clientId, clientId)));
+
+  const grants = await transaction
+    .select({ authorizationCodeId: oauthGrants.authorizationCodeId })
+    .from(oauthGrants)
+    .where(eq(oauthGrants.connectionId, connection.id));
+  if (grants.length > 0) {
+    await transaction.delete(oauthVerification).where(
+      inArray(
+        oauthVerification.identifier,
+        grants.map((grant) => grant.authorizationCodeId),
+      ),
+    );
+  }
+  await transaction.delete(oauthGrants).where(eq(oauthGrants.connectionId, connection.id));
+}
+
+/**
+ * Ends one climber's connection to one app. Returns false when there was
+ * nothing to end.
  */
 export async function disconnectPartnerConnection(
   database: PartnerDatabase,
@@ -28,38 +79,7 @@ export async function disconnectPartnerConnection(
   return runInPartnerTransaction(database, async (transaction) => {
     const connection = await lockPartnerConnection(transaction, userId, clientId);
     if (!connection || connection.revokedAt) return false;
-
-    const revokedAt = new Date();
-    await transaction
-      .update(oauthConnections)
-      .set({ generation: connection.generation + 1, revokedAt, revocationReason: reason, updatedAt: revokedAt })
-      .where(eq(oauthConnections.id, connection.id));
-    await transaction
-      .delete(oauthAccessToken)
-      .where(and(eq(oauthAccessToken.userId, userId), eq(oauthAccessToken.clientId, clientId)));
-    await transaction
-      .delete(oauthRefreshToken)
-      .where(and(eq(oauthRefreshToken.userId, userId), eq(oauthRefreshToken.clientId, clientId)));
-    await transaction
-      .delete(oauthConsent)
-      .where(and(eq(oauthConsent.userId, userId), eq(oauthConsent.clientId, clientId)));
-    await transaction
-      .delete(oauthRefreshAncestors)
-      .where(and(eq(oauthRefreshAncestors.userId, userId), eq(oauthRefreshAncestors.clientId, clientId)));
-
-    const grants = await transaction
-      .select({ authorizationCodeId: oauthGrants.authorizationCodeId })
-      .from(oauthGrants)
-      .where(eq(oauthGrants.connectionId, connection.id));
-    if (grants.length > 0) {
-      await transaction.delete(oauthVerification).where(
-        inArray(
-          oauthVerification.identifier,
-          grants.map((grant) => grant.authorizationCodeId),
-        ),
-      );
-    }
-    await transaction.delete(oauthGrants).where(eq(oauthGrants.connectionId, connection.id));
+    await endPartnerConnection(transaction, connection, reason);
     return true;
   });
 }

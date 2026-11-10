@@ -4,13 +4,18 @@
  * authorize requests made a refresh wait over 3 s. Work past the cap is refused
  * at once instead of waiting.
  */
-export type PartnerAdmissionLane = 'token' | 'authorize';
+export type PartnerAdmissionLane = 'token' | 'api' | 'authorize';
 
 export interface PartnerAdmissionLimits {
   /** At most this many requests run at once: the connections in the pool. */
   permits: number;
   /** Authorize is anonymous and browser-driven, so it may hold only this many. */
   authorizePermits: number;
+  /**
+   * `/v1` requests may hold only this many, so a busy app's polling always
+   * leaves a connection for its own refreshes.
+   */
+  apiPermits: number;
   queueLimitPerLane: number;
   queueDeadlineMs: number;
 }
@@ -30,32 +35,38 @@ interface AdmissionWaiter {
   deadline: ReturnType<typeof setTimeout>;
 }
 
+/** Token work first, so neither a `/v1` nor an authorize flood can delay a refresh. */
+const LANES_IN_PRIORITY_ORDER: readonly PartnerAdmissionLane[] = ['token', 'api', 'authorize'];
+
 export function createPartnerAdmissionGate(limits: PartnerAdmissionLimits): PartnerAdmissionGate {
   let running = 0;
-  let authorizeRunning = 0;
-  const queues: Record<PartnerAdmissionLane, AdmissionWaiter[]> = { token: [], authorize: [] };
+  const runningByLane: Record<PartnerAdmissionLane, number> = { token: 0, api: 0, authorize: 0 };
+  const laneCaps: Record<PartnerAdmissionLane, number> = {
+    token: limits.permits,
+    api: limits.apiPermits,
+    authorize: limits.authorizePermits,
+  };
+  const queues: Record<PartnerAdmissionLane, AdmissionWaiter[]> = { token: [], api: [], authorize: [] };
 
-  const canRun = (lane: PartnerAdmissionLane) =>
-    running < limits.permits && (lane !== 'authorize' || authorizeRunning < limits.authorizePermits);
+  const canRun = (lane: PartnerAdmissionLane) => running < limits.permits && runningByLane[lane] < laneCaps[lane];
 
   function startRunning(lane: PartnerAdmissionLane): PartnerAdmissionPermit {
     running += 1;
-    if (lane === 'authorize') authorizeRunning += 1;
+    runningByLane[lane] += 1;
     let released = false;
     return {
       release() {
         if (released) return;
         released = true;
         running -= 1;
-        if (lane === 'authorize') authorizeRunning -= 1;
+        runningByLane[lane] -= 1;
         admitNext();
       },
     };
   }
 
-  /** Token work first, so an authorize flood cannot delay a refresh. */
   function admitNext() {
-    for (const lane of ['token', 'authorize'] as const) {
+    for (const lane of LANES_IN_PRIORITY_ORDER) {
       while (queues[lane].length > 0 && canRun(lane)) {
         const waiter = queues[lane].shift() as AdmissionWaiter;
         clearTimeout(waiter.deadline);

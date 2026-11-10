@@ -9,9 +9,10 @@ export const API_HOSTNAME = 'api.boardsesh.com';
 
 /**
  * Everything else the API host answers, as exact method and path pairs. The
- * partner OAuth routes are served ahead of this list by `partner-auth.ts`, and
- * only when their mode is on. `ws.boardsesh.com` stays the only host serving
- * GraphQL, the upload routes and native auth.
+ * partner OAuth routes (`partner-auth.ts`) and the `/v1` API
+ * (`public-api/router.ts`) are served ahead of this list, and only when their
+ * mode is on. `ws.boardsesh.com` stays the only host serving GraphQL, the
+ * upload routes and native auth.
  */
 const API_HOST_ROUTES: ReadonlyArray<{ method: string; pathname: string }> = [{ method: 'GET', pathname: '/health' }];
 

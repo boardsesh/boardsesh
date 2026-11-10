@@ -147,6 +147,8 @@ export interface PartnerTestEnvironment {
       challengeMethod?: string;
       omitChallenge?: boolean;
       resource?: string;
+      /** Leave `resource` off the request entirely. */
+      omitResource?: boolean;
       climber?: TestClimber;
       prompt?: string;
     },
@@ -295,7 +297,7 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
         redirect_uri: client.redirectUri,
         scope: (options.scopes ?? ['profile:read', 'offline_access']).join(' '),
         state: randomUUID(),
-        resource: options.resource ?? TEST_RESOURCE,
+        ...(options.omitResource ? {} : { resource: options.resource ?? TEST_RESOURCE }),
         ...(options.prompt ? { prompt: options.prompt } : {}),
         ...(options.omitChallenge
           ? {}

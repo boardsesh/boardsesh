@@ -11,21 +11,18 @@ import {
 } from '../auth/partner/routes';
 import { getTrustedClientIp } from '../utils/client-ip';
 import { logger } from '../utils/logger';
-import { RateLimitError } from '../utils/rate-limiter';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
-import {
-  consumeRateLimitRedis,
-  countRateLimitRedis,
-  peekRateLimitRedis,
-  type RateLimitUsage,
-} from '../utils/redis-rate-limiter';
 import { isApiHost } from './api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders, type PartnerCorsPolicy } from './partner-cors';
+import {
+  chargePartnerLimit,
+  PartnerRateLimited,
+  partnerRateLimitedHeaders,
+  RateLimitLedger,
+} from './partner-rate-limits';
 
 type PartnerRuntime = NonNullable<Awaited<ReturnType<typeof loadPartnerAuthority>>>;
 type PartnerRuntimeLoader = (mode: PartnerOAuthMode) => Promise<PartnerRuntime | null>;
-
-const MINUTE_MS = 60_000;
 
 const HOLD_RETRY_AFTER_SECONDS = '60';
 const UNAVAILABLE_RETRY_AFTER_SECONDS = '2';
@@ -61,15 +58,6 @@ const FORWARDED_REQUEST_HEADERS = [
 const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize', 'consent']);
 const NEXTAUTH_SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/;
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-
-class PartnerRateLimited extends Error {
-  constructor(
-    readonly limit: number,
-    readonly retryAfterSeconds: number,
-  ) {
-    super('Partner OAuth rate limit reached');
-  }
-}
 
 class PartnerBodyRefused extends Error {
   constructor(readonly status: 408 | 413 | 503) {
@@ -184,13 +172,13 @@ function unavailableResponse(): Response {
   });
 }
 
-function rateLimitedResponse({ limit, retryAfterSeconds }: PartnerRateLimited): Response {
-  return jsonError(429, 'rate_limited', 'Too many requests. Slow down and try again.', {
-    'retry-after': String(retryAfterSeconds),
-    'ratelimit-limit': String(limit),
-    'ratelimit-remaining': '0',
-    'ratelimit-reset': String(retryAfterSeconds),
-  });
+function rateLimitedResponse(limited: PartnerRateLimited): Response {
+  return jsonError(
+    429,
+    'rate_limited',
+    'Too many requests. Slow down and try again.',
+    partnerRateLimitedHeaders(limited),
+  );
 }
 
 function bodyRefusedResponse({ status }: PartnerBodyRefused): Response {
@@ -237,42 +225,6 @@ function errorPageResponse(requestTarget: string | undefined): Response {
 function corsPolicyFor(kind: PartnerRouteKind): PartnerCorsPolicy | null {
   if (kind === 'consent') return 'first-party';
   return kind === 'token' || kind === 'revoke' ? 'credential-free' : null;
-}
-
-/** Limits that run before the database is touched. The lowest `remaining` is the one a client publishes. */
-class RateLimitLedger {
-  private readonly usages: RateLimitUsage[] = [];
-
-  consume(identity: string, operation: string, maxRequests: number): Promise<void> {
-    return this.record(consumeRateLimitRedis(identity, operation, maxRequests, MINUTE_MS), maxRequests);
-  }
-
-  /** Refuses when the window is full, without counting this request. */
-  check(identity: string, operation: string, maxRequests: number): Promise<void> {
-    return this.record(peekRateLimitRedis(identity, operation, maxRequests, MINUTE_MS), maxRequests);
-  }
-
-  private async record(pendingUsage: Promise<RateLimitUsage>, maxRequests: number): Promise<void> {
-    try {
-      this.usages.push(await pendingUsage);
-    } catch (error) {
-      if (error instanceof RateLimitError) throw new PartnerRateLimited(maxRequests, error.retryAfterSeconds);
-      throw error;
-    }
-  }
-
-  headers(): Record<string, string> {
-    const tightest = this.usages.reduce<RateLimitUsage | undefined>(
-      (lowest, usage) => (!lowest || usage.remaining < lowest.remaining ? usage : lowest),
-      undefined,
-    );
-    if (!tightest) return {};
-    return {
-      'ratelimit-limit': String(tightest.limit),
-      'ratelimit-remaining': String(tightest.remaining),
-      'ratelimit-reset': String(tightest.resetSeconds),
-    };
-  }
 }
 
 /** Bounds how many bodies are being buffered, overall and for one address. */
@@ -433,7 +385,7 @@ export function createPartnerAuthHandler({
     clientId: string | undefined,
     response: Response,
   ): Promise<void> {
-    if (kind === 'token' && clientId && response.ok) await countRateLimitRedis(clientId, 'oauth-client', MINUTE_MS);
+    if (kind === 'token' && clientId && response.ok) await chargePartnerLimit(clientId, 'oauth-client');
   }
 
   async function serveBodyRoute(
@@ -482,7 +434,7 @@ export function createPartnerAuthHandler({
       // permit is released: at most PARTNER_POOL_MAX requests are ever between
       // this check and their charge on one instance.
       if (connectionBucket && clientId === tokenClientId && (await reachedAfterClientAuthentication(response))) {
-        await countRateLimitRedis(connectionBucket, 'oauth-refresh', MINUTE_MS);
+        await chargePartnerLimit(connectionBucket, 'oauth-refresh');
       }
     } finally {
       permit.release();

@@ -265,6 +265,9 @@ importers:
       '@boardsesh/privacy':
         specifier: workspace:*
         version: link:../shared/privacy
+      '@boardsesh/public-api':
+        specifier: workspace:*
+        version: link:../shared/public-api
       '@boardsesh/queue':
         specifier: workspace:*
         version: link:../shared/queue

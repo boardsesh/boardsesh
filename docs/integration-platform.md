@@ -237,7 +237,9 @@ path.
 `GET /v1/me` returns `usr_` plus a random id minted the first time a climber
 connects that app (`oauth_subjects`), stable across reconnects. It is not
 `users.id`. Two apps cannot join their data on it, and the public contract
-does not leak an internal key.
+does not leak an internal key. Today the row is minted on the app's first
+`GET /v1/me` (22 base-62 characters, 130 random bits); Disconnect never
+deletes it, so a reconnect reads the same id.
 
 ### D9. A stable public hostname: `api.boardsesh.com`
 
@@ -425,9 +427,11 @@ native/watch aliases are owned by the migration doc, not this API contract.
 ### Routes and the mode switch
 
 `PARTNER_OAUTH_MODE` is read once at boot, from the environment. No request can
-choose it. `handlers/partner-auth.ts` is the only production module outside
-`auth/partner/` that may reach into that folder, and with the mode `off` it
-answers nothing.
+choose it. `handlers/partner-auth.ts` (the OAuth routes) and
+`handlers/public-api/router.ts` (the `/v1` API) are the only production modules
+outside `auth/partner/` that may reach into that folder, and with the mode `off`
+both answer nothing. `scripts/__tests__/better-auth-boundary.test.ts` holds that
+list and what each may import.
 
 | Mode | What the API host does |
 | --- | --- |
@@ -445,13 +449,21 @@ against what the client sent, so a trailing slash, a doubled slash, different ca
 a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
 stock routes inside Better Auth, except the two with path parameters.
 
+The `/v1` API adds `GET /v1/me` and `DELETE /v1/connection`, matched the same way,
+plus their CORS preflights. Under `hold` they answer `503` with `Retry-After: 60` in
+the API error shape. `GET /v1/openapi.json` and the logbook routes are not served
+yet: the generated document already describes `/v1/logbook/*` and `logbook:read`,
+and publishing it before those routes exist would advertise what is not there
+(launch gate 10). Both arrive with the logbook routes (L4).
+
 Availability is protected before any transaction opens:
 
 - A body is buffered first, up to 64 KB and for at most 5 seconds. Over the size
   is `413`, over the time is `408`, with the connection closed either way.
-- At most 3 requests run at once, one for an authorize, with token work first. 16
-  more wait per kind, for at most 1 second. Anything else gets `503` and
-  `Retry-After` at once.
+- At most 3 requests run at once, one for an authorize and two for `/v1`, with token
+  work first, then `/v1`, then authorize. 16 more wait per kind, for at most 1
+  second. Anything else gets `503` and `Retry-After` at once. `/v1` never holds the
+  third permit, so an app's polling always leaves one for its refreshes.
 - Discovery and a signed-out authorize take no transaction.
 - Rate limits use the table under Operations and run first. Per-connection refresh
   and the app limits never reach a lock. The first replay of a spent code closes
@@ -479,6 +491,18 @@ Availability is protected before any transaction opens:
   Cloudflare edge, otherwise the last `X-Forwarded-For` hop. An IPv6 client counts
   as its /64, and an IPv4-mapped address as that IPv4 address.
 - A Redis command that takes over 100 ms falls back to the per-instance memory limit.
+
+For `/v1`, in this order:
+
+1. No `Authorization: Bearer` header is a `401` at once, with no lookup.
+2. The address's count of failed token lookups is checked: 600 a minute, the same
+   sizing as the token endpoint's per-address refresh bound. It is charged only
+   when a lookup finds no usable token, so an app's server polling many climbers
+   from one address is never held by it.
+3. A `/v1` admission permit, then the token lookup on the primary.
+4. Only then are the connection (120 a minute, `api-connection`) and the app (6,000
+   a minute, `api-app`) charged. A caller without a valid token for them cannot
+   spend either.
 
 ### Browser access
 
@@ -542,22 +566,33 @@ invoke the same authority-owned operation. Cleanup jobs use pg-boss.
 
 ### Bearer auth for `/v1/*`
 
-`authenticateApiBearer` uses the provider's supported opaque-token
-introspection/verification integration. It verifies activity, resource
-audience, client, user, scopes and the current connection generation, then
-checks suspension and revocation without a positive-result cache. The sole
-partner API resource identifier is `https://api.boardsesh.com/v1` (no trailing
-slash); it is distinct from the issuer. Register that resource and link every
-self-service client to it through supported provider APIs. Clients send it as
-`resource` at authorization, code exchange and refresh. A missing or different
-resource must never produce a usable API token: test request rejection or,
-if the provider issues an unbound token, `401 invalid_token` at `/v1/*`.
-Registration links alone are not assumed to supply a request default. The
-resource server must be authorized to inspect tokens minted for public and
-confidential clients; the spike proves that setup rather than using a guessed
-internal lookup. It returns `{ clientId, connectionId, connectionGeneration, userId, subject, scopes }`.
-Each route checks its required scope. Invalid tokens yield `401` and
-`WWW-Authenticate: Bearer error="invalid_token"`; missing scopes yield `403`.
+The bearer check verifies activity, resource audience, client, user, scopes and
+the current connection generation, then checks suspension and revocation without
+a positive-result cache. The sole partner API resource identifier is
+`https://api.boardsesh.com/v1` (no trailing slash); it is distinct from the
+issuer. Register that resource and link every self-service client to it through
+supported provider APIs. Clients send it as `resource` at authorization, code
+exchange and refresh. A missing or different resource must never produce a usable
+API token: the pinned provider issues a token with no audience when `resource` is
+omitted, so `/v1/*` answers it `401 invalid_token`. Registration links alone are
+not assumed to supply a request default.
+
+How it is built (`auth/partner/bearer.ts`): the presented token is hashed with the
+provider's own `hashToken`, then one read on the primary, with no lock, joins the
+access token to its `oauth_grants` row, the connection and the client. It refuses
+everything the provider's introspection refuses (unknown, expired, revoked, a
+disabled client, an ended session) and, on top, a token without this audience, a
+sender-constrained (DPoP) token, a revoked connection, a grant from an older
+generation, and a token whose grant row is gone. The route tests run each refusal
+against stock introspection as well, so the provider's verdict is the floor this
+check is held to, and the checks only Boardsesh adds are named. It works the same
+for public and confidential clients, because it never authenticates as one. It
+returns `{ clientId, userId, connectionId, connectionGeneration, scopes }`; `/v1/me`
+mints or reads the `usr_` subject itself. A write (`DELETE /v1/connection`) checks
+the token again under the connection lock. Each route checks its required scope.
+Invalid tokens yield `401` and `WWW-Authenticate: Bearer error="invalid_token"`
+(a request with no token gets the bare `Bearer` challenge); missing scopes yield
+`403`.
 
 ### Revocation
 
@@ -582,6 +617,19 @@ complete disconnect. Transport failures, `429` and `5xx` are retryable, not
 proof of disconnection. The caller never supplies an arbitrary user or client
 ID. Pending protocol/cleanup work must not be hidden behind a success response
 if a credential could still regain access.
+
+`DELETE /v1/connection` today: one transaction takes the climber's `users` row
+`FOR SHARE`, then the connection `FOR UPDATE`, the order every partner writer
+uses, and checks the token again under those locks. It then raises the generation,
+sets `revoked_at` and deletes every access and refresh token, remembered consent,
+refresh ancestor, pending consent screen, grant and pending code of that
+connection. Ancestry goes with the tokens because the family guard refuses a
+fenced grant without closing its family, so a leftover ancestor would make every
+replay of it take the climber's row lock. A connection that ended between the
+token check and the lock answers `204`; a token that stopped being valid in that
+gap (revoked, or from before a reconnect) answers `401` and ends nothing, so an old
+token can never end a connection the climber has made again. A lock that does not
+come within 2 s answers `503` with `Retry-After: 2`.
 
 ### Test suite required before launch
 
@@ -1278,8 +1326,9 @@ What LEGAL.md implies:
 | Token endpoint, refresh | 10 requests/min per connection | `oauth-refresh:<clientId>:<connectionId>` once validated, plus an IP bound before validation; prove supported middleware/body handling in D2 |
 | Token endpoint, code exchange and revoke | 60 requests/min per (app, client IP) | `oauth-client:<clientId>:<ip>`, IP from `getPublicClientIp` |
 | Token endpoint, whole app | 6,000 requests/min | `oauth-client:<clientId>` |
-| API, per connection | 120 requests/min per (app, climber) | `api:<clientId>:<userId>` |
-| API, per app | 6,000 requests/min across all its climbers | `api:<clientId>` |
+| API, per connection | 120 requests/min per (app, climber) | `<clientId>:<userId>` under `api-connection`, charged once the token has passed |
+| API, per app | 6,000 requests/min across all its climbers | `<clientId>` under `api-app`, charged once the token has passed |
+| API, failed token lookups | 600/min per client IP | `<ip>` under `api-invalid-token-ip`; checked before the lookup, charged only when it fails |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |
