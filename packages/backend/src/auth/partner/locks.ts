@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, or } from 'drizzle-orm';
 import { oauthClient, oauthConnections, oauthConsentInteractions, oauthGrants, users } from '@boardsesh/db/schema/auth';
 import type { FamilyOwner } from './family-guard';
 import type { PartnerDatabase } from './tables';
+import { getPostgresErrorCode } from '../../utils/postgres-errors';
 
 type OAuthConnection = typeof oauthConnections.$inferSelect;
 
@@ -120,14 +121,29 @@ export async function lockAppForDeletion(transaction: PartnerDatabase, clientId:
  * The same locks for every app an account registered, in client id order, for
  * account deletion: the `users` delete cascades into each app exactly as an
  * app delete does. Call it with the account's own `users` row already locked
- * FOR UPDATE (account deletion's first lock), and before the delete. A held
- * consent screen opened mid-deletion surfaces as 55P03, which the caller retries.
+ * FOR UPDATE (account deletion's first lock), and before the delete.
+ *
+ * A lock it cannot take (the NOWAIT pass over a consent screen a climber's
+ * answer holds) is thrown as `PARTNER_APP_LOCK_BUSY`, a code of its own, so the
+ * caller can retry exactly this refusal without retrying every 55P03 its own
+ * lock timeouts raise.
  */
+export const PARTNER_APP_LOCK_BUSY = 'partner_app_lock_busy';
+
 export async function lockOwnedAppsForDeletion(database: PartnerDatabase, ownerUserId: string): Promise<void> {
   const apps = await database
     .select({ clientId: oauthClient.clientId })
     .from(oauthClient)
     .where(eq(oauthClient.userId, ownerUserId))
     .orderBy(asc(oauthClient.clientId));
-  for (const { clientId } of apps) await lockAppForDeletion(database, clientId);
+  for (const { clientId } of apps) {
+    try {
+      await lockAppForDeletion(database, clientId);
+    } catch (error) {
+      if (getPostgresErrorCode(error) !== '55P03') throw error;
+      throw Object.assign(new Error("A consent answer holds one of the account's partner apps.", { cause: error }), {
+        code: PARTNER_APP_LOCK_BUSY,
+      });
+    }
+  }
 }

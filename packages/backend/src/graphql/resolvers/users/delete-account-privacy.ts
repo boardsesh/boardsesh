@@ -6,31 +6,31 @@ import { getPostgresErrorCode } from '../../../utils/postgres-errors';
 
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-/** A lock that could not be taken right away (NOWAIT). Rolled back like a deadlock. */
-const LOCK_NOT_AVAILABLE = '55P03';
-const LOCK_NOT_AVAILABLE_BACKOFF_MS = 50;
+const BUSY_BACKOFF_MS = 50;
 
 /**
- * Only a rolled-back deadlock or refused lock is safe to retry; media effects
- * run after commit. 55P03 comes from the partner app locks (`lockOwnedAppsForDeletion`),
- * which refuse to wait on a consent screen a climber's answer holds; that answer
- * finishes in milliseconds, so the retry waits a moment first.
+ * Only a rolled-back deadlock is safe to retry; media effects run after commit.
+ * `alsoRetry` names one more error code the caller knows is a rolled-back,
+ * momentary refusal (the partner app locks' busy code); it waits a moment
+ * before each retry, because what refused it finishes in milliseconds.
  */
-export async function retryAccountDeletion<Result>(transaction: () => Promise<Result>): Promise<Result> {
+export async function retryAccountDeletion<Result>(
+  transaction: () => Promise<Result>,
+  { alsoRetry }: { alsoRetry?: string } = {},
+): Promise<Result> {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await transaction();
     } catch (error) {
       const code = getPostgresErrorCode(error);
-      if (code !== '40P01' && code !== LOCK_NOT_AVAILABLE) throw error;
+      const busy = alsoRetry !== undefined && code === alsoRetry;
+      if (code !== '40P01' && !busy) throw error;
       if (attempt >= 2) {
         throw new GraphQLError('Your account is busy. Please try deleting it again.', {
           extensions: { code: 'ACCOUNT_DELETE_RETRY_REQUIRED' },
         });
       }
-      if (code === LOCK_NOT_AVAILABLE) {
-        await new Promise((resolve) => setTimeout(resolve, LOCK_NOT_AVAILABLE_BACKOFF_MS * (attempt + 1)));
-      }
+      if (busy) await new Promise((resolve) => setTimeout(resolve, BUSY_BACKOFF_MS * (attempt + 1)));
     }
   }
 }
