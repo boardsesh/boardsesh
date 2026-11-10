@@ -78,6 +78,8 @@ const PROPS: FilterChipRowProps = {
   accuracyValue: 'off',
   onChangeAccuracy: noop,
   climbType: 'boulders',
+  benchmarksActive: false,
+  onToggleBenchmarks: noop,
   onChangeClimbType: noop,
   betaActive: false,
   onToggleBeta: noop,
@@ -105,6 +107,7 @@ describe('FilterChipRow', () => {
     expect(capsules.map(({ key }) => key)).toEqual([
       'filters',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'popularity',
@@ -119,6 +122,7 @@ describe('FilterChipRow', () => {
       'angle',
       'filters',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'popularity',
@@ -162,6 +166,7 @@ describe('FilterChipRow without the Angle chip', () => {
     expect(capsules?.map(({ key }) => key)).toEqual([
       'filters',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'popularity',

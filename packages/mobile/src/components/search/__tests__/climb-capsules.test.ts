@@ -55,6 +55,8 @@ function makeProps(overrides: Partial<FilterChipRowProps> = {}): FilterChipRowPr
     onChangeClimbType: vi.fn(),
     betaActive: false,
     onToggleBeta: vi.fn(),
+    benchmarksActive: false,
+    onToggleBenchmarks: vi.fn(),
     ...overrides,
   };
 }
@@ -101,6 +103,7 @@ describe('buildClimbCapsules: the resting row', () => {
     expect(summarize(buildClimbCapsules(makeProps(), mockT, null))).toEqual([
       ['sheet', 'filters', 'mobile.filter.title', false],
       ['rail', 'grade', 'Grade', false],
+      ['toggle', 'benchmarks', 'mobile.filter.benchmark', false],
       ['menu', 'progress', 'mobile.filter.progress.label', false],
       ['menu', 'collection', 'mobile.filter.collection.label', false],
       ['menu', 'popularity', 'mobile.filter.popularity', false],
@@ -110,7 +113,7 @@ describe('buildClimbCapsules: the resting row', () => {
 
   it('hides Your progress when signed out, keeping the pin', () => {
     const keys = buildClimbCapsules(makeProps({ canFilterProgress: false }), mockT, null).map(({ key }) => key);
-    expect(keys).toEqual(['filters', 'grade', 'collection', 'popularity', 'rating']);
+    expect(keys).toEqual(['filters', 'grade', 'benchmarks', 'collection', 'popularity', 'rating']);
   });
 
   it('drops an unpinned chip and keeps the fixed chrome', () => {
@@ -152,7 +155,8 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     minAscents: 10,
     minRating: 3,
     progress: 'unsent',
-    collection: 'benchmarks',
+    collection: 'liked',
+    benchmarksActive: true,
     sortBy: 'quality',
     sortActive: true,
     accuracyValue: '0.1',
@@ -167,7 +171,8 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
       ['rail', 'grade', 'V4–V6', true],
       ['menu', 'accuracy', 'mobile.filter.accuracy.moderate', true],
       ['menu', 'progress', 'mobile.filter.progress.unsent', true],
-      ['menu', 'collection', 'mobile.filter.benchmark', true],
+      ['menu', 'collection', 'mobile.filter.collection.liked', true],
+      ['toggle', 'benchmarks', 'mobile.filter.benchmark', true],
       ['menu', 'climbType', 'mobile.filter.climbType.routes', true],
       ['toggleMenu', 'tall', 'mobile.search.chips.tall', true],
       ['toggleMenu', 'wide', 'mobile.search.chips.wide', true],
@@ -183,7 +188,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     const selected = (key: string) => capsuleByKey(capsules, key, 'menu').selected;
     expect(selected('accuracy')).toBe('0.1');
     expect(selected('progress')).toBe('unsent');
-    expect(selected('collection')).toBe('benchmarks');
+    expect(selected('collection')).toBe('liked');
     expect(selected('climbType')).toBe('routes');
     expect(selected('popularity')).toBe('10');
     expect(selected('rating')).toBe('3');
@@ -195,7 +200,7 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     const values = (key: string) => capsuleByKey(capsules, key, 'menu').options.map(({ value }) => value);
     expect(values('accuracy')).toEqual(['off', '0.2', '0.1', '0.05']);
     expect(values('progress')).toEqual(['all', 'unsent', 'untried', 'projects', 'sent']);
-    expect(values('collection')).toEqual(['any', 'benchmarks', 'drafts', 'liked']);
+    expect(values('collection')).toEqual(['any', 'drafts', 'liked']);
     expect(values('climbType')).toEqual(['boulders', 'routes', 'both']);
     expect(values('popularity')).toEqual(['any', '2', '10', '100', '1000']);
     expect(values('rating')).toEqual(['any', '1', '2', '3', '4', '5']);
@@ -217,12 +222,9 @@ describe('buildClimbCapsules: every chip pinned and set', () => {
     expect(labels('rating')[0]).toBe('mobile.filter.anyRating');
   });
 
-  it('drops personal collections when signed out and Benchmarks on a spray wall', () => {
+  it('drops personal collections when signed out', () => {
     const signedOut = buildClimbCapsules(makeProps({ canFilterPersonalCollections: false }), mockT, null);
-    expect(capsuleByKey(signedOut, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
-      'any',
-      'benchmarks',
-    ]);
+    expect(capsuleByKey(signedOut, 'collection', 'menu').options.map(({ value }) => value)).toEqual(['any']);
     const spray = buildClimbCapsules(makeProps({ isSprayWall: true }), mockT, null);
     expect(capsuleByKey(spray, 'collection', 'menu').options.map(({ value }) => value)).toEqual([
       'any',
@@ -318,6 +320,7 @@ describe('buildClimbCapsules: Recent', () => {
       'filters',
       'recent',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'popularity',
@@ -326,7 +329,7 @@ describe('buildClimbCapsules: Recent', () => {
   });
 
   it('is hidden while unpinned, saved searches or not, and every other chip stays put', () => {
-    const otherChips = ['filters', 'grade', 'progress', 'collection', 'popularity', 'rating'];
+    const otherChips = ['filters', 'grade', 'benchmarks', 'progress', 'collection', 'popularity', 'rating'];
     expect(keysOf({ pinnedChips: withoutRecent, recentFilters: recents })).toEqual(otherChips);
     expect(keysOf({ pinnedChips: withoutRecent, recentFilters: [] })).toEqual(otherChips);
     // Pinned with nothing saved: the row is the same as unpinned.
@@ -437,7 +440,7 @@ describe('buildClimbCapsules: Tall / Wide', () => {
       mockT,
       null,
     ).map(({ key }) => key);
-    expect(keys).toEqual(['filters', 'grade', 'progress', 'collection', 'tall', 'popularity', 'rating']);
+    expect(keys).toEqual(['filters', 'grade', 'benchmarks', 'progress', 'collection', 'tall', 'popularity', 'rating']);
   });
 
   it('taps to toggle and offers Lock on an unlocked chip', () => {
@@ -624,5 +627,26 @@ describe('buildClimbCapsules: list seams', () => {
       null,
     );
     expect(capsules.some((capsule) => capsule.key === 'recent')).toBe(false);
+  });
+});
+
+describe('the benchmarks chip (#2493)', () => {
+  const benchmarksChip = (overrides: Partial<FilterChipRowProps>) =>
+    buildClimbCapsules(makeProps({ pinnedChips: ['benchmarks'], ...overrides }), mockT, null).find(
+      (capsule) => capsule.key === 'benchmarks',
+    );
+
+  it('is a plain toggle named Verified on Kilter and Benchmarks elsewhere', () => {
+    const onToggleBenchmarks = vi.fn();
+    const kilter = benchmarksChip({ boardName: 'kilter', onToggleBenchmarks });
+    expect(kilter).toMatchObject({ kind: 'toggle', label: 'mobile.filter.verified', active: false });
+    if (kilter?.kind === 'toggle') kilter.onPress();
+    expect(onToggleBenchmarks).toHaveBeenCalledTimes(1);
+    expect(benchmarksChip({ boardName: 'tension' })).toMatchObject({ label: 'mobile.filter.benchmark' });
+  });
+
+  it('hides on a spray wall unless it is already on', () => {
+    expect(benchmarksChip({ isSprayWall: true })).toBeUndefined();
+    expect(benchmarksChip({ isSprayWall: true, benchmarksActive: true })).toMatchObject({ active: true });
   });
 });

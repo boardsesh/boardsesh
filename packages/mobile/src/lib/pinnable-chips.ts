@@ -26,6 +26,7 @@ export const PINNABLE_CHIP_KINDS = [
   'accuracy',
   'progress',
   'collection',
+  'benchmarks',
   'climbType',
   'tall',
   'wide',
@@ -60,6 +61,8 @@ export const PINNABLE_CHIP_CATALOG: readonly PinnableChipKind[] = PINNABLE_CHIP_
 export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
   'recent',
   'grade',
+  // Benchmarks only (Verified only on Kilter), right after Grade (#2493).
+  'benchmarks',
   'progress',
   'collection',
   'tall',
@@ -114,8 +117,15 @@ export function normalizePinnedChips(kinds: readonly unknown[]): PinnableChipKin
 export const RECENT_UNPINNED_MARKER = '!recent';
 
 /**
- * Loads a stored pin payload. Same as {@link normalizePinnedChips}, plus one
- * migration: a list saved before Recent was pinnable (it holds neither 'recent'
+ * Saved when the Benchmarks chip is not pinned, for the same reason as
+ * {@link RECENT_UNPINNED_MARKER}: a list saved before the chip existed must stay
+ * apart from one where the climber unpinned it.
+ */
+export const BENCHMARKS_UNPINNED_MARKER = '!benchmarks';
+
+/**
+ * Loads a stored pin payload. Same as {@link normalizePinnedChips}, plus two
+ * migrations (Recent below, and Benchmarks, see the comment in the body): a list saved before Recent was pinnable (it holds neither 'recent'
  * nor {@link RECENT_UNPINNED_MARKER}) gains 'recent' first, where the chip has
  * always drawn, so nobody loses it by updating. Nothing valid left returns `[]`,
  * so the store still falls back to the full defaults instead of a row of Recent
@@ -126,7 +136,15 @@ export function fromStoredPinnedChips(stored: readonly unknown[]): PinnableChipK
   const pins = normalizePinnedChips(stored);
   if (pins.length === 0) return pins;
   const savedBeforeRecentPin = !stored.includes('recent') && !stored.includes(RECENT_UNPINNED_MARKER);
-  return savedBeforeRecentPin ? ['recent', ...pins] : pins;
+  const withRecent: PinnableChipKind[] = savedBeforeRecentPin ? ['recent', ...pins] : pins;
+  // Benchmarks became its own chip, pinned by default right after Grade (#2493).
+  // A list saved before that gains it there too, or first after Recent when
+  // Grade is not pinned, so every climber starts with it.
+  const savedBeforeBenchmarksPin = !stored.includes('benchmarks') && !stored.includes(BENCHMARKS_UNPINNED_MARKER);
+  if (!savedBeforeBenchmarksPin) return withRecent;
+  const anchor = withRecent.includes('grade') ? 'grade' : withRecent.includes('recent') ? 'recent' : null;
+  if (anchor === null) return ['benchmarks', ...withRecent];
+  return withRecent.flatMap((kind): PinnableChipKind[] => (kind === anchor ? [kind, 'benchmarks'] : [kind]));
 }
 
 /**
@@ -152,6 +170,7 @@ export function toStoredPinnedChips(kinds: readonly PinnableChipKind[]): string[
       ? kinds.flatMap((kind) => (kind === 'wide' ? [kind, LEGACY_SHAPE_KIND] : [kind]))
       : [...kinds];
   if (!kinds.includes('recent')) stored.push(RECENT_UNPINNED_MARKER);
+  if (!kinds.includes('benchmarks')) stored.push(BENCHMARKS_UNPINNED_MARKER);
   return stored;
 }
 
@@ -184,12 +203,14 @@ export function chipKindToTokenKeys(kind: FilterChipKind): readonly string[] {
     case 'progress':
       return ['progress'];
     case 'collection':
-      // The onlyBenchmarks and Liked tokens. The Collection chip also owns My
-      // drafts (status='drafts'), whose token key `status` is shared with the
+      // The Liked token. The Collection chip also owns My drafts
+      // (status='drafts'), whose token key `status` is shared with the
       // Popularity group's "Unrepeated" (status='projects'), so it's left
       // unclaimed here — a drafts token can still show alongside a pinned
       // Collection chip (rare).
-      return ['benchmark', 'liked'];
+      return ['liked'];
+    case 'benchmarks':
+      return ['benchmark'];
     case 'tall':
       return ['tall'];
     case 'wide':

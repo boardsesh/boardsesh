@@ -87,6 +87,7 @@ export type ClimbFilterSessionAction<K extends string> =
   | { type: 'popularity'; bucket: number | undefined }
   | { type: 'collection'; value: CollectionFilter }
   | { type: 'toggleBeta' }
+  | { type: 'toggleBenchmarks' }
   | { type: 'setName'; name: string }
   | { type: 'setSort'; sort: SessionSort<K> }
   /**
@@ -220,9 +221,13 @@ export function climbFilterSessionReducer<K extends string>(
       return {
         ...state,
         filters: withInertSort({ ...state.filters, ...patch.filters }, state.defaultFilters),
-        boardFilters: { ...state.boardFilters, ...patch.boardFilters },
       };
     }
+    case 'toggleBenchmarks':
+      return {
+        ...state,
+        boardFilters: { ...state.boardFilters, onlyBenchmarks: state.boardFilters.onlyBenchmarks ? undefined : true },
+      };
     case 'toggleBeta':
       return {
         ...state,

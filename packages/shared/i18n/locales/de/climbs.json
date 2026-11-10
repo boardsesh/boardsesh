@@ -511,6 +511,8 @@
       "benchmark": "Benchmarks",
       "verified": "Verifiziert",
       "verifiedDescription": "Verifizierte Boulder werden von Kilter mit Kletterer*innen und Routenbauer*innen ausgewählt.",
+      "onlyBenchmarks": "Nur Benchmark-Boulder",
+      "onlyVerified": "Nur verifizierte Boulder",
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
       "close": "Filter schließen",

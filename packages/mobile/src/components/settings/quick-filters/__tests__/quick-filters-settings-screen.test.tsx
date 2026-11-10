@@ -85,6 +85,8 @@ vi.mock('../../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../../lib/analytics', () => ({ track: analytics.track }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+// The Benchmarks row is named for the active board; none here, so it reads Benchmarks.
+vi.mock('../../../../lib/graphql/use-active-board', () => ({ useActiveBoard: () => ({ data: null }) }));
 vi.mock('../../../../lib/announce-queued', () => ({ announceQueued: announce.announceQueued }));
 
 import { QuickFiltersSettingsScreen } from '../QuickFiltersSettingsScreen';
@@ -164,6 +166,7 @@ describe('QuickFiltersSettingsScreen', () => {
       'playlists.accuracy',
       'playlists.progress',
       'playlists.climbType',
+      'playlists.benchmarks',
       'playlists.popularity',
       'playlists.rating',
       'playlists.boardFit',
@@ -185,6 +188,7 @@ describe('QuickFiltersSettingsScreen', () => {
     expect(await climbPinnedChipsStore.load()).toEqual([
       'recent',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'tall',
@@ -195,6 +199,7 @@ describe('QuickFiltersSettingsScreen', () => {
     expect(stored(STORAGE_KEY)).toEqual([
       'recent',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'tall',
@@ -204,7 +209,7 @@ describe('QuickFiltersSettingsScreen', () => {
       'popularity',
     ]);
     expect(announce.announceQueued).toHaveBeenCalledWith(
-      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: 'mobile.filter.minRating', position: 7, count: 8 })}`,
+      `mobile.settings.sectionLayout.moved ${JSON.stringify({ section: 'mobile.filter.minRating', position: 8, count: 9 })}`,
     );
   });
 

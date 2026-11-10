@@ -1853,11 +1853,9 @@ function ClimbListInner() {
   // (onlyFavorited), mutually exclusive: picking one clears the other two.
   const handleChangeCollection = useCallback(
     (value: CollectionFilter) => {
-      const patch = collectionPatch(value, filters);
-      patchBoardFilters(patch.boardFilters);
-      patchFilters(patch.filters);
+      patchFilters(collectionPatch(value, filters).filters);
     },
-    [patchBoardFilters, patchFilters, filters],
+    [patchFilters, filters],
   );
   // --- Tier-2 (opt-in) chip handlers — mirror the filter sheet's own controls so
   // a chip and the sheet never diverge. ---
@@ -1876,6 +1874,10 @@ function ClimbListInner() {
   const handleToggleBeta = useCallback(
     () => patchFilters({ onlyWithBetaVideos: filters.onlyWithBetaVideos ? undefined : true }),
     [patchFilters, filters.onlyWithBetaVideos],
+  );
+  const handleToggleBenchmarks = useCallback(
+    () => patchBoardFilters({ onlyBenchmarks: boardFilters.onlyBenchmarks ? undefined : true }),
+    [patchBoardFilters, boardFilters.onlyBenchmarks],
   );
   // Climb-type single-select derived from the boulders/routes flags — one shared
   // helper with the sheet, so the chip and sheet never show a different pick.
@@ -2056,7 +2058,7 @@ function ClimbListInner() {
           progress={flagsToProgress(filters)}
           onChangeProgress={handleChangeProgress}
           canFilterProgress={isAuthenticated}
-          collection={getCollectionFilter(filters, boardFilters)}
+          collection={getCollectionFilter(filters)}
           onChangeCollection={handleChangeCollection}
           canFilterPersonalCollections={isAuthenticated}
           isSprayWall={boardName === SPRAY_BOARD_NAME}
@@ -2070,6 +2072,8 @@ function ClimbListInner() {
           onChangeClimbType={handleChangeClimbType}
           betaActive={!!filters.onlyWithBetaVideos}
           onToggleBeta={handleToggleBeta}
+          benchmarksActive={!!boardFilters.onlyBenchmarks}
+          onToggleBenchmarks={handleToggleBenchmarks}
           // The Material Climbs bar's 48dp chip row (ClimbTopChrome).
           dense={denseChipRow}
         />
@@ -2112,6 +2116,7 @@ function ClimbListInner() {
     climbType,
     handleChangeClimbType,
     handleToggleBeta,
+    handleToggleBenchmarks,
     sheetOnlyFilterTokens,
   ]);
 

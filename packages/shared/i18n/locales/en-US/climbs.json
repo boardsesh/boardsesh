@@ -511,6 +511,8 @@
       "benchmark": "Benchmarks",
       "verified": "Verified",
       "verifiedDescription": "Verified climbs are picked by Kilter with climbers and setters.",
+      "onlyBenchmarks": "Only benchmark climbs",
+      "onlyVerified": "Only Verified climbs",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "close": "Close filters",

@@ -511,6 +511,8 @@
       "benchmark": "Benchmarks",
       "verified": "Vérifiés",
       "verifiedDescription": "Les blocs vérifiés sont choisis par Kilter avec des grimpeurs et des ouvreurs.",
+      "onlyBenchmarks": "Blocs benchmark uniquement",
+      "onlyVerified": "Blocs vérifiés uniquement",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
       "close": "Fermer les filtres",

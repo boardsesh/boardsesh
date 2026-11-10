@@ -25,7 +25,7 @@ function freshState(initialSort: SessionSort<Key> = DEFAULT_SORT): ClimbFilterSe
 function busyState(): ClimbFilterSessionState<Key> {
   let state = freshState(HARDEST_FIRST);
   state = climbFilterSessionReducer(state, { type: 'patchFilters', patch: { minGrade: 12, maxGrade: 14 } });
-  state = climbFilterSessionReducer(state, { type: 'collection', value: 'benchmarks' });
+  state = climbFilterSessionReducer(state, { type: 'toggleBenchmarks' });
   state = climbFilterSessionReducer(state, { type: 'setName', name: 'crimp' });
   return climbFilterSessionReducer(state, { type: 'setBoardFit', boardFit: true });
 }

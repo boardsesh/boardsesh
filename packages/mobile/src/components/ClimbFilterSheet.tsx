@@ -54,7 +54,12 @@ import { applyRecentFilterById, findCurrentRecentFilter, type ApplyRecentFilter 
 import { PINNABLE_CHIP_KINDS, isValidChipKind, type FilterChipKind } from '../lib/pinnable-chips';
 import { gradeRailRowHeight } from './filter-sheet/grade-rail-row-height';
 import { SPRAY_BOARD_NAME } from '../lib/spray/spray-wall-registry';
-import { collectionPatch, getCollectionFilter, type CollectionFilter } from '../lib/collection-filter';
+import {
+  collectionPatch,
+  getCollectionFilter,
+  offersBenchmarksFilter,
+  type CollectionFilter,
+} from '../lib/collection-filter';
 import type { SegmentOption } from './SegmentedControl.types';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
@@ -686,13 +691,23 @@ export function ClimbFilterSheet({
   const handleCollectionChange = useCallback(
     (collection: CollectionFilter) => {
       const filters = selectedFiltersRef.current;
-      const patch = collectionPatch(collection, filters);
-      publishSelection({ ...filters, ...patch.filters }, { ...selectedBoardFiltersRef.current, ...patch.boardFilters });
+      publishSelection(
+        { ...filters, ...collectionPatch(collection, filters).filters },
+        selectedBoardFiltersRef.current,
+      );
     },
     [publishSelection],
   );
-  const collectionFilter = getCollectionFilter(selectedFilters, selectedBoardFilters);
-  const offerBenchmarks = !isSprayWall || collectionFilter === 'benchmarks';
+  const collectionFilter = getCollectionFilter(selectedFilters);
+  const offerBenchmarks = offersBenchmarksFilter(isSprayWall, !!selectedBoardFilters.onlyBenchmarks);
+  const handleBenchmarksChange = useCallback(
+    (onlyBenchmarks: boolean) =>
+      publishSelection(selectedFiltersRef.current, {
+        ...selectedBoardFiltersRef.current,
+        onlyBenchmarks: onlyBenchmarks || undefined,
+      }),
+    [publishSelection],
+  );
   // A list that hides My drafts (a playlist) still offers it while it is the
   // active value, so a status carried in can be undone.
   const offerDrafts = shownSections.drafts || collectionFilter === 'drafts';
@@ -702,14 +717,13 @@ export function ClimbFilterSheet({
   const collectionOptions = useMemo(
     () => [
       { key: 'any' as const, label: t('mobile.filter.collection.any') },
-      ...(offerBenchmarks ? [{ key: 'benchmarks' as const, label: benchmarkFilterLabel(boardName, t) }] : []),
       // My drafts and Liked are auth-only: both are the climber's own climbs.
       ...((isAuthenticated || isSprayWall) && offerDrafts
         ? [{ key: 'drafts' as const, label: isSprayWall ? t('mobile.filter.wallDrafts') : t('mobile.filter.drafts') }]
         : []),
       ...(isAuthenticated && offerLiked ? [{ key: 'liked' as const, label: t('mobile.filter.collection.liked') }] : []),
     ],
-    [t, boardName, isAuthenticated, isSprayWall, offerBenchmarks, offerDrafts, offerLiked],
+    [t, isAuthenticated, isSprayWall, offerDrafts, offerLiked],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -1129,12 +1143,15 @@ export function ClimbFilterSheet({
                 showMyRating,
               }
             : null,
-        collection: {
-          options: collectionOptions,
-          selected: collectionFilter,
-          onSelect: handleCollectionChange,
-          description: isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined,
-        },
+        collection: { options: collectionOptions, selected: collectionFilter, onSelect: handleCollectionChange },
+        benchmarks: offerBenchmarks
+          ? {
+              label: isVerifiedBoard(boardName) ? t('mobile.filter.onlyVerified') : t('mobile.filter.onlyBenchmarks'),
+              subtitle: isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined,
+              value: !!selectedBoardFilters.onlyBenchmarks,
+              onValueChange: handleBenchmarksChange,
+            }
+          : null,
         popularity: { onStatusChange: handleStatusChange, onBucket: handlePopularity },
         climbType: {
           show: showClimbTypeControl,
@@ -1388,13 +1405,9 @@ export function ClimbFilterSheet({
 
               {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
               <FilterSheetSection title={t('mobile.filter.section.quality')}>
-                {/* Collection — Benchmarks, My drafts and Liked are mutually
-                  exclusive. Personal collections are offered only when signed in. */}
-                <FilterLabelRow
-                  label={t('mobile.filter.collection.label')}
-                  description={isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined}
-                  {...pinProps('collection')}
-                />
+                {/* Collection — My drafts and Liked are mutually exclusive, and
+                  offered only when signed in. */}
+                <FilterLabelRow label={t('mobile.filter.collection.label')} {...pinProps('collection')} />
                 <View style={filterSheetStyles.controlGap} />
                 <SegmentedControl
                   options={collectionOptions}
@@ -1402,6 +1415,26 @@ export function ClimbFilterSheet({
                   onSelect={handleCollectionChange}
                   accessibilityLabel={t('mobile.filter.collection.label')}
                 />
+
+                {/* Benchmarks only (Verified only on Kilter) — its own switch, so it
+                  combines with My drafts or Liked. */}
+                {offerBenchmarks ? (
+                  <>
+                    <View style={filterSheetStyles.subsectionGap} />
+                    <FilterLabelRow
+                      label={benchmarkFilterLabel(boardName, t)}
+                      description={isVerifiedBoard(boardName) ? t('mobile.filter.verifiedDescription') : undefined}
+                      {...pinProps('benchmarks')}
+                    />
+                    <SwitchRow
+                      label={
+                        isVerifiedBoard(boardName) ? t('mobile.filter.onlyVerified') : t('mobile.filter.onlyBenchmarks')
+                      }
+                      value={!!selectedBoardFilters.onlyBenchmarks}
+                      onValueChange={handleBenchmarksChange}
+                    />
+                  </>
+                ) : null}
 
                 <View style={filterSheetStyles.subsectionGap} />
                 <FilterLabelRow label={t('mobile.filter.minRating')} {...pinProps('rating')} />

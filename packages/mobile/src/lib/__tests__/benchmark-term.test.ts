@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 import { describe, expect, it } from 'vitest';
 import { getBoardCapabilities } from '@boardsesh/board-config';
 
-import { collectionChipLabel } from '../../components/search/FilterChipRow.logic';
+import { filterChipLabel } from '../filter-chip-labels';
 import { describeClimbAttributes } from '../../components/climb-attribute-labels';
 import { benchmarkAttributeLabel, benchmarkFilterLabel, isVerifiedBoard } from '../benchmark-term';
 
@@ -42,10 +42,10 @@ describe('benchmark labels', () => {
     expect(benchmarkAttributeLabel('tension', echoKey)).toBe('mobile.climbRow.benchmark');
   });
 
-  it('reaches the Collection chip', () => {
-    expect(collectionChipLabel('benchmarks', echoKey, false, 'kilter')).toBe('mobile.filter.verified');
-    expect(collectionChipLabel('benchmarks', echoKey, false, 'moonboard')).toBe('mobile.filter.benchmark');
-    expect(collectionChipLabel('benchmarks', echoKey)).toBe('mobile.filter.benchmark');
+  it('names the pinnable chip on the Quick filters page', () => {
+    expect(filterChipLabel('benchmarks', echoKey, 'kilter')).toBe('mobile.filter.verified');
+    expect(filterChipLabel('benchmarks', echoKey, 'moonboard')).toBe('mobile.filter.benchmark');
+    expect(filterChipLabel('benchmarks', echoKey)).toBe('mobile.filter.benchmark');
   });
 
   it('reaches the words the player speaks for the row', () => {
