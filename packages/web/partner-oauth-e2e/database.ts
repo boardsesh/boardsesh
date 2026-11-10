@@ -8,16 +8,19 @@ import { SEED_OUTPUT_PREFIX, type SeededAccount, type SeedResult } from './stack
  * The journey's database work, run with tsx by the global setup (Playwright's
  * own loader cannot load `@boardsesh/db`):
  *
- *   seed            two accounts and one old tick; prints the result as JSON
- *   cleanup <ids>   deletes those accounts, and by cascade everything they own
+ *   seed <developer id> <climber id>   two accounts and one old tick; prints the result as JSON
+ *   cleanup <ids>                      deletes those accounts, and by cascade everything they own
+ *
+ * The global setup chooses the ids, so it can clean up even after a seed that
+ * failed halfway. A run killed outright never reaches its teardown, so `seed`
+ * first removes this suite's accounts left from runs over an hour ago.
  *
  * Refuses any database that is not on this machine or a private network.
  */
 
 type SqlClient = ReturnType<typeof createPool>;
 
-async function seedAccount(sql: SqlClient, role: 'developer' | 'climber'): Promise<SeededAccount> {
-  const userId = `partner-e2e-${role}-${randomUUID()}`;
+async function seedAccount(sql: SqlClient, role: 'developer' | 'climber', userId: string): Promise<SeededAccount> {
   const account: SeededAccount = {
     userId,
     email: `${userId}@example.invalid`,
@@ -34,7 +37,7 @@ async function seedAccount(sql: SqlClient, role: 'developer' | 'climber'): Promi
   return account;
 }
 
-async function seed(sql: SqlClient): Promise<SeedResult> {
+async function seed(sql: SqlClient, developerId: string, climberId: string): Promise<SeedResult> {
   const [climb] = await sql<{ uuid: string; name: string; layout_id: number }[]>`
     SELECT uuid, name, layout_id FROM board_climbs
     WHERE board_type = 'kilter' AND is_listed AND NOT is_draft AND name IS NOT NULL AND layout_id = 1
@@ -45,8 +48,8 @@ async function seed(sql: SqlClient): Promise<SeedResult> {
       'The dev database has no listed Kilter climb. Recreate it: `docker compose down -v && vp run db:up`.',
     );
   }
-  const developer = await seedAccount(sql, 'developer');
-  const climber = await seedAccount(sql, 'climber');
+  const developer = await seedAccount(sql, 'developer', developerId);
+  const climber = await seedAccount(sql, 'climber', climberId);
   const historyTickId = randomUUID();
   await sql`
     INSERT INTO boardsesh_ticks
@@ -65,6 +68,10 @@ async function seed(sql: SqlClient): Promise<SeedResult> {
 
 async function main(): Promise<void> {
   const [command, ...userIds] = process.argv.slice(2);
+  // Only ever this suite's own accounts.
+  if (userIds.some((userId) => !userId.startsWith('partner-e2e-'))) {
+    throw new Error('The partner e2e only touches accounts whose id starts with partner-e2e-.');
+  }
   const databaseUrl = process.env.DATABASE_URL ?? '';
   const host = databaseUrl ? new URL(databaseUrl).hostname.toLowerCase() : '';
   if (!host || !isPrivateHostname(host)) {
@@ -75,11 +82,17 @@ async function main(): Promise<void> {
   const sql = createPool();
   try {
     if (command === 'seed') {
-      console.info(`${SEED_OUTPUT_PREFIX}${JSON.stringify(await seed(sql))}`);
+      const [developerId, climberId] = userIds;
+      if (!developerId || !climberId) throw new Error('seed needs a developer id and a climber id.');
+      await sql`
+        DELETE FROM users
+        WHERE id LIKE 'partner-e2e-%' AND email LIKE 'partner-e2e-%@example.invalid'
+          AND created_at < now() - interval '1 hour'
+      `;
+      console.info(`${SEED_OUTPUT_PREFIX}${JSON.stringify(await seed(sql, developerId, climberId))}`);
     } else if (command === 'cleanup') {
-      const ids = userIds.filter((userId) => userId.startsWith('partner-e2e-'));
       // The users rows cascade into credentials, ticks, the app, its connection and every token.
-      if (ids.length > 0) await sql`DELETE FROM users WHERE id IN ${sql(ids)}`;
+      if (userIds.length > 0) await sql`DELETE FROM users WHERE id IN ${sql(userIds)}`;
     } else {
       throw new Error(`Unknown command ${command ?? '(none)'}; use seed or cleanup.`);
     }

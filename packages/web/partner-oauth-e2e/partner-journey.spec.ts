@@ -207,6 +207,9 @@ test('an app registers, connects a climber on www, syncs the logbook, refreshes 
     await oauth.discoveryRequest(issuer, { algorithm: 'oauth2', ...viaEdge }),
   );
   expect(authorizationServer.issuer).toBe(ISSUER);
+  // RFC 9207: the server promises `iss` on every authorization response, so the
+  // app can, and oauth4webapi then must, check it below.
+  expect(authorizationServer.authorization_response_iss_parameter_supported).toBe(true);
 
   const loopback = await startLoopbackRedirect();
   try {

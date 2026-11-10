@@ -1182,7 +1182,8 @@ Chromium, on the real www pages and the real backend:
 1. A developer signs in on www and registers a public native app with a loopback
    redirect, through the console's own GraphQL operation (`CREATE_OAUTH_CLIENT`)
    and with a publisher name.
-2. The app (oauth4webapi) discovers the issuer and sends the climber's browser to
+2. The app (oauth4webapi) discovers the issuer, which must advertise `iss` on
+   authorization responses (RFC 9207), and sends the climber's browser to
    authorize. The climber signs in on `/oauth/sign-in`, then sees the consent
    screen with the app name, "Made by", the scope lines and the unreviewed-app
    line, and presses Allow.
@@ -1218,12 +1219,37 @@ are www's `/monitoring` and the backend's `/api/posthog`: the pages believe they
 are on production, and those two paths would forward the browser's Sentry and
 PostHog traffic to the real projects.
 
+Nothing else the servers run with can reach a service either
+(`server-environment.ts`). They inherit only what a shell needs to run `vp`,
+Node and Next (`PATH`, `HOME`, locale, temp and `VP_*`), never the rest of the
+caller's environment. The environment files each server reads by itself (Next's
+`.env*` in `packages/web`, the backend's `.env`, `.boardsesh/dev-db.env` and
+`.env.development.local`) are folded in the way the server would: a
+credential-looking name a file would supply (`*_KEY`, `*_SECRET`, `SMTP_*`,
+`POSTHOG_*` and the like) is set to an empty string, which beats the file, and
+setup refuses to start, naming only the variables, if any value left names a
+host that is not this machine or a private network. `NEXTAUTH_URL` and
+`NEXT_PUBLIC_APP_URL` are the two exceptions: they are links and cookie names,
+never fetched by a server, and `NEXTAUTH_URL_INTERNAL` keeps NextAuth's own
+calls local.
+
+Each server runs under `watchdog.mjs` as the leader of its own process group.
+Teardown always signals the whole group, and the watchdog ends the group within
+a second of the Playwright runner disappearing, even by `SIGKILL`, so a killed
+run never leaves `next dev` or the backend behind. Setup chooses the two account
+ids before it seeds, so a failure at any point after that still deletes them,
+and each seed first deletes this suite's accounts left over an hour ago by a run
+that was killed outright.
+
 The climber's browser declines the analytics prompt a signed-in account without
 an analytics choice sees once, as a climber would; the developer's and the
 climber's pages otherwise run untouched.
 
 What it does not prove:
 
+- Refusals. It walks the path that succeeds; a wrong verifier, a wrong or
+  missing audience, a replayed code or refresh token, a stale session and the
+  other negative cases are covered only by the launch suite.
 - The app's own `DELETE /v1/connection`; the launch suite covers it.
 - A production build, Cloudflare and Railway, Safari and Android browsers, social
   sign-in, the developer console's screens, and a confidential client (the launch
