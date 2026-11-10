@@ -1,0 +1,222 @@
+import type { BetterAuthPlugin } from 'better-auth';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
+import { eq } from 'drizzle-orm';
+import { oauthConnections, oauthGrants, oauthVerification } from '@boardsesh/db/schema/auth';
+import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
+import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
+import {
+  lockClimber,
+  lockCurrentGrant,
+  lockOrCreatePartnerConnection,
+  lockPartnerConnection,
+  selectConnectionForUpdate,
+} from './locks';
+import { currentPartnerTransaction } from './transaction';
+
+/** RFC 6749 section 3.2 forbids repeats. RFC 8707 makes `resource` the one exception. */
+const REPEATABLE_FORM_PARAMETERS = new Set(['resource']);
+
+function stringParameter(candidate: unknown): string | undefined {
+  return typeof candidate === 'string' ? candidate : undefined;
+}
+
+function firstRepeatedParameter(formBody: string): string | undefined {
+  const seen = new Set<string>();
+  for (const name of new URLSearchParams(formBody).keys()) {
+    if (seen.has(name) && !REPEATABLE_FORM_PARAMETERS.has(name)) return name;
+    seen.add(name);
+  }
+  return undefined;
+}
+
+/** Splits `prompt` the way the provider's schema does. */
+function promptTokens(prompt: string): string[] {
+  return prompt
+    .split(' ')
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function parseCodeOwner(serialized: string): { userId: string; clientId: string } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(serialized);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const record = parsed as Record<string, unknown>;
+  const query = record.query;
+  if (typeof record.userId !== 'string' || typeof query !== 'object' || query === null) return null;
+  const clientId = (query as Record<string, unknown>).client_id;
+  return typeof clientId === 'string' ? { userId: record.userId, clientId } : null;
+}
+
+/** Where the provider sent the browser, whether it answered JSON or a 302. */
+function authorizeRedirectTarget(context: {
+  context: { returned?: unknown; responseHeaders?: Headers };
+}): string | undefined {
+  const returned = context.context.returned;
+  if (typeof returned === 'object' && returned !== null && 'url' in returned) {
+    const url = (returned as { url: unknown }).url;
+    if (typeof url === 'string') return url;
+  }
+  return context.context.responseHeaders?.get('location') ?? undefined;
+}
+
+export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): BetterAuthPlugin {
+  const family = createRefreshFamilyHooks({
+    store: createPartnerFamilyStore(),
+    oauthOptions,
+    async acquireFamilyFence(owner) {
+      return (await lockCurrentGrant(currentPartnerTransaction().transaction, owner)) ? 'current' : 'fenced';
+    },
+    async lockAccessTokenOwner(owner) {
+      if (owner.userId === null) return;
+      await lockPartnerConnection(currentPartnerTransaction().transaction, owner.userId, owner.clientId);
+    },
+  });
+
+  return {
+    id: 'boardsesh-partner-fence',
+    hooks: {
+      before: [
+        // Hooks run before the provider parses the request, so they read it raw.
+        // The provider trims grant_type, and last-wins form parsing would let one
+        // copy of a parameter reach the guards and another reach the provider.
+        // Refusing both here keeps every guard on the value the provider acts on.
+        {
+          matcher: (context) => context.path === '/oauth2/token' || context.path === '/oauth2/revoke',
+          handler: createAuthMiddleware(async (context) => {
+            const invalidRequest = (description: string) =>
+              context.json(
+                { error: 'invalid_request', error_description: description },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            const grantType: unknown = context.body?.grant_type;
+            if (typeof grantType === 'string' && grantType !== grantType.trim()) {
+              return invalidRequest('grant_type must not have surrounding whitespace.');
+            }
+            if (context.request && firstRepeatedParameter(await context.request.clone().text())) {
+              return invalidRequest('Request parameters must not be repeated.');
+            }
+          }),
+        },
+        // A signed-in climber opening an authorization or answering consent.
+        {
+          matcher: (context) => context.path === '/oauth2/authorize' || context.path === '/oauth2/consent',
+          handler: createAuthMiddleware(async (context) => {
+            const session = context.context.session;
+            if (!session) return;
+            const { transaction, state } = currentPartnerTransaction();
+            const isConsent = context.path === '/oauth2/consent';
+            // The provider reads a form POST from the body and a GET from the query.
+            // Consent's nested authorize finds no client_id in its JSON body and
+            // stops below: consent's own pass through this hook has taken the locks.
+            const source = !isConsent && context.method === 'POST' ? 'body' : 'query';
+            const parameters: Record<string, unknown> = context[source] ?? {};
+            const clientId = isConsent
+              ? typeof context.body?.oauth_query === 'string'
+                ? new URLSearchParams(context.body.oauth_query).get('client_id')
+                : null
+              : stringParameter(parameters.client_id);
+            if (!clientId) return;
+            if (isConsent && context.body?.accept === true) state.consentApproved = true;
+
+            // Held even with no connection yet: a password reset then waits for this
+            // request and finds the code it binds. The row itself waits for a code.
+            if (!(await lockClimber(transaction, session.user.id))) {
+              throw new APIError('BAD_REQUEST', { error: 'invalid_request', error_description: 'Account not found.' });
+            }
+            const connection = await selectConnectionForUpdate(transaction, session.user.id, clientId);
+            // A reconnect always shows a new consent screen, even if the app would
+            // otherwise skip it.
+            if (connection?.revokedAt && !isConsent && !state.consentApproved) {
+              const prompt = parameters.prompt ?? '';
+              if (typeof prompt !== 'string') return;
+              const prompts = new Set(promptTokens(prompt));
+              // The provider refuses prompt=none combined with anything else, and
+              // answers consent_required by itself because Disconnect removed the consent.
+              if (prompts.has('none')) return;
+              prompts.add('consent');
+              return { context: { [source]: { ...parameters, prompt: [...prompts].join(' ') } } };
+            }
+          }),
+        },
+        // Redeeming a code: find the owner from the grant, then lock before the provider consumes it.
+        {
+          matcher: (context) => context.path === '/oauth2/token' && context.body?.grant_type === 'authorization_code',
+          handler: createAuthMiddleware(async (context) => {
+            const code: unknown = context.body?.code;
+            if (typeof code !== 'string' || !code) return;
+            const provider = getOAuthProviderApi(context, oauthOptions, 'authorization_code');
+            const client = await provider.authenticateClient({ requireCredentials: false });
+            const { transaction } = currentPartnerTransaction();
+            const authorizationCodeId = await provider.hashToken(code, 'authorization_code');
+            const [grant] = await transaction
+              .select({ userId: oauthConnections.userId, clientId: oauthConnections.clientId })
+              .from(oauthGrants)
+              .innerJoin(oauthConnections, eq(oauthConnections.id, oauthGrants.connectionId))
+              .where(eq(oauthGrants.authorizationCodeId, authorizationCodeId));
+            // An unknown code takes no lock. A code from another app is refused
+            // here, before the stock path would consume it.
+            const invalidGrant = () =>
+              context.json(
+                { error: 'invalid_grant', error_description: 'The authorization code is no longer valid.' },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            if (!grant || grant.clientId !== client.clientId) return invalidGrant();
+            const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
+            if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
+          }),
+        },
+        ...(family.before ?? []),
+      ],
+      after: [
+        // A code was issued: bind it to the connection generation and cut its lifetime.
+        {
+          matcher: (context) => context.path === '/oauth2/authorize',
+          handler: createAuthMiddleware(async (context) => {
+            const target = authorizeRedirectTarget(context);
+            if (!target) return;
+            const code = URL.canParse(target) ? new URL(target).searchParams.get('code') : null;
+            if (!code) return;
+            const { transaction, state } = currentPartnerTransaction();
+            const provider = getOAuthProviderApi(context, oauthOptions);
+            const authorizationCodeId = await provider.hashToken(code, 'authorization_code');
+            const [pending] = await transaction
+              .select({ value: oauthVerification.value })
+              .from(oauthVerification)
+              .where(eq(oauthVerification.identifier, authorizationCodeId));
+            // No matching row means `code` came from the client's own redirect URI, not from issuance.
+            if (!pending) return;
+            const codeOwner = parseCodeOwner(pending.value);
+            if (!codeOwner) throw new Error('Issued authorization code has no owner.');
+
+            const connection = await lockOrCreatePartnerConnection(transaction, codeOwner.userId, codeOwner.clientId);
+            if (!connection) throw new Error('Authorization code issued for a missing account.');
+            if (connection.revokedAt && !state.consentApproved) {
+              throw new Error('Authorization code issued for a disconnected connection without consent.');
+            }
+            const issuedAt = new Date();
+            if (connection.revokedAt || !connection.connectedAt) {
+              await transaction
+                .update(oauthConnections)
+                .set({ revokedAt: null, revocationReason: null, connectedAt: issuedAt, updatedAt: issuedAt })
+                .where(eq(oauthConnections.id, connection.id));
+            }
+            await transaction
+              .insert(oauthGrants)
+              .values({ authorizationCodeId, connectionId: connection.id, generation: connection.generation });
+            await transaction
+              .update(oauthVerification)
+              .set({ expiresAt: new Date(issuedAt.getTime() + PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS * 1000) })
+              .where(eq(oauthVerification.identifier, authorizationCodeId));
+          }),
+        },
+        ...(family.after ?? []),
+      ],
+    },
+  } satisfies BetterAuthPlugin;
+}

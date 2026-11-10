@@ -11,7 +11,6 @@ import {
   oauthAccessToken,
   oauthAppPolicy,
   oauthClient,
-  oauthClientAssertion,
   oauthClientResource,
   oauthConnections,
   oauthConsent,
@@ -22,10 +21,10 @@ import {
   oauthResource,
   oauthSession,
   oauthSubjects,
-  oauthVerification,
   users,
 } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
+import { partnerAdapterSchema } from '../tables';
 
 /**
  * Proves the tables in packages/db/src/schema/auth/partner-oauth.ts are the ones
@@ -35,18 +34,7 @@ import { db } from '../../../db/client';
  * here. The Better Auth `user`, `session` and `verification` mapping mirrors the
  * partner authority's configuration.
  */
-const PARTNER_ADAPTER_SCHEMA = {
-  users,
-  oauthSession,
-  oauthVerification,
-  oauthClient,
-  oauthResource,
-  oauthClientResource,
-  oauthRefreshToken,
-  oauthAccessToken,
-  oauthConsent,
-  oauthClientAssertion,
-} as const;
+const PARTNER_ADAPTER_SCHEMA = partnerAdapterSchema;
 
 type AdapterModelName = keyof typeof PARTNER_ADAPTER_SCHEMA;
 
