@@ -93,6 +93,7 @@ describe('importing partner modules', () => {
       resource: 'https://api.boardsesh.test/v1',
       webOrigin: 'https://www.boardsesh.test',
       secrets: [{ version: 1, value: VALID_SECRET }],
+      nextAuthSecret: VALID_SECRET,
     });
     expect(callCounts.betterAuth).toBe(1);
     await authority.$context.catch(() => {});
@@ -329,9 +330,27 @@ describe('BETTER_AUTH_TELEMETRY', () => {
         resource: 'https://api.boardsesh.test/v1',
         webOrigin: 'https://www.boardsesh.test',
         secrets: [{ version: 1, value: VALID_SECRET }],
+        nextAuthSecret: VALID_SECRET,
       }),
     ).toThrow(PartnerAuthorityConfigurationError);
     expect(callCounts.betterAuth).toBe(0);
+  });
+});
+
+describe('NEXTAUTH_SECRET', () => {
+  it.each([undefined, '', '   '])('is required to read the www session, refusing %j', async (rawSecret) => {
+    const { readPartnerAuthorityConfiguration, PartnerAuthorityConfigurationError } = await import('../configuration');
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', `1:${VALID_SECRET}`);
+    vi.stubEnv('NEXTAUTH_SECRET', rawSecret);
+    expect(() => readPartnerAuthorityConfiguration()).toThrow(PartnerAuthorityConfigurationError);
+    expect(() => readPartnerAuthorityConfiguration()).toThrow(/NEXTAUTH_SECRET/);
+  });
+
+  it('is read from the environment beside the partner secrets', async () => {
+    const { readPartnerAuthorityConfiguration } = await import('../configuration');
+    vi.stubEnv('PARTNER_OAUTH_SECRETS', `1:${VALID_SECRET}`);
+    vi.stubEnv('NEXTAUTH_SECRET', 'web-secret');
+    expect(readPartnerAuthorityConfiguration().nextAuthSecret).toBe('web-secret');
   });
 });
 

@@ -741,9 +741,18 @@ describe('partner fence', () => {
       expect(new URL(denied.body.url!).searchParams.get('error')).toBe('access_denied');
       expect(await consentlessConnections(client.owner.userId)).toEqual([]);
 
-      const accepted = await environment.consent(client.owner, {
+      // A consent link answers once: the denied one cannot be approved afterwards.
+      const reused = await environment.consent(client.owner, {
         accept: true,
         oauth_query: new URL(atConsent.location!).searchParams.toString(),
+      });
+      expect(reused.response.status).toBe(400);
+      expect(await consentlessConnections(client.owner.userId)).toEqual([]);
+
+      const again = await environment.authorize(client);
+      const accepted = await environment.consent(client.owner, {
+        accept: true,
+        oauth_query: new URL(again.location!).searchParams.toString(),
       });
       expect(accepted.response.status).toBe(200);
       const rows = await consentlessConnections(client.owner.userId);

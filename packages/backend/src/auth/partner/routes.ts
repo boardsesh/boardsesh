@@ -1,7 +1,7 @@
 /** Better Auth mounts under the issuer path, so its own routes are relative to this. */
 export const PARTNER_AUTH_BASE_PATH = '/api/auth';
 
-export type PartnerRouteKind = 'authorize' | 'consent' | 'token' | 'revoke' | 'discovery' | 'error';
+export type PartnerRouteKind = 'authorize' | 'consent' | 'consent-details' | 'token' | 'revoke' | 'discovery' | 'error';
 
 export interface PartnerRoute {
   method: 'GET' | 'POST';
@@ -18,6 +18,8 @@ export interface PartnerRoute {
 export const PARTNER_ROUTES: readonly PartnerRoute[] = [
   { method: 'GET', pathname: `${PARTNER_AUTH_BASE_PATH}/oauth2/authorize`, kind: 'authorize' },
   { method: 'POST', pathname: `${PARTNER_AUTH_BASE_PATH}/oauth2/consent`, kind: 'consent' },
+  // What the www consent screen shows: the app, its developer and the scopes, for an open consent link.
+  { method: 'POST', pathname: `${PARTNER_AUTH_BASE_PATH}/oauth2/consent-details`, kind: 'consent-details' },
   { method: 'POST', pathname: `${PARTNER_AUTH_BASE_PATH}/oauth2/token`, kind: 'token' },
   { method: 'POST', pathname: `${PARTNER_AUTH_BASE_PATH}/oauth2/revoke`, kind: 'revoke' },
   { method: 'GET', pathname: `/.well-known/oauth-authorization-server${PARTNER_AUTH_BASE_PATH}`, kind: 'discovery' },
@@ -25,7 +27,7 @@ export const PARTNER_ROUTES: readonly PartnerRoute[] = [
   { method: 'GET', pathname: `${PARTNER_AUTH_BASE_PATH}/error`, kind: 'error' },
 ];
 
-const CORS_ROUTE_KINDS: ReadonlySet<PartnerRouteKind> = new Set(['consent', 'token', 'revoke']);
+const CORS_ROUTE_KINDS: ReadonlySet<PartnerRouteKind> = new Set(['consent', 'consent-details', 'token', 'revoke']);
 
 /**
  * The path of a request target, exactly as the client sent it. Nothing is
