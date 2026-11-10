@@ -323,3 +323,56 @@ describe('auth_time in the jwt callback', () => {
     expect(claims.auth_time).toBe(earlierSignIn);
   });
 });
+
+describe('link_guarded beside auth_time', () => {
+  it('is written by a password sign-in only while partner OAuth is on', async () => {
+    remember(await signInWithPassword());
+    expect(await currentSessionClaims()).not.toHaveProperty('link_guarded');
+
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    remember(await signInWithPassword());
+    const claims = await currentSessionClaims();
+    expect(claims?.auth_time).toBe(SIGN_IN_AT_SECONDS);
+    expect(claims?.link_guarded).toBe(true);
+  });
+
+  it('survives a cookie rotation, and a rotation never adds it', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    remember(await signInWithPassword());
+    vi.setSystemTime(SIGN_IN_AT_MS + ONE_DAY_MS);
+    remember(await invoke('session'));
+    expect((await currentSessionClaims())?.link_guarded).toBe(true);
+
+    // A sign-in made while the mode was off stays unguarded after it turns on.
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    remember(await signInWithPassword());
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    remember(await invoke('session'));
+    const claims = await currentSessionClaims();
+    expect(claims?.auth_time).toBeDefined();
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+
+  it('is never written for a native transfer, which has no auth_time', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    const claims = await runJwtCallback({
+      token: { sub: climber.id, auth_time: SIGN_IN_AT_SECONDS - 60, link_guarded: true },
+      user: { id: climber.id },
+      account: accountFor('native-oauth'),
+    });
+
+    expect(claims).not.toHaveProperty('auth_time');
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+
+  it('is never taken from the client on an update', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    const claims = await runJwtCallback({
+      token: { sub: climber.id, authSessionId: 'old-login', auth_time: SIGN_IN_AT_SECONDS },
+      session: { link_guarded: true },
+      trigger: 'update',
+    });
+
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+});

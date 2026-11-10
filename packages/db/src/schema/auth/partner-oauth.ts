@@ -282,7 +282,7 @@ export const oauthConnections = pgTable(
       .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
     generation: integer('generation').default(0).notNull(),
     scopes: text('scopes').array().default([]).notNull(),
-    /** Set when the climber approves; the daily new-connection cap counts on it. */
+    /** Set when the app first redeems a code; cleared by an approved reconnect until it redeems again. The caps count on it. */
     connectedAt: timestamptz('connected_at'),
     lastUsedAt: timestamptz('last_used_at'),
     revokedAt: timestamptz('revoked_at'),

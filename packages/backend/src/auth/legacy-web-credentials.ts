@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { hkdf } from '@panva/hkdf';
 import { jwtDecrypt } from 'jose';
-import { AUTH_TIME_CLOCK_SKEW_SECONDS, readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
+import {
+  AUTH_TIME_CLOCK_SKEW_SECONDS,
+  isLinkGuardedSignIn,
+  readAuthTimeClaim,
+} from '@boardsesh/auth-protocol/auth-time';
 
 const SESSION_COOKIE_NAMES = ['__Secure-next-auth.session-token', 'next-auth.session-token'] as const;
 const MAX_COOKIE_HEADER_LENGTH = 128 * 1024;
@@ -30,6 +34,12 @@ export interface VerifiedLegacyWebCredential {
    * than clock skew explains, or postdates the cookie's own issue time.
    */
   readonly originalAuthenticatedAt: Date | null;
+  /**
+   * The sign-in was made while the web guarded OAuth account links, so its
+   * `auth_time` cannot have been bought by linking a provider into an old
+   * session (`link_guarded: true`, written only beside `auth_time`).
+   */
+  readonly linkGuarded: boolean;
   readonly authSessionId: string | null;
   readonly lineageId: string;
   readonly credentialFingerprint: string;
@@ -132,6 +142,7 @@ export async function verifyLegacyNextAuthJwe(
       // Only a cookie written by a sign-in carries auth_time (#6981, F5). The
       // attribution timestamp in nativeOAuthCreationProof is not one.
       originalAuthenticatedAt: signedInAt(payload.auth_time, issuedAt, currentTime),
+      linkGuarded: isLinkGuardedSignIn(payload),
       authSessionId,
       lineageId: `${authSessionId ? 'session' : 'credential'}:${fingerprint(
         JSON.stringify(['nextauth-v4', userId, authSessionId ?? credentialFingerprint]),
@@ -238,6 +249,8 @@ export async function verifyLegacyWebCookie(
     expiresAt: new Date(Math.min(...proofs.map((proof) => proof.expiresAt.getTime()))),
     validUntil: new Date(Math.min(...proofs.map((proof) => proof.validUntil.getTime()))),
     originalAuthenticatedAt: combinedSignIn(proofs),
+    // Guarded only if every accepted copy says so.
+    linkGuarded: proofs.every((proof) => proof.linkGuarded),
     credentialFingerprint: fingerprints.length === 1 ? fingerprints[0] : fingerprint(JSON.stringify(fingerprints)),
     // Include stale recognized alternates so a successful handoff can clear
     // their exact chunk names, without trusting any of their identity claims.

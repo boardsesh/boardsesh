@@ -919,7 +919,9 @@ If your app is suspended or deleted, the token endpoint answers
 `invalid_client` and the API answers `401 invalid_token`; the console says why.
 If your app has reached its cap of connected climbers or its daily cap of new
 connections, approving redirects back with `error=temporarily_unavailable`;
-existing connections are unaffected.
+existing connections are unaffected. A connection counts from your first code
+exchange, not from the climber's approval, so if the last place goes between the
+two, the exchange answers `400 invalid_grant` with that reason.
 
 New `error` codes may be added; branch on the HTTP status first.
 

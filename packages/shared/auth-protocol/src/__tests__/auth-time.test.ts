@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTH_TIME_CLOCK_SKEW_SECONDS,
   isRecentSignIn,
+  PASSWORD_CHANGE_CLOCK_TOLERANCE_MS,
   readAuthTimeClaim,
   RECENT_SIGN_IN_MAX_AGE_SECONDS,
+  signedInAfterPasswordChange,
 } from '../auth-time';
 
 const NOW_MS = Date.UTC(2026, 10, 10, 12, 0, 0, 500);
@@ -53,5 +55,29 @@ describe('isRecentSignIn', () => {
 
   it('refuses an unknown sign-in time', () => {
     expect(isRecentSignIn(null, NOW_MS)).toBe(false);
+  });
+});
+
+describe('signedInAfterPasswordChange', () => {
+  const changedAt = new Date(NOW_MS - 3600_000);
+  const changedAtSeconds = Math.floor(changedAt.getTime() / 1000);
+
+  it('accepts any sign-in when there is no password', () => {
+    expect(signedInAfterPasswordChange(1, null)).toBe(true);
+  });
+
+  it('refuses a sign-in from before the change', () => {
+    expect(signedInAfterPasswordChange(changedAtSeconds - 86_400, changedAt)).toBe(false);
+  });
+
+  it('refuses a sign-in inside the clock tolerance after the change', () => {
+    expect(signedInAfterPasswordChange(changedAtSeconds + 59, changedAt)).toBe(false);
+    expect(signedInAfterPasswordChange(changedAtSeconds + PASSWORD_CHANGE_CLOCK_TOLERANCE_MS / 1000, changedAt)).toBe(
+      false,
+    );
+  });
+
+  it('accepts a sign-in more than the tolerance after the change', () => {
+    expect(signedInAfterPasswordChange(changedAtSeconds + 61, changedAt)).toBe(true);
   });
 });

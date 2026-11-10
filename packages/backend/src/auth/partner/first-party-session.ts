@@ -1,18 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { isRecentSignIn, RECENT_SIGN_IN_MAX_AGE_SECONDS } from '@boardsesh/auth-protocol/auth-time';
+import {
+  isRecentSignIn,
+  isSignInGoodForPartnerConsent,
+  RECENT_SIGN_IN_MAX_AGE_SECONDS,
+} from '@boardsesh/auth-protocol/auth-time';
 import { oauthSession, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { verifyLegacyWebCookie } from '../legacy-web-credentials';
 import { lockClimber } from './locks';
 import type { PartnerDatabase } from './tables';
-
-/**
- * A sign-in counts only if it is this much later than the last password write.
- * The sign-in time comes from a web server's clock and the write time from the
- * database's, so a cookie minted just before a reset on a fast clock could
- * otherwise look newer than the reset.
- */
-export const PASSWORD_CHANGE_CLOCK_TOLERANCE_MS = 60_000;
 
 /** Long enough for a session-bound access token issued at the very end of the 30 days to run its hour. */
 const SESSION_ROW_GRACE_MS = 60 * 60 * 1000;
@@ -41,8 +37,9 @@ function bridgedSessionId(userId: string, authSessionId: string, authTimeSeconds
 /**
  * The climber behind a request, read from the www NextAuth session cookie and
  * nothing else: no Better Auth cookie, header or body can name one. Decision 19
- * applies here, so only a sign-in under 30 days old, and later than the last
- * password write, becomes a partner session.
+ * applies here, so only a sign-in under 30 days old, made while the web guarded
+ * OAuth links (`link_guarded`), and later than the last password write, becomes
+ * a partner session.
  *
  * The cookie is checked first, without the database: a request with no usable
  * cookie never asks for `transaction`, which is how a signed-out authorize runs
@@ -63,7 +60,14 @@ export async function resolveFirstPartySession(
   const signedInAt = credential.originalAuthenticatedAt;
   const authTimeSeconds = signedInAt ? Math.floor(signedInAt.getTime() / 1000) : null;
   // Every cookie a sign-in writes carries both; one without a login id predates them.
-  if (!credential.authSessionId || authTimeSeconds === null || !isRecentSignIn(authTimeSeconds, now.getTime())) {
+  // A sign-in the web made with its link guard off could have been bought by
+  // linking a provider into an old session, so it never counts here.
+  if (
+    !credential.authSessionId ||
+    !credential.linkGuarded ||
+    authTimeSeconds === null ||
+    !isRecentSignIn(authTimeSeconds, now.getTime())
+  ) {
     return { status: 'sign-in-required' };
   }
 
@@ -74,9 +78,12 @@ export async function resolveFirstPartySession(
     .select({ updatedAt: userCredentials.updatedAt })
     .from(userCredentials)
     .where(eq(userCredentials.userId, credential.userId));
-  if (password && authTimeSeconds * 1000 - PASSWORD_CHANGE_CLOCK_TOLERANCE_MS <= password.updatedAt.getTime()) {
-    return { status: 'sign-in-required' };
-  }
+  const signIn = {
+    authTimeSeconds,
+    linkGuarded: credential.linkGuarded,
+    passwordChangedAt: password?.updatedAt ?? null,
+  };
+  if (!isSignInGoodForPartnerConsent(signIn, now.getTime())) return { status: 'sign-in-required' };
 
   const sessionId = bridgedSessionId(credential.userId, credential.authSessionId, authTimeSeconds);
   await database

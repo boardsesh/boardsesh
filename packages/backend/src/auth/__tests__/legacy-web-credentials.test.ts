@@ -188,6 +188,18 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     expect(proof?.originalAuthenticatedAt).toBeNull();
   });
 
+  it('reports link_guarded only when the claim is exactly true', async () => {
+    for (const [claim, linkGuarded] of [
+      [true, true],
+      ['true', false],
+      [1, false],
+      [undefined, false],
+    ] as const) {
+      const credential = await installedSession({ auth_time: NOW_SECONDS, link_guarded: claim });
+      expect((await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW))?.linkGuarded).toBe(linkGuarded);
+    }
+  });
+
   it('treats a sign-in after the cookie it produced as unknown', async () => {
     const credential = await encryptedFixture({ iat: NOW_SECONDS - 600, auth_time: NOW_SECONDS - 500 });
     const proof = await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW);
@@ -350,6 +362,24 @@ describe('legacy web cookie ownership and bounded parsing', () => {
     expect(forward?.issuedAt).toEqual(NOW);
     expect(forward?.expiresAt).toEqual(new Date(NOW.getTime() + 3600_000));
     expect(forward?.originalAuthenticatedAt).toBeNull();
+  });
+
+  it('combines link_guarded conservatively: guarded only if every copy is', async () => {
+    const guarded = await installedSession({ auth_time: NOW_SECONDS - 60, link_guarded: true });
+    const unguarded = await installedSession({ auth_time: NOW_SECONDS - 60 });
+    const both = await verifyLegacyWebCookie(
+      `${SECURE_COOKIE}=${guarded}; ${PLAIN_COOKIE}=${guarded}`,
+      LEGACY_SECRET,
+      NOW,
+    );
+    expect(both?.linkGuarded).toBe(true);
+    const mixed = await verifyLegacyWebCookie(
+      `${SECURE_COOKIE}=${guarded}; ${PLAIN_COOKIE}=${unguarded}`,
+      LEGACY_SECRET,
+      NOW,
+    );
+    expect(mixed?.userId).toBe('same-existing-user');
+    expect(mixed?.linkGuarded).toBe(false);
   });
 
   it('combines sign-in times conservatively: the earliest, and unknown if either copy lacks one', async () => {

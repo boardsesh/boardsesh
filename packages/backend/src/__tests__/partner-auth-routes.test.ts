@@ -2042,7 +2042,12 @@ describe('the deployed partner routes', () => {
         const climberId = randomUUID();
         await db.insert(users).values({ id: climberId, email: `${climberId}@example.invalid` });
         const webSession = await encodeNextAuthSession({
-          token: { sub: climberId, authSessionId: randomUUID(), auth_time: Math.floor(Date.now() / 1000) - 60 },
+          token: {
+            sub: climberId,
+            authSessionId: randomUUID(),
+            auth_time: Math.floor(Date.now() / 1000) - 60,
+            link_guarded: true,
+          },
           secret: process.env.NEXTAUTH_SECRET!,
         });
         const consentQuery = {
