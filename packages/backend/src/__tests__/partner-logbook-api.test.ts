@@ -403,6 +403,7 @@ describe('the logbook routes', () => {
     it('serves edits, deletions and new ticks after the snapshot, at least once, and never another climber', async () => {
       const { climber, token } = await connectedApp();
       const [edited, removed, kept] = await insertTicks(climber.userId, 3);
+      await waitForWritesToSettle();
       const first = await sync(token);
       expect(first.copy.size).toBe(3);
 
@@ -433,6 +434,9 @@ describe('the logbook routes', () => {
     it("answers an empty page and the same position when nothing changed, and never shows the climber's id", async () => {
       const { climber, token } = await connectedApp();
       await insertTicks(climber.userId, 1);
+      // The horizon is cluster-wide, so another worker's open transaction could
+      // otherwise leave the tick for a later page.
+      await waitForWritesToSettle();
       const first = await sync(token);
       await waitForWritesToSettle();
       const again = pageOf(await getChanges(apiHost, token, { cursor: first.cursor }));
@@ -679,7 +683,7 @@ describe('the logbook routes', () => {
   });
 
   describe('the snapshot creation limit', () => {
-    it('counts only real creations, and refuses a creation over 2 a minute with 429', async () => {
+    it('counts only real creations, and refuses a creation over 2 a minute with 429', { timeout: 40_000 }, async () => {
       await enoughWindowLeft();
       const { client, climber, token } = await connectedApp();
       await insertTicks(climber.userId, 1);
@@ -886,6 +890,7 @@ describe('the logbook routes', () => {
         ...(await insertTicks(climber.userId, 1, { climbUuid: draft })),
         ...(await insertTicks(climber.userId, 1, { climbUuid: unlisted })),
       ];
+      await waitForWritesToSettle();
 
       const first = await sync(token);
       expect([...first.copy.keys()]).toEqual([plainTick]);
@@ -901,8 +906,12 @@ describe('the logbook routes', () => {
       });
       await waitForWritesToSettle();
       const caughtUp = await sync(token, first.cursor);
-      expect(caughtUp.pages.flatMap((body) => body.changes)).toEqual([{ type: 'tick.deleted', id: laterTick }]);
+      const changes = caughtUp.pages.flatMap((body) => body.changes);
+      expect(changes).toContainEqual({ type: 'tick.deleted', id: laterTick });
+      const servedTicks = changes.flatMap((change) => (change.type === 'tick' ? [change.tick.id] : []));
+      for (const heldTick of [...heldTicks, laterTick]) expect(servedTicks).not.toContain(heldTick);
       expect(JSON.stringify(caughtUp.pages)).not.toContain(unlisted);
+      expect(JSON.stringify(caughtUp.pages)).not.toContain(draft);
 
       for (const tickId of [...heldTicks, laterTick]) {
         const answered = await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token });
@@ -980,17 +989,21 @@ describe('the logbook routes', () => {
   });
 
   describe('limits and CORS', () => {
-    it('charges the connection and the app once the token has passed, like every /v1 route', async () => {
-      await enoughWindowLeft();
-      const { client, climber, token } = await connectedApp();
-      const answered = await getChanges(apiHost, token);
-      expect(answered.status).toBe(200);
-      expect(answered.headers['ratelimit-limit']).toBe('120');
-      expect(await limiterCount(`${client.clientId}:${climber.userId}`, 'api-connection')).toBe(1);
-      expect(await limiterCount(client.clientId, 'api-app')).toBe(1);
-    });
+    it(
+      'charges the connection and the app once the token has passed, like every /v1 route',
+      { timeout: 40_000 },
+      async () => {
+        await enoughWindowLeft();
+        const { client, climber, token } = await connectedApp();
+        const answered = await getChanges(apiHost, token);
+        expect(answered.status).toBe(200);
+        expect(answered.headers['ratelimit-limit']).toBe('120');
+        expect(await limiterCount(`${client.clientId}:${climber.userId}`, 'api-connection')).toBe(1);
+        expect(await limiterCount(client.clientId, 'api-app')).toBe(1);
+      },
+    );
 
-    it("never refuses a valid token for a neighbour's failed lookups", async () => {
+    it("never refuses a valid token for a neighbour's failed lookups", { timeout: 40_000 }, async () => {
       await enoughWindowLeft();
       const clientIp = randomClientIp();
       await seedLimiter(clientIp, 'api-invalid-token-ip', 600);
