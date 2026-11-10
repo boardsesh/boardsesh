@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "signIn": {
+      "title": "Sign in to connect an app",
+      "description": "Sign in to Boardsesh, then choose what an app can see."
+    },
+    "consent": {
+      "title": "Connect an app",
+      "description": "Choose whether an app can connect to your Boardsesh account."
+    }
+  },
+  "states": {
+    "invalidLink": {
+      "title": "This link doesn't work",
+      "body": "Go back to the app you came from and connect again."
+    },
+    "expired": {
+      "title": "This link has expired",
+      "body": "A link to connect an app lasts 10 minutes. Go back to the app and connect again."
+    },
+    "unavailable": {
+      "title": "Connecting apps isn't available right now",
+      "body": "Try again later. Your Boardsesh account isn't affected."
+    }
+  },
+  "signIn": {
+    "signedOut": {
+      "title": "Sign in to connect an app",
+      "body": "An app wants to connect to your Boardsesh account. Sign in first, and you'll see what it can access before anything is shared."
+    },
+    "stale": {
+      "title": "Sign in again to continue",
+      "body": "Connecting an app needs a recent sign-in, so we're asking you to sign in once more. Your account is fine.",
+      "detail": "We ask every 30 days and after a password change."
+    },
+    "justSignedIn": {
+      "title": "Almost there",
+      "body": "If you changed your password in the last minute, wait a minute, then sign in again."
+    },
+    "signedInAs": "Signed in as {{account}}.",
+    "signOut": "Not you? Sign out",
+    "submit": "Sign in",
+    "errors": {
+      "invalidCredentials": "That email and password don't match. Try again.",
+      "unavailable": "Sign-in isn't working right now. Try again in a minute.",
+      "accountNotLinked": "That account belongs to a different Boardsesh sign-in. Sign in the way you first signed up, or sign out and try again.",
+      "linkRefused": "That account isn't linked to your Boardsesh sign-in yet. Sign in with your password or the account you usually use.",
+      "generic": "Sign-in didn't finish. Try again."
+    }
+  },
+  "consent": {
+    "loading": "Checking what the app is asking for",
+    "sending": "Sending your answer",
+    "unnamedApp": "Unnamed app",
+    "title": "Connect {{app}} to your Boardsesh account?",
+    "titleReconnect": "Connect {{app}} again?",
+    "signedInAs": "Signed in as {{account}}.",
+    "signOut": "Not you? Sign out",
+    "reconnect": "You disconnected {{app}} before. Choosing Allow connects it again.",
+    "canHeading": "{{app}} will be able to",
+    "scopes": {
+      "profileRead": "See your display name and profile photo",
+      "logbookRead": "See every tick in your logbook, on every board",
+      "logbookOnlyMe": "Including ticks you keep to “Only me”",
+      "offlineAccess": "Keep this access until you disconnect it",
+      "other": "Other access: {{scope}}"
+    },
+    "cannot": "It can't change anything in your account, and it never sees your password.",
+    "notReviewed": "Boardsesh hasn't reviewed this app. Only connect apps you trust.",
+    "redirect": "After you choose, you go back to {{host}}.",
+    "links": {
+      "label": "About {{app}}",
+      "homepage": "Website",
+      "privacy": "Privacy policy",
+      "terms": "Terms",
+      "newTab": "(opens in a new tab)"
+    },
+    "allow": "Allow",
+    "deny": "Don't allow",
+    "disconnect": "You can disconnect it any time in Settings › Connected apps.",
+    "backToApp": "Back to {{app}}",
+    "connected": {
+      "title": "{{app}} is connected",
+      "body": "Taking you back to {{app}}. If nothing happens, use the button below."
+    },
+    "declined": {
+      "title": "{{app}} isn't connected",
+      "body": "Nothing was shared. Taking you back to {{app}}."
+    },
+    "appFull": {
+      "title": "{{app}} can't take new connections right now",
+      "body": "It has reached its limit for now, so nothing was shared. Try again later."
+    },
+    "appNotReady": {
+      "title": "{{app}} can't connect yet",
+      "body": "Its developer hasn't finished setting it up, so nothing was shared."
+    },
+    "appError": {
+      "title": "{{app}} didn't connect",
+      "body": "Nothing was shared. Go back to {{app}} and try again."
+    },
+    "appUnavailable": {
+      "title": "This app can't connect",
+      "body": "It isn't available on Boardsesh right now, so nothing was shared."
+    },
+    "signInAgain": {
+      "title": "Sign in again to continue",
+      "body": "Connecting an app needs a recent sign-in. Your account is fine.",
+      "button": "Sign in"
+    },
+    "busy": {
+      "title": "Boardsesh is busy",
+      "body": "Nothing was shared. Try again in a minute."
+    },
+    "failed": {
+      "title": "That didn't work",
+      "body": "Nothing was shared. Try again, or go back to the app and connect again."
+    },
+    "tryAgain": "Try again"
+  }
+}

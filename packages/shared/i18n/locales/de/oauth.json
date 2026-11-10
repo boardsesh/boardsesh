@@ -1,0 +1,121 @@
+{
+  "metadata": {
+    "signIn": {
+      "title": "Melde dich an, um eine App zu verbinden",
+      "description": "Melde dich bei Boardsesh an und entscheide, was eine App sehen darf."
+    },
+    "consent": {
+      "title": "App verbinden",
+      "description": "Entscheide, ob sich eine App mit deinem Boardsesh-Konto verbinden darf."
+    }
+  },
+  "states": {
+    "invalidLink": {
+      "title": "Dieser Link funktioniert nicht",
+      "body": "Geh zurück zur App, aus der du kommst, und verbinde sie erneut."
+    },
+    "expired": {
+      "title": "Dieser Link ist abgelaufen",
+      "body": "Ein Link zum Verbinden einer App gilt 10 Minuten. Geh zurück zur App und verbinde sie erneut."
+    },
+    "unavailable": {
+      "title": "Apps lassen sich gerade nicht verbinden",
+      "body": "Versuch es später noch mal. Dein Boardsesh-Konto ist davon nicht betroffen."
+    }
+  },
+  "signIn": {
+    "signedOut": {
+      "title": "Melde dich an, um eine App zu verbinden",
+      "body": "Eine App möchte sich mit deinem Boardsesh-Konto verbinden. Melde dich zuerst an. Bevor etwas geteilt wird, siehst du, worauf sie zugreifen kann."
+    },
+    "stale": {
+      "title": "Melde dich erneut an, um fortzufahren",
+      "body": "Zum Verbinden einer App brauchst du eine aktuelle Anmeldung, deshalb bitten wir dich, dich noch einmal anzumelden. Mit deinem Konto ist alles in Ordnung.",
+      "detail": "Wir fragen alle 30 Tage und nach einer Passwortänderung."
+    },
+    "justSignedIn": {
+      "title": "Fast geschafft",
+      "body": "Wenn du dein Passwort in der letzten Minute geändert hast, warte eine Minute und melde dich dann erneut an."
+    },
+    "signedInAs": "Angemeldet als {{account}}.",
+    "signOut": "Nicht du? Abmelden",
+    "submit": "Anmelden",
+    "errors": {
+      "invalidCredentials": "E-Mail und Passwort passen nicht zusammen. Versuch es noch mal.",
+      "unavailable": "Die Anmeldung funktioniert gerade nicht. Versuch es in einer Minute noch mal.",
+      "accountNotLinked": "Dieses Konto gehört zu einer anderen Boardsesh-Anmeldung. Melde dich so an, wie du dich registriert hast, oder melde dich ab und versuch es noch mal.",
+      "linkRefused": "Dieses Konto ist noch nicht mit deiner Boardsesh-Anmeldung verknüpft. Melde dich mit deinem Passwort oder dem Konto an, das du sonst nutzt.",
+      "generic": "Die Anmeldung wurde nicht abgeschlossen. Versuch es noch mal."
+    }
+  },
+  "consent": {
+    "loading": "Wir prüfen, worum die App bittet",
+    "sending": "Deine Antwort wird gesendet",
+    "unnamedApp": "Unbenannte App",
+    "title": "{{app}} mit deinem Boardsesh-Konto verbinden?",
+    "titleReconnect": "{{app}} erneut verbinden?",
+    "signedInAs": "Angemeldet als {{account}}.",
+    "signOut": "Nicht du? Abmelden",
+    "reconnect": "Du hast {{app}} schon einmal getrennt. Wenn du Erlauben wählst, wird die App wieder verbunden.",
+    "canHeading": "{{app}} darf dann",
+    "scopes": {
+      "profileRead": "Deinen Anzeigenamen und dein Profilbild sehen",
+      "logbookRead": "Jeden Eintrag in deinem Routenbuch sehen, auf jedem Board",
+      "logbookOnlyMe": "Auch Einträge, die du auf „Nur ich“ gestellt hast",
+      "offlineAccess": "Diesen Zugriff behalten, bis du die App trennst",
+      "other": "Weiterer Zugriff: {{scope}}"
+    },
+    "cannot": "Die App kann nichts in deinem Konto ändern und sieht nie dein Passwort.",
+    "notReviewed": "Boardsesh hat diese App nicht geprüft. Verbinde nur Apps, denen du vertraust.",
+    "redirect": "Nach deiner Wahl geht es zurück zu {{host}}.",
+    "links": {
+      "label": "Über {{app}}",
+      "homepage": "Website",
+      "privacy": "Datenschutzerklärung",
+      "terms": "Nutzungsbedingungen",
+      "newTab": "(öffnet in neuem Tab)"
+    },
+    "allow": "Erlauben",
+    "deny": "Nicht erlauben",
+    "disconnect": "Du kannst die App jederzeit unter Einstellungen › Verbundene Apps trennen.",
+    "backToApp": "Zurück zu {{app}}",
+    "connected": {
+      "title": "{{app}} ist verbunden",
+      "body": "Du kommst gleich zurück zu {{app}}. Falls nichts passiert, nutze den Button unten."
+    },
+    "declined": {
+      "title": "{{app}} ist nicht verbunden",
+      "body": "Es wurde nichts geteilt. Du kommst gleich zurück zu {{app}}."
+    },
+    "appFull": {
+      "title": "{{app}} nimmt gerade keine neuen Verbindungen an",
+      "body": "Die App hat ihr Limit vorerst erreicht, deshalb wurde nichts geteilt. Versuch es später noch mal."
+    },
+    "appNotReady": {
+      "title": "{{app}} kann sich noch nicht verbinden",
+      "body": "Die Entwickler*innen haben die App noch nicht fertig eingerichtet, deshalb wurde nichts geteilt."
+    },
+    "appError": {
+      "title": "{{app}} wurde nicht verbunden",
+      "body": "Es wurde nichts geteilt. Geh zurück zu {{app}} und versuch es noch mal."
+    },
+    "appUnavailable": {
+      "title": "Diese App kann sich nicht verbinden",
+      "body": "Die App ist auf Boardsesh gerade nicht verfügbar, deshalb wurde nichts geteilt."
+    },
+    "signInAgain": {
+      "title": "Melde dich erneut an, um fortzufahren",
+      "body": "Zum Verbinden einer App brauchst du eine aktuelle Anmeldung. Mit deinem Konto ist alles in Ordnung.",
+      "button": "Anmelden"
+    },
+    "busy": {
+      "title": "Boardsesh ist gerade ausgelastet",
+      "body": "Es wurde nichts geteilt. Versuch es in einer Minute noch mal."
+    },
+    "failed": {
+      "title": "Das hat nicht geklappt",
+      "body": "Es wurde nichts geteilt. Versuch es noch mal oder geh zurück zur App und verbinde sie erneut."
+    },
+    "tryAgain": "Erneut versuchen"
+  }
+}
