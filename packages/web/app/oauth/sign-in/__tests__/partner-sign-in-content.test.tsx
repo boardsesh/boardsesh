@@ -85,6 +85,8 @@ describe('PartnerSignInContent', () => {
     expect(screen.getByText('We ask every 30 days and after a password change.')).toBeTruthy();
     expect(screen.getByText(/Signed in as climber@example.com/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Not you? Sign out' }).getAttribute('href')).toContain('/auth/signout');
+    // Signing in again is usually as the same climber.
+    expect((screen.getByLabelText('Email') as HTMLInputElement).value).toBe('climber@example.com');
   });
 
   it('tells a climber who just signed in to wait out the minute after a password change', () => {

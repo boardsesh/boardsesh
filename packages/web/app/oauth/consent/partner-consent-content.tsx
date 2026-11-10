@@ -71,8 +71,13 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
         {includesOnlyMeTicks ? (
           <Typography
             variant="body2"
-            color="text.secondary"
-            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              mt: 0.5,
+              fontWeight: themeTokens.typography.fontWeight.medium,
+            }}
           >
             <LockOutlined aria-hidden sx={{ fontSize: 16 }} />
             {t('consent.scopes.logbookOnlyMe')}

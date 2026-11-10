@@ -10,6 +10,7 @@ import { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from '@boardsesh/a
 import SocialLoginButtons from '@/app/components/auth/social-login-buttons';
 import { PasswordSignInFields } from '@/app/components/auth/password-sign-in-fields';
 import {
+  EMAIL_REGEX,
   initialLoginValues,
   validateLoginFields,
   type LoginErrors,
@@ -79,7 +80,11 @@ function PartnerSignInForm({ view }: { view: SignInFormView }) {
   const { t } = useTranslation('oauth');
   const { t: tAuth } = useTranslation('auth');
   const formId = useId();
-  const [values, setValues] = useState<LoginValues>(initialLoginValues);
+  // Signing in again is usually as the same climber, so start from their email.
+  const [values, setValues] = useState<LoginValues>(() => ({
+    ...initialLoginValues,
+    email: view.account && EMAIL_REGEX.test(view.account) ? view.account : '',
+  }));
   const [errors, setErrors] = useState<LoginErrors>({});
   const urlError = useSignInErrorMessage(view.errorCode);
   const [serverError, setServerError] = useState<string | null>(urlError);
