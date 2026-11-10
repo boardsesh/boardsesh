@@ -42,6 +42,8 @@ const PARTNER_MODULES = [
   '../mode',
   '../offline',
   '../registered-origins',
+  '../registration',
+  '../registration-rules',
   '../routes',
   '../tables',
   '../transaction',
@@ -50,6 +52,7 @@ const PARTNER_MODULES = [
   '../../../handlers/partner-rate-limits',
   '../../../handlers/public-api/http',
   '../../../handlers/public-api/router',
+  '../../../graphql/resolvers/oauth-clients/partner-registration',
 ];
 
 const VALID_SECRET = 'partner-oauth-test-secret-never-deployed-0123456789';
@@ -192,6 +195,65 @@ describe('the F10 entry point', () => {
       handler({ method: 'GET', url: '/v1/me', headers: { host: 'api.boardsesh.com' } } as never, {} as never),
     ).resolves.toBe(false);
     expect(loadRuntime).not.toHaveBeenCalled();
+  });
+});
+
+describe('the F12 entry point', () => {
+  it('answers NOT_FOUND with the mode off and builds nothing, signed in or not', async () => {
+    let authorityLoaded = false;
+    vi.doMock('../authority', () => {
+      authorityLoaded = true;
+      return { getPartnerAuthorityRuntime: () => 'runtime' };
+    });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    vi.stubEnv('PARTNER_OAUTH_DEVELOPER_ALLOWLIST', 'developer-1');
+    callCounts.betterAuth = 0;
+    callCounts.createDedicatedPool = 0;
+    const { oauthClientMutations, oauthClientQueries, __resetPartnerRegistrationDeploymentForTests } =
+      await import('../../../graphql/resolvers/oauth-clients/partner-registration');
+    __resetPartnerRegistrationDeploymentForTests();
+    const signedIn = { connectionId: 'developer', isAuthenticated: true, userId: 'developer-1' };
+    const anonymous = { connectionId: 'anonymous', isAuthenticated: false };
+    for (const context of [signedIn, anonymous]) {
+      const calls = [
+        oauthClientQueries.myOAuthClients(undefined, {}, context),
+        oauthClientMutations.rotateOAuthClientSecret(undefined, { clientId: 'x' }, context),
+        oauthClientMutations.deleteOAuthClient(undefined, { clientId: 'x' }, context),
+        oauthClientMutations.updateOAuthClient(undefined, { input: { clientId: 'x', name: 'Crimp Lab' } }, context),
+        oauthClientMutations.createOAuthClient(
+          undefined,
+          {
+            input: {
+              name: 'Crimp Lab',
+              privacyPolicyUrl: 'https://crimp.example.test/privacy',
+              applicationType: 'WEB',
+              tokenEndpointAuthMethod: 'NONE',
+              redirectUris: ['https://crimp.example.test/cb'],
+            },
+          },
+          context,
+        ),
+      ];
+      for (const call of calls) await expect(call).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    }
+    expect(authorityLoaded).toBe(false);
+    expect(callCounts.betterAuth).toBe(0);
+    expect(callCounts.createDedicatedPool).toBe(0);
+  });
+
+  it('reads the mode once, from the environment', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    const { oauthClientQueries, __resetPartnerRegistrationDeploymentForTests } =
+      await import('../../../graphql/resolvers/oauth-clients/partner-registration');
+    __resetPartnerRegistrationDeploymentForTests();
+    const context = { connectionId: 'developer', isAuthenticated: true, userId: 'developer-1' };
+    await expect(oauthClientQueries.myOAuthClients(undefined, {}, context)).rejects.toMatchObject({
+      extensions: { code: 'NOT_FOUND' },
+    });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    await expect(oauthClientQueries.myOAuthClients(undefined, {}, context)).rejects.toMatchObject({
+      extensions: { code: 'NOT_FOUND' },
+    });
   });
 });
 

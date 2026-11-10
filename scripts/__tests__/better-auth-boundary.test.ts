@@ -15,27 +15,41 @@ const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
 const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
 const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
 /** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
-const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'family-guard.ts', 'fence.ts'];
+const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'family-guard.ts', 'fence.ts', 'registration.ts'];
 /**
- * The production modules outside the partner folder that may reach into it,
- * each with what it may load. None of these constructs an authority or opens a
- * pool: the OAuth routes (F9) and the public `/v1` API (F10).
+ * The only production modules outside the partner folder that may reach into
+ * it, and what each may load. None of these constructs an authority or opens a
+ * pool: the authority itself comes only through the loader.
  */
 const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
+  // The OAuth routes on the API host (F9).
   'packages/backend/src/handlers/partner-auth.ts': [
     '../auth/partner/load-authority',
     '../auth/partner/mode',
     '../auth/partner/routes',
   ],
+  // The public /v1 API on the API host (F10).
   'packages/backend/src/handlers/public-api/router.ts': [
     '../../auth/partner/load-authority',
     '../../auth/partner/mode',
+  ],
+  // The developer console's GraphQL operations (F12).
+  'packages/backend/src/graphql/resolvers/oauth-clients/partner-registration.ts': [
+    '../../../auth/partner/load-authority',
+    '../../../auth/partner/mode',
+    '../../../auth/partner/registration-rules',
   ],
   // The retention sweep's job (F11), which runs whatever the mode and so must never load Better Auth.
   'packages/backend/src/services/partner-oauth-sweep.ts': ['../auth/partner/retention'],
 };
 /** The sweep itself: plain SQL on the partner tables. */
 const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
+/**
+ * Partner modules an entry point loads besides the loader, whose one import of
+ * the authority is dynamic (checked below). They import no Better Auth and no
+ * other partner module but `mode`.
+ */
+const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts'];
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -208,6 +222,15 @@ describe('Better Auth dependency boundary', () => {
       const entrySource = readRepoFile(entryPoint);
       expect(entrySource).not.toMatch(/import\(['"`][^'"`]*auth\/partner/);
       expect(importSpecifiers(entrySource).some(isBetterAuthSpecifier)).toBe(false);
+    },
+  );
+
+  it.each(PARTNER_ENTRY_TARGETS)(
+    'keeps %s, which an entry point loads, free of Better Auth and the authority',
+    (file) => {
+      const specifiers = runtimeImportSpecifiers(readRepoFile(`${PARTNER_ROOT}${file}`));
+      expect(specifiers.some(isBetterAuthSpecifier)).toBe(false);
+      expect(specifiers.filter((specifier) => specifier.startsWith('./') && specifier !== './mode')).toEqual([]);
     },
   );
 
