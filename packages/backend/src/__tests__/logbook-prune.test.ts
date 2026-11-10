@@ -5,6 +5,7 @@ import { boardClimbAliases, boardseshTicks, logbookChangeWatermark, logbookChang
 import { db } from '../db/client';
 import {
   LOGBOOK_FEED_ORIGIN,
+  positionIsBefore,
   logbookFeedAliasJoin,
   logbookFeedTickColumns,
   logbookVisibleTicksFilter,
@@ -15,7 +16,7 @@ import {
   type LogbookFeedPosition,
   type LogbookFeedTick,
 } from '../services/logbook-feed';
-import { pruneLogbookChanges, type LogbookPruneOptions } from '../services/logbook-prune';
+import { pruneLogbookChanges, type BatchRunner, type LogbookPruneOptions } from '../services/logbook-prune';
 import { getWorkerDatabaseUrl } from './worker-db';
 
 /**
@@ -26,6 +27,11 @@ import { getWorkerDatabaseUrl } from './worker-db';
  * Remove a protection to prove these fail:
  * - the watermark update in the delete transaction: the old-cursor, in-flight
  *   page and randomized tests get a page with a gap instead of 410.
+ * - the watermark update moved to a transaction of its own after the delete:
+ *   the between-transactions test reads a page with a gap.
+ * - the batch's highest position by `seq` alone: the out-of-feed-order batch
+ *   leaves a deleted row above the watermark.
+ * - the idle-in-transaction timeout: the bounds test.
  * - "never move the watermark back": the out-of-order test gets a page with a gap.
  * - the horizon check (`txid < xmin`): the open-transaction test deletes rows
  *   past the horizon and expires a current cursor.
@@ -440,6 +446,110 @@ describe('pruning the logbook change log', { timeout: 90_000 }, () => {
     expect(await watermark()).toEqual(positionOf(rows[11]));
   });
 
+  it('leaves no moment between its transactions when a held cursor reads past a deleted change', async () => {
+    const ticks: string[] = [];
+    for (let index = 0; index < 6; index += 1) ticks.push(await insertTick());
+    await waitForWritesToSettle();
+    // A reader that has read the first change and stopped.
+    const first = await pageAt(LOGBOOK_FEED_ORIGIN, 1);
+    if (first.status !== 'ok') throw new Error('expired');
+    const rows = await changeRows();
+    await ageRows(rows.slice(0, 4));
+    await waitForWritesToSettle();
+
+    // After every transaction the job commits, that cursor answers 410 or gets every later change.
+    const pagesWithAGap: string[][] = [];
+    let commits = 0;
+    await pruneLogbookChanges(
+      {
+        read: (callback) => db.transaction(callback),
+        runBatch: async (callback) => {
+          const result = await db.transaction(callback);
+          commits += 1;
+          const page = await pageAt(first.next);
+          if (page.status === 'ok') {
+            const missing = ticks.slice(1).filter((tickUuid) => !tickIdsOf(page).includes(tickUuid));
+            if (missing.length > 0) pagesWithAGap.push(missing);
+          }
+          return result;
+        },
+      },
+      { rowsPerBatch: 2 },
+    );
+    expect(commits).toBe(2);
+    expect(pagesWithAGap).toEqual([]);
+    expect(await pageAt(first.next)).toEqual(EXPIRED);
+  });
+
+  it('raises the watermark over the highest feed position a batch deleted, not the highest seq', async () => {
+    // `lowTxid` gets its txid first but is written after `highTxid`, so in one
+    // batch the highest seq is not the highest feed position.
+    const writer = openClient();
+    let written: () => void = () => {};
+    const highWritten = new Promise<void>((resolve) => {
+      written = resolve;
+    });
+    let started: () => void = () => {};
+    const hasTxid = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const lowTxid = uniqueId('tick');
+    const late = writer.begin(async (transaction) => {
+      await transaction`SELECT pg_current_xact_id()`;
+      started();
+      await highWritten;
+      await transaction`
+        INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, status, attempt_count, climbed_at)
+        VALUES (${lowTxid}, ${CLIMBER_A}, ${BOARD}, 'prune-climb', 40, 'send', 1, '2026-05-01 18:22:37')`;
+    });
+    await hasTxid;
+    const highTxid = await insertTick();
+    written();
+    await late;
+    const kept = await insertTick();
+    await waitForWritesToSettle();
+    const rows = await changeRows();
+    // Insertion order: highTxid, lowTxid, kept. Feed order: lowTxid, highTxid, kept.
+    expect(rows.map((row) => row.tickUuid)).toEqual([highTxid, lowTxid, kept]);
+
+    // A reader that has read lowTxid, the first change in feed order, and stopped.
+    const reader = await pageAt(LOGBOOK_FEED_ORIGIN, 1);
+    if (reader.status !== 'ok') throw new Error('expired');
+    expect(tickIdsOf(reader)).toEqual([lowTxid]);
+
+    await ageRows(rows.slice(0, 2));
+    expect(await prune()).toMatchObject({ rowsDeleted: 2, batches: 1, prunedThrough: positionOf(rows[0]) });
+    // highTxid's change is gone, so the reader gets 410, not a page that skips it.
+    expect(await pageAt(reader.next)).toEqual(EXPIRED);
+  });
+
+  it('bounds both of its transactions, including how long either may sit idle', async () => {
+    await insertTick();
+    const rows = await changeRows();
+    await ageRows(rows);
+    await waitForWritesToSettle();
+
+    const seen: Record<'walk' | 'delete', Array<Record<string, string>>> = { walk: [], delete: [] };
+    const recordingSettings =
+      (kind: 'walk' | 'delete'): BatchRunner =>
+      (callback) =>
+        db.transaction(async (transaction) => {
+          const result = await callback(transaction);
+          const [settings] = (await transaction.execute(sql`
+            SELECT current_setting('statement_timeout') AS statement,
+                   current_setting('lock_timeout') AS lock,
+                   current_setting('idle_in_transaction_session_timeout') AS idle
+          `)) as unknown as Array<Record<string, string>>;
+          seen[kind].push(settings);
+          return result;
+        });
+    await pruneLogbookChanges({ read: recordingSettings('walk'), runBatch: recordingSettings('delete') });
+
+    expect(seen.delete).toEqual([{ statement: '5s', lock: '1s', idle: '10s' }]);
+    // The walk, then the read of the watermark at the end, which sets nothing.
+    expect(seen.walk[0]).toEqual({ statement: '2min', lock: '0', idle: '10s' });
+  });
+
   it('stops at its batch and time budgets and leaves the rest for the next run', async () => {
     for (let index = 0; index < 10; index += 1) await insertTick();
     const rows = await changeRows();
@@ -507,15 +617,50 @@ describe('a reader, writers and the prune at once', () => {
   // Reproduce a failure with LOGBOOK_PRUNE_TEST_SEED=<printed seed>.
   const baseSeed = Number(process.env.LOGBOOK_PRUNE_TEST_SEED ?? Date.now() % 1_000_000);
 
-  async function randomizedRun(seed: number): Promise<{ expiries: number }> {
+  async function randomizedRun(seed: number): Promise<{ expiries: number; checkedPages: number }> {
     const random = mulberry32(seed);
     const writers = Array.from({ length: 3 }, () => openClient());
     const live: string[] = [];
     let expiries = 0;
 
     const reader = { ...(await bootstrap(CLIMBER_A)) };
+    let checkedPages = 0;
+    /**
+     * Reads one page and, unless it expired, checks the reader against the
+     * database as the page saw it: every tick with no change past where the page
+     * stopped must already be exactly what that snapshot holds. A change the
+     * prune deleted without a 410 leaves its tick stale or missing here, on the
+     * page that skipped it, before any later 410 and fresh start can hide it.
+     */
     const readOnePage = async (): Promise<boolean> => {
-      const page = await readLogbookFeedPage(db, { userId: CLIMBER_A, cursor: reader.cursor, limit: 2 });
+      const captured: {
+        truth?: { ticks: Map<string, LogbookFeedTick>; changes: LogbookFeedPosition[]; changedTicks: string[] };
+      } = {};
+      const page = await readLogbookFeedPage(db, {
+        userId: CLIMBER_A,
+        cursor: reader.cursor,
+        limit: 2,
+        withinRead: async (transaction) => {
+          const ticks = await transaction
+            .select(logbookFeedTickColumns)
+            .from(boardseshTicks)
+            .leftJoin(boardClimbAliases, logbookFeedAliasJoin)
+            .where(logbookVisibleTicksFilter(CLIMBER_A));
+          const changes = await transaction
+            .select({
+              txid: sql<string>`${logbookChanges.txid}::text`,
+              seq: sql<string>`${logbookChanges.seq}::text`,
+              tickUuid: logbookChanges.tickUuid,
+            })
+            .from(logbookChanges)
+            .where(eq(logbookChanges.userId, CLIMBER_A));
+          captured.truth = {
+            ticks: new Map(ticks.map((row) => [row.uuid, row])),
+            changes: changes.map(({ txid, seq }) => ({ txid, seq })),
+            changedTicks: changes.map((change) => change.tickUuid),
+          };
+        },
+      });
       if (page.status === 'expired') {
         expiries += 1;
         Object.assign(reader, await bootstrap(CLIMBER_A));
@@ -526,12 +671,33 @@ describe('a reader, writers and the prune at once', () => {
         else reader.copy.delete(entry.id);
       }
       reader.cursor = { generation: page.generation, ...page.next };
+
+      const seen = captured.truth;
+      if (!seen) throw new Error('the page was read without its snapshot');
+      const readThrough: LogbookFeedPosition = page.hasMore ? page.next : { txid: page.horizon, seq: '0' };
+      const pending = new Set(
+        seen.changedTicks.filter((_tickUuid, index) => positionIsBefore(readThrough, seen.changes[index])),
+      );
+      for (const tickUuid of new Set([...seen.ticks.keys(), ...reader.copy.keys()])) {
+        if (pending.has(tickUuid)) continue;
+        expect(reader.copy.get(tickUuid), `seed ${seed}: ${tickUuid} after a page that read through it`).toEqual(
+          seen.ticks.get(tickUuid),
+        );
+      }
+      checkedPages += 1;
       return page.hasMore;
     };
 
     let writing = true;
     const readerLoop = (async () => {
-      while (writing) {
+      for (let iteration = 1; writing; iteration += 1) {
+        // Every third page, let the prune overtake the reader first, so the 410
+        // path runs mid-run and the pages after the fresh start are checked too.
+        if (iteration % 3 === 0) {
+          for (const deadline = Date.now() + 1000; writing && Date.now() < deadline; await delay(5)) {
+            if (positionIsBefore(reader.cursor, await watermark())) break;
+          }
+        }
         await readOnePage();
         await delay(Math.floor(random() * 20));
       }
@@ -545,7 +711,7 @@ describe('a reader, writers and the prune at once', () => {
       }
     })();
 
-    const operations = Array.from({ length: 80 }, () => random());
+    const operations = Array.from({ length: 150 }, () => random());
     const workers = writers.map(async (writer) => {
       for (;;) {
         const roll = operations.shift();
@@ -564,6 +730,7 @@ describe('a reader, writers and the prune at once', () => {
           const target = live.splice(Math.floor(random() * live.length), 1)[0];
           await writer`DELETE FROM boardsesh_ticks WHERE uuid = ${target}`;
         }
+        await delay(Math.floor(random() * 4));
       }
     });
     try {
@@ -573,10 +740,9 @@ describe('a reader, writers and the prune at once', () => {
       await Promise.all([readerLoop, pruneLoop]);
     }
 
-    // One last prune, then read until the horizon is past every write.
+    // Read until the horizon is past every write. No prune here: a 410 now would
+    // start the reader over and the comparison below could not see a gap.
     await waitForWritesToSettle();
-    await ageChanges(sql`true`);
-    await prune();
     while (await readOnePage());
 
     const expected = [...(await publicView(CLIMBER_A)).values()].sort((left, right) =>
@@ -584,15 +750,17 @@ describe('a reader, writers and the prune at once', () => {
     );
     const actual = [...reader.copy.values()].sort((left, right) => left.uuid.localeCompare(right.uuid));
     expect(actual, `seed ${seed}: the reader's copy differs from the database`).toEqual(expected);
-    return { expiries };
+    return { expiries, checkedPages };
   }
 
   it.each([0, 1, 2])(
-    "keeps the reader's copy equal to the database, through 410 and a fresh start (variant %i)",
+    "keeps the reader's copy equal to the database after every page, through 410 and a fresh start (variant %i)",
     async (variant) => {
-      const { expiries } = await randomizedRun(baseSeed + variant);
-      // The prune overtook the reader at least once, so the 410 path ran.
+      const { expiries, checkedPages } = await randomizedRun(baseSeed + variant);
+      // The prune overtook the reader at least once, so the 410 path ran, and
+      // the reader read on afterwards, so pages after a fresh start were checked.
       expect(expiries).toBeGreaterThan(0);
+      expect(checkedPages).toBeGreaterThan(expiries);
     },
     120_000,
   );

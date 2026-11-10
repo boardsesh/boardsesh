@@ -1927,7 +1927,9 @@ Written into the public docs in these words:
   watermark, or the new watermark without the rows, never the gap between.
   There is never a committed deletion above the watermark. The 410 boundary is
   exact: the watermark is itself a deleted row's position, so a cursor below it
-  has lost at least that row and answers `410 cursor_expired`, and a cursor at
+  answers `410 cursor_expired`. The watermark is global and the feed is per
+  climber, so the deleted row may be another climber's: a 410 means this
+  climber's changes may be gone, not that they are. A cursor at
   or above it is valid however old it is, because nothing after it was
   deleted. Validity is measured against what was pruned, not against when the
   cursor was issued.
