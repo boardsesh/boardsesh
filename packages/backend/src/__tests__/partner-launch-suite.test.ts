@@ -2215,6 +2215,8 @@ describe('partner OAuth on, in the real server', () => {
             disconnectServerError: disconnected.status >= 500,
           }).toEqual({ consent: 400, refreshIssued: false, refreshServerError: false, disconnectServerError: false });
         } finally {
+          // A failed assertion must not leave the key share held for the next test's hooks.
+          await holder`ROLLBACK`.catch(() => undefined);
           holder.release();
         }
         for (const table of [oauthConnections, oauthConsentInteractions, oauthRefreshToken] as const) {
@@ -2225,12 +2227,17 @@ describe('partner OAuth on, in the real server', () => {
     );
 
     it(
-      "deleting a developer's account while a consent answer, a refresh and a Disconnect queue on its app: no deadlock",
+      "account deletion takes its app's partner locks before the cascade: consent, refresh and Disconnect queue behind it",
       async () => {
-        // The users delete cascades into the developer's apps, so account
-        // deletion takes the same partner-order locks as an app delete first
-        // (lockOwnedAppsForDeletion). Same gun as above: a key share on the app
-        // row parks the cascade at the moment it would delete the app.
+        // What this proves: deleteAccount takes the app's partner-order locks
+        // (lockOwnedAppsForDeletion) before its users delete cascades into the
+        // app, so a consent answer, a refresh and a Disconnect on that app queue
+        // behind the deletion and then answer as client errors. It does not
+        // reproduce a deadlock: with the lock step removed, these three finish
+        // before the cascade and no cycle forms here or in the reviewer's
+        // stronger probe. The step is a defensive guard that keeps account
+        // deletion in the same order as app deletion. Same gun as above: a key
+        // share on the app row parks the cascade where it would delete the app.
         const app = await registerApp();
         const climber = await newClimber();
         const narrow = await connect(app, climber, { scopes: ['offline_access'] });
@@ -2276,6 +2283,8 @@ describe('partner OAuth on, in the real server', () => {
             disconnectServerError: disconnected.status >= 500,
           }).toEqual({ consent: 400, refreshIssued: false, refreshServerError: false, disconnectServerError: false });
         } finally {
+          // A failed assertion must not leave the key share held for the next test's hooks.
+          await holder`ROLLBACK`.catch(() => undefined);
           holder.release();
         }
         expect(await db.$count(users, eq(users.id, app.developerId))).toBe(0);
