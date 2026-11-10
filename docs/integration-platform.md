@@ -434,7 +434,16 @@ folder: `handlers/partner-auth.ts` (these routes), `handlers/public-api/router.t
 developer console's operations, see [Self-service registration](#self-service-registration)).
 With the mode `off` none answers anything new, and none loads Better Auth.
 `scripts/__tests__/better-auth-boundary.test.ts` holds that list and what each
-may import.
+may import. Backend and web parse it with the same function
+(`@boardsesh/auth-protocol/partner-oauth-mode`): an absent, empty or misspelled
+value is `off`.
+
+**Set it on the web service too, every time it changes.** The web reads its own
+environment to decide whether to guard OAuth account links (see
+[Consent and the www session](#consent-and-the-www-session)). Turn the web on
+before or with the backend, and turn it off after the backend: a backend serving
+consent while the web still reads `off` would let an old session's link buy a
+fresh sign-in time.
 
 | Mode | What the backend does |
 | --- | --- |
@@ -562,7 +571,11 @@ OAuth callback that links an unlinked provider account into a live session.
 whose `linkAccount` refuses that link unless the session's own sign-in is under
 30 days old (NextAuth's `error=Callback`). Signing in with a provider account
 already linked to the climber, creating an account, and linking by verified
-provider email with no session all work as before.
+provider email with no session all work as before. The guard is on only while
+the web's `PARTNER_OAUTH_MODE` is not `off`: every cookie from before the claim
+lacks `auth_time`, so guarding before partner consent exists would refuse every
+signed-in climber's link and protect nothing. By the time the mode leaves `off`,
+sessions will have carried the claim for weeks.
 
 **`prompt=login`** is dropped. Stock Better Auth answers it by asking for a
 Better Auth sign-in, which never happens here, so it would loop; the 30-day rule

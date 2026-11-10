@@ -4,6 +4,7 @@ import type { Adapter, AdapterAccount } from 'next-auth/adapters';
 import { getToken, type JWT } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { isRecentSignIn, readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
+import { parsePartnerOAuthMode } from '@boardsesh/auth-protocol/partner-oauth-mode';
 
 /** Named so NextAuth's logs say why the callback failed. It sends the browser to `error=Callback`. */
 export class StaleSessionLinkError extends Error {
@@ -58,8 +59,16 @@ async function readCallbackSession(base: NextAuthOptions, request: NextRequest):
  * no session cookie, a provider account already linked to this user, and a
  * new account all run as before. Staged mode needs none of this, because its
  * adapter refuses every link and the backend refuses to link into an actor.
+ *
+ * The guard only matters once partner consent can exist, so it follows the
+ * same `PARTNER_OAUTH_MODE` the backend reads, and does nothing while that is
+ * `off` (absent, empty or misspelled included). Every cookie from before the
+ * claim lacks `auth_time`, so guarding earlier would refuse every signed-in
+ * climber's link. The web service needs the variable set whenever the backend's
+ * mode leaves `off`.
  */
 export async function withSessionLinkGuard(base: NextAuthOptions, request: NextRequest): Promise<NextAuthOptions> {
+  if (parsePartnerOAuthMode(process.env.PARTNER_OAUTH_MODE) === 'off') return base;
   // The adapter type is a union of NextAuth's and Auth.js's; both take one account.
   const linkAccount = base.adapter?.linkAccount as unknown as ((account: AdapterAccount) => unknown) | undefined;
   if (!base.adapter || !linkAccount) return base;
