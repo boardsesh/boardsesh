@@ -63,6 +63,7 @@
       "profileRead": "See your display name and profile photo",
       "logbookRead": "See every tick in your logbook, on every board",
       "logbookOnlyMe": "Including ticks you keep to “Only me”",
+      "logbookUnlisted": "Including unlisted climbs and drafts in your logbook, even ones set by others",
       "offlineAccess": "Keep this access until you disconnect it",
       "other": "Other access: {{scope}}"
     },

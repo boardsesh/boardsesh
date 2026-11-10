@@ -265,6 +265,8 @@ not confirm disconnect.
 The climber can also choose Settings → Connected apps in the Boardsesh app,
 or account settings on the web, and tap Disconnect. A password reset,
 security revocation or account deletion also ends the affected connections.
+Connected apps also shows the climber what your app can read, when they
+connected it, and when it last called the API, to within an hour.
 
 Disconnect removes remembered consent and invalidates every credential family
 for this connection. API calls then return `401 invalid_token`, refreshes

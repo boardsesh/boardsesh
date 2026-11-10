@@ -6,6 +6,7 @@ import { ListRow } from '../../src/components/ListRow';
 import { BoardAccountsSection } from '../../src/components/integrations/BoardAccountsSection';
 import { AppleHealthCard } from '../../src/components/integrations/AppleHealthCard';
 import { StravaCard } from '../../src/components/integrations/StravaCard';
+import { PartnerAppsSection } from '../../src/components/integrations/PartnerAppsSection';
 import { getSupportedIntegrations, type IntegrationId } from '../../src/lib/integrations';
 import { scopedRouter as router } from '../../src/lib/routing/scoped-navigation';
 import { useFeatureFlag } from '../../src/providers/feature-flags-provider';
@@ -71,6 +72,9 @@ export default function IntegrationsScreen() {
           </View>
         </View>
       ) : null}
+      {/* Apps connected through Boardsesh sign-in (partner OAuth). Last, so it
+          appearing once its list loads moves nothing above it. */}
+      <PartnerAppsSection />
     </ScrollView>
   );
 }

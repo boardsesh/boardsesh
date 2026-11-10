@@ -348,6 +348,7 @@ jobs:
               - 'packages/shared/climb-actions/**'
               - 'packages/shared/climb-filters/**'
               - 'packages/shared/community-roles/**'
+              - 'packages/shared/connected-apps/**'
               - 'packages/shared/create-climb-react/**'
               - 'packages/shared/email/**'
               - 'packages/shared/graphql/**'

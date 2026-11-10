@@ -825,7 +825,7 @@
       },
       "settings": {
         "draftLabel": "Guardar como borrador",
-        "draftDescription": "Los borradores quedan privados hasta que los publiques.",
+        "draftDescription": "Los borradores quedan sin listar hasta que los publiques. Las apps conectadas por quien registre uno pueden verlo igualmente.",
         "noMatchLabel": "Sin igualar",
         "noMatchDescription": "No se pueden igualar las manos en la misma presa",
         "noKickboardLabel": "Sin repisa inferior",
@@ -834,7 +834,7 @@
         "campusDescription": "Solo manos, sin apoyar los pies",
         "anyFeetLabel": "Pies libres",
         "anyFeetDescription": "Los pies pueden usar cualquier presa, no solo las marcadas",
-        "wallDraftDescription": "Quienes tengan acceso a este Spraywall pueden escalar tus borradores guardados."
+        "wallDraftDescription": "Quienes tengan acceso a este Spraywall pueden escalar tus borradores guardados. Las apps conectadas por quien registre uno también pueden verlo."
       },
       "drafts": {
         "holds_one": "{{count}} presa",

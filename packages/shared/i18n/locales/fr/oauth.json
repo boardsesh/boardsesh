@@ -63,6 +63,7 @@
       "profileRead": "Voir ton nom affiché et ta photo de profil",
       "logbookRead": "Voir toutes les entrées de ton carnet, sur toutes les boards",
       "logbookOnlyMe": "Y compris les entrées que tu gardes en « Moi uniquement »",
+      "logbookUnlisted": "Y compris les blocs non listés et les brouillons de ton carnet, même ceux ouverts par d’autres",
       "offlineAccess": "Garder cet accès jusqu'à ce que tu la déconnectes",
       "other": "Autre accès : {{scope}}"
     },
@@ -78,7 +79,7 @@
     },
     "allow": "Autoriser",
     "deny": "Ne pas autoriser",
-    "disconnect": "Tu peux la déconnecter à tout moment dans Réglages › Apps connectées.",
+    "disconnect": "Tu peux la déconnecter à tout moment dans Paramètres › Applications connectées.",
     "backToApp": "Retour à {{app}}",
     "connected": {
       "title": "Tu as connecté {{app}}",
