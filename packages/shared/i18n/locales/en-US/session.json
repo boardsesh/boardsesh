@@ -776,6 +776,8 @@
       "preGeneratorOnlyBenchmarksLabel": "Benchmarks only",
       "preGeneratorOnlyBenchmarksDescription": "Most boards have only a few per grade, so a long block can come up short.",
       "preGeneratorOnlyBenchmarksSummary": "Benchmarks",
+      "preGeneratorOnlyVerifiedLabel": "Verified only",
+      "preGeneratorOnlyVerifiedSummary": "Verified",
       "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
       "preGeneratorAddBlock": "Add a block",
       "preGeneratorAddBlockHint": "Adds a block at the end of your workout",

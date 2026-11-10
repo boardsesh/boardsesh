@@ -95,6 +95,7 @@ export function buildClimbCapsules(
     onChangeCollection,
     canFilterPersonalCollections,
     isSprayWall,
+    boardName,
     sortBy,
     sortActive,
     onChangeSort,
@@ -221,10 +222,10 @@ export function buildClimbCapsules(
           label:
             collection === 'any'
               ? t('mobile.filter.collection.label')
-              : collectionChipLabel(collection, t, isSprayWall),
+              : collectionChipLabel(collection, t, isSprayWall, boardName),
           active: collection !== 'any',
           options: visibleCollectionValues({ canFilterPersonalCollections, isSprayWall, current: collection }).map(
-            (value) => ({ value, label: collectionChipLabel(value, t, isSprayWall) }),
+            (value) => ({ value, label: collectionChipLabel(value, t, isSprayWall, boardName) }),
           ),
           selected: collection,
           onSelect: (value) => {

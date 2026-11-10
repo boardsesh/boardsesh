@@ -62,6 +62,7 @@ These are already used consistently in the catalogs — keep using them so we do
 | ----------------------- | ---------------------- |
 | hold                    | presa                  |
 | climb / boulder problem | bloque                 |
+| Verified (Kilter's mark) | Verificado / Verificados |
 | workout block (stage of a training session, not a climb) | fase (bloque stays the climb) |
 | route                   | vía                    |
 | send (logged ascent)    | encadene               |

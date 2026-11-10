@@ -509,6 +509,8 @@
       "quickFiltersFooter": "Elige qué filtros se muestran en la fila superior y en qué orden.",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
+      "verified": "Verificados",
+      "verifiedDescription": "Los bloques verificados los elige Kilter con escaladores y setters.",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
       "close": "Cerrar filtros",
@@ -677,6 +679,7 @@
       "anyFeet": "Pies libres",
       "noKickboard": "Sin repisa",
       "benchmark": "Benchmark",
+      "verified": "Bloque verificado",
       "method": {
         "footless": "Sin pies",
         "footlessKickboard": "Sin pies + KB",

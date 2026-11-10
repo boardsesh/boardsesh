@@ -32,6 +32,7 @@ import { spacing } from '../../../theme/tokens';
 import { Chip, generatorControlStyles } from './generator-controls';
 import type { SizeFilterAvailability, WorkoutFilters } from './workout-blocks';
 import { biasCanSkipSent, biasCanSkipTried, biasDropsFloors, biasNeedsSignIn } from './workout-search-tiers';
+import { isVerifiedBoard } from '../../../lib/benchmark-term';
 
 type Translate = (key: string, options?: Record<string, string | number>) => string;
 
@@ -136,7 +137,12 @@ function skipsSent(filters: WorkoutFilters): boolean {
  * search applies, Any, with its floors and no skip switch. `isAuthenticated` has
  * no default, so no caller can name a bias the search ignores by leaving it out.
  */
-export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAuthenticated: boolean): string {
+export function blockFiltersSummary(
+  filters: WorkoutFilters,
+  t: Translate,
+  isAuthenticated: boolean,
+  boardName?: BoardName | null,
+): string {
   const parts: string[] = [];
   if (blockAppliesFloors(filters, isAuthenticated)) {
     parts.push(
@@ -148,7 +154,13 @@ export function blockFiltersSummary(filters: WorkoutFilters, t: Translate, isAut
   parts.push(climbBiasLabel(appliedClimbBias(filters, isAuthenticated), t));
   if (isAuthenticated && skipsTried(filters)) parts.push(t('mobile.session.preGeneratorSkipTriedSummary'));
   else if (isAuthenticated && skipsSent(filters)) parts.push(t('mobile.session.preGeneratorSkipSentSummary'));
-  if (filters.onlyBenchmarks) parts.push(t('mobile.session.preGeneratorOnlyBenchmarksSummary'));
+  if (filters.onlyBenchmarks) {
+    parts.push(
+      isVerifiedBoard(boardName)
+        ? t('mobile.session.preGeneratorOnlyVerifiedSummary')
+        : t('mobile.session.preGeneratorOnlyBenchmarksSummary'),
+    );
+  }
   return parts.join(' · ');
 }
 
@@ -199,7 +211,10 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
   const title = t('mobile.session.preGeneratorClimbFilters');
   // Signed out a stored bias or skip switch does nothing, so the line shows Any
   // and leaves the switch out.
-  const summary = useMemo(() => blockFiltersSummary(filters, t, isAuthenticated), [filters, isAuthenticated, t]);
+  const summary = useMemo(
+    () => blockFiltersSummary(filters, t, isAuthenticated, boardName),
+    [filters, isAuthenticated, t, boardName],
+  );
   // While closed, the title with the line under it, wrapping across the card's
   // width. Beside the title on one line it cut off at "Skip…" on a 393 pt phone
   // once Skip sent or Benchmarks was on, even in English.
@@ -345,7 +360,11 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
                 ]}
               />
               <SwitchRow
-                label={t('mobile.session.preGeneratorOnlyBenchmarksLabel')}
+                label={
+                  isVerifiedBoard(boardName)
+                    ? t('mobile.session.preGeneratorOnlyVerifiedLabel')
+                    : t('mobile.session.preGeneratorOnlyBenchmarksLabel')
+                }
                 description={t('mobile.session.preGeneratorOnlyBenchmarksDescription')}
                 wrapDescription
                 value={filters.onlyBenchmarks === true}

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 import { resolveClimbAttributes, type ClimbAttributeInput } from './climb-attribute-labels';
+import { benchmarkAttributeLabel } from '../lib/benchmark-term';
 
 type ClimbAttributeIconsProps = ClimbAttributeInput & {
   /**
@@ -25,6 +26,7 @@ type ClimbAttributeIconsProps = ClimbAttributeInput & {
  */
 export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
   benchmarkDifficulty,
+  boardName,
   characteristics,
   isNoMatch: isNoMatchFallback,
   size = 14,
@@ -44,7 +46,7 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
   return (
     <>
       {isBenchmark ? (
-        <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.benchmark')} style={styles.icon}>
+        <View accessibilityRole="image" accessibilityLabel={benchmarkAttributeLabel(boardName, t)} style={styles.icon}>
           <Icon name="benchmark" size={size} color={theme.systemColors.secondaryLabel} />
         </View>
       ) : null}

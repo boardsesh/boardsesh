@@ -150,7 +150,13 @@ export type BoardCapabilities = {
    * one, so the URL builder drops it separately — this flag is about the family
    * having such a site at all.
    */
-  auroraAppLink: boolean;
+  auroraAppLink: boolean /**
+   * What the app calls the climbs marked by `benchmark_difficulty`. Kilter's own
+   * app has no benchmarks and calls its list Verified, so Kilter says Verified.
+   * Only the word differs: the column, the filter flags and the wire fields are
+   * "benchmark" on every board.
+   */;
+  benchmarkTerm: 'benchmark' | 'verified';
 };
 
 /**
@@ -169,6 +175,7 @@ const AURORA_CAPABILITIES: BoardCapabilities = {
   multiFrameClimbs: true,
   nativeBoardControl: true,
   auroraAppLink: true,
+  benchmarkTerm: 'benchmark',
 };
 
 /**
@@ -186,6 +193,7 @@ const MOONBOARD_CAPABILITIES: BoardCapabilities = {
   multiFrameClimbs: true,
   nativeBoardControl: true,
   auroraAppLink: false,
+  benchmarkTerm: 'benchmark',
 };
 
 /**
@@ -203,6 +211,7 @@ const WOODS_CAPABILITIES: BoardCapabilities = {
   multiFrameClimbs: false,
   nativeBoardControl: true,
   auroraAppLink: false,
+  benchmarkTerm: 'benchmark',
 };
 
 /**
@@ -234,13 +243,14 @@ const SPRAY_CAPABILITIES: BoardCapabilities = {
   multiFrameClimbs: false,
   nativeBoardControl: false,
   auroraAppLink: false,
+  benchmarkTerm: 'benchmark',
 };
 
 // Typed as a total Record over BoardName, so adding a board to SUPPORTED_BOARDS
 // without deciding what it can do is a compile error rather than a silent
 // fallthrough to the Aurora defaults.
 const CAPABILITIES_BY_BOARD: Record<BoardName, BoardCapabilities> = {
-  kilter: AURORA_CAPABILITIES,
+  kilter: { ...AURORA_CAPABILITIES, benchmarkTerm: 'verified' },
   tension: AURORA_CAPABILITIES,
   decoy: AURORA_CAPABILITIES,
   touchstone: AURORA_CAPABILITIES,

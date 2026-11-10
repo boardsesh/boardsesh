@@ -1093,6 +1093,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       ) : null}
       <ClimbAttributeIcons
         benchmarkDifficulty={climb.benchmark_difficulty}
+        boardName={boardName}
         characteristics={climb.characteristics}
         isNoMatch={climb.is_no_match}
       />

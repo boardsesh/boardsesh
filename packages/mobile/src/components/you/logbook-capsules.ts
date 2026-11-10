@@ -47,6 +47,7 @@ import { gradeBoundLabels, type NamedGradeStop } from '../../lib/grade-stops';
 import { LOGBOOK_PINNABLE_CHIP_CATALOG, type LogbookPinnableChipKind } from '../../lib/logbook-pinnable-chips';
 import { countActiveLogbookFilters } from './use-logbook-search';
 import type { LogbookBoardOption } from './use-logbook-board-options';
+import { isVerifiedBoard } from '../../lib/benchmark-term';
 
 /** The inline rails a capsule can open under the row. */
 export type LogbookRailKind = 'grade' | 'angle';
@@ -301,7 +302,9 @@ function activeLabelFor(kind: LogbookPinnableChipKind, input: LogbookLabelInput,
     case 'setter':
       return logbookSetterLabel(filters.setterUsernames, t);
     case 'benchmarks':
-      return t('mobile.logbook.capsules.benchmarks');
+      return isVerifiedBoard(filters.boardType)
+        ? t('mobile.logbook.capsules.verified')
+        : t('mobile.logbook.capsules.benchmarks');
     case 'sort': {
       const { key, direction } = logbookSortKeyOf(sort);
       return logbookSortLabel(key, direction, viewerIsOwner, t);
@@ -498,7 +501,9 @@ export function buildLogbookCapsules(input: LogbookCapsuleInput, t: YouT): Capsu
         capsules.push({
           kind: 'toggle',
           key: kind,
-          label: t('mobile.logbook.capsules.benchmarks'),
+          label: isVerifiedBoard(filters.boardType)
+            ? t('mobile.logbook.capsules.verified')
+            : t('mobile.logbook.capsules.benchmarks'),
           active,
           onPress: () => onChangeFilters({ benchmarkOnly: !filters.benchmarkOnly }),
         });

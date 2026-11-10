@@ -1769,6 +1769,7 @@ function ClimbListInner() {
       getActiveFilterTokens({
         filters,
         boardFilters,
+        boardName,
         grades,
         t,
         formatGradeByDifficultyId: formatBoardGradeByDifficultyId,
@@ -1780,6 +1781,7 @@ function ClimbListInner() {
     [
       filters,
       boardFilters,
+      boardName,
       grades,
       t,
       formatBoardGradeByDifficultyId,
@@ -2058,6 +2060,7 @@ function ClimbListInner() {
           onChangeCollection={handleChangeCollection}
           canFilterPersonalCollections={isAuthenticated}
           isSprayWall={boardName === SPRAY_BOARD_NAME}
+          boardName={boardName}
           sortBy={filters.sortBy}
           sortActive={sortActive}
           onChangeSort={handleChangeSort}

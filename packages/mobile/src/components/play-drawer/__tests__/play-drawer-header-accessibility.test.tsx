@@ -139,11 +139,27 @@ describe('PlayDrawerHeaderAccessibility', () => {
     expect(getByTestId('play-drawer-header-accessibility').dataset.pointerEvents).toBe('box-none');
   });
 
+  it('calls the mark a Verified climb on Kilter', () => {
+    const { getByTestId } = render(
+      createElement(PlayDrawerHeaderAccessibility, {
+        ...baseProps,
+        model: modelWith({ benchmarkDifficulty: '18' }),
+      }),
+    );
+    expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toContain(
+      'mobile.climbRow.verified',
+    );
+  });
+
   it('says the benchmark and no-match glyphs the drawn header puts after the name', () => {
     const { getByTestId, rerender } = render(
       createElement(PlayDrawerHeaderAccessibility, {
         ...baseProps,
-        model: modelWith({ benchmarkDifficulty: '18', characteristics: ['no_match', 'method_footless'] }),
+        model: modelWith({
+          boardName: 'tension',
+          benchmarkDifficulty: '18',
+          characteristics: ['no_match', 'method_footless'],
+        }),
       }),
     );
     expect(getByTestId('play-drawer-header-accessibility').getAttribute('aria-label')).toBe(

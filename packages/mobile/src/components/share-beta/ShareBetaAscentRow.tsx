@@ -193,6 +193,7 @@ export const ShareBetaAscentRow = memo(function ShareBetaAscentRow({
               benchmarkDifficulty={
                 ascent.isBenchmark ? (ascent.consensusDifficultyName ?? ascent.difficultyName ?? '1') : null
               }
+              boardName={ascent.boardType}
               isNoMatch={ascent.isNoMatch}
             />
             {ascent.isMirror ? (

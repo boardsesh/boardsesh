@@ -509,6 +509,8 @@
       "quickFiltersFooter": "Wähle, welche Filter oben in der Leiste erscheinen und in welcher Reihenfolge.",
       "established2plus": "Etabliert 2+",
       "benchmark": "Benchmarks",
+      "verified": "Verifiziert",
+      "verifiedDescription": "Verifizierte Boulder werden von Kilter mit Kletterer*innen und Routenbauer*innen ausgewählt.",
       "showCount_one": "{{count}} Boulder zeigen",
       "showCount_other": "{{count}} Boulder zeigen",
       "close": "Filter schließen",
@@ -677,6 +679,7 @@
       "anyFeet": "Freie Füße",
       "noKickboard": "Ohne FL",
       "benchmark": "Benchmark",
+      "verified": "Verifizierter Boulder",
       "method": {
         "footless": "Ohne Füße",
         "footlessKickboard": "Ohne Füße + KB",

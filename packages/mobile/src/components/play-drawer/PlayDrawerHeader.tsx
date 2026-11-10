@@ -157,6 +157,7 @@ function deriveHeaderFacts(
     : characteristics;
   const attributes: ClimbAttributeInput = {
     benchmarkDifficulty,
+    boardName,
     characteristics: residualCharacteristics?.length ? residualCharacteristics : null,
     isNoMatch: ruleLabels ? undefined : isNoMatch,
   };

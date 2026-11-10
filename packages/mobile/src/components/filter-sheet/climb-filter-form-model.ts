@@ -97,6 +97,8 @@ export type ClimbFilterFormInput = {
     options: { key: CollectionFilter; label: string }[];
     selected: CollectionFilter;
     onSelect: (key: CollectionFilter) => void;
+    /** Says what the board's benchmark option means, when the word needs it (Verified on Kilter). */
+    description?: string;
   };
   popularity: { onStatusChange: (status: StatusFilter) => void; onBucket: (bucket: number | undefined) => void };
   climbType: {
@@ -235,6 +237,7 @@ function qualitySection(input: ClimbFilterFormInput): ClimbFilterFormSection {
   return {
     key: 'quality',
     title: t('mobile.filter.section.quality'),
+    footer: collection.description,
     rows: [
       {
         kind: 'select',

@@ -776,6 +776,8 @@
       "preGeneratorOnlyBenchmarksLabel": "Blocs benchmark uniquement",
       "preGeneratorOnlyBenchmarksDescription": "La plupart des boards en ont peu par cotation, une phase longue peut donc rester incomplète.",
       "preGeneratorOnlyBenchmarksSummary": "Benchmarks",
+      "preGeneratorOnlyVerifiedLabel": "Blocs vérifiés uniquement",
+      "preGeneratorOnlyVerifiedSummary": "Vérifiés",
       "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
       "preGeneratorAddBlock": "Ajouter une phase",
       "preGeneratorAddBlockHint": "Ajoute une phase à la fin de ton entraînement",

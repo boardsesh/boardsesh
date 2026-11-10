@@ -776,6 +776,8 @@
       "preGeneratorOnlyBenchmarksLabel": "Solo benchmark",
       "preGeneratorOnlyBenchmarksDescription": "La maggior parte dei pannelli ne ha solo pochi per grado, quindi una fase lunga potrebbe avere meno blocchi.",
       "preGeneratorOnlyBenchmarksSummary": "Benchmark",
+      "preGeneratorOnlyVerifiedLabel": "Solo verificati",
+      "preGeneratorOnlyVerifiedSummary": "Verificati",
       "preGeneratorOptionAccessibilityLabel": "{{group}}, {{value}}",
       "preGeneratorAddBlock": "Aggiungi una fase",
       "preGeneratorAddBlockHint": "Aggiunge una fase alla fine del tuo allenamento",

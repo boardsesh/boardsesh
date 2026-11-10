@@ -489,6 +489,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       getActiveFilterTokens({
         filters,
         boardFilters,
+        boardName: boardConfig?.boardName,
         grades: gradesData,
         t,
         formatGradeByDifficultyId: formatBoardGradeByDifficultyId,
@@ -501,6 +502,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     [
       filters,
       boardFilters,
+      boardConfig?.boardName,
       gradesData,
       t,
       formatBoardGradeByDifficultyId,
@@ -581,6 +583,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       onChangeCollection: handleChangeCollection,
       canFilterPersonalCollections: isAuthenticated,
       isSprayWall,
+      boardName: boardConfig?.boardName,
       sortControl: chipSortControl,
       accuracyValue,
       onChangeAccuracy: handleChangeAccuracy,
@@ -612,6 +615,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       collection,
       handleChangeCollection,
       isSprayWall,
+      boardConfig?.boardName,
       chipSortControl,
       accuracyValue,
       handleChangeAccuracy,

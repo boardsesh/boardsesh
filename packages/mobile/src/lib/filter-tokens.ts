@@ -29,6 +29,7 @@ import {
 import { buildFilterLabels, buildSortLabel, formatSettersLabel } from './filter-labels';
 import { gradeBoundLabels, type NamedGradeStop } from './grade-stops';
 import type { GradeBound } from '../providers/climb-search-provider';
+import { benchmarkFilterLabel } from './benchmark-term';
 
 export type FilterToken = {
   /** Stable identity for the React key and tests. */
@@ -41,6 +42,8 @@ export type FilterToken = {
 type GetActiveFilterTokensArgs = {
   filters: ClimbFilterState;
   boardFilters: ClimbBoardFilterState;
+  /** Names the benchmark token: Verified on Kilter, Benchmarks elsewhere. */
+  boardName?: string | null;
   grades: Grade[] | undefined;
   t: TFunction<'climbs'>;
   /** Formats a difficulty id in the user's chosen single scale (V or font),
@@ -79,6 +82,7 @@ export function buildNameFilterToken(name: string, t: TFunction<'climbs'>, clear
 export function getActiveFilterTokens({
   filters,
   boardFilters,
+  boardName,
   grades,
   t,
   formatGradeByDifficultyId,
@@ -270,7 +274,7 @@ export function getActiveFilterTokens({
   if (boardFilters.onlyBenchmarks) {
     tokens.push({
       key: 'benchmark',
-      label: t('mobile.filter.benchmark'),
+      label: benchmarkFilterLabel(boardName, t),
       clear: () => patchBoardFilters({ onlyBenchmarks: false }),
     });
   }
