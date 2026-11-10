@@ -198,10 +198,17 @@ export function createPartnerApiAccess({
 }
 
 /**
+ * How long the stamp may wait for the table lock its UPDATE takes. SKIP LOCKED
+ * covers row locks only; a migration holding `oauth_connections` would
+ * otherwise hold every stale request for the partner 2 s lock timeout.
+ */
+const LAST_USED_LOCK_TIMEOUT = '50ms';
+
+/**
  * One UPDATE that names its row through `FOR NO KEY UPDATE SKIP LOCKED`, so it
- * never waits: a connection a Disconnect, a refresh, a consent answer or the
- * password trigger holds is skipped, and the next request an hour on tries
- * again. The hour is checked again in SQL, so of two requests racing past the
+ * never waits for a row: a connection a Disconnect, a refresh, a consent answer
+ * or the password trigger holds is skipped, and a later request tries again. A
+ * table lock (a migration) is waited for at most 50 ms, then the stamp gives up. The hour is checked again in SQL, so of two requests racing past the
  * unlocked read only the first writes; the second finds the row locked or
  * already fresh. It holds the row for that one statement only, and it never
  * touches `users`, so it cannot join a partner lock cycle. A connection ended or
@@ -212,6 +219,7 @@ export async function touchPartnerConnectionLastUsed(
   { connectionId, connectionGeneration }: Pick<PartnerApiPrincipal, 'connectionId' | 'connectionGeneration'>,
 ): Promise<boolean> {
   return runInPartnerTransaction(database, async (transaction) => {
+    await transaction.execute(sql`select set_config('lock_timeout', ${LAST_USED_LOCK_TIMEOUT}, true)`);
     const stamped = await transaction
       .update(oauthConnections)
       .set({ lastUsedAt: sql`now()` })

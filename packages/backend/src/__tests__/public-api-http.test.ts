@@ -1,7 +1,12 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { ApiErrorResponseSchema, MeResponseSchema } from '@boardsesh/public-api';
 import { createPartnerAdmissionGate } from '../auth/partner/admission';
-import { mintPartnerSubject, PARTNER_LAST_USED_RESOLUTION_MS, partnerLastUseIsStale } from '../auth/partner/api-access';
+import {
+  createPartnerApiAccess,
+  mintPartnerSubject,
+  PARTNER_LAST_USED_RESOLUTION_MS,
+  partnerLastUseIsStale,
+} from '../auth/partner/api-access';
 import { judgePartnerBearer, type PartnerBearerRefusal } from '../auth/partner/bearer';
 import {
   apiErrorBody,
@@ -257,6 +262,32 @@ describe("Connected apps' last-use throttle", () => {
 
   it('is one hour', () => {
     expect(PARTNER_LAST_USED_RESOLUTION_MS).toBe(3_600_000);
+  });
+
+  // A busy app's requests must cost nothing: no transaction, no round trip.
+  it('opens no transaction for a fresh stamp, and one for a stale one', async () => {
+    const transaction = vi.fn(async () => {
+      throw new Error('the fake database writes nothing');
+    });
+    const access = createPartnerApiAccess({
+      database: { transaction } as unknown as Parameters<typeof createPartnerApiAccess>[0]['database'],
+      resource: 'https://api.boardsesh.test/v1',
+      hashAccessToken: async (token) => token,
+    });
+    const principal = {
+      clientId: 'client-a',
+      userId: 'user-a',
+      connectionId: 'connection-a',
+      connectionGeneration: 0,
+      scopes: [],
+      accessTokenHash: 'hash',
+    };
+    const fresh = new Date(Date.now() - 5 * 60_000);
+    expect(await access.recordUse({ ...principal, connectionLastUsedAt: fresh })).toBe(false);
+    expect(transaction).not.toHaveBeenCalled();
+    // A failed stamp is swallowed: the request it rides on still answers.
+    expect(await access.recordUse({ ...principal, connectionLastUsedAt: null })).toBe(false);
+    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });
 

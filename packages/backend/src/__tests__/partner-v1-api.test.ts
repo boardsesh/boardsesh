@@ -966,6 +966,53 @@ describe('the public /v1 API', () => {
       TEST_DEADLINE_MS,
     );
 
+    it(
+      'gives up within 50 ms when a migration holds the table, and still answers',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const holder = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+        try {
+          let release!: () => void;
+          const released = new Promise<void>((resolve) => (release = resolve));
+          let holding!: () => void;
+          const heldLock = new Promise<void>((resolve) => (holding = resolve));
+          // What a foreign-key migration takes (0301's pattern): reads pass, writes wait.
+          const held = holder.begin(async (transaction) => {
+            await transaction`lock table oauth_connections in share row exclusive mode`;
+            holding();
+            await released;
+          });
+          await heldLock;
+          const startedAt = Date.now();
+          const answered = await getMe(issued.access_token);
+          const tookMs = Date.now() - startedAt;
+          release();
+          await held;
+          expect(answered.status).toBe(200);
+          expect(tookMs).toBeLessThan(1_000);
+          expect((await connectionOf(client)).lastUsedAt).toBeNull();
+        } finally {
+          await holder.end({ timeout: 5 });
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it('starts again from "not used" when the climber reconnects', async () => {
+      const client = await environment.createClient();
+      const issued = await environment.issueTokens(client);
+      expect((await getMe(issued.access_token)).status).toBe(200);
+      expect((await connectionOf(client)).lastUsedAt).not.toBeNull();
+      expect((await disconnect(issued.access_token)).status).toBe(204);
+      const reconnected = await reconnect(client);
+      const afterReconnect = await connectionOf(client);
+      expect(afterReconnect.connectedAt).not.toBeNull();
+      expect(afterReconnect.lastUsedAt).toBeNull();
+      expect((await getMe(reconnected)).status).toBe(200);
+      expect((await connectionOf(client)).lastUsedAt).not.toBeNull();
+    });
+
     it('writes once when many stale requests race', async () => {
       const client = await environment.createClient();
       await environment.issueTokens(client);

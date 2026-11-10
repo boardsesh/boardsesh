@@ -221,6 +221,16 @@ describe('disconnectApp', () => {
     expect(countsOf(await readPartnerState(attacker))).toEqual(INTACT_COUNTS);
   });
 
+  it("refuses another climber's id for the same app, and ends neither connection", async () => {
+    const victim = await seedConnectedClimber('victim');
+    const attackerId = await createUser('attacker');
+    const attacker = await attachPartnerState(attackerId, victim.clientId);
+    const reply = await disconnectAs(attacker.climberId, victim.connectionId);
+    expect(reply.errors?.[0]?.extensions?.code).toBe('NOT_FOUND');
+    expect(countsOf(await readPartnerState(victim))).toEqual(INTACT_COUNTS);
+    expect((await readPartnerState(attacker)).connection).toMatchObject({ generation: 0, revokedAt: null });
+  });
+
   it('answers an unknown id the same way as a stranger', async () => {
     const rows = await seedConnectedClimber();
     const reply = await disconnectAs(rows.climberId, randomUUID());
