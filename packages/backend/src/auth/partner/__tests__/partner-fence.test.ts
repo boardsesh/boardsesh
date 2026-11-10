@@ -19,7 +19,9 @@ import { disconnectPartnerConnection } from '../connection';
 import { lockCurrentGrant } from '../locks';
 import { currentPartnerTransaction, handlePartnerRequest, runInPartnerTransaction } from '../transaction';
 import {
+  clientCredentials,
   createPartnerTestEnvironment,
+  postForm,
   READ_ONLY_PROOF_APPLICATION_NAME,
   TEST_OAUTH_OPTIONS,
   TEST_RESOURCE,
@@ -432,9 +434,9 @@ describe('partner fence', () => {
           // Queuing on the held row would end in a 503 once the lock timeout passed.
           const unknown = await environment.refresh(client, 'not-a-real-refresh-token');
           expect(unknown.body.error).toBe('invalid_grant');
-          // Stock 1.7.17 answers an unknown token with 400 rather than RFC 7009's 200.
+          // RFC 7009 section 2.2. Stock 1.7.17 answers 400; the guard answers for it.
           const unknownRevoke = await environment.revoke(client, { token: 'not-a-real-token' });
-          expect(unknownRevoke.response.status).toBe(400);
+          expect(unknownRevoke.response.status).toBe(200);
         } finally {
           await release();
         }
@@ -957,5 +959,391 @@ describe('partner fence', () => {
         logged.mockRestore();
       }
     });
+  });
+
+  describe('a spent authorization code', () => {
+    const holdClimberRow = (client: TestClient) =>
+      holdLock((transaction) =>
+        transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('no key update'),
+      );
+
+    async function spendCode(client: TestClient) {
+      const authorization = await environment.authorize(client);
+      const issued = await environment.exchange(client, authorization);
+      expect(issued.response.status).toBe(200);
+      return { authorization, issued };
+    }
+
+    it(
+      'takes no lock once nothing is left to clean up',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const firstReplay = await environment.exchange(client, authorization);
+        expect(firstReplay.response.status).toBe(400);
+        expect(firstReplay.body.error).toBe('invalid_grant');
+        expect(
+          await db
+            .select({ id: oauthAccessToken.id })
+            .from(oauthAccessToken)
+            .where(eq(oauthAccessToken.clientId, client.clientId)),
+        ).toEqual([]);
+
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const replays = await Promise.all(
+            Array.from({ length: 6 }, () => environment.exchange(client, authorization)),
+          );
+          // Queuing behind the row lock would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(replays.map((replay) => replay.body.error)).toEqual(Array.from({ length: 6 }, () => 'invalid_grant'));
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks while tokens from the code remain, so replay cleanup stays fenced',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const release = await holdClimberRow(client);
+        try {
+          const firstReplay = await environment.exchange(client, authorization);
+          // The replay had to wait on the climber's row, then gave up.
+          expect(firstReplay.response.status).toBe(503);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks a live code, so redemption stays fenced',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const release = await holdClimberRow(client);
+        try {
+          const redemption = await environment.exchange(client, authorization);
+          expect(redemption.response.status).toBe(503);
+        } finally {
+          await release();
+        }
+        expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    /** Fails the provider's own checks before it would consume the code or clean up. */
+    const replayWithoutVerifier = (client: TestClient, authorization: { location: string | null }) =>
+      postForm(environment.instance, '/oauth2/token', {
+        grant_type: 'authorization_code',
+        code: new URL(authorization.location!).searchParams.get('code')!,
+        redirect_uri: client.redirectUri,
+        ...clientCredentials(client),
+      });
+
+    const tokenRowCounts = async (client: TestClient) => ({
+      access: (
+        await db
+          .select({ id: oauthAccessToken.id })
+          .from(oauthAccessToken)
+          .where(eq(oauthAccessToken.clientId, client.clientId))
+      ).length,
+      refresh: (
+        await db
+          .select({ id: oauthRefreshToken.id })
+          .from(oauthRefreshToken)
+          .where(eq(oauthRefreshToken.clientId, client.clientId))
+      ).length,
+    });
+
+    it(
+      'closes the tokens on the first replay the provider would refuse, so the lock is taken once',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const firstReplay = await replayWithoutVerifier(client, authorization);
+        expect(firstReplay.body.error).toBe('invalid_grant');
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const replays = await Promise.all(
+            Array.from({ length: 6 }, () => replayWithoutVerifier(client, authorization)),
+          );
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(replays.map((replay) => replay.body.error)).toEqual(Array.from({ length: 6 }, () => 'invalid_grant'));
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'takes rotated tokens and their ancestry with it, as the provider does for its whole family',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization, issued } = await spendCode(client);
+        const rotated = await environment.refresh(client, issued.body.refresh_token!);
+        expect(rotated.response.status).toBe(200);
+        expect((await tokenRowCounts(client)).refresh).toBeGreaterThan(0);
+
+        expect((await replayWithoutVerifier(client, authorization)).body.error).toBe('invalid_grant');
+
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+        expect(
+          await db.select().from(oauthRefreshAncestors).where(eq(oauthRefreshAncestors.clientId, client.clientId)),
+        ).toEqual([]);
+        expect((await environment.refresh(client, rotated.body.refresh_token!)).body.error).toBe('invalid_grant');
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still locks while only a refresh token from the code remains',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        await db.delete(oauthAccessToken).where(eq(oauthAccessToken.clientId, client.clientId));
+        const release = await holdClimberRow(client);
+        try {
+          expect((await replayWithoutVerifier(client, authorization)).response.status).toBe(503);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'treats an expired code that was never redeemed as spent, without the lock',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const code = new URL(authorization.location!).searchParams.get('code')!;
+        await db
+          .update(oauthVerification)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(oauthVerification.identifier, await hashForTest(code)));
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          expect((await replayWithoutVerifier(client, authorization)).body.error).toBe('invalid_grant');
+          expect(performance.now() - started).toBeLessThan(1000);
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'refuses an expired refresh token without the lock',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        await db
+          .update(oauthRefreshToken)
+          .set({ expiresAt: new Date(Date.now() - 1000) })
+          .where(eq(oauthRefreshToken.token, await hashForTest(issued.refresh_token!)));
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await environment.refresh(client, issued.refresh_token!, environment.instance);
+          // Queuing on the held row would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.body.error).toBe('invalid_grant');
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still lets an expired used token trip reuse, taking the lock only for the first replay',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const rotated = await environment.refresh(client, issued.refresh_token!, environment.instance);
+        expect(rotated.response.status).toBe(200);
+        const consumedHash = await hashForTest(issued.refresh_token!);
+        const pastExpiry = new Date(Date.now() - 1000);
+        await db
+          .update(oauthRefreshToken)
+          .set({ expiresAt: pastExpiry })
+          .where(eq(oauthRefreshToken.token, consumedHash));
+        await db
+          .update(oauthRefreshAncestors)
+          .set({ expiresAt: pastExpiry })
+          .where(eq(oauthRefreshAncestors.tokenHash, consumedHash));
+
+        // The first replay closes the family, as an unexpired replay would.
+        expect((await environment.refresh(client, issued.refresh_token!, environment.instance)).body.error).toBe(
+          'invalid_grant',
+        );
+        expect((await environment.refresh(client, rotated.body.refresh_token!, environment.instance)).body.error).toBe(
+          'invalid_grant',
+        );
+
+        // Its rows are gone, so a later replay takes no lock.
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await environment.refresh(client, issued.refresh_token!, environment.instance);
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.body.error).toBe('invalid_grant');
+        } finally {
+          await release();
+        }
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'leaves no usable token when a redemption and a replay race',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const results = await Promise.all([
+          environment.exchange(client, authorization),
+          environment.exchange(client, authorization, environment.secondaryInstance),
+        ]);
+        const statuses = results.map((result) => result.response.status).sort((first, second) => first - second);
+        // One redeems; the loser finds the code gone and closes what it issued.
+        expect(statuses).toEqual([200, 400]);
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'survives concurrent first replays with no server error',
+      async () => {
+        const client = await environment.createClient();
+        const { authorization } = await spendCode(client);
+        const replays = await Promise.all(
+          Array.from({ length: 8 }, () => replayWithoutVerifier(client, authorization)),
+        );
+        expect(replays.map((replay) => replay.response.status)).toEqual(Array.from({ length: 8 }, () => 400));
+        expect(await tokenRowCounts(client)).toEqual({ access: 0, refresh: 0 });
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    const PRECONDITION_DESCRIPTION = 'Either code_verifier or client_secret is required';
+
+    /** A token request with a Basic credential, which `postForm` cannot send. */
+    async function postWithBasic(client: TestClient, fields: Record<string, string>) {
+      const encode = (value: string) => new URLSearchParams({ value }).toString().slice('value='.length);
+      const credential = Buffer.from(`${encode(client.clientId)}:${encode(client.clientSecret!)}`).toString('base64');
+      const response = await environment.instance.handler(
+        new Request(`${TEST_OAUTH_ISSUER}/oauth2/token`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded', authorization: `Basic ${credential}` },
+          body: new URLSearchParams(fields),
+        }),
+      );
+      return { response, body: (await response.json()) as { error?: string; error_description?: string } };
+    }
+
+    const codeOf = (authorization: { location: string | null }) =>
+      new URL(authorization.location!).searchParams.get('code')!;
+
+    it.each([
+      ['no code_verifier', {}],
+      ['an empty code_verifier', { code_verifier: '' }],
+    ])(
+      'refuses a public app with %s before the lock, and leaves the code usable',
+      async (_label, verifierField) => {
+        const client = await environment.createClient({ publicClient: true });
+        const authorization = await environment.authorize(client);
+        const release = await holdClimberRow(client);
+        try {
+          const started = performance.now();
+          const refused = await postForm(environment.instance, '/oauth2/token', {
+            grant_type: 'authorization_code',
+            code: codeOf(authorization),
+            redirect_uri: client.redirectUri,
+            client_id: client.clientId,
+            ...verifierField,
+          });
+          // Queuing behind the row lock would end in a 503 after the 2 s lock timeout.
+          expect(performance.now() - started).toBeLessThan(1000);
+          expect(refused.response.status).toBe(400);
+          expect(refused.body).toMatchObject({ error: 'invalid_request', error_description: PRECONDITION_DESCRIPTION });
+        } finally {
+          await release();
+        }
+        expect((await environment.exchange(client, authorization)).response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'lets a confidential app sending its secret in the form reach the provider without a verifier',
+      async () => {
+        const client = await environment.createClient();
+        const authorization = await environment.authorize(client);
+        const answered = await postForm(environment.instance, '/oauth2/token', {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          redirect_uri: client.redirectUri,
+          ...clientCredentials(client),
+        });
+        // The provider decides, and asks for PKCE because every app registers with it.
+        expect(answered.body.error).toBe('invalid_request');
+        expect(answered.body.error_description).not.toBe(PRECONDITION_DESCRIPTION);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'lets a confidential app sending its secret by Basic reach the provider without a verifier',
+      async () => {
+        const client = await environment.createClient({ secretMethod: 'client_secret_basic' });
+        const authorization = await environment.authorize(client);
+        const answered = await postWithBasic(client, {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          redirect_uri: client.redirectUri,
+        });
+        expect(answered.body.error).toBe('invalid_request');
+        expect(answered.body.error_description).not.toBe(PRECONDITION_DESCRIPTION);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'still accepts every legitimate exchange: public, secret in the form, and secret by Basic',
+      async () => {
+        const publicClient = await environment.createClient({ publicClient: true });
+        expect(
+          (await environment.exchange(publicClient, await environment.authorize(publicClient))).response.status,
+        ).toBe(200);
+        const postClient = await environment.createClient();
+        expect((await environment.exchange(postClient, await environment.authorize(postClient))).response.status).toBe(
+          200,
+        );
+        const basicClient = await environment.createClient({ secretMethod: 'client_secret_basic' });
+        const authorization = await environment.authorize(basicClient);
+        const answered = await postWithBasic(basicClient, {
+          grant_type: 'authorization_code',
+          code: codeOf(authorization),
+          code_verifier: authorization.verifier,
+          redirect_uri: basicClient.redirectUri,
+        });
+        expect(answered.response.status).toBe(200);
+      },
+      TEST_DEADLINE_MS,
+    );
   });
 });

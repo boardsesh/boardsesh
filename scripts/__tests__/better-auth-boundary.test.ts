@@ -16,6 +16,10 @@ const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
 const PARTNER_ROOT = 'packages/backend/src/auth/partner/';
 /** Partner modules that load Better Auth at runtime. Everything else must stay importable with the mode off. */
 const PARTNER_RUNTIME_IMPORTERS = ['authority.ts', 'family-guard.ts', 'fence.ts'];
+/** The one production module outside the partner folder that may reach into it. */
+const PARTNER_ENTRY_POINT = 'packages/backend/src/handlers/partner-auth.ts';
+/** What that entry point may load. None of these constructs an authority or opens a pool. */
+const PARTNER_ENTRY_IMPORTS = ['../auth/partner/load-authority', '../auth/partner/mode', '../auth/partner/routes'];
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -163,7 +167,7 @@ describe('Better Auth dependency boundary', () => {
     expect(runtimeImporters.sort()).toEqual([...PARTNER_RUNTIME_IMPORTERS].sort());
   });
 
-  it('keeps the partner authority out of production code until a route imports it through the loader', () => {
+  it('lets exactly one production module outside the partner folder reach into it', () => {
     const productionModules = trackedSourceFiles.filter(
       (path) =>
         path.startsWith('packages/backend/src/') &&
@@ -175,7 +179,17 @@ describe('Better Auth dependency boundary', () => {
     const importers = productionModules.filter((path) =>
       importSpecifiers(readRepoFile(path)).some((specifier) => resolvesIntoPartnerFolder(path, specifier)),
     );
-    expect(importers).toEqual([]);
+    expect(importers).toEqual([PARTNER_ENTRY_POINT]);
+  });
+
+  it('limits the entry point to modules that build nothing, and to the loader for the authority', () => {
+    const partnerImports = importSpecifiers(readRepoFile(PARTNER_ENTRY_POINT)).filter((specifier) =>
+      resolvesIntoPartnerFolder(PARTNER_ENTRY_POINT, specifier),
+    );
+    expect([...new Set(partnerImports)].sort()).toEqual([...PARTNER_ENTRY_IMPORTS].sort());
+    const entrySource = readRepoFile(PARTNER_ENTRY_POINT);
+    expect(entrySource).not.toMatch(/import\(['"`][^'"`]*auth\/partner/);
+    expect(importSpecifiers(entrySource).some(isBetterAuthSpecifier)).toBe(false);
   });
 
   it('reaches the authority only through a dynamic import in the loader', () => {

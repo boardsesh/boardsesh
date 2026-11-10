@@ -24,6 +24,15 @@ export const TEST_RESOURCE = TEST_CONFIGURATION.resource;
 
 /** The header the test session bridge reads. It holds an `oauth_session` token. */
 export const TEST_SESSION_HEADER = 'x-boardsesh-test-session';
+/** The route tests send a NextAuth-named cookie instead, because the routes forward only known headers. */
+export const TEST_SESSION_COOKIE = 'next-auth.session-token';
+
+function sessionTokenFromCookie(cookieHeader: string | null | undefined): string | undefined {
+  return cookieHeader
+    ?.split('; ')
+    .find((pair) => pair.startsWith(`${TEST_SESSION_COOKIE}=`))
+    ?.slice(TEST_SESSION_COOKIE.length + 1);
+}
 
 /**
  * Stands in for the consent bridge (F13). It sets `ctx.context.session` from an
@@ -38,7 +47,8 @@ export function testSessionBridge(database: PartnerDatabase): BetterAuthPlugin {
         {
           matcher: () => true,
           handler: createAuthMiddleware(async (context) => {
-            const token = context.headers?.get(TEST_SESSION_HEADER);
+            const token =
+              context.headers?.get(TEST_SESSION_HEADER) ?? sessionTokenFromCookie(context.headers?.get('cookie'));
             if (!token) return;
             const [session] = await database.select().from(oauthSession).where(eq(oauthSession.token, token));
             if (!session) return;
@@ -126,6 +136,9 @@ export interface PartnerTestEnvironment {
     skipConsent?: boolean;
     owner?: TestClimber;
     linkResource?: boolean;
+    redirectOrigin?: string;
+    /** For a confidential client. Defaults to `client_secret_post`. */
+    secretMethod?: 'client_secret_post' | 'client_secret_basic';
   }): Promise<TestClient>;
   authorize(
     client: TestClient,
@@ -201,6 +214,9 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
   function buildAuthority(database: PartnerDatabase, plugins: BetterAuthPlugin[] = []): PartnerAuthority {
     return createPartnerAuthority(database, TEST_CONFIGURATION, {
       plugins: [testSessionBridge(createPartnerDatabaseHandle(database)), ...plugins],
+      // These suites exercise stock routes directly (introspection, the sign-in
+      // refusals). The disabled list is proven in the route suite.
+      disabledPaths: [],
     });
   }
   const instanceFor = (database: PartnerDatabase, authority: PartnerAuthority): RequestHandlerInstance => ({
@@ -239,13 +255,13 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
     async createClient(options = {}) {
       const owner = options.owner ?? (await environment.createClimber());
       const identifier = randomUUID();
-      const redirectUri = `https://client.example.test/callback/${identifier}`;
+      const redirectUri = `${options.redirectOrigin ?? 'https://client.example.test'}/callback/${identifier}`;
       const registered = await auth.api.adminCreateOAuthClient({
         headers: new Headers({ [TEST_SESSION_HEADER]: owner.sessionToken }),
         body: {
           client_name: 'Partner authority fixture',
           redirect_uris: [redirectUri],
-          token_endpoint_auth_method: options.publicClient ? 'none' : 'client_secret_post',
+          token_endpoint_auth_method: options.publicClient ? 'none' : (options.secretMethod ?? 'client_secret_post'),
           grant_types: ['authorization_code', 'refresh_token'],
           response_types: ['code'],
           scope: TEST_OAUTH_OPTIONS.scopes.join(' '),

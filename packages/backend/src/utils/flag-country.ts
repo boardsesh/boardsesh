@@ -32,6 +32,11 @@ function includesAddress(peers: BlockList, address: string | undefined): boolean
   return !!address && peers.check(address, isIP(address) === 4 ? 'ipv4' : 'ipv6');
 }
 
+/** True for the private ranges a reverse-proxy socket peer uses here (RFC 1918, loopback, ULA). */
+export function isPrivatePeerAddress(address: string): boolean {
+  return includesAddress(privatePeers, address);
+}
+
 /**
  * True when this request reached us from a Cloudflare edge: the socket peer is
  * Cloudflare itself, or it is our private ingress and the last XFF hop (the

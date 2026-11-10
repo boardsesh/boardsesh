@@ -141,7 +141,11 @@ export function createRefreshFamilyHooks({
               if (accessToken) {
                 if (accessToken.clientId === client.clientId) await lockAccessTokenOwner(accessToken);
                 if (context.body?.token_type_hint === 'refresh_token') context.body.token_type_hint = 'access_token';
+                return;
               }
+              // RFC 7009 section 2.2: an unknown token is a success, and stock
+              // 1.7.17 answers 400. The client has authenticated by this point.
+              return refused();
             }
             return;
           }
@@ -155,8 +159,14 @@ export function createRefreshFamilyHooks({
             // registered client must never reach that path.
             return refused();
           }
-          if (!isRefresh && owner.expiresAt < new Date()) {
-            // RFC 7009 treats an already-invalid token as a successful no-op.
+          // RFC 7009 treats an already-invalid token as a successful no-op. A
+          // refresh with an expired token that was never used fails anyway, so it
+          // must not take the climber's row lock to find that out. Read before the
+          // lock, that is safe: an expired token can no longer be consumed, since
+          // the provider refuses to refresh it and revoke stops above. An expired
+          // token that was used still goes on to trip reuse, once, under the lock.
+          const consumedBeforeLock = ancestor?.consumedAt ?? refreshToken?.revoked ?? null;
+          if (owner.expiresAt < new Date() && (!isRefresh || consumedBeforeLock === null)) {
             return refused();
           }
           if (!owner.authorizationCodeId) {

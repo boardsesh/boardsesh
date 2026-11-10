@@ -1,8 +1,14 @@
 import type { BetterAuthPlugin } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { getOAuthProviderApi, type OAuthOptions } from '@better-auth/oauth-provider';
-import { eq } from 'drizzle-orm';
-import { oauthConnections, oauthGrants, oauthVerification } from '@boardsesh/db/schema/auth';
+import { and, eq, gt } from 'drizzle-orm';
+import {
+  oauthAccessToken,
+  oauthConnections,
+  oauthGrants,
+  oauthRefreshToken,
+  oauthVerification,
+} from '@boardsesh/db/schema/auth';
 import { PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS } from './configuration';
 import { createPartnerFamilyStore, createRefreshFamilyHooks } from './family-guard';
 import {
@@ -12,6 +18,7 @@ import {
   lockPartnerConnection,
   selectConnectionForUpdate,
 } from './locks';
+import type { PartnerDatabase } from './tables';
 import { currentPartnerTransaction } from './transaction';
 
 /** RFC 6749 section 3.2 forbids repeats. RFC 8707 makes `resource` the one exception. */
@@ -36,6 +43,41 @@ function promptTokens(prompt: string): string[] {
     .split(' ')
     .map((token) => token.trim())
     .filter(Boolean);
+}
+
+/**
+ * Whether the code can still be redeemed. An expired row counts as gone, as it
+ * does in the provider, because nothing deletes it until the provider consumes it.
+ */
+async function isCodeLive(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
+  const [pendingCode] = await transaction
+    .select({ identifier: oauthVerification.identifier })
+    .from(oauthVerification)
+    .where(and(eq(oauthVerification.identifier, authorizationCodeId), gt(oauthVerification.expiresAt, new Date())))
+    .limit(1);
+  return pendingCode !== undefined;
+}
+
+/**
+ * True when the code cannot be redeemed and neither token table still has a row
+ * from it. The code is read first: a redemption inserts its tokens in the
+ * transaction that consumes the code, so a code row seen as gone means those
+ * tokens are already visible to the two reads that follow.
+ */
+async function isSpentCodeWithNoTokens(transaction: PartnerDatabase, authorizationCodeId: string): Promise<boolean> {
+  if (await isCodeLive(transaction, authorizationCodeId)) return false;
+  const [accessToken] = await transaction
+    .select({ id: oauthAccessToken.id })
+    .from(oauthAccessToken)
+    .where(eq(oauthAccessToken.authorizationCodeId, authorizationCodeId))
+    .limit(1);
+  if (accessToken) return false;
+  const [refreshToken] = await transaction
+    .select({ id: oauthRefreshToken.id })
+    .from(oauthRefreshToken)
+    .where(eq(oauthRefreshToken.authorizationCodeId, authorizationCodeId))
+    .limit(1);
+  return refreshToken === undefined;
 }
 
 function parseCodeOwner(serialized: string): { userId: string; clientId: string } | null {
@@ -66,8 +108,9 @@ function authorizeRedirectTarget(context: {
 }
 
 export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): BetterAuthPlugin {
+  const familyStore = createPartnerFamilyStore();
   const family = createRefreshFamilyHooks({
-    store: createPartnerFamilyStore(),
+    store: familyStore,
     oauthOptions,
     async acquireFamilyFence(owner) {
       return (await lockCurrentGrant(currentPartnerTransaction().transaction, owner)) ? 'current' : 'fenced';
@@ -152,6 +195,17 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (typeof code !== 'string' || !code) return;
             const provider = getOAuthProviderApi(context, oauthOptions, 'authorization_code');
             const client = await provider.authenticateClient({ requireCredentials: false });
+            // The provider's own first check: with neither a code_verifier nor a
+            // client secret it refuses before consuming anything, so taking the
+            // lock first would let one live code hold it again on every request.
+            const codeVerifier: unknown = context.body?.code_verifier;
+            const hasCodeVerifier = typeof codeVerifier === 'string' && codeVerifier.length > 0;
+            if (!hasCodeVerifier && (client.method === undefined || client.method === 'none')) {
+              return context.json(
+                { error: 'invalid_request', error_description: 'Either code_verifier or client_secret is required' },
+                { status: 400, headers: { 'cache-control': 'no-store' } },
+              );
+            }
             const { transaction } = currentPartnerTransaction();
             const authorizationCodeId = await provider.hashToken(code, 'authorization_code');
             const [grant] = await transaction
@@ -167,8 +221,21 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
                 { status: 400, headers: { 'cache-control': 'no-store' } },
               );
             if (!grant || grant.clientId !== client.clientId) return invalidGrant();
+            // A spent code whose tokens are already gone needs no fence: only a
+            // live code can issue anything, and there is nothing left to clean
+            // up. Taking `users FOR SHARE` here would let replays of it hold off
+            // a password reset for as long as the replays keep coming.
+            if (await isSpentCodeWithNoTokens(transaction, authorizationCodeId)) return invalidGrant();
             const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
             if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
+            // RFC 6749 section 4.1.2: a code used twice takes its tokens with it.
+            // Done here, under the lock, because the provider only does it after
+            // its own checks, and a replay that fails those (no code_verifier)
+            // would otherwise find the tokens still there and lock again forever.
+            if (!(await isCodeLive(transaction, authorizationCodeId))) {
+              await familyStore.closeFamily(owner);
+              return invalidGrant();
+            }
           }),
         },
         ...(family.before ?? []),
@@ -178,6 +245,9 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
         {
           matcher: (context) => context.path === '/oauth2/authorize',
           handler: createAuthMiddleware(async (context) => {
+            // A code needs a session. Without one the redirect is the sign-in
+            // page, and a `code` on it is a parameter the caller sent.
+            if (!context.context.session) return;
             const target = authorizeRedirectTarget(context);
             if (!target) return;
             const code = URL.canParse(target) ? new URL(target).searchParams.get('code') : null;

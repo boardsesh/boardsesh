@@ -422,6 +422,64 @@ does not claim `api.boardsesh.com`; `/oauth` on `www` is excluded from iOS
 association before consent launches. First-party auth paths and their old
 native/watch aliases are owned by the migration doc, not this API contract.
 
+### Routes and the mode switch
+
+`PARTNER_OAUTH_MODE` is read once at boot, from the environment. No request can
+choose it. `handlers/partner-auth.ts` is the only production module outside
+`auth/partner/` that may reach into that folder, and with the mode `off` it
+answers nothing.
+
+| Mode | What the API host does |
+| --- | --- |
+| `off` (default, and any unrecognised value) | Every partner route is `404`, and Better Auth is never loaded |
+| `hold` | Every partner route answers `503` with `Retry-After: 60`, without loading Better Auth |
+| `allowlist`, `open` | The routes below are served. The two modes differ only in who can register an app |
+
+Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
+`GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
+`POST /api/auth/oauth2/token`, `POST /api/auth/oauth2/revoke`, RFC 8414 metadata at
+both paths above, and `GET /api/auth/error`, the page the provider sends a browser
+to when it must not send it to the app. Token, revoke and consent also answer a
+CORS preflight, which never reaches Better Auth. The path is matched byte for byte
+against what the client sent, so a trailing slash, a doubled slash, different case,
+a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
+stock routes inside Better Auth, except the two with path parameters.
+
+Availability is protected before any transaction opens:
+
+- A body is buffered first, up to 64 KB and for at most 5 seconds. Over the size
+  is `413`, over the time is `408`, with the connection closed either way.
+- At most 3 requests run at once, one for an authorize, with token work first. 16
+  more wait per kind, for at most 1 second. Anything else gets `503` and
+  `Retry-After` at once.
+- Discovery and a signed-out authorize take no transaction.
+- Rate limits use the table under Operations and run first. Per-connection refresh
+  and the app limits never reach a lock. The first replay of a spent code closes
+  that code's tokens under the lock. Every later replay answers `invalid_grant`
+  without taking the climber's row lock.
+- The whole-app count is checked before serving and charged only after a token
+  response succeeds, because a public `client_id` is no secret: charging it by name
+  would let anyone spend an app's budget. Revoke is not charged at all, since it
+  answers `200` for any token. A burst can pass the check together, so one instance
+  can overshoot by up to 19 requests (3 running, 16 queued).
+- The per-connection refresh count applies only to a current, unexpired refresh
+  token. It is checked before the transaction and charged after the response only
+  when the token's own app authenticated and the provider got past that: a success,
+  `invalid_grant`, `invalid_scope` or `invalid_target`. Anything refused earlier,
+  including the token sent under another app's `client_id`, never takes a lock, and
+  the per-address limit covers it, so a confidential app's token without its secret
+  cannot spend the count. A public app authenticates by `client_id` alone, so every
+  authenticated attempt it makes is charged. An expired token that was never used is
+  refused before the lock; an expired used one still trips reuse, once. The charge
+  lands before the request's admission permit is released, so one instance can
+  overshoot by at most 2 (3 permits).
+- A `client_id` outside `[A-Za-z0-9_-]`, at most 128 characters, cannot name a real
+  app and bills a shared invalid bucket.
+- The client address for a limit is `CF-Connecting-IP` only from a verified
+  Cloudflare edge, otherwise the last `X-Forwarded-For` hop. An IPv6 client counts
+  as its /64, and an IPv4-mapped address as that IPv4 address.
+- A Redis command that takes over 100 ms falls back to the per-instance memory limit.
+
 ### Browser access
 
 CORS on the token/revoke endpoints and `/v1/*` is credential-free and separate

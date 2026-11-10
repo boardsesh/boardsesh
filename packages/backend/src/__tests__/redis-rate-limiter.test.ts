@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
-import { RateLimitError } from '../utils/rate-limiter';
+import {
+  checkRateLimitRedis,
+  consumeRateLimitRedis,
+  countRateLimitRedis,
+  peekRateLimitRedis,
+} from '../utils/redis-rate-limiter';
+import { RateLimitError, resetAllRateLimits } from '../utils/rate-limiter';
 
 // Use vi.hoisted() so mock variables are available when vi.mock factories run
-const { mockEval, mockIsRedisConnected, mockCheckRateLimit } = vi.hoisted(() => ({
+const { mockEval, mockGet, mockIsRedisConnected, mockCheckRateLimit } = vi.hoisted(() => ({
   mockEval: vi.fn(),
+  mockGet: vi.fn(),
   mockIsRedisConnected: vi.fn(),
   mockCheckRateLimit: vi.fn(),
 }));
@@ -15,6 +21,7 @@ vi.mock('../redis/client', () => ({
     getClients: () => ({
       publisher: {
         eval: mockEval,
+        get: mockGet,
       },
     }),
   },
@@ -197,6 +204,84 @@ describe('checkRateLimitRedis', () => {
         }),
       ).resolves.toBeUndefined();
       expect(mockCheckRateLimit).toHaveBeenCalledWith('socket-peer:10.0.0.8:createSession', 600, 60_000);
+    });
+  });
+});
+
+describe('partner limiter helpers', () => {
+  const REDIS_PAUSED = () => new Promise<never>(() => undefined);
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetAllRateLimits();
+    mockIsRedisConnected.mockReturnValue(true);
+    mockCheckRateLimit.mockReturnValue({ count: 1, resetAt: Date.now() + 60_000 });
+  });
+
+  describe('when Redis stops answering', () => {
+    it('consumeRateLimitRedis falls back to memory quickly', async () => {
+      mockEval.mockImplementation(REDIS_PAUSED);
+      const started = performance.now();
+      const usage = await consumeRateLimitRedis('address', 'oauth-test', 60, 60_000);
+      expect(performance.now() - started).toBeLessThan(500);
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('address:oauth-test', 60, 60_000);
+      expect(usage.limit).toBe(60);
+    });
+
+    it('peekRateLimitRedis falls back to memory quickly', async () => {
+      mockGet.mockImplementation(REDIS_PAUSED);
+      const started = performance.now();
+      const usage = await peekRateLimitRedis('client', 'oauth-test', 60, 60_000);
+      expect(performance.now() - started).toBeLessThan(500);
+      expect(usage.remaining).toBe(60);
+    });
+
+    it('countRateLimitRedis returns quickly and counts in memory instead', async () => {
+      mockEval.mockImplementation(REDIS_PAUSED);
+      const started = performance.now();
+      await countRateLimitRedis('client', 'oauth-test', 60_000);
+      expect(performance.now() - started).toBeLessThan(500);
+      mockGet.mockImplementation(REDIS_PAUSED);
+      expect((await peekRateLimitRedis('client', 'oauth-test', 60, 60_000)).remaining).toBe(59);
+    });
+  });
+
+  describe('peekRateLimitRedis', () => {
+    it('reads the window without counting this call', async () => {
+      mockGet.mockResolvedValue('5');
+      const usage = await peekRateLimitRedis('client', 'oauth-test', 6, 60_000);
+      expect(usage.remaining).toBe(1);
+      expect(mockEval).not.toHaveBeenCalled();
+    });
+
+    it('throws at the limit, so exactly the limit is allowed through', async () => {
+      mockGet.mockResolvedValue('6');
+      await expect(peekRateLimitRedis('client', 'oauth-test', 6, 60_000)).rejects.toBeInstanceOf(RateLimitError);
+    });
+
+    it('treats a window nobody has written as empty', async () => {
+      mockGet.mockResolvedValue(null);
+      expect((await peekRateLimitRedis('client', 'oauth-test', 6, 60_000)).remaining).toBe(6);
+    });
+
+    it('applies the limit from memory when Redis is not connected', async () => {
+      mockIsRedisConnected.mockReturnValue(false);
+      for (let attempt = 0; attempt < 3; attempt += 1) await countRateLimitRedis('client', 'oauth-memory', 60_000);
+      await expect(peekRateLimitRedis('client', 'oauth-memory', 3, 60_000)).rejects.toBeInstanceOf(RateLimitError);
+      expect((await peekRateLimitRedis('client', 'oauth-memory', 4, 60_000)).remaining).toBe(1);
+    });
+  });
+
+  describe('countRateLimitRedis', () => {
+    it('increments without a limit and never throws', async () => {
+      mockEval.mockResolvedValue(999_999);
+      await expect(countRateLimitRedis('client', 'oauth-test', 60_000)).resolves.toBeUndefined();
+      expect(mockEval).toHaveBeenCalledTimes(1);
+    });
+
+    it('survives a Redis error', async () => {
+      mockEval.mockRejectedValue(new Error('connection lost'));
+      await expect(countRateLimitRedis('client', 'oauth-test', 60_000)).resolves.toBeUndefined();
     });
   });
 });

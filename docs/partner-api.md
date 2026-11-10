@@ -150,6 +150,9 @@ it stops a mix-up if your app talks to several OAuth servers).
 If they decline: `?error=access_denied&state=...`.
 
 The code lives for 60 seconds and works exactly once. Reusing it is rejected.
+Reuse also ends the tokens that code issued, including when a confidential
+app's retry leaves out `code_verifier`, so an app that reloads its callback and
+sends the code again will find its new refresh token refused with `invalid_grant`.
 If you cannot tell whether an exchange succeeded, restart authorization; do
 not retry the same code expecting another token pair.
 
