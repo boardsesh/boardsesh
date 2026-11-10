@@ -512,11 +512,11 @@ integer or `null` where the board grade has no V equivalent, `font` the
 Fontainebleau grade in capitals, `label` the board's own label as its grade
 table spells it. Use whichever scale your climber prefers.
 
-A tick on a climb that someone else keeps as a draft or unlisted is not sent:
-those climbs belong to their setter alone, and an unlisted climb opens by its
-id. The feed sends `tick.deleted` for it instead, and `GET /v1/logbook/ticks/{id}`
-answers `404`. A published climb is always sent, whatever its setter's account
-privacy.
+Your app sees every climb the climber has logged, including drafts and
+unlisted climbs set by others, with the same id, name, layout and grade as any
+other climb. The climber's logbook is theirs to share. The one exception is a
+climb on someone else's spray wall that is not public, described under
+`climb.name` above.
 
 The API does not include hold positions, other climbers' ticks or full board
 catalogs. If you need a catalog, the public nightly snapshots are documented

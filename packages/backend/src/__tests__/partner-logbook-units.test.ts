@@ -11,7 +11,6 @@ import {
 import type { LogbookFeedTick } from '../services/logbook-feed';
 import {
   WITHHELD_LAYOUT_NAME,
-  isLogbookTickWithheld,
   logbookGrade,
   serializeLogbookTick,
   utcTimestamp,
@@ -27,7 +26,6 @@ import {
  *   version-swap test fails.
  * - let a build wait for a permit: the build-never-queues test fails.
  * - drop the spray rule from the serializer: the withheld-names tests fail.
- * - serve a held-out climb's tick: the draft and unlisted tests fail.
  */
 
 const SECRETS = [{ version: 2, value: 'partner-oauth-test-secret-version-two-0123456789' }];
@@ -138,7 +136,7 @@ const BASE_TICK: LogbookFeedTick = {
 
 function metadataFor(
   tick: LogbookFeedTick,
-  climb: Partial<{ name: string | null; layoutName: string | null; namesVisible: boolean; heldOut: boolean }> | null,
+  climb: Partial<{ name: string | null; layoutName: string | null; namesVisible: boolean }> | null,
   communityDifficulty: number | null = null,
 ): LogbookClimbMetadata {
   const metadata: LogbookClimbMetadata = { climbs: new Map(), communityDifficulty: new Map() };
@@ -147,7 +145,6 @@ function metadataFor(
       name: 'Slopey Business',
       layoutName: 'Kilter Board Original',
       namesVisible: true,
-      heldOut: false,
       ...climb,
     });
   }
@@ -229,15 +226,6 @@ describe('the tick serializer', () => {
     const spray = { ...BASE_TICK, boardType: 'spray' };
     const tick = serializeLogbookTick(spray, metadataFor(spray, { name: 'Couch traverse', layoutName: 'Home wall' }));
     expect(tick.climb).toMatchObject({ name: 'Couch traverse', board: { type: 'spray', layout: 'Home wall' } });
-  });
-
-  it("holds back a tick on someone else's draft or unlisted climb, and refuses to serialize it", () => {
-    const heldOut = metadataFor(BASE_TICK, { heldOut: true });
-    expect(isLogbookTickWithheld(BASE_TICK, heldOut)).toBe(true);
-    expect(() => serializeLogbookTick(BASE_TICK, heldOut)).toThrow(/withheld/);
-    expect(isLogbookTickWithheld(BASE_TICK, metadataFor(BASE_TICK, {}))).toBe(false);
-    // A tick whose climb row has not arrived yet is not known to be held out.
-    expect(isLogbookTickWithheld(BASE_TICK, metadataFor(BASE_TICK, null))).toBe(false);
   });
 
   it('refuses to serve a tick the contract cannot describe rather than send something else', () => {

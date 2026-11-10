@@ -852,22 +852,40 @@ describe('the logbook routes', () => {
       });
     });
 
-    /** A climb set by `setterId`, published, draft or unlisted. */
+    /** A climb set by `setterId`, published, draft or unlisted, with a community grade at 40 degrees. */
     async function seedClimb(setterId: string, state: 'published' | 'draft' | 'unlisted') {
-      const climbUuid = `lb-api-held-${state}-${randomUUID()}`;
+      const climbUuid = `lb-api-${state}-${randomUUID()}`;
       const layoutId = 660_000 + Math.floor(Math.random() * 100_000);
       await db.execute(
-        sql`INSERT INTO board_layouts (board_type, id, name) VALUES ('kilter', ${layoutId}, 'Held layout')`,
+        sql`INSERT INTO board_layouts (board_type, id, name) VALUES ('kilter', ${layoutId}, ${`Layout of ${state}`})`,
       );
       await db.execute(sql`
         INSERT INTO board_climbs (uuid, board_type, layout_id, name, frames, frames_count, is_draft, is_listed, user_id, created_at)
-        VALUES (${climbUuid}, 'kilter', ${layoutId}, ${`Secret ${state}`}, 'p1r1', 1, ${state === 'draft'},
+        VALUES (${climbUuid}, 'kilter', ${layoutId}, ${`Climb ${state}`}, 'p1r1', 1, ${state === 'draft'},
                 ${state !== 'unlisted'}, ${setterId}, '2026-01-01')
+      `);
+      await db.execute(sql`
+        INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty)
+        VALUES ('kilter', ${climbUuid}, 40, 19)
       `);
       return climbUuid;
     }
 
-    it("shows the climber's own draft and own unlisted climbs", async () => {
+    /** What every case below must serve: the whole climb, nothing withheld. */
+    function wholeClimb(climbUuid: string, state: 'published' | 'draft' | 'unlisted') {
+      return {
+        id: climbUuid,
+        name: `Climb ${state}`,
+        board: { type: 'kilter', layout: `Layout of ${state}` },
+        grade: { v: 4, font: '6B+', label: '6b+/V4' },
+        boardseshGrade: null,
+      };
+    }
+
+    // Owner decision (2026-11-10): an app the climber connected sees every climb
+    // they have logged, whoever set it and whether or not it is published. The
+    // four cases below pin that; only the spray-wall rule withholds anything.
+    it("serves the climber's own draft and own unlisted climbs in full", async () => {
       const { climber, token } = await connectedApp();
       const draft = await seedClimb(climber.userId, 'draft');
       const unlisted = await seedClimb(climber.userId, 'unlisted');
@@ -875,31 +893,27 @@ describe('the logbook routes', () => {
       const [unlistedTick] = await insertTicks(climber.userId, 1, { climbUuid: unlisted });
 
       const { copy } = await sync(token);
-      expect(copy.get(draftTick)?.climb).toMatchObject({ id: draft, name: 'Secret draft' });
-      expect(copy.get(unlistedTick)?.climb).toMatchObject({ id: unlisted, name: 'Secret unlisted' });
-      expect((await apiHost.send('GET', `/v1/logbook/ticks/${draftTick}`, { token })).status).toBe(200);
+      expect(copy.get(draftTick)?.climb).toEqual(wholeClimb(draft, 'draft'));
+      expect(copy.get(unlistedTick)?.climb).toEqual(wholeClimb(unlisted, 'unlisted'));
+      const single = await apiHost.send('GET', `/v1/logbook/ticks/${draftTick}`, { token });
+      expect(single.status).toBe(200);
+      expect(TickSchema.parse(JSON.parse(single.body)).climb).toEqual(wholeClimb(draft, 'draft'));
     });
 
-    it("never serves a tick on someone else's draft or unlisted climb: not in a snapshot, the feed or the tick route", async () => {
+    it("serves a tick on someone else's draft or unlisted climb in full: snapshot, feed and tick route", async () => {
       const setter = await environment.createClimber();
       const { climber, token } = await connectedApp();
       const draft = await seedClimb(setter.userId, 'draft');
       const unlisted = await seedClimb(setter.userId, 'unlisted');
-      const [plainTick] = await insertTicks(climber.userId, 1);
-      const heldTicks = [
-        ...(await insertTicks(climber.userId, 1, { climbUuid: draft })),
-        ...(await insertTicks(climber.userId, 1, { climbUuid: unlisted })),
-      ];
+      const [draftTick] = await insertTicks(climber.userId, 1, { climbUuid: draft });
+      const [unlistedTick] = await insertTicks(climber.userId, 1, { climbUuid: unlisted });
       await waitForWritesToSettle();
 
       const first = await sync(token);
-      expect([...first.copy.keys()]).toEqual([plainTick]);
-      const served = JSON.stringify(first.pages);
-      for (const secret of [draft, unlisted, 'Secret draft', 'Secret unlisted', 'Held layout']) {
-        expect(served).not.toContain(secret);
-      }
+      expect(first.copy.get(draftTick)?.climb).toEqual(wholeClimb(draft, 'draft'));
+      expect(first.copy.get(unlistedTick)?.climb).toEqual(wholeClimb(unlisted, 'unlisted'));
 
-      // A new tick on a held-out climb reaches the feed as a removal, never as a tick.
+      // A new tick on such a climb reaches the feed as a tick, not a removal.
       const [laterTick] = await insertTicks(climber.userId, 1, {
         climbUuid: unlisted,
         climbedAt: '2026-06-01 10:00:00',
@@ -907,31 +921,31 @@ describe('the logbook routes', () => {
       await waitForWritesToSettle();
       const caughtUp = await sync(token, first.cursor);
       const changes = caughtUp.pages.flatMap((body) => body.changes);
-      expect(changes).toContainEqual({ type: 'tick.deleted', id: laterTick });
-      const servedTicks = changes.flatMap((change) => (change.type === 'tick' ? [change.tick.id] : []));
-      for (const heldTick of [...heldTicks, laterTick]) expect(servedTicks).not.toContain(heldTick);
-      expect(JSON.stringify(caughtUp.pages)).not.toContain(unlisted);
-      expect(JSON.stringify(caughtUp.pages)).not.toContain(draft);
+      expect(changes).not.toContainEqual({ type: 'tick.deleted', id: laterTick });
+      expect(caughtUp.copy.get(laterTick)?.climb).toEqual(wholeClimb(unlisted, 'unlisted'));
 
-      for (const tickId of [...heldTicks, laterTick]) {
-        const answered = await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token });
-        errorOf(answered, 404, 'not_found');
-        expect(answered.body).not.toContain('Secret');
+      for (const [tickId, climbUuid, state] of [
+        [draftTick, draft, 'draft'],
+        [unlistedTick, unlisted, 'unlisted'],
+      ] as const) {
+        const single = await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token });
+        expect(single.status).toBe(200);
+        expect(TickSchema.parse(JSON.parse(single.body)).climb).toEqual(wholeClimb(climbUuid, state));
       }
     });
 
-    it('shows a published climb whose setter keeps a private account', async () => {
+    it('serves a published climb whose setter keeps a private account in full', async () => {
       const setter = await environment.createClimber();
       await db.insert(userProfiles).values({ userId: setter.userId, isPrivate: true });
       const { climber, token } = await connectedApp();
       const published = await seedClimb(setter.userId, 'published');
       const [tickId] = await insertTicks(climber.userId, 1, { climbUuid: published });
 
-      expect((await onlyTick(token)).climb).toMatchObject({ id: published, name: 'Secret published' });
+      expect((await onlyTick(token)).climb).toEqual(wholeClimb(published, 'published'));
       expect((await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token })).status).toBe(200);
     });
 
-    it('stops serving a tick once its climb goes back to draft, at the next read', async () => {
+    it('keeps serving a tick when its climb goes back to draft', async () => {
       const setter = await environment.createClimber();
       const { climber, token } = await connectedApp();
       const climbUuid = await seedClimb(setter.userId, 'published');
@@ -939,7 +953,9 @@ describe('the logbook routes', () => {
       expect((await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token })).status).toBe(200);
 
       await db.execute(sql`UPDATE board_climbs SET is_draft = true WHERE uuid = ${climbUuid}`);
-      errorOf(await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token }), 404, 'not_found');
+      const single = await apiHost.send('GET', `/v1/logbook/ticks/${tickId}`, { token });
+      expect(single.status).toBe(200);
+      expect(TickSchema.parse(JSON.parse(single.body)).climb).toMatchObject({ id: climbUuid, name: 'Climb published' });
     });
 
     it("shows a spray climb's names for the climber's own wall and for a public one", async () => {
