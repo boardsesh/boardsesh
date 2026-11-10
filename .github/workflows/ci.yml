@@ -807,6 +807,21 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: vp run check:public-api-openapi
 
+      # A PR that changes that document needs a changelog entry
+      # (docs/integration-platform.md, "Versioning"). No path gate either: the
+      # newest entry must name the committed document's hash on every run, and
+      # on a PR the entries already on the base may not change.
+      - name: public-api-changelog (contract changes carry a changelog entry)
+        id: public-api-changelog
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+          fi
+          vp run check:public-api-changelog
+
       # `mobile` is in the gate because check:i18n:orphans scans
       # packages/mobile/{src,app} too. #4416 shipped a raw `playView.resetZoom`
       # label from a mobile-only commit; without it the guard would skip the
