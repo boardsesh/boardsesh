@@ -855,6 +855,18 @@ and still counts toward the developer's 10. Deleting any other app removes its
 connections first (waiting for an issuer holding one), then its pending codes,
 then the app, whose cascade takes tokens, consent, grants, subjects and policy.
 
+**What the consent screen can show.** The app name is `oauth_client.name`, the
+homepage `oauth_client.uri` and the privacy policy `oauth_client.policy`
+(`name`, `homepageUrl`, `privacyPolicyUrl` in GraphQL). This plan has no
+per-app terms URL; `oauth_client.tos` exists and stays empty. There is no
+publisher name yet, and "Made by" must not read the developer's `users.name`:
+that can be their Google full name, and anyone signed in can open a consent
+screen for any `client_id`. The smallest change is one nullable column,
+`oauth_app_policy.publisher_name` (`publisherName: text('publisher_name')` in
+`partner-oauth.ts`, generated as `ADD COLUMN`), which takes ACCESS EXCLUSIVE on an
+`oauth_` table and so uses the 3-second guard and deploys alone. Registration
+would then require it, under the same length and lookalike rules as the app name.
+
 **Exact redirect URI rule** (`partnerRedirectUriProblem` in `auth/partner/registration-rules.ts`):
 
 | Form | Web app | Native app |
