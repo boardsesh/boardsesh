@@ -912,10 +912,14 @@ passes the bearer check and the rate limits, at most once an hour per connection
 The bearer read already carries the stored value, so a fresh one costs nothing. A
 stale one runs one `UPDATE` that names its row through `FOR NO KEY UPDATE SKIP
 LOCKED`, re-checks the hour, the generation and `revoked_at` in SQL, and never
-touches `users`: it never waits for a lock, racing requests write once, and a row a
-Disconnect, refresh or consent answer holds is simply stamped on a later call. A
-failure to stamp is logged and never fails the request. Connected apps shows a stamp
-under an hour old as "Used in the last hour".
+touches `users`: it never waits for a row, racing requests write once, and a row a
+Disconnect, refresh or consent answer holds is simply stamped on a later call. SKIP
+LOCKED does not cover the table lock the UPDATE takes, so the stamp sets a 50 ms
+`lock_timeout`: while a migration holds `oauth_connections`, a request gives up the
+stamp after 50 ms instead of the partner 2 s. A failure to stamp is logged and never
+fails the request. An approved reconnect clears `last_used_at` with `connected_at`,
+so the new connection starts at "Not used yet". Connected apps shows a stamp under an
+hour old as "Used in the last hour".
 
 **What the climber sees.** The words and the show-or-hide rule live in
 `@boardsesh/connected-apps`, shared by both platforms. The section is hidden while

@@ -243,7 +243,6 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     marginTop: spacing[3],
-    marginHorizontal: -spacing[2],
   },
   footer: {
     paddingHorizontal: spacing[4],
