@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
@@ -18,6 +18,7 @@ import {
   contentPrivacy,
   userProfiles,
   logbookChangeWatermark,
+  logbookChanges,
   logbookSnapshots,
   oauthConnections,
 } from '@boardsesh/db/schema';
@@ -30,6 +31,7 @@ import { decodeLogbookCursor, encodeLogbookCursor } from '../handlers/public-api
 import { createPublicApiHandler, type PublicApiHandlerOptions } from '../handlers/public-api/router';
 import { redisClientManager } from '../redis/client';
 import { readLogbookFeedPage, readLogbookTick, type LogbookPageReader } from '../services/logbook-feed';
+import { pruneLogbookChanges } from '../services/logbook-prune';
 import {
   LOGBOOK_SNAPSHOT_BUILD_SLOT_LOCK_CLASS,
   LOGBOOK_SNAPSHOT_BUILD_SLOTS,
@@ -552,6 +554,63 @@ describe('the logbook routes', () => {
       } finally {
         await db.update(logbookChangeWatermark).set({ prunedThroughTxid: '0', prunedThroughSeq: 0n });
       }
+    });
+
+    it('answers 410 exactly below the watermark a real prune set, and serves a cursor at it in full', async () => {
+      const { climber, token } = await connectedApp();
+      await insertTicks(climber.userId, 1);
+      const { cursor: caughtUp } = await sync(token);
+      // Three more, each its own transaction, so each change has its own position.
+      const added: string[] = [];
+      for (let index = 0; index < 3; index += 1) {
+        added.push(...(await insertTicks(climber.userId, 1, { climbUuid: `lb-api-prune-${index}` })));
+      }
+      await waitForWritesToSettle();
+      const throughFirst = pageOf(await getChanges(apiHost, token, { cursor: caughtUp, limit: 1 }));
+      const throughSecond = pageOf(await getChanges(apiHost, token, { cursor: throughFirst.cursor, limit: 1 }));
+      const idsOf = (body: LogbookChangesResponse) =>
+        body.changes.map((change) => (change.type === 'tick' ? change.tick.id : change.id));
+      expect([...idsOf(throughFirst), ...idsOf(throughSecond)]).toEqual(added.slice(0, 2));
+
+      // Every change up to the second tick's ages out, and a real prune runs.
+      const [secondChange] = await db
+        .select({ seq: logbookChanges.seq })
+        .from(logbookChanges)
+        .where(eq(logbookChanges.tickUuid, added[1]));
+      await db
+        .update(logbookChanges)
+        .set({ createdAt: sql`localtimestamp - interval '91 days'` })
+        .where(lte(logbookChanges.seq, secondChange.seq));
+      await waitForWritesToSettle();
+      const pruned = await pruneLogbookChanges({
+        read: (callback) => db.transaction(callback),
+        runBatch: (callback) => db.transaction(callback),
+      });
+
+      // The watermark is exactly the second tick's change, the cursor the app holds.
+      const decoded = decodeLogbookCursor(throughSecond.cursor, TEST_CONFIGURATION.secrets);
+      if (decoded.status !== 'ok' || decoded.cursor.kind !== 'changes') throw new Error('expected a change cursor');
+      const atWatermark = decoded.cursor;
+      expect(pruned.prunedThrough).toEqual({ txid: atWatermark.txid, seq: atWatermark.seq });
+      expect(BigInt(atWatermark.txid)).toBeGreaterThan(0n);
+
+      // At the watermark, and one seq past it: the third tick, nothing missing.
+      expect(idsOf(pageOf(await getChanges(apiHost, token, { cursor: throughSecond.cursor })))).toEqual([added[2]]);
+      const reseal = (seq: bigint) =>
+        encodeLogbookCursor({ ...atWatermark, seq: String(seq) }, TEST_CONFIGURATION.secrets);
+      expect(idsOf(pageOf(await getChanges(apiHost, token, { cursor: reseal(BigInt(atWatermark.seq) + 1n) })))).toEqual(
+        [added[2]],
+      );
+      // One seq below it, and every cursor before it: the second tick's change is gone.
+      errorOf(
+        await getChanges(apiHost, token, { cursor: reseal(BigInt(atWatermark.seq) - 1n) }),
+        410,
+        'cursor_expired',
+      );
+      errorOf(await getChanges(apiHost, token, { cursor: throughFirst.cursor }), 410, 'cursor_expired');
+      errorOf(await getChanges(apiHost, token, { cursor: caughtUp }), 410, 'cursor_expired');
+      // Starting over still gives the whole logbook.
+      expect((await sync(token)).copy.size).toBe(4);
     });
 
     it('answers 410 for a snapshot cursor once its snapshot is gone', async () => {

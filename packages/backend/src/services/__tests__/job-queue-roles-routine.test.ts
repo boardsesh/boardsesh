@@ -792,6 +792,43 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
       ),
     ).toBe(0);
 
+    // 7. The logbook change prune, as the maintenance login: every change row
+    //    written so far ages out and goes, and the watermark moves over it. The
+    //    job never reads whose row it is or which tick it names.
+    await database.execute(sql`UPDATE logbook_changes SET created_at = localtimestamp - interval '91 days'`);
+    const [lastChange] = (await database.execute(sql`
+      SELECT txid::text AS txid, seq::text AS seq FROM logbook_changes ORDER BY txid DESC, seq DESC LIMIT 1`)) as unknown as Array<{
+      txid: string;
+      seq: string;
+    }>;
+    expect(lastChange).toBeDefined();
+    // Every write so far below the cluster-wide horizon, so none is skipped as unsettled.
+    const [fence] = (await database.execute(sql`SELECT pg_current_xact_id()::text AS txid`)) as unknown as Array<{
+      txid: string;
+    }>;
+    for (const deadline = Date.now() + 60_000; ;) {
+      const [snapshot] = (await database.execute(
+        sql`SELECT pg_snapshot_xmin(pg_current_snapshot())::text AS horizon`,
+      )) as unknown as Array<{ horizon: string }>;
+      if (BigInt(snapshot.horizon) > BigInt(fence.txid)) break;
+      if (Date.now() > deadline) throw new Error('the transaction horizon never passed the fence');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    try {
+      await runAs('maintenance-delivery', maintenance, 'prune-logbook-changes', {});
+      expect(await count(sql`SELECT count(*)::int AS count FROM logbook_changes`)).toBe(0);
+      const [prunedThrough] = (await database.execute(sql`
+        SELECT pruned_through_txid::text AS txid, pruned_through_seq::text AS seq FROM logbook_change_watermark`)) as unknown as Array<{
+        txid: string;
+        seq: string;
+      }>;
+      expect(prunedThrough).toEqual(lastChange);
+    } finally {
+      await database.execute(
+        sql`UPDATE logbook_change_watermark SET pruned_through_txid = '0', pruned_through_seq = 0`,
+      );
+    }
+
     // Nothing was refused and swallowed on the way.
     expect(logged.filter((line) => /permission denied|"sqlState":"42501"/i.test(line))).toEqual([]);
 
@@ -816,6 +853,18 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
     await expect(maintenanceDb.executeSql('SELECT user_id FROM public.logbook_snapshots LIMIT 1')).rejects.toThrow(
       'permission denied',
     );
+    await expect(maintenanceDb.executeSql('SELECT user_id FROM public.logbook_changes LIMIT 1')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(maintenanceDb.executeSql('SELECT tick_uuid FROM public.logbook_changes LIMIT 1')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(
+      maintenanceDb.executeSql('SELECT feed_generation FROM public.logbook_change_watermark LIMIT 1'),
+    ).rejects.toThrow('permission denied');
+    await expect(
+      maintenanceDb.executeSql("INSERT INTO public.logbook_changes (user_id, tick_uuid) VALUES ('a', 'b')"),
+    ).rejects.toThrow('permission denied');
   } finally {
     await routine.boss.stop({ graceful: true, close: true });
     await maintenance.boss.stop({ graceful: true, close: true });

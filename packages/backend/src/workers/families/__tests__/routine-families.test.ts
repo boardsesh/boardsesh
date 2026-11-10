@@ -217,6 +217,12 @@ describe('family contracts', () => {
         cron: '2,17,32,47 * * * *',
         options: { expireInSeconds: 300, retryLimit: 1, retryDelay: 60, deadlineSeconds: 900, heartbeatSeconds: 60 },
       },
+      {
+        name: 'prune-logbook-changes',
+        role: 'maintenance-delivery',
+        cron: '53 3 * * *',
+        options: { expireInSeconds: 600, retryLimit: 1, retryDelay: 300, deadlineSeconds: 3600, heartbeatSeconds: 60 },
+      },
     ];
     for (const { name, role, cron, options } of cases) {
       const family = requireFamily(name);
@@ -240,6 +246,7 @@ describe('family contracts', () => {
       'moonboard-locations-sync',
       'climb-stats-self-heal',
       'reclaim-logbook-snapshots',
+      'prune-logbook-changes',
     ]) {
       const { options } = requireFamily(name);
       expect(options.retryBackoff).toBe(true);
