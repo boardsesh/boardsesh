@@ -1224,6 +1224,27 @@ describe('partner OAuth routes on the API host', () => {
       },
       TEST_DEADLINE_MS,
     );
+
+    it(
+      'gives every body slot back: 40 bodies in a row from 40 zones, then 10 from one, are all read',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const exchange = (zone: string) =>
+          sendToken(
+            { grant_type: 'authorization_code', code: 'not-real', client_id: client.clientId },
+            fromWorker(zone),
+          );
+        const statuses: number[] = [];
+        // More than the 32 the Worker address may hold at once, so one slot that
+        // is never given back refuses the 33rd.
+        for (let index = 0; index < 40; index += 1) statuses.push((await exchange(randomZone())).status);
+        // More than one zone's 8.
+        const oneZone = randomZone();
+        for (let index = 0; index < 10; index += 1) statuses.push((await exchange(oneZone)).status);
+        expect(statuses).toEqual(Array.from({ length: 50 }, () => 400));
+      },
+      TEST_DEADLINE_MS,
+    );
   });
 
   describe('a refused body', () => {
