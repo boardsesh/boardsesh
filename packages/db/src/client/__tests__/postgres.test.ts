@@ -44,6 +44,51 @@ void describe('postgres client', () => {
     });
   });
 
+  void describe('createDedicatedPool', () => {
+    void it('builds a new pool with its own size on every call', async () => {
+      const { createDedicatedPool, createPool } = await import('../postgres');
+      const firstPool = createDedicatedPool(3);
+      const secondPool = createDedicatedPool(3);
+      try {
+        assert.notEqual(firstPool, secondPool, 'each call must return its own pool');
+        assert.notEqual(firstPool, createPool(), 'a dedicated pool is never the shared one');
+        assert.equal(firstPool.options.max, 3);
+      } finally {
+        await Promise.all([firstPool.end(), secondPool.end()]);
+      }
+    });
+
+    void it('applies its own connect timeout and startup parameters', async () => {
+      const { createDedicatedPool } = await import('../postgres');
+      const pool = createDedicatedPool(2, {
+        connect_timeout: 2,
+        connection: { statement_timeout: 1000, application_name: 'dedicated-test' },
+      });
+      try {
+        assert.equal(pool.options.connect_timeout, 2);
+        assert.equal(pool.options.connection.statement_timeout, 1000);
+        assert.equal(pool.options.connection.application_name, 'dedicated-test');
+      } finally {
+        await pool.end();
+      }
+    });
+
+    void it('wins over the same startup parameter in the URL and keeps the rest', async () => {
+      const { createDedicatedPool } = await import('../postgres');
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL =
+        'postgres://postgres:password@localhost:5432/main?statement_timeout=45000&lock_timeout=5';
+      const pool = createDedicatedPool(2, { connection: { statement_timeout: 1000 } });
+      try {
+        assert.equal(pool.options.connection.statement_timeout, 1000);
+        assert.equal(pool.options.connection.lock_timeout, '5');
+      } finally {
+        process.env.DATABASE_URL = previousUrl;
+        await pool.end();
+      }
+    });
+  });
+
   void describe('per-deployment pool knobs', () => {
     // Asserts on the options postgres-js actually resolved, not on the source
     // text of postgres.ts. A source grep goes green-but-meaningless the moment

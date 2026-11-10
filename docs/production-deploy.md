@@ -433,13 +433,13 @@ hand-written server) since the standalone `server.js` is generated at build time
 
 `overlapSeconds` (the other teardown knob) keeps both deployments serving at
 once. It is deliberately unset. With the C15 code defaults, the two backend
-replicas use 2 x (`DB_POOL_MAX` 5 + `PGBOSS_POOL_SIZE` 2) = 14 connections,
-down from 28 before the pool change. On a 15 s drain, the full-fleet ceiling is
-79 while the web service's explicit `DB_POOL_MAX=10` is unchanged; setting the
-separate web cap to 4 lowers that ceiling to 73. Both fit under the 97
+replicas use 2 x (`DB_POOL_MAX` 5 + the 2-connection admission pool +
+`PGBOSS_POOL_SIZE` 2) = 18 connections. On a 15 s drain, the full-fleet ceiling
+is 87 while the web service's explicit `DB_POOL_MAX=10` is unchanged; setting
+the separate web cap to 4 lowers that ceiling to 81. Both fit under the 97
 non-superuser slots of `max_connections=100`. The homelab sync runners still
 set `max: 5` in code and ignore `DB_POOL_MAX`, so a cap of 3 needs a separate
-code follow-up before relying on the 53 steady / 67 draining projection.
+code follow-up before relying on the 57 steady / 75 draining projection.
 PgBouncer remains parked; see
 [db-connectivity.md](./db-connectivity.md#pgbouncer-parked) for why and when to
 revisit it. Railway only sends SIGTERM once the replacement deployment is

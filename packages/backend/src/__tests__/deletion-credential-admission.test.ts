@@ -20,6 +20,7 @@ import { db } from '../db/client';
 import { notifications } from '@boardsesh/db/schema/app';
 import { getWorkerDatabaseName, getWorkerDatabaseUrl } from './worker-db';
 import { validateMobileJwt, validateNextAuthToken, validateToken } from '../middleware/auth';
+import { getAdmissionPool } from '../auth/admission-pool';
 import { AuthAdmissionUnavailableError, requireHumanSubjectForIssuance } from '../auth/human-admission';
 import { prepareProjectionUnderUsersTableLock } from '../auth/current-store/email-reservations';
 import { createYogaInstance } from '../graphql/yoga';
@@ -962,10 +963,12 @@ describe('mounted deletion admission against the owned primary database', () => 
     try {
       const credentials = await Promise.all(burstUserIds.map((id) => tokens(id)));
       for (const credential of credentials) await validateMobileJwt(credential.jws);
-      const selectSpy = vi.spyOn(db, 'select');
+      const mainPoolSelect = vi.spyOn(db, 'select');
+      const admissionStatement = vi.spyOn(getAdmissionPool(), 'unsafe');
       const results = await Promise.all(credentials.map((credential) => validateMobileJwt(credential.jws)));
       expect(results.map((result) => result?.userId)).toEqual(burstUserIds);
-      expect(selectSpy).toHaveBeenCalledTimes(1);
+      expect(admissionStatement).toHaveBeenCalledTimes(1);
+      expect(mainPoolSelect).not.toHaveBeenCalled();
     } finally {
       vi.restoreAllMocks();
       await db.delete(users).where(inArray(users.id, burstUserIds));

@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/node';
 import { startServer } from './server';
 import { redisClientManager } from './redis/client';
 import { closePool, closeReadPool } from '@boardsesh/db/client';
+import { closeAdmissionPool } from './auth/admission-pool';
 import { shutdownPosthog } from './services/analytics/posthog';
 import { logger } from './utils/logger';
 import { FORCE_SHUTDOWN_TIMEOUT_MS } from './shutdown-timing';
@@ -157,10 +158,13 @@ async function main() {
     // Disconnect from Redis
     await redisClientManager.disconnect();
 
-    // Close database connection pools (primary + read replica)
+    // Close database connection pools (primary + read replica + admission).
+    // Admission goes last: nothing reads through it once the servers are closed,
+    // and its bounded close can never hold up the others.
     try {
       await closeReadPool();
       await closePool();
+      await closeAdmissionPool();
       logger.info('Database pools closed');
     } catch (error) {
       logger.warn('Error closing database pools:', error);

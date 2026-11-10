@@ -52,6 +52,7 @@ try {
     { pubsub },
     { redisClientManager },
     { closePool, closeReadPool },
+    { closeAdmissionPool },
     { stopClientUsageReporter },
     { kilterLiveSync },
   ] = await Promise.all([
@@ -60,6 +61,7 @@ try {
     import('../../pubsub'),
     import('../../redis/client'),
     import('@boardsesh/db/client'),
+    import('../../auth/admission-pool'),
     import('../../services/client-usage'),
     import('../../services/kilter-live-sync'),
   ]);
@@ -82,7 +84,7 @@ try {
       await kilterLiveSync.shutdown();
       stopClientUsageReporter();
       await redisClientManager.disconnect();
-      await Promise.all([closePool(), closeReadPool()]);
+      await Promise.all([closePool(), closeReadPool(), closeAdmissionPool()]);
       if (process.connected)
         await new Promise<void>((resolve, reject) =>
           process.send?.(

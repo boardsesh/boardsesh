@@ -238,6 +238,51 @@ export function createPool() {
   return cache.client!;
 }
 
+/**
+ * What a dedicated pool may set for itself. These take effect only here:
+ * postgres.js copies `connect_timeout` when it builds each connection, so writing
+ * `pool.options` afterwards does nothing. TLS and pooler handling stay shared.
+ */
+export type DedicatedPoolOverrides = {
+  /** Seconds to open a connection, in place of the shared 30. */
+  connect_timeout?: number;
+  /** Startup parameters, merged over the shared ones and over the same names in the URL. */
+  connection?: Partial<postgres.ConnectionParameters>;
+};
+
+/**
+ * postgres.js lets a URL query parameter beat the same startup parameter given
+ * in options, so `?statement_timeout=45000` in DATABASE_URL would undo an
+ * override. Removes only the parameters the caller overrides.
+ */
+function withoutOverriddenUrlParameters(connectionString: string, overriddenNames: readonly string[]): string {
+  const url = new URL(connectionString);
+  const conflictingNames = overriddenNames.filter((name) => url.searchParams.has(name));
+  if (conflictingNames.length === 0) return connectionString;
+  for (const name of conflictingNames) url.searchParams.delete(name);
+  return url.href;
+}
+
+/**
+ * A pool of its own for work that must not compete with the shared one for
+ * connections. Same TLS and pooler handling as the primary, but never cached:
+ * the caller owns it, closes it, and wraps it in drizzle before reading through it.
+ */
+export function createDedicatedPool(max: number, overrides: DedicatedPoolOverrides = {}): PoolInstance {
+  const { connectionString } = getConnectionConfig();
+  const sharedOptions = buildPoolOptions(connectionString);
+  const dedicatedConnectionString = withoutOverriddenUrlParameters(
+    connectionString,
+    Object.keys(overrides.connection ?? {}),
+  );
+  return postgres(dedicatedConnectionString, {
+    ...sharedOptions,
+    ...overrides,
+    max,
+    connection: { ...sharedOptions.connection, ...overrides.connection },
+  });
+}
+
 export async function closePool(): Promise<void> {
   try {
     if (cache.client) {

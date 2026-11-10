@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { users, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
-import { db, type Database } from '../db/client';
+import type { Database } from '../db/client';
+import { readOnAdmissionConnection } from './admission-pool';
 import { requireReadCommitted } from './current-store/foundation-context';
 
 import {
@@ -43,14 +44,16 @@ export async function activeHumanSubjectIds(userIds: readonly string[]): Promise
   const requestedIds = [...new Set(userIds)];
   if (!requestedIds.length) return new Set();
   if (requestedIds.length > AUTH_ADMISSION_BATCH_SIZE) throw new AuthAdmissionUnavailableError();
-  return runAuthAdmissionRead(async () => {
-    const subjects = await db
-      .select({ id: users.id })
-      .from(users)
-      .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
-      .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
-    return new Set(subjects.map((subject) => subject.id));
-  });
+  return runAuthAdmissionRead((markExecuting) =>
+    readOnAdmissionConnection(markExecuting, async (admissionDatabase) => {
+      const subjects = await admissionDatabase
+        .select({ id: users.id })
+        .from(users)
+        .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+        .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
+      return new Set(subjects.map((subject) => subject.id));
+    }),
+  );
 }
 
 /**

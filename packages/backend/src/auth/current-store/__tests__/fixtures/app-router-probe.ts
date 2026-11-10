@@ -619,7 +619,8 @@ async function start(input: Record<string, unknown>) {
         await Promise.allSettled(active);
         logger.removeListener('data', observeActivityFailure);
         const { closePool, closeReadPool } = await import('@boardsesh/db/client');
-        await Promise.allSettled([closePool(), closeReadPool()]);
+        const { closeAdmissionPool } = await import('../../../admission-pool');
+        await Promise.allSettled([closePool(), closeReadPool(), closeAdmissionPool()]);
         await providers.close();
         webOAuthConsole?.restore();
         await send({ kind: 'stopped', quiescent: active.size === 0 });

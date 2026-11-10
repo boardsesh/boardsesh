@@ -5,11 +5,13 @@ import {
 } from './admission-read-runner';
 
 /**
- * Reads this coalescer runs at once. It stays under the runner's eight slots so
- * ordinary requests cannot crowd out the WebSocket sweep, which calls the runner
- * directly. During a stall, timed-out reads can still hold every slot.
+ * Reads this coalescer runs at once: one per admission connection. A third read
+ * would only queue behind them, where it can use up the whole deadline. Callers
+ * wait here instead, where one that outlives the deadline is refused before any
+ * read starts. The WebSocket sweep calls the runner directly. During a stall,
+ * timed-out reads can still hold every runner slot.
  */
-export const MAX_CONCURRENT_COALESCED_ADMISSION_READS = 4;
+export const MAX_CONCURRENT_COALESCED_ADMISSION_READS = 2;
 
 /** Distinct users allowed to wait for a read before new callers are refused. */
 export const MAX_WAITING_ADMISSION_USERS = 1024;
