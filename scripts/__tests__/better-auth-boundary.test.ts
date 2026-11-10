@@ -13,6 +13,11 @@ const PINNED_VERSION = '1.7.17';
 const BACKEND_MANIFEST_PATH = 'packages/backend/package.json';
 /** The only folder allowed to import Better Auth until the partner authority ships. */
 const PROTOTYPE_ROOT = 'packages/backend/src/auth/prototype/';
+/**
+ * Backend tests that check the partner tables against Better Auth's own schema.
+ * Tests are never bundled, so they cannot carry Better Auth into web or mobile.
+ */
+const PARTNER_TESTS_ROOT = 'packages/backend/src/auth/partner/__tests__/';
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -98,10 +103,12 @@ describe('Better Auth dependency boundary', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('is imported only by the auth prototype, so web and mobile can never bundle it', () => {
+  it('is imported only by the auth prototype and partner schema tests, so web and mobile can never bundle it', () => {
     const importers = filesImporting(trackedSourceFiles, isBetterAuthSpecifier);
     expect(importers.length).toBeGreaterThan(0);
-    expect(importers.filter((path) => !path.startsWith(PROTOTYPE_ROOT))).toEqual([]);
+    expect(
+      importers.filter((path) => !path.startsWith(PROTOTYPE_ROOT) && !path.startsWith(PARTNER_TESTS_ROOT)),
+    ).toEqual([]);
   });
 
   it('keeps the prototype out of every production backend module', () => {
