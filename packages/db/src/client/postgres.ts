@@ -246,9 +246,22 @@ export function createPool() {
 export type DedicatedPoolOverrides = {
   /** Seconds to open a connection, in place of the shared 30. */
   connect_timeout?: number;
-  /** Startup parameters, merged over the shared ones. */
+  /** Startup parameters, merged over the shared ones and over the same names in the URL. */
   connection?: Partial<postgres.ConnectionParameters>;
 };
+
+/**
+ * postgres.js lets a URL query parameter beat the same startup parameter given
+ * in options, so `?statement_timeout=45000` in DATABASE_URL would undo an
+ * override. Removes only the parameters the caller overrides.
+ */
+function withoutOverriddenUrlParameters(connectionString: string, overriddenNames: readonly string[]): string {
+  const url = new URL(connectionString);
+  const conflictingNames = overriddenNames.filter((name) => url.searchParams.has(name));
+  if (conflictingNames.length === 0) return connectionString;
+  for (const name of conflictingNames) url.searchParams.delete(name);
+  return url.href;
+}
 
 /**
  * A pool of its own for work that must not compete with the shared one for
@@ -258,7 +271,11 @@ export type DedicatedPoolOverrides = {
 export function createDedicatedPool(max: number, overrides: DedicatedPoolOverrides = {}): PoolInstance {
   const { connectionString } = getConnectionConfig();
   const sharedOptions = buildPoolOptions(connectionString);
-  return postgres(connectionString, {
+  const dedicatedConnectionString = withoutOverriddenUrlParameters(
+    connectionString,
+    Object.keys(overrides.connection ?? {}),
+  );
+  return postgres(dedicatedConnectionString, {
     ...sharedOptions,
     ...overrides,
     max,

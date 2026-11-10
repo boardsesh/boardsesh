@@ -3,7 +3,7 @@ import { connect, createServer, type AddressInfo, type Socket } from 'node:net';
 import { inArray, sql } from 'drizzle-orm';
 import { SignJWT } from 'jose';
 import postgres from 'postgres';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createDedicatedPool, createPool, setDbConnectObserver, type DbConnectRetryEvent } from '@boardsesh/db/client';
 import { authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { getWorkerDatabaseUrl } from '../../__tests__/worker-db';
@@ -11,9 +11,10 @@ import { db } from '../../db/client';
 import { validateToken } from '../../middleware/auth';
 import {
   AUTH_ADMISSION_APPLICATION_NAME,
+  AUTH_ADMISSION_CONNECT_RETRY_BUDGET_MS,
   AUTH_ADMISSION_CONNECT_TIMEOUT_S,
-  AUTH_ADMISSION_MIN_RECYCLE_INTERVAL_MS,
   AUTH_ADMISSION_POOL_MAX_CONNECTIONS,
+  AUTH_ADMISSION_RECYCLE_BACKOFF_MS,
   AUTH_ADMISSION_READ_WATCHDOG_MS,
   AUTH_ADMISSION_STATEMENT_TIMEOUT_MS,
   closeAdmissionPool,
@@ -84,6 +85,7 @@ async function startPostgresProxy() {
   const openSockets = new Set<Socket>();
   const forwarded: Array<{ clientSide: Socket; databaseSide: Socket }> = [];
   let shouldSwallowNewConnections = false;
+  let openDelayMs = 0;
 
   function track(socket: Socket) {
     openSockets.add(socket);
@@ -91,14 +93,22 @@ async function startPostgresProxy() {
     socket.once('close', () => openSockets.delete(socket));
   }
 
-  const server = createServer((clientSide) => {
-    track(clientSide);
-    if (shouldSwallowNewConnections) return;
+  function forward(clientSide: Socket) {
+    if (clientSide.destroyed) return;
     const databaseSide = connect(Number(database.port), database.hostname);
     track(databaseSide);
     clientSide.pipe(databaseSide);
     databaseSide.pipe(clientSide);
     forwarded.push({ clientSide, databaseSide });
+  }
+
+  const server = createServer((clientSide) => {
+    track(clientSide);
+    if (shouldSwallowNewConnections) return;
+    if (openDelayMs === 0) return forward(clientSide);
+    // Holds the startup bytes, as a primary slow to accept a session would.
+    clientSide.pause();
+    setTimeout(() => forward(clientSide), openDelayMs);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
@@ -122,6 +132,9 @@ async function startPostgresProxy() {
     setSwallowNewConnections(shouldSwallow: boolean) {
       shouldSwallowNewConnections = shouldSwallow;
     },
+    setOpenDelayMs(delayMs: number) {
+      openDelayMs = delayMs;
+    },
     close: async () => {
       for (const socket of openSockets) socket.destroy();
       await new Promise((resolve) => server.close(resolve));
@@ -135,6 +148,36 @@ async function unusedLocalPort() {
   const { port } = server.address() as AddressInfo;
   await new Promise((resolve) => server.close(resolve));
   return port;
+}
+
+type Stopwatch = { wallMs: () => number; runningMs: () => number };
+
+/**
+ * Something on this machine has paused a test process for up to 6 s at a time; a
+ * bare Node interval saw it too. Upper time bounds leave out any pause seen while
+ * measuring, so they test the pool rather than the scheduler.
+ */
+function watchForProcessPauses() {
+  const tickMs = 50;
+  let lastTickAt = performance.now();
+  let pausedMs = 0;
+  const ticker = setInterval(() => {
+    const now = performance.now();
+    const lateMs = now - lastTickAt - tickMs;
+    if (lateMs > 250) pausedMs += lateMs;
+    lastTickAt = now;
+  }, tickMs);
+  return {
+    stopwatch(): Stopwatch {
+      const startedAt = performance.now();
+      const pausedBeforeMs = pausedMs;
+      return {
+        wallMs: () => performance.now() - startedAt,
+        runningMs: () => performance.now() - startedAt - (pausedMs - pausedBeforeMs),
+      };
+    },
+    stop: () => clearInterval(ticker),
+  };
 }
 
 async function timed<Result>(operation: () => PromiseLike<Result>) {
@@ -266,9 +309,33 @@ describe('auth admission pool', () => {
     expect(MAX_CONCURRENT_COALESCED_ADMISSION_READS).toBe(AUTH_ADMISSION_POOL_MAX_CONNECTIONS);
   });
 
-  it('gives up on an unanswered read a second after the statement timeout, and rate-limits replacing the pool', () => {
+  it('gives up on an unanswered read a second after the statement timeout, and backs off replacing the pool', () => {
     expect(AUTH_ADMISSION_READ_WATCHDOG_MS).toBe(AUTH_ADMISSION_STATEMENT_TIMEOUT_MS + 1000);
-    expect(AUTH_ADMISSION_MIN_RECYCLE_INTERVAL_MS).toBe(5000);
+    expect(AUTH_ADMISSION_RECYCLE_BACKOFF_MS).toEqual([5000, 10_000, 20_000, 60_000]);
+  });
+
+  it('lets a dial outlive one read but end before the pool can be replaced again', () => {
+    const connectTimeoutMs = AUTH_ADMISSION_CONNECT_TIMEOUT_S * 1000;
+    expect(connectTimeoutMs).toBeGreaterThan(AUTH_ADMISSION_READ_WATCHDOG_MS);
+    expect(connectTimeoutMs).toBeLessThan(AUTH_ADMISSION_RECYCLE_BACKOFF_MS[0]);
+  });
+
+  it('wins over the same startup parameters in DATABASE_URL, and leaves the others', async () => {
+    vi.stubEnv(
+      'DATABASE_URL',
+      `${getWorkerDatabaseUrl()}?statement_timeout=45000&application_name=from-url&lock_timeout=12345`,
+    );
+    const [row] = await getAdmissionPool()<
+      { statement_timeout: string; application_name: string; lock_timeout: string }[]
+    >`
+      SELECT current_setting('statement_timeout') AS statement_timeout,
+             current_setting('application_name') AS application_name,
+             current_setting('lock_timeout') AS lock_timeout`;
+    expect(row).toEqual({
+      statement_timeout: '1s',
+      application_name: AUTH_ADMISSION_APPLICATION_NAME,
+      lock_timeout: '12345ms',
+    });
   });
 
   it('merges startup parameters for a dedicated pool over the shared ones', async () => {
@@ -282,46 +349,52 @@ describe('auth admission pool', () => {
     }
   });
 
-  it('gives a connection two seconds to open, against the shared thirty', () => {
-    expect(AUTH_ADMISSION_CONNECT_TIMEOUT_S).toBe(2);
+  it('gives a connection four seconds to open, against the shared thirty', () => {
+    expect(AUTH_ADMISSION_CONNECT_TIMEOUT_S).toBe(4);
     expect(getAdmissionPool().options.connect_timeout).toBe(AUTH_ADMISSION_CONNECT_TIMEOUT_S);
     expect(createPool().options.connect_timeout).toBe(30);
   });
 
   describe('when the path to Postgres stops answering', () => {
-    async function timeUntilAnswered(maximumWaitMs: number) {
-      const startedAt = performance.now();
+    let pauses: ReturnType<typeof watchForProcessPauses>;
+    beforeEach(() => {
+      pauses = watchForProcessPauses();
+    });
+    afterEach(() => {
+      pauses.stop();
+    });
+
+    async function waitForAnAnswer(stopwatch: Stopwatch, maximumRunningMs: number) {
       for (;;) {
         const answered = await activeHumanSubjectIds([activeUserId]).then(
           () => true,
           () => false,
         );
-        if (answered) return performance.now();
-        if (performance.now() - startedAt > maximumWaitMs) throw new Error('Admission reads never recovered');
+        if (answered) return;
+        if (stopwatch.runningMs() > maximumRunningMs) throw new Error('Admission reads never recovered');
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
 
-    it('replaces a pool whose connections stop answering, and reads come back', { timeout: 15000 }, async () => {
+    it('replaces a pool whose connections stop answering, and reads come back', { timeout: 30000 }, async () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
         await Promise.all([activeHumanSubjectIds([activeUserId]), activeHumanSubjectIds([activeUserId])]);
 
         proxy.hangExistingConnections();
-        const hungAt = performance.now();
-        const recoveredAt = await timeUntilAnswered(8000);
+        const sinceHang = pauses.stopwatch();
+        await waitForAnAnswer(sinceHang, 8000);
 
-        const recoveryMs = recoveredAt - hungAt;
-        expect(recoveryMs).toBeGreaterThanOrEqual(AUTH_ADMISSION_READ_WATCHDOG_MS - 50);
-        expect(recoveryMs).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 3000);
+        expect(sinceHang.wallMs()).toBeGreaterThanOrEqual(AUTH_ADMISSION_READ_WATCHDOG_MS - 50);
+        expect(sinceHang.runningMs()).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 3000);
       } finally {
         await closeAdmissionPool();
         await proxy.close();
       }
     });
 
-    it('recovers soon after a path that swallowed new connections heals', { timeout: 15000 }, async () => {
+    it('recovers soon after a path that swallowed new connections heals', { timeout: 30000 }, async () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
@@ -329,19 +402,39 @@ describe('auth admission pool', () => {
 
         proxy.severExistingConnections();
         proxy.setSwallowNewConnections(true);
-        const recovered = timeUntilAnswered(10000);
+        let sinceHeal: Stopwatch | undefined;
+        const recovered = waitForAnAnswer(pauses.stopwatch(), 10000).then(() => sinceHeal?.runningMs());
         await new Promise((resolve) => setTimeout(resolve, 2500));
         proxy.setSwallowNewConnections(false);
-        const healedAt = performance.now();
+        sinceHeal = pauses.stopwatch();
 
-        expect((await recovered) - healedAt).toBeLessThan(4000);
+        // A dial swallowed just before the heal holds its slot until it times out.
+        expect(await recovered).toBeLessThan(AUTH_ADMISSION_CONNECT_TIMEOUT_S * 1000 + 1500);
       } finally {
         await closeAdmissionPool();
         await proxy.close();
       }
     });
 
-    it('closes within its bound even with a read that never returns', { timeout: 8000 }, async () => {
+    it('reaches a primary that takes longer than the watchdog to open a connection', { timeout: 40000 }, async () => {
+      const proxy = await startPostgresProxy();
+      try {
+        vi.stubEnv('DATABASE_URL', proxy.url);
+        await activeHumanSubjectIds([activeUserId]);
+
+        proxy.severExistingConnections();
+        proxy.setOpenDelayMs(AUTH_ADMISSION_READ_WATCHDOG_MS + 500);
+        const sinceSlowed = pauses.stopwatch();
+        // Answered while every new connection is still slow to open.
+        await waitForAnAnswer(sinceSlowed, 12000);
+        expect(sinceSlowed.runningMs()).toBeLessThan(10000);
+      } finally {
+        await closeAdmissionPool();
+        await proxy.close();
+      }
+    });
+
+    it('closes within its bound even with a read that never returns', { timeout: 30000 }, async () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
@@ -354,8 +447,9 @@ describe('auth admission pool', () => {
         ).catch(() => undefined);
         await nextEventLoopTurn();
 
-        const closing = await timed(closeAdmissionPool);
-        expect(closing.elapsedMs).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 1000);
+        const closing = pauses.stopwatch();
+        await closeAdmissionPool();
+        expect(closing.runningMs()).toBeLessThan(AUTH_ADMISSION_READ_WATCHDOG_MS + 1000);
         await hungRead;
       } finally {
         await proxy.close();
@@ -432,11 +526,15 @@ describe('auth admission pool', () => {
   });
 
   it('creates nothing on import, one pool on first use, and a fresh one after closing', async () => {
-    const { createDedicatedPool: actualCreateDedicatedPool, ...actualClient } =
-      await vi.importActual<typeof import('@boardsesh/db/client')>('@boardsesh/db/client');
+    const {
+      createDedicatedPool: actualCreateDedicatedPool,
+      withConnectRetry: actualWithConnectRetry,
+      ...actualClient
+    } = await vi.importActual<typeof import('@boardsesh/db/client')>('@boardsesh/db/client');
     const createDedicatedPool = vi.fn(actualCreateDedicatedPool);
+    const withConnectRetry = vi.fn(actualWithConnectRetry);
     vi.resetModules();
-    vi.doMock('@boardsesh/db/client', () => ({ ...actualClient, createDedicatedPool }));
+    vi.doMock('@boardsesh/db/client', () => ({ ...actualClient, createDedicatedPool, withConnectRetry }));
     try {
       const isolated = await import('../admission-pool');
       expect(createDedicatedPool).not.toHaveBeenCalled();
@@ -453,6 +551,11 @@ describe('auth admission pool', () => {
         AUTH_ADMISSION_POOL_MAX_CONNECTIONS,
         expect.objectContaining({ connect_timeout: AUTH_ADMISSION_CONNECT_TIMEOUT_S }),
       );
+      // A timed-out dial is already past the caller's deadline, so it is not retried.
+      expect(AUTH_ADMISSION_CONNECT_RETRY_BUDGET_MS).toBe(AUTH_ADMISSION_RESPONSE_DEADLINE_MS);
+      expect(withConnectRetry).toHaveBeenCalledWith(createDedicatedPool.mock.results[0].value, {
+        budgetMs: AUTH_ADMISSION_CONNECT_RETRY_BUDGET_MS,
+      });
 
       await isolated.closeAdmissionPool();
       await readOnce();

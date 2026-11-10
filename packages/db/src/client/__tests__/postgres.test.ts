@@ -72,6 +72,21 @@ void describe('postgres client', () => {
         await pool.end();
       }
     });
+
+    void it('wins over the same startup parameter in the URL and keeps the rest', async () => {
+      const { createDedicatedPool } = await import('../postgres');
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL =
+        'postgres://postgres:password@localhost:5432/main?statement_timeout=45000&lock_timeout=5';
+      const pool = createDedicatedPool(2, { connection: { statement_timeout: 1000 } });
+      try {
+        assert.equal(pool.options.connection.statement_timeout, 1000);
+        assert.equal(pool.options.connection.lock_timeout, '5');
+      } finally {
+        process.env.DATABASE_URL = previousUrl;
+        await pool.end();
+      }
+    });
   });
 
   void describe('per-deployment pool knobs', () => {
