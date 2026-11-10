@@ -473,15 +473,15 @@ climber's.
   "angle": 40,
   "mirrored": false,
   "stars": 4,
-  "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
+  "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
   "benchmark": false,
   "comment": "Finally stuck the cross-through",
   "climb": {
     "id": "3f9c2a1e5b7d4c8e9a0b1c2d3e4f5a6b",
     "name": "Slopey Business",
     "board": { "type": "kilter", "layout": "Kilter Board Original" },
-    "grade": { "v": 4, "font": "6B+", "label": "6B+/V4" },
-    "boardseshGrade": 4.2
+    "grade": { "v": 4, "font": "6B+", "label": "6b+/V4" },
+    "boardseshGrade": null
   },
   "createdAt": "2026-10-20T18:42:15Z",
   "updatedAt": "2026-10-20T18:42:15Z"
@@ -505,12 +505,18 @@ climber's.
 | `climb.board.type` | `kilter`, `tension`, `moonboard`, `decoy`, `touchstone`, `grasshopper`, `soill`, `woods`, `spray` (a climber's own spray wall). New values may be added |
 | `climb.board.layout` | Layout name, for display (`"Spray wall"` when the name is withheld) |
 | `climb.grade` | The community grade at this angle when you read it, or `null` when the climb has none at this angle. Check for `null` before reading `climb.grade.font` or `climb.grade.v`: a sync that throws on it fails on the same tick every time it retries. It drifts over time without the tick changing |
-| `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional; the model behind it may change |
+| `climb.boardseshGrade` | The Boardsesh universal grade, a decimal on the V scale, or `null`. Always `null` for now: its V-scale form is not published yet. Optional; the model behind it may change |
 
-A grade object is `{ "v": 4, "font": "6B+", "label": "6B+/V4" }`: `v` is an
+A grade object is `{ "v": 4, "font": "6B+", "label": "6b+/V4" }`: `v` is an
 integer or `null` where the board grade has no V equivalent, `font` the
-Fontainebleau grade, `label` the board's own label. Use whichever scale your
-climber prefers.
+Fontainebleau grade in capitals, `label` the board's own label as its grade
+table spells it. Use whichever scale your climber prefers.
+
+A tick on a climb that someone else keeps as a draft or unlisted is not sent:
+those climbs belong to their setter alone, and an unlisted climb opens by its
+id. The feed sends `tick.deleted` for it instead, and `GET /v1/logbook/ticks/{id}`
+answers `404`. A published climb is always sent, whatever its setter's account
+privacy.
 
 The API does not include hold positions, other climbers' ticks or full board
 catalogs. If you need a catalog, the public nightly snapshots are documented

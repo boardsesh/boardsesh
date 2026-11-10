@@ -1,9 +1,9 @@
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { TickSchema, type Grade, type Tick } from '@boardsesh/public-api';
 import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
-import { BOULDER_GRADES, getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { getBoulderGradesForBoard } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { sprayClimbVisibilityCondition } from '@boardsesh/db/queries';
-import { boardClimbGrades, boardClimbStats, boardClimbs, boardLayouts } from '@boardsesh/db/schema';
+import { boardClimbStats, boardClimbs, boardLayouts } from '@boardsesh/db/schema';
 import type { FeedTransaction, LogbookFeedTick } from './logbook-feed';
 
 /**
@@ -12,9 +12,9 @@ import type { FeedTransaction, LogbookFeedTick } from './logbook-feed';
  * are the table in docs/integration-platform.md, "The tick".
  *
  * Climb metadata is read at delivery, in the page's own read transaction, so a
- * snapshot made before a spray wall went private never serves its old names:
- * the stored tick keeps its values and identity, and its public metadata is
- * read again under today's rules.
+ * snapshot made before a spray wall went private, or before a climb went back
+ * to draft or unlisted, never serves what it showed then: the stored tick keeps
+ * its values and identity, and its climb is read again under today's rules.
  */
 
 /** What `climb.board.layout` says when the wall's name is withheld. */
@@ -29,19 +29,19 @@ export interface LogbookClimbRecord {
    * shared the wall with the climber, not with the climber's apps.
    */
   namesVisible: boolean;
+  /**
+   * True for someone else's draft or unlisted climb. Those go to their owner
+   * only, everywhere, and the tick cannot be served without the climb's id,
+   * which for an unlisted climb is its link. See {@link isLogbookTickWithheld}.
+   */
+  heldOut: boolean;
 }
 
-export interface LogbookClimbGrades {
-  /** `board_climb_stats.display_difficulty` at the tick's angle, on the difficulty-id scale. */
-  communityDifficulty: number | null;
-  /** `board_climb_grades.universal_grade` at the tick's angle, on the difficulty-id scale. */
-  universalGrade: number | null;
-}
-
-/** The metadata one page needs, keyed so every tick finds its climb and its angle. */
+/** The metadata one page needs, keyed so every tick finds its climb and its community grade. */
 export interface LogbookClimbMetadata {
   climbs: Map<string, LogbookClimbRecord>;
-  grades: Map<string, LogbookClimbGrades>;
+  /** `board_climb_stats.display_difficulty` at the tick's angle, on the difficulty-id scale. */
+  communityDifficulty: Map<string, number | null>;
 }
 
 const climbKey = (boardType: string, climbUuid: string) => `${boardType}\u0000${climbUuid}`;
@@ -68,15 +68,28 @@ function namesVisibleTo(userId: string): SQL<boolean> {
 }
 
 /**
- * Two batched reads for a page: the climbs (name, layout, whether names show)
- * and their grades at each tick's angle. Never one query per tick.
+ * Only draft and unlisted climbs are held out, and they go to their owner
+ * alone. "Listed" means `is_listed IS TRUE`, so a missing flag holds a climb
+ * out. A published climb is public whatever its setter's account privacy, and
+ * a climb with no Boardsesh owner (an upstream unlisted climb) has nobody it
+ * goes to.
+ */
+function heldOutFrom(userId: string): SQL<boolean> {
+  return sql<boolean>`((${boardClimbs.isDraft} IS TRUE OR ${boardClimbs.isListed} IS NOT TRUE)
+    AND ${boardClimbs.userId} IS DISTINCT FROM ${userId}::text)`;
+}
+
+/**
+ * Two batched reads for a page: the climbs (name, layout, whether names show,
+ * whether the climb is held out) and their community grade at each tick's
+ * angle. Never one query per tick.
  */
 export async function readLogbookClimbMetadata(
   transaction: FeedTransaction,
   userId: string,
   ticks: readonly LogbookFeedTick[],
 ): Promise<LogbookClimbMetadata> {
-  const metadata: LogbookClimbMetadata = { climbs: new Map(), grades: new Map() };
+  const metadata: LogbookClimbMetadata = { climbs: new Map(), communityDifficulty: new Map() };
   if (ticks.length === 0) return metadata;
 
   const climbUuids = [...new Set(ticks.map((tick) => tick.canonicalClimbUuid))];
@@ -87,6 +100,7 @@ export async function readLogbookClimbMetadata(
       name: boardClimbs.name,
       layoutName: boardLayouts.name,
       namesVisible: namesVisibleTo(userId),
+      heldOut: heldOutFrom(userId),
     })
     .from(boardClimbs)
     .leftJoin(
@@ -99,6 +113,7 @@ export async function readLogbookClimbMetadata(
       name: row.name,
       layoutName: row.layoutName,
       namesVisible: row.namesVisible,
+      heldOut: row.heldOut,
     });
   }
 
@@ -116,42 +131,17 @@ export async function readLogbookClimbMetadata(
     ),
     sql`, `,
   );
-  const [statsRows, gradeRows] = await Promise.all([
-    transaction
-      .select({
-        boardType: boardClimbStats.boardType,
-        climbUuid: boardClimbStats.climbUuid,
-        angle: boardClimbStats.angle,
-        displayDifficulty: boardClimbStats.displayDifficulty,
-      })
-      .from(boardClimbStats)
-      .where(
-        sql`(${boardClimbStats.boardType}, ${boardClimbStats.climbUuid}, ${boardClimbStats.angle}) IN (${triples})`,
-      ),
-    transaction
-      .select({
-        boardType: boardClimbGrades.boardType,
-        climbUuid: boardClimbGrades.climbUuid,
-        angle: boardClimbGrades.angle,
-        universalGrade: boardClimbGrades.universalGrade,
-      })
-      .from(boardClimbGrades)
-      .where(
-        sql`(${boardClimbGrades.boardType}, ${boardClimbGrades.climbUuid}, ${boardClimbGrades.angle}) IN (${triples})`,
-      ),
-  ]);
-  const gradesFor = (key: string): LogbookClimbGrades => {
-    const existing = metadata.grades.get(key);
-    if (existing) return existing;
-    const created: LogbookClimbGrades = { communityDifficulty: null, universalGrade: null };
-    metadata.grades.set(key, created);
-    return created;
-  };
+  const statsRows = await transaction
+    .select({
+      boardType: boardClimbStats.boardType,
+      climbUuid: boardClimbStats.climbUuid,
+      angle: boardClimbStats.angle,
+      displayDifficulty: boardClimbStats.displayDifficulty,
+    })
+    .from(boardClimbStats)
+    .where(sql`(${boardClimbStats.boardType}, ${boardClimbStats.climbUuid}, ${boardClimbStats.angle}) IN (${triples})`);
   for (const row of statsRows) {
-    gradesFor(angleKey(row.boardType, row.climbUuid, row.angle)).communityDifficulty = row.displayDifficulty;
-  }
-  for (const row of gradeRows) {
-    gradesFor(angleKey(row.boardType, row.climbUuid, row.angle)).universalGrade = row.universalGrade;
+    metadata.communityDifficulty.set(angleKey(row.boardType, row.climbUuid, row.angle), row.displayDifficulty);
   }
   return metadata;
 }
@@ -173,32 +163,6 @@ export function logbookGrade(boardType: string, difficulty: number | null): Grad
   return { v: vGrade ? Number(vGrade[1]) : null, font: grade.font_grade.toUpperCase(), label: grade.difficulty_name };
 }
 
-const SHARED_SCALE = BOULDER_GRADES.map((grade) => ({
-  difficultyId: grade.difficulty_id,
-  v: Number(V_GRADE.exec(grade.v_grade)?.[1] ?? Number.NaN),
-}));
-
-/**
- * The universal grade, which the model keeps on the shared difficulty-id scale
- * (10 is 4a/V0), as a decimal on the V scale, to one place. Linear between
- * neighbouring ids of the shared table, so 6b+ (V4) half way to 6c (V5) is
- * 4.5, and clamped to V0 and V16 at the ends. The cross-board standard is
- * Tension-anchored, so the shared table applies on every board.
- */
-export function universalGradeOnVScale(universalGrade: number | null): number | null {
-  if (universalGrade === null || !Number.isFinite(universalGrade)) return null;
-  const first = SHARED_SCALE[0];
-  const last = SHARED_SCALE[SHARED_SCALE.length - 1];
-  if (universalGrade <= first.difficultyId) return first.v;
-  if (universalGrade >= last.difficultyId) return last.v;
-  // The ids are consecutive and ascending, and the ends were handled above.
-  const upperIndex = SHARED_SCALE.findIndex((stop) => stop.difficultyId > universalGrade);
-  const lower = SHARED_SCALE[upperIndex - 1];
-  const upper = SHARED_SCALE[upperIndex];
-  const fraction = (universalGrade - lower.difficultyId) / (upper.difficultyId - lower.difficultyId);
-  return Math.round((lower.v + fraction * (upper.v - lower.v)) * 10) / 10;
-}
-
 /**
  * Stored ticks carry `timestamp without time zone` values, which hold UTC
  * (`normalizeClimbedAt`), as `2026-10-20 18:42:11.123456`. RFC 3339 in UTC,
@@ -211,12 +175,31 @@ export function utcTimestamp(stored: string): string {
 }
 
 /**
+ * A tick on someone else's draft or unlisted climb is not served at all: the
+ * feed and a snapshot send `tick.deleted` for it, and the tick route answers
+ * 404. Withholding the climb's name is not enough, because the contract
+ * requires `climb.id` and an unlisted climb opens by its id. The contract
+ * change that would let the tick be served with its climb withheld is in
+ * docs/integration-platform.md, "The routes, as built (L4)".
+ */
+export function isLogbookTickWithheld(tick: LogbookFeedTick, metadata: LogbookClimbMetadata): boolean {
+  return metadata.climbs.get(climbKey(tick.boardType, tick.canonicalClimbUuid))?.heldOut === true;
+}
+
+/**
  * One public tick. Throws if the result would break the contract, so nothing
- * outside it (an origin, a session id, a user id) can ever be sent.
+ * outside it (an origin, a session id, a user id) can ever be sent, and
+ * refuses a withheld tick ({@link isLogbookTickWithheld}).
+ *
+ * `climb.boardseshGrade` is always null. The Boardsesh grade lives on the
+ * difficulty-id scale (docs/boardsesh-grade.md), and no conversion to the
+ * decimal V scale the contract describes is documented, so none is invented.
  */
 export function serializeLogbookTick(tick: LogbookFeedTick, metadata: LogbookClimbMetadata): Tick {
+  if (isLogbookTickWithheld(tick, metadata)) throw new Error('A withheld tick cannot be serialized.');
   const climb = metadata.climbs.get(climbKey(tick.boardType, tick.canonicalClimbUuid));
-  const grades = metadata.grades.get(angleKey(tick.boardType, tick.canonicalClimbUuid, tick.angle));
+  const communityDifficulty =
+    metadata.communityDifficulty.get(angleKey(tick.boardType, tick.canonicalClimbUuid, tick.angle)) ?? null;
   // A spray tick with no climb row has no wall left to check, so it withholds.
   const namesVisible = climb ? climb.namesVisible : tick.boardType !== 'spray';
   const layout = namesVisible
@@ -238,8 +221,8 @@ export function serializeLogbookTick(tick: LogbookFeedTick, metadata: LogbookCli
       id: tick.canonicalClimbUuid,
       name: namesVisible ? (climb?.name?.trim() ? climb.name : null) : null,
       board: { type: tick.boardType, layout },
-      grade: logbookGrade(tick.boardType, grades?.communityDifficulty ?? null),
-      boardseshGrade: universalGradeOnVScale(grades?.universalGrade ?? null),
+      grade: logbookGrade(tick.boardType, communityDifficulty),
+      boardseshGrade: null,
     },
     createdAt: utcTimestamp(tick.createdAt),
     updatedAt: utcTimestamp(tick.updatedAt),
