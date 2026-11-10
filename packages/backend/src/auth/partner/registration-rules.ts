@@ -225,7 +225,18 @@ const CONFUSABLE_LETTERS: Readonly<Record<string, string>> = {
   ρ: 'p',
   ν: 'v',
   τ: 't',
+  // Latin-script letters outside a-z that read as a-z: dotless and small-capital
+  // i, Latin alpha, small-capital B and K. A mixed-script check cannot see these.
+  ı: 'l',
+  ɪ: 'l',
+  ɑ: 'a',
+  ʙ: 'b',
+  ᴋ: 'k',
 };
+
+const LATIN_LETTER = /\p{Script=Latin}/u;
+/** Scripts with letters that render like Latin ones. A name may use them, but not alongside Latin. */
+const LATIN_LOOKALIKE_SCRIPT = /[\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Armenian}\p{Script=Cherokee}]/u;
 
 /** Case, accents, spacing, punctuation and lookalike letters removed. */
 function nameSkeleton(name: string): string {
@@ -258,8 +269,12 @@ const DENIED_NAME_SKELETONS = PARTNER_APP_NAME_DENYLIST.map((term) => ({ term, s
 /**
  * A name climbers read on the consent screen, cleaned, or a refusal: 3 to 50
  * characters after trimming and collapsing spaces, at least one letter or
- * number, no control characters, and nothing that contains a denied term,
- * however disguised.
+ * number, no control characters, nothing that contains a denied term, however
+ * disguised, and no Latin letters mixed with Greek, Cyrillic, Armenian or
+ * Cherokee ones. The skeleton only folds the lookalikes it lists and drops
+ * every other letter outside a-z, so "Κilter" (Greek Κ) would reach the
+ * denylist as "lter"; refusing the mix closes that whole class. A name written
+ * entirely in one of those scripts is fine.
  */
 function validateConsentScreenName(rawName: unknown, field: string, missing: string): string {
   if (typeof rawName !== 'string') invalid(missing);
@@ -272,6 +287,9 @@ function validateConsentScreenName(rawName: unknown, field: string, missing: str
   const skeleton = nameSkeleton(name);
   const denied = DENIED_NAME_SKELETONS.find((entry) => skeleton.includes(entry.skeleton));
   if (denied) invalid(`The ${field} cannot use or imitate "${denied.term}".`);
+  if (LATIN_LETTER.test(name) && LATIN_LOOKALIKE_SCRIPT.test(name)) {
+    invalid(`The ${field} cannot mix Latin letters with Greek, Cyrillic, Armenian or Cherokee ones.`);
+  }
   return name;
 }
 
