@@ -25,6 +25,9 @@ import {
 const AUTHORIZE_PATH = '/api/auth/oauth2/authorize';
 const TOKEN_PATH = '/api/auth/oauth2/token';
 const FLOOD_DEADLINE_MS = 120_000;
+const FLOOD_REQUESTS = 3000;
+/** A starved token lane delays every refresh by seconds; runner contention only some. */
+const FLOOD_ROUNDS = 3;
 
 /** Set this to get the measured numbers: one JSON line per scenario. */
 const MEASUREMENTS_FILE = process.env.PARTNER_MEASUREMENTS_FILE;
@@ -193,44 +196,54 @@ describe('partner OAuth availability', () => {
       const baselineRefreshMs = performance.now() - baseline;
 
       const floodClient = await environment.createClient({ publicClient: true });
-      const flood = Array.from({ length: 3000 }, () =>
-        host.send(
-          'GET',
-          `${AUTHORIZE_PATH}?${new URLSearchParams({
-            response_type: 'code',
-            client_id: floodClient.clientId,
-            redirect_uri: floodClient.redirectUri,
-            scope: 'profile:read',
-            code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-            code_challenge_method: 'S256',
-          }).toString()}`,
-          uniqueIp(),
-        ),
-      );
+      const floodPath = `${AUTHORIZE_PATH}?${new URLSearchParams({
+        response_type: 'code',
+        client_id: floodClient.clientId,
+        redirect_uri: floodClient.redirectUri,
+        scope: 'profile:read',
+        code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+        code_challenge_method: 'S256',
+      }).toString()}`;
 
-      // Refresh while the flood is in flight.
-      const tokens = await environment.issueTokens(client);
-      const refreshStarted = performance.now();
-      const refreshed = await refreshOnce(client, tokens.refresh_token!, uniqueIp());
-      const refreshDuringFloodMs = performance.now() - refreshStarted;
+      // A fresh flood for every sample. Without the gate the first refresh waits
+      // until the flood has drained, so a second one in the same flood is fast
+      // (1,839 ms, then 15 ms) and would hide the regression.
+      const refreshDuringFloodMs: number[] = [];
+      const floodRefused503: number[] = [];
+      for (let round = 1; round <= FLOOD_ROUNDS; round += 1) {
+        const flood = Array.from({ length: FLOOD_REQUESTS }, () => host.send('GET', floodPath, uniqueIp()));
 
-      const settled = await Promise.all(flood);
-      const statuses = settled.reduce<Record<number, number>>((counts, { status }) => {
-        counts[status] = (counts[status] ?? 0) + 1;
-        return counts;
-      }, {});
-      record('authorize-flood-vs-refresh', {
-        baselineRefreshMs: Math.round(baselineRefreshMs),
-        refreshDuringFloodMs: Math.round(refreshDuringFloodMs),
-        floodRequests: flood.length,
-        floodServed302: statuses[302] ?? 0,
-        floodRefused503: statuses[503] ?? 0,
-      });
+        // Refresh while the flood is in flight.
+        const tokens = await environment.issueTokens(client);
+        const refreshStarted = performance.now();
+        const refreshed = await refreshOnce(client, tokens.refresh_token!, uniqueIp());
+        const refreshMs = performance.now() - refreshStarted;
 
-      expect(refreshed.status).toBe(200);
-      // Before the gate this waited 3,083 ms against a 10 ms baseline.
-      expect(refreshDuringFloodMs).toBeLessThan(500);
-      expect(statuses[503]).toBeGreaterThan(0);
+        const settled = await Promise.all(flood);
+        const statuses = settled.reduce<Record<number, number>>((counts, { status }) => {
+          counts[status] = (counts[status] ?? 0) + 1;
+          return counts;
+        }, {});
+        record('authorize-flood-vs-refresh', {
+          round,
+          baselineRefreshMs: Math.round(baselineRefreshMs),
+          refreshDuringFloodMs: Math.round(refreshMs),
+          floodRequests: flood.length,
+          floodServed302: statuses[302] ?? 0,
+          floodRefused503: statuses[503] ?? 0,
+        });
+
+        expect(refreshed.status).toBe(200);
+        refreshDuringFloodMs.push(refreshMs);
+        floodRefused503.push(statuses[503] ?? 0);
+      }
+
+      // Before the gate every refresh waited seconds: 3,083 ms against a 10 ms
+      // baseline. A busy CI runner slows only some (one took 1,089 ms in the full
+      // parallel suite), so the fastest of the rounds is judged.
+      const roundedSamples = refreshDuringFloodMs.map((sampleMs) => Math.round(sampleMs));
+      expect(Math.min(...refreshDuringFloodMs), `refreshes took ${roundedSamples.join(', ')} ms`).toBeLessThan(500);
+      for (const refused of floodRefused503) expect(refused).toBeGreaterThan(0);
     },
     FLOOD_DEADLINE_MS,
   );
