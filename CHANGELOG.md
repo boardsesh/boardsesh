@@ -4,6 +4,18 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-10
+
+### New
+
+- Links to Boardsesh pages now show a lit board in chat and social previews ([#7383](https://github.com/boardsesh/boardsesh/pull/7383))
+- Kilter climbs now carry Kilter's own Verified mark ([#7359](https://github.com/boardsesh/boardsesh/pull/7359))
+  Find them in Filter under Collection, or use Verified only in a workout
+
+### Fixed
+
+- Fewer failed loads in the app when Boardsesh is busy. ([#7381](https://github.com/boardsesh/boardsesh/pull/7381))
+
 ## 2026-11-09
 
 ### New
