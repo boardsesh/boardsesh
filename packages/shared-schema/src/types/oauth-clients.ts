@@ -20,6 +20,8 @@ export type OAuthClient = {
   suspensionReason: string | null;
   maxActiveConnections: number;
   maxNewConnectionsPerDay: number;
+  /** Climbers connected now. Deleting the app disconnects them. */
+  activeConnections: number;
 };
 
 export type OAuthClientCredentials = {

@@ -1109,9 +1109,36 @@ client secret: encrypted with `PARTNER_OAUTH_SECRETS` (`storeClientSecret:
 commit.
 
 **Changing a suspended app.** Refused, delete included: the record stays for ops
-and still counts toward the developer's 10. Deleting any other app removes its
-connections first (waiting for an issuer holding one), then its pending codes,
-then the app, whose cascade takes tokens, consent, grants, subjects and policy.
+and still counts toward the developer's 10.
+
+**Deleting an app** (`lockAppForDeletion` in `auth/partner/registration.ts`) takes
+every lock its cascade will need first, in the partner lock order rather than
+Postgres's cascade order: `users` FOR SHARE for every climber with a connection
+or an open consent screen for the app (in id order), then those consent screens
+FOR UPDATE, then the connections FOR UPDATE, then the pending codes, then the app
+row, whose cascade takes tokens, consent, grants, subjects and policy. A consent
+answer locks its screen before the connection, so the screens come before the
+connections here too; Disconnect and the password trigger lock the connection and
+skip or wait for nothing this holds. A screen opened after the first pass and
+already held by a consent answer is the one wait that could still close a cycle,
+so the second pass over the screens is NOWAIT: the delete answers `busy` and the
+developer retries, instead of Postgres aborting the climber's answer with a 503.
+The launch suite races a delete against a consent answer, a refresh and a
+Disconnect; with the old order the consent answer was the deadlock victim.
+Account deletion of a developer still cascades into their apps in Postgres's own
+order; that path is not covered by this.
+
+**The console** (F15) is `/developers/apps` on www, behind the server flag
+`developer-console` (`packages/web/app/flags.ts`, fails closed; a signed-out
+visitor is sent to sign in first). It lists, registers, edits, rotates and deletes
+through the operations above. `OAuthClient.activeConnections` is the number of
+climbers connected now, counted the way the caps count (`connected_at` set,
+`revoked_at` empty); the delete confirmation states it. A new or rotated secret
+is shown once in a dialog that closes only from its own button. It lives in
+component state only: never in the React Query cache, a URL or a log. The route
+sends `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `no-referrer` and
+`no-store`, and loads no ad pixel. PostHog on www is the lite SDK with no
+autocapture or replay, so it never sees the page's text.
 
 **What the consent screen can show.** The app name is `oauth_client.name`, the
 homepage `oauth_client.uri` and the privacy policy `oauth_client.policy`

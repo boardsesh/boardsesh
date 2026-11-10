@@ -1,0 +1,148 @@
+{
+  "metadata": {
+    "title": "Tus apps | Boardsesh para desarrolladores",
+    "description": "Registra una app que lee el logbook de Boardsesh de un escalador cuando este la aprueba."
+  },
+  "page": {
+    "eyebrow": "Boardsesh para desarrolladores",
+    "title": "Tus apps",
+    "lead": "Registra una app para que los escaladores puedan conectarla a su logbook de Boardsesh. No se comparte nada hasta que un escalador aprueba tu app en la pantalla de consentimiento.",
+    "register": "Registrar una app",
+    "limits": "Hasta {{apps}} apps por cuenta. Cada app nueva puede conectar {{connections}} escaladores y {{perDay}} escaladores nuevos al día."
+  },
+  "states": {
+    "loading": "Cargando tus apps…",
+    "empty": {
+      "title": "Aún no tienes apps",
+      "body": "Registra una app para obtener un client ID. Una app cuyo servidor canjea el código también recibe un client secret.",
+      "action": "Registrar tu primera app"
+    },
+    "notAvailable": {
+      "title": "El registro de apps aún no está abierto",
+      "body": "Boardsesh todavía no ha activado las apps de terceros. Vuelve más tarde."
+    },
+    "notAllowlisted": {
+      "title": "Por ahora el registro de apps es solo por invitación",
+      "body": "Tu cuenta no está en la lista de invitados. Pide acceso al equipo de Boardsesh."
+    },
+    "paused": {
+      "title": "El registro de apps está en pausa",
+      "body": "Boardsesh ha pausado las apps de terceros un momento. Inténtalo de nuevo en un minuto."
+    },
+    "failed": {
+      "title": "Tus apps no se cargaron",
+      "body": "Revisa tu conexión e inténtalo de nuevo.",
+      "retry": "Reintentar"
+    }
+  },
+  "app": {
+    "publisher": "Creada por {{publisher}}",
+    "noPublisher": "Sin autor. Edita la app para añadirlo; hasta entonces la pantalla de consentimiento no muestra la línea «Creada por».",
+    "clientId": "Client ID",
+    "kind": {
+      "WEB": "App web",
+      "NATIVE": "App nativa"
+    },
+    "auth": {
+      "NONE": "Pública: sin secret, solo PKCE",
+      "CLIENT_SECRET_BASIC": "Confidencial: secret en una cabecera HTTP Basic",
+      "CLIENT_SECRET_POST": "Confidencial: secret en el cuerpo del formulario"
+    },
+    "redirectUris": "Redirect URIs",
+    "homepage": "Página web",
+    "privacyPolicy": "Política de privacidad",
+    "linksTerm": "Enlaces",
+    "linksLabel": "Enlaces de {{app}}",
+    "connectionsTerm": "Escaladores",
+    "connections_one": "{{count}} de {{max}} escaladores conectados",
+    "connections_other": "{{count}} de {{max}} escaladores conectados",
+    "newPerDay": "Hasta {{count}} escaladores nuevos al día",
+    "registeredTerm": "Registrada",
+    "suspended": {
+      "title": "Suspendida por Boardsesh",
+      "body": "Esta app no recibe tokens y no se puede cambiar ni eliminar. Motivo: {{reason}}",
+      "noReason": "Esta app no recibe tokens y no se puede cambiar ni eliminar."
+    },
+    "actions": {
+      "label": "Acciones de {{app}}",
+      "edit": "Editar",
+      "rotate": "Nuevo secret",
+      "delete": "Eliminar"
+    }
+  },
+  "form": {
+    "createTitle": "Registrar una app",
+    "editTitle": "Editar {{app}}",
+    "name": "Nombre de la app",
+    "nameHelp": "Los escaladores lo ven en la pantalla de consentimiento. De 3 a 50 caracteres.",
+    "publisher": "Autor",
+    "publisherHelp": "La persona o empresa que hace la app. Los escaladores ven «Creada por» con este nombre.",
+    "homepage": "URL de la página web (opcional)",
+    "privacyPolicy": "URL de la política de privacidad",
+    "urlHelp": "Empieza por https://. Se enlaza desde la pantalla de consentimiento.",
+    "applicationType": "Adónde vuelve el inicio de sesión",
+    "applicationTypeWeb": "Un sitio web",
+    "applicationTypeWebHelp": "Solo redirect URIs con https://.",
+    "applicationTypeNative": "Una app móvil, de escritorio o de línea de comandos",
+    "applicationTypeNativeHelp": "También admite http://127.0.0.1 o http://[::1] en cualquier puerto, y un esquema propio como com.example.app:/oauth/boardsesh.",
+    "clientType": "Dónde se canjea el código por tokens",
+    "clientTypeConfidential": "En mi servidor",
+    "clientTypeConfidentialHelp": "Recibes un client secret. Guárdalo solo en el servidor.",
+    "clientTypePublic": "En el dispositivo o en el navegador",
+    "clientTypePublicHelp": "Sin secret. PKCE protege el código. Úsalo para todo lo que distribuyas a los usuarios.",
+    "secretMethod": "Cómo envía el secret tu servidor",
+    "secretMethodBasic": "Cabecera HTTP Basic (recomendado)",
+    "secretMethodPost": "En el cuerpo del formulario",
+    "redirectUris": "Redirect URIs",
+    "redirectUrisHelp": "Una por línea, hasta 10. Deben coincidir exactamente, salvo el puerto de una dirección loopback.",
+    "fixed": "Fijado al registrar: {{kind}}, {{auth}}.",
+    "required": "Rellena este campo.",
+    "cancel": "Cancelar",
+    "create": "Registrar app",
+    "creating": "Registrando…",
+    "save": "Guardar cambios",
+    "saving": "Guardando…",
+    "refused": "Boardsesh no guardó esta app"
+  },
+  "secret": {
+    "createdTitle": "{{app}} está registrada",
+    "rotatedTitle": "Nuevo secret para {{app}}",
+    "createdWarning": "Copia el client secret ahora. Boardsesh no lo volverá a mostrar.",
+    "rotatedWarning": "El secret anterior ya no funciona. Copia el nuevo ahora: Boardsesh no lo volverá a mostrar.",
+    "lostHelp": "¿Lo perdiste? Crea un secret nuevo desde la tarjeta de la app. El anterior deja de funcionar al instante.",
+    "publicNote": "Esta es una app pública, así que no tiene secret. Envía un PKCE code challenge en cada autorización.",
+    "clientSecret": "Client secret",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyFailed": "No se pudo copiar. Selecciona el texto y cópialo tú.",
+    "confirmSaved": "He guardado el secret",
+    "done": "Listo"
+  },
+  "rotate": {
+    "title": "¿Crear un secret nuevo para {{app}}?",
+    "body": "El secret actual deja de funcionar en cuanto confirmes. Las peticiones de token de tu servidor fallan hasta que despliegues el nuevo.",
+    "confirm": "Crear secret nuevo",
+    "working": "Creando un secret nuevo…"
+  },
+  "delete": {
+    "title": "¿Eliminar {{app}}?",
+    "connected_one": "Hay {{count}} escalador conectado. Al eliminar la app se desconecta al instante y sus tokens dejan de funcionar.",
+    "connected_other": "Hay {{count}} escaladores conectados. Al eliminar la app se desconectan todos al instante y sus tokens dejan de funcionar.",
+    "noneConnected": "No hay escaladores conectados. Cualquier inicio de sesión en curso de esta app deja de funcionar.",
+    "permanent": "No se puede deshacer.",
+    "confirm": "Eliminar app",
+    "working": "Eliminando…"
+  },
+  "toasts": {
+    "saved": "Cambios guardados",
+    "deleted": "{{app}} eliminada"
+  },
+  "errors": {
+    "busy": "Boardsesh está ocupado. Inténtalo de nuevo en unos segundos.",
+    "rateLimited": "Demasiados cambios en un minuto. Espera un momento e inténtalo de nuevo.",
+    "gone": "Esta app ya no existe. Se actualizó la lista.",
+    "suspended": "Boardsesh suspendió esta app, así que no se puede cambiar.",
+    "emailNotVerified": "Verifica tu correo electrónico antes de registrar una app.",
+    "generic": "Algo salió mal. Inténtalo de nuevo."
+  }
+}

@@ -6195,6 +6195,8 @@ export type NotificationType =
 /** An app a developer registered for the Boardsesh API. Never carries its secret. */
 export type OAuthClient = {
   __typename?: 'OAuthClient';
+  /** Climbers connected now. Deleting the app disconnects every one of them. */
+  activeConnections: Scalars['Int']['output'];
   applicationType: OAuthClientApplicationType;
   clientId: Scalars['ID']['output'];
   /** ISO 8601. */
@@ -17210,6 +17212,7 @@ export type OAuthClientResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['OAuthClient'] = ResolversParentTypes['OAuthClient'],
 > = ResolversObject<{
+  activeConnections?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   applicationType?: Resolver<ResolversTypes['OAuthClientApplicationType'], ParentType, ContextType>;
   clientId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;

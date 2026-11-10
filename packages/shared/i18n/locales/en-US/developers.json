@@ -1,0 +1,148 @@
+{
+  "metadata": {
+    "title": "Your apps | Boardsesh for developers",
+    "description": "Register an app that reads a climber's Boardsesh logbook once they approve it."
+  },
+  "page": {
+    "eyebrow": "Boardsesh for developers",
+    "title": "Your apps",
+    "lead": "Register an app so climbers can connect it to their Boardsesh logbook. Nothing is shared until a climber approves your app on the consent screen.",
+    "register": "Register an app",
+    "limits": "Up to {{apps}} apps per account. Each new app can connect {{connections}} climbers, and {{perDay}} new climbers a day."
+  },
+  "states": {
+    "loading": "Loading your apps…",
+    "empty": {
+      "title": "No apps yet",
+      "body": "Register an app to get a client ID. An app whose server exchanges the code also gets a client secret.",
+      "action": "Register your first app"
+    },
+    "notAvailable": {
+      "title": "App registration isn't open yet",
+      "body": "Boardsesh hasn't switched on partner apps. Check back later."
+    },
+    "notAllowlisted": {
+      "title": "App registration is invite-only for now",
+      "body": "Your account isn't on the invite list. Ask the Boardsesh team for access."
+    },
+    "paused": {
+      "title": "App registration is paused",
+      "body": "Boardsesh paused partner apps for a moment. Try again in a minute."
+    },
+    "failed": {
+      "title": "Your apps didn't load",
+      "body": "Check your connection and try again.",
+      "retry": "Try again"
+    }
+  },
+  "app": {
+    "publisher": "Made by {{publisher}}",
+    "noPublisher": "No publisher set. Edit the app to add one; until then the consent screen shows no \"Made by\" line.",
+    "clientId": "Client ID",
+    "kind": {
+      "WEB": "Web app",
+      "NATIVE": "Native app"
+    },
+    "auth": {
+      "NONE": "Public: no secret, PKCE only",
+      "CLIENT_SECRET_BASIC": "Confidential: secret in an HTTP Basic header",
+      "CLIENT_SECRET_POST": "Confidential: secret in the form body"
+    },
+    "redirectUris": "Redirect URIs",
+    "homepage": "Homepage",
+    "privacyPolicy": "Privacy policy",
+    "linksTerm": "Links",
+    "linksLabel": "Links for {{app}}",
+    "connectionsTerm": "Climbers",
+    "connections_one": "{{count}} of {{max}} climbers connected",
+    "connections_other": "{{count}} of {{max}} climbers connected",
+    "newPerDay": "Up to {{count}} new climbers a day",
+    "registeredTerm": "Registered",
+    "suspended": {
+      "title": "Suspended by Boardsesh",
+      "body": "This app gets no tokens and can't be changed or deleted. Reason: {{reason}}",
+      "noReason": "This app gets no tokens and can't be changed or deleted."
+    },
+    "actions": {
+      "label": "Actions for {{app}}",
+      "edit": "Edit",
+      "rotate": "New secret",
+      "delete": "Delete"
+    }
+  },
+  "form": {
+    "createTitle": "Register an app",
+    "editTitle": "Edit {{app}}",
+    "name": "App name",
+    "nameHelp": "Climbers see this on the consent screen. 3 to 50 characters.",
+    "publisher": "Publisher",
+    "publisherHelp": "The person or company that makes the app. Climbers see \"Made by\" with this name.",
+    "homepage": "Homepage URL (optional)",
+    "privacyPolicy": "Privacy policy URL",
+    "urlHelp": "Starts with https://. Linked from the consent screen.",
+    "applicationType": "Where the sign-in comes back to",
+    "applicationTypeWeb": "A website",
+    "applicationTypeWebHelp": "https:// redirect URIs only.",
+    "applicationTypeNative": "A mobile, desktop or command-line app",
+    "applicationTypeNativeHelp": "Also allows http://127.0.0.1 or http://[::1] on any port, and a custom scheme such as com.example.app:/oauth/boardsesh.",
+    "clientType": "Where the code is exchanged for tokens",
+    "clientTypeConfidential": "On my server",
+    "clientTypeConfidentialHelp": "You get a client secret. Keep it on the server only.",
+    "clientTypePublic": "On the device or in the browser",
+    "clientTypePublicHelp": "No secret. PKCE protects the code. Use this for anything you ship to users.",
+    "secretMethod": "How your server sends the secret",
+    "secretMethodBasic": "HTTP Basic header (recommended)",
+    "secretMethodPost": "In the form body",
+    "redirectUris": "Redirect URIs",
+    "redirectUrisHelp": "One per line, up to 10. Matched exactly, except the port of a loopback address.",
+    "fixed": "Fixed when you registered: {{kind}}, {{auth}}.",
+    "required": "Fill this in.",
+    "cancel": "Cancel",
+    "create": "Register app",
+    "creating": "Registering…",
+    "save": "Save changes",
+    "saving": "Saving…",
+    "refused": "Boardsesh didn't save this app"
+  },
+  "secret": {
+    "createdTitle": "{{app}} is registered",
+    "rotatedTitle": "New secret for {{app}}",
+    "createdWarning": "Copy the client secret now. Boardsesh won't show it again.",
+    "rotatedWarning": "The old secret has stopped working. Copy the new one now: Boardsesh won't show it again.",
+    "lostHelp": "Lost it later? Make a new secret from the app's card. The old one stops working at once.",
+    "publicNote": "This is a public app, so there is no secret. Send a PKCE code challenge with every authorization.",
+    "clientSecret": "Client secret",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Couldn't copy. Select the text and copy it yourself.",
+    "confirmSaved": "I've stored the secret",
+    "done": "Done"
+  },
+  "rotate": {
+    "title": "Make a new secret for {{app}}?",
+    "body": "The current secret stops working the moment you confirm. Token requests from your server fail until you deploy the new one.",
+    "confirm": "Make new secret",
+    "working": "Making a new secret…"
+  },
+  "delete": {
+    "title": "Delete {{app}}?",
+    "connected_one": "{{count}} climber is connected. Deleting the app disconnects them at once, and their tokens stop working.",
+    "connected_other": "{{count}} climbers are connected. Deleting the app disconnects all of them at once, and their tokens stop working.",
+    "noneConnected": "No climbers are connected. Any sign-in in progress for this app stops working.",
+    "permanent": "You can't undo this.",
+    "confirm": "Delete app",
+    "working": "Deleting…"
+  },
+  "toasts": {
+    "saved": "Changes saved",
+    "deleted": "{{app}} deleted"
+  },
+  "errors": {
+    "busy": "Boardsesh is busy. Try again in a few seconds.",
+    "rateLimited": "Too many changes in a minute. Wait a moment, then try again.",
+    "gone": "This app no longer exists. The list has been refreshed.",
+    "suspended": "Boardsesh suspended this app, so it can't be changed.",
+    "emailNotVerified": "Verify your email address before you register an app.",
+    "generic": "Something went wrong. Try again."
+  }
+}

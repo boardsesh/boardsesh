@@ -8,7 +8,7 @@ Two kinds, and they fail in different ways.
 
 **Server flags** (`SERVER_FEATURE_FLAG_KEYS`) resolve during SSR via `getServerFeatureFlag` and decide whether a route renders at all — with one off, its route is a plain `notFound()`. A client-resolved flag could not do this: by the time the browser knows the answer the HTML has already shipped.
 
-The registry is **empty today**. `gyms-directory` was the only server flag; `/gyms` and its three facet routes now render for everyone and the flag is gone. The machinery below stays for the next route that needs it — and the diagnostics endpoint still answers any key you name.
+The registry holds one key today: `developer-console`, which gates the partner developer console at `/developers/apps` (signed-in only; a signed-out visitor is sent to sign in before the flag is asked). `gyms-directory` was the previous one; `/gyms` and its three facet routes now render for everyone and that flag is gone. The diagnostics endpoint answers any key you name.
 
 ## How a server flag resolves
 

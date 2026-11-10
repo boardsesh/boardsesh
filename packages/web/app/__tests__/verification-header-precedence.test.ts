@@ -162,6 +162,20 @@ describe('partner app sign-in and consent pages', () => {
   });
 });
 
+describe('developer console', () => {
+  it.each(localePrefixes.map((prefix) => `${prefix}/developers/apps`))(
+    'keeps %s, which shows a client secret once, out of frames, caches and search',
+    async (pathname) => {
+      const response = await configuredHeaders(pathname);
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store, max-age=0, must-revalidate');
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, follow');
+    },
+  );
+});
+
 describe('OAuth credential response configuration precedence', () => {
   const paths = localePrefixes.flatMap((prefix) =>
     ['google', 'apple', 'facebook'].flatMap((provider) =>

@@ -130,6 +130,8 @@ describe('isAdPixelPath', () => {
     '/Es/Embed/x',
     '/oauth/consent',
     '/it/oauth/sign-in',
+    '/developers/apps',
+    '/fr/Developers/Apps',
   ])('excludes %s', (path) => {
     expect(isAdPixelPath(path)).toBe(false);
   });
