@@ -17,6 +17,7 @@ import {
   type LogbookFeedTick,
 } from '../services/logbook-feed';
 import { pruneLogbookChanges, type BatchRunner, type LogbookPruneOptions } from '../services/logbook-prune';
+import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { getWorkerDatabaseUrl } from './worker-db';
 
 /**
@@ -440,10 +441,55 @@ describe('pruning the logbook change log', { timeout: 90_000 }, () => {
     await ageRows(rows);
     await waitForWritesToSettle();
 
-    const [first, second] = await Promise.all([prune({ rowsPerBatch: 2 }), prune({ rowsPerBatch: 2 })]);
-    expect(first.rowsDeleted + second.rowsDeleted).toBe(12);
+    const runs = await Promise.allSettled([prune({ rowsPerBatch: 2 }), prune({ rowsPerBatch: 2 })]);
+    // A batch waits at most 1 s for the other run's hold on the watermark row.
+    // On a loaded machine that can run out: the batch fails whole (55P03, the
+    // next test proves it) and the next run takes its rows. Nothing else may fail.
+    for (const run of runs) {
+      if (run.status === 'rejected') expect(getPostgresErrorCode(run.reason)).toBe('55P03');
+    }
+    const deletedByBoth = runs.map((run) => (run.status === 'fulfilled' ? run.value.rowsDeleted : null));
+    if (!deletedByBoth.includes(null)) expect((deletedByBoth[0] ?? 0) + (deletedByBoth[1] ?? 0)).toBe(12);
+    await prune();
     expect(await changeRows()).toEqual([]);
     expect(await watermark()).toEqual(positionOf(rows[11]));
+  });
+
+  it('fails a batch whole when the watermark row stays held past its 1 s lock timeout', async () => {
+    for (let index = 0; index < 3; index += 1) await insertTick();
+    const rows = await changeRows();
+    await ageRows(rows);
+    await waitForWritesToSettle();
+
+    const holder = openClient();
+    let release: () => void = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => {};
+    const holding = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const held = holder.begin(async (transaction) => {
+      await transaction`SELECT 1 FROM logbook_change_watermark WHERE id = 1 FOR UPDATE`;
+      locked();
+      await released;
+    });
+    try {
+      await holding;
+      const refused = await prune().then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(getPostgresErrorCode(refused)).toBe('55P03');
+      // The deletes rolled back with the watermark raise: nothing is gone below an unmoved watermark.
+      expect(await changeRows()).toHaveLength(3);
+      expect(await watermark()).toEqual(LOGBOOK_FEED_ORIGIN);
+    } finally {
+      release();
+      await held;
+    }
+    expect(await prune()).toMatchObject({ rowsDeleted: 3, prunedThrough: positionOf(rows[2]) });
   });
 
   it('leaves no moment between its transactions when a held cursor reads past a deleted change', async () => {
@@ -740,10 +786,30 @@ describe('a reader, writers and the prune at once', () => {
       await Promise.all([readerLoop, pruneLoop]);
     }
 
-    // Read until the horizon is past every write. No prune here: a 410 now would
-    // start the reader over and the comparison below could not see a gap.
+    // Catch up, then make sure the prune overtakes the reader at least once,
+    // whatever the timing above was: other test files' open transactions on
+    // this Postgres can hold the horizon back for the whole concurrent phase.
     await waitForWritesToSettle();
     while (await readOnePage());
+    const overtaken = await insertTick();
+    await waitForWritesToSettle();
+    await ageChanges(sql`true`);
+    await prune();
+    expect(positionIsBefore(reader.cursor, await watermark()), `seed ${seed}: the prune did not pass the reader`).toBe(
+      true,
+    );
+    const expiriesBefore = expiries;
+    await readOnePage();
+    expect(expiries).toBe(expiriesBefore + 1);
+
+    // After the fresh start, more changes, read and checked page by page. No
+    // prune from here on: a 410 would start the reader over and hide a gap.
+    const checkedBeforeFinalReads = checkedPages;
+    await db.update(boardseshTicks).set({ comment: 'after the fresh start' }).where(eq(boardseshTicks.uuid, overtaken));
+    await insertTick();
+    await waitForWritesToSettle();
+    while (await readOnePage());
+    expect(checkedPages).toBeGreaterThan(checkedBeforeFinalReads);
 
     const expected = [...(await publicView(CLIMBER_A)).values()].sort((left, right) =>
       left.uuid.localeCompare(right.uuid),
@@ -757,8 +823,7 @@ describe('a reader, writers and the prune at once', () => {
     "keeps the reader's copy equal to the database after every page, through 410 and a fresh start (variant %i)",
     async (variant) => {
       const { expiries, checkedPages } = await randomizedRun(baseSeed + variant);
-      // The prune overtook the reader at least once, so the 410 path ran, and
-      // the reader read on afterwards, so pages after a fresh start were checked.
+      // The 410 path ran, and pages after a fresh start were checked.
       expect(expiries).toBeGreaterThan(0);
       expect(checkedPages).toBeGreaterThan(expiries);
     },
