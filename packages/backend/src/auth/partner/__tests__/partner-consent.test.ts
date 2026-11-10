@@ -359,7 +359,7 @@ describe('partner consent', () => {
         oauth_query: authorization.oauthQuery,
       });
       expect(again.response.status).toBe(400);
-      expect(again.body.error).toBe('invalid_request');
+      expect(again.body.error).toBe('link_spent');
       expect(await grantsOf(climber, client)).toHaveLength(1);
       expect((await interactionFor(authorization.oauthQuery)).consumedAt).not.toBeNull();
     });
@@ -803,7 +803,7 @@ describe('partner consent', () => {
   });
 
   describe('the consent details', () => {
-    it('state what the climber is approving, including that logbook:read covers "only me" ticks', async () => {
+    it('state what the climber is approving, and nothing about the account that registered the app', async () => {
       const client = await consentClient();
       await db.update(users).set({ name: 'Account name' }).where(eq(users.id, client.owner.userId));
       await db.insert(userProfiles).values({ userId: client.owner.userId, displayName: 'Sequence Labs' });
@@ -825,7 +825,6 @@ describe('partner consent', () => {
           homepageUrl: 'https://sequence.example',
           privacyPolicyUrl: 'https://sequence.example/privacy',
           termsUrl: null,
-          developerName: 'Sequence Labs',
           redirectHost: new URL(client.redirectUri).host,
         },
         scopes: [
@@ -836,6 +835,10 @@ describe('partner consent', () => {
         reviewed: false,
         expiresAt: (await interactionFor(authorization.oauthQuery)).expiresAt.toISOString(),
       });
+      // The developer's own names never reach a climber's browser.
+      expect(JSON.stringify(details.body)).not.toContain('Sequence Labs');
+      expect(JSON.stringify(details.body)).not.toContain('Account name');
+      expect(JSON.stringify(details.body)).not.toContain(client.owner.userId);
       // Reading them spends nothing.
       expect((await interactionFor(authorization.oauthQuery)).consumedAt).toBeNull();
       // Decision 21, ready for L4: the one scope that reads "only me" ticks says so.
@@ -873,14 +876,79 @@ describe('partner consent', () => {
       const spent = await postJson(instance, '/oauth2/consent-details', climber.cookie, {
         oauth_query: authorization.oauthQuery,
       });
-      expect(spent.response.status).toBe(400);
+      expect({ status: spent.response.status, error: spent.body.error }).toEqual({ status: 400, error: 'link_spent' });
       const fresh = await authorize(instance, client, (await webClimber()).cookie);
-      expect(
-        (await postJson(instance, '/oauth2/consent-details', climber.cookie, { oauth_query: fresh.oauthQuery }))
-          .response.status,
-      ).toBe(400);
+      const someoneElses = await postJson(instance, '/oauth2/consent-details', climber.cookie, {
+        oauth_query: fresh.oauthQuery,
+      });
+      expect({ status: someoneElses.response.status, error: someoneElses.body.error }).toEqual({
+        status: 400,
+        error: 'link_spent',
+      });
       const signedOut = await postJson(instance, '/oauth2/consent-details', null, { oauth_query: fresh.oauthQuery });
-      expect(signedOut.response.status).toBe(401);
+      expect({ status: signedOut.response.status, error: signedOut.body.error }).toEqual({
+        status: 401,
+        error: 'login_required',
+      });
+    });
+  });
+
+  describe('a suspended app', () => {
+    async function suspend(client: TestClient, disabled: boolean) {
+      await db.execute(sql`update oauth_client set disabled = ${disabled} where client_id = ${client.clientId}`);
+    }
+
+    it('answers app_suspended, not link_spent, on both consent routes, and spends nothing', async () => {
+      const client = await consentClient();
+      const climber = await webClimber();
+      const authorization = await authorize(instance, client, climber.cookie);
+      await suspend(client, true);
+      for (const path of ['/oauth2/consent-details', '/oauth2/consent']) {
+        const refused = await postJson(instance, path, climber.cookie, {
+          accept: true,
+          oauth_query: authorization.oauthQuery,
+        });
+        expect({ path, status: refused.response.status, error: refused.body.error }).toEqual({
+          path,
+          status: 403,
+          error: 'app_suspended',
+        });
+      }
+      expect((await interactionFor(authorization.oauthQuery)).consumedAt).toBeNull();
+      expect(await connectionOf(climber, client)).toBeUndefined();
+
+      // Reinstated before the link expires, the same link still works.
+      await suspend(client, false);
+      const approved = await postJson(instance, '/oauth2/consent', climber.cookie, {
+        accept: true,
+        oauth_query: authorization.oauthQuery,
+      });
+      expect(codeIn(approved.body.url)).not.toBeNull();
+    });
+
+    it('answers app_suspended for a spent link too: the app is the reason that will not pass', async () => {
+      const client = await consentClient();
+      const climber = await webClimber();
+      const { authorization } = await approve(climber, client);
+      await suspend(client, true);
+      for (const path of ['/oauth2/consent-details', '/oauth2/consent']) {
+        const refused = await postJson(instance, path, climber.cookie, {
+          accept: true,
+          oauth_query: authorization.oauthQuery,
+        });
+        expect({ path, error: refused.body.error }).toEqual({ path, error: 'app_suspended' });
+      }
+    });
+
+    it('still answers link_spent for a spent link while the app is live', async () => {
+      const client = await consentClient();
+      const climber = await webClimber();
+      const { authorization } = await approve(climber, client);
+      const again = await postJson(instance, '/oauth2/consent', climber.cookie, {
+        accept: true,
+        oauth_query: authorization.oauthQuery,
+      });
+      expect({ status: again.response.status, error: again.body.error }).toEqual({ status: 400, error: 'link_spent' });
     });
   });
 

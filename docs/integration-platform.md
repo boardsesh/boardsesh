@@ -654,7 +654,6 @@ checks as the post, without spending it:
     "homepageUrl": "https://…",
     "privacyPolicyUrl": "https://…",
     "termsUrl": null,
-    "developerName": "Sequence Labs",
     "redirectHost": "com.example.app"
   },
   "scopes": [{ "scope": "profile:read", "includesOnlyMeTicks": false }],
@@ -667,7 +666,27 @@ checks as the post, without spending it:
 Facts only; the page words them in the climber's language. `includesOnlyMeTicks`
 is true for `logbook:read` (decision 21), so the screen can say that approving
 shares ticks the climber keeps to "only me". `logbook:read` cannot be requested
-until its route ships (L4); until then no response lists it.
+until its route ships (L4); until then no response lists it. Nothing about the
+account that registered the app is sent: its display or account name is the
+developer's own, not something a climber should see. A `publisherName` from the
+registration record joins `client` once that column exists (F12); until then the
+screen shows no "Made by" line.
+
+**Refusals on both consent routes.** Each is `{ "error": "<code>",
+"error_description": "<English text>" }` with `cache-control: no-store`. Switch on
+`error` and the status, never on the text. The codes are `PARTNER_CONSENT_ERRORS`
+in `@boardsesh/auth-protocol/partner-oauth`, beside `PARTNER_OAUTH_ISSUER`.
+
+| Status | `error` | Means | Page does |
+| --- | --- | --- | --- |
+| `401` | `login_required` | No www session, or one whose sign-in cannot approve an app | Send the climber to sign in, then back |
+| `403` | `invalid_request` | Origin is not exactly `https://www.boardsesh.com` | Nothing a climber can fix |
+| `403` | `app_suspended` | The app is suspended or deleted. Checked first; the link is not spent | Say the app cannot be connected now |
+| `400` | `link_spent` | The link was already answered, expired, belongs to another climber or sign-in, or the climber disconnected the app since | Ask the climber to start again from the app |
+
+An approval the caps refuse is not an error response: it answers `200` with
+`{ "redirect": true, "url": "<app redirect with error=temporarily_unavailable>" }`,
+like a denial.
 
 ### Browser access
 
@@ -943,7 +962,8 @@ Rules enforced without a human:
 | New connections per app per day | 200 by default; a developer can ask for more through the console form | Bounds the damage of a phishing app; ordinary apps never hit it |
 | Scopes | Any app may request any published scope. The consent page lists them | No approval tier |
 
-The consent screen shows: the app name, "Made by {developer's display name}",
+The consent screen shows: the app name, "Made by {publisher name}" once
+registration records one (never the developer's account name),
 the redirect host, the app's homepage and privacy links, one line per scope,
 and "Boardsesh hasn't reviewed this app. Only connect apps you trust." That
 line is on every app; a verified-domain badge (the developer proves control of
