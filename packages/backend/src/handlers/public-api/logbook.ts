@@ -19,11 +19,7 @@ import {
   type LogbookSnapshotCursor,
   type LogbookSnapshotPage,
 } from '../../services/logbook-snapshot';
-import {
-  isLogbookTickWithheld,
-  serializeLogbookTick,
-  type LogbookClimbMetadata,
-} from '../../services/logbook-tick-serializer';
+import { serializeLogbookTick, type LogbookClimbMetadata } from '../../services/logbook-tick-serializer';
 import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { chargePartnerLimit, peekPartnerLimit } from '../partner-rate-limits';
@@ -114,15 +110,11 @@ function hasLogbookScope(principal: PartnerApiPrincipal): boolean {
 
 /**
  * Serializes a page's entries with the metadata read in the same transaction.
- * A tick on someone else's draft or unlisted climb goes out as `tick.deleted`,
- * the entry for a tick the app may no longer hold, so an app that had it from
- * before the climb was held out removes it.
  */
 function presentEntries(entries: readonly LogbookFeedEntry[], metadata: LogbookClimbMetadata | null): LogbookChange[] {
   return entries.map((entry): LogbookChange => {
     if (entry.type === 'tick.deleted') return { type: 'tick.deleted', id: entry.id };
     if (!metadata) throw new Error('A logbook page served ticks without reading their metadata.');
-    if (isLogbookTickWithheld(entry.tick, metadata)) return { type: 'tick.deleted', id: entry.tick.uuid };
     return { type: 'tick', tick: serializeLogbookTick(entry.tick, metadata) };
   });
 }
@@ -159,8 +151,6 @@ export async function serveLogbookTick(context: LogbookRouteContext, tickId: str
     if (!tick) return notFound;
     const metadata = collected.metadata();
     if (!metadata) throw new Error('A tick was read without its metadata.');
-    // Someone else's draft or unlisted climb: the same 404 as a tick that is not there.
-    if (isLogbookTickWithheld(tick, metadata)) return notFound;
     return { status: 200, body: serializeLogbookTick(tick, metadata) };
   } catch (error) {
     if (logbook.isConnectionEnded(error)) return connectionEnded(requestId);

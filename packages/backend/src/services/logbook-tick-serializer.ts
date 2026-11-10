@@ -12,9 +12,14 @@ import type { FeedTransaction, LogbookFeedTick } from './logbook-feed';
  * are the table in docs/integration-platform.md, "The tick".
  *
  * Climb metadata is read at delivery, in the page's own read transaction, so a
- * snapshot made before a spray wall went private, or before a climb went back
- * to draft or unlisted, never serves what it showed then: the stored tick keeps
- * its values and identity, and its climb is read again under today's rules.
+ * snapshot made before a spray wall went private never serves its old names:
+ * the stored tick keeps its values and identity, and its public metadata is
+ * read again under today's rules.
+ *
+ * Every climb the climber has logged is served, including a draft or an
+ * unlisted climb someone else set: the climber's logbook is theirs, and an app
+ * they connected sees all of it (owner decision, 2026-11-10). The one exception
+ * is the documented spray-wall rule below.
  */
 
 /** What `climb.board.layout` says when the wall's name is withheld. */
@@ -29,12 +34,6 @@ export interface LogbookClimbRecord {
    * shared the wall with the climber, not with the climber's apps.
    */
   namesVisible: boolean;
-  /**
-   * True for someone else's draft or unlisted climb. Those go to their owner
-   * only, everywhere, and the tick cannot be served without the climb's id,
-   * which for an unlisted climb is its link. See {@link isLogbookTickWithheld}.
-   */
-  heldOut: boolean;
 }
 
 /** The metadata one page needs, keyed so every tick finds its climb and its community grade. */
@@ -68,21 +67,8 @@ function namesVisibleTo(userId: string): SQL<boolean> {
 }
 
 /**
- * Only draft and unlisted climbs are held out, and they go to their owner
- * alone. "Listed" means `is_listed IS TRUE`, so a missing flag holds a climb
- * out. A published climb is public whatever its setter's account privacy, and
- * a climb with no Boardsesh owner (an upstream unlisted climb) has nobody it
- * goes to.
- */
-function heldOutFrom(userId: string): SQL<boolean> {
-  return sql<boolean>`((${boardClimbs.isDraft} IS TRUE OR ${boardClimbs.isListed} IS NOT TRUE)
-    AND ${boardClimbs.userId} IS DISTINCT FROM ${userId}::text)`;
-}
-
-/**
- * Two batched reads for a page: the climbs (name, layout, whether names show,
- * whether the climb is held out) and their community grade at each tick's
- * angle. Never one query per tick.
+ * Two batched reads for a page: the climbs (name, layout, whether names show)
+ * and their community grade at each tick's angle. Never one query per tick.
  */
 export async function readLogbookClimbMetadata(
   transaction: FeedTransaction,
@@ -100,7 +86,6 @@ export async function readLogbookClimbMetadata(
       name: boardClimbs.name,
       layoutName: boardLayouts.name,
       namesVisible: namesVisibleTo(userId),
-      heldOut: heldOutFrom(userId),
     })
     .from(boardClimbs)
     .leftJoin(
@@ -113,7 +98,6 @@ export async function readLogbookClimbMetadata(
       name: row.name,
       layoutName: row.layoutName,
       namesVisible: row.namesVisible,
-      heldOut: row.heldOut,
     });
   }
 
@@ -175,28 +159,14 @@ export function utcTimestamp(stored: string): string {
 }
 
 /**
- * A tick on someone else's draft or unlisted climb is not served at all: the
- * feed and a snapshot send `tick.deleted` for it, and the tick route answers
- * 404. Withholding the climb's name is not enough, because the contract
- * requires `climb.id` and an unlisted climb opens by its id. The contract
- * change that would let the tick be served with its climb withheld is in
- * docs/integration-platform.md, "The routes, as built (L4)".
- */
-export function isLogbookTickWithheld(tick: LogbookFeedTick, metadata: LogbookClimbMetadata): boolean {
-  return metadata.climbs.get(climbKey(tick.boardType, tick.canonicalClimbUuid))?.heldOut === true;
-}
-
-/**
  * One public tick. Throws if the result would break the contract, so nothing
- * outside it (an origin, a session id, a user id) can ever be sent, and
- * refuses a withheld tick ({@link isLogbookTickWithheld}).
+ * outside it (an origin, a session id, a user id) can ever be sent.
  *
  * `climb.boardseshGrade` is always null. The Boardsesh grade lives on the
  * difficulty-id scale (docs/boardsesh-grade.md), and no conversion to the
  * decimal V scale the contract describes is documented, so none is invented.
  */
 export function serializeLogbookTick(tick: LogbookFeedTick, metadata: LogbookClimbMetadata): Tick {
-  if (isLogbookTickWithheld(tick, metadata)) throw new Error('A withheld tick cannot be serialized.');
   const climb = metadata.climbs.get(climbKey(tick.boardType, tick.canonicalClimbUuid));
   const communityDifficulty =
     metadata.communityDifficulty.get(angleKey(tick.boardType, tick.canonicalClimbUuid, tick.angle)) ?? null;

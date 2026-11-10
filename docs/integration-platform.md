@@ -1422,25 +1422,12 @@ snapshot was built never serves its old names.
   public wall: the by-layout rule with no viewer, so a gym membership, follow or
   grant the climber holds is not passed on to apps. A spray tick whose climb row
   is gone withholds both.
-- A tick on someone else's draft or unlisted climb (`is_draft IS TRUE` or
-  `is_listed IS NOT TRUE`, setter not the climber) is not served at all: the feed
-  and a snapshot page send `tick.deleted` for it and the tick route answers `404`,
-  checked at delivery like the spray rule. Those climbs go to their owner alone,
-  and the tick cannot be sent without `climb.id`, which the contract requires and
-  which, for an unlisted climb, is its link. The climber's own draft and unlisted
-  climbs are served. A published climb is served whatever its setter's account
-  privacy. A climb with no Boardsesh owner (upstream unlisted) goes to no one. A
-  tick whose climb row has not arrived yet is served as before, since nothing
-  says it is held out.
-- Serving those ticks with their climb withheld instead needs a contract change
-  in `@boardsesh/public-api`: `TickClimbSchema.id` becomes
-  `z.string().min(1).nullable()` ("`null` for a climb someone else keeps as a
-  draft or unlisted"), with `name` `null`, `board.layout` the board type's label,
-  and `grade` and `boardseshGrade` `null` for those climbs; then a regenerated
-  `openapi.json`, a changelog entry, and the `climb.id` row in partner-api.md.
-  Until then the cost is completeness: an app never sees those ticks, and one on
-  a climb that is published later reaches it only through a full sync or a later
-  edit of the tick, since publishing writes no change row.
+- A connected app sees every climb the climber has logged, including drafts and
+  unlisted climbs set by others, in full: id, name, layout and grades, the same
+  as any published climb (owner decision, 2026-11-10). The climber's logbook is
+  their data. Whether a climb is a draft, unlisted, or set by a private account
+  changes nothing here; only the spray-wall rule above withholds anything.
+  Explaining this to the climber at consent is a separate follow-up.
 - `grade` and `climb.grade` use the board's own grade table: `v` from its V grade,
   `font` upper-cased, `label` its `boulder_name` (MoonBoard's 6A is V2). A
   difficulty off the table is `null`.
@@ -1764,7 +1751,7 @@ Three kinds of data, three answers:
 | Kind | Examples | Through the API |
 | --- | --- | --- |
 | The climber's own activity | Ticks, their grades, stars, comments, workout results | Yes, with their consent, scoped |
-| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, only attached to a tick the climber logged |
+| Metadata needed to read it | Climb id, name, community grade, board type and layout | Yes, only attached to a tick the climber logged, including a draft or unlisted climb someone else set |
 | Catalogs and community data | Hold positions, full climb lists, setter lists, stats, other climbers' ticks, beta videos | No. Catalogs are already public as nightly snapshots; the API is not a second, authenticated way to scrape them |
 
 What LEGAL.md implies:
@@ -1777,6 +1764,10 @@ What LEGAL.md implies:
 - **Climb names and grades are factual data** under LEGAL.md's own position,
   and for catalog boards already public through `/api/v1` and the snapshots.
   Attaching them to a tick adds no exposure.
+- **A logged climb is part of the logbook, whoever set it.** A tick on a draft
+  or an unlisted climb someone else set carries that climb's id, name, layout
+  and grade like any other: the climber logged it, and the logbook is theirs to
+  share with the apps they connect.
 - **Spray walls are the exception.** Their climbs are `is_listed = false` and
   kept out of the snapshots ([spray-walls.md](./spray-walls.md)), and a wall
   can be private or link-only. A tick on a spray wall the climber owns carries
