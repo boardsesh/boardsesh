@@ -245,6 +245,7 @@ export const oauthClientMutations = {
           applicationType: lowerCaseEnum(input.applicationType),
           tokenEndpointAuthMethod: lowerCaseEnum(input.tokenEndpointAuthMethod),
           redirectUris: input.redirectUris,
+          acceptedTermsVersion: input.acceptedTermsVersion,
         }),
       ),
     ),

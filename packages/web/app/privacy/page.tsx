@@ -1,4 +1,5 @@
 import Link from '@mui/material/Link';
+import { parsePartnerOAuthMode } from '@boardsesh/auth-protocol/partner-oauth-mode';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 import { createPageMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -16,6 +17,10 @@ export async function generateMetadata() {
 
 export default async function PrivacyPolicyPage() {
   const { t } = await getServerTranslation('marketing');
+  // Apps can connect only once this web service's PARTNER_OAUTH_MODE is on, so
+  // the section describing them appears with them. DRAFT (#6981 F18): the
+  // wording waits for the owner's approval, which is also a launch gate.
+  const partnerAppsOn = parsePartnerOAuthMode(process.env.PARTNER_OAUTH_MODE) !== 'off';
   return (
     <PageShell title={t('privacy.title')} lead={t('privacy.lastUpdated')}>
       <PageSection>
@@ -60,6 +65,15 @@ export default async function PrivacyPolicyPage() {
         <Prose>{t('privacy.sprayPhotos.body4')}</Prose>
         <Prose>{t('privacy.sprayPhotos.body5')}</Prose>
       </PageSection>
+
+      {partnerAppsOn ? (
+        <PageSection title={t('privacy.connectedApps.title')}>
+          <Prose>{t('privacy.connectedApps.intro')}</Prose>
+          <Prose>{t('privacy.connectedApps.whatItGets')}</Prose>
+          <Prose>{t('privacy.connectedApps.afterSharing')}</Prose>
+          <Prose>{t('privacy.connectedApps.disconnect')}</Prose>
+        </PageSection>
+      ) : null}
 
       <PageSection title={t('privacy.thirdParty.title')}>
         <Prose>

@@ -1,3 +1,4 @@
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { randomInt, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { request } from 'node:http';
@@ -56,6 +57,7 @@ const APP_INPUT: CreateOAuthClientInput = {
   applicationType: 'WEB',
   tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
   redirectUris: ['https://planner.example.test/oauth/boardsesh'],
+  acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
 };
 
 interface GraphQLReply {
@@ -470,6 +472,25 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       );
       expect(errorOf(reply)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
       expect(errorOf(reply)?.message).toMatch(/fragment/);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'refuses a registration without the current developer terms',
+    async () => {
+      await enoughWindowLeft();
+      const bearer = await firstPartyToken(secondDeveloperId);
+      const { acceptedTermsVersion: _required, ...withoutTerms } = APP_INPUT;
+      const missing = await server.graphql({ query: CREATE_MUTATION, variables: { input: withoutTerms } }, { bearer });
+      expect(errorOf(missing)?.message).toMatch(/acceptedTermsVersion/);
+
+      const outdated = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: { ...APP_INPUT, acceptedTermsVersion: '2026-01-01' } } },
+        { bearer },
+      );
+      expect(errorOf(outdated)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
+      expect(errorOf(outdated)?.message).toMatch(/Accept the current Boardsesh developer terms/);
     },
     TEST_DEADLINE_MS,
   );

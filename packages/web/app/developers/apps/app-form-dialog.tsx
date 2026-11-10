@@ -5,6 +5,7 @@ import Alert from '@mui/material/Alert';
 import AlertTitle from '@mui/material/AlertTitle';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
@@ -12,7 +13,9 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import FormHelperText from '@mui/material/FormHelperText';
 import FormLabel from '@mui/material/FormLabel';
+import MuiLink from '@mui/material/Link';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import Stack from '@mui/material/Stack';
@@ -20,6 +23,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useTranslation } from 'react-i18next';
 import type { OAuthClient } from '@boardsesh/shared-schema';
+import LocaleLink from '@/app/components/i18n/locale-link';
 import {
   EMPTY_APP_FORM,
   formFromApp,
@@ -120,7 +124,7 @@ export default function AppFormDialog({ app, onClose, onSubmit }: AppFormDialogP
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const missingFields = missingAppFormFields(state);
+    const missingFields = missingAppFormFields(state, { registering: !editing });
     if (missingFields.length > 0) {
       setMissing(new Set(missingFields));
       return;
@@ -265,6 +269,28 @@ export default function AppFormDialog({ app, onClose, onSubmit }: AppFormDialogP
               slotProps={{ htmlInput: { spellCheck: false, autoCapitalize: 'none' }, input: { sx: MONOSPACE_SX } }}
               {...fieldProps('redirectUris', t('form.redirectUrisHelp'))}
             />
+
+            {editing ? null : (
+              <Stack spacing={0.5}>
+                <MuiLink component={LocaleLink} href="/developers/terms" target="_blank" rel="noopener" variant="body2">
+                  {t('form.readTerms')}
+                </MuiLink>
+                <FormControl required error={missing.has('acceptedTerms')} disabled={saving}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={state.acceptedTerms}
+                        onChange={(event) => update('acceptedTerms', event.target.checked)}
+                      />
+                    }
+                    label={<Typography variant="body2">{t('form.acceptTerms')}</Typography>}
+                  />
+                  {missing.has('acceptedTerms') ? (
+                    <FormHelperText>{t('form.acceptTermsRequired')}</FormHelperText>
+                  ) : null}
+                </FormControl>
+              </Stack>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, gap: 1, '& .MuiButton-root': { minHeight: 44 } }}>

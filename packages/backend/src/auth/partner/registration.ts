@@ -358,6 +358,9 @@ export function createPartnerRegistration({
             publisherName: input.publisherName,
             maxActiveConnections: PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS,
             maxNewConnectionsPerDay: PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY,
+            // What the developer agreed to, and when: the terms are the basis for suspending an app.
+            termsVersion: input.acceptedTermsVersion,
+            termsAcceptedAt: new Date(),
           })
           .returning();
         return { app: toRecord(row, policy, 0), clientSecret: registered.client_secret ?? null };

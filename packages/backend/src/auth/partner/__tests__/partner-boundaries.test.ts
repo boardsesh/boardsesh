@@ -280,6 +280,7 @@ describe('the F12 entry point', () => {
               applicationType: 'WEB',
               tokenEndpointAuthMethod: 'NONE',
               redirectUris: ['https://crimp.example.test/cb'],
+              acceptedTermsVersion: 'any',
             },
           },
           context,

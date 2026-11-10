@@ -1280,7 +1280,8 @@ A developer console at `https://www.boardsesh.com/developers/apps`
 `packages/backend` (`createOAuthClient`, `updateOAuthClient`,
 `rotateOAuthClientSecret`, `deleteOAuthClient`, `myOAuthClients`).
 
-Form fields: name, publisher name, homepage URL, privacy policy URL, client
+Form fields: name, publisher name, homepage URL, privacy policy URL, the
+developer terms box (registration only), client
 authentication type, web/native application topology and redirect URIs. Registration binds
 the client to the published `https://api.boardsesh.com/v1` resource; developers
 cannot expand its resource permissions. The secret (confidential clients) is shown once. No icon upload in the
@@ -1394,7 +1395,15 @@ through the operations above. `OAuthClient.activeConnections` is the number of
 climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
 is shown once in a dialog that closes only from its own button. It lives in
-component state only: never in the React Query cache, a URL or a log. The route
+component state only: never in the React Query cache, a URL or a log.
+Registering needs the developer terms box ticked; the form links to
+`/developers/terms` (same flag) and sends `acceptedTermsVersion`, the shared
+`PARTNER_DEVELOPER_TERMS_VERSION` from `@boardsesh/auth-protocol/partner-oauth`.
+The backend refuses any other value with `BAD_USER_INPUT`, so a console left
+open across a terms change asks the developer to reload, and writes the version
+and the time to `oauth_app_policy.terms_version` and `terms_accepted_at`. An edit
+does not ask again, and apps registered before this have both columns empty. The
+route
 sends `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `no-referrer` and
 `no-store`, and loads no ad pixel. PostHog on www is the lite SDK with no
 autocapture or replay, so it never sees the page's text.
@@ -2192,31 +2201,42 @@ What LEGAL.md implies:
   not public carries `climb.name: null` and `climb.board.layout: "Spray wall"`:
   the owner shared the wall with the climber, not with the climber's apps. The
   tick itself (date, status, attempts, angle, grade) is still the climber's.
-- **The "Hosted Service & API Access" section needs one clarifying sentence
-  before the first outside app ships against milestone 1.** It says a "publicly distributed
-  app … that uses Boardsesh accounts, data or servers as its service needs our
-  written permission, and we do not currently grant it". Read literally, that
-  covers DivePeaks. The intent (the Boardz decision, October 2026) is about
-  apps that run *on* Boardsesh: forks and alternative clients. Proposed wording
-  for Marco to approve:
-
-  > Connecting a climber's Boardsesh account to your app with their
-  > permission, through the OAuth API and the scopes in the developer docs, is
-  > an integration and needs no permission from us. Building an app whose
-  > accounts, climbing, board control or sessions run on Boardsesh's servers
-  > is not an integration, and the paragraph above applies.
-
+- **The "Hosted Service & API Access" section of LEGAL.md.** It said a
+  "publicly distributed app … that uses Boardsesh accounts, data or servers as
+  its service needs our written permission, and we do not currently grant it".
+  Read literally, that covers DivePeaks. The intent (the Boardz decision,
+  October 2026) is about apps that run *on* Boardsesh: forks and alternative
+  clients. The paragraph now names those (accounts, climbing, board control or
+  sessions on Boardsesh's servers) and says that connecting a climber's account
+  through the OAuth API, within the published scopes and under the developer
+  terms, is an integration that needs no further permission. The www `/legal`
+  page carries the same paragraph in every locale (`legal.hostedService.p3`).
   The scope list enforces that line technically: nothing on it lets an app
-  control a board, run a session or browse the catalog.
-- **Developer terms** (short, linked from the console and LEGAL.md): use data
-  only for what the climber connected the app for, delete it when the climber
-  disconnects or asks, no resale, no re-publishing other climbers' data (there
-  is none in the API anyway), respect rate limits, describe compatibility not
-  endorsement ("Works with Boardsesh"), and we can suspend apps that break
-  this. Draft in milestone 2, Marco signs off.
-- **Privacy policy**: one paragraph on connected apps: what leaves, that the
-  app's own policy governs it afterwards, how to disconnect, and that deleting
-  a Boardsesh account does not delete copies an app already holds.
+  control a board, run a session or browse the catalog. **Draft until the owner
+  approves it**; an HTML comment in LEGAL.md marks it.
+- **Developer terms** at www `/developers/terms`, behind the same
+  `developer-console` flag as the console, English in every locale. They cover:
+  use data only for what the climber connected the app for; no sale, rental,
+  advertising or data brokering; the climb details a tick carries, including
+  someone else's draft or unlisted climb, are for the climber's own logbook and
+  are never re-published or collected into a list; delete on disconnect or
+  request; a privacy policy; secrets kept safe and leaks reported within 72
+  hours; rate limits and scopes respected; no catalog copying; compatibility
+  wording, not endorsement ("Works with Boardsesh"), and board brands only to
+  name boards; and Boardsesh may suspend or delete an app that breaks them.
+  Registration requires the current version (below). **Draft until the owner
+  approves it**: the page shows "Draft, not in force" and the version ends in
+  `-draft`.
+- **Privacy policy**: an "Apps you connect" section on www `/privacy`, shown
+  only while the web's `PARTNER_OAUTH_MODE` is not `off`, in every locale. It
+  says what an app can receive (display name and photo; every tick, "Only me"
+  ones included; each tick's climb with name, grade, board and layout, also when
+  someone else set it and it is a draft or unlisted; but on someone else's
+  non-public Spraywall neither the climb's name nor the Spraywall's), that the
+  app's own policy governs the data afterwards, how to disconnect, that a
+  password reset disconnects every app, and that disconnecting or deleting the
+  account does not delete copies an app already holds. **Draft until the owner
+  approves it.**
 - **Trademarks**: the docs say "Kilter", "Tension", "MoonBoard" only to name
   board types, never to suggest the API is an official channel for them.
 
@@ -2333,7 +2353,7 @@ stays `off` until step 1 of stage A.
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
-| 9 | The owner has approved the `LEGAL.md` sentence, the developer terms and the privacy paragraph | |
+| 9 | The owner has approved the `LEGAL.md` sentence, the developer terms and the privacy paragraph, removed the draft markers and set `PARTNER_DEVELOPER_TERMS_VERSION` to the approval date | The terms page no longer says "Draft, not in force" |
 
 ### Turning it on and off
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test';
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import type { OAuthClient } from '@boardsesh/shared-schema';
 import {
   EMPTY_APP_FORM,
@@ -35,9 +36,24 @@ describe('the register and edit form', () => {
     ]);
   });
 
-  it('names the fields the form must not send empty', () => {
-    expect(missingAppFormFields(EMPTY_APP_FORM)).toEqual(['name', 'publisherName', 'privacyPolicyUrl', 'redirectUris']);
-    expect(missingAppFormFields(formFromApp(APP))).toEqual([]);
+  it('names the fields the form must not send empty, and asks for the terms only when registering', () => {
+    expect(missingAppFormFields(EMPTY_APP_FORM, { registering: true })).toEqual([
+      'name',
+      'publisherName',
+      'privacyPolicyUrl',
+      'redirectUris',
+      'acceptedTerms',
+    ]);
+    expect(missingAppFormFields(EMPTY_APP_FORM, { registering: false })).toEqual([
+      'name',
+      'publisherName',
+      'privacyPolicyUrl',
+      'redirectUris',
+    ]);
+    expect(missingAppFormFields(formFromApp(APP), { registering: false })).toEqual([]);
+    expect(missingAppFormFields({ ...formFromApp(APP), acceptedTerms: false }, { registering: true })).toEqual([
+      'acceptedTerms',
+    ]);
   });
 
   it('builds a create input: a public app sends no secret method, and a blank homepage is left out', () => {
@@ -58,6 +74,8 @@ describe('the register and edit form', () => {
       applicationType: 'NATIVE',
       tokenEndpointAuthMethod: 'NONE',
       redirectUris: ['com.example.crimp:/oauth/boardsesh', 'http://127.0.0.1/callback'],
+      // The version this page shows; the server refuses any other.
+      acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
     });
     expect(toCreateInput({ ...EMPTY_APP_FORM, clientType: 'confidential' }).tokenEndpointAuthMethod).toBe(
       'CLIENT_SECRET_BASIC',

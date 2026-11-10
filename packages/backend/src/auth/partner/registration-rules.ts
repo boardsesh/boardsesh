@@ -1,3 +1,4 @@
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
 
 /**
@@ -39,6 +40,8 @@ export interface PartnerAppInput {
   applicationType: PartnerAppApplicationType;
   tokenEndpointAuthMethod: PartnerAppAuthMethod;
   redirectUris: string[];
+  /** The developer terms version the developer accepted: always the current one once validated. */
+  acceptedTermsVersion: string;
 }
 
 /** An edit. A field left undefined keeps its value; `homepageUrl: null` clears it. */
@@ -335,6 +338,18 @@ function validateAuthMethod(rawMethod: unknown): PartnerAppAuthMethod {
   return match;
 }
 
+/**
+ * A new app needs the developer to have accepted the terms the console shows
+ * now. An older version is refused too, so a console left open across a terms
+ * change asks again instead of recording text the developer never saw.
+ */
+function validateAcceptedTermsVersion(raw: unknown): string {
+  if (raw !== PARTNER_DEVELOPER_TERMS_VERSION) {
+    invalid('Accept the current Boardsesh developer terms to register an app. Reload the page to see them.');
+  }
+  return PARTNER_DEVELOPER_TERMS_VERSION;
+}
+
 export function normalizePartnerAppInput(raw: Record<string, unknown>): PartnerAppInput {
   const applicationType = validateApplicationType(raw.applicationType);
   return {
@@ -348,6 +363,7 @@ export function normalizePartnerAppInput(raw: Record<string, unknown>): PartnerA
     applicationType,
     tokenEndpointAuthMethod: validateAuthMethod(raw.tokenEndpointAuthMethod),
     redirectUris: validatePartnerRedirectUris(raw.redirectUris, applicationType),
+    acceptedTermsVersion: validateAcceptedTermsVersion(raw.acceptedTermsVersion),
   };
 }
 

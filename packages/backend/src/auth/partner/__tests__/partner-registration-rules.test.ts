@@ -1,3 +1,4 @@
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   normalizePartnerAppInput,
@@ -287,6 +288,7 @@ describe('a registration request', () => {
     applicationType: 'native',
     tokenEndpointAuthMethod: 'none',
     redirectUris: ['com.example.crimp:/oauth/boardsesh'],
+    acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
   };
 
   it('keeps only the fields the rules know', () => {
@@ -298,8 +300,18 @@ describe('a registration request', () => {
       applicationType: 'native',
       tokenEndpointAuthMethod: 'none',
       redirectUris: ['com.example.crimp:/oauth/boardsesh'],
+      acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
     });
   });
+
+  it.each([undefined, null, '', 'yes', true, '2026-01-01', ` ${PARTNER_DEVELOPER_TERMS_VERSION}`])(
+    'refuses a registration that did not accept the current developer terms (%j)',
+    (acceptedTermsVersion) => {
+      expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, acceptedTermsVersion }))).toMatch(
+        /Accept the current Boardsesh developer terms/,
+      );
+    },
+  );
 
   it.each(['private_key_jwt', 'client_secret_jwt', 'tls_client_auth', 'self_signed_tls_client_auth', 'NONE', ''])(
     'refuses the token endpoint method %j',

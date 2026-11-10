@@ -54,7 +54,9 @@ Everything is HTTPS.
 ## 1. Registering your app
 
 Sign in at `https://www.boardsesh.com/developers/apps` with a Boardsesh
-account whose email is verified, and create an app. It is usable immediately.
+account whose email is verified, accept the developer terms
+(`https://www.boardsesh.com/developers/terms`), and create an app. It is usable
+immediately.
 During early access the console only lets in developer accounts the Boardsesh
 team has invited; anyone else sees "App registration is invite-only for now".
 

@@ -38,6 +38,8 @@ export type CreateOAuthClientInput = {
   applicationType: OAuthClientApplicationType;
   tokenEndpointAuthMethod: OAuthClientAuthMethod;
   redirectUris: string[];
+  /** The developer terms version the developer accepted; must be the current one. */
+  acceptedTermsVersion: string;
 };
 
 export type UpdateOAuthClientInput = {

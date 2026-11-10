@@ -1,3 +1,4 @@
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import { createHash, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -332,6 +333,7 @@ async function registerApp(kind: AppKind = 'confidential-basic', target: Running
         applicationType: native ? 'NATIVE' : 'WEB',
         tokenEndpointAuthMethod: authMethod,
         redirectUris,
+        acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
       },
     },
     { bearer: await firstPartyToken(developerId) },
@@ -685,6 +687,7 @@ describe('partner OAuth on, in the real server', () => {
             applicationType: 'WEB',
             tokenEndpointAuthMethod: 'NONE',
             redirectUris: ['https://outside.example.test/cb'],
+            acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
           },
         },
         { bearer: await firstPartyToken(outsider) },
@@ -933,6 +936,7 @@ describe('partner OAuth on, in the real server', () => {
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',
                 redirectUris: ['https://token.example.test/cb'],
+                acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
               },
             },
             { bearer },
@@ -2551,6 +2555,7 @@ describe('partner OAuth on, in the real server', () => {
                 applicationType: 'WEB',
                 tokenEndpointAuthMethod: 'NONE',
                 redirectUris: ['https://outside.example.test/cb'],
+                acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
               },
             },
             { bearer: await firstPartyToken(outsider) },
