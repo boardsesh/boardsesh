@@ -935,6 +935,25 @@ working from the OAuth threat list, run before the first connection and again
 before milestone 2 opens registration. Failure of any launch gate blocks that
 deliverable; it does not authorize a fallback implementation.
 
+**The launch suite** (`packages/backend/src/__tests__/partner-launch-suite.test.ts`,
+#6981 F17) runs this list on the assembled stack: the real `startServer`, real
+Postgres and Redis, the www session cookie the installed NextAuth writes, and
+oauth4webapi, an OAuth client nobody here wrote, as the partner app. It walks
+registration, consent through the session bridge, the code exchange with PKCE,
+`/v1/me`, refresh rotation and reuse, Disconnect and reconnect, every row of the
+revocation table above, the retention sweep, suspend, secret rotation, app
+deletion and `revoke-user`, and each mode with the web's own mode in step and
+out of it. A second copy of the backend, loaded fresh in the same process with
+its own authority and pools, is the second instance. Time moves by rewriting
+rows, never by waiting, and races wait on what `pg_stat_activity` reports. It
+needs `REDIS_URL`, like the other partner route suites, and runs in about 30
+seconds in the `backend` project.
+
+It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
+sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
+front of the API host, Sentry and PostHog redaction, and the routes not built yet
+(the logbook feed, Connected apps Disconnect).
+
 ---
 
 ## Self-service registration

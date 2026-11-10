@@ -395,6 +395,9 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+      oauth4webapi:
+        specifier: 3.8.7
+        version: 3.8.7
       postgres:
         specifier: 3.4.9
         version: 3.4.9(patch_hash=1c2f0335f127be464a29a2e1a0ab433b2881c5eda2ca8028da5641c6dcc93703)
