@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { appendFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import { connect as openTcpConnection, type AddressInfo, type Socket } from 'node:net';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
-import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
+import { oauthConnections, oauthConsentInteractions, oauthRefreshToken, users } from '@boardsesh/db/schema/auth';
 import { createPartnerAdmissionGate } from '../auth/partner/admission';
 import {
   createPartnerAuthorityRuntime,
@@ -34,6 +35,12 @@ import {
 } from '../auth/partner/__tests__/partner-fixture';
 
 const TEST_DEADLINE_MS = 60_000;
+
+// The installed NextAuth encoder writes the www session cookie the deployed bridge reads.
+const webRequire = createRequire(new URL('../../../web/package.json', import.meta.url));
+const { encode: encodeNextAuthSession } = webRequire('next-auth/jwt') as {
+  encode(this: void, options: { token: Record<string, unknown>; secret: string }): Promise<string>;
+};
 const MINUTE_MS = 60_000;
 
 // The limits run against real Redis, the path production takes.
@@ -210,6 +217,7 @@ async function startPartnerHost(options: PartnerAuthHandlerOptions) {
 }
 
 const CONSENT_PATH = '/api/auth/oauth2/consent';
+const CONSENT_DETAILS_PATH = '/api/auth/oauth2/consent-details';
 const TOKEN_PATH = '/api/auth/oauth2/token';
 const REVOKE_PATH = '/api/auth/oauth2/revoke';
 const AUTHORIZE_PATH = '/api/auth/oauth2/authorize';
@@ -300,11 +308,14 @@ describe('partner OAuth routes on the API host', () => {
         ...formBody({ token: 'unknown', ...clientCredentials(client) }),
       });
       expect(revokeResponse.status).toBe(200);
-      const consentResponse = await partnerHost.send('POST', CONSENT_PATH, {
-        body: JSON.stringify({ accept: true }),
-        headers: { 'Content-Type': 'application/json' },
-      });
-      expect(consentResponse.status).toBe(401);
+      for (const path of [CONSENT_PATH, CONSENT_DETAILS_PATH]) {
+        const consentResponse = await partnerHost.send('POST', path, {
+          body: JSON.stringify({ accept: true }),
+          headers: { 'Content-Type': 'application/json', Origin: TEST_CONFIGURATION.webOrigin },
+        });
+        expect({ path, status: consentResponse.status }).toEqual({ path, status: 401 });
+        expect(JSON.parse(consentResponse.body)).toMatchObject({ error: 'login_required' });
+      }
       for (const path of METADATA_PATHS) expect((await partnerHost.send('GET', path)).status).toBe(200);
       expect((await partnerHost.send('GET', `${ERROR_PATH}?error=invalid_client`)).status).toBe(400);
     });
@@ -381,7 +392,8 @@ describe('partner OAuth routes on the API host', () => {
         // POST /oauth2/authorize shares its path with the allowed GET, so a disabled list cannot name it.
         .filter(({ path }) => !disabled.has(path) && !path.includes(':') && path !== '/oauth2/authorize');
       expect(undecided).toEqual([]);
-      expect(new Set(stockHttpRoutes().map(({ path }) => path)).size).toBe(53);
+      // 53 stock routes, and the consent details route the consent guard adds.
+      expect(new Set(stockHttpRoutes().map(({ path }) => path)).size).toBe(54);
     });
 
     it('refuses every other stock route over HTTP, with a signed-in climber', async () => {
@@ -848,7 +860,11 @@ describe('partner OAuth routes on the API host', () => {
       'stops a real flood of valid refreshes within one burst of the budget',
       async () => {
         await inOneLimitWindow(async () => {
-          const client = await environment.createClient({ publicClient: true });
+          // Thirty climbers is past decision 22's launch caps, which this test is not about.
+          const client = await environment.createClient({
+            publicClient: true,
+            policy: { maxActiveConnections: 100, maxNewConnectionsPerDay: 100 },
+          });
           const refreshTokens: string[] = [];
           for (let climberIndex = 0; climberIndex < 30; climberIndex += 1) {
             const climber = await environment.createClimber();
@@ -1787,15 +1803,18 @@ describe('partner OAuth routes on the API host', () => {
       ).toBeUndefined();
     });
 
-    it('allows consent only from the web origin, with credentials', async () => {
-      const preflight = await partnerHost.send('OPTIONS', CONSENT_PATH, {
-        headers: { Origin: TEST_CONFIGURATION.webOrigin },
-      });
-      expect(preflight.headers['access-control-allow-origin']).toBe(TEST_CONFIGURATION.webOrigin);
-      expect(preflight.headers['access-control-allow-credentials']).toBe('true');
-      const other = await partnerHost.send('OPTIONS', CONSENT_PATH, { headers: { Origin: appOrigin } });
-      expect(other.headers['access-control-allow-origin']).toBeUndefined();
-    });
+    it.each([CONSENT_PATH, CONSENT_DETAILS_PATH])(
+      'allows %s only from the web origin, with credentials',
+      async (path) => {
+        const preflight = await partnerHost.send('OPTIONS', path, {
+          headers: { Origin: TEST_CONFIGURATION.webOrigin },
+        });
+        expect(preflight.headers['access-control-allow-origin']).toBe(TEST_CONFIGURATION.webOrigin);
+        expect(preflight.headers['access-control-allow-credentials']).toBe('true');
+        const other = await partnerHost.send('OPTIONS', path, { headers: { Origin: appOrigin } });
+        expect(other.headers['access-control-allow-origin']).toBeUndefined();
+      },
+    );
   });
 
   describe('responses', () => {
@@ -1955,6 +1974,7 @@ describe('the deployed partner routes', () => {
     'serves the routes in the real server with the mode on, and nothing else on the API host',
     async () => {
       const { startServer } = await import('../server');
+      const partnerEnvironment = await createPartnerTestEnvironment();
       vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
       vi.stubEnv('PARTNER_OAUTH_SECRETS', '1:partner-oauth-test-secret-never-deployed-0123456789');
       vi.stubEnv('PORT', '0');
@@ -1963,7 +1983,7 @@ describe('the deployed partner routes', () => {
       try {
         if (!server.httpServer.listening) await once(server.httpServer, 'listening');
         const { port } = server.httpServer.address() as AddressInfo;
-        const send = (method: string, path: string, host: string, body?: string) =>
+        const send = (method: string, path: string, host: string, body?: string, cookie?: string) =>
           new Promise<SentResponse>((resolve, reject) => {
             const outgoing = request(
               {
@@ -1975,6 +1995,7 @@ describe('the deployed partner routes', () => {
                   Host: host,
                   'X-Forwarded-For': randomClientIp(),
                   'Content-Type': 'application/x-www-form-urlencoded',
+                  ...(cookie ? { Cookie: cookie } : {}),
                 },
               },
               (incoming) => {
@@ -2015,6 +2036,38 @@ describe('the deployed partner routes', () => {
         expect(token.status).toBeGreaterThanOrEqual(400);
         expect(token.status).toBeLessThan(500);
 
+        // The deployed authority reads the www session itself: a recent sign-in
+        // reaches the consent screen and stores its link; no cookie means sign in.
+        const consentClient = await partnerEnvironment.createClient({ skipConsent: false, publicClient: true });
+        const climberId = randomUUID();
+        await db.insert(users).values({ id: climberId, email: `${climberId}@example.invalid` });
+        const webSession = await encodeNextAuthSession({
+          token: { sub: climberId, authSessionId: randomUUID(), auth_time: Math.floor(Date.now() / 1000) - 60 },
+          secret: process.env.NEXTAUTH_SECRET!,
+        });
+        const consentQuery = {
+          response_type: 'code',
+          client_id: consentClient.clientId,
+          redirect_uri: consentClient.redirectUri,
+          scope: 'profile:read offline_access',
+          state: randomUUID(),
+          code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+          code_challenge_method: 'S256',
+        };
+        const signedIn = await send(
+          'GET',
+          browserRouteTarget(AUTHORIZE_PATH, consentQuery),
+          API_HOSTNAME,
+          undefined,
+          `__Secure-next-auth.session-token=${webSession}`,
+        );
+        expect(signedIn.headers.location).toMatch(/^https:\/\/www\.boardsesh\.com\/oauth\/consent\?/);
+        expect(
+          await db.select().from(oauthConsentInteractions).where(eq(oauthConsentInteractions.userId, climberId)),
+        ).toHaveLength(1);
+        const signedOut = await send('GET', browserRouteTarget(AUTHORIZE_PATH, consentQuery), API_HOSTNAME);
+        expect(signedOut.headers.location).toMatch(/^https:\/\/www\.boardsesh\.com\/oauth\/sign-in\?/);
+
         // The rest of the API host stays shut, and other hosts see no partner route.
         expect((await send('GET', '/graphql', API_HOSTNAME)).status).toBe(404);
         expect((await send('GET', '/api/auth/oauth2/userinfo', API_HOSTNAME)).status).toBe(404);
@@ -2026,6 +2079,7 @@ describe('the deployed partner routes', () => {
         await new Promise<void>((resolve) => server.wss.close(() => resolve()));
         await new Promise<void>((resolve) => server.httpServer.close(() => resolve()));
         await (await getPartnerAuthorityRuntime()).close();
+        await partnerEnvironment.close();
       }
     },
     TEST_DEADLINE_MS,

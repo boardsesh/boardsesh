@@ -245,6 +245,7 @@ describe('the running server on the API host', () => {
     ['POST', '/api/auth/oauth2/token'],
     ['POST', '/api/auth/oauth2/revoke'],
     ['POST', '/api/auth/oauth2/consent'],
+    ['POST', '/api/auth/oauth2/consent-details'],
     ['GET', '/.well-known/oauth-authorization-server/api/auth'],
     ['GET', '/api/auth/.well-known/oauth-authorization-server'],
     ['GET', '/api/auth/error'],

@@ -414,6 +414,7 @@ to Better Auth's handler as well as mounting `/api/auth/*`. A mount limited to
 | `GET /api/auth/oauth2/authorize` on `api` | Better Auth OAuth provider | Validates client, redirect and PKCE before continuing to login/consent; untrusted redirects are never followed |
 | `/oauth/consent` on `www` | Next page | Renders the supported provider consent flow, requiring a current first-party session |
 | `POST /api/auth/oauth2/consent` on `api` | Better Auth OAuth provider | Supported session-bound consent API, with the provider's continuation and CSRF checks |
+| `POST /api/auth/oauth2/consent-details` on `api` | Boardsesh, inside the authority | What the consent screen shows for an open consent link. See [Consent and the www session](#consent-and-the-www-session) |
 | `POST /api/auth/oauth2/token` on `api` | Better Auth OAuth provider | Authorization-code and refresh grants only; each client uses its registered authentication method |
 | `POST /api/auth/oauth2/revoke` on `api` | Better Auth OAuth provider | RFC 7009 token revocation, distinct from disconnect |
 | `GET /.well-known/oauth-authorization-server/api/auth` on `api` | Better Auth handler, explicitly forwarded outside its base mount | Canonical RFC 8414 metadata for the pathful issuer; the provider's `/api/auth/.well-known/oauth-authorization-server` alias may also be served, with identical metadata |
@@ -443,10 +444,11 @@ may import.
 
 Only these exact method and path pairs are served, and only on `api.boardsesh.com`:
 `GET /api/auth/oauth2/authorize`, `POST /api/auth/oauth2/consent`,
-`POST /api/auth/oauth2/token`, `POST /api/auth/oauth2/revoke`, RFC 8414 metadata at
-both paths above, and `GET /api/auth/error`, the page the provider sends a browser
-to when it must not send it to the app. Token, revoke and consent also answer a
-CORS preflight, which never reaches Better Auth. The path is matched byte for byte
+`POST /api/auth/oauth2/consent-details`, `POST /api/auth/oauth2/token`,
+`POST /api/auth/oauth2/revoke`, RFC 8414 metadata at both paths above, and
+`GET /api/auth/error`, the page the provider sends a browser to when it must not
+send it to the app. Token, revoke and both consent routes also answer a CORS
+preflight, which never reaches Better Auth. The path is matched byte for byte
 against what the client sent, so a trailing slash, a doubled slash, different case,
 a percent-encoded byte or `HEAD` is a `404`. `disabledPaths` also refuses the other
 stock routes inside Better Auth, except the two with path parameters.
@@ -523,6 +525,102 @@ valid token got 14 of 61 through, and never a `429`.
 4. Only once a token has passed are the connection (120 a minute,
    `api-connection`) and the app (6,000 a minute, `api-app`) charged. A caller
    without a valid token for them cannot spend either.
+
+### Consent and the www session
+
+Code: `auth/partner/consent.ts`, `first-party-session.ts`, `connection-caps.ts`.
+The consent pages on `www` call the two consent routes with the climber's cookie;
+everything that decides lives here.
+
+**Who is signed in.** Only the www NextAuth session cookie says. The session
+bridge decrypts it with the strict legacy verifier (`auth/legacy-web-credentials.ts`:
+pinned algorithms, required claims, chunked and duplicate cookies fail closed) on
+every authorize and consent request. No Better Auth cookie is ever set, and the
+adapter never finds a session by token, so a correctly signed Better Auth cookie
+still signs no one in. A signed-out authorize is one with no NextAuth cookie,
+which is why it can run outside a transaction.
+
+**When a sign-in counts** (decision 19). The cookie must carry an `auth_time`
+the web wrote at sign-in (#6981 F5), under 30 days old, and more than 60 seconds
+after the climber's last password write (`user_credentials.updated_at`, from the
+database clock). The 60 seconds cover a web clock running ahead of the database.
+A missing, fractional, non-positive or future (beyond 60 s of skew) `auth_time`
+is unknown, and unknown is too old. A cookie that fails any of this sends authorize
+to `/oauth/sign-in`, and consent answers `401 login_required`. A deleted account's
+cookie, which stays decryptable for 30 days, reads as signed out. The sign-in
+check runs after the request takes `users` FOR SHARE, so a consent queued behind
+a password reset sees the reset. `user_credentials` is read, never locked: the
+legacy reset locks that row before `users`.
+
+The bridge keeps one `oauth_session` row per NextAuth login (user, `authSessionId`,
+`auth_time`), created under `users` FOR SHARE, with `created_at` set to the sign-in
+time. The provider takes a code's auth time and `max_age` from that column.
+
+The web side closes the one way an old cookie could get a new `auth_time`: an
+OAuth callback that links an unlinked provider account into a live session.
+`oauth-link-guard.server.ts` gives legacy-mode callbacks a request-local adapter
+whose `linkAccount` refuses that link unless the session's own sign-in is under
+30 days old (NextAuth's `error=Callback`). Signing in with a provider account
+already linked to the climber, creating an account, and linking by verified
+provider email with no session all work as before.
+
+**`prompt=login`** is dropped. Stock Better Auth answers it by asking for a
+Better Auth sign-in, which never happens here, so it would loop; the 30-day rule
+already asks for a real sign-in when one is due.
+
+**Consent links.** Every time the provider sends a signed-in climber to the
+consent screen, the link's signature is stored as an `oauth_consent_interactions`
+row: climber, bridged login, app, connection generation (0 when there is no
+connection yet) and the link's 600-second expiry. The consent post must present a
+row that is open, unexpired, for this climber, this login and this app, at the
+generation the connection has now; it is locked and spent in the same
+transaction, whether the climber allows or declines. So a link answers once,
+cannot be answered by someone else or after an account switch, and cannot
+reconnect an app the climber disconnected meanwhile. A first-time consent has no
+connection row to lock, so the fence checks the generation again when it binds
+the code, and rolls the whole request back if a Disconnect moved it.
+
+**Cross-site requests.** Both consent routes take only `Origin:
+https://www.boardsesh.com`, exactly, whatever the cookies say. SameSite=Lax lets
+every `*.boardsesh.com` subdomain send the session cookie, so a cookie is no proof
+of where a request came from.
+
+**Caps** (decision 22). An app holds at most `max_active_connections` (25)
+approved, unrevoked connections and gains at most `max_new_connections_per_day`
+(20) in any 24 hours; a reconnect counts as new. A connection counts once
+`connected_at` is set, never as a row a code created. The check runs when a
+connection is about to go live, under the connection lock and then the app's
+`oauth_app_policy` row FOR NO KEY UPDATE, so two climbers cannot both take the last
+place. An app with no policy row cannot gain connections. A refusal rolls the
+request back (consent, code and the spent link alike) and sends the browser to the
+app with `error=temporarily_unavailable` (`access_denied` with no policy row).
+
+**What the screen shows.** `POST /api/auth/oauth2/consent-details` with
+`{ "oauth_query": "<the page's query>" }` answers, for an open link and the same
+checks as the post, without spending it:
+
+```json
+{
+  "client": {
+    "clientId": "bsk_…",
+    "name": "Sequence",
+    "homepageUrl": "https://…",
+    "privacyPolicyUrl": "https://…",
+    "termsUrl": null,
+    "developerName": "Sequence Labs",
+    "redirectHost": "com.example.app"
+  },
+  "scopes": [{ "scope": "profile:read", "includesOnlyMeTicks": false }],
+  "reconnect": false,
+  "reviewed": false,
+  "expiresAt": "2026-11-10T12:10:00.000Z"
+}
+```
+
+Facts only; the page words them in the climber's language. `includesOnlyMeTicks`
+is true for `logbook:read` (decision 21), so the screen can say that approving
+shares ticks the climber keeps to "only me". `logbook:read` cannot be requested
+until its route ships (L4); until then no response lists it.
 
 ### Browser access
 

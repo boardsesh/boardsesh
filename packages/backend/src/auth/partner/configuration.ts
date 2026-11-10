@@ -26,6 +26,11 @@ export interface PartnerAuthorityConfiguration {
   webOrigin: string;
   /** Newest first. The newest encrypts; older versions only decrypt. */
   secrets: PartnerSecret[];
+  /**
+   * Decrypts the www NextAuth session cookie, the only source of a signed-in
+   * climber here. Read-only: the authority never writes that cookie.
+   */
+  nextAuthSecret: string;
 }
 
 export class PartnerAuthorityConfigurationError extends Error {
@@ -68,7 +73,15 @@ export function readPartnerAuthorityConfiguration(
     resource: PARTNER_RESOURCE,
     webOrigin: PARTNER_WEB_ORIGIN,
     secrets: parsePartnerSecrets(environment.PARTNER_OAUTH_SECRETS),
+    nextAuthSecret: requireNextAuthSecret(environment.NEXTAUTH_SECRET),
   };
+}
+
+function requireNextAuthSecret(rawSecret: string | undefined): string {
+  if (!rawSecret?.trim()) {
+    throw new PartnerAuthorityConfigurationError('NEXTAUTH_SECRET is required when the mode is not off.');
+  }
+  return rawSecret;
 }
 
 /**

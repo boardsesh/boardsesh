@@ -55,7 +55,9 @@ const FORWARDED_REQUEST_HEADERS = [
   'user-agent',
 ] as const;
 /** Token and revoke authenticate the client, so a browser's cookies mean nothing there. */
-const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize', 'consent']);
+const COOKIE_READING_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['authorize', 'consent', 'consent-details']);
+/** The routes the www consent screen calls with the climber's cookie. JSON bodies, no app credentials. */
+const CONSENT_ROUTES: ReadonlySet<PartnerRouteKind> = new Set(['consent', 'consent-details']);
 const NEXTAUTH_SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token(?:\.\d+)?=/;
 const CLIENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -223,7 +225,7 @@ function errorPageResponse(requestTarget: string | undefined): Response {
 }
 
 function corsPolicyFor(kind: PartnerRouteKind): PartnerCorsPolicy | null {
-  if (kind === 'consent') return 'first-party';
+  if (CONSENT_ROUTES.has(kind)) return 'first-party';
   return kind === 'token' || kind === 'revoke' ? 'credential-free' : null;
 }
 
@@ -396,12 +398,14 @@ export function createPartnerAuthHandler({
     ledger: RateLimitLedger,
     requestId: string,
   ): Promise<{ response: Response; clientId: string | undefined }> {
-    if (route.kind === 'consent') await ledger.consume(clientIp, 'oauth-consent', CONSENT_PER_IP);
+    const isConsent = CONSENT_ROUTES.has(route.kind);
+    // One bucket for both: the screen reads the details once and posts once.
+    if (isConsent) await ledger.consume(clientIp, 'oauth-consent', CONSENT_PER_IP);
     const body = await bufferedBody(req, clientIp, ledger);
     // Consent posts JSON and carries no client credentials to bill.
-    const fields = route.kind === 'consent' ? {} : formFields(body);
-    const clientId = route.kind === 'consent' ? undefined : claimedClientId(req, fields);
-    if (route.kind !== 'consent') await applyTokenLimits(route.kind, fields, clientId, clientIp, ledger);
+    const fields = isConsent ? {} : formFields(body);
+    const clientId = isConsent ? undefined : claimedClientId(req, fields);
+    if (!isConsent) await applyTokenLimits(route.kind, fields, clientId, clientIp, ledger);
 
     const permit = await runtime.admission.acquire('token');
     if (!permit) return { response: unavailableResponse(), clientId };

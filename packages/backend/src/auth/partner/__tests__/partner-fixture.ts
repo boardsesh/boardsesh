@@ -4,7 +4,7 @@ import { createAuthMiddleware } from 'better-auth/api';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { oauthClientResource, oauthSession, users } from '@boardsesh/db/schema/auth';
+import { oauthAppPolicy, oauthClientResource, oauthSession, users } from '@boardsesh/db/schema/auth';
 import { db } from '../../../db/client';
 import { createPartnerAuthority, partnerOAuthOptions, type PartnerAuthority } from '../authority';
 import type { PartnerAuthorityConfiguration } from '../configuration';
@@ -16,6 +16,9 @@ export const TEST_CONFIGURATION: PartnerAuthorityConfiguration = {
   resource: 'https://api.boardsesh.test/v1',
   webOrigin: 'https://www.boardsesh.test',
   secrets: [{ version: 1, value: 'partner-oauth-test-secret-never-deployed-0123456789' }],
+  // The backend test setup sets NEXTAUTH_SECRET to this, so cookies the real
+  // NextAuth encoder writes in a test decrypt here too.
+  nextAuthSecret: process.env.NEXTAUTH_SECRET ?? 'boardsesh-test-session-identity-secret',
 };
 
 export const TEST_OAUTH_OPTIONS = partnerOAuthOptions(TEST_CONFIGURATION);
@@ -139,6 +142,8 @@ export interface PartnerTestEnvironment {
     redirectOrigin?: string;
     /** For a confidential client. Defaults to `client_secret_post`. */
     secretMethod?: 'client_secret_post' | 'client_secret_basic';
+    /** The app's caps, or false for an app with no policy row. Defaults to decision 22's 25 and 20. */
+    policy?: { maxActiveConnections?: number; maxNewConnectionsPerDay?: number } | false;
   }): Promise<TestClient>;
   authorize(
     client: TestClient,
@@ -272,6 +277,14 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
         },
       });
       if (!registered?.client_id) throw new Error('Fixture client registration did not return an id');
+      // Registration (F12) writes this row; an app without one cannot gain connections.
+      if (options.policy !== false) {
+        await db.insert(oauthAppPolicy).values({
+          clientId: registered.client_id,
+          ownerUserId: owner.userId,
+          ...options.policy,
+        });
+      }
       if (options.linkResource ?? true) {
         await db.insert(oauthClientResource).values({
           id: randomUUID(),
