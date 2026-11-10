@@ -2399,9 +2399,11 @@ developers ([What the backend does today](#what-the-backend-does-today-f12)).
 6. Set up alerts on per-app error and `429` ratios, cap hits and lock timeouts
    (gate 7).
 
-**Stage B.** Before it starts, merge the Cloudflare Worker egress limits (#7403)
-and the `/v1` concurrency routing (#7404): every Worker-hosted partner reaches
-us from one `CF-Connecting-IP`, and without them they share one bucket. Then add
+**Stage B.** It relies on the Cloudflare Worker egress limits (#7403) and the
+`/v1` concurrency routing (#7404), both in the fast-path stack: every
+Worker-hosted partner reaches us from one `CF-Connecting-IP`, and without them
+they would share one bucket. Many separate /48s can still fill the shared `/v1`
+lane; that needs a Cloudflare rule, which is the owner's. Then add
 the two developers' ids to `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` and to the
 `developer-console` flag, send them [partner-api.md](./partner-api.md), ask them
 to connect only their own accounts, and turn every question into a doc fix.
