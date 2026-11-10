@@ -9,7 +9,7 @@ import {
   type PartnerRoute,
   type PartnerRouteKind,
 } from '../auth/partner/routes';
-import { getTrustedClientIp } from '../utils/client-ip';
+import { getPartnerLimitIdentity, type PartnerLimitIdentity } from '../utils/client-ip';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import { isApiHost } from './api-host';
@@ -32,6 +32,8 @@ const MAX_BODY_BYTES = 64 * 1024;
 const BODY_READ_DEADLINE_MS = 5000;
 const MAX_BODY_READS = 256;
 const MAX_BODY_READS_PER_IP = 8;
+/** Every Worker zone together, from Cloudflare's one Worker egress address: an eighth of all body reads. */
+const MAX_BODY_READS_PER_WORKER_EGRESS = 32;
 
 const AUTHORIZE_PER_IP = 60;
 const CONSENT_PER_IP = 60;
@@ -41,6 +43,17 @@ const REFRESH_PER_CONNECTION = 10;
 /** Not in the doc, which asks only for "an IP bound". One egress IP refreshing hourly at this rate serves 36,000 climbers. */
 const REFRESH_PER_APP_AND_IP = 600;
 const BODY_READS_PER_IP = 1200;
+/**
+ * Each Cloudflare Worker zone gets every per-address limit to itself, and all
+ * zones together get this many times it, counted on the Worker egress address.
+ * The zone header is written by the Worker, so without a ceiling one Worker
+ * claiming many zones would multiply its budget without end. Ten lets ten
+ * busy Worker-hosted apps run at their full limit at once, and holds one that
+ * forges zones to ten times what a single address may send.
+ */
+const WORKER_EGRESS_CEILING_FACTOR = 10;
+/** Names the ceiling buckets, which are never the Worker address's own header-less ones. */
+const WORKER_EGRESS_LIMIT_SUFFIX = 'worker-egress';
 
 /** Only these reach Better Auth; anything else could change how it reads the request. */
 const FORWARDED_REQUEST_HEADERS = [
@@ -229,24 +242,58 @@ function corsPolicyFor(kind: PartnerRouteKind): PartnerCorsPolicy | null {
   return kind === 'token' || kind === 'revoke' ? 'credential-free' : null;
 }
 
-/** Bounds how many bodies are being buffered, overall and for one address. */
+/**
+ * Bounds how many bodies are being buffered: overall, for one address (or one
+ * Worker zone), and for every Worker zone together.
+ */
 function createBodyReadSlots() {
   let total = 0;
-  const perAddress = new Map<string, number>();
+  const held = new Map<string, number>();
+  const take = (key: string) => held.set(key, (held.get(key) ?? 0) + 1);
+  const give = (key: string) => {
+    const remaining = (held.get(key) ?? 1) - 1;
+    if (remaining === 0) held.delete(key);
+    else held.set(key, remaining);
+  };
   return {
-    tryAcquire(clientIp: string): (() => void) | null {
-      const heldByAddress = perAddress.get(clientIp) ?? 0;
-      if (total >= MAX_BODY_READS || heldByAddress >= MAX_BODY_READS_PER_IP) return null;
+    tryAcquire({ key, sharedEgress }: PartnerLimitIdentity): (() => void) | null {
+      // Its own map key, so the zones' count never mixes with the address's header-less requests.
+      const egressKey = sharedEgress === undefined ? undefined : `${WORKER_EGRESS_LIMIT_SUFFIX}:${sharedEgress}`;
+      if (total >= MAX_BODY_READS || (held.get(key) ?? 0) >= MAX_BODY_READS_PER_IP) return null;
+      if (egressKey && (held.get(egressKey) ?? 0) >= MAX_BODY_READS_PER_WORKER_EGRESS) return null;
       total += 1;
-      perAddress.set(clientIp, heldByAddress + 1);
+      take(key);
+      if (egressKey) take(egressKey);
       return () => {
         total -= 1;
-        const remaining = (perAddress.get(clientIp) ?? 1) - 1;
-        if (remaining === 0) perAddress.delete(clientIp);
-        else perAddress.set(clientIp, remaining);
+        give(key);
+        if (egressKey) give(egressKey);
       };
     },
   };
+}
+
+/**
+ * One per-address limit: the address's (or the Worker zone's) own bucket, then,
+ * for a Worker, the ceiling on every zone together. `bucket` builds the key
+ * from the identity, so a per-app limit stays per app in the ceiling too. The
+ * zone is charged first, so a zone over its own limit spends none of the ceiling.
+ */
+async function consumePerAddress(
+  ledger: RateLimitLedger,
+  identity: PartnerLimitIdentity,
+  operation: string,
+  maxRequests: number,
+  bucket: (address: string) => string = (address) => address,
+): Promise<void> {
+  await ledger.consume(bucket(identity.key), operation, maxRequests);
+  if (identity.sharedEgress !== undefined) {
+    await ledger.consume(
+      bucket(identity.sharedEgress),
+      `${operation}-${WORKER_EGRESS_LIMIT_SUFFIX}`,
+      maxRequests * WORKER_EGRESS_CEILING_FACTOR,
+    );
+  }
 }
 
 function buildPartnerRequest(req: IncomingMessage, route: PartnerRoute, issuer: string, body: Buffer | null): Request {
@@ -345,9 +392,13 @@ export function createPartnerAuthHandler({
     }
   }
 
-  async function bufferedBody(req: IncomingMessage, clientIp: string, ledger: RateLimitLedger): Promise<Buffer> {
-    await ledger.consume(clientIp, 'oauth-body-ip', BODY_READS_PER_IP);
-    const releaseSlot = bodyReadSlots.tryAcquire(clientIp);
+  async function bufferedBody(
+    req: IncomingMessage,
+    identity: PartnerLimitIdentity,
+    ledger: RateLimitLedger,
+  ): Promise<Buffer> {
+    await consumePerAddress(ledger, identity, 'oauth-body-ip', BODY_READS_PER_IP);
+    const releaseSlot = bodyReadSlots.tryAcquire(identity);
     if (!releaseSlot) throw new PartnerBodyRefused(503);
     try {
       return await readBoundedBody(req, bodyReadDeadlineMs);
@@ -366,14 +417,15 @@ export function createPartnerAuthHandler({
     kind: PartnerRouteKind,
     fields: Record<string, string>,
     clientId: string | undefined,
-    clientIp: string,
+    identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
   ): Promise<void> {
     const bucketClientId = clientId ?? 'invalid';
+    const perApp = (address: string) => `${bucketClientId}:${address}`;
     if (kind === 'token' && fields.grant_type === 'refresh_token') {
-      await ledger.consume(`${bucketClientId}:${clientIp}`, 'oauth-refresh-ip', REFRESH_PER_APP_AND_IP);
+      await consumePerAddress(ledger, identity, 'oauth-refresh-ip', REFRESH_PER_APP_AND_IP, perApp);
     } else {
-      await ledger.consume(`${bucketClientId}:${clientIp}`, 'oauth-client', TOKEN_PER_APP_AND_IP);
+      await consumePerAddress(ledger, identity, 'oauth-client', TOKEN_PER_APP_AND_IP, perApp);
     }
     if (kind === 'token' && clientId) await ledger.check(clientId, 'oauth-client', TOKEN_PER_APP);
   }
@@ -394,18 +446,18 @@ export function createPartnerAuthHandler({
     req: IncomingMessage,
     route: PartnerRoute,
     runtime: PartnerRuntime,
-    clientIp: string,
+    identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
     requestId: string,
   ): Promise<{ response: Response; clientId: string | undefined }> {
     const isConsent = CONSENT_ROUTES.has(route.kind);
     // One bucket for both: the screen reads the details once and posts once.
-    if (isConsent) await ledger.consume(clientIp, 'oauth-consent', CONSENT_PER_IP);
-    const body = await bufferedBody(req, clientIp, ledger);
+    if (isConsent) await consumePerAddress(ledger, identity, 'oauth-consent', CONSENT_PER_IP);
+    const body = await bufferedBody(req, identity, ledger);
     // Consent posts JSON and carries no client credentials to bill.
     const fields = isConsent ? {} : formFields(body);
     const clientId = isConsent ? undefined : claimedClientId(req, fields);
-    if (!isConsent) await applyTokenLimits(route.kind, fields, clientId, clientIp, ledger);
+    if (!isConsent) await applyTokenLimits(route.kind, fields, clientId, identity, ledger);
 
     const permit = await runtime.admission.acquire('token');
     if (!permit) return { response: unavailableResponse(), clientId };
@@ -469,11 +521,11 @@ export function createPartnerAuthHandler({
     req: IncomingMessage,
     route: PartnerRoute,
     runtime: PartnerRuntime,
-    clientIp: string,
+    identity: PartnerLimitIdentity,
     ledger: RateLimitLedger,
     requestId: string,
   ): Promise<Response> {
-    await ledger.consume(clientIp, 'oauth-authorize', AUTHORIZE_PER_IP);
+    await consumePerAddress(ledger, identity, 'oauth-authorize', AUTHORIZE_PER_IP);
     const permit = await runtime.admission.acquire('authorize');
     if (!permit) return unavailableResponse();
     try {
@@ -511,7 +563,7 @@ export function createPartnerAuthHandler({
   async function serveRoute(req: IncomingMessage, res: ServerResponse, route: PartnerRoute): Promise<void> {
     const requestId = `req_${randomBytes(12).toString('base64url')}`;
     const ledger = new RateLimitLedger();
-    const clientIp = getTrustedClientIp(req);
+    const identity = getPartnerLimitIdentity(req);
     const policy = corsPolicyFor(route.kind);
     let runtime: PartnerRuntime | null = null;
     let clientId: string | undefined;
@@ -526,9 +578,9 @@ export function createPartnerAuthHandler({
         if (!runtime) response = unavailableResponse();
         else if (route.kind === 'discovery') response = await runtime.discoveryResponse({ requestId });
         else if (route.kind === 'authorize') {
-          response = await serveAuthorize(req, route, runtime, clientIp, ledger, requestId);
+          response = await serveAuthorize(req, route, runtime, identity, ledger, requestId);
         } else {
-          const outcome = await serveBodyRoute(req, route, runtime, clientIp, ledger, requestId);
+          const outcome = await serveBodyRoute(req, route, runtime, identity, ledger, requestId);
           response = outcome.response;
           clientId = outcome.clientId;
         }
