@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import {
   classifyConsentRefusal,
   fetchConsentDetails,
@@ -14,7 +15,6 @@ const DETAILS = {
     homepageUrl: 'https://sequence.example',
     privacyPolicyUrl: 'https://sequence.example/privacy',
     termsUrl: null,
-    developerName: 'Alex Developer',
     redirectHost: 'com.example.app',
   },
   scopes: [{ scope: 'profile:read', includesOnlyMeTicks: false }],
@@ -46,12 +46,11 @@ describe('fetchConsentDetails', () => {
     expect(postedJson(init)).toEqual({ oauth_query: 'client_id=bsk_sequence&sig=abc' });
   });
 
-  it('never carries the developer name the backend still returns', async () => {
+  it('reads the app details the screen shows', async () => {
     const outcome = await fetchConsentDetails('q', async () => jsonResponse(200, DETAILS));
     if (outcome.kind !== 'ready') throw new Error('expected details');
-    expect(outcome.details.client).not.toHaveProperty('developerName');
-    expect(JSON.stringify(outcome.details)).not.toContain('Alex Developer');
     expect(outcome.details.client.name).toBe('Sequence');
+    expect(outcome.details.client.redirectHost).toBe('com.example.app');
   });
 
   it('treats a body it cannot read as a failure', async () => {
@@ -71,23 +70,30 @@ describe('fetchConsentDetails', () => {
 
 describe('classifyConsentRefusal', () => {
   it.each([
-    [401, { error: 'login_required', error_description: 'Sign in to Boardsesh again to continue.' }, 'sign-in-again'],
-    [400, { error: 'invalid_request', error_description: 'This consent link is no longer valid.' }, 'expired'],
+    [401, { error: PARTNER_CONSENT_ERRORS.loginRequired, error_description: 'any text' }, 'sign-in-again'],
+    [400, { error: PARTNER_CONSENT_ERRORS.linkSpent, error_description: 'any text' }, 'expired'],
     [400, { error: 'invalid_signature' }, 'expired'],
-    [400, { error: 'invalid_request', error_description: 'This app cannot be connected.' }, 'app-unavailable'],
+    [403, { error: PARTNER_CONSENT_ERRORS.appSuspended, error_description: 'any text' }, 'app-unavailable'],
+    [403, { error: PARTNER_CONSENT_ERRORS.crossSite, error_description: 'any text' }, 'failed'],
     [403, { error: 'temporarily_unavailable', error_description: 'limit' }, 'app-full'],
     [403, { error: 'access_denied' }, 'app-unavailable'],
-    [
-      403,
-      { error: 'invalid_request', error_description: 'Consent is answered only from the Boardsesh website.' },
-      'failed',
-    ],
+    // A code the page does not know, whatever its text says.
+    [400, { error: 'invalid_request', error_description: 'This consent link is no longer valid.' }, 'failed'],
     [404, {}, 'unavailable'],
     [429, { error: 'rate_limited' }, 'busy'],
     [503, { error: 'temporarily_unavailable' }, 'busy'],
     [500, { error: 'server_error' }, 'busy'],
   ])('reads %i %j as %s', async (status, body, problem) => {
     expect(await classifyConsentRefusal(jsonResponse(status, body))).toBe(problem);
+  });
+
+  it('pins the codes the backend answers with', () => {
+    expect(PARTNER_CONSENT_ERRORS).toEqual({
+      loginRequired: 'login_required',
+      crossSite: 'invalid_request',
+      linkSpent: 'link_spent',
+      appSuspended: 'app_suspended',
+    });
   });
 
   it('reads a refusal without a JSON body by its status alone', async () => {
@@ -130,7 +136,10 @@ describe('sendConsentDecision', () => {
 
   it('turns a spent link into the expired state', async () => {
     const outcome = await sendConsentDecision('q', false, async () =>
-      jsonResponse(400, { error: 'invalid_request', error_description: 'This consent link is no longer valid.' }),
+      jsonResponse(400, {
+        error: PARTNER_CONSENT_ERRORS.linkSpent,
+        error_description: 'This consent link is no longer valid.',
+      }),
     );
     expect(outcome).toEqual({ kind: 'problem', problem: 'expired' });
   });

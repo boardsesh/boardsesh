@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { PARTNER_CONSENT_ERRORS } from '@boardsesh/auth-protocol/partner-oauth';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import type { PartnerConsentView } from '@/app/lib/partner-oauth/page-views';
 
@@ -38,7 +39,6 @@ function details(overrides: Record<string, unknown> = {}) {
       homepageUrl: 'https://sequence.example',
       privacyPolicyUrl: 'https://sequence.example/privacy',
       termsUrl: 'javascript:alert(1)',
-      developerName: 'Alex Developer',
       redirectHost: 'com.example.app',
     },
     scopes: [
@@ -104,9 +104,8 @@ describe('PartnerConsentContent', () => {
     expect(screen.getByText(/Settings › Connected apps/)).toBeTruthy();
   });
 
-  it('never names the developer, and links only ordinary web pages, each marked as opening a new tab', async () => {
+  it('links only ordinary web pages, each marked as opening a new tab', async () => {
     await renderReady();
-    expect(document.body.textContent).not.toContain('Alex Developer');
     const links = within(screen.getByRole('navigation', { name: 'About Sequence' })).getAllByRole('link');
     expect(links.map((link) => link.getAttribute('href'))).toEqual([
       'https://sequence.example/',
@@ -189,15 +188,11 @@ describe('PartnerConsentContent', () => {
   });
 
   it.each([
-    [401, { error: 'login_required' }, 'Sign in again to continue'],
-    [
-      400,
-      { error: 'invalid_request', error_description: 'This consent link is no longer valid.' },
-      'This link has expired',
-    ],
-    [400, { error: 'invalid_request', error_description: 'This app cannot be connected.' }, "This app can't connect"],
+    [401, { error: PARTNER_CONSENT_ERRORS.loginRequired }, 'Sign in again to continue'],
+    [400, { error: PARTNER_CONSENT_ERRORS.linkSpent, error_description: 'any text' }, 'This link has expired'],
+    [403, { error: PARTNER_CONSENT_ERRORS.appSuspended, error_description: 'any text' }, "This app can't connect"],
     [404, {}, "Connecting apps isn't available right now"],
-  ])('explains a %i refusal of the details', async (status, body, title) => {
+  ])('explains a %i %j refusal of the details', async (status, body, title) => {
     fetchMock.mockResolvedValueOnce(jsonResponse(status, body));
     render(<PartnerConsentContent view={CONSENT_VIEW} />);
     expect(await screen.findByRole('heading', { name: title })).toBeTruthy();
@@ -205,7 +200,7 @@ describe('PartnerConsentContent', () => {
   });
 
   it('offers sign-in again for the same request', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: 'login_required' }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: PARTNER_CONSENT_ERRORS.loginRequired }));
     render(<PartnerConsentContent view={CONSENT_VIEW} />);
     const signIn = await screen.findByRole('link', { name: 'Sign in' });
     expect(signIn.getAttribute('href')).toBe(CONSENT_VIEW.kind === 'consent' ? CONSENT_VIEW.signInPath : '');

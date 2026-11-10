@@ -13,8 +13,8 @@
  * the consent routes.
  */
 
-/** `PARTNER_ISSUER` in packages/backend/src/auth/partner/configuration.ts. */
-export const PARTNER_OAUTH_ISSUER = 'https://api.boardsesh.com/api/auth';
+import { PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+
 export const PARTNER_AUTHORIZE_URL = `${PARTNER_OAUTH_ISSUER}/oauth2/authorize`;
 export const PARTNER_CONSENT_URL = `${PARTNER_OAUTH_ISSUER}/oauth2/consent`;
 export const PARTNER_CONSENT_DETAILS_URL = `${PARTNER_OAUTH_ISSUER}/oauth2/consent-details`;
