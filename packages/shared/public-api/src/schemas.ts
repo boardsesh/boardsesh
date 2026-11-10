@@ -58,7 +58,7 @@ export const TickStatusSchema = extensibleEnum(TICK_STATUSES, {
 }).openapi('TickStatus');
 export type TickStatus = z.infer<typeof TickStatusSchema>;
 
-const GRADE_EXAMPLE = { v: 4, font: '6B+', label: '6B+/V4' };
+const GRADE_EXAMPLE = { v: 4, font: '6B+', label: '6b+/V4' };
 
 export const GradeSchema = z
   .strictObject({
@@ -67,7 +67,10 @@ export const GradeSchema = z
       example: 4,
     }),
     font: z.string().min(1).openapi({ description: 'Fontainebleau grade.', example: '6B+' }),
-    label: z.string().min(1).openapi({ description: "The board's own label for this grade.", example: '6B+/V4' }),
+    label: z.string().min(1).openapi({
+      description: "The board's own label for this grade, as its grade table spells it.",
+      example: '6b+/V4',
+    }),
   })
   .openapi('Grade', { additionalProperties: true, example: GRADE_EXAMPLE });
 export type Grade = z.infer<typeof GradeSchema>;
@@ -77,7 +80,7 @@ const TICK_CLIMB_EXAMPLE = {
   name: 'Slopey Business',
   board: { type: 'kilter', layout: 'Kilter Board Original' },
   grade: GRADE_EXAMPLE,
-  boardseshGrade: 4.2,
+  boardseshGrade: null,
 };
 
 export const TickClimbSchema = z
@@ -107,8 +110,8 @@ export const TickClimbSchema = z
     }),
     boardseshGrade: z.number().nullable().openapi({
       description:
-        'The Boardsesh universal grade, a decimal on the V scale, or `null`. Optional reading; the model may change.',
-      example: 4.2,
+        'The Boardsesh universal grade, a decimal on the V scale, or `null`. Always `null` for now: its V-scale form is not published yet. Optional reading; the model may change.',
+      example: null,
     }),
   })
   .openapi('TickClimb', { additionalProperties: true, example: TICK_CLIMB_EXAMPLE });
