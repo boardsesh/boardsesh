@@ -444,6 +444,28 @@ const LOGBOOK_SNAPSHOT_RECLAIM_GRANTS: readonly WorkerTableGrant[] = [
   { table: 'logbook_snapshot_chunks', privileges: ['DELETE'] },
 ];
 
+/**
+ * What `prune-logbook-changes` reads and writes: a change row's position and
+ * age, claimed `FOR UPDATE SKIP LOCKED` (which needs UPDATE on one column), the
+ * rows it deletes, and the retention watermark. Never whose logbook a row
+ * belongs to (`user_id`), which tick it names, or the feed generation.
+ */
+const LOGBOOK_CHANGE_PRUNE_GRANTS: readonly WorkerTableGrant[] = [
+  { table: 'logbook_changes', privileges: ['SELECT'], columns: ['seq', 'txid', 'created_at'] },
+  { table: 'logbook_changes', privileges: ['UPDATE'], columns: ['created_at'] },
+  { table: 'logbook_changes', privileges: ['DELETE'] },
+  {
+    table: 'logbook_change_watermark',
+    privileges: ['SELECT'],
+    columns: ['id', 'pruned_through_txid', 'pruned_through_seq'],
+  },
+  {
+    table: 'logbook_change_watermark',
+    privileges: ['UPDATE'],
+    columns: ['pruned_through_txid', 'pruned_through_seq', 'updated_at'],
+  },
+];
+
 const SPRAY_WALL_ART_GRANTS: readonly WorkerTableGrant[] = [
   {
     table: 'spray_walls',
@@ -519,12 +541,14 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // provider-routine-cycle (a user sync), aurora-shared-sync,
   // kilter-catalog-sync, moonboard-locations-sync.
   'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
-  // climb-stats-self-heal, user-data-export, spray-wall-art, reclaim-logbook-snapshots.
+  // climb-stats-self-heal, user-data-export, spray-wall-art, reclaim-logbook-snapshots,
+  // prune-logbook-changes.
   'maintenance-delivery': [
     ...CLIMB_STATS_SELF_HEAL_GRANTS,
     ...USER_DATA_EXPORT_GRANTS,
     ...SPRAY_WALL_ART_GRANTS,
     ...LOGBOOK_SNAPSHOT_RECLAIM_GRANTS,
+    ...LOGBOOK_CHANGE_PRUNE_GRANTS,
   ],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots, spray-wall-health,

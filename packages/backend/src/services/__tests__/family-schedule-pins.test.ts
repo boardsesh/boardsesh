@@ -29,6 +29,7 @@ const EXPECTED_SCHEDULES: Record<string, Array<{ key: string; cron: string; tz: 
   'reclaim-logbook-snapshots': [
     { key: 'quarter-hourly', cron: '2,17,32,47 * * * *', tz: 'UTC', roles: ['maintenance-delivery'] },
   ],
+  'prune-logbook-changes': [{ key: 'daily', cron: '53 3 * * *', tz: 'UTC', roles: ['maintenance-delivery'] }],
   'user-data-export': [],
   'spray-wall-art': [],
   'spray-wall-health': [{ key: 'weekly', cron: '45 8 * * 1', tz: 'UTC', roles: ['batch'] }],
