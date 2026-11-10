@@ -2094,6 +2094,13 @@
       "when": 1794299995531,
       "tag": "0298_logbook_change_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 299,
+      "version": "7",
+      "when": 1794300197601,
+      "tag": "0299_logbook_snapshots",
+      "breakpoints": true
     }
   ]
 }

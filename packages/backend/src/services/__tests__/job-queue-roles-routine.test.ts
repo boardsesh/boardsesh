@@ -759,6 +759,26 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
                        WHERE board_type = 'spray' AND climb_uuid = ${SPRAY_HEAL_CLIMB} AND angle = 40`),
     ).toBe(SPRAY_PINNED_DIFFICULTY);
 
+    // 6. The logbook snapshot reclaim, as the maintenance login: a row past its
+    //    hour goes, with its chunk. The job never reads the chunk's ticks.
+    const [expiredSnapshot] = (await database.execute(sql`
+      INSERT INTO logbook_snapshots
+        (user_id, connection_id, connection_generation, feed_generation, horizon_txid, status, expires_at)
+      VALUES (${AURORA_USER}, 'grant-test-connection', 0, gen_random_uuid(), '1'::xid8, 'ready', now() - interval '1 minute')
+      RETURNING id`)) as unknown as Array<{ id: string }>;
+    await database.execute(sql`
+      INSERT INTO logbook_snapshot_chunks (snapshot_id, chunk_index, ticks)
+      VALUES (${expiredSnapshot.id}::uuid, 0, '[]'::jsonb)`);
+    await runAs('maintenance-delivery', maintenance, 'reclaim-logbook-snapshots', {});
+    expect(
+      await count(sql`SELECT count(*)::int AS count FROM logbook_snapshots WHERE id = ${expiredSnapshot.id}::uuid`),
+    ).toBe(0);
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS count FROM logbook_snapshot_chunks WHERE snapshot_id = ${expiredSnapshot.id}::uuid`,
+      ),
+    ).toBe(0);
+
     // Nothing was refused and swallowed on the way.
     expect(logged.filter((line) => /permission denied|"sqlState":"42501"/i.test(line))).toEqual([]);
 
@@ -775,6 +795,12 @@ async function proveRoutineGrants({ full, ownerUrl }: Proof) {
       'permission denied',
     );
     await expect(maintenanceDb.executeSql('SELECT 1 FROM public.aurora_credentials LIMIT 1')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(maintenanceDb.executeSql('SELECT ticks FROM public.logbook_snapshot_chunks LIMIT 1')).rejects.toThrow(
+      'permission denied',
+    );
+    await expect(maintenanceDb.executeSql('SELECT user_id FROM public.logbook_snapshots LIMIT 1')).rejects.toThrow(
       'permission denied',
     );
   } finally {

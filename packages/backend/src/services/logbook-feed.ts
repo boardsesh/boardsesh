@@ -73,7 +73,7 @@ export type LogbookFeedState = {
   prunedThrough: LogbookFeedPosition;
 };
 
-type FeedTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+export type FeedTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 const ROW_COUNT_DIGITS = /^\d+$/;
 
@@ -84,7 +84,7 @@ function comparablePosition(position: LogbookFeedPosition): readonly [bigint, bi
   return [BigInt(position.txid), BigInt(position.seq)];
 }
 
-function positionIsBefore(left: LogbookFeedPosition, right: LogbookFeedPosition): boolean {
+export function positionIsBefore(left: LogbookFeedPosition, right: LogbookFeedPosition): boolean {
   const [leftTxid, leftSeq] = comparablePosition(left);
   const [rightTxid, rightSeq] = comparablePosition(right);
   return leftTxid < rightTxid || (leftTxid === rightTxid && leftSeq < rightSeq);
@@ -119,6 +119,39 @@ export async function readLogbookFeedState(transaction: FeedTransaction): Promis
   };
 }
 
+/**
+ * The serializer's columns plus the canonical climb. The feed and the snapshot
+ * both read exactly this, so a tick means the same thing in both.
+ */
+export const logbookFeedTickColumns = {
+  uuid: boardseshTicks.uuid,
+  boardType: boardseshTicks.boardType,
+  climbUuid: boardseshTicks.climbUuid,
+  canonicalClimbUuid: sql<string>`COALESCE(${boardClimbAliases.canonicalUuid}, ${boardseshTicks.climbUuid})`,
+  angle: boardseshTicks.angle,
+  isMirror: boardseshTicks.isMirror,
+  status: boardseshTicks.status,
+  attemptCount: boardseshTicks.attemptCount,
+  quality: boardseshTicks.quality,
+  difficulty: boardseshTicks.difficulty,
+  isBenchmark: boardseshTicks.isBenchmark,
+  comment: boardseshTicks.comment,
+  climbedAt: boardseshTicks.climbedAt,
+  createdAt: boardseshTicks.createdAt,
+  updatedAt: boardseshTicks.updatedAt,
+};
+
+/** The alias join every visible-tick read uses: `climb.id` follows catalog merges. */
+export const logbookFeedAliasJoin = and(
+  eq(boardClimbAliases.boardType, boardseshTicks.boardType),
+  eq(boardClimbAliases.aliasUuid, boardseshTicks.climbUuid),
+) as SQL;
+
+/** This climber's ticks an app can see: their own, minus Aurora twin copies. */
+export function logbookVisibleTicksFilter(userId: string): SQL {
+  return and(eq(boardseshTicks.userId, userId), notAuroraTwinDuplicate(boardseshTicks)) as SQL;
+}
+
 /** Current rows for the page's ticks, through the same twin rule as the logbook. */
 async function loadVisibleTicks(
   transaction: FeedTransaction,
@@ -128,38 +161,10 @@ async function loadVisibleTicks(
   if (tickUuids.length === 0) return new Map();
 
   const rows = await transaction
-    .select({
-      uuid: boardseshTicks.uuid,
-      boardType: boardseshTicks.boardType,
-      climbUuid: boardseshTicks.climbUuid,
-      canonicalClimbUuid: sql<string>`COALESCE(${boardClimbAliases.canonicalUuid}, ${boardseshTicks.climbUuid})`,
-      angle: boardseshTicks.angle,
-      isMirror: boardseshTicks.isMirror,
-      status: boardseshTicks.status,
-      attemptCount: boardseshTicks.attemptCount,
-      quality: boardseshTicks.quality,
-      difficulty: boardseshTicks.difficulty,
-      isBenchmark: boardseshTicks.isBenchmark,
-      comment: boardseshTicks.comment,
-      climbedAt: boardseshTicks.climbedAt,
-      createdAt: boardseshTicks.createdAt,
-      updatedAt: boardseshTicks.updatedAt,
-    })
+    .select(logbookFeedTickColumns)
     .from(boardseshTicks)
-    .leftJoin(
-      boardClimbAliases,
-      and(
-        eq(boardClimbAliases.boardType, boardseshTicks.boardType),
-        eq(boardClimbAliases.aliasUuid, boardseshTicks.climbUuid),
-      ),
-    )
-    .where(
-      and(
-        eq(boardseshTicks.userId, userId),
-        inArray(boardseshTicks.uuid, tickUuids),
-        notAuroraTwinDuplicate(boardseshTicks),
-      ) as SQL,
-    );
+    .leftJoin(boardClimbAliases, logbookFeedAliasJoin)
+    .where(and(logbookVisibleTicksFilter(userId), inArray(boardseshTicks.uuid, tickUuids)));
 
   return new Map(rows.map((row) => [row.uuid, row]));
 }

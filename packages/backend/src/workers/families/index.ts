@@ -23,6 +23,7 @@ import { userDataExportFamily } from './user-data-export';
 import { sprayWallArtFamily } from './spray-wall-art';
 import { sprayWallHealthFamily } from './spray-wall-health';
 import { communityMonthlyStatsFamily } from './community-monthly-stats';
+import { reclaimLogbookSnapshotsFamily } from './reclaim-logbook-snapshots';
 
 export { BackgroundJobError, InvalidJobPayloadError } from './types';
 export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFamilyOptions } from './types';
@@ -48,6 +49,7 @@ const FAMILY_MODULES = {
   'spray-wall-art': sprayWallArtFamily,
   'spray-wall-health': sprayWallHealthFamily,
   'community-monthly-stats': communityMonthlyStatsFamily,
+  'reclaim-logbook-snapshots': reclaimLogbookSnapshotsFamily,
 } satisfies Record<BackgroundJobFamily, BackgroundJobFamilyModule>;
 
 const registry: ReadonlyMap<string, BackgroundJobFamilyModule> = new Map(

@@ -742,20 +742,72 @@ GET /v1/logbook/changes?cursor=<opaque>&limit=100
 
 The server materializes a temporary snapshot of every visible tick for this
 climber, including ticks that predate the change-log migration or have not
-changed within retention. In one bounded `REPEATABLE READ` transaction it
-captures the current feed generation and horizon `H`, applies the same
-ownership/twin/privacy rules and serializer, and writes the immutable snapshot
-tick values plus their starting change position `(H, 0)`. It publishes the snapshot
-only after that transaction commits. A failure publishes no partial snapshot.
+changed within retention. The build is paged, not one transaction:
+
+1. `startLogbookSnapshot` captures the current feed generation and horizon `H`
+   in one short transaction and commits the snapshot row, with its starting
+   change position `(H, 0)`, before any tick is copied.
+2. `advanceLogbookSnapshotBuild` copies 200 ticks at a time, each page in its
+   own short transaction (a 5 s statement timeout, no snapshot held between
+   pages), using the same ownership/twin/privacy rules and serializer as the
+   feed. It stops after a time budget, so a request never holds a transaction
+   across the build, and any later call resumes it from the position stored on
+   the row. The app's polling drives it: while the build is unfinished the
+   route answers an empty page and `hasMore: true`, the same as an empty
+   incremental page.
+3. The snapshot publishes only when the last page commits and the row turns
+   `ready`. Until then nothing is served, and a failure publishes no partial
+   snapshot.
+
+Starting a snapshot for a connection joins the build or finished snapshot it
+already has, as long as the feed can still continue from it (same generation,
+catch-up not pruned), so a crash retry or a second worker reuses the copy. `start`
+reports whether it created or joined, and only a real creation counts against
+the creation rate limit. Anything else about the connection's old row is retired
+only once the new one is certain, so a capacity refusal leaves it in place.
+
 This is a server-side copy, not an open database transaction held across HTTP
-requests. Measure and bound its cost before launch; return a retryable error
-on resource exhaustion rather than silently truncating a large logbook.
+requests. Pages are read at different points in time; the hand-off below is why
+that is still exact. `services/logbook-snapshot.ts` is the implementation and
+the costs are under [What it costs](#what-it-costs). The route needs a small
+dedicated connection pool (build slots plus one or two), so a cold chunk cannot
+hold a connection first-party queries need.
+
+Bounds, none of them silent:
+
+- A snapshot over 250,000 ticks stops with `too_large` rather than truncating
+  the logbook, and `start` keeps answering `too_large` for an hour so a restart
+  cannot rebuild it.
+- At most 2 chunks copy at once across the cluster, enforced per chunk with
+  advisory-lock slots. A call that finds no free slot answers "still building".
+- A chunk's join plan is forced to nested loops, because the planner's merge
+  anti-join on the twin rule cost in proportion to the chunk's position, and
+  chunks walk `(updated_at, id)`, which an existing index serves without reading
+  a group of equal timestamps whole.
+- The statement timeout stays at 5 s, with `idle_in_transaction_session_timeout`
+  at 10 s so a frozen client cannot keep a slot. A worst-case fully cold chunk
+  needs about 17 s at 30 ms a page, so it times out three times and succeeds on
+  the fourth: the pages already read stay in shared buffers.
+- A timeout is logged with the snapshot id only, and the build sits out 5 s so it
+  cannot hold a slot back to back. Twenty timeouts in a row with no chunk copied
+  end the build as `stalled`, and `start` keeps answering `stalled` for an hour.
+  That shape cannot finish: Aurora twins by the tens of thousands at one instant,
+  where the anti-join is quadratic in hidden rows. A slow disk resets the count
+  every time it manages a chunk.
+- Every snapshot's ticks together are capped at 25 million until expired ones
+  are reclaimed. `start` refuses at the cap and a running build waits at it.
+- A `start` that cannot get its locks in time answers `busy`, not an error.
 
 Snapshot cursors identify that snapshot and its next page. Snapshots are bound
-to the authenticated app/climber connection, checked on every page, expire
-after one hour, and are reclaimed by a job. Responses use `Cache-Control:
-no-store`. Rate-limit new snapshot creation separately from incremental reads;
-one sync worker per connection avoids accidental duplicate full downloads.
+to the authenticated app/climber connection, checked on every page. The database
+clock enforces two limits whether or not the reclaim job has run: a build has 3
+hours, and a finished snapshot is readable for one hour. Expired rows are reclaimed by the
+`reclaim-logbook-snapshots` worker family (every 15 minutes, at most 200 batches
+a run, each batch up to 100 snapshots and 500 chunks, safe to retry or run
+twice). Rows cascade from `users`, so a deleted account's snapshot goes with it.
+Responses use `Cache-Control: no-store`. Rate-limit new snapshot creation
+separately from incremental reads; one sync worker per connection avoids
+accidental duplicate full downloads.
 Authorization and privacy always use current policy at page delivery: check the
 connection again, and reapply the serializer's current public-metadata redaction
 in that page's read transaction. A wall made private after snapshot creation
@@ -765,11 +817,31 @@ metadata; fail closed if current authorization cannot be checked.
 
 The final snapshot page returns the ordinary change cursor `(H, 0)` and
 `hasMore: true`, even if it contained no ticks. The client must then drain
-changes until `hasMore: false` before publishing the replacement copy. All
-transactions below `H` had completed in the snapshot; every write that could
-commit later has a transaction ID at or above `H` and will be replayed. Some
-already visible writes at or above `H` are replayed too; upserts/removals make
-that harmless. Twin visibility and alias changes follow the same trigger rules.
+changes until `hasMore: false` before publishing the replacement copy.
+
+**Why a paged snapshot plus the feed is exact.** `H` is taken first, and its
+transaction commits before any page is copied.
+
+1. Every copied page reads a snapshot taken after `H` was read, so it sees every
+   transaction below `H`: `H` is `pg_snapshot_xmin`, so nothing below it can
+   still be in flight when the first page runs.
+2. A write that commits later has a transaction ID at or above `H`, and the feed
+   serves every change row at or above `H`, in any commit order (`Why it cannot
+   skip a change`). The trigger writes that row in the writer's own transaction,
+   so a page cannot have seen a write the feed will miss.
+3. Either a change is below `H`, in which case every page sees it, or it is at
+   or above `H`, in which case the feed replays it. There is no third case, so
+   no page has to see a consistent moment and no snapshot stays open across the
+   build. Twin visibility and alias changes go through the same two paths, since
+   the same triggers log them.
+
+Pages are ordered by `(updated_at, id)`. The proof above does not depend on the
+order. A tick edited during the build may be copied twice (the later copy is the
+newer state) or not at all (the feed replays it), and a tick deleted mid-build
+may be copied before
+the deletion arrives as `tick.deleted`. Upserts and removals make all of that
+harmless: at least once, in the order the guarantees below describe. Some
+already visible writes at or above `H` are replayed too.
 
 Validate the saved change position against the pruning watermark in the same
 snapshot as every incremental page. If history necessary for catch-up was
@@ -1042,6 +1114,39 @@ tick write already produces, at most about 22 MB a day.
 Account deletion removes the climber's rows in its own transaction, after the
 cascade into `boardsesh_ticks` has written them.
 
+The bootstrap snapshot, measured the same way (PostgreSQL 18.6 in a 4 GB
+container with 1 GB of shared buffers, the 15 production indexes), through the
+real service code with `auto_explain` on every chunk statement. The worst case:
+99,500 ticks, all Aurora-pull and scattered across a 1.5M-tick heap, with 300,000
+rows in `board_climb_aliases` so every tick has an alias to fetch:
+
+| Step | Cost |
+| --- | --- |
+| Start (`H` and the row) | 9.5 ms, one transaction |
+| Build | 498 chunks, one short transaction each, every one a Nested Loop Anti Join. p50 9 ms, p95 12 ms on local disk. Total about 5 s |
+| Buffers per chunk | About 1,800 warm, at any position. Before the join plan was forced, a middle chunk of an all-Aurora logbook touched 50,350 |
+| Cold pages, every chunk evicted first | Worst 562, typical 545, 270,477 for the build. With an empty alias table the worst is 219. Before the fix one chunk read 26,766 |
+| Cold pages, evicted once before the build | About 36,300 for the build: 551 for the first chunk, then falling as the build warms its own pages |
+| Ticks sharing one instant | 10,000 JSON imports: 180 ms a chunk. 5,000 and 10,000 Aurora rows: 1 to 2 s in all. Ordered by `climbed_at`, 5,000 never finished |
+| Storage | 9.6 MB including TOAST, 96 bytes a tick; a 250,000-tick snapshot at the cap is about 24 MB |
+| WAL | 9.8 MB for the build, 98 bytes a tick |
+| Download | 501 pages, p50 2.8 ms, 1.5 s total |
+| Reclaim | 11 ms for the whole snapshot, 290 kB of WAL |
+
+The cost that matters on the 4 GB primary is the page reads. Using the 30 ms
+figure for one cold page (#5994, measured during a Railway storage incident, so
+probably high), the worst chunk is 16.9 s, so a fully cold chunk times out three
+times and succeeds on the fourth call. Twenty timeouts in a row is 100 s of reads,
+about 3,300 cold pages against a worst chunk of 562, so a legitimately cold build
+does not reach the limit unless the disk is slower than 180 ms a page, and then a
+build should stop anyway. A 100,000-tick build from a cold start is about 18
+minutes, or 2 h 15 min if every chunk were read fully cold. The 250,000-tick cap
+is about 45 minutes from a cold start and fits the 3-hour deadline; if every one
+of its chunks were read fully cold it would need 5.6 h, and that build expires and
+is retried. Two slots mean at most two connections are ever busy with this. These
+are local-disk measurements, so the 30 ms lines are inference, not production
+numbers.
+
 The phone's own sync (`syncTicks`, `syncDeletions`) is untouched. It could
 move onto the same log later and lose its own long-transaction hole; that is
 a separate decision for the offline-sync owners.
@@ -1118,7 +1223,7 @@ What LEGAL.md implies:
 | API, per connection | 120 requests/min per (app, climber) | `api:<clientId>:<userId>` |
 | API, per app | 6,000 requests/min across all its climbers | `api:<clientId>` |
 | Page size | 200 | |
-| Snapshot creation | 2 per minute per connection, one active build | A retry restarts safely; incomplete snapshots never become a partial full download |
+| Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |
 | Request body | 64 KB | |
 
@@ -1146,8 +1251,8 @@ higher tier, which by then is a conversation worth having.
 Every logbook read is scoped by `user_id` on an index that leads with it; there is
 no query in the API whose cost grows with the size of the catalog or the
 number of climbers. Bootstrap also makes a temporary complete snapshot: 10,000
-ticks is 50 pages plus one server-side snapshot build. Bound snapshot storage,
-concurrency and build time, and measure its transaction cost. Per-page climb
+ticks is 50 pages and 50 short build transactions. The bounds and the cost of a
+100,000-tick account are in [What it costs](#what-it-costs). Per-page climb
 lookups are batched. Measure p95 per route
 before milestone 2 opens registration, against the read replica numbers in
 [postgres-query-costs.md](./postgres-query-costs.md).

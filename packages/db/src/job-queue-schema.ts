@@ -410,6 +410,20 @@ const USER_DATA_EXPORT_GRANTS: readonly WorkerTableGrant[] = [
  * visibility or public-copy column: the job renders what the backend queued
  * and decides nothing about who may see it.
  */
+/**
+ * What `reclaim-logbook-snapshots` reads and writes: a snapshot's identity and
+ * expiry, claimed `FOR UPDATE SKIP LOCKED` (which needs an UPDATE grant), and
+ * the rows it deletes. Column grants keep a chunk's `ticks` and a snapshot's
+ * binding out of reach; the job never needs them.
+ */
+const LOGBOOK_SNAPSHOT_RECLAIM_GRANTS: readonly WorkerTableGrant[] = [
+  { table: 'logbook_snapshots', privileges: ['SELECT'], columns: ['id', 'expires_at'] },
+  { table: 'logbook_snapshots', privileges: ['UPDATE'], columns: ['expires_at'] },
+  { table: 'logbook_snapshots', privileges: ['DELETE'] },
+  { table: 'logbook_snapshot_chunks', privileges: ['SELECT'], columns: ['snapshot_id', 'chunk_index'] },
+  { table: 'logbook_snapshot_chunks', privileges: ['DELETE'] },
+];
+
 const SPRAY_WALL_ART_GRANTS: readonly WorkerTableGrant[] = [
   {
     table: 'spray_walls',
@@ -485,8 +499,13 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // provider-routine-cycle (a user sync), aurora-shared-sync,
   // kilter-catalog-sync, moonboard-locations-sync.
   'routine-provider': [...PROVIDER_SYNC_GRANTS, ...ROUTINE_PROVIDER_EXTRA_GRANTS],
-  // climb-stats-self-heal, user-data-export, spray-wall-art.
-  'maintenance-delivery': [...CLIMB_STATS_SELF_HEAL_GRANTS, ...USER_DATA_EXPORT_GRANTS, ...SPRAY_WALL_ART_GRANTS],
+  // climb-stats-self-heal, user-data-export, spray-wall-art, reclaim-logbook-snapshots.
+  'maintenance-delivery': [
+    ...CLIMB_STATS_SELF_HEAL_GRANTS,
+    ...USER_DATA_EXPORT_GRANTS,
+    ...SPRAY_WALL_ART_GRANTS,
+    ...LOGBOOK_SNAPSHOT_RECLAIM_GRANTS,
+  ],
   // refresh-recommendations, refresh-hold-features, refresh-climb-grades,
   // refresh-climb-neighbors, export-board-snapshots, spray-wall-health,
   // community-monthly-stats.

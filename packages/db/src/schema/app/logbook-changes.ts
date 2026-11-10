@@ -5,7 +5,7 @@ import { sql } from 'drizzle-orm';
  * Postgres `xid8`: a 64-bit transaction id that never wraps. Read and written
  * as a decimal string because it can exceed `Number.MAX_SAFE_INTEGER`.
  */
-const xid8 = customType<{ data: string; driverData: string }>({
+export const xid8 = customType<{ data: string; driverData: string }>({
   dataType() {
     return 'xid8';
   },
