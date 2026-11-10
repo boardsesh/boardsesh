@@ -73,7 +73,7 @@ const partnerRevocationTriggerSchema = readFileSync(
 );
 // Binds snapshots to their partner connection; needs both tables above.
 const logbookSnapshotsConnectionSchema = readFileSync(
-  new URL('../../../db/drizzle/0300_logbook_snapshots_connection_fk.sql', import.meta.url),
+  new URL('../../../db/drizzle/0301_logbook_snapshots_connection_fk.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(
