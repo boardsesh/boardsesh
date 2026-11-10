@@ -616,8 +616,8 @@ describe('partner OAuth on, in the real server', () => {
         code_challenge_methods_supported: ['S256'],
         authorization_response_iss_parameter_supported: true,
       });
-      // Gate 10: only shipped scopes. logbook:read joins with its route (L4).
-      expect(metadata.scopes_supported).toEqual(['profile:read', 'offline_access']);
+      // Gate 10: only shipped scopes. logbook:read joined with its route (L4).
+      expect(metadata.scopes_supported).toEqual(['logbook:read', 'profile:read', 'offline_access']);
       expect(metadata).not.toHaveProperty('introspection_endpoint');
       expect(metadata).not.toHaveProperty('userinfo_endpoint');
       expect(metadata).not.toHaveProperty('registration_endpoint');
@@ -980,11 +980,11 @@ describe('partner OAuth on, in the real server', () => {
     });
 
     it(
-      'offers no scope the API does not serve: logbook:read waits for its route',
+      'offers no scope the API does not serve: workouts:write waits for its route',
       async () => {
         const app = await registerApp();
         const climber = await newClimber();
-        const authorization = await startAuthorization(app, { scopes: ['logbook:read', 'offline_access'] });
+        const authorization = await startAuthorization(app, { scopes: ['workouts:write', 'offline_access'] });
         const { location } = await openAuthorize(authorization.url, climber);
         expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(false);
         const target = new URL(location, ISSUER);
@@ -2065,7 +2065,7 @@ describe('partner OAuth on, in the real server', () => {
         expect((await refresh(app, connection.tokens.refresh_token)).ok).toBe(false);
         const afterSuspension = await openAuthorize((await startAuthorization(app)).url, climber);
         expect(afterSuspension.location.startsWith(CONSENT_PAGE)).toBe(false);
-        expect((await postConsentRoute(CONSENT_DETAILS_PATH, openScreen.location, climber)).reply.status).toBe(400);
+        expect((await postConsentRoute(CONSENT_DETAILS_PATH, openScreen.location, climber)).reply.status).toBe(403);
         // Suspension is not revocation.
         expect((await connectionRow(connection)).revokedAt).toBeNull();
 
