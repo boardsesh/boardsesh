@@ -7548,6 +7548,12 @@ export type Query = {
    * audit list (admin only). List-only; no bulk action.
    */
   orphanGyms: OrphanGymConnection;
+  /**
+   * Whether partner apps are switched on (any PARTNER_OAUTH_MODE but off), the same
+   * value as ConnectedApps.partnerAppsEnabled. Screens that only need to know whether
+   * to mention connected apps read this. It changes only with a deploy.
+   */
+  partnerAppsEnabled: Scalars['Boolean']['output'];
   /** List pending gym ownership claims for the admin review queue (admin only). */
   pendingGymClaims: GymClaimConnection;
   /**
@@ -13915,6 +13921,10 @@ export type GetMyConnectedAppsQuery = {
   };
 };
 
+export type GetPartnerAppsEnabledQueryVariables = Exact<{ [key: string]: never }>;
+
+export type GetPartnerAppsEnabledQuery = { __typename?: 'Query'; partnerAppsEnabled: boolean };
+
 export type DisconnectAppMutationVariables = Exact<{
   connectionId: Scalars['ID']['input'];
 }>;
@@ -20111,6 +20121,20 @@ export const GetMyConnectedAppsDocument = {
     },
   ],
 } as unknown as DocumentNode<GetMyConnectedAppsQuery, GetMyConnectedAppsQueryVariables>;
+export const GetPartnerAppsEnabledDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetPartnerAppsEnabled' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [{ kind: 'Field', name: { kind: 'Name', value: 'partnerAppsEnabled' } }],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetPartnerAppsEnabledQuery, GetPartnerAppsEnabledQueryVariables>;
 export const DisconnectAppDocument = {
   kind: 'Document',
   definitions: [

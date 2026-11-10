@@ -134,6 +134,8 @@ export default function SettingsLayout() {
         <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
         <Stack.Screen name="export" options={{ title: tSettings('export.title') }} />
         <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
+        {/* No title here: the page names itself after the app it shows. */}
+        <Stack.Screen name="connected-app" />
         {/* i18n-ignore-next-line — preview-only screen */}
         <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
         <Stack.Screen name="dev-servers" options={{ title: t('mobile.settings.metroServersTitle') }} />

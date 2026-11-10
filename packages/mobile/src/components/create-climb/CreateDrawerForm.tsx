@@ -7,6 +7,7 @@ import { SwitchRow } from '../SwitchRow';
 import { offersNoKickboardRule } from './spray-climb-rules';
 import { textStyles as fallbackTextStyles } from '../../theme/typography';
 import { useTheme } from '../../providers/theme-provider';
+import { usePartnerAppsEnabled } from '../../lib/graphql/hooks/use-connected-apps';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 const DESCRIPTION_MAX = 500;
@@ -55,6 +56,9 @@ export function CreateDrawerForm({
 }: CreateDrawerFormProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, textStyles = fallbackTextStyles } = useTheme();
+  // Once partner apps are on, a draft is unlisted rather than private: apps
+  // connected by climbers who log it can see it (#7387). Off, nothing changes.
+  const partnerAppsEnabled = usePartnerAppsEnabled();
 
   const inputStyle = useMemo<TextStyle>(
     () => ({
@@ -118,17 +122,25 @@ export function CreateDrawerForm({
         />
         <SwitchRow
           label={t('mobile.create.settings.draftLabel')}
-          description={
-            boardName === 'spray'
-              ? t('mobile.create.settings.wallDraftDescription')
-              : t('mobile.create.settings.draftDescription')
-          }
+          description={draftDescription(boardName, partnerAppsEnabled, t)}
           value={isDraft}
           onValueChange={onChangeIsDraft}
         />
       </View>
     </View>
   );
+}
+
+/** The draft switch's description: on a Spraywall or a board, with the apps line once partner apps are on. */
+function draftDescription(boardName: string, partnerAppsEnabled: boolean, t: (key: string) => string): string {
+  if (boardName === 'spray') {
+    return partnerAppsEnabled
+      ? t('mobile.create.settings.wallDraftDescriptionApps')
+      : t('mobile.create.settings.wallDraftDescription');
+  }
+  return partnerAppsEnabled
+    ? t('mobile.create.settings.draftDescriptionApps')
+    : t('mobile.create.settings.draftDescription');
 }
 
 const styles = StyleSheet.create({

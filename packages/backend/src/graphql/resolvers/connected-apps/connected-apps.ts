@@ -77,6 +77,9 @@ function failed(operation: string, error: unknown): GraphQLError {
 }
 
 export const connectedAppsQueries = {
+  /** No sign-in needed: the mode is not a secret, and every partner route already shows it. */
+  partnerAppsEnabled: (): boolean => partnerMode() !== 'off',
+
   myConnectedApps: async (_: unknown, _args: unknown, ctx: ConnectionContext): Promise<ConnectedApps> => {
     const userId = signedInClimber(ctx);
     let records: ConnectedAppRecord[];

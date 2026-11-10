@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Partner apps are off: the draft and Spraywall notes stay as they were (#7387).
+vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({ usePartnerAppsEnabled: () => false }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };

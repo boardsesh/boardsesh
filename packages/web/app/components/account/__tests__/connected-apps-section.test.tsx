@@ -106,21 +106,39 @@ describe('ConnectedAppsSection', () => {
     ).toBeTruthy();
   });
 
-  it('lists each app with what it reads and when, and the unlisted-climbs line under the logbook', async () => {
+  it('lists each app by name and last use, with no detail on the list itself', async () => {
     mocks.data = twoApps();
     renderSection();
     const sequence = await screen.findByTestId('connected-app-connection-sequence');
-    expect(within(sequence).getByRole('heading', { name: 'Sequence' })).toBeTruthy();
-    expect(sequence.textContent).toContain('Connected Oct 12, 2026');
-    expect(sequence.textContent).toContain('Last used 3 hours ago');
-    expect(sequence.textContent).toContain('Sees every tick in your logbook, on every board');
-    expect(sequence.textContent).toContain(
+    expect(sequence.textContent).toBe('SequenceLast used 3 hours ago');
+    expect(screen.getByTestId('connected-app-connection-divepeaks').textContent).toBe('DivePeaksNot used yet');
+    expect(screen.getByRole('heading', { name: 'Connected apps' })).toBeTruthy();
+    expect(screen.queryByText('Sees every tick in your logbook, on every board')).toBeNull();
+  });
+
+  it('opens an app to what it can see and when, with the unlisted-climbs line under the logbook', async () => {
+    mocks.data = twoApps();
+    renderSection();
+    fireEvent.click(await screen.findByTestId('connected-app-connection-sequence'));
+    const dialog = await screen.findByRole('dialog', { name: 'Sequence' });
+    expect(dialog.textContent).toContain('Connected Oct 12, 2026');
+    expect(dialog.textContent).toContain('Last used 3 hours ago');
+    expect(within(dialog).getByRole('heading', { name: 'What Sequence can see' })).toBeTruthy();
+    expect(dialog.textContent).toContain('Sees every tick in your logbook, on every board');
+    expect(dialog.textContent).toContain(
       'Including unlisted climbs and drafts in your logbook, even ones set by others',
     );
-    expect(sequence.textContent).toContain('Sees your display name and profile photo');
-    expect(screen.getByTestId('connected-app-connection-divepeaks').textContent).toContain('Not used yet');
-    expect(screen.getByRole('heading', { name: 'Connected apps' })).toBeTruthy();
+    expect(dialog.textContent).toContain('Sees your display name and profile photo');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+
+  async function openDisconnect(name: string) {
+    fireEvent.click(await screen.findByTestId(`connected-app-connection-${name.toLowerCase()}`));
+    const detail = await screen.findByRole('dialog', { name });
+    fireEvent.click(within(detail).getByRole('button', { name: `Disconnect ${name}` }));
+    return screen.findByRole('dialog', { name: `Disconnect ${name}?` });
+  }
 
   it('asks before it disconnects, then removes the row', async () => {
     mocks.data = twoApps();
@@ -129,13 +147,13 @@ describe('ConnectedAppsSection', () => {
       return { disconnectApp: true };
     });
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Sequence' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Disconnect Sequence?' });
-    expect(dialog.textContent).toContain('Anything it already copied stays with the app.');
+    const confirm = await openDisconnect('Sequence');
+    expect(confirm.textContent).toContain('Anything it already copied stays with the app.');
     expect(mocks.disconnect).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Disconnect' }));
     await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith({ connectionId: 'connection-sequence' }));
     await waitFor(() => expect(screen.queryByTestId('connected-app-connection-sequence')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(screen.getByTestId('connected-app-connection-divepeaks')).toBeTruthy();
     expect(mocks.showMessage).toHaveBeenCalledWith('Sequence disconnected', 'success');
   });
@@ -144,21 +162,20 @@ describe('ConnectedAppsSection', () => {
     mocks.data = twoApps();
     mocks.disconnect.mockRejectedValue(new Error('offline'));
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect DivePeaks' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Disconnect' }));
+    const confirm = await openDisconnect('DivePeaks');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
       expect(mocks.showMessage).toHaveBeenCalledWith("Couldn't disconnect DivePeaks. Try again.", 'error'),
     );
     expect(screen.getByTestId('connected-app-connection-divepeaks')).toBeTruthy();
   });
 
-  it('cancels without disconnecting', async () => {
+  it('goes back to the app without disconnecting on Cancel', async () => {
     mocks.data = twoApps();
     renderSection();
-    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Sequence' }));
-    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const confirm = await openDisconnect('Sequence');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('dialog', { name: 'Sequence' })).toBeTruthy();
     expect(mocks.disconnect).not.toHaveBeenCalled();
   });
 });

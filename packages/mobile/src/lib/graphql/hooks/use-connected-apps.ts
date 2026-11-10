@@ -3,14 +3,40 @@ import { withoutConnectedApp } from '@boardsesh/connected-apps';
 import {
   DISCONNECT_APP,
   GET_MY_CONNECTED_APPS,
+  GET_PARTNER_APPS_ENABLED,
   type DisconnectAppResponse,
   type DisconnectAppVariables,
   type GetMyConnectedAppsResponse,
+  type GetPartnerAppsEnabledResponse,
 } from '@boardsesh/graphql/operations/connected-apps';
 import { useAuth } from '../../../providers/auth-provider';
 import { getHttpClient } from '../client';
 
 export const CONNECTED_APPS_QUERY_KEY = ['myConnectedApps'] as const;
+export const PARTNER_APPS_ENABLED_QUERY_KEY = ['partnerAppsEnabled'] as const;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Whether partner apps are switched on, for the notes that mention them (the
+ * draft switch, the Spraywall visibility picker). The answer changes only with a
+ * deploy, so one request an hour at most, shared by every screen that asks; never
+ * one per editor open. False until it answers, offline, or on any failure, so a
+ * climber sees nothing new while the mode is off.
+ */
+export function usePartnerAppsEnabled(): boolean {
+  const { isAuthenticated } = useAuth();
+  const { data } = useQuery({
+    queryKey: PARTNER_APPS_ENABLED_QUERY_KEY,
+    queryFn: () => getHttpClient().request<GetPartnerAppsEnabledResponse>(GET_PARTNER_APPS_ENABLED),
+    select: (response) => response.partnerAppsEnabled,
+    enabled: isAuthenticated,
+    staleTime: HOUR_MS,
+    gcTime: 24 * HOUR_MS,
+    retry: false,
+  });
+  return data === true;
+}
 
 /**
  * The apps the signed-in climber connected through partner OAuth (#6981 F16).

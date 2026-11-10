@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   confirmResult: true,
   confirm: vi.fn((_options: unknown) => Promise.resolve(mocks.confirmResult)),
+  push: vi.fn(),
+  back: vi.fn(),
+  params: {} as { id?: string },
+  title: undefined as string | undefined,
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({
@@ -28,6 +32,20 @@ vi.mock('../../../providers/toast-provider', () => ({
 vi.mock('../../../providers/dialog-provider', () => ({
   useConfirm: () => mocks.confirm,
 }));
+vi.mock('../../../lib/routing/scoped-navigation', () => ({ scopedRouter: { push: mocks.push } }));
+vi.mock('expo-router', () => ({
+  Stack: {
+    Screen: ({ options }: { options?: { title?: string } }) => {
+      mocks.title = options?.title;
+      return null;
+    },
+  },
+  useLocalSearchParams: () => mocks.params,
+  useRouter: () => ({ back: mocks.back, canGoBack: () => true }),
+}));
+vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
+  useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
+}));
 vi.mock('../../../lib/clock', () => ({ nowMs: () => Date.parse('2026-11-10T12:00:00Z') }));
 vi.mock('../../../lib/format-relative-time', () => ({ formatRelativeTime: (iso: string) => `ago(${iso})` }));
 
@@ -41,11 +59,17 @@ vi.mock('react-i18next', () => ({
 type RNViewProps = { children?: ReactNode; testID?: string };
 vi.mock('react-native', () => ({
   View: ({ children, testID }: RNViewProps) => createElement('div', { 'data-testid': testID }, children),
+  ScrollView: ({ children, testID }: RNViewProps) => createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { secondaryGroupedBackground: '#fff', tertiaryGroupedBackground: '#eee', secondaryLabel: '#888' },
+    systemColors: {
+      groupedBackground: '#eee',
+      secondaryGroupedBackground: '#fff',
+      tertiaryGroupedBackground: '#ddd',
+      secondaryLabel: '#888',
+    },
     brandColors: { primary: '#6D28D9', warning: '#B45309' },
   }),
 }));
@@ -53,15 +77,18 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+vi.mock('../../ActivityIndicator', () => ({
+  ActivityIndicator: () => createElement('div', { 'data-spinner': 'true' }),
+}));
 vi.mock('../../SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', {}, title),
 }));
-type ButtonMockProps = {
-  title: string;
-  accessibilityLabel?: string;
-  onPress?: () => void;
-  loading?: boolean;
-};
+type ListRowMockProps = { title: string; subtitle?: string; onPress?: () => void; testID?: string };
+vi.mock('../../ListRow', () => ({
+  ListRow: ({ title, subtitle, onPress, testID }: ListRowMockProps) =>
+    createElement('button', { onClick: onPress, 'data-testid': testID }, `${title}|${subtitle ?? ''}`),
+}));
+type ButtonMockProps = { title: string; accessibilityLabel?: string; onPress?: () => void; loading?: boolean };
 vi.mock('../../Button', () => ({
   Button: ({ title, accessibilityLabel, onPress, loading }: ButtonMockProps) =>
     createElement(
@@ -76,6 +103,7 @@ vi.mock('../../../theme/tokens', () => ({
 }));
 
 import { PartnerAppsSection } from '../PartnerAppsSection';
+import { ConnectedAppDetailScreen } from '../ConnectedAppDetailScreen';
 
 const TWO_APPS: ConnectedApps = {
   partnerAppsEnabled: true,
@@ -101,16 +129,22 @@ const TWO_APPS: ConnectedApps = {
   ],
 };
 
-describe('PartnerAppsSection', () => {
-  beforeEach(() => {
-    mocks.isAuthenticated = true;
-    mocks.data = undefined;
-    mocks.mutate.mockReset();
-    mocks.showToast.mockReset();
-    mocks.confirm.mockClear();
-    mocks.confirmResult = true;
-  });
+const SEQUENCE_DISCONNECT = 'settings:integrations.partnerApps.disconnectA11y {"app":"Sequence"}';
 
+beforeEach(() => {
+  mocks.isAuthenticated = true;
+  mocks.data = undefined;
+  mocks.mutate.mockReset();
+  mocks.showToast.mockReset();
+  mocks.confirm.mockClear();
+  mocks.confirmResult = true;
+  mocks.push.mockReset();
+  mocks.back.mockReset();
+  mocks.params = {};
+  mocks.title = undefined;
+});
+
+describe('PartnerAppsSection', () => {
   it('draws nothing before the list arrives, or signed out', () => {
     expect(render(<PartnerAppsSection />).container.innerHTML).toBe('');
     mocks.isAuthenticated = false;
@@ -130,28 +164,63 @@ describe('PartnerAppsSection', () => {
     expect(container.textContent).toContain('settings:integrations.partnerApps.empty');
   });
 
-  it('shows each app with what it reads, the unlisted-climbs line, when it connected and was used', () => {
+  it('lists one compact row per app, and a row opens that app', () => {
     mocks.data = TWO_APPS;
-    const { container, getByTestId } = render(<PartnerAppsSection />);
-    const sequence = getByTestId('partner-app-connection-sequence');
-    expect(sequence.textContent).toContain('Sequence');
-    expect(sequence.textContent).toContain('settings:integrations.partnerApps.scopes.logbookRead');
-    expect(sequence.textContent).toContain('settings:integrations.partnerApps.scopes.logbookUnlisted');
-    expect(sequence.textContent).toContain('settings:integrations.partnerApps.lastUsed');
-    const divePeaks = getByTestId('partner-app-connection-divepeaks');
-    expect(divePeaks.textContent).toContain('settings:integrations.partnerApps.notUsedYet');
-    expect(divePeaks.textContent).toContain('settings:integrations.partnerApps.suspended');
-    expect(container.textContent).toContain('settings:integrations.partnerApps.footer');
+    const { getByTestId, container } = render(<PartnerAppsSection />);
+    expect(getByTestId('partner-app-connection-sequence').textContent).toBe(
+      'Sequence|settings:integrations.partnerApps.lastUsed {"time":"ago(2026-11-10T09:00:00.000Z)"}',
+    );
+    expect(getByTestId('partner-app-connection-divepeaks').textContent).toBe(
+      'DivePeaks|settings:integrations.partnerApps.suspendedShort',
+    );
+    // What an app can see lives one tap in.
+    expect(container.textContent).not.toContain('settings:integrations.partnerApps.scopes.logbookRead');
+    fireEvent.click(getByTestId('partner-app-connection-divepeaks'));
+    expect(mocks.push).toHaveBeenCalledWith({
+      pathname: '/settings/connected-app',
+      params: { id: 'connection-divepeaks' },
+    });
+  });
+});
+
+describe('ConnectedAppDetailScreen', () => {
+  it('shows what the app can see, the unlisted-climbs line, and when it connected and was used', () => {
+    mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-sequence' };
+    const { getByTestId } = render(<ConnectedAppDetailScreen />);
+    const detail = getByTestId('connected-app-detail').textContent ?? '';
+    expect(mocks.title).toBe('Sequence');
+    expect(detail).toContain('settings:integrations.partnerApps.scopesHeading {"app":"Sequence"}');
+    expect(detail).toContain('settings:integrations.partnerApps.scopes.logbookRead');
+    expect(detail).toContain('settings:integrations.partnerApps.scopes.logbookUnlisted');
+    expect(detail).toContain('settings:integrations.partnerApps.connected');
+    expect(detail).toContain('settings:integrations.partnerApps.lastUsed');
+    expect(detail).toContain('settings:integrations.partnerApps.footer');
   });
 
-  it('asks first, then disconnects and reports it', async () => {
+  it('explains a suspended app', () => {
     mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-divepeaks' };
+    const { getByTestId } = render(<ConnectedAppDetailScreen />);
+    expect(getByTestId('connected-app-detail').textContent).toContain('settings:integrations.partnerApps.suspended');
+  });
+
+  it('says so when the app is no longer connected', () => {
+    mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-gone' };
+    const { container } = render(<ConnectedAppDetailScreen />);
+    expect(container.textContent).toBe('settings:integrations.partnerApps.gone');
+  });
+
+  it('asks first, then disconnects, reports it and goes back', async () => {
+    mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-sequence' };
     mocks.mutate.mockImplementation((_variables, callbacks) => {
       callbacks.onSuccess?.();
       callbacks.onSettled?.();
     });
-    const { getByLabelText } = render(<PartnerAppsSection />);
-    fireEvent.click(getByLabelText('settings:integrations.partnerApps.disconnectA11y {"app":"Sequence"}'));
+    const { getByLabelText } = render(<ConnectedAppDetailScreen />);
+    fireEvent.click(getByLabelText(SEQUENCE_DISCONNECT));
     await waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
     expect(mocks.confirm).toHaveBeenCalledWith({
       title: 'settings:integrations.partnerApps.disconnectConfirmTitle {"app":"Sequence"}',
@@ -165,24 +234,28 @@ describe('PartnerAppsSection', () => {
       'settings:integrations.partnerApps.disconnected {"app":"Sequence"}',
       'success',
     );
+    expect(mocks.back).toHaveBeenCalledTimes(1);
   });
 
   it('does nothing when the climber cancels', async () => {
     mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-sequence' };
     mocks.confirmResult = false;
-    const { getByLabelText } = render(<PartnerAppsSection />);
-    fireEvent.click(getByLabelText('settings:integrations.partnerApps.disconnectA11y {"app":"DivePeaks"}'));
+    const { getByLabelText } = render(<ConnectedAppDetailScreen />);
+    fireEvent.click(getByLabelText(SEQUENCE_DISCONNECT));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(1));
     expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 
-  it('says so when Disconnect fails', async () => {
+  it('stays on the app and says so when Disconnect fails', async () => {
     mocks.data = TWO_APPS;
+    mocks.params = { id: 'connection-divepeaks' };
     mocks.mutate.mockImplementation((_variables, callbacks) => {
       callbacks.onError?.();
       callbacks.onSettled?.();
     });
-    const { getByLabelText } = render(<PartnerAppsSection />);
+    const { getByLabelText } = render(<ConnectedAppDetailScreen />);
     fireEvent.click(getByLabelText('settings:integrations.partnerApps.disconnectA11y {"app":"DivePeaks"}'));
     await waitFor(() =>
       expect(mocks.showToast).toHaveBeenCalledWith(
@@ -190,5 +263,6 @@ describe('PartnerAppsSection', () => {
         'error',
       ),
     );
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 });

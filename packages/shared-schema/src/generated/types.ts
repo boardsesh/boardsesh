@@ -7551,6 +7551,12 @@ export type Query = {
    * audit list (admin only). List-only; no bulk action.
    */
   orphanGyms: OrphanGymConnection;
+  /**
+   * Whether partner apps are switched on (any PARTNER_OAUTH_MODE but off), the same
+   * value as ConnectedApps.partnerAppsEnabled. Screens that only need to know whether
+   * to mention connected apps read this. It changes only with a deploy.
+   */
+  partnerAppsEnabled: Scalars['Boolean']['output'];
   /** List pending gym ownership claims for the admin review queue (admin only). */
   pendingGymClaims: GymClaimConnection;
   /**
@@ -18237,6 +18243,7 @@ export type QueryResolvers<
     RequireFields<QueryObservedBoardSerialMatchesArgs, 'input'>
   >;
   orphanGyms?: Resolver<ResolversTypes['OrphanGymConnection'], ParentType, ContextType, Partial<QueryOrphanGymsArgs>>;
+  partnerAppsEnabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   pendingGymClaims?: Resolver<
     ResolversTypes['GymClaimConnection'],
     ParentType,

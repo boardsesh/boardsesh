@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildConnectedAppDetail,
   buildConnectedAppRow,
   buildConnectedAppsSection,
   connectedAppDisconnectPrompt,
@@ -63,7 +64,7 @@ describe('the section', () => {
     expect(section.kind).toBe('list');
   });
 
-  it('keeps the server order and adds the footer', () => {
+  it('keeps the server order', () => {
     const section = buildConnectedAppsSection({
       signedIn: true,
       data: { apps: [app({ connectionId: 'newer' }), app({ connectionId: 'older' })], partnerAppsEnabled: true },
@@ -72,7 +73,6 @@ describe('the section', () => {
     });
     if (section.kind !== 'list') throw new Error(`expected a list, got ${section.kind}`);
     expect(section.rows.map((row) => row.connectionId)).toEqual(['newer', 'older']);
-    expect(section.footer).toBe('settings:integrations.partnerApps.footer');
   });
 });
 
@@ -96,6 +96,7 @@ describe('a row', () => {
       ],
       connected: 'settings:integrations.partnerApps.connected {"date":"date(2026-10-12)"}',
       lastUsed: 'settings:integrations.partnerApps.lastUsed {"time":"ago(2026-11-10T09:00:00.000Z)"}',
+      summary: 'settings:integrations.partnerApps.lastUsed {"time":"ago(2026-11-10T09:00:00.000Z)"}',
       suspendedNotice: null,
       disconnectLabel: 'settings:integrations.partnerApps.disconnect',
       disconnectAccessibilityLabel: 'settings:integrations.partnerApps.disconnectA11y {"app":"Hangboard Planner"}',
@@ -129,10 +130,10 @@ describe('a row', () => {
     expect(buildConnectedAppRow(app({ publisherName: '  ' }), echo, formatters).publisher).toBeNull();
   });
 
-  it('explains a suspended app', () => {
-    expect(buildConnectedAppRow(app({ suspended: true }), echo, formatters).suspendedNotice).toBe(
-      'settings:integrations.partnerApps.suspended',
-    );
+  it('explains a suspended app, and says so in the list row', () => {
+    const row = buildConnectedAppRow(app({ suspended: true }), echo, formatters);
+    expect(row.suspendedNotice).toBe('settings:integrations.partnerApps.suspended');
+    expect(row.summary).toBe('settings:integrations.partnerApps.suspendedShort');
   });
 
   it('words a scope it does not know rather than hiding it', () => {
@@ -183,5 +184,38 @@ describe('Disconnect', () => {
     const data = { apps: [app({ connectionId: 'a' }), app({ connectionId: 'b' })], partnerAppsEnabled: false };
     expect(withoutConnectedApp(data, 'a')).toEqual({ apps: [app({ connectionId: 'b' })], partnerAppsEnabled: false });
     expect(data.apps).toHaveLength(2);
+  });
+});
+
+describe('the detail', () => {
+  const data = {
+    apps: [app({ connectionId: 'a' }), app({ connectionId: 'b', name: 'DivePeaks' })],
+    partnerAppsEnabled: true,
+  };
+
+  it('waits for the list the first time', () => {
+    expect(
+      buildConnectedAppDetail({ signedIn: true, data: undefined, connectionId: 'a', t: echo, formatters }),
+    ).toEqual({
+      kind: 'loading',
+    });
+  });
+
+  it('shows the app the row named, with what it can see and what Disconnect does', () => {
+    const detail = buildConnectedAppDetail({ signedIn: true, data, connectionId: 'b', t: echo, formatters });
+    if (detail.kind !== 'app') throw new Error(`expected the app, got ${detail.kind}`);
+    expect(detail.row.name).toBe('DivePeaks');
+    expect(detail.scopesHeading).toBe('settings:integrations.partnerApps.scopesHeading {"app":"DivePeaks"}');
+    expect(detail.footer).toBe('settings:integrations.partnerApps.footer');
+  });
+
+  it.each([
+    ['an app no longer connected', true, 'gone-id'],
+    ['signed out', false, 'a'],
+  ])('says the app is gone for %s', (_label, signedIn, connectionId) => {
+    expect(buildConnectedAppDetail({ signedIn, data, connectionId, t: echo, formatters })).toEqual({
+      kind: 'gone',
+      message: 'settings:integrations.partnerApps.gone',
+    });
   });
 });

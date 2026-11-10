@@ -582,6 +582,8 @@
       "title": "Apps with access",
       "empty": "No apps connected yet. Apps you connect to your Boardsesh account show up here.",
       "footer": "Disconnecting an app stops it reading anything new. What it already copied stays with the app.",
+      "gone": "This app isn't connected any more.",
+      "scopesHeading": "What {{app}} can see",
       "unnamedApp": "Unnamed app",
       "publisher": "By {{publisher}}",
       "connected": "Connected {{date}}",
@@ -589,6 +591,7 @@
       "lastUsedRecently": "Used in the last hour",
       "notUsedYet": "Not used yet",
       "suspended": "Boardsesh paused this app. It can't read anything right now.",
+      "suspendedShort": "Paused by Boardsesh",
       "scopes": {
         "logbookRead": "Sees every tick in your logbook, on every board",
         "logbookOnlyMe": "Including ticks you keep to “Only me”",
@@ -603,7 +606,8 @@
       "disconnectConfirmBody": "{{app}} stops seeing your account right away. Anything it already copied stays with the app. To use it again, connect it from the app.",
       "disconnected": "{{app}} disconnected",
       "disconnectFailed": "Couldn't disconnect {{app}}. Try again.",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "close": "Close"
     }
   },
   "watchPairing": {

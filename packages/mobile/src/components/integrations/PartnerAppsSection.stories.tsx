@@ -1,29 +1,25 @@
 import { useEffect, useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
+  buildConnectedAppDetail,
   buildConnectedAppsSection,
   connectedAppDisconnectPrompt,
   type ConnectedAppsFacts,
-  type ConnectedAppsSectionView,
   type ConnectedAppsTranslate,
 } from '@boardsesh/connected-apps';
 import type { StoryModule } from '../../dev/stories/types';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { nowMs } from '../../lib/clock';
-import { formatRelativeTime } from '../../lib/format-relative-time';
-import { spacing, borderRadius } from '../../theme/tokens';
-import { Icon } from '../Icon';
-import { ListRow } from '../ListRow';
-import { SectionHeader } from '../SectionHeader';
-import { Text } from '../Text';
-import { PartnerAppsSectionView } from './PartnerAppsSection';
+import { spacing } from '../../theme/tokens';
+import { ConnectedAppDetailPage } from './ConnectedAppDetailScreen';
+import { PartnerAppsSectionView, useConnectedAppsFormatters } from './PartnerAppsSection';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
-function twoApps(): ConnectedAppsFacts {
+function twoApps({ suspendSecond = false } = {}): ConnectedAppsFacts {
   const now = nowMs();
   return {
     partnerAppsEnabled: true,
@@ -44,33 +40,13 @@ function twoApps(): ConnectedAppsFacts {
         scopes: ['logbook:read', 'offline_access'],
         connectedAt: new Date(now - 70 * DAY_MS).toISOString(),
         lastUsedAt: new Date(now - 2 * DAY_MS).toISOString(),
-        suspended: false,
+        suspended: suspendSecond,
       },
     ],
   };
 }
 
-/** The section built exactly as `PartnerAppsSection` builds it, from fixed data instead of the server. */
-function useStorySection(data: ConnectedAppsFacts): ConnectedAppsSectionView {
-  const { t, i18n } = useTranslation('settings');
-  const locale = i18n.language;
-  return useMemo(
-    () =>
-      buildConnectedAppsSection({
-        signedIn: true,
-        data,
-        t: t as ConnectedAppsTranslate,
-        formatters: {
-          date: (iso) => new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }),
-          relativeTime: formatRelativeTime,
-          nowMs: nowMs(),
-        },
-      }),
-    [data, t, locale],
-  );
-}
-
-/** The Connected apps page's grouped background and width, with only this section on it. */
+/** The Connected apps page's grouped background, with only this section on it. */
 function StoryPage({ children }: { children: React.ReactNode }) {
   const { systemColors } = useTheme();
   return (
@@ -84,96 +60,80 @@ function StoryPage({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SectionStory({ data }: { data: ConnectedAppsFacts }) {
-  const section = useStorySection(data);
+/** The list exactly as `PartnerAppsSection` builds it, from fixed data instead of the server. */
+function ListStory({ data }: { data: ConnectedAppsFacts }) {
+  const { t } = useTranslation('settings');
+  const formatters = useConnectedAppsFormatters();
+  const section = useMemo(
+    () => buildConnectedAppsSection({ signedIn: true, data, t: t as ConnectedAppsTranslate, formatters }),
+    [data, t, formatters],
+  );
   return (
     <StoryPage>
-      <PartnerAppsSectionView section={section} onDisconnect={() => {}} disconnectingId={null} />
+      <PartnerAppsSectionView section={section} onOpen={() => {}} />
     </StoryPage>
   );
 }
 
-/** The confirmation Disconnect raises, opened as soon as the story paints. */
-function DisconnectPromptStory() {
+/** The detail page exactly as `ConnectedAppDetailScreen` builds it. `confirm` opens Disconnect's prompt. */
+function DetailStory({
+  connectionId,
+  data,
+  confirm = false,
+}: {
+  connectionId: string;
+  data: ConnectedAppsFacts;
+  confirm?: boolean;
+}) {
   const { t } = useTranslation('settings');
-  const confirm = useConfirm();
-  const data = useMemo(twoApps, []);
-  const section = useStorySection(data);
+  const formatters = useConnectedAppsFormatters();
+  const ask = useConfirm();
+  const detail = useMemo(
+    () => buildConnectedAppDetail({ signedIn: true, data, connectionId, t: t as ConnectedAppsTranslate, formatters }),
+    [data, connectionId, t, formatters],
+  );
   useEffect(() => {
-    void confirm({
-      ...connectedAppDisconnectPrompt({ name: 'Sequence' }, t as ConnectedAppsTranslate),
+    if (!confirm || detail.kind !== 'app') return;
+    void ask({
+      ...connectedAppDisconnectPrompt({ name: detail.row.name }, t as ConnectedAppsTranslate),
       destructive: true,
     });
-  }, [confirm, t]);
-  return (
-    <StoryPage>
-      <PartnerAppsSectionView section={section} onDisconnect={() => {}} disconnectingId={null} />
-    </StoryPage>
-  );
-}
-
-/**
- * Option B, for the owner to compare (not shipped): one compact row per app
- * with when it was last used, and the detail one tap in.
- */
-function CompactOptionStory() {
-  const { systemColors } = useTheme();
-  const section = useStorySection(useMemo(twoApps, []));
-  if (section.kind !== 'list') return null;
-  return (
-    <StoryPage>
-      <SectionHeader title={section.title} />
-      <View style={[styles.card, { backgroundColor: systemColors.secondaryGroupedBackground }]}>
-        {section.rows.map((row, index) => (
-          <ListRow
-            key={row.connectionId}
-            title={row.name}
-            subtitle={row.lastUsed}
-            leading={<Icon name="link" size={20} color={systemColors.secondaryLabel} />}
-            showChevron
-            showSeparator={index < section.rows.length - 1}
-            onPress={() => {}}
-          />
-        ))}
-      </View>
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footer}>
-        {section.footer}
-      </Text>
-    </StoryPage>
-  );
+  }, [confirm, detail, ask, t]);
+  return <ConnectedAppDetailPage detail={detail} onDisconnect={() => {}} disconnecting={false} />;
 }
 
 const stories: StoryModule = {
   title: 'Settings / Connected apps / Apps with access',
   stories: {
-    twoApps: {
-      name: 'Two connected apps (option A: everything on the page)',
+    list: {
+      name: 'Two connected apps: one row each',
       layout: 'fullscreen',
-      render: () => <SectionStory data={twoApps()} />,
+      render: () => <ListStory data={twoApps()} />,
     },
-    suspended: {
-      name: 'An app Boardsesh suspended',
+    listSuspended: {
+      name: 'Two apps, one suspended by Boardsesh',
       layout: 'fullscreen',
-      render: () => (
-        <SectionStory
-          data={{ ...twoApps(), apps: twoApps().apps.map((app, index) => ({ ...app, suspended: index === 1 })) }}
-        />
-      ),
+      render: () => <ListStory data={twoApps({ suspendSecond: true })} />,
     },
     empty: {
       name: 'Nothing connected, partner apps on',
       layout: 'fullscreen',
-      render: () => <SectionStory data={{ apps: [], partnerAppsEnabled: true }} />,
+      render: () => <ListStory data={{ apps: [], partnerAppsEnabled: true }} />,
+    },
+    detail: {
+      name: 'An app: what it can see, and Disconnect',
+      layout: 'fullscreen',
+      render: () => <DetailStory connectionId="story-sequence" data={twoApps()} />,
+    },
+    detailSuspended: {
+      name: 'An app Boardsesh suspended',
+      layout: 'fullscreen',
+      render: () => <DetailStory connectionId="story-divepeaks" data={twoApps({ suspendSecond: true })} />,
     },
     disconnectPrompt: {
       name: 'Disconnect asks first',
       layout: 'fullscreen',
-      render: () => <DisconnectPromptStory />,
-    },
-    compactOption: {
-      name: 'Option B: one row per app, detail one tap in',
-      layout: 'fullscreen',
-      render: () => <CompactOptionStory />,
+      render: () => <DetailStory connectionId="story-sequence" data={twoApps()} confirm />,
     },
   },
 };
@@ -184,14 +144,5 @@ const styles = StyleSheet.create({
   page: {
     paddingTop: spacing[4],
     paddingBottom: spacing[8],
-  },
-  card: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-    marginHorizontal: spacing[4],
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
   },
 });
