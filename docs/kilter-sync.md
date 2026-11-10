@@ -684,6 +684,7 @@ op run --env-file=packages/kilter-sync/.env.1password -- vp exec kilter-sync dae
 | `KILTER_PORTAL_HOST`         | no                 | Override REST portal host (sandbox)                                |
 | `DATABASE_URL`               | yes                | Same Postgres as everything else                                   |
 | `SYNC_DAEMON_DISABLED`       | no                 | `true` once the worker families own routine syncs: the daemon exits 0 |
+| `DB_POOL_MAX`                | no                 | The daemon's Postgres pool size: 5 when unset, never below 2 ([db-connectivity.md](./db-connectivity.md), "Pool budgets and pg-boss timers") |
 | `KILTER_TEST_USERNAME` / `KILTER_TEST_PASSWORD` | no | ROPC fallback token for the catalog when no Kilter account is linked (never in production) |
 
 ## Open wire questions

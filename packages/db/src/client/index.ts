@@ -3,6 +3,7 @@ export {
   createPool,
   createDedicatedPool,
   createDbOnPool,
+  resolvePoolMax,
   closePool,
   createReadDb,
   createReadPool,

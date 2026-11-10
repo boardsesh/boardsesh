@@ -64,6 +64,16 @@ function readPoolInt(name: string, fallback: number, minimum: number): number {
 }
 
 /**
+ * `DB_POOL_MAX` as every pool in a process should read it: unset or unparseable
+ * gives `fallback`, anything else is clamped to `MIN_POOL_MAX`. Exported for the
+ * sync daemons, which build their own postgres.js pools and keep their own
+ * default, so that one variable caps them the same way it caps `createDb()`.
+ */
+export function resolvePoolMax(fallback: number = DEFAULT_POOL_MAX): number {
+  return readPoolInt('DB_POOL_MAX', fallback, MIN_POOL_MAX);
+}
+
+/**
  * Per-deployment pool knobs. On Vercel the defaults are the serverless pair
  * above; everywhere else (backend, sync jobs, scripts) they are
  * `DEFAULT_POOL_MAX` / `DEFAULT_POOL_IDLE_TIMEOUT_S` unless the env var is set.
@@ -115,7 +125,7 @@ export function resetReportedPostgresNotices(): void {
 function basePoolOptions() {
   const isServerless = Boolean(process.env.VERCEL);
   return {
-    max: readPoolInt('DB_POOL_MAX', isServerless ? SERVERLESS_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX, MIN_POOL_MAX),
+    max: resolvePoolMax(isServerless ? SERVERLESS_DEFAULT_POOL_MAX : DEFAULT_POOL_MAX),
     idle_timeout: readPoolInt(
       'DB_POOL_IDLE_TIMEOUT_S',
       isServerless ? SERVERLESS_DEFAULT_POOL_IDLE_TIMEOUT_S : DEFAULT_POOL_IDLE_TIMEOUT_S,

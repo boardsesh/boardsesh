@@ -159,6 +159,26 @@ void describe('postgres client', () => {
       assert.equal(options.max, 5);
     });
 
+    void it('resolves DB_POOL_MAX for pools built outside createDb, with their own fallback', async () => {
+      // The sync daemons build their own postgres.js pools through this.
+      const { resolvePoolMax } = await import('../postgres');
+      const previous = process.env.DB_POOL_MAX;
+      try {
+        delete process.env.DB_POOL_MAX;
+        assert.equal(resolvePoolMax(), 5);
+        assert.equal(resolvePoolMax(7), 7);
+        process.env.DB_POOL_MAX = '3';
+        assert.equal(resolvePoolMax(7), 3);
+        process.env.DB_POOL_MAX = '1';
+        assert.equal(resolvePoolMax(), 2);
+        process.env.DB_POOL_MAX = 'abc';
+        assert.equal(resolvePoolMax(7), 7);
+      } finally {
+        if (previous === undefined) delete process.env.DB_POOL_MAX;
+        else process.env.DB_POOL_MAX = previous;
+      }
+    });
+
     void it('falls back to the serverless default when DB_POOL_MAX is not a number on Vercel', async () => {
       const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: '1' });
       assert.equal(options.max, 3);

@@ -554,7 +554,8 @@ Not covered:
   going through `@boardsesh/db/client`. They are background jobs that already
   retry at the job level; routing them through the shared builder is a separate
   change (it would also add `ssl: 'require'`, which their local runs do not
-  currently use).
+  currently use). They do take their pool size from the shared
+  `resolvePoolMax()`, so `DB_POOL_MAX` caps them.
 
 ## PgBouncer: parked
 
@@ -588,15 +589,19 @@ ORDER BY 3 DESC;
 The following are projections after the code defaults in this change are
 deployed. They are not a live production measurement. The web service currently
 sets `DB_POOL_MAX=10` explicitly, so the new default does not affect it until
-the separate operator cap is applied. The Aurora and Kilter sync runners also
-construct raw postgres.js clients with `max: 5`; they do not read
-`DB_POOL_MAX`. Capping those daemons at 3 needs a separate code change. The
-hold detector's `createDb()` pool uses the shared default of 5 (or honors an
+the separate operator cap is applied. The Aurora and Kilter sync runners build
+their own postgres.js pools rather than calling `createDb()`, and size them with
+the same `resolvePoolMax()` (`packages/db/src/client/postgres.ts`): 5 when
+`DB_POOL_MAX` is unset, the variable when it is set, never below 2. Capping the
+daemons at 3 is therefore a variable change, with no code change. The hold
+detector's `createDb()` pool uses the shared default of 5 (or honors an
 explicit `DB_POOL_MAX`), and its separate pg-boss pool is fixed at 3. No
 three-connection hold-detector override is part of these source defaults, so
-the projection below counts both pools as 5 + 3.
+the projection below counts both pools as 5 + 3. (The homelab compose in
+blackheathdc-ansible, `roles/boardsesh_detector`, sets `DB_POOL_MAX: "3"`, so
+the detector holds 3 + 3 there.)
 
-| client                                   | code defaults (web still 10) | after web cap 4 | after separate daemon cap 3 |
+| client                                   | code defaults (web still 10) | after web cap 4 | after web cap 4 and daemon cap 3 |
 | ---------------------------------------- | ---------------------------: | --------------: | --------------------------: |
 | backend postgres.js, 2 replicas          |                       2 x 5 |          2 x 5 |                      2 x 5 |
 | backend admission pool, 2 replicas       |                       2 x 2 |          2 x 2 |                      2 x 2 |
@@ -611,6 +616,30 @@ the projection below counts both pools as 5 + 3.
 | migrator, during a deploy                |                           1 |             1 |                         1 |
 | **steady ceiling (one migrator counted)**|                     **<=79** |       **<=73** |                   **<=67** |
 | **+ old backend fleet draining (15 s)**  |                    **<=107** |      **<=101** |                   **<=95** |
+
+The code-only budget uses the unchanged web setting of 10. Both caps are
+operator steps, and each is one variable:
+
+| service | where it runs | variable | value |
+| --- | --- | --- | --- |
+| `boardsesh-web` | Railway, production environment | `DB_POOL_MAX` | `4` |
+| `kilter-sync` and `aurora-sync` daemons | homelab host `boardsesh-sync`, docker compose, not Railway | `DB_POOL_MAX` in `sync.env` (blackheathdc-ansible `roles/boardsesh_sync/templates/sync.env.j2`) | `3` |
+
+The two daemon containers share that one `env_file`, so one line caps both.
+The daemon cap takes effect once the host runs a `boardsesh-sync` image built
+from this change or later; an older image ignores the variable. The daemon row
+counts three pools, which is conservative: the sync host runs two daemon
+containers, and production has had both disabled since the routine cutover
+(`boardsesh_sync_daemon_disabled: true`, see
+[background-workers.md](./background-workers.md), "Routine cutover"), so they exit
+before opening a pool. The row matters again if that cutover is rolled back. The
+admission pool adds 2 per backend replica, 4 at steady state and 8 while an old
+fleet drains ("Admission reads have their own pool" above); production had 43
+of 100 in use when it was added. Do not lower `max_connections` to 60 while the
+drain projection is 75 or higher (95 with partner OAuth on): 60 leaves 57
+application slots, below even the later-cap projection. The original C15 order still applies — cap every
+client, watch a week of deploy peaks under 45, then consider the restart-window
+change. If those conditions are not met, keep `max_connections=100`.
 
 ### Dedicated pools
 
@@ -657,17 +686,6 @@ either option is a source change and a deploy, not an operator step. The drain-9
 option uses every one of the 97 application slots and leaves no headroom, so
 prefer the drain-95 option or raising `max_connections`.
 
-The code-only budget uses the unchanged web setting of 10. The web cap to 4 is
-an operator step after this change deploys. The daemon cap column is a later
-source change, because those runners currently ignore `DB_POOL_MAX`. The
-admission pool adds 2 per backend replica, 4 at steady state and 8 while an old
-fleet drains ("Admission reads have their own pool" above); production had 43
-of 100 in use when it was added. Do not lower `max_connections` to 60 while the
-drain projection is 75 or higher (95 with partner OAuth on): 60 leaves 57
-application slots, below even the later-cap projection. The original C15 order still applies — cap every
-client, watch a week of deploy peaks under 45, then consider the restart-window
-change. If those conditions are not met, keep `max_connections=100`.
-
 ### If PgBouncer is revisited
 
 PgBouncer remains parked as described above. If the backend and web are later
@@ -676,7 +694,7 @@ steady state (web 4 plus backend 14) or 32 during a backend deploy, plus 10 and 
 with partner OAuth on (its two dedicated pools). The direct
 clients (hold detector, sync daemons, background workers, the backend's two
 admission pools, `boardsesh_readonly`, and migrator) total at most 45 while the
-daemons remain at 5. This projected split fits under the 97 application slots; it
+daemons remain at 5, and 39 with `DB_POOL_MAX=3` on the daemons. This projected split fits under the 97 application slots; it
 is not evidence that PgBouncer has been deployed or that its TLS prerequisites
 are complete.
 
