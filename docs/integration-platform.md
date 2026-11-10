@@ -924,7 +924,12 @@ disconnect, password reset and reconnect across instances. Assert one usable
 successor for one-time credentials, no token after security invalidation, and
 no resurrection of an old connection generation. A consumed-row update must
 fail on repeated consumption; merely returning zero affected rows is not a
-successful single-use guard.
+successful single-use guard. The launch suite races code redemption, refresh
+rotation and a refresh against Disconnect across two instances behind a barrier,
+and a refresh against a password reset. A reconnect is raced by the old
+generation's refresh token, which Disconnect deleted, so it is refused before
+any lock and needs no barrier. Repeated consumption, and rollback of a failed
+mint, are proven at the authority in `auth/partner/__tests__/partner-oauth-flow.test.ts`.
 
 Adversarial coverage includes consent CSRF, forged continuations, clickjacking
 (`frame-ancestors 'none'`), unsafe callback URLs, stale migrated sessions,
@@ -933,7 +938,12 @@ first-party/GraphQL/native/watch endpoints. Test immediate secret rotation,
 app suspension/deletion, account deletion, connection cleanup failure, and
 correct CORS/headers for expired-token and rate-limit errors. Ordinary
 first-party sign-out must not silently revoke an offline connection; explicit
-security revocation must.
+security revocation must. The launch suite covers each of these against the
+real server except two: the www consent page's own `frame-ancestors` (the API
+host's error page is checked there; the consent page is tested with the page
+itself, `packages/web/app/oauth`, #6981 F14), and CORS on `429`, which the route suites
+(`partner-auth-routes.test.ts`, `partner-v1-api.test.ts`) check, since reaching a
+limit for real takes hundreds of requests.
 
 Independent adversarial agent reviews, by agents that did not write the code and
 working from the OAuth threat list, run before the first connection and again
@@ -956,8 +966,8 @@ seconds in the `backend` project.
 
 It cannot prove: browser CORS in real Chromium and WebKit, the www consent and
 sign-in pages, consent on iOS Safari and Android Chrome, Cloudflare and Railway in
-front of the API host, Sentry and PostHog redaction, and the routes not built yet
-(the logbook feed, Connected apps Disconnect).
+front of the API host, and Sentry and PostHog redaction. The logbook routes have
+their own suites (L4), and Connected apps Disconnect is not built yet.
 
 ---
 
