@@ -14,12 +14,12 @@ export const API_HOSTNAME = 'api.boardsesh.com';
  */
 const API_HOST_ROUTES: ReadonlyArray<{ method: string; pathname: string }> = [{ method: 'GET', pathname: '/health' }];
 
-/** Reduces a Host header to its lowercase name: no userinfo, port, path or trailing dots. */
+/** Reduces a Host header to its lowercase name: no userinfo, trailing dots, or anything after the name. */
 function hostnameFromHostHeader(hostHeader: string): string {
   return hostHeader
     .trim()
     .toLowerCase()
-    .replace(/^(?:.*@)?([^:/?#\\,]*).*$/, '$1')
+    .replace(/^(?:.*@)?([a-z0-9.-]*).*$/, '$1')
     .replace(/\.+$/, '');
 }
 

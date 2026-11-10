@@ -4,13 +4,14 @@ import { createServer, type Server, type ServerResponse } from 'node:http';
 import { createRequire } from 'node:module';
 import { connect } from 'node:net';
 import { gunzipSync } from 'node:zlib';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 import { API_HOSTNAME } from '../handlers/api-host';
 import { createMalformedRequestRecorder, MALFORMED_REQUEST_LOG_INTERVAL_MS } from '../handlers/request-guard';
 import { startServer } from '../server';
 import { logger } from '../utils/logger';
 import { getWorkerDatabaseUrl } from './worker-db';
+import { WebSocket } from 'ws';
 
 // Replaces one route's handler so these tests can throw from inside the real
 // dispatcher. Everything else about the server is the production code path.
@@ -32,6 +33,35 @@ vi.mock('../handlers/robots', async (importOriginal) => {
 // Counts what the running server reports, because the tally itself only reaches
 // the log once per real minute.
 const recordedRefusals = vi.hoisted(() => ({ count: 0 }));
+
+// What the region trust check decided, as seen from inside Yoga's context.
+const edgeRegionDecisions = vi.hoisted(() => [] as Array<string | undefined>);
+
+vi.mock('../utils/flag-country', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/flag-country')>();
+  return {
+    ...actual,
+    resolveEdgeRegionCode: (...args: Parameters<typeof actual.resolveEdgeRegionCode>) => {
+      const decision = actual.resolveEdgeRegionCode(...args);
+      edgeRegionDecisions.push(decision);
+      return decision;
+    },
+  };
+});
+
+// Forces the rejection branch, which a real cap would need many sockets to reach.
+const anonymousCap = vi.hoisted(() => ({ rejectEveryone: false }));
+
+vi.mock('../websocket/connection-cap', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../websocket/connection-cap')>();
+  return {
+    ...actual,
+    tryAcquireAnonConnectionSlot: (...args: Parameters<typeof actual.tryAcquireAnonConnectionSlot>) =>
+      anonymousCap.rejectEveryone
+        ? { allowed: false, rejection: { tier: 'client-ip', key: 'ip:test', active: 1, limit: 1 } }
+        : actual.tryAcquireAnonConnectionSlot(...args),
+  };
+});
 
 vi.mock('../handlers/request-guard', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../handlers/request-guard')>();
@@ -117,9 +147,9 @@ function http10Bytes(target: string, host: string | null): string {
   return `GET ${target} HTTP/1.0\r\n${hostLine}\r\n`;
 }
 
-function graphqlPostBytes(target: string, host: string): string {
+function graphqlPostBytes(target: string, host: string, extraHeaders = ''): string {
   const query = JSON.stringify({ query: '{ __typename }' });
-  const extra = `Content-Type: application/json\r\nContent-Length: ${query.length}\r\n`;
+  const extra = `${extraHeaders}Content-Type: application/json\r\nContent-Length: ${query.length}\r\n`;
   return requestBytes(target, host, { method: 'POST', extra }) + query;
 }
 
@@ -473,9 +503,86 @@ describe('the running server', () => {
     });
   });
 
+  describe('what an accepted connection logs', () => {
+    const FILLER = 'a'.repeat(7_000);
+    const OVERSIZED_HEADERS = { 'User-Agent': `u${FILLER}`, 'X-Forwarded-For': `f${FILLER}` };
+    const LOGGED_BYTES_LIMIT = 4_000;
+
+    function openConnection(connectionParams: Record<string, unknown>, headers: Record<string, string> = {}) {
+      return new Promise<void>((resolve, reject) => {
+        const socket = new WebSocket(`ws://127.0.0.1:${port}/graphql`, 'graphql-transport-ws', { headers });
+        socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init', payload: connectionParams })));
+        socket.once('message', () => {
+          socket.terminate();
+          resolve();
+        });
+        socket.once('close', () => resolve());
+        socket.once('error', reject);
+      });
+    }
+
+    function loggedCalls(spy: { mock: { calls: unknown } }) {
+      return spy.mock.calls as Array<[string, Record<string, string>]>;
+    }
+
+    it('clips the User-Agent and X-Forwarded-For it records', async () => {
+      const infoLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+
+      await openConnection({}, OVERSIZED_HEADERS);
+
+      const connected = loggedCalls(infoLog).find(([message]) => message.startsWith('Client connected'))?.[1];
+      expect(connected?.userAgent).toHaveLength(256);
+      expect(connected?.forwardedFor).toHaveLength(256);
+      expect(JSON.stringify(infoLog.mock.calls).length).toBeLessThan(LOGGED_BYTES_LIMIT);
+    });
+
+    it('clips an unauthenticated 1 MB controllerMac', async () => {
+      const infoLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+
+      await openConnection({ controllerMac: 'M'.repeat(1_000_000) });
+
+      const macLine = loggedCalls(infoLog).find(([message]) => message.startsWith('[Auth] Controller MAC'));
+      expect(macLine?.[0]).toBe(`[Auth] Controller MAC: ${'M'.repeat(17)}`);
+      expect(JSON.stringify(infoLog.mock.calls).length).toBeLessThan(LOGGED_BYTES_LIMIT);
+    });
+
+    it('keeps a real MAC whole', async () => {
+      const infoLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+
+      await openConnection({ controllerMac: 'AA:BB:CC:DD:EE:FF' });
+
+      const macLine = loggedCalls(infoLog).find(([message]) => message.startsWith('[Auth] Controller MAC'));
+      expect(macLine?.[0]).toBe('[Auth] Controller MAC: AA:BB:CC:DD:EE:FF');
+    });
+
+    it('clips the User-Agent it records when the anonymous cap refuses', async () => {
+      const warnLog = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      anonymousCap.rejectEveryone = true;
+
+      try {
+        await openConnection({}, OVERSIZED_HEADERS);
+      } finally {
+        anonymousCap.rejectEveryone = false;
+      }
+
+      const rejected = loggedCalls(warnLog).find(([message]) => message.includes('over concurrency cap'))?.[1];
+      expect(rejected?.userAgent).toHaveLength(256);
+    });
+  });
+
   describe('the API host when its Host is malformed', () => {
-    const UNPARSEABLE_API_HOSTS = [`${API_HOSTNAME}:abc`, `${API_HOSTNAME}:1:2`, `${API_HOSTNAME}, x`];
+    const UNPARSEABLE_API_HOSTS = [
+      `${API_HOSTNAME}:abc`,
+      `${API_HOSTNAME}:1:2`,
+      `${API_HOSTNAME}, x`,
+      `${API_HOSTNAME} x`,
+      `${API_HOSTNAME}<`,
+      `${API_HOSTNAME}|`,
+    ];
     const READABLE_API_HOSTS = [
+      `${API_HOSTNAME};x`,
+      `${API_HOSTNAME}_x`,
+      `${API_HOSTNAME}~x`,
       `${API_HOSTNAME}/`,
       `${API_HOSTNAME}/x`,
       `${API_HOSTNAME}?x`,
@@ -540,7 +647,6 @@ describe('the running server', () => {
       ['http://example.com/graphql', 'localhost'],
       ['/graphql', 'ws.boardsesh.com'],
       ['/graphql?a=1', 'ws.boardsesh.com'],
-      ['//foo/graphql', 'localhost'],
     ])('runs a POST to %s with Host %s', async (target, host) => {
       expectGraphqlAnswer(await sendRaw(port, graphqlPostBytes(target, host), HEALTHY_ROUTE_DEADLINE_MS));
     });
@@ -551,6 +657,41 @@ describe('the running server', () => {
     ])('keeps the query string on a GET to %s', async (target, host) => {
       const request = requestBytes(target, host, { extra: 'Accept: application/json\r\n' });
       expectGraphqlAnswer(await sendRaw(port, request, HEALTHY_ROUTE_DEADLINE_MS));
+    });
+
+    // utils/flag-country.ts trusts this header only on the exact path Cloudflare
+    // clears it on, so no other target form may look like that path by the time
+    // Yoga's context runs.
+    describe('the edge region header', () => {
+      // The loopback peer counts as our private ingress, so the last hop decides.
+      const TRUSTED_EDGE_HEADERS = 'X-Forwarded-For: 203.0.113.9, 173.245.48.1\r\nX-Boardsesh-Region-Code: AU\r\n';
+      const postFromEdge = (target: string) =>
+        sendRaw(port, graphqlPostBytes(target, 'ws.boardsesh.com', TRUSTED_EDGE_HEADERS), HEALTHY_ROUTE_DEADLINE_MS);
+
+      beforeAll(() => {
+        process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER = 'true';
+      });
+      afterAll(() => {
+        delete process.env.BOARDSESH_TRUST_EDGE_REGION_HEADER;
+      });
+      beforeEach(() => {
+        edgeRegionDecisions.length = 0;
+      });
+
+      it('is trusted on the exact path the edge rule covers', async () => {
+        expectGraphqlAnswer(await postFromEdge('/graphql'));
+        expect(edgeRegionDecisions).toContain('AU');
+      });
+
+      it.each(['//foo/graphql', '/\\foo/graphql', 'http://x/graphql', 'https://ws.boardsesh.com/graphql'])(
+        'is not trusted on %s',
+        async (target) => {
+          const response = await postFromEdge(target);
+          expect(response.statusLine).not.toBeNull();
+          expect(response.body).not.toMatch(/\n\s+at /);
+          expect(edgeRegionDecisions).not.toContain('AU');
+        },
+      );
     });
   });
 

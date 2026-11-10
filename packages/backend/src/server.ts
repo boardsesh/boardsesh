@@ -779,8 +779,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         if (!applyCorsHeaders(req, res)) return;
 
         // Yoga builds its URL as `http://<Host><target>`, which an absolute-form
-        // target turns into an invalid URL and a 500 carrying a stack trace.
-        req.url = url.pathname + url.search;
+        // target turns into an invalid URL and a 500 carrying a stack trace. It
+        // reads `originalUrl` first, so `req.url` stays as sent: the region trust
+        // check in utils/flag-country.ts compares it to the path Cloudflare clears
+        // that header on, and a rewrite would make other forms pass as that path.
+        if (!req.url?.startsWith('/')) Object.assign(req, { originalUrl: url.pathname + url.search });
 
         // Yoga handles the request and writes directly to the response
         await yoga.handle(req, res);

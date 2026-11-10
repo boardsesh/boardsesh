@@ -34,6 +34,27 @@ describe('isApiHost', () => {
     [`\xad${API_HOSTNAME}`],
     ['\xaapi.boardsesh.com'],
     ['api.b\xbaardsesh.com'],
+    [`${API_HOSTNAME} x`],
+    [`${API_HOSTNAME}<`],
+    [`${API_HOSTNAME}>`],
+    [`${API_HOSTNAME}|`],
+    [`${API_HOSTNAME}%`],
+    [`${API_HOSTNAME}[`],
+    [`${API_HOSTNAME}]`],
+    [`${API_HOSTNAME}^`],
+    [`${API_HOSTNAME};`],
+    [`${API_HOSTNAME}&`],
+    [`${API_HOSTNAME}!`],
+    [`${API_HOSTNAME}$`],
+    [`${API_HOSTNAME}'`],
+    [`${API_HOSTNAME}(`],
+    [`${API_HOSTNAME})`],
+    [`${API_HOSTNAME}*`],
+    [`${API_HOSTNAME}+`],
+    [`${API_HOSTNAME}=`],
+    [`${API_HOSTNAME}_`],
+    [`${API_HOSTNAME}~`],
+    [`${API_HOSTNAME}\xe9`],
   ])('recognises %j', (hostHeader) => {
     expect(isApiHost(hostHeader)).toBe(true);
   });
@@ -51,6 +72,10 @@ describe('isApiHost', () => {
     [`evil.com#${API_HOSTNAME}`],
     [`${API_HOSTNAME}@evil.com`],
     [`evil.com:${API_HOSTNAME}`],
+    [`x.${API_HOSTNAME}`],
+    [`x-${API_HOSTNAME}`],
+    [`${API_HOSTNAME}-x`],
+    [`${API_HOSTNAME}x`],
     [''],
     [undefined],
   ])('does not recognise %j', (hostHeader) => {
@@ -59,6 +84,17 @@ describe('isApiHost', () => {
 
   // The dispatcher trusts what `new URL` reads, so nothing it reads as the API
   // host may slip past the filter. Latin-1, as Node decodes header bytes.
+  // `@` is left out because what follows it is the host, and here nothing does.
+  it('recognises the API host followed by any byte that cannot continue a name', () => {
+    const missed: string[] = [];
+    for (let byte = 1; byte <= 255; byte += 1) {
+      const character = String.fromCharCode(byte);
+      if (/[a-z0-9.@-]/i.test(character)) continue;
+      if (!isApiHost(`${API_HOSTNAME}${character}`)) missed.push(`${API_HOSTNAME}${character}`);
+    }
+    expect(missed).toEqual([]);
+  });
+
   it('recognises every single-byte variation that new URL reads as the API host', () => {
     const missed: string[] = [];
     for (let position = 0; position <= API_HOSTNAME.length; position += 1) {
