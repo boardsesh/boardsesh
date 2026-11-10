@@ -12045,6 +12045,8 @@ input CreateOAuthClientInput {
   tokenEndpointAuthMethod: OAuthClientAuthMethod!
   "1 to 10."
   redirectUris: [String!]!
+  "The developer terms version the developer accepted. Must equal the current version, or registration is refused."
+  acceptedTermsVersion: String!
 }
 
 "Fields left out keep their value. A null homepageUrl removes it; publisherName can change but never be removed. The app type and auth method never change."

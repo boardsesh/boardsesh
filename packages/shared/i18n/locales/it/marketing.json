@@ -1098,6 +1098,13 @@
       "body4": "Spegnerlo, eliminare la Spraywall o eliminare il tuo account tolgono la Spraywall dal nostro insieme di addestramento archiviato entro 24 ore. Una copia già scaricata per un ciclo di addestramento può essere usata per altri 7 giorni al massimo, e viene eliminata la prossima volta che recuperiamo l'insieme. I modelli già addestrati conservano ciò che hanno imparato, ma non contengono nessuna copia della tua foto.",
       "body5": "Se una Spraywall viene segnalata, un admin di Boardsesh può vedere la sua foto per esaminare la segnalazione, qualunque cosa dica l'interruttore. Quando elimini una Spraywall, eliminiamo la sua foto dopo 30 giorni. Quando elimini il tuo account, le foto delle tue Spraywall vengono eliminate con esso; una copia di addestramento esce secondo le tempistiche sopra. Reimpostare una Spraywall conserva la vecchia, foto inclusa, come Spraywall archiviata finché non elimini anche quella. Spegnere l'interruttore su una delle due Spraywall vale per entrambe."
     },
+    "connectedApps": {
+      "title": "Le app che colleghi",
+      "intro": "Puoi collegare un'altra app al tuo account Boardsesh, per esempio un'app per pianificare gli allenamenti. Prima di condividere qualsiasi cosa, Boardsesh ti mostra l'app, chi la sviluppa, un link alla sua informativa sulla privacy e cosa chiede di vedere. Non viene condiviso nulla finché non scegli Consenti.",
+      "whatItGets": "In base a ciò che consenti, l'app può vedere il tuo nome visualizzato e la foto profilo, e ogni salita del tuo diario, comprese quelle che tieni su «Solo io». Ogni salita è accompagnata dal blocco a cui si riferisce: nome, grado, pannello e layout. Questo vale anche per un blocco tracciato da qualcun altro che è ancora una bozza o non in elenco, perché la salita fa parte del tuo diario. Sulla Spraywall di un'altra persona che non è pubblica, l'app riceve la tua salita, ma non il nome del blocco né quello della Spraywall.",
+      "afterSharing": "Una volta che l'app ha i tuoi dati, quello che ne fa è regolato dalla sua informativa sulla privacy.",
+      "disconnect": "Puoi scollegare un'app in qualsiasi momento dalle impostazioni di Boardsesh. Qualsiasi modifica della password, compreso reimpostarla o impostarne una per la prima volta, scollega tutte le app. Da quel momento l'app non può leggere nulla di nuovo. Scollegarla, o eliminare il tuo account Boardsesh, non cancella ciò che l'app ha già copiato: chiedi all'app di cancellarlo."
+    },
     "thirdParty": {
       "title": "Servizi di terze parti",
       "posthogLabel": "PostHog.",

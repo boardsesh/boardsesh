@@ -8,6 +8,7 @@ import { CREATE_OAUTH_CLIENT, SAVE_TICK } from '@boardsesh/graphql/operations';
 import { edgeFetch } from './edge';
 import {
   API_HOST,
+  E2E_DEVELOPER_TERMS_VERSION,
   GRAPHQL_URL,
   ISSUER,
   RESOURCE,
@@ -24,7 +25,8 @@ import {
  * pages and the real backend (#6981 F18):
  *
  * 1. A developer signs in on www and registers a public native app through the
- *    console's GraphQL operation, with a publisher name.
+ *    console's GraphQL operation, with a publisher name and the current
+ *    developer terms accepted.
  * 2. The app sends the climber's browser to authorize. The climber signs in on
  *    the www sign-in page and presses Allow on the www consent page.
  * 3. The app checks `state` and `iss`, and exchanges the code with PKCE and
@@ -182,6 +184,9 @@ test('an app registers, connects a climber on www, syncs the logbook, refreshes 
       applicationType: 'NATIVE',
       tokenEndpointAuthMethod: 'NONE',
       redirectUris: [REGISTERED_REDIRECT],
+      // What the console sends once the developer ticks the terms box, for the
+      // version this backend publishes.
+      acceptedTermsVersion: E2E_DEVELOPER_TERMS_VERSION,
     },
   });
   expect(registration.body.errors).toBeUndefined();

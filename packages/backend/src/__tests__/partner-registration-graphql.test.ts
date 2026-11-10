@@ -48,6 +48,9 @@ const LIST_QUERY = /* GraphQL */ `
     }
   }
 `;
+/** A published terms version for this deployment; the shipped one may still be a draft. */
+const TERMS_VERSION = 'graphql-test-terms-1';
+
 const APP_INPUT: CreateOAuthClientInput = {
   name: 'Hangboard Planner',
   publisherName: 'Planner Labs',
@@ -56,6 +59,7 @@ const APP_INPUT: CreateOAuthClientInput = {
   applicationType: 'WEB',
   tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
   redirectUris: ['https://planner.example.test/oauth/boardsesh'],
+  acceptedTermsVersion: TERMS_VERSION,
 };
 
 interface GraphQLReply {
@@ -274,6 +278,7 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       PARTNER_OAUTH_MODE: 'allowlist',
       PARTNER_OAUTH_DEVELOPER_ALLOWLIST: `someone-else,${developerId},${secondDeveloperId},${addressDeveloperId}`,
       PARTNER_OAUTH_SECRETS: PARTNER_SECRET,
+      PARTNER_DEVELOPER_TERMS_VERSION: TERMS_VERSION,
     });
   }, TEST_DEADLINE_MS);
 
@@ -470,6 +475,25 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       );
       expect(errorOf(reply)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
       expect(errorOf(reply)?.message).toMatch(/fragment/);
+    },
+    TEST_DEADLINE_MS,
+  );
+
+  it(
+    'refuses a registration without the current developer terms',
+    async () => {
+      await enoughWindowLeft();
+      const bearer = await firstPartyToken(secondDeveloperId);
+      const { acceptedTermsVersion: _required, ...withoutTerms } = APP_INPUT;
+      const missing = await server.graphql({ query: CREATE_MUTATION, variables: { input: withoutTerms } }, { bearer });
+      expect(errorOf(missing)?.message).toMatch(/acceptedTermsVersion/);
+
+      const outdated = await server.graphql(
+        { query: CREATE_MUTATION, variables: { input: { ...APP_INPUT, acceptedTermsVersion: '2026-01-01' } } },
+        { bearer },
+      );
+      expect(errorOf(outdated)?.extensions).toMatchObject({ code: 'BAD_USER_INPUT', reason: 'INVALID_INPUT' });
+      expect(errorOf(outdated)?.message).toMatch(/Accept the current Boardsesh developer terms/);
     },
     TEST_DEADLINE_MS,
   );

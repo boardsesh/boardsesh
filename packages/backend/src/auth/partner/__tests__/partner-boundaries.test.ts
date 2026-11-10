@@ -102,6 +102,7 @@ describe('importing partner modules', () => {
       webOrigin: 'https://www.boardsesh.test',
       secrets: [{ version: 1, value: VALID_SECRET }],
       nextAuthSecret: VALID_SECRET,
+      developerTermsVersion: 'test-terms',
     });
     expect(callCounts.betterAuth).toBe(1);
     await authority.$context.catch(() => {});
@@ -280,6 +281,7 @@ describe('the F12 entry point', () => {
               applicationType: 'WEB',
               tokenEndpointAuthMethod: 'NONE',
               redirectUris: ['https://crimp.example.test/cb'],
+              acceptedTermsVersion: 'any',
             },
           },
           context,
@@ -381,6 +383,7 @@ describe('BETTER_AUTH_TELEMETRY', () => {
         webOrigin: 'https://www.boardsesh.test',
         secrets: [{ version: 1, value: VALID_SECRET }],
         nextAuthSecret: VALID_SECRET,
+        developerTermsVersion: 'test-terms',
       }),
     ).toThrow(PartnerAuthorityConfigurationError);
     expect(callCounts.betterAuth).toBe(0);

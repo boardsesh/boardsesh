@@ -1,4 +1,5 @@
-import { PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+import { PARTNER_DEVELOPER_TERMS_VERSION, PARTNER_OAUTH_ISSUER } from '@boardsesh/auth-protocol/partner-oauth';
+import { isProductionSentryEnvironment } from '@boardsesh/db/client/config';
 
 /** Shared with the www consent pages, which send the browser back to it. */
 export const PARTNER_ISSUER = PARTNER_OAUTH_ISSUER;
@@ -44,6 +45,12 @@ export interface PartnerAuthorityConfiguration {
    * climber here. Read-only: the authority never writes that cookie.
    */
   nextAuthSecret: string;
+  /**
+   * The developer terms a registration must accept. Registration is refused
+   * while it is a draft (ends in `-draft`), so no app registers against text
+   * the owner has not approved.
+   */
+  developerTermsVersion: string;
 }
 
 export class PartnerAuthorityConfigurationError extends Error {
@@ -83,8 +90,23 @@ export function parsePartnerSecrets(rawSecrets: string | undefined): PartnerSecr
   return secrets;
 }
 
+/**
+ * The developer terms registration requires. In production it is always the
+ * shared constant, so publishing terms is a reviewed code change and never an
+ * environment flip. Anywhere else (tests, the e2e journey, a preview) the
+ * `PARTNER_DEVELOPER_TERMS_VERSION` variable may name a published version,
+ * because the shipped constant may still be a draft that registers nothing.
+ * "Production" is the backend's own test, the one its Sentry gate uses: Railway
+ * leaves NODE_ENV unset there, so NODE_ENV alone cannot say.
+ */
+export function partnerDeveloperTermsVersion(environment: NodeJS.ProcessEnv, production: boolean): string {
+  const override = environment.PARTNER_DEVELOPER_TERMS_VERSION?.trim();
+  return !production && override ? override : PARTNER_DEVELOPER_TERMS_VERSION;
+}
+
 export function readPartnerAuthorityConfiguration(
   environment: NodeJS.ProcessEnv = process.env,
+  { production = isProductionSentryEnvironment() }: { production?: boolean } = {},
 ): PartnerAuthorityConfiguration {
   return {
     issuer: PARTNER_ISSUER,
@@ -92,6 +114,7 @@ export function readPartnerAuthorityConfiguration(
     webOrigin: PARTNER_WEB_ORIGIN,
     secrets: parsePartnerSecrets(environment.PARTNER_OAUTH_SECRETS),
     nextAuthSecret: requireNextAuthSecret(environment.NEXTAUTH_SECRET),
+    developerTermsVersion: partnerDeveloperTermsVersion(environment, production),
   };
 }
 

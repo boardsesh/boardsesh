@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import type { OAuthClient } from '@boardsesh/shared-schema';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
@@ -141,12 +142,14 @@ describe('DeveloperAppsContent', () => {
     fireEvent.change(within(form).getByLabelText(/Redirect URIs/), {
       target: { value: 'https://planner.example/oauth/boardsesh' },
     });
+    fireEvent.click(within(form).getByRole('checkbox', { name: /I accept the Boardsesh developer terms/ }));
     fireEvent.click(within(form).getByRole('button', { name: 'Register app' }));
 
     const reveal = await screen.findByRole('dialog', { name: 'Hangboard Planner is registered' });
     expect(createdInput).toMatchObject({
       publisherName: 'Planner Labs',
       tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
+      acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
     });
     expect(within(reveal).getByText("Copy the client secret now. Boardsesh won't show it again.")).toBeTruthy();
     expect(within(reveal).getByRole('textbox', { name: 'Client secret' }).textContent).toBe(SECRET);
@@ -166,6 +169,37 @@ describe('DeveloperAppsContent', () => {
     fireEvent.click(within(reveal).getByRole('button', { name: "I've stored the secret" }));
     await waitFor(() => expect(screen.queryByText(SECRET)).toBeNull());
     expect(await screen.findByRole('listitem', { name: 'Hangboard Planner' })).toBeTruthy();
+  });
+
+  it('registers nothing until the developer accepts the terms, and links to them', async () => {
+    const create = vi.fn();
+    serve({ MyOAuthClients: () => ({ myOAuthClients: [] }), CreateOAuthClient: create });
+    renderConsole();
+    fireEvent.click(await screen.findByRole('button', { name: 'Register your first app' }));
+    const form = await screen.findByRole('dialog', { name: 'Register an app' });
+    const termsLink = within(form).getByRole('link', { name: /Read the developer terms/ });
+    expect(termsLink.getAttribute('href')).toBe('/developers/terms');
+    expect(termsLink.getAttribute('target')).toBe('_blank');
+    fireEvent.change(within(form).getByLabelText(/App name/), { target: { value: 'Hangboard Planner' } });
+    fireEvent.change(within(form).getByLabelText(/Publisher/), { target: { value: 'Planner Labs' } });
+    fireEvent.change(within(form).getByLabelText(/Privacy policy URL/), {
+      target: { value: 'https://planner.example/privacy' },
+    });
+    fireEvent.change(within(form).getByLabelText(/Redirect URIs/), {
+      target: { value: 'https://planner.example/oauth/boardsesh' },
+    });
+    fireEvent.click(within(form).getByRole('button', { name: 'Register app' }));
+    expect(await within(form).findByText('Accept the developer terms to register an app.')).toBeTruthy();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('does not ask an edit to accept the terms again', async () => {
+    serve({ MyOAuthClients: () => ({ myOAuthClients: [app()] }) });
+    renderConsole();
+    const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+    const form = await screen.findByRole('dialog', { name: 'Edit Hangboard Planner' });
+    expect(within(form).queryByRole('checkbox', { name: /developer terms/ })).toBeNull();
   });
 
   it("shows the server's refusal inside the form and keeps what the developer typed", async () => {

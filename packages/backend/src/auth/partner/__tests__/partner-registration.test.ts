@@ -34,6 +34,7 @@ import {
   createAuthorityDatabase,
   createPartnerTestEnvironment,
   TEST_CONFIGURATION,
+  TEST_DEVELOPER_TERMS_VERSION,
   TEST_OAUTH_OPTIONS,
   TEST_RESOURCE,
   type PartnerTestEnvironment,
@@ -52,6 +53,7 @@ const APP_INPUT = {
   applicationType: 'web',
   tokenEndpointAuthMethod: 'client_secret_post',
   redirectUris: ['https://planner.example.test/oauth/boardsesh'],
+  acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
 const NATIVE_PUBLIC_INPUT = {
@@ -62,6 +64,7 @@ const NATIVE_PUBLIC_INPUT = {
   applicationType: 'native',
   tokenEndpointAuthMethod: 'none',
   redirectUris: ['http://127.0.0.1/callback', 'com.example.cli:/oauth/boardsesh'],
+  acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
 
 async function refusal(promise: Promise<unknown>): Promise<PartnerRegistrationError> {
@@ -176,7 +179,11 @@ describe('partner app registration', () => {
         maxActiveConnections: 25,
         maxNewConnectionsPerDay: 20,
         suspendedAt: null,
+        termsVersion: TEST_DEVELOPER_TERMS_VERSION,
       });
+      // Accepted during this registration, by the database row's own account.
+      expect(policy.termsAcceptedAt).toBeInstanceOf(Date);
+      expect(Math.abs(Date.now() - (policy.termsAcceptedAt as Date).getTime())).toBeLessThan(60_000);
       expect([PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS, PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY]).toEqual([25, 20]);
       expect(created.app).toMatchObject({
         publisherName: APP_INPUT.publisherName,
@@ -196,6 +203,39 @@ describe('partner app registration', () => {
         expect(refused.message).toMatch(/publisher name cannot use or imitate/);
       }
       expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
+    });
+
+    it('requires the current developer terms, and writes nothing without them', async () => {
+      const developerId = await createDeveloper();
+      for (const acceptedTermsVersion of [undefined, '2026-01-01']) {
+        const refused = await refusal(register(developerId, { ...APP_INPUT, acceptedTermsVersion }));
+        expect(refused.reason).toBe('invalid_input');
+        expect(refused.message).toMatch(/Accept the current Boardsesh developer terms/);
+      }
+      expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
+    });
+
+    it("registers nothing while the deployment's developer terms are a draft", async () => {
+      const draftDatabase = createAuthorityDatabase('partner-registration-draft-terms');
+      try {
+        const draftRuntime = await createPartnerAuthorityRuntime(
+          draftDatabase.database,
+          { ...TEST_CONFIGURATION, developerTermsVersion: '2026-11-10-draft' },
+          { logbook: { feed: db, snapshots: db }, close: () => draftDatabase.close() },
+        );
+        const developerId = await createDeveloper();
+        const refused = await refusal(
+          draftRuntime.registration.createApp(consoleDatabase, developerId, {
+            ...APP_INPUT,
+            acceptedTermsVersion: '2026-11-10-draft',
+          }),
+        );
+        expect(refused.reason).toBe('terms_unpublished');
+        expect(refused.message).toMatch(/^Developer terms are not published yet/);
+        expect(await db.$count(oauthClient, eq(oauthClient.userId, developerId))).toBe(0);
+      } finally {
+        await draftDatabase.close();
+      }
     });
 
     it('ignores every hazard a caller slips into the input, and refuses private_key_jwt', async () => {

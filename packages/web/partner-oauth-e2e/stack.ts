@@ -6,6 +6,11 @@
  */
 
 export const STACK_ENVIRONMENT_VARIABLE = 'PARTNER_OAUTH_E2E_STACK';
+/**
+ * The developer terms version the e2e backend publishes. The shipped version
+ * may be a draft, and the backend registers no app against draft terms.
+ */
+export const E2E_DEVELOPER_TERMS_VERSION = 'partner-e2e-terms-1';
 /** The line `database.ts seed` prints its result on. */
 export const SEED_OUTPUT_PREFIX = 'PARTNER_OAUTH_E2E_SEED=';
 

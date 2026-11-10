@@ -1,3 +1,4 @@
+import { PARTNER_DEVELOPER_TERMS_VERSION } from '@boardsesh/auth-protocol/partner-oauth';
 import type {
   CreateOAuthClientInput,
   OAuthClient,
@@ -26,9 +27,11 @@ export type AppFormState = {
   secretMethod: AppSecretMethod;
   /** One redirect URI per line, as typed. */
   redirectUris: string;
+  /** The developer ticked the developer terms box. Asked only when registering. */
+  acceptedTerms: boolean;
 };
 
-export type AppFormField = 'name' | 'publisherName' | 'privacyPolicyUrl' | 'redirectUris';
+export type AppFormField = 'name' | 'publisherName' | 'privacyPolicyUrl' | 'redirectUris' | 'acceptedTerms';
 
 /** The backend's own cap (`PARTNER_REDIRECT_URIS_PER_APP`). */
 export const MAX_REDIRECT_URIS = 10;
@@ -42,6 +45,7 @@ export const EMPTY_APP_FORM: AppFormState = {
   clientType: 'confidential',
   secretMethod: 'CLIENT_SECRET_BASIC',
   redirectUris: '',
+  acceptedTerms: false,
 };
 
 /** Lines with something on them, trimmed. Order is kept; the server refuses repeats. */
@@ -56,13 +60,18 @@ export function authMethodFor(state: Pick<AppFormState, 'clientType' | 'secretMe
   return state.clientType === 'public' ? 'NONE' : state.secretMethod;
 }
 
-/** Fields the form must not send empty. Everything else the server checks, with its own message. */
-export function missingAppFormFields(state: AppFormState): AppFormField[] {
+/**
+ * Fields the form must not send empty. Everything else the server checks, with
+ * its own message. Registering also needs the developer terms accepted; an
+ * edit does not ask again.
+ */
+export function missingAppFormFields(state: AppFormState, { registering }: { registering: boolean }): AppFormField[] {
   const missing: AppFormField[] = [];
   if (state.name.trim().length === 0) missing.push('name');
   if (state.publisherName.trim().length === 0) missing.push('publisherName');
   if (state.privacyPolicyUrl.trim().length === 0) missing.push('privacyPolicyUrl');
   if (parseRedirectUris(state.redirectUris).length === 0) missing.push('redirectUris');
+  if (registering && !state.acceptedTerms) missing.push('acceptedTerms');
   return missing;
 }
 
@@ -76,6 +85,9 @@ export function toCreateInput(state: AppFormState): CreateOAuthClientInput {
     applicationType: state.applicationType,
     tokenEndpointAuthMethod: authMethodFor(state),
     redirectUris: parseRedirectUris(state.redirectUris),
+    // The version this page shows. The server refuses any other, so a page left
+    // open across a change of terms asks the developer to reload.
+    acceptedTermsVersion: PARTNER_DEVELOPER_TERMS_VERSION,
   };
 }
 
@@ -89,6 +101,8 @@ export function formFromApp(app: OAuthClient): AppFormState {
     clientType: app.tokenEndpointAuthMethod === 'NONE' ? 'public' : 'confidential',
     secretMethod: app.tokenEndpointAuthMethod === 'CLIENT_SECRET_POST' ? 'CLIENT_SECRET_POST' : 'CLIENT_SECRET_BASIC',
     redirectUris: app.redirectUris.join('\n'),
+    // Accepted at registration; an edit does not ask again.
+    acceptedTerms: true,
   };
 }
 

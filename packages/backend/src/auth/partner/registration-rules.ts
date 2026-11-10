@@ -39,6 +39,8 @@ export interface PartnerAppInput {
   applicationType: PartnerAppApplicationType;
   tokenEndpointAuthMethod: PartnerAppAuthMethod;
   redirectUris: string[];
+  /** The developer terms version the developer accepted: always the current one once validated. */
+  acceptedTermsVersion: string;
 }
 
 /** An edit. A field left undefined keeps its value; `homepageUrl: null` clears it. */
@@ -83,6 +85,7 @@ export type PartnerRegistrationRefusal =
   | 'not_found'
   | 'suspended'
   | 'no_secret'
+  | 'terms_unpublished'
   | 'busy';
 
 /** A refusal the developer can act on. The message is safe to show them. */
@@ -335,7 +338,34 @@ function validateAuthMethod(rawMethod: unknown): PartnerAppAuthMethod {
   return match;
 }
 
-export function normalizePartnerAppInput(raw: Record<string, unknown>): PartnerAppInput {
+/** Terms the owner has not approved yet. No app registers against them. */
+export function isDraftDeveloperTermsVersion(termsVersion: string): boolean {
+  return termsVersion.endsWith('-draft');
+}
+
+/**
+ * A new app needs the developer to have accepted the terms the console shows
+ * now. An older version is refused too, so a console left open across a terms
+ * change asks again instead of recording text the developer never saw.
+ */
+function validateAcceptedTermsVersion(raw: unknown, termsVersion: string): string {
+  if (raw !== termsVersion) {
+    invalid('Accept the current Boardsesh developer terms to register an app. Reload the page to see them.');
+  }
+  return termsVersion;
+}
+
+/**
+ * `termsVersion` is the deployment's current developer terms. While they are a
+ * draft, every registration is refused before anything else is checked.
+ */
+export function normalizePartnerAppInput(raw: Record<string, unknown>, termsVersion: string): PartnerAppInput {
+  if (isDraftDeveloperTermsVersion(termsVersion)) {
+    throw new PartnerRegistrationError(
+      'terms_unpublished',
+      'Developer terms are not published yet, so no app can be registered. Registration opens once Boardsesh publishes them.',
+    );
+  }
   const applicationType = validateApplicationType(raw.applicationType);
   return {
     name: validatePartnerAppName(raw.name),
@@ -348,6 +378,7 @@ export function normalizePartnerAppInput(raw: Record<string, unknown>): PartnerA
     applicationType,
     tokenEndpointAuthMethod: validateAuthMethod(raw.tokenEndpointAuthMethod),
     redirectUris: validatePartnerRedirectUris(raw.redirectUris, applicationType),
+    acceptedTermsVersion: validateAcceptedTermsVersion(raw.acceptedTermsVersion, termsVersion),
   };
 }
 
