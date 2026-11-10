@@ -67,6 +67,20 @@ export const resolveBoardBySlug = cache(async (slug: string, wallUuid?: string):
   }
 });
 
+/**
+ * The board as a stranger holding only its slug sees it: what an unfurler sees,
+ * and so the question the backend's board share card asks before it draws.
+ *
+ * For an anonymous request that is the read the page already made; a signed-in
+ * viewer can open boards a stranger cannot (followers, invite-only, their own
+ * Only-me board), so their request asks again without the token. No `?wall=`
+ * capability is ever sent: an unlisted spray wall must read as missing here.
+ */
+export const resolveBoardBySlugAsStranger = cache(async (slug: string): Promise<ResolvedBoard | null> => {
+  if (!(await getServerAuthToken())) return resolveBoardBySlug(slug);
+  return fetchBoardBySlug(slug, undefined, false);
+});
+
 class UnknownWallUuidArgumentError extends Error {}
 
 const BOARD_BY_SLUG_FIELDS = `
@@ -94,7 +108,11 @@ const BOARD_BY_SLUG_FIELDS = `
  * open an UNLISTED wall; it is sent only when the request carried one, so every
  * other lookup sends the same document, and hits the same cache entry, as before.
  */
-async function fetchBoardBySlug(slug: string, wallUuid: string | undefined): Promise<ResolvedBoard | null> {
+async function fetchBoardBySlug(
+  slug: string,
+  wallUuid: string | undefined,
+  asViewer = true,
+): Promise<ResolvedBoard | null> {
   const url = getGraphQLHttpUrl();
   const query =
     wallUuid === undefined
@@ -102,7 +120,7 @@ async function fetchBoardBySlug(slug: string, wallUuid: string | undefined): Pro
       : `query BoardBySlugWithWall($slug: String!, $wallUuid: ID) { boardBySlug(slug: $slug, wallUuid: $wallUuid) { ${BOARD_BY_SLUG_FIELDS} } }`;
   const variables = wallUuid === undefined ? { slug } : { slug, wallUuid };
 
-  const authToken = await getServerAuthToken();
+  const authToken = asViewer ? await getServerAuthToken() : undefined;
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...webClientIdentityHeaders() };
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;

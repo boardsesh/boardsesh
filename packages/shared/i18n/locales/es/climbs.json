@@ -29,7 +29,9 @@
       "description": "Explora bloques en {{boardName}} a {{angle}}°",
       "fallbackTitle": "Bloques",
       "fallbackDescription": "Explora bloques",
-      "paginatedTitle": "Bloques de {{boardName}} a {{angle}}° — Página {{page}}"
+      "paginatedTitle": "Bloques de {{boardName}} a {{angle}}° — Página {{page}}",
+      "ogTitle": "Bloques en {{name}} a {{angle}}°",
+      "ogDescription": "Elige uno, enciéndelo y registra el encadene."
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -1079,7 +1081,10 @@
       },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
-        "description": "{{wallName}}, un Spraywall a {{angle}}°. Mira el Spraywall y ábrelo en la app de Boardsesh."
+        "description": "{{wallName}}, un Spraywall a {{angle}}°. Mira el Spraywall y ábrelo en la app de Boardsesh.",
+        "ogTitle": "{{wallName}} · Spraywall",
+        "ogDescription_one": "Un Spraywall a {{angle}}° con {{count}} presa. Mira el Spraywall y prueba lo que hay montado.",
+        "ogDescription_other": "Un Spraywall a {{angle}}° con {{count}} presas. Mira el Spraywall y prueba lo que hay montado."
       }
     },
     "install": {

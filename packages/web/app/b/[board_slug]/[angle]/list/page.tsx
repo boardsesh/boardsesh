@@ -2,13 +2,19 @@ import React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { SearchRequestPagination } from '@/app/lib/types';
-import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
+import {
+  resolveBoardBySlug,
+  resolveBoardBySlugAsStranger,
+  boardToRouteParamsFromAngleSegment,
+  type ResolvedBoard,
+} from '@/app/lib/board-slug-utils';
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
+import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import {
   isFrontDoorPageOutOfRange,
   parseFrontDoorPage,
@@ -28,6 +34,36 @@ import BoardQrLandingTracker from './board-qr-landing-tracker';
  * lands rather than a climb list. `./spray-wall-view` owns the capability rule.
  */
 const SPRAY_BOARD_TYPE = 'spray';
+
+/**
+ * The board's share card, or null when a stranger could not open the board and
+ * so the backend card would answer 404: private, followers-only, invite-only and
+ * admin-hidden boards. The URL carries the slug and nothing else, so no invite
+ * token or wall capability can ever reach it. A lookup that fails costs the
+ * card, never the page's metadata.
+ */
+async function resolveBoardShareImage(board: ResolvedBoard): Promise<string | null> {
+  let strangerView: ResolvedBoard | null;
+  try {
+    strangerView = await resolveBoardBySlugAsStranger(board.slug);
+  } catch {
+    return null;
+  }
+  if (!strangerView) return null;
+  return buildOgFamilyImageUrl(
+    'place',
+    { kind: 'board', slug: strangerView.slug },
+    buildOgContentVersion(
+      strangerView.name,
+      strangerView.boardType,
+      strangerView.layoutId,
+      strangerView.sizeId,
+      strangerView.setIds,
+      strangerView.angle,
+      strangerView.locationName ?? null,
+    ),
+  );
+}
 
 type BoardSlugListPageProps = {
   params: Promise<{ board_slug: string; angle: string }>;
@@ -95,15 +131,20 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       boardIsHidden: board.isUnlisted || !board.isPublic || board.gymIsListed === false,
     });
 
+    const imageUrl = await resolveBoardShareImage(board);
+
     return createBoardContentPageMetadata({
       title:
         page > 1
           ? t('metadata.list.paginatedTitle', { boardName, angle: params.angle, page })
           : t('metadata.list.title', { boardName, angle: params.angle }),
       description: t('metadata.list.description', { boardName, angle: params.angle }),
+      ogTitle: t('metadata.list.ogTitle', { name: board.name, angle: params.angle }),
+      ogDescription: t('metadata.list.ogDescription'),
       path,
       locale,
       robots,
+      ...(imageUrl ? { imagePath: imageUrl } : {}),
     });
   } catch {
     return createBoardContentPageMetadata({

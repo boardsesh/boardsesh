@@ -13,6 +13,7 @@ import {
 import { ClimbFilterSheet, type ClimbFilterSheetPickers, type ClimbFilterSheetSections } from './ClimbFilterSheet';
 import { SetterFollowButton } from './SetterFollowButton';
 import { ShareIconButton } from './ShareIconButton';
+import { buildSetterOgImageUrl } from '../lib/share-prewarm';
 import { Button } from './Button';
 import { Text } from './Text';
 import { useClimbFilterSession } from '../hooks/use-climb-filter-session';
@@ -299,6 +300,7 @@ export function SetterPlaylistScreen({ tab }: { tab: SetterPlaylistTab }) {
           copiedMessage={tProfile('setter.linkCopied')}
           errorMessage={tProfile('setter.shareFailed')}
           onShare={trackSetterShared}
+          prewarmOgImageUrl={buildSetterOgImageUrl(username)}
         />
         <SetterFollowButton username={username} />
       </>

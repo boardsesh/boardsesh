@@ -21,6 +21,7 @@ export async function generateMetadata() {
   return createPageMetadata({
     title: t('metadata.home.title'),
     description: t('metadata.home.description'),
+    ogTitle: t('metadata.home.ogTitle'),
     ogDescription: t('metadata.home.ogDescription'),
     path: '/',
     locale,

@@ -21,7 +21,11 @@ const setterData = vi.hoisted(() => ({
 }));
 
 const ogSummary = vi.hoisted(() => ({
-  value: { displayName: 'Marco', version: 'v1' } as { displayName: string; version: string } | null,
+  value: { displayName: 'Marco', totalAscents: 0, version: 'v1' } as {
+    displayName: string;
+    totalAscents: number;
+    version: string;
+  } | null,
   calls: 0,
   /** Set to drive the head down its `catch`, the way a database blip would. */
   failure: null as Error | null,
@@ -105,6 +109,8 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
     return ogSummary.value;
   },
 }));
+
+vi.mock('@/app/lib/backend-url', () => ({ getPublicBackendHttpUrl: () => 'https://ws.boardsesh.com' }));
 
 vi.mock('@/app/lib/i18n/get-locale', () => ({ getLocale: async () => serverLocale.value }));
 vi.mock('@/app/lib/i18n/server', () => ({
@@ -239,7 +245,7 @@ function graphOf(
 
 beforeEach(() => {
   notFoundCalls.count = 0;
-  ogSummary.value = { displayName: 'Marco', version: 'v1' };
+  ogSummary.value = { displayName: 'Marco', totalAscents: 0, version: 'v1' };
   ogSummary.calls = 0;
   ogSummary.failure = null;
   serverLocale.value = 'en-US';
@@ -454,6 +460,40 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     expect(metadata.alternates?.canonical).toBe('/setter/marco');
     expect(metadata.alternates?.languages).toBeUndefined();
+  });
+
+  it('points the share preview at the backend setter card, versioned by what it draws', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
+
+    const first = await metadataFor();
+    const [firstImage] = (first.openGraph?.images ?? []) as Array<{ url: string }>;
+    expect(firstImage.url).toMatch(/^https:\/\/ws\.boardsesh\.com\/og\/setter\?username=marco&v=[0-9a-z]+$/);
+
+    // A new most-sent climb is a new card, so it must be a new URL: the old
+    // token was a constant and a setter card could stay stale forever.
+    setterData.value = pageData([{ uuid: 'b'.repeat(32), name: 'New Favourite' }]);
+    const second = await metadataFor({}, 'marco ');
+    const [secondImage] = (second.openGraph?.images ?? []) as Array<{ url: string }>;
+    expect(secondImage.url.split('v=')[1]).not.toBe(firstImage.url.split('v=')[1]);
+  });
+
+  it('headlines the send total once there are ten sends, and the climb count below that', async () => {
+    setterData.value = pageData([{ uuid: 'a'.repeat(32), name: 'Most Sent' }]);
+    ogSummary.value = { displayName: 'Marco', totalAscents: 1_136_595, version: 'v1' };
+
+    const prolific = await metadataFor();
+    // The mocked `t` prints the key and the name.
+    expect(prolific.openGraph?.title).toBe('metadata.setter.ogTitleSends:Marco');
+    expect(prolific.openGraph?.description).toBe(
+      'metadata.setter.ogSetCount metadata.setter.ogMostSent metadata.setter.ogPickOne',
+    );
+
+    ogSummary.value = { displayName: 'Marco', totalAscents: 9, version: 'v1' };
+    const quiet = await metadataFor({}, 'marco2');
+    expect(quiet.openGraph?.title).toBe('metadata.setter.ogTitleSetCount:Marco');
+    expect(quiet.openGraph?.description).toBe(
+      'metadata.setter.ogOnBoards metadata.setter.ogMostSentSoFar metadata.setter.ogGoGetOnIt',
+    );
   });
 
   it('serves a setter whose name contains a percent sign instead of 500ing on it', async () => {

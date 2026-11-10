@@ -142,7 +142,11 @@
     "sprayWallCount_other": "{{count}} Spraywalls",
     "sprayWallsIntro": "Los Spraywalls de este centro, presa a presa. Abre uno para ver lo que se ha montado en él.",
     "sprayWallPhotoAlt": "Foto de {{wallName}}",
-    "sprayWallMeta": "{{angle}}° · {{holds}} presas"
+    "sprayWallMeta": "{{angle}}° · {{holds}} presas",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "Plafón {{board}} en {{gymName}}. Mira qué bloques hay y registra tus encadenes.",
+    "ogDescriptionManyTypes": "Plafones {{boards}} en {{gymName}}. Mira qué bloques hay y registra tus encadenes.",
+    "ogDescriptionNoBoards": "Todavía no hay plafones en este rocódromo. ¿Escalas aquí? Reclama el rocódromo y añádelos."
   },
   "boardPoster": {
     "metaTitle": "Póster QR de {{boardName}}",

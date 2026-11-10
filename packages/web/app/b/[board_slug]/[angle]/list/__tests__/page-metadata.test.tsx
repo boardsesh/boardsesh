@@ -25,6 +25,8 @@ vi.mock('@/app/lib/i18n/server', () => ({
 
 type ResolvedBoard = {
   slug: string;
+  name: string;
+  angle: number;
   boardType: string;
   layoutId: number;
   sizeId: number;
@@ -37,6 +39,8 @@ type ResolvedBoard = {
 function board(overrides: Partial<ResolvedBoard> = {}): ResolvedBoard {
   return {
     slug: 'my-board',
+    name: 'Backspace',
+    angle: 40,
     boardType: 'kilter',
     layoutId: 1,
     sizeId: 7,
@@ -48,9 +52,15 @@ function board(overrides: Partial<ResolvedBoard> = {}): ResolvedBoard {
 }
 
 const resolveBoardBySlug = vi.fn<(slug: string) => Promise<ResolvedBoard | null>>();
+const resolveBoardBySlugAsStranger = vi.fn<(slug: string) => Promise<ResolvedBoard | null>>();
+
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => 'https://ws.boardsesh.com',
+}));
 
 vi.mock('@/app/lib/board-slug-utils', () => ({
   resolveBoardBySlug,
+  resolveBoardBySlugAsStranger,
   boardToRouteParams: vi.fn(() => ({
     board_name: 'kilter',
     layout_id: 1,
@@ -92,6 +102,8 @@ const pageModule = await import('../page');
 beforeEach(() => {
   resolveBoardBySlug.mockReset();
   resolveBoardBySlug.mockResolvedValue(board());
+  resolveBoardBySlugAsStranger.mockReset();
+  resolveBoardBySlugAsStranger.mockImplementation((slug) => resolveBoardBySlug(slug));
 });
 
 function generateMetadata(searchParams: Record<string, string> = {}) {
@@ -182,6 +194,59 @@ describe('board slug list metadata', () => {
 
     expect(metadata.alternates?.canonical).toBeUndefined();
     expect(JSON.stringify(metadata.title)).not.toContain('my-board');
+  });
+});
+
+function imageUrlOf(metadata: Awaited<ReturnType<typeof generateMetadata>>): string | undefined {
+  const images = metadata.openGraph?.images as Array<{ url: string }> | undefined;
+  return images?.[0]?.url;
+}
+
+describe('board slug list share preview', () => {
+  it("points at the backend board card and names the board's own climbs", async () => {
+    const metadata = await generateMetadata();
+
+    expect(imageUrlOf(metadata)).toMatch(
+      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=my-board&v=[0-9a-z]+$/,
+    );
+    expect(metadata.openGraph?.title).toBe('metadata.list.ogTitle(name=Backspace,angle=40)');
+    expect(metadata.openGraph?.description).toBe('metadata.list.ogDescription');
+    // The search title still leads with the board type.
+    expect(JSON.stringify(metadata.title)).toContain('metadata.list.title');
+  });
+
+  it('gives an Unlisted home board a card: its slug is its link', async () => {
+    resolveBoardBySlug.mockResolvedValue(board({ isUnlisted: true }));
+
+    const metadata = await generateMetadata();
+
+    expect(imageUrlOf(metadata)).toContain('/og/place?kind=board&slug=my-board');
+  });
+
+  it('keeps the generic card for a board a stranger cannot open, which the backend would 404', async () => {
+    // A signed-in follower can open it; the stranger read cannot.
+    resolveBoardBySlug.mockResolvedValue(board({ isPublic: false }));
+    resolveBoardBySlugAsStranger.mockResolvedValue(null);
+
+    const metadata = await generateMetadata();
+
+    expect(imageUrlOf(metadata)).toBe('/opengraph-image');
+  });
+
+  it('never carries an invite token into the image URL', async () => {
+    const metadata = await generateMetadata({ invite: 'secret-invite-token' });
+
+    expect(imageUrlOf(metadata)).not.toContain('secret-invite-token');
+    expect(JSON.stringify(metadata)).not.toContain('secret-invite-token');
+  });
+
+  it('costs the card, never the metadata, when the stranger read fails', async () => {
+    resolveBoardBySlugAsStranger.mockRejectedValue(new Error('backend down'));
+
+    const metadata = await generateMetadata();
+
+    expect(imageUrlOf(metadata)).toBe('/opengraph-image');
+    expect(canonicalOf(metadata)).toContain('/40/list');
   });
 });
 

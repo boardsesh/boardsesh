@@ -9,9 +9,9 @@ import {
   type SessionWorkoutResult,
 } from '@boardsesh/graphql/operations/session-workouts';
 import SessionDetailContent from './session-detail-content';
-import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
 import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { buildSessionOgImageUrl, buildSessionRecapShareCopy } from '@/app/lib/seo/session-share-copy';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import I18nProvider from '@/app/components/providers/i18n-provider';
@@ -96,6 +96,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       : t('detail.sessionNameOnBoardsesh', { name: sessionName });
   }
 
+  const { ogTitle, ogDescription } = buildSessionRecapShareCopy(summary, locale, t);
+  // Null when there is no recap card to draw: no image beats a broken one.
+  const imageUrl = buildSessionOgImageUrl(sessionId, summary, 'recap');
+
   // Indexability is deliberately unchanged: this is the kept public share
   // surface, so flipping it to noindex is a product decision, not a hreflang
   // fix. All that changes here is that the canonical now carries its locale and
@@ -103,9 +107,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return createPageMetadata({
     title: sessionName,
     description,
+    ogTitle,
+    ogDescription,
     path,
     locale,
-    imagePath: buildVersionedOgImagePath('/api/og/session', { sessionId }, summary.version),
+    imagePath: imageUrl,
     imageAlt: sessionName,
   });
 }

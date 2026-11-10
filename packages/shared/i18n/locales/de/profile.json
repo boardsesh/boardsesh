@@ -8,7 +8,14 @@
       "notFoundDescription": "Dieses Kletterprofil konnte nicht gefunden werden.",
       "ogAlt": "Kletterprofil von {{name}}",
       "title": "Klettersessions von {{name}}",
-      "titleWithBoard": "{{board}}-Sessions von {{name}}"
+      "titleWithBoard": "{{board}}-Sessions von {{name}}",
+      "ogTitleSent": "{{name}} hat {{grade}} getoppt",
+      "ogTitleNoSends": "{{name}} auf Boardsesh",
+      "ogDescriptionHardest_one": "{{climb}} ist die erste Begehung an {{boards}}. Sieh dir das Routenbuch an.",
+      "ogDescriptionHardest_other": "{{climb}} ist die schwerste von {{count}} Begehungen an {{boards}}. Sieh dir das Routenbuch an.",
+      "ogDescriptionCount_one": "{{count}} Begehung an {{boards}}. Sieh dir das Routenbuch an.",
+      "ogDescriptionCount_other": "{{count}} Begehungen an {{boards}}. Sieh dir das Routenbuch an.",
+      "ogDescriptionNoSends": "Noch keine Begehungen eingetragen. Sieh dir das Profil an."
     },
     "statistics": {
       "title": "Statistiken"
@@ -24,7 +31,18 @@
       "description": "Boulder von {{name}} auf Boardsesh",
       "fallbackTitle": "Routenbauer*in-Profil",
       "fallbackDescription": "Routenbauer*in-Profil und Boulder auf Boardsesh ansehen",
-      "ogAlt": "Routenbauer*in-Profil von {{name}}"
+      "ogAlt": "Routenbauer*in-Profil von {{name}}",
+      "ogTitleSends": "{{name}}: {{sends}} Begehungen der eigenen Boulder",
+      "ogTitleSetCount_one": "{{name}} hat {{climbs}} Boulder geschraubt",
+      "ogTitleSetCount_other": "{{name}} hat {{climbs}} Boulder geschraubt",
+      "ogSetCount_one": "{{climbs}} Boulder geschraubt.",
+      "ogSetCount_other": "{{climbs}} Boulder geschraubt.",
+      "ogMostSent_one": "Am häufigsten getoppt: {{climb}}, {{sends}} Begehung.",
+      "ogMostSent_other": "Am häufigsten getoppt: {{climb}}, {{sends}} Begehungen.",
+      "ogMostSentSoFar": "Bisher am häufigsten getoppt: {{climb}}.",
+      "ogOnBoards": "An {{boards}}.",
+      "ogPickOne": "Such dir einen aus und probier ihn.",
+      "ogGoGetOnIt": "Probier ihn aus."
     }
   },
   "page": {

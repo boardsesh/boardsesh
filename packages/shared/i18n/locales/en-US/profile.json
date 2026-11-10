@@ -8,7 +8,14 @@
       "notFoundDescription": "This climbing profile could not be found.",
       "ogAlt": "{{name}}'s climbing profile",
       "title": "{{name}}'s Climbing Sessions",
-      "titleWithBoard": "{{name}}'s {{board}} Sessions"
+      "titleWithBoard": "{{name}}'s {{board}} Sessions",
+      "ogTitleSent": "{{name}} sent {{grade}}",
+      "ogTitleNoSends": "{{name}} on Boardsesh",
+      "ogDescriptionHardest_one": "{{climb}} is the first send on {{boards}}. See the logbook.",
+      "ogDescriptionHardest_other": "{{climb}} is the hardest of {{count}} climbs sent on {{boards}}. See the logbook.",
+      "ogDescriptionCount_one": "{{count}} climb sent on {{boards}}. See the logbook.",
+      "ogDescriptionCount_other": "{{count}} climbs sent on {{boards}}. See the logbook.",
+      "ogDescriptionNoSends": "No sends logged yet. See the profile."
     },
     "statistics": {
       "title": "Statistics"
@@ -24,7 +31,18 @@
       "description": "Climbs created by {{name}} on Boardsesh",
       "fallbackTitle": "Setter Profile",
       "fallbackDescription": "View setter profile and climbs on Boardsesh",
-      "ogAlt": "{{name}}'s setter profile"
+      "ogAlt": "{{name}}'s setter profile",
+      "ogTitleSends": "{{name}}: {{sends}} sends on their climbs",
+      "ogTitleSetCount_one": "{{name}} set {{climbs}} climb",
+      "ogTitleSetCount_other": "{{name}} set {{climbs}} climbs",
+      "ogSetCount_one": "Set {{climbs}} climb.",
+      "ogSetCount_other": "Set {{climbs}} climbs.",
+      "ogMostSent_one": "Most sent: {{climb}}, {{sends}} send.",
+      "ogMostSent_other": "Most sent: {{climb}}, {{sends}} sends.",
+      "ogMostSentSoFar": "Most sent so far: {{climb}}.",
+      "ogOnBoards": "On {{boards}}.",
+      "ogPickOne": "Pick one and get on it.",
+      "ogGoGetOnIt": "Go get on it."
     }
   },
   "page": {

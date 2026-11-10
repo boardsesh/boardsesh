@@ -12,9 +12,10 @@ import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
-import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import { getSetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { getSetterOgSummary, type SetterOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import {
   frontDoorPagePath,
   isFrontDoorPageOutOfRange,
@@ -27,7 +28,7 @@ import {
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
-import { getSetterPageView, setterPageHasCrawlableClimb } from './setter-page-view';
+import { getSetterPageView, setterPageHasCrawlableClimb, type SetterPageView } from './setter-page-view';
 import SetterFollowIsland from './setter-follow-island';
 import SetterJsonLd from './setter-json-ld';
 import SetterSeoFragment from './setter-seo-fragment';
@@ -85,6 +86,75 @@ const relatedLinksSx = {
   gap: `${themeTokens.spacing[2]}px`,
   margin: `${themeTokens.spacing[5]}px 0`,
 };
+
+/** Below this many sends the card's hero is the climb count, and so is the share title. */
+const SETTER_SENDS_HERO_MIN = 10;
+
+type SetterTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
+
+/**
+ * Page one of the setter's climbs, most sent first: the climb the card lights.
+ * Null when that read fails, which costs the share copy its climb and nothing else.
+ */
+async function readSetterFirstPage(username: string): Promise<SetterPageView | null> {
+  try {
+    return await getSetterPageView(username, 1);
+  } catch {
+    return null;
+  }
+}
+
+/** What a chat app shows above the card: the setter's send total, as the card's hero does. */
+function buildSetterShareCopy(
+  summary: SetterOgSummary,
+  firstPage: SetterPageView | null,
+  locale: string,
+  t: SetterTranslate,
+): { ogTitle: string; ogDescription: string } {
+  const numberFormat = new Intl.NumberFormat(locale);
+  const topClimb = firstPage?.data.climbs[0] ?? null;
+  const climbCount = firstPage?.data.climbCount ?? null;
+  const name = summary.displayName;
+
+  if (summary.totalAscents >= SETTER_SENDS_HERO_MIN) {
+    const sends = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(
+      summary.totalAscents,
+    );
+    const sentences = [
+      climbCount === null
+        ? null
+        : t('metadata.setter.ogSetCount', { count: climbCount, climbs: numberFormat.format(climbCount) }),
+      topClimb
+        ? t('metadata.setter.ogMostSent', {
+            climb: topClimb.name,
+            count: topClimb.ascensionist_count,
+            sends: numberFormat.format(topClimb.ascensionist_count),
+          })
+        : null,
+      t('metadata.setter.ogPickOne'),
+    ];
+    return {
+      ogTitle: t('metadata.setter.ogTitleSends', { name, sends }),
+      ogDescription: sentences.filter(Boolean).join(' '),
+    };
+  }
+
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    (firstPage?.data.boardTypes ?? []).map(boardTypeLabel),
+  );
+  const sentences = [
+    boards ? t('metadata.setter.ogOnBoards', { boards }) : null,
+    topClimb ? t('metadata.setter.ogMostSentSoFar', { climb: topClimb.name }) : null,
+    t('metadata.setter.ogGoGetOnIt'),
+  ];
+  return {
+    ogTitle:
+      climbCount === null
+        ? t('metadata.setter.title', { name })
+        : t('metadata.setter.ogTitleSetCount', { name, count: climbCount, climbs: numberFormat.format(climbCount) }),
+    ogDescription: sentences.filter(Boolean).join(' '),
+  };
+}
 
 /**
  * `getSetterOgSummary` returning null is the whole 404 story for metadata: the
@@ -161,6 +231,17 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
     }
 
     const displayName = summary.displayName;
+    // Page one is already read for this request (it is the page body's own
+    // read); a later page skips the climb rather than paying for a second read.
+    const firstPage = page === 1 ? await readSetterFirstPage(username) : null;
+    const { ogTitle, ogDescription } = buildSetterShareCopy(summary, firstPage, locale, t);
+    const topClimb = firstPage?.data.climbs[0];
+    // A setter with no visible climb returned above, which is the card's own gate.
+    const imageUrl = buildOgFamilyImageUrl(
+      'setter',
+      { username },
+      buildOgContentVersion(summary.version, topClimb?.uuid ?? null, topClimb?.ascensionist_count ?? null),
+    );
     const { path, robots } = resolveListPageIndexation({ cleanPath, page, searchParams: resolvedSearchParams });
     // The shared doctrine cannot see this one: a setter every one of whose
     // climbs sits on a configuration `resolveClimbSitemapGroups` does not
@@ -181,8 +262,10 @@ export async function generateMetadata({ params, searchParams }: SetterPageProps
       path,
       locale,
       robots: robots ?? (linklessPage ? NOINDEX_FOLLOW : undefined),
+      ogTitle,
+      ogDescription,
       openGraphType: 'profile',
-      imagePath: buildVersionedOgImagePath('/api/og/setter', { username }, summary.version),
+      ...(imageUrl ? { imagePath: imageUrl } : {}),
       imageAlt: t('metadata.setter.ogAlt', { name: displayName }),
     });
   } catch {

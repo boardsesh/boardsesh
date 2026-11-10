@@ -68,6 +68,7 @@ import { CommentSheet } from '../../../src/components/you/CommentSheet';
 import { GlassIconButton } from '../../../src/components/GlassIconButton';
 import { FollowIconButton } from '../../../src/components/FollowIconButton';
 import { ShareIconButton } from '../../../src/components/ShareIconButton';
+import { buildPlaylistOgImageUrl } from '../../../src/lib/share-prewarm';
 import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
 import { OfflineState } from '../../../src/components/OfflineState';
 import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
@@ -897,6 +898,7 @@ export default function PlaylistDetail() {
           copiedMessage={t('detail.shareSuccess')}
           errorMessage={t('detail.shareError')}
           onShare={trackPlaylistShared}
+          prewarmOgImageUrl={buildPlaylistOgImageUrl(playlistUuid)}
           // Beside the owner toolbar's white glyphs on the clear glass over the hero.
           iconColor={isOwner && !collapsed && nativeGlass ? iosSystemColors.white : undefined}
         />

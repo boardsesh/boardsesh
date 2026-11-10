@@ -29,7 +29,9 @@
       "description": "Browse climbs on {{boardName}} at {{angle}}°",
       "fallbackTitle": "Climbs",
       "fallbackDescription": "Browse climbs",
-      "paginatedTitle": "{{boardName}} Climbs at {{angle}}° — Page {{page}}"
+      "paginatedTitle": "{{boardName}} Climbs at {{angle}}° — Page {{page}}",
+      "ogTitle": "Climbs on {{name}} at {{angle}}°",
+      "ogDescription": "Pick one, light it up and log the send."
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -1079,7 +1081,10 @@
       },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
-        "description": "{{wallName}}, a Spraywall at {{angle}}°. See the Spraywall and open it in the Boardsesh app."
+        "description": "{{wallName}}, a Spraywall at {{angle}}°. See the Spraywall and open it in the Boardsesh app.",
+        "ogTitle": "{{wallName}} · Spraywall",
+        "ogDescription_one": "A Spraywall at {{angle}}° with {{count}} hold. See the Spraywall and try what's been set.",
+        "ogDescription_other": "A Spraywall at {{angle}}° with {{count}} holds. See the Spraywall and try what's been set."
       }
     },
     "install": {

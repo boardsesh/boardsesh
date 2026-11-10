@@ -100,15 +100,18 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
 
   // --- /api/og/* (5) ---
-  // Legacy og:image redirect shim (307 -> the Railway renderer) kept
-  // for every already-shared HTML page and crawler cache from before the
-  // OG-card migration to the backend (see docs/og-climb.md). New metadata
-  // never emits it — no in-repo caller by design.
+  // Legacy og:image redirect shims (307 -> the backend renderer) kept
+  // for every already-shared HTML page and crawler cache from before each
+  // card moved to the backend (see docs/og-climb.md). New metadata never
+  // emits them — no in-repo caller by design.
   'app/api/og/climb/route.tsx': 'keep-external',
-  'app/api/og/playlist/route.tsx': 'keep-caller',
-  'app/api/og/profile/route.tsx': 'keep-caller',
+  'app/api/og/playlist/route.tsx': 'keep-external',
+  'app/api/og/profile/route.tsx': 'keep-external',
+  'app/api/og/setter/route.tsx': 'keep-external',
+  // The same shim for a real session, but it still draws the card for a
+  // `daily:` feed group, which the backend refuses, and the session and join
+  // pages for those groups still advertise it.
   'app/api/og/session/route.tsx': 'keep-caller',
-  'app/api/og/setter/route.tsx': 'keep-caller',
 
   // --- /api/v1/* (11) — published in the OpenAPI doc rendered at the
   // indexable, sitemapped /docs and served as a crawlable /openapi.json.

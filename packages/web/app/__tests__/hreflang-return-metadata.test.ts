@@ -22,12 +22,13 @@ vi.mock('next/headers', () => ({
 vi.mock('@/app/lib/db/db', () => ({ dbz: {}, dbzRead: {}, sql: {}, executeRows: async () => [] }));
 
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
-  getSetterOgSummary: async () => ({ displayName: 'Marco', avatarUrl: null, version: 'v1' }),
+  getSetterOgSummary: async () => ({ displayName: 'Marco', totalAscents: 0, version: 'v1' }),
   getProfileOgSummary: async () => ({
     displayName: 'Marco',
-    avatarUrl: null,
-    fallbackImageUrl: null,
     topBoardType: 'kilter',
+    hardestSend: null,
+    sentClimbCount: 0,
+    sentBoardTypes: [],
     version: 'v1',
   }),
   getPlaylistOgSummary: async () => ({
@@ -38,6 +39,7 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
     isPublic: true,
     boardType: 'kilter',
     climbCount: 12,
+    gradeSummary: null,
     version: 'v1',
   }),
   getSessionOgSummary: async () => ({
@@ -53,6 +55,16 @@ vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
     boardPreviewPath: null,
     version: 'v1',
     found: true,
+    isLive: false,
+    inviteName: null,
+    liveBoard: null,
+    tickCount: 3,
+    totalFlashes: 0,
+    durationMinutes: null,
+    recapParticipants: [{ name: 'Marco' }],
+    boardTypes: ['kilter'],
+    hardestSend: null,
+    hardestAttempt: null,
   }),
 }));
 

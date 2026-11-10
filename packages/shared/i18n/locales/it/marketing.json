@@ -3,7 +3,8 @@
     "home": {
       "title": "App di arrampicata compatibile con Kilter, Tension e MoonBoard",
       "description": "Condividi una coda live con la tua crew e tieni traccia delle ripetizioni su tutti i pannelli. Funziona con Kilter, Tension, MoonBoard e altri.",
-      "ogDescription": "Condividi una coda live con la tua crew e tieni traccia delle ripetizioni su tutti i pannelli. Funziona con Kilter, Tension, MoonBoard e altri."
+      "ogDescription": "Illumina i blocchi in parete, registra le tue ripetizioni e scala con la tua crew. Funziona con Kilter, Tension, MoonBoard e altri.",
+      "ogTitle": "Boardsesh: un'app per i tuoi pannelli"
     },
     "about": {
       "title": "Fatta da climber, aperta a tutti",

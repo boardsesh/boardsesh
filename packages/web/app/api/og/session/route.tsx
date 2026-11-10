@@ -9,6 +9,8 @@ import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/app/lib/seo/og';
 import { getSessionOgSummary } from '@/app/lib/seo/dynamic-og-data';
 import { ogErrorResponse } from '@/app/lib/seo/og-error';
 import { withReadDeadline } from '@/app/lib/db/read-deadline';
+import { isDailySessionId } from '@/app/lib/seo/og-family';
+import { redirectToOgFamilyCard } from '@/app/lib/seo/og-family-redirect';
 
 export const runtime = 'nodejs';
 
@@ -38,7 +40,21 @@ function buildJoinHeadline(leaderName: string | null) {
   return leaderName ? `Join ${leaderName} on the wall` : 'Join the crew on the wall';
 }
 
+/**
+ * A real session's card lives on the backend (`/og/session`), and this URL is a
+ * 307 to it so links shared before the move still unfurl. A `daily:` feed group
+ * is not a session and the backend refuses those ids, so its card is still drawn
+ * here, as it always was.
+ */
 export async function GET(request: NextRequest) {
+  const requestedSessionId = new URL(request.url).searchParams.get('sessionId');
+  if (!requestedSessionId || !isDailySessionId(requestedSessionId)) {
+    return redirectToOgFamilyCard(request, 'session', 'sessionId', ['variant']);
+  }
+  return renderDailySessionCard(request);
+}
+
+async function renderDailySessionCard(request: NextRequest) {
   const routeT0 = performance.now();
 
   try {

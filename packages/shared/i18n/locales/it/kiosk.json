@@ -142,7 +142,11 @@
     "sprayWallCount_other": "{{count}} Spraywall",
     "sprayWallsIntro": "Le Spraywall di questa palestra, presa per presa. Aprine una per vedere cosa è stato tracciato.",
     "sprayWallPhotoAlt": "Foto di {{wallName}}",
-    "sprayWallMeta": "{{angle}}° · {{holds}} prese"
+    "sprayWallMeta": "{{angle}}° · {{holds}} prese",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "Pannello {{board}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
+    "ogDescriptionManyTypes": "Pannelli {{boards}} a {{gymName}}. Guarda cosa c'è tracciato e registra le tue ripetizioni.",
+    "ogDescriptionNoBoards": "Ancora nessun pannello qui. Scali qui? Rivendica la palestra e aggiungili."
   },
   "boardPoster": {
     "metaTitle": "Poster QR per {{boardName}}",

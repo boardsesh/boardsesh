@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect } from 'next/navigation';
 import Box from '@mui/material/Box';
@@ -25,6 +25,7 @@ import {
   type GymKioskOperationResult,
 } from '@boardsesh/graphql/operations';
 import { disambiguateBoardSubtitles, stripGymNamePrefix } from '@boardsesh/board-config';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { parseGymQrLanding } from '@boardsesh/analytics';
 import { gymRedirectAttributionQuery } from '@/app/lib/gym-attribution';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
@@ -33,6 +34,7 @@ import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createPageMetadata, createNoIndexMetadata, absoluteUrl } from '@/app/lib/seo/metadata';
 import { gymIsIndexableVenue } from '@/app/lib/seo/gym-index-eligibility';
+import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { safeExternalHref } from '@/app/lib/safe-external-url';
 import { themeTokens } from '@/app/theme/theme-config';
@@ -103,7 +105,12 @@ async function fetchDefaultKiosk(gymSlug: string, token: string | undefined): Pr
   }
 }
 
-async function fetchGymBoards(gymUuid: string, token: string | undefined): Promise<UserBoard[]> {
+/**
+ * Request-deduped like `fetchGymBySlug`: `generateMetadata` reads the boards a
+ * stranger sees (no token) for the share copy, and for an anonymous reader, which
+ * is every crawler, that is the page body's own read.
+ */
+const fetchGymBoards = cache(async (gymUuid: string, token: string | undefined): Promise<UserBoard[]> => {
   try {
     const response = await executeAuthenticatedGraphQL<GetGymBoardsQueryResponse>(
       GET_GYM_BOARDS_FOR_LISTING,
@@ -115,7 +122,7 @@ async function fetchGymBoards(gymUuid: string, token: string | undefined): Promi
     console.error('fetchGymBoards failed:', error);
     return [];
   }
-}
+});
 
 /**
  * The gym's spray walls, as its members and the open web respectively may see them.
@@ -186,6 +193,48 @@ function resolveGymPhotoSrc(gym: Gym): string | null {
   return safeExternalHref(resolveGymPhotoDisplayUrl(gym.imageUrl ?? null, getPublicBackendHttpUrl()));
 }
 
+type KioskTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
+
+/**
+ * The share card and the words above it for a public gym: its own name and the
+ * boards a stranger can see on its page, the same read the card draws from. No
+ * catalogue climb count is ever said about a place.
+ */
+async function buildGymShareCard(
+  gym: Gym,
+  requestedSlug: string,
+  locale: string,
+  t: KioskTranslate,
+): Promise<{ ogTitle: string; ogDescription: string; imagePath?: string }> {
+  const boards = await fetchGymBoards(gym.uuid, undefined);
+  const boardTypes = [...new Set(boards.map((board) => board.boardType))];
+  const labels = boardTypes.map(boardTypeLabel);
+
+  let generated: string;
+  if (labels.length === 0) generated = t('gymPage.ogDescriptionNoBoards');
+  else if (labels.length === 1) generated = t('gymPage.ogDescriptionOneType', { board: labels[0], gymName: gym.name });
+  else {
+    const boardList = new Intl.ListFormat(locale, { type: 'conjunction' }).format(labels);
+    generated = t('gymPage.ogDescriptionManyTypes', { boards: boardList, gymName: gym.name });
+  }
+
+  const imageUrl = buildOgFamilyImageUrl(
+    'place',
+    // The canonical slug: a merged twin's old slug resolves to the same gym.
+    { kind: 'gym', slug: gym.slug ?? requestedSlug },
+    buildOgContentVersion(
+      gym.name,
+      gym.imageUrl ?? null,
+      boards.map((board) => [board.boardType, board.angle]),
+    ),
+  );
+  return {
+    ogTitle: labels.length > 0 ? t('gymPage.ogTitle', { gymName: gym.name, boards: labels.join(' + ') }) : gym.name,
+    ogDescription: gym.description?.trim() || generated,
+    ...(imageUrl ? { imagePath: imageUrl } : {}),
+  };
+}
+
 export async function generateMetadata(props: GymRouteProps): Promise<Metadata> {
   const { gym_slug } = await props.params;
   const token = await getServerAuthToken();
@@ -207,19 +256,11 @@ export async function generateMetadata(props: GymRouteProps): Promise<Metadata> 
   // `/gym/x?src=qr&medium=poster` its own canonical and split the page's
   // ranking signals across as many URLs as there are param combinations. Filter,
   // sort and attribution params all canonicalise to the clean base URL.
-  // An owner-uploaded photo becomes the share card; gyms without one keep the
-  // generic Boardsesh card (createPageMetadata's default). No imageWidth /
-  // imageHeight for a user photo — we don't know its aspect ratio, and a wrong
-  // one makes scrapers crop it.
-  const photoSrc = resolveGymPhotoSrc(gym);
-  const shareCard = photoSrc
-    ? {
-        imagePath: photoSrc,
-        imageAlt: t('gymPage.photoAlt', { gymName: gym.name }),
-        imageWidth: null,
-        imageHeight: null,
-      }
-    : {};
+  //
+  // A public gym advertises its family card, which draws the gym's own photo when
+  // it has one. A private gym is only ever seen by an editor previewing it, and
+  // the backend card answers 404 for it, so it keeps the generic site card.
+  const shareCard = gym.isPublic ? await buildGymShareCard(gym, gym_slug, locale, t) : {};
 
   // A gym that isn't a public venue — a private listing, or a climber's personal
   // home wall (see `gymIsIndexableVenue`) — gets `noindex, follow` AND NO

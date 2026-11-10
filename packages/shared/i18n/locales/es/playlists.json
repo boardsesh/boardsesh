@@ -11,7 +11,15 @@
       "privateDescription": "Esta playlist es privada.",
       "generatedDescription_one": "{{count}} bloque de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalo.",
       "generatedDescription_other": "{{count}} bloques de {{board}} en {{name}}. Abre la playlist en Boardsesh y escálalos.",
-      "ogAlt": "La playlist {{name}} en Boardsesh"
+      "ogAlt": "La playlist {{name}} en Boardsesh",
+      "ogTitle": "{{name}} · Lista de {{board}}",
+      "ogTitleWithBand": "{{name}} · Lista de {{board}} {{band}}",
+      "ogDescriptionRange_one": "{{count}} bloque de {{board}} de {{low}} a {{high}}. Pruébalo.",
+      "ogDescriptionRange_other": "{{count}} bloques de {{board}} de {{low}} a {{high}}. Elige uno y pruébalo.",
+      "ogDescriptionOneGrade_one": "{{count}} bloque de {{board}} de {{grade}}. Pruébalo.",
+      "ogDescriptionOneGrade_other": "{{count}} bloques de {{board}} de {{grade}}. Elige uno y pruébalo.",
+      "ogDescriptionNoBand_one": "{{count}} bloque de {{board}}. Pruébalo.",
+      "ogDescriptionNoBand_other": "{{count}} bloques de {{board}}. Elige uno y pruébalo."
     }
   },
   "library": {

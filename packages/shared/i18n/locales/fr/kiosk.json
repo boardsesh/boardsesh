@@ -142,7 +142,11 @@
     "sprayWallCount_other": "{{count}} Spraywalls",
     "sprayWallsIntro": "Les Spraywalls de cette salle, prise par prise. Ouvre-en un pour voir ce qui y a été ouvert.",
     "sprayWallPhotoAlt": "Photo de {{wallName}}",
-    "sprayWallMeta": "{{angle}}° · {{holds}} prises"
+    "sprayWallMeta": "{{angle}}° · {{holds}} prises",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "Board {{board}} à {{gymName}}. Découvre les blocs ouverts dessus et fais la croix.",
+    "ogDescriptionManyTypes": "Boards {{boards}} à {{gymName}}. Découvre les blocs ouverts et fais la croix.",
+    "ogDescriptionNoBoards": "Aucune board listée ici pour l'instant. Tu grimpes ici ? Revendique la salle et ajoute-les."
   },
   "boardPoster": {
     "metaTitle": "Affiche QR pour {{boardName}}",

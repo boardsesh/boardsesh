@@ -10,6 +10,13 @@ export const DEFAULT_OG_IMAGE_PATH = '/opengraph-image';
 type PageMetadataOptions = {
   title: string;
   description: string;
+  /**
+   * What a chat app shows above the preview, when it should differ from the
+   * search title. Used verbatim: the preview already names the site, so no
+   * `| Boardsesh` suffix is added.
+   */
+  ogTitle?: string;
+  /** The preview's description, when it should differ from the search snippet. */
   ogDescription?: string;
   path?: string;
   imagePath?: string | null;
@@ -63,6 +70,7 @@ function buildLanguageAlternates(basePath: string): Record<string, string> {
 export function createPageMetadata({
   title,
   description,
+  ogTitle,
   ogDescription,
   path,
   imagePath = DEFAULT_OG_IMAGE_PATH,
@@ -109,7 +117,7 @@ export function createPageMetadata({
     robots,
     keywords,
     openGraph: {
-      title: fullTitle,
+      title: ogTitle ?? fullTitle,
       description: ogDescription ?? description,
       type: openGraphType,
       url: canonicalPath,
@@ -128,8 +136,8 @@ export function createPageMetadata({
     },
     twitter: {
       card: twitterCard,
-      title: fullTitle,
-      description,
+      title: ogTitle ?? fullTitle,
+      description: ogDescription ?? description,
       images: normalizedImagePath ? [normalizedImagePath] : undefined,
     },
   };

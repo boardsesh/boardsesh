@@ -11,7 +11,15 @@
       "privateDescription": "This playlist is private.",
       "generatedDescription_one": "{{count}} {{board}} climb in {{name}}. Open the playlist in Boardsesh and climb it.",
       "generatedDescription_other": "{{count}} {{board}} climbs in {{name}}. Open the playlist in Boardsesh and climb them.",
-      "ogAlt": "The {{name}} playlist on Boardsesh"
+      "ogAlt": "The {{name}} playlist on Boardsesh",
+      "ogTitle": "{{name}} · {{board}} list",
+      "ogTitleWithBand": "{{name}} · {{band}} {{board}} list",
+      "ogDescriptionRange_one": "{{count}} {{board}} climb from {{low}} to {{high}}. Get on the wall.",
+      "ogDescriptionRange_other": "{{count}} {{board}} climbs from {{low}} to {{high}}. Pick one and get on the wall.",
+      "ogDescriptionOneGrade_one": "{{count}} {{board}} climb at {{grade}}. Get on the wall.",
+      "ogDescriptionOneGrade_other": "{{count}} {{board}} climbs at {{grade}}. Pick one and get on the wall.",
+      "ogDescriptionNoBand_one": "{{count}} {{board}} climb. Get on the wall.",
+      "ogDescriptionNoBand_other": "{{count}} {{board}} climbs. Pick one and get on the wall."
     }
   },
   "library": {

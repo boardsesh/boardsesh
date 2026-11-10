@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { brandColors, brandColorsDark, materialSurfaces } from '@boardsesh/velvet-tokens';
-import { themeTokens, printSurfaceTokens } from '../theme-config';
+import { themeTokens } from '../theme-config';
 import { darkTheme } from '../mui-theme';
 // Read the literal index.css text from disk. A bundler import (?raw / glob) gets
 // CSS-processed in this test env and import.meta.url is not a file: URL, so resolve the
@@ -282,20 +282,6 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
     const { separator, surface, surfaceElevated } = themeTokens.semantic;
     expect(contrast(blendOpaque(separator, surfaceElevated), surfaceElevated)).toBeLessThan(3);
     expect(contrast(blendOpaque(separator, surface), surface)).toBeLessThan(3);
-  });
-});
-
-describe('the light-surface tokens stay legible on the white OG cards', () => {
-  // printSurfaceTokens is the one place web still ships light values: the Satori cards
-  // for /api/og/{profile,setter,playlist}, which render on #FFFFFF. Those routes all
-  // vi.mock the token module, so nothing else checks these pairings.
-  it.each([900, 800, 700, 600, 500] as const)('printSurfaceTokens.neutral[%s] clears AA on white', (step) => {
-    expect(contrast(printSurfaceTokens.neutral[step], '#ffffff')).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it('the light foreground violet clears AA on white, where the dark one does not', () => {
-    expect(contrast(printSurfaceTokens.primary, '#ffffff')).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(themeTokens.colors.primary, '#ffffff')).toBeLessThan(4.5);
   });
 });
 

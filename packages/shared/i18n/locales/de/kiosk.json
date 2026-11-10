@@ -142,7 +142,11 @@
     "sprayWallCount_other": "{{count}} Spraywalls",
     "sprayWallsIntro": "Die Spraywalls dieser Halle, Griff für Griff. Öffne eine und sieh, was dort geschraubt wurde.",
     "sprayWallPhotoAlt": "Foto von {{wallName}}",
-    "sprayWallMeta": "{{angle}}° · {{holds}} Griffe"
+    "sprayWallMeta": "{{angle}}° · {{holds}} Griffe",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "{{board}} bei {{gymName}}. Sieh dir an, was geschraubt ist, und trag deine Begehungen ein.",
+    "ogDescriptionManyTypes": "{{boards}} bei {{gymName}}. Sieh dir an, was geschraubt ist, und trag deine Begehungen ein.",
+    "ogDescriptionNoBoards": "Hier sind noch keine Boards eingetragen. Du kletterst hier? Übernimm die Halle und trag sie ein."
   },
   "boardPoster": {
     "metaTitle": "QR-Poster für {{boardName}}",
