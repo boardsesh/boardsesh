@@ -147,6 +147,7 @@ describe('batch family registration', () => {
       'user-data-export',
       'spray-wall-art',
       'reclaim-logbook-snapshots',
+      'prune-logbook-changes',
     ]);
     expect(requireFamily('refresh-climb-grades')).toBe(refreshClimbGradesFamily);
     expect(requireFamily('refresh-climb-neighbors')).toBe(refreshClimbNeighborsFamily);

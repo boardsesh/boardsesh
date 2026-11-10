@@ -33,6 +33,7 @@ describe('family registry', () => {
       'spray-wall-health',
       'community-monthly-stats',
       'reclaim-logbook-snapshots',
+      'prune-logbook-changes',
     ]);
     expect(() => requireFamily('no-such-family')).toThrow('UNKNOWN_FAMILY');
   });

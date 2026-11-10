@@ -1749,7 +1749,10 @@ One table, `logbook_changes`, written only by triggers:
 | `tick_uuid` | `text` | Which tick. No FK: the tick may be gone |
 | `created_at` | `timestamp`, default `now()` | For pruning only |
 
-Indexes: `(user_id, txid, seq)` for reads, and a BRIN on `created_at` for the prune job.
+Indexes: `(user_id, txid, seq)` for reads, and a BRIN on `created_at` that was
+meant for the prune job. The job walks the primary key instead (see "Retention,
+cursor validity and moving the database"), so nothing reads the BRIN index now;
+it costs a few pages and can be dropped in a later migration.
 
 Writers, all triggers (`AFTER … FOR EACH ROW` unless noted) added with a
 `drizzle-kit generate --custom` migration, the way `0144_offline_sync_backend.sql` added the
@@ -1914,22 +1917,45 @@ Written into the public docs in these words:
 
 ### Retention, cursor validity and moving the database
 
-- A daily pg-boss job chooses a settled retention boundary `(T, S)` below
-  the current horizon such that **every row in the contiguous prefix through
-  that boundary is older than 90 days**. A younger row stops the prefix even
-  if later positions contain older rows; do not select the greatest expired
-  row independently of preceding rows. It deletes that prefix in ordered batches. **Each committed batch advances
-  `logbook_change_watermark.pruned_through` atomically through precisely the
-  prefix it removed.** Serialize pruning jobs on the watermark row. There is
-  never a committed deletion hidden behind the old watermark. Deleting
-  by position rather than by `created_at` keeps the watermark exact: `now()`
-  is a transaction's start time while its `txid` comes at its first write, so
-  the two orders disagree slightly, and pruning by time would delete rows past
-  positions still retained. A cursor below the watermark answers
-  `410 cursor_expired`: a row after it may be gone. A cursor at or above it is
-  valid however old it is, because nothing after it was deleted. Validity is
-  measured against what was pruned, not against when the cursor was
-  issued.
+- The daily `prune-logbook-changes` job (`services/logbook-prune.ts`; schedule,
+  grants and cost in [background-workers.md](./background-workers.md)) deletes
+  rows older than 90 days in batches of at most 500. **Every row a batch
+  deletes sits at or below the watermark that the same transaction commits:**
+  the batch raises `logbook_change_watermark.pruned_through` to the last
+  position it deleted, and never lowers it. A feed page reads the watermark and
+  the rows from one REPEATABLE READ snapshot, so it sees the rows with the old
+  watermark, or the new watermark without the rows, never the gap between.
+  There is never a committed deletion above the watermark. The 410 boundary is
+  exact: the watermark is itself a deleted row's position, so a cursor below it
+  answers `410 cursor_expired`. The watermark is global and the feed is per
+  climber, so the deleted row may be another climber's: a 410 means this
+  climber's changes may be gone, not that they are. A cursor at
+  or above it is valid however old it is, because nothing after it was
+  deleted. Validity is measured against what was pruned, not against when the
+  cursor was issued.
+- A batch deletes a row only when its transaction is below the transaction
+  horizon (`txid < pg_snapshot_xmin`) in the deleting transaction. The feed
+  never serves past the horizon, so a watermark above it would expire every
+  cursor, including the one a reader was just handed. A long write transaction
+  therefore holds pruning back exactly as it holds the feed back.
+- "Older than 90 days" is by `created_at`, the writing transaction's start.
+  The job walks the primary key (`seq`, insertion order) from the oldest row
+  and stops at the first younger row; it does not use the BRIN index on
+  `created_at`, which decays once deleted head pages are reused (measured in
+  background-workers.md). Insertion order and feed order (`txid`, `seq`)
+  disagree slightly, because a transaction's `txid` comes at its first write and
+  its rows' `seq` at each insert. So a younger row can end up below the new
+  watermark. It is kept, cannot be read (every cursor below the watermark
+  answers 410), and goes once it is 90 days old without moving the watermark
+  back. The cost of judging age by a transaction's start: a row whose
+  transaction started over 90 days ago but wrote later can go, expiring cursors
+  issued between that start and that write. So a cursor can answer 410 up to
+  one write transaction's length short of 90 days. A rule that stops at the
+  first younger row in feed order has the same cost. Batches need no
+  lock on the watermark row before they start: each claims its rows `FOR
+  UPDATE SKIP LOCKED` and raises the watermark only through what it deleted,
+  so two runs at once delete each row once and leave the watermark at the
+  highest position either deleted (tested).
 - The test cursor `c3.expired` always answers `410`, so an app can test its
   recovery path.
 - Store a random persistent feed-generation ID alongside the watermark and
