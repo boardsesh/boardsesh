@@ -51,7 +51,7 @@ vi.mock('../../SwitchRow', () => ({
 
 import { CreateDrawerForm } from '../CreateDrawerForm';
 
-function renderForm(boardName: string) {
+function renderForm(boardName: string, sprayWallPublic = false) {
   const noop = () => {};
   return render(
     <CreateDrawerForm
@@ -69,6 +69,7 @@ function renderForm(boardName: string) {
       anyFeetAvailable
       isDraft={false}
       onChangeIsDraft={noop}
+      sprayWallPublic={sprayWallPublic}
     />,
   );
 }
@@ -90,22 +91,25 @@ describe('CreateDrawerForm no-kickboard switch', () => {
 });
 
 describe('CreateDrawerForm draft switch', () => {
-  function draftDescription(boardName: string): string | null {
-    const draft = renderForm(boardName)
+  function draftDescription(boardName: string, sprayWallPublic = false): string | null {
+    const draft = renderForm(boardName, sprayWallPublic)
       .getAllByTestId('switch-row')
       .find((row) => row.textContent === 'mobile.create.settings.draftLabel');
     return draft?.getAttribute('data-description') ?? null;
   }
 
+  // A Private or Link only Spraywall's climbs reach apps without their names, so
+  // only a board or a public Spraywall mentions them, and only with apps on.
   it.each([
-    ['kilter', false, 'mobile.create.settings.draftDescription'],
-    ['spray', false, 'mobile.create.settings.wallDraftDescription'],
-    ['kilter', true, 'mobile.create.settings.draftDescriptionApps'],
-    ['spray', true, 'mobile.create.settings.wallDraftDescriptionApps'],
-  ])('on %s with partner apps on: %s, says %s', (boardName, enabled, expected) => {
+    ['kilter', false, false, 'mobile.create.settings.draftDescription'],
+    ['spray', false, true, 'mobile.create.settings.wallDraftDescription'],
+    ['kilter', true, false, 'mobile.create.settings.draftDescriptionApps'],
+    ['spray', true, false, 'mobile.create.settings.wallDraftDescription'],
+    ['spray', true, true, 'mobile.create.settings.wallDraftDescriptionApps'],
+  ])('on %s, partner apps on: %s, public wall: %s, says %s', (boardName, enabled, wallPublic, expected) => {
     partnerApps.enabled = enabled;
     try {
-      expect(draftDescription(boardName)).toBe(expected);
+      expect(draftDescription(boardName, wallPublic)).toBe(expected);
     } finally {
       partnerApps.enabled = false;
     }

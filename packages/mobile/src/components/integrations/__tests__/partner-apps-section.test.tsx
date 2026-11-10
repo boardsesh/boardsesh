@@ -9,6 +9,8 @@ type MutateCallbacks = { onSuccess?: () => void; onError?: () => void; onSettled
 const mocks = vi.hoisted(() => ({
   isAuthenticated: true,
   data: undefined as ConnectedApps | undefined,
+  isError: false,
+  refetch: vi.fn(),
   mutate: vi.fn<(variables: { connectionId: string }, callbacks: MutateCallbacks) => void>(),
   showToast: vi.fn(),
   confirmResult: true,
@@ -20,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({
-  useMyConnectedApps: () => ({ data: mocks.data }),
+  useMyConnectedApps: () => ({ data: mocks.data, isError: mocks.isError, refetch: mocks.refetch }),
   useDisconnectApp: () => ({ mutate: mocks.mutate }),
 }));
 vi.mock('../../../providers/auth-provider', () => ({
@@ -134,6 +136,8 @@ const SEQUENCE_DISCONNECT = 'settings:integrations.partnerApps.disconnectA11y {"
 beforeEach(() => {
   mocks.isAuthenticated = true;
   mocks.data = undefined;
+  mocks.isError = false;
+  mocks.refetch.mockReset();
   mocks.mutate.mockReset();
   mocks.showToast.mockReset();
   mocks.confirm.mockClear();
@@ -203,6 +207,20 @@ describe('ConnectedAppDetailScreen', () => {
     mocks.params = { id: 'connection-divepeaks' };
     const { getByTestId } = render(<ConnectedAppDetailScreen />);
     expect(getByTestId('connected-app-detail').textContent).toContain('settings:integrations.partnerApps.suspended');
+  });
+
+  it('spins while the first load runs, then offers a retry if it failed', () => {
+    mocks.params = { id: 'connection-sequence' };
+    const loading = render(<ConnectedAppDetailScreen />);
+    expect(loading.container.querySelector('[data-spinner]')).not.toBeNull();
+    loading.unmount();
+
+    mocks.isError = true;
+    const { container, getByText } = render(<ConnectedAppDetailScreen />);
+    expect(container.querySelector('[data-spinner]')).toBeNull();
+    expect(container.textContent).toContain('settings:integrations.partnerApps.loadFailed');
+    fireEvent.click(getByText('settings:integrations.partnerApps.retry'));
+    expect(mocks.refetch).toHaveBeenCalledTimes(1);
   });
 
   it('says so when the app is no longer connected', () => {

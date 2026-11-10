@@ -583,6 +583,8 @@
       "empty": "No apps connected yet. Apps you connect to your Boardsesh account show up here.",
       "footer": "Disconnecting an app stops it reading anything new. What it already copied stays with the app.",
       "gone": "This app isn't connected any more.",
+      "loadFailed": "Couldn't load this app. Check your connection and try again.",
+      "retry": "Try again",
       "scopesHeading": "What {{app}} can see",
       "unnamedApp": "Unnamed app",
       "publisher": "By {{publisher}}",
@@ -595,7 +597,8 @@
       "scopes": {
         "logbookRead": "Sees every tick in your logbook, on every board",
         "logbookOnlyMe": "Including ticks you keep to “Only me”",
-        "logbookUnlisted": "Including unlisted climbs and drafts in your logbook, even ones set by others",
+        "logbookUnlisted": "Including other setters' unlisted climbs and drafts you've logged",
+        "logbookSpraywall": "Climbs on someone else's Private or Link only Spraywall arrive without their names",
         "profileRead": "Sees your display name and profile photo",
         "offlineAccess": "Keeps this access until you disconnect it",
         "other": "Other access: {{scope}}"

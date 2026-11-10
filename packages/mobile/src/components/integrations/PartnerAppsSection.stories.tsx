@@ -99,7 +99,7 @@ function DetailStory({
       destructive: true,
     });
   }, [confirm, detail, ask, t]);
-  return <ConnectedAppDetailPage detail={detail} onDisconnect={() => {}} disconnecting={false} />;
+  return <ConnectedAppDetailPage detail={detail} onDisconnect={() => {}} disconnecting={false} onRetry={() => {}} />;
 }
 
 const stories: StoryModule = {

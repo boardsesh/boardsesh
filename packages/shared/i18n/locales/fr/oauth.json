@@ -63,7 +63,8 @@
       "profileRead": "Voir ton nom affiché et ta photo de profil",
       "logbookRead": "Voir toutes les entrées de ton carnet, sur toutes les boards",
       "logbookOnlyMe": "Y compris les entrées que tu gardes en « Moi uniquement »",
-      "logbookUnlisted": "Y compris les blocs non listés et les brouillons de ton carnet, même ceux ouverts par d’autres",
+      "logbookUnlisted": "Y compris les blocs non listés et les brouillons ouverts par d’autres que tu as notés",
+      "logbookSpraywall": "Les blocs du Spraywall « Privé » ou « Lien seulement » d’une autre personne arrivent sans leur nom",
       "offlineAccess": "Garder cet accès jusqu'à ce que tu la déconnectes",
       "other": "Autre accès : {{scope}}"
     },

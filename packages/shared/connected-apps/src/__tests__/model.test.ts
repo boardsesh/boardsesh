@@ -89,6 +89,7 @@ describe('a row', () => {
           notes: [
             'settings:integrations.partnerApps.scopes.logbookOnlyMe',
             'settings:integrations.partnerApps.scopes.logbookUnlisted',
+            'settings:integrations.partnerApps.scopes.logbookSpraywall',
           ],
         },
         { scope: 'profile:read', label: 'settings:integrations.partnerApps.scopes.profileRead', notes: [] },
@@ -198,6 +199,23 @@ describe('the detail', () => {
       buildConnectedAppDetail({ signedIn: true, data: undefined, connectionId: 'a', t: echo, formatters }),
     ).toEqual({
       kind: 'loading',
+    });
+  });
+
+  it('offers a retry, never an endless spinner, when the first load failed', () => {
+    expect(
+      buildConnectedAppDetail({
+        signedIn: true,
+        data: undefined,
+        connectionId: 'a',
+        loadFailed: true,
+        t: echo,
+        formatters,
+      }),
+    ).toEqual({
+      kind: 'error',
+      message: 'settings:integrations.partnerApps.loadFailed',
+      retryLabel: 'settings:integrations.partnerApps.retry',
     });
   });
 

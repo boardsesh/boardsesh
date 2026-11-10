@@ -14,6 +14,7 @@ import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
+import { useSprayWallIsPublic } from '../../lib/spray/use-spray-wall-is-public';
 // The scroll container is RNGH's own `ScrollView`, not React Native's plain one.
 // A plain ScrollView can't be declared a relation with an RNGH gesture, and on
 // Android its classic `onInterceptTouchEvent` can win the touch stream on the
@@ -102,6 +103,9 @@ export function CreateDrawer({
   // identity, so nothing caught it until the emulator did. Matches
   // CreateDrawerHeader, which already aliases its second and third namespaces.
   const { t: tSession } = useTranslation('session');
+  // A draft's line about connected apps is true only on a public Spraywall: on a
+  // Private or Link only one, apps get its climbs without their names (#7387).
+  const sprayWallPublic = useSprayWallIsPublic(board.boardName === 'spray' ? board.layoutId : null);
   const insets = useSafeAreaInsets();
   // Bottom terms use the WINDOW inset: this route sits inside the climbs tab,
   // whose per-tab provider folds iOS 26 tab chrome the modal covers into
@@ -471,6 +475,7 @@ export function CreateDrawer({
             <View style={styles.belowFold}>
               <CreateDrawerForm
                 boardName={board.boardName}
+                sprayWallPublic={sprayWallPublic}
                 description={controller.description}
                 onChangeDescription={controller.setDescription}
                 noMatch={controller.noMatch}

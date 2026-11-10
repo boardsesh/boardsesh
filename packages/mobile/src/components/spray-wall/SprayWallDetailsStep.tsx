@@ -12,7 +12,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { usePartnerAppsEnabled } from '../../lib/graphql/hooks/use-connected-apps';
 import { MoreForm } from '../MoreForm';
 import { GymPickerSheet } from '../board-discovery/GymPickerSheet';
 import { SPRAY_ANGLE_OPTIONS, type SprayWallBuilder } from '../board-discovery/use-spray-wall-builder';
@@ -52,7 +51,6 @@ type SprayWallDetailsStepProps = {
 
 export function SprayWallDetailsStep({ builder, defaultName, saving, error }: SprayWallDetailsStepProps) {
   const { t } = useTranslation('boards');
-  const partnerAppsEnabled = usePartnerAppsEnabled();
   const [renameOpen, setRenameOpen] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
 
@@ -117,7 +115,6 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
         defaultName,
         onRename: openRename,
         visibility,
-        partnerAppsEnabled,
         onVisibilitySelect: selectVisibility,
         angle: draftAngle,
         angles: SPRAY_ANGLE_OPTIONS,
@@ -135,7 +132,6 @@ export function SprayWallDetailsStep({ builder, defaultName, saving, error }: Sp
       defaultName,
       openRename,
       visibility,
-      partnerAppsEnabled,
       selectVisibility,
       draftAngle,
       changeAngle,

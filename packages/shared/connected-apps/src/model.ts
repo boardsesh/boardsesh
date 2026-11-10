@@ -78,11 +78,13 @@ export type ConnectedAppsSectionView =
 
 /**
  * One app's detail: what it can see, when it connected and was last used, and
- * Disconnect. `loading` until the list has arrived once; `gone` when the app is
- * no longer among the climber's connections (disconnected elsewhere, or a stale link).
+ * Disconnect. `loading` until the list has arrived once; `error` when that first
+ * load failed (a cold deep link offline), with a retry; `gone` when the app is no
+ * longer among the climber's connections (disconnected elsewhere, or a stale link).
  */
 export type ConnectedAppDetailView =
   | { kind: 'loading' }
+  | { kind: 'error'; message: string; retryLabel: string }
   | { kind: 'gone'; message: string }
   | { kind: 'app'; row: ConnectedAppRowView; scopesHeading: string; footer: string };
 
@@ -111,10 +113,12 @@ export function orderConnectedAppScopes(scopes: readonly string[]): string[] {
 }
 
 /**
- * One line per scope. `logbook:read` carries the two things a climber would not
- * guess: it includes ticks they keep to "Only me" (decision 21), and the full
- * climb behind every tick, unlisted climbs and drafts set by others included
- * (#7387, owner decision 2026-11-10).
+ * One line per scope. `logbook:read` carries what a climber would not guess: it
+ * includes ticks they keep to "Only me" (decision 21); the full climb behind every
+ * tick, other setters' unlisted climbs and drafts included (#7387, owner decision
+ * 2026-11-10); except that a climb on someone else's Private or Link only
+ * Spraywall reaches the app without its names, the serializer's rule
+ * (`logbook-tick-serializer.ts`, docs/integration-platform.md "Data boundaries").
  */
 export function describeConnectedAppScope(scope: string, t: ConnectedAppsTranslate): ConnectedAppScopeView {
   switch (scope) {
@@ -125,6 +129,7 @@ export function describeConnectedAppScope(scope: string, t: ConnectedAppsTransla
         notes: [
           t('settings:integrations.partnerApps.scopes.logbookOnlyMe'),
           t('settings:integrations.partnerApps.scopes.logbookUnlisted'),
+          t('settings:integrations.partnerApps.scopes.logbookSpraywall'),
         ],
       };
     case 'profile:read':
@@ -203,6 +208,8 @@ export function buildConnectedAppsSection({
 
 export interface ConnectedAppDetailInput extends ConnectedAppsSectionInput {
   connectionId: string;
+  /** The list has never loaded and its last attempt failed. */
+  loadFailed?: boolean;
 }
 
 /** The detail an app's row opens, from the same list the section shows. */
@@ -210,10 +217,19 @@ export function buildConnectedAppDetail({
   signedIn,
   data,
   connectionId,
+  loadFailed = false,
   t,
   formatters,
 }: ConnectedAppDetailInput): ConnectedAppDetailView {
-  if (signedIn && !data) return { kind: 'loading' };
+  if (signedIn && !data) {
+    return loadFailed
+      ? {
+          kind: 'error',
+          message: t('settings:integrations.partnerApps.loadFailed'),
+          retryLabel: t('settings:integrations.partnerApps.retry'),
+        }
+      : { kind: 'loading' };
+  }
   const app = signedIn ? data?.apps.find((candidate) => candidate.connectionId === connectionId) : undefined;
   if (!app) return { kind: 'gone', message: t('settings:integrations.partnerApps.gone') };
   const row = buildConnectedAppRow(app, t, formatters);

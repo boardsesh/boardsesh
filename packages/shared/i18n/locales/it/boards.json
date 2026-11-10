@@ -508,7 +508,6 @@
       "unlisted": "Solo con link",
       "public": "Pubblica",
       "privateHint": "La vedi solo tu, più i membri della sua palestra se ne ha una. Con “Aiuta ad addestrare il riconoscimento delle prese” attivo, il team di Boardsesh può usare la foto per migliorare il riconoscimento delle prese.",
-      "appsNote": "Le app collegate da chi registra i suoi blocchi possono comunque vederli.",
       "unlistedHint": "Entra chiunque abbia il link. La Spraywall non è in elenco nella pagina della palestra e la sua foto resta fuori dal web aperto.",
       "publicHint": "Chiunque può trovare la Spraywall. Compare nella pagina della palestra, i suoi blocchi finiscono nel feed e la foto della Spraywall va sul web aperto.",
       "ownerOnlyError": "Solo il climber che ha creato questa Spraywall può cambiare chi la vede. Le altre modifiche sono state salvate.",

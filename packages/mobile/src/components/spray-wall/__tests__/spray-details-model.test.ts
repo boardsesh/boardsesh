@@ -18,7 +18,6 @@ function makeInput(overrides: Partial<SprayDetailsModelInput> = {}): SprayDetail
     defaultName: "Marco's Spray wall",
     onRename: vi.fn(),
     visibility: 'private',
-    partnerAppsEnabled: false,
     onVisibilitySelect: vi.fn(),
     angle: 40,
     angles: ANGLES,
@@ -86,19 +85,6 @@ describe('buildSprayDetailsModel', () => {
     const section = buildSprayDetailsModel(makeInput({ visibility })).sections.find((s) => s.key === 'visibility');
     expect(section?.title).toBe('mobile.sprayVisibility.label');
     expect(section?.footer).toBe(hint);
-  });
-
-  // #7387: once partner apps are on, a Link only or private wall's climbs still
-  // reach apps connected by climbers who log them. With the mode off, nothing changes.
-  it.each([
-    ['private', 'mobile.sprayVisibility.privateHint mobile.sprayVisibility.appsNote'],
-    ['unlisted', 'mobile.sprayVisibility.unlistedHint mobile.sprayVisibility.appsNote'],
-    ['public', 'mobile.sprayVisibility.publicHint'],
-  ] as const)('adds the connected-apps line to %s once partner apps are on', (visibility, footer) => {
-    const section = buildSprayDetailsModel(makeInput({ visibility, partnerAppsEnabled: true })).sections.find(
-      (s) => s.key === 'visibility',
-    );
-    expect(section?.footer).toBe(footer);
   });
 
   it('offers the three visibilities in one control, wired to the stable handler it is given', () => {

@@ -4,7 +4,6 @@ import type { GetPartnerAppsEnabledResponse } from '@boardsesh/graphql/operation
 import type { StoryModule } from '../../dev/stories/types';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
 import { PARTNER_APPS_ENABLED_QUERY_KEY } from '../../lib/graphql/hooks/use-connected-apps';
-import { SprayWallVisibilityField } from '../board-discovery/BoardMetaFields';
 import { CreateDrawerForm } from '../create-climb/CreateDrawerForm';
 
 /**
@@ -21,7 +20,7 @@ function PartnerApps({ on, children }: { on: boolean; children: ReactNode }) {
 }
 
 /** The create-climb form below the board, its switches live, as a setter sees it. */
-function DraftForm({ boardName }: { boardName: string }) {
+function DraftForm({ boardName, sprayWallPublic = false }: { boardName: string; sprayWallPublic?: boolean }) {
   const [description, setDescription] = useState('');
   const [noMatch, setNoMatch] = useState(false);
   const [noKickboard, setNoKickboard] = useState(false);
@@ -45,18 +44,8 @@ function DraftForm({ boardName }: { boardName: string }) {
         anyFeetAvailable
         isDraft={isDraft}
         onChangeIsDraft={setIsDraft}
+        sprayWallPublic={sprayWallPublic}
       />
-    </StorySurface>
-  );
-}
-
-/** The Spraywall visibility control from Edit board, starting on `visibility`. */
-function VisibilityField({ visibility }: { visibility: 'private' | 'unlisted' }) {
-  const [isPublic, setIsPublic] = useState(false);
-  const [isUnlisted, setIsUnlisted] = useState(visibility === 'unlisted');
-  return (
-    <StorySurface>
-      <SprayWallVisibilityField builder={{ isPublic, setIsPublic, isUnlisted, setIsUnlisted }} />
     </StorySurface>
   );
 }
@@ -75,11 +64,11 @@ const stories: StoryModule = {
       ),
     },
     wallDraftNote: {
-      name: 'Save as draft on a Spraywall, partner apps on',
+      name: 'Save as draft on a public Spraywall, partner apps on',
       render: () => (
         <PartnerApps on>
-          <StoryVariant label="Spraywall">
-            <DraftForm boardName="spray" />
+          <StoryVariant label="Public Spraywall">
+            <DraftForm boardName="spray" sprayWallPublic />
           </StoryVariant>
         </PartnerApps>
       ),
@@ -90,19 +79,6 @@ const stories: StoryModule = {
         <PartnerApps on={false}>
           <StoryVariant label="Kilter board">
             <DraftForm boardName="kilter" />
-          </StoryVariant>
-        </PartnerApps>
-      ),
-    },
-    sprayVisibility: {
-      name: 'Spraywall visibility, partner apps on',
-      render: () => (
-        <PartnerApps on>
-          <StoryVariant label="Link only">
-            <VisibilityField visibility="unlisted" />
-          </StoryVariant>
-          <StoryVariant label="Private">
-            <VisibilityField visibility="private" />
           </StoryVariant>
         </PartnerApps>
       ),
