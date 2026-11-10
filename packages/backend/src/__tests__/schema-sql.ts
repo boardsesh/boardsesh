@@ -55,11 +55,11 @@ const partnerOAuthSchema = readFileSync(
 // triggers production runs. They are applied at the schema tail: the triggers
 // need boardsesh_ticks and board_climb_aliases to exist.
 const logbookChangesSchema = readFileSync(
-  new URL('../../../db/drizzle/0296_logbook_changes.sql', import.meta.url),
+  new URL('../../../db/drizzle/0297_logbook_changes.sql', import.meta.url),
   'utf8',
 );
 const logbookChangeTriggersSchema = readFileSync(
-  new URL('../../../db/drizzle/0297_logbook_change_triggers.sql', import.meta.url),
+  new URL('../../../db/drizzle/0298_logbook_change_triggers.sql', import.meta.url),
   'utf8',
 );
 const sharedSprayDraftsSchema = readFileSync(
