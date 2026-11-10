@@ -67,6 +67,36 @@ describe('the changelog gate', () => {
         entries: [first, { ...first, date: '2026-11-01' }],
         documentSha256: first.documentSha256,
       }),
-    ).toEqual([expect.stringContaining('Two changelog entries')]);
+    ).toEqual([expect.stringContaining('Two neighbouring changelog entries')]);
+  });
+
+  it('passes a revert that brings back an older document, and the next change after it', () => {
+    const revert = entry('2026-11-14', 'document one', 'Reverted the added field.');
+    expect(
+      publicApiChangelogProblems({
+        entries: [revert, second, first],
+        documentSha256: first.documentSha256,
+        baseEntries: [second, first],
+      }),
+    ).toEqual([]);
+    const next = entry('2026-11-15', 'document three', 'Added another field.');
+    expect(
+      publicApiChangelogProblems({
+        entries: [next, revert, second, first],
+        documentSha256: next.documentSha256,
+        baseEntries: [revert, second, first],
+      }),
+    ).toEqual([]);
+  });
+
+  it('fails an entry that changes no contract: the same document as the entry below it', () => {
+    const noChange = entry('2026-11-14', 'document two', 'Nothing changed.');
+    expect(
+      publicApiChangelogProblems({
+        entries: [noChange, second, first],
+        documentSha256: second.documentSha256,
+        baseEntries: [second, first],
+      }),
+    ).toEqual([expect.stringContaining('needs a contract change')]);
   });
 });

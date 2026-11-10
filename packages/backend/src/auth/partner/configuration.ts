@@ -19,6 +19,14 @@ export const PARTNER_SIGNED_QUERY_LIFETIME_SECONDS = 600;
 export const PARTNER_AUTHORIZATION_CODE_LIFETIME_SECONDS = 60;
 
 const MINIMUM_SECRET_LENGTH = 32;
+/**
+ * The highest secret version accepted. Logbook cursors name the version they
+ * were sealed under in nine digits (`handlers/public-api/logbook-cursor.ts`),
+ * so a larger one, such as an epoch-seconds version, would make every cursor
+ * this server issues unreadable to it. Refused at startup instead, so client
+ * secrets and cursors always agree.
+ */
+export const PARTNER_SECRET_MAX_VERSION = 999_999_999;
 
 export interface PartnerSecret {
   version: number;
@@ -56,6 +64,11 @@ export function parsePartnerSecrets(rawSecrets: string | undefined): PartnerSecr
     const value = entry.slice(separatorIndex + 1).trim();
     if (separatorIndex < 1 || !Number.isInteger(version) || version < 0 || !value) {
       throw new PartnerAuthorityConfigurationError('PARTNER_OAUTH_SECRETS entries must be "version:value".');
+    }
+    if (version > PARTNER_SECRET_MAX_VERSION) {
+      throw new PartnerAuthorityConfigurationError(
+        `PARTNER_OAUTH_SECRETS version ${version} is above ${PARTNER_SECRET_MAX_VERSION}: logbook cursors carry at most nine digits of version.`,
+      );
     }
     if (value.length < MINIMUM_SECRET_LENGTH) {
       throw new PartnerAuthorityConfigurationError(
