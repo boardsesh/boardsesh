@@ -282,8 +282,13 @@ describe('climbPinnedChipsStore', () => {
     const storage = await getMockStorage();
     storage.__setRaw('pinnedFilterChips', JSON.stringify(['grade', 'rating']));
     const { climbPinnedChipsStore } = await import('../pinned-chips-store');
-    expect(await climbPinnedChipsStore.load()).toEqual(['recent', 'grade', 'rating']);
+    expect(await climbPinnedChipsStore.load()).toEqual(['recent', 'grade', 'benchmarks', 'rating']);
     await climbPinnedChipsStore.set(['grade', 'rating']);
-    expect(JSON.parse(storage.__getRaw('pinnedFilterChips') as string)).toEqual(['grade', 'rating', '!recent']);
+    expect(JSON.parse(storage.__getRaw('pinnedFilterChips') as string)).toEqual([
+      'grade',
+      'rating',
+      '!recent',
+      '!benchmarks',
+    ]);
   });
 });

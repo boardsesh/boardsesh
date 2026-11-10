@@ -265,6 +265,7 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
     [],
   );
   const handleToggleBeta = useCallback(() => dispatch({ type: 'toggleBeta' }), []);
+  const handleToggleBenchmarks = useCallback(() => dispatch({ type: 'toggleBenchmarks' }), []);
   const handleToggleBoardFit = useCallback(() => dispatch({ type: 'toggleBoardFit' }), []);
   const handleChipSortSelect = useCallback((value: string) => {
     const model = optionsRef.current.sortModel;
@@ -555,7 +556,8 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
   );
   const gradeRailOpen = gradeUsesPopover ? gradePopoverOpen : gradeRowShown;
   const progress = flagsToProgress(filters);
-  const collection = getCollectionFilter(filters, boardFilters);
+  const collection = getCollectionFilter(filters);
+  const benchmarksActive = !!boardFilters.onlyBenchmarks;
   const climbType = getClimbTypeFilter(filters, defaultFilters);
   const defaultClimbType = getClimbTypeFilter(defaultFilters, defaultFilters);
   const accuracyValue = filters.gradeAccuracy ?? 'off';
@@ -592,6 +594,8 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       defaultClimbType,
       betaActive,
       onToggleBeta: handleToggleBeta,
+      benchmarksActive,
+      onToggleBenchmarks: handleToggleBenchmarks,
       boardFit: chipBoardFit,
       showAngle: false,
     }),
@@ -624,6 +628,8 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       defaultClimbType,
       betaActive,
       handleToggleBeta,
+      benchmarksActive,
+      handleToggleBenchmarks,
       chipBoardFit,
     ],
   );

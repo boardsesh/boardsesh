@@ -3,6 +3,7 @@ import {
   PINNABLE_CHIP_CATALOG,
   DEFAULT_PINNED_CHIPS,
   RECENT_UNPINNED_MARKER,
+  BENCHMARKS_UNPINNED_MARKER,
   isValidChipKind,
   fromStoredPinnedChips,
   normalizePinnedChips,
@@ -19,6 +20,7 @@ describe('pinnable-chips catalog', () => {
       'accuracy',
       'progress',
       'collection',
+      'benchmarks',
       'climbType',
       'tall',
       'wide',
@@ -33,6 +35,7 @@ describe('pinnable-chips catalog', () => {
     expect([...DEFAULT_PINNED_CHIPS]).toEqual([
       'recent',
       'grade',
+      'benchmarks',
       'progress',
       'collection',
       'tall',
@@ -66,8 +69,8 @@ describe('normalizePinnedChips', () => {
     expect(normalizePinnedChips(['sort', 'recent', 'grade'])).toEqual(['sort', 'recent', 'grade']);
   });
 
-  it('drops unknown kinds (incl. the retired "benchmarks") and de-dupes, the first one winning', () => {
-    expect(normalizePinnedChips(['grade', 'benchmarks', 'grade', 'wide'])).toEqual(['grade', 'wide']);
+  it('drops unknown kinds and de-dupes, the first one winning', () => {
+    expect(normalizePinnedChips(['grade', 'setters', 'grade', 'wide'])).toEqual(['grade', 'wide']);
     expect(normalizePinnedChips(['wide', 'grade', 'wide'])).toEqual(['wide', 'grade']);
   });
 
@@ -110,20 +113,28 @@ describe('fromStoredPinnedChips', () => {
 
   it('gives a list saved before Recent was pinnable the Recent pin first, where it always drew', () => {
     expect(fromStoredPinnedChips(savedDefaultsBeforeRecentPin)).toEqual([...DEFAULT_PINNED_CHIPS]);
-    expect(fromStoredPinnedChips(['rating', 'grade'])).toEqual(['recent', 'rating', 'grade']);
+    // The Benchmarks marker keeps these on the Recent rule alone; that chip has its own cases below.
+    expect(fromStoredPinnedChips(['rating', 'grade', BENCHMARKS_UNPINNED_MARKER])).toEqual([
+      'recent',
+      'rating',
+      'grade',
+    ]);
     // A customised older list keeps its own pins in its order, plus Recent.
-    expect(fromStoredPinnedChips(['sort', 'beta'])).toEqual(['recent', 'sort', 'beta']);
+    expect(fromStoredPinnedChips(['sort', 'beta', BENCHMARKS_UNPINNED_MARKER])).toEqual(['recent', 'sort', 'beta']);
   });
 
   it('keeps Recent hidden when the list carries the unpinned marker', () => {
-    expect(fromStoredPinnedChips(['grade', 'rating', RECENT_UNPINNED_MARKER])).toEqual(['grade', 'rating']);
+    expect(fromStoredPinnedChips(['grade', 'rating', RECENT_UNPINNED_MARKER, BENCHMARKS_UNPINNED_MARKER])).toEqual([
+      'grade',
+      'rating',
+    ]);
     // Wherever the marker sits.
-    expect(fromStoredPinnedChips([RECENT_UNPINNED_MARKER, 'sort'])).toEqual(['sort']);
+    expect(fromStoredPinnedChips([RECENT_UNPINNED_MARKER, 'sort', BENCHMARKS_UNPINNED_MARKER])).toEqual(['sort']);
   });
 
   it('keeps a list that already holds Recent as it is', () => {
-    expect(fromStoredPinnedChips(['recent', 'grade'])).toEqual(['recent', 'grade']);
-    expect(fromStoredPinnedChips(['recent'])).toEqual(['recent']);
+    expect(fromStoredPinnedChips(['recent', 'grade', BENCHMARKS_UNPINNED_MARKER])).toEqual(['recent', 'grade']);
+    expect(fromStoredPinnedChips(['recent', BENCHMARKS_UNPINNED_MARKER])).toEqual(['recent']);
   });
 
   it('returns nothing for an empty or garbage list, so the store falls back to the full defaults', () => {
@@ -135,8 +146,11 @@ describe('fromStoredPinnedChips', () => {
   });
 
   it('still migrates a stored "shape" pin alongside the Recent rule', () => {
-    expect(fromStoredPinnedChips(['shape'])).toEqual(['recent', 'tall', 'wide']);
-    expect(fromStoredPinnedChips(['shape', RECENT_UNPINNED_MARKER])).toEqual(['tall', 'wide']);
+    expect(fromStoredPinnedChips(['shape', BENCHMARKS_UNPINNED_MARKER])).toEqual(['recent', 'tall', 'wide']);
+    expect(fromStoredPinnedChips(['shape', RECENT_UNPINNED_MARKER, BENCHMARKS_UNPINNED_MARKER])).toEqual([
+      'tall',
+      'wide',
+    ]);
   });
 });
 
@@ -149,16 +163,31 @@ describe('toStoredPinnedChips', () => {
       'wide',
       'shape',
       'rating',
+      '!benchmarks',
     ]);
-    expect(toStoredPinnedChips(['recent', 'grade', 'tall', 'rating'])).toEqual(['recent', 'grade', 'tall', 'rating']);
-    expect(toStoredPinnedChips(['recent', 'wide'])).toEqual(['recent', 'wide']);
+    expect(toStoredPinnedChips(['recent', 'grade', 'tall', 'rating'])).toEqual([
+      'recent',
+      'grade',
+      'tall',
+      'rating',
+      '!benchmarks',
+    ]);
+    expect(toStoredPinnedChips(['recent', 'wide'])).toEqual(['recent', 'wide', '!benchmarks']);
   });
 
   it('ends with the unpinned marker only when Recent is not pinned', () => {
-    expect(toStoredPinnedChips(['grade', 'tall', 'wide'])).toEqual(['grade', 'tall', 'wide', 'shape', '!recent']);
-    expect(toStoredPinnedChips(['wide'])).toEqual(['wide', '!recent']);
-    expect(toStoredPinnedChips([])).toEqual(['!recent']);
+    expect(toStoredPinnedChips(['grade', 'tall', 'wide'])).toEqual([
+      'grade',
+      'tall',
+      'wide',
+      'shape',
+      '!recent',
+      '!benchmarks',
+    ]);
+    expect(toStoredPinnedChips(['wide'])).toEqual(['wide', '!recent', '!benchmarks']);
+    expect(toStoredPinnedChips([])).toEqual(['!recent', '!benchmarks']);
     expect(toStoredPinnedChips([...DEFAULT_PINNED_CHIPS])).not.toContain(RECENT_UNPINNED_MARKER);
+    expect(toStoredPinnedChips([...DEFAULT_PINNED_CHIPS])).not.toContain(BENCHMARKS_UNPINNED_MARKER);
   });
 
   it('keeps the climber’s order, with the alias right after Wide', () => {
@@ -168,6 +197,31 @@ describe('toStoredPinnedChips', () => {
       'shape',
       'grade',
       'tall',
+      'recent',
+      '!benchmarks',
+    ]);
+  });
+
+  it('gives a list saved before the Benchmarks chip existed the chip right after Grade (#2493)', () => {
+    expect(fromStoredPinnedChips(['recent', 'rating', 'grade', 'collection'])).toEqual([
+      'recent',
+      'rating',
+      'grade',
+      'benchmarks',
+      'collection',
+    ]);
+    // Without Grade it goes first after Recent, and first of all without Recent too.
+    expect(fromStoredPinnedChips(['recent', 'rating'])).toEqual(['recent', 'benchmarks', 'rating']);
+    expect(fromStoredPinnedChips(['rating', RECENT_UNPINNED_MARKER])).toEqual(['benchmarks', 'rating']);
+  });
+
+  it('never re-adds a Benchmarks chip the climber unpinned', () => {
+    const stored = toStoredPinnedChips(['recent', 'collection']);
+    expect(stored).toContain(BENCHMARKS_UNPINNED_MARKER);
+    expect(fromStoredPinnedChips(stored)).toEqual(['recent', 'collection']);
+    expect(fromStoredPinnedChips(toStoredPinnedChips(['collection', 'benchmarks', 'recent']))).toEqual([
+      'collection',
+      'benchmarks',
       'recent',
     ]);
   });
@@ -261,7 +315,8 @@ describe('chipKindToTokenKeys', () => {
       grade: ['grade'],
       accuracy: ['gradeAccuracy'],
       progress: ['progress'],
-      collection: ['benchmark', 'liked'],
+      collection: ['liked'],
+      benchmarks: ['benchmark'],
       climbType: ['climbType'],
       tall: ['tall'],
       wide: ['wide'],

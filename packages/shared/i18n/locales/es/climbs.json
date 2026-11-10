@@ -511,6 +511,8 @@
       "benchmark": "Benchmarks",
       "verified": "Verificados",
       "verifiedDescription": "Los bloques verificados los elige Kilter con escaladores y setters.",
+      "onlyBenchmarks": "Solo bloques benchmark",
+      "onlyVerified": "Solo bloques verificados",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
       "close": "Cerrar filtros",

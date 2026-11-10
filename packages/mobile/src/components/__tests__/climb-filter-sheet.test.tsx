@@ -814,37 +814,31 @@ describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interaction
       sortBy: 'creation',
       minAscents: undefined,
     });
-    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
-      ...currentBoardFilters,
-      onlyBenchmarks: undefined,
-    });
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(currentBoardFilters);
 
-    fireEvent.click(collectionControls.getByTestId('segment-benchmarks'));
+    fireEvent.click(collectionControls.getByTestId('segment-liked'));
     expect(collectionControls.getByTestId('segment-drafts').getAttribute('data-selected')).toBe('false');
-    expect(collectionControls.getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
+    expect(collectionControls.getByTestId('segment-liked').getAttribute('data-selected')).toBe('true');
     advanceCountPreview();
     expect(searchInputMocks.toClimbSearchInput.mock.calls.at(-1)?.[0]).toEqual({
       ...currentFilters,
+      onlyFavorited: true,
       sortBy: 'creation',
       minAscents: undefined,
     });
-    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual({
-      ...currentBoardFilters,
-      onlyBenchmarks: true,
-    });
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(currentBoardFilters);
 
     fireEvent.click(collectionControls.getByTestId('segment-any'));
     expect(collectionControls.getByTestId('segment-any').getAttribute('data-selected')).toBe('true');
     expect(onSelectionChange).toHaveBeenCalledTimes(3);
     advanceCountPreview();
-    const clearedCollection = { ...currentBoardFilters, onlyBenchmarks: undefined };
-    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(clearedCollection);
+    expect(searchInputMocks.mergeBoardFilters.mock.calls.at(-1)?.[1]).toEqual(currentBoardFilters);
     const commitsBeforeClose = onSelectionChange.mock.calls.length;
     closeAndFinish(getByText('close'));
     expect(onSelectionChange).toHaveBeenCalledTimes(commitsBeforeClose);
     expect(onSelectionChange).toHaveBeenLastCalledWith(
       { ...currentFilters, sortBy: 'creation', minAscents: undefined },
-      clearedCollection,
+      currentBoardFilters,
     );
   });
 });
@@ -1777,8 +1771,8 @@ describe('ClimbFilterSheet flat sections', () => {
     authMock.isAuthenticated = false;
     const { queryByText, queryByTestId } = renderFilterSheet();
     expect(queryByText('mobile.filter.progress.label')).toBeNull();
-    // Collection still shows (Any / Benchmarks), but the auth-only My drafts option is dropped.
-    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    // Collection still shows (Any), the benchmarks switch stays, but the auth-only options are dropped.
+    expect(queryByTestId('switch-mobile.filter.onlyVerified')).not.toBeNull();
     expect(queryByTestId('segment-drafts')).toBeNull();
     expect(queryByTestId('segment-liked')).toBeNull();
   });
@@ -1820,7 +1814,7 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(applied.status).toBe('projects');
   });
 
-  it('publishes the Collection transition atomically, clearing Benchmarks when selecting My drafts', () => {
+  it('publishes the Collection transition atomically and leaves Benchmarks on when selecting My drafts', () => {
     const onSelectionChange = vi.fn();
     const { getByTestId } = renderFilterSheet({
       onSelectionChange,
@@ -1830,17 +1824,17 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(onSelectionChange).toHaveBeenCalledTimes(1);
     expect(onSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ status: 'drafts' }), {
       ...currentBoardFilters,
-      onlyBenchmarks: undefined,
+      onlyBenchmarks: true,
     });
   });
 
-  it('keeps Popularity when Collection changes without leaving My drafts', () => {
+  it('keeps Popularity when the benchmarks switch changes', () => {
     const onSelectionChange = vi.fn();
     const { getByTestId } = renderFilterSheet({
       onSelectionChange,
       currentFilters: { ...currentFilters, minAscents: 10 },
     });
-    fireEvent.click(getByTestId('segment-benchmarks'));
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyVerified'));
     expect(onSelectionChange).toHaveBeenCalledWith(
       { ...currentFilters, minAscents: 10 },
       { ...currentBoardFilters, onlyBenchmarks: true },
@@ -1856,42 +1850,65 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(onSelectionChange.mock.calls.at(-1)?.[0]).toMatchObject({ status: 'drafts' });
   });
 
-  it('selecting Collection "Benchmarks" clears a drafts status (mutually exclusive)', () => {
+  it('combines the benchmarks switch with My drafts', () => {
     const onSelectionChange = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByTestId('segment-drafts'));
-    fireEvent.click(getByTestId('segment-benchmarks'));
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyVerified'));
     closeAndFinish(getByText('close'));
     const call = onSelectionChange.mock.calls.at(-1);
-    expect(call?.[0]).toMatchObject({ status: 'any' });
+    expect(call?.[0]).toMatchObject({ status: 'drafts' });
     expect(call?.[1]).toMatchObject({ onlyBenchmarks: true });
   });
 
-  it('selecting Collection "Liked" sets onlyFavorited and clears drafts and benchmarks (#6002)', () => {
+  it('selecting Collection "Liked" sets onlyFavorited, clears drafts and leaves benchmarks on (#6002)', () => {
     const onSelectionChange = vi.fn();
     const { getByTestId } = renderFilterSheet({ onSelectionChange });
 
     fireEvent.click(getByTestId('segment-drafts'));
-    fireEvent.click(getByTestId('segment-benchmarks'));
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyVerified'));
     fireEvent.click(getByTestId('segment-liked'));
     expect(onSelectionChange).toHaveBeenCalledTimes(3);
     const call = onSelectionChange.mock.calls.at(-1);
     expect((call?.[0] as ClimbFilters).onlyFavorited).toBe(true);
     expect((call?.[0] as ClimbFilters).status).toBe('any');
-    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBeUndefined();
+    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
   });
 
-  it('selecting Collection "Benchmarks" clears Liked', () => {
+  it('turning the benchmarks switch on and off publishes true then undefined, leaving climb filters alone', () => {
     const onSelectionChange = vi.fn();
     const { getByTestId } = renderFilterSheet({ onSelectionChange });
 
-    fireEvent.click(getByTestId('segment-liked'));
-    fireEvent.click(getByTestId('segment-benchmarks'));
-    expect(onSelectionChange).toHaveBeenCalledTimes(2);
-    const call = onSelectionChange.mock.calls.at(-1);
-    expect((call?.[0] as ClimbFilters).onlyFavorited).toBeUndefined();
-    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyVerified'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(currentFilters, {
+      ...currentBoardFilters,
+      onlyBenchmarks: true,
+    });
+    expect(getByTestId('switch-mobile.filter.onlyVerified').getAttribute('data-value')).toBe('true');
+
+    fireEvent.click(getByTestId('switch-mobile.filter.onlyVerified'));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(currentFilters, {
+      ...currentBoardFilters,
+      onlyBenchmarks: undefined,
+    });
+  });
+
+  it('reads Verified with its description on a Kilter board', () => {
+    const { getByTestId, getAllByText } = renderFilterSheet();
+    expect(getByTestId('switch-mobile.filter.onlyVerified')).not.toBeNull();
+    expect(getAllByText('mobile.filter.verified').length).toBeGreaterThan(0);
+    expect(getAllByText('mobile.filter.verifiedDescription').length).toBeGreaterThan(0);
+  });
+
+  it('reads Benchmarks without a description on another board', () => {
+    const { getByTestId, getAllByText, queryByText, queryByTestId } = renderFilterSheet({
+      boardConfig: { ...boardConfig, boardName: 'tension' },
+    });
+    expect(getByTestId('switch-mobile.filter.onlyBenchmarks')).not.toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyVerified')).toBeNull();
+    expect(getAllByText('mobile.filter.benchmark').length).toBeGreaterThan(0);
+    expect(queryByText('mobile.filter.verifiedDescription')).toBeNull();
   });
 });
 
@@ -2174,14 +2191,15 @@ describe('ClimbFilterSheet on a spray wall', () => {
   it('offers Benchmarks and the climb type on a catalogue board', () => {
     const { queryByTestId } = renderFilterSheet();
 
-    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyVerified')).not.toBeNull();
     expect(queryByTestId('segment-routes')).not.toBeNull();
   });
 
   it('drops Benchmarks and the climb type on a spray wall', () => {
     const { queryByTestId } = renderFilterSheet({ boardConfig: sprayBoardConfig });
 
-    expect(queryByTestId('segment-benchmarks')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyVerified')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyBenchmarks')).toBeNull();
     expect(queryByTestId('segment-routes')).toBeNull();
     // The rest of the collection control stays.
     expect(queryByTestId('segment-drafts')).not.toBeNull();
@@ -2214,7 +2232,7 @@ describe('ClimbFilterSheet on a spray wall', () => {
       currentBoardFilters: { ...currentBoardFilters, onlyBenchmarks: true },
     });
 
-    expect(getByTestId('segment-benchmarks').getAttribute('data-selected')).toBe('true');
+    expect(getByTestId('switch-mobile.filter.onlyBenchmarks').getAttribute('data-value')).toBe('true');
   });
 });
 
@@ -2230,6 +2248,7 @@ describe('ClimbFilterSheet pins', () => {
     'accuracy',
     'progress',
     'collection',
+    'benchmarks',
     'rating',
     'popularity',
     'climbType',
@@ -2245,7 +2264,7 @@ describe('ClimbFilterSheet pins', () => {
     fireEvent.click(getByLabelText('mobile.filter.unpinChip'));
     expect(pinStore.togglePin.mock.calls).toEqual([[kind]]);
     // Every other control still offers its own pin.
-    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(11);
+    expect(getAllByLabelText('mobile.filter.pinChip')).toHaveLength(12);
   });
 
   // With no saved searches the row stays, so the chip can be hidden before it
@@ -2390,7 +2409,7 @@ describe('ClimbFilterSheet list seams', () => {
     expect(queryByTestId('switch-authors.followingClimbs')).toBeNull();
     expect(queryByTestId('switch-mobile.filter.betaVideosDescription')).toBeNull();
     // Rows that apply to every climb stay.
-    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    expect(queryByTestId('switch-mobile.filter.onlyBenchmarks')).not.toBeNull();
     expect(queryByText('mobile.filter.minRating')).not.toBeNull();
   });
 

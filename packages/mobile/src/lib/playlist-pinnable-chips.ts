@@ -27,6 +27,7 @@ export const PLAYLIST_PINNABLE_CHIP_KINDS = [
   'progress',
   'climbType',
   'beta',
+  'benchmarks',
   'popularity',
   'rating',
   'boardFit',

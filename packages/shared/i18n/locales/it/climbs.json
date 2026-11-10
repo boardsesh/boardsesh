@@ -511,6 +511,8 @@
       "benchmark": "Benchmark",
       "verified": "Verificati",
       "verifiedDescription": "I blocchi verificati sono scelti da Kilter con climber e tracciatori.",
+      "onlyBenchmarks": "Solo blocchi benchmark",
+      "onlyVerified": "Solo blocchi verificati",
       "showCount_one": "Mostra {{count}} blocco",
       "showCount_other": "Mostra {{count}} blocchi",
       "close": "Chiudi i filtri",

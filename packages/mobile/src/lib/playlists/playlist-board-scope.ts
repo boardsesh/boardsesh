@@ -39,6 +39,7 @@ const CHIP_FILTER_FIELDS: Record<PlaylistPinnableChipKind, readonly PlaylistFilt
   progress: PROGRESS_FIELDS,
   climbType: ['boulders', 'routes'],
   beta: ['onlyWithBetaVideos'],
+  benchmarks: ['onlyBenchmarks'],
   popularity: ['minAscents', 'status'],
   rating: ['minRating'],
   boardFit: ['onlyActiveBoard'],

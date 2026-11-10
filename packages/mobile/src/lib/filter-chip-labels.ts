@@ -5,9 +5,10 @@
 
 import type { TFunction } from 'i18next';
 import type { FilterChipKind } from './pinnable-chips';
+import { benchmarkFilterLabel } from './benchmark-term';
 
-/** The control's name (and its chip's resting label where it has one). */
-export function filterChipLabel(kind: FilterChipKind, t: TFunction<'climbs'>): string {
+/** The control's name (and its chip's resting label where it has one). Benchmarks is named for `boardName`. */
+export function filterChipLabel(kind: FilterChipKind, t: TFunction<'climbs'>, boardName?: string | null): string {
   switch (kind) {
     case 'recent':
       return t('mobile.search.recentFilters');
@@ -19,6 +20,8 @@ export function filterChipLabel(kind: FilterChipKind, t: TFunction<'climbs'>): s
       return t('mobile.filter.progress.label');
     case 'collection':
       return t('mobile.filter.collection.label');
+    case 'benchmarks':
+      return benchmarkFilterLabel(boardName, t);
     case 'climbType':
       return t('mobile.filter.climbType.label');
     case 'tall':

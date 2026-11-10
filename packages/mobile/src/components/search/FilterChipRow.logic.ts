@@ -20,7 +20,6 @@ import {
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import type { CollectionFilter, ClimbTypeFilter } from '../../lib/collection-filter';
-import { benchmarkFilterLabel } from '../../lib/benchmark-term';
 
 export { progressFilterLabel } from '../../lib/filter-labels';
 export { isCollectionFilter } from '../../lib/collection-filter';
@@ -82,19 +81,12 @@ export function isClimbType(value: string): value is ClimbTypeFilter {
 }
 
 /**
- * Label for the "Collection" single-select: the chip shows "Benchmarks" / "My
- * drafts" / "Liked" when active, and "Any" for the neutral value (the resting chip uses the
+ * Label for the "Collection" single-select: the chip shows "My drafts" /
+ * "Liked" when active, and "Any" for the neutral value (the resting chip uses the
  * group name "Collection" instead — see the call site).
  */
-export function collectionChipLabel(
-  value: CollectionFilter,
-  t: TFunction<'climbs'>,
-  isSprayWall = false,
-  boardName?: string | null,
-): string {
+export function collectionChipLabel(value: CollectionFilter, t: TFunction<'climbs'>, isSprayWall = false): string {
   switch (value) {
-    case 'benchmarks':
-      return benchmarkFilterLabel(boardName, t);
     case 'drafts':
       return isSprayWall ? t('mobile.filter.wallDrafts') : t('mobile.filter.drafts');
     case 'liked':

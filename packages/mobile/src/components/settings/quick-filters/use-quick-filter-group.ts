@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { filterChipLabel } from '../../../lib/filter-chip-labels';
+import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { hapticSelection } from '../../../lib/haptics';
 import type { FilterChipKind } from '../../../lib/pinnable-chips';
 import { canMovePinnedChip, type PinnedChipsStore } from '../../../lib/pinned-chips-store';
@@ -28,9 +29,12 @@ export const QUICK_FILTERS_ANALYTICS_PAGE = 'quickFilters';
 export function useQuickFilterGroup<K extends FilterChipKind>(store: PinnedChipsStore<K>, surface: QuickFilterSurface) {
   const { t } = useTranslation('climbs');
   const { pinned, loaded } = store.usePinnedChips();
+  // The Benchmarks row takes the active board's word for it (Verified on Kilter).
+  const { data: activeBoard } = useActiveBoard();
+  const boardName = activeBoard?.boardType;
   const rows = useMemo(
-    () => quickFilterRows(store.catalog, pinned, (kind) => filterChipLabel(kind, t)),
-    [store, pinned, t],
+    () => quickFilterRows(store.catalog, pinned, (kind) => filterChipLabel(kind, t, boardName)),
+    [store, pinned, t, boardName],
   );
   const pinnedRows = useMemo(() => rows.filter((row) => row.movable), [rows]);
   const unpinnedRows = useMemo(() => rows.filter((row) => !row.movable), [rows]);
