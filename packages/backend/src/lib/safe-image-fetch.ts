@@ -18,14 +18,28 @@ const HOST_ALLOWLISTS: Record<ImageHostKind, RegExp> = {
   // photo host a signed-in account's `users.image` points at. `avatarUrl` is
   // whatever the row holds, so nothing else may be fetched on its say-so.
   avatar: /^(media\.boardsesh\.com|[a-z0-9-]+\.googleusercontent\.com)$/i,
+  // Gym photos and public spray wall photos drawn on share cards. Both are
+  // objects we wrote to our own media bucket, so nothing else is needed here.
+  'place-photo': /^media\.boardsesh\.com$/i,
 };
 
-export type ImageHostKind = 'instagram' | 'tiktok' | 'avatar';
+export type ImageHostKind = 'instagram' | 'tiktok' | 'avatar' | 'place-photo';
 
 export class UnsafeImageHostError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'UnsafeImageHostError';
+  }
+}
+
+/**
+ * The host may answer differently in a moment: a failed DNS lookup, a 5xx or a
+ * 429. Still a refusal for this request, but not a fact about the image.
+ */
+export class TransientImageFetchError extends UnsafeImageHostError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransientImageFetchError';
   }
 }
 
@@ -106,7 +120,7 @@ export async function assertAllowedImageHost(rawUrl: string, kind: ImageHostKind
   try {
     addresses = await lookup(parsed.hostname, { all: true });
   } catch {
-    throw new UnsafeImageHostError(`Could not resolve ${parsed.hostname}`);
+    throw new TransientImageFetchError(`Could not resolve ${parsed.hostname}`);
   }
 
   for (const { address } of addresses) {
@@ -170,7 +184,11 @@ export async function fetchAllowedImage(
     signal: AbortSignal.timeout(options.timeoutMs),
     headers: { Accept: 'image/*' },
   });
-  if (!response.ok) throw new UnsafeImageHostError(`Image fetch answered ${response.status}`);
+  if (!response.ok) {
+    const failure = `Image fetch answered ${response.status}`;
+    if (response.status >= 500 || response.status === 429) throw new TransientImageFetchError(failure);
+    throw new UnsafeImageHostError(failure);
+  }
   const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().startsWith('image/')) {
     throw new UnsafeImageHostError(`Refusing non-image content type: ${contentType}`);

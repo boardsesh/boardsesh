@@ -1,67 +1,21 @@
-import React from 'react';
-import { ImageResponse } from 'next/og';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { themeTokens } from './theme/theme-config';
 
 export const runtime = 'nodejs';
 
-export const alt = 'Boardsesh - Train smarter on your climbing board';
+export const alt = 'Boardsesh: one app for your boards';
 export const size = { width: 1200, height: 630 };
-export const contentType = 'image/png';
+export const contentType = 'image/jpeg';
 
-// Resolve icon.png via import.meta.url so @vercel/nft traces it into the
-// standalone container build. dirname+join yields a plain string, which
-// avoids a Turbopack URL-prototype mismatch we saw when passing the URL
-// straight into readFileSync.
-const iconPath = join(dirname(fileURLToPath(import.meta.url)), 'icon.png');
-const iconPng = readFileSync(iconPath);
-const iconDataUrl = `data:image/png;base64,${iconPng.toString('base64')}`;
+// Rendered once through the backend's real card pipeline and committed:
+// packages/backend/src/scripts/render-default-share-card.ts regenerates it.
+// Resolved via import.meta.url so @vercel/nft traces it into the standalone
+// container build. dirname+join yields a plain string, which avoids a Turbopack
+// URL-prototype mismatch we saw when passing the URL straight into readFileSync.
+const cardPath = join(dirname(fileURLToPath(import.meta.url)), 'default-share-card.jpg');
+const cardJpeg = new Uint8Array(readFileSync(cardPath));
 
 export default function Image() {
-  return new ImageResponse(
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#15101e',
-        fontFamily: 'sans-serif',
-      }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={iconDataUrl} width={320} height={320} alt="" />
-
-      <div
-        style={{
-          fontSize: 128,
-          fontWeight: 900,
-          color: themeTokens.text.brandPrimary,
-          letterSpacing: '-2px',
-          marginTop: 24,
-        }}
-      >
-        {/* i18n-ignore-next-line -- OG image, brand-only text */}
-        boardsesh
-      </div>
-
-      <div
-        style={{
-          fontSize: 36,
-          color: themeTokens.text.brandMuted,
-          fontWeight: 500,
-          marginTop: 12,
-          letterSpacing: '6px',
-        }}
-      >
-        {/* i18n-ignore-next-line -- OG image, English-only */}
-        ONE APP FOR YOUR BOARDS
-      </div>
-    </div>,
-    { ...size },
-  );
+  return new Response(cardJpeg, { headers: { 'Content-Type': contentType } });
 }

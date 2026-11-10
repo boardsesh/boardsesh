@@ -18,6 +18,8 @@ import { readLatestSessionTickFrames } from './latest-session-tick';
 import { canViewSessionRecap, readSessionRecap, type SessionRecapRead } from './session-recap';
 import { loadCardAvatar, resetAvatarCache } from './load-avatar';
 import { runCardRead } from './card-read-limit';
+import { coalesceCardLoad, resetCardLoadsInFlight } from './coalesce-card-load';
+import { resetOgFamilyPlaceCaches } from './load-place-cards';
 import { isSetterClimbListable, setterHasVisibleClimbs } from '../../graphql/resolvers/social/setter-follows';
 import {
   PLAYLIST_ART_PAGE_SIZE,
@@ -102,26 +104,6 @@ const sessionRecapCache = new PostGateCache<SessionRecapRead | null>({
   maxEntries: POST_GATE_MAX_ENTRIES,
 });
 
-/**
- * One load per card at a time. Facebook, Slack and WhatsApp each fetch a card
- * within the same moment; those land here, and share one gate and one render.
- * Nothing is kept once the load settles, so the next request runs its own gate.
- */
-const cardLoadsInFlight = new Map<string, Promise<LoadedOgFamilyCard | null>>();
-
-function coalesceCardLoad(
-  key: string,
-  load: () => Promise<LoadedOgFamilyCard | null>,
-): Promise<LoadedOgFamilyCard | null> {
-  const running = cardLoadsInFlight.get(key);
-  if (running) return running;
-  const started = load().finally(() => {
-    cardLoadsInFlight.delete(key);
-  });
-  cardLoadsInFlight.set(key, started);
-  return started;
-}
-
 /** Test seam: these are process-lifetime. */
 export function resetOgFamilyLoadCaches(): void {
   playlistClimbsCache.clear();
@@ -132,8 +114,9 @@ export function resetOgFamilyLoadCaches(): void {
   setterTotalCache.clear();
   setterTopClimbCache.clear();
   sessionRecapCache.clear();
-  cardLoadsInFlight.clear();
+  resetCardLoadsInFlight();
   resetAvatarCache();
+  resetOgFamilyPlaceCaches();
 }
 
 /**

@@ -20,6 +20,8 @@ import {
   loadSessionRecapCard,
   loadSetterCard,
 } from '../services/og-family/load-cards';
+import { loadBoardPlaceCard, loadGymPlaceCard } from '../services/og-family/load-place-cards';
+import { PlacePhotoTemporarilyUnavailableError } from '../services/og-family/place-photo';
 import type { LoadedOgFamilyCard } from '../services/og-family/card-model';
 
 // The same limits as `/og/climb`: one image per crawl, and a card costs a render.
@@ -39,6 +41,10 @@ const OG_USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
 /** Same bound the resolver uses; a setter name can be any script, with spaces. */
 const OG_SETTER_NAME_MAX_LENGTH = 100;
 const CONTROL_CHARACTER = /\p{Cc}/u;
+
+/** The same shape and bound `gymBySlug` and `boardBySlug` enforce: checked before any database or CPU work. */
+const OG_PLACE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+const OG_PLACE_SLUG_MAX_LENGTH = 120;
 
 /** A setter name a database and a text renderer can both take. Any script, any spacing, no control characters. */
 function isAcceptableSetterName(username: string | null): username is string {
@@ -108,7 +114,7 @@ async function passRateLimit(req: IncomingMessage, res: ServerResponse): Promise
 async function serveOgFamilyCard(
   req: IncomingMessage,
   res: ServerResponse,
-  surface: 'playlist' | 'session-join' | 'session-recap' | 'profile' | 'setter',
+  surface: 'playlist' | 'session-join' | 'session-recap' | 'profile' | 'setter' | 'place-gym' | 'place-board',
   load: () => Promise<LoadedOgFamilyCard | null>,
 ): Promise<void> {
   if (!(await passRateLimit(req, res))) return;
@@ -124,7 +130,7 @@ async function serveOgFamilyCard(
       sendNotFound(req, res);
       return;
     }
-    if (error instanceof CardReadsSaturatedError) {
+    if (error instanceof CardReadsSaturatedError || error instanceof PlacePhotoTemporarilyUnavailableError) {
       sendSaturated(req, res, error.message);
       return;
     }
@@ -149,6 +155,7 @@ async function serveOgFamilyCard(
     const { buffer, contentType, cache, timings } = await renderOgFamilyArt({
       cacheKey: buildOgFamilyByteKey(surface, card.digest),
       art: card.art,
+      photo: card.photo,
       content: card.content,
     });
     const totalMs = performance.now() - totalT0;
@@ -247,4 +254,30 @@ export async function handleOgSetter(req: IncomingMessage, res: ServerResponse, 
     return;
   }
   await serveOgFamilyCard(req, res, 'setter', () => loadSetterCard(username, OG_FAMILY_FONT_FAMILY));
+}
+
+/**
+ * GET/HEAD/OPTIONS /og/place?kind=gym|board&slug=…
+ *
+ * A place is reached by its public slug and nothing else: no token or uuid is
+ * accepted, so a share link never carries an invite and nothing here can log one.
+ */
+export async function handleOgPlace(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (!applyCorsHeaders(req, res)) return;
+  const kind = url.searchParams.get('kind');
+  const slug = url.searchParams.get('slug');
+  if (
+    (kind !== 'gym' && kind !== 'board') ||
+    !slug ||
+    slug.length > OG_PLACE_SLUG_MAX_LENGTH ||
+    !OG_PLACE_SLUG_PATTERN.test(slug)
+  ) {
+    sendNotFound(req, res);
+    return;
+  }
+  if (kind === 'gym') {
+    await serveOgFamilyCard(req, res, 'place-gym', () => loadGymPlaceCard(slug, OG_FAMILY_FONT_FAMILY));
+    return;
+  }
+  await serveOgFamilyCard(req, res, 'place-board', () => loadBoardPlaceCard(slug, OG_FAMILY_FONT_FAMILY));
 }

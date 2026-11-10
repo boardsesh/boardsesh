@@ -115,6 +115,7 @@ const OG_CARD_PATHS: ReadonlySet<string> = new Set([
   '/og/session',
   '/og/profile',
   '/og/setter',
+  '/og/place',
 ]);
 const OG_CARD_SAMPLE_RATE = 0.05;
 

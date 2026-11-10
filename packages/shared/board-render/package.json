@@ -25,6 +25,11 @@
       "import": "./src/og-card.ts",
       "default": "./src/og-card.ts"
     },
+    "./render-version-projection": {
+      "types": "./src/render-version-projection.ts",
+      "import": "./src/render-version-projection.ts",
+      "default": "./src/render-version-projection.ts"
+    },
     "./og-family": {
       "types": "./src/og-family.ts",
       "import": "./src/og-family.ts",

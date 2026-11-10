@@ -147,3 +147,30 @@ export const OG_SETTER_TOP_CLIMB = parse(/* GraphQL */ `
     }
   }
 `);
+
+/** The gym card's gate. What boards it has is read after it, with a stranger's visibility. */
+export const OG_PLACE_GYM = parse(/* GraphQL */ `
+  query OgPlaceGym($slug: String!) {
+    gymBySlug(slug: $slug) {
+      uuid
+      name
+      imageUrl
+    }
+  }
+`);
+
+/** The board card's gate. `locationName` is masked for a stranger by the field resolver. */
+export const OG_PLACE_BOARD = parse(/* GraphQL */ `
+  query OgPlaceBoard($slug: String!) {
+    boardBySlug(slug: $slug) {
+      uuid
+      boardType
+      layoutId
+      sizeId
+      setIds
+      name
+      angle
+      locationName
+    }
+  }
+`);

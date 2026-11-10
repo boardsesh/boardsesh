@@ -22,7 +22,7 @@ import {
   type RenderBoardConfig,
 } from '@boardsesh/board-config';
 import { isValidFramesString } from '@boardsesh/board-render';
-import type { OgFamilyArtSpec } from '../board-render';
+import type { OgFamilyArtSpec, OgFamilyPhotoArt } from '../board-render';
 import type { CardAvatar } from './load-avatar';
 import type { SessionRecapRead } from './session-recap';
 
@@ -31,6 +31,8 @@ export type LoadedOgFamilyCard = {
   /** Digest of everything that changes the bytes. See `digestDrawnData`. */
   digest: string;
   art: OgFamilyArtSpec | null;
+  /** A real photo in the art slot, when this card draws one instead of a board. */
+  photo?: OgFamilyPhotoArt | null;
   content: OgFamilyCardContent;
 };
 
@@ -40,7 +42,7 @@ export function digestDrawnData(drawn: unknown): string {
 }
 
 /** Card-name bound: text longer than this cannot be drawn usefully anyway. */
-const MAX_DRAWN_NAME_CODEPOINTS = 60;
+export const MAX_DRAWN_NAME_CODEPOINTS = 60;
 
 export type BoardConfig = {
   boardName: BoardName;
