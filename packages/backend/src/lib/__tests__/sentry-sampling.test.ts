@@ -98,7 +98,7 @@ describe('resolveBackendTracesSampleRate', () => {
     ).toBe(0);
   });
 
-  it.each(['/og/playlist', '/og/session', '/og/profile', '/og/setter'])(
+  it.each(['/og/playlist', '/og/session', '/og/profile', '/og/setter', '/og/place'])(
     'samples the family card route %s at 5%%',
     (path) => {
       expect(resolveBackendTracesSampleRate({ name: `GET ${path}` })).toBe(0.05);

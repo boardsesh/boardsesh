@@ -7,11 +7,12 @@ import {
   type SprayOgVersionRow,
   type SprayOgWallRow,
 } from '../spray-og-card';
-import { canAccessResourceWithoutLink } from '../privacy';
+import { mapSearchInputToParams, searchClimbs } from '../../db/queries/climbs/index';
+import { readGymBoardsForStranger } from '../../graphql/resolvers/social/boards';
 import { isRenderableConfig, type BoardConfig, type LoadedOgFamilyCard } from './card-model';
-import { runCardRead } from './card-read-limit';
+import { runCardRead, runPhotoRead } from './card-read-limit';
 import { coalesceCardLoad } from './coalesce-card-load';
-import { OG_PLACE_BOARD, OG_PLACE_GYM, OG_PLACE_TOP_CLIMB } from './documents';
+import { OG_PLACE_BOARD, OG_PLACE_GYM } from './documents';
 import {
   buildBoardCardContent,
   buildGymCardContent,
@@ -30,12 +31,20 @@ import { createAnonymousOgContext, runOgDocument } from './run-document';
  * has to leave the card quickly, and a place's cards are re-gated on every request.
  */
 const TOP_CLIMB_TTL_MS = 60_000;
+const GYM_BOARDS_TTL_MS = 60_000;
 const SPRAY_ART_TTL_MS = 60_000;
 const POST_GATE_MAX_ENTRIES = 256;
 const SPRAY_ART_CACHE_ENTRIES = 24;
 
 const topClimbFramesCache = new PostGateCache<string | null>({
   ttlMs: TOP_CLIMB_TTL_MS,
+  maxEntries: POST_GATE_MAX_ENTRIES,
+});
+
+type GymBoardRows = Awaited<ReturnType<typeof readGymBoardsForStranger>>;
+
+const gymBoardsCache = new PostGateCache<GymBoardRows>({
+  ttlMs: GYM_BOARDS_TTL_MS,
   maxEntries: POST_GATE_MAX_ENTRIES,
 });
 
@@ -49,14 +58,19 @@ const sprayArtCache = new PostGateCache<SprayPlaceArt | null>({
 /** Test seam: these are process-lifetime. */
 export function resetOgFamilyPlaceCaches(): void {
   topClimbFramesCache.clear();
+  gymBoardsCache.clear();
   sprayArtCache.clear();
   resetPlacePhotoCache();
 }
 
 /**
- * The most-climbed listable climb on this config, read through `searchClimbs` so
- * it carries the same filters every browse list has: no drafts, nothing unlisted,
- * no community-hidden climb, and only climbs that fit this size and these sets.
+ * The most-climbed listable climb on this config: the same query every browse
+ * list runs, so no drafts, nothing unlisted, no community-hidden climb, and only
+ * climbs that fit this size and these sets.
+ *
+ * Straight to the query, not through the `searchClimbs` resolver. Its anonymous
+ * catalogue pages sit in Redis for a day with no invalidation, so a climb read
+ * that way stays lit long after it is hidden.
  */
 function readTopClimbFrames(
   config: BoardConfig,
@@ -67,25 +81,17 @@ function readTopClimbFrames(
   const key = `${boardName}:${layoutId}:${sizeId}:${setIds}:${angle}`;
   return topClimbFramesCache.read(key, () =>
     runCardRead(async () => {
-      const { searchClimbs } = await runOgDocument<{ searchClimbs: { climbs: { frames: string | null }[] } }>(
-        OG_PLACE_TOP_CLIMB,
-        {
-          input: {
-            boardName,
-            layoutId,
-            sizeId,
-            setIds,
-            angle,
-            page: 0,
-            pageSize: 1,
-            sortBy: 'ascents',
-            sortOrder: 'desc',
-            ...(options.intactHoldsOnly ? { holdIntegrity: 'INTACT' } : {}),
-          },
-        },
-        createAnonymousOgContext(),
+      const { climbs } = await searchClimbs(
+        { board_name: boardName, layout_id: layoutId, size_id: sizeId, set_ids: setIds.split(',').map(Number), angle },
+        mapSearchInputToParams({
+          page: 0,
+          pageSize: 1,
+          sortBy: 'ascents',
+          sortOrder: 'desc',
+          ...(options.intactHoldsOnly ? { holdIntegrity: 'INTACT' } : {}),
+        }),
       );
-      return searchClimbs.climbs[0]?.frames ?? null;
+      return climbs[0]?.frames ?? null;
     }),
   );
 }
@@ -98,9 +104,9 @@ async function buildBoardArt(config: BoardConfig, angle: number): Promise<OgFami
 
 /**
  * Load a gym card, or `null` for the 404. `gymBySlug` is the gate: a private or
- * missing gym stops here, before any photo or climb read. Its board lines come
- * from the same read: `gymBoards` would spend a rate-limit bucket to answer
- * less, since an anonymous caller only sees public boards there.
+ * missing gym stops here, before any photo or climb read. Its `boardTypes` count
+ * every board linked to the gym, Only-me ones included, so the line and the art
+ * come from `readGymBoardsForStranger`, the same rule the gym page lists by.
  */
 export function loadGymPlaceCard(slug: string, fontFamily: string): Promise<LoadedOgFamilyCard | null> {
   return coalesceCardLoad(`place-gym:${slug}`, async () => {
@@ -108,14 +114,21 @@ export function loadGymPlaceCard(slug: string, fontFamily: string): Promise<Load
     const { gymBySlug: gym } = await runOgDocument<{ gymBySlug: GymForCard | null }>(OG_PLACE_GYM, { slug }, context);
     if (!gym) return null;
 
-    const photo = await loadGymPhoto(gym.imageUrl, runCardRead);
+    const boardRows = await gymBoardsCache.read(gym.uuid, () => runCardRead(() => readGymBoardsForStranger(gym.uuid)));
+    const boardTypes = [...new Set(boardRows.map((row) => row.boardType))];
+
+    const photo = await loadGymPhoto(gym.imageUrl);
     let art: OgFamilyArtSpec | null = null;
     if (!photo) {
-      const choice = pickGymBoardConfig(gym.boardTypes, gym.boardSummaries);
+      const choice = pickGymBoardConfig(boardTypes, boardRows);
       if (choice) art = await buildBoardArt(choice.config, choice.angle);
     }
 
-    const content = buildGymCardContent({ gym, hasArt: !!photo || !!art, fontFamily });
+    const content = buildGymCardContent({
+      gym: { name: gym.name, boardTypes, boardSummaries: boardRows },
+      hasArt: !!photo || !!art,
+      fontFamily,
+    });
     return { digest: digestPlaceCard(art, photo, content), art, photo, content };
   });
 }
@@ -161,14 +174,15 @@ async function loadSprayPlaceCard(board: BoardForCard, fontFamily: string): Prom
   };
   const frames = (await readTopClimbFrames(config, board.angle, { intactHoldsOnly: true })) ?? '';
 
+  // A rejected load is not kept, so a timeout is answered once and retried by the
+  // next request. Only "this wall has no usable photo" is held.
   const sprayArt = await sprayArtCache.read(
     `${wall.wallId}:${wall.currentVersionId}:${wall.publicPhotoKey}:${frames}`,
-    () =>
-      runCardRead(async () => {
-        const holds = await sprayDeps.loadAliveHolds(wall.wallId);
-        const photo = await renderSprayWallPhoto({ photoUrl, version, holds, frames });
-        return photo ? { photo, holdCount: holds.length } : null;
-      }),
+    async () => {
+      const holds = await runCardRead(() => sprayDeps.loadAliveHolds(wall.wallId));
+      const photo = await runPhotoRead(() => renderSprayWallPhoto({ photoUrl, version, holds, frames }));
+      return photo ? { photo, holdCount: holds.length } : null;
+    },
   );
   if (!sprayArt) return null;
 
@@ -182,9 +196,9 @@ async function loadSprayPlaceCard(board: BoardForCard, fontFamily: string): Prom
  * gate and everything drawn comes from it, so a `hideLocation` board draws no
  * location because the schema returned none.
  *
- * `boardBySlug` reads a home board's slug as its link, and an Unlisted board
- * opens for a link holder. A card is not that: it would advertise a board its
- * owner kept out of listings, so an Unlisted board needs the no-link reading too.
+ * An Unlisted home board gets a card: its slug is its link, and whoever holds that
+ * link already reads this name and config. An Unlisted spray wall does not, because
+ * a wall's slug comes from its name and `boardBySlug` refuses it.
  */
 export function loadBoardPlaceCard(slug: string, fontFamily: string): Promise<LoadedOgFamilyCard | null> {
   return coalesceCardLoad(`place-board:${slug}`, async () => {
@@ -195,8 +209,6 @@ export function loadBoardPlaceCard(slug: string, fontFamily: string): Promise<Lo
       context,
     );
     if (!board) return null;
-    if (!(await canAccessResourceWithoutLink('board', board.uuid, null))) return null;
-
     if (board.boardType === 'spray') return loadSprayPlaceCard(board, fontFamily);
 
     const config: BoardConfig = {

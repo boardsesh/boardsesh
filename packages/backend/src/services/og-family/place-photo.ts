@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import sharp from 'sharp';
 import { ogFamilyBoardBox } from '@boardsesh/board-render/og-family';
 import { IDENTITY_HOMOGRAPHY, invert, type Homography } from '@boardsesh/spray-wall-geometry';
-import { fetchAllowedImage, UnsafeImageHostError } from '../../lib/safe-image-fetch';
+import { fetchAllowedImage, TransientImageFetchError, UnsafeImageHostError } from '../../lib/safe-image-fetch';
 import { staticPathToMediaRedirect, VERSION_QUERY_PARAM } from '../../lib/media-url';
 import { getMediaPublicBaseUrl } from '../../storage/s3';
 import { logger } from '../../utils/logger';
@@ -14,11 +14,14 @@ import {
   type SprayOverlayMark,
 } from '../spray-og-card';
 import type { OgFamilyPhotoArt } from '../board-render';
+import { CardReadsSaturatedError, runPhotoRead } from './card-read-limit';
 import { isDecodableAvatarBytes } from './load-avatar';
 import { PostGateCache } from './post-gate-cache';
 
-/** A slow CDN must cost a share card a beat, not its render budget. */
-const PHOTO_FETCH_TIMEOUT_MS = 2_500;
+/** A gym has board art to fall back to, so a slow CDN costs its card a beat and no more. */
+const GYM_PHOTO_FETCH_TIMEOUT_MS = 2_500;
+/** A wall has nothing else to draw. The deadline the wall's climb card already uses. */
+const WALL_PHOTO_FETCH_TIMEOUT_MS = 8_000;
 /** Above the largest gym photo and wall photo an upload can store. */
 const PHOTO_MAX_BYTES = 12 * 1024 * 1024;
 /** Fits the 24 MP wall photo the app may send. Refuses a decompression bomb before sharp allocates it. */
@@ -64,6 +67,38 @@ export function resolveGymPhotoFetchUrl(imageUrl: string, mediaBaseUrl: string |
   return staticPathToMediaRedirect(parsed.pathname, search, mediaBaseUrl);
 }
 
+/** The photo could not be read just now. Answered, never remembered: the next request tries again. */
+export class PlacePhotoTemporarilyUnavailableError extends Error {
+  constructor() {
+    super('Photo temporarily unavailable');
+    this.name = 'PlacePhotoTemporarilyUnavailableError';
+  }
+}
+
+function isTransientFetchFailure(error: unknown): boolean {
+  return error instanceof TransientImageFetchError || !(error instanceof UnsafeImageHostError);
+}
+
+/**
+ * The photo's bytes, or null when the answer is final: a refused host, a 404, a
+ * response that was not an image.
+ * @throws PlacePhotoTemporarilyUnavailableError for a timeout, a dropped
+ * connection or a server error.
+ */
+async function fetchPhotoBytes(fetchUrl: string, timeoutMs: number): Promise<Buffer | null> {
+  try {
+    return await fetchAllowedImage(fetchUrl, 'place-photo', { timeoutMs, maxBytes: PHOTO_MAX_BYTES });
+  } catch (error) {
+    // Expected for a dead link or a bad upload. Only the host goes in the log.
+    logger.info('[OGFamily] place photo not fetched', {
+      reason: isTransientFetchFailure(error) ? 'transient' : 'refused',
+      host: new URL(fetchUrl).hostname,
+    });
+    if (isTransientFetchFailure(error)) throw new PlacePhotoTemporarilyUnavailableError();
+    return null;
+  }
+}
+
 function openPhoto(bytes: Buffer): sharp.Sharp {
   return sharp(bytes, { limitInputPixels: PHOTO_MAX_INPUT_PIXELS, failOn: 'error', pages: 1 }).timeout({
     seconds: PHOTO_DECODE_TIMEOUT_SECONDS,
@@ -93,19 +128,12 @@ export async function decodeGymPhoto(bytes: Buffer): Promise<OgFamilyPhotoArt | 
 async function readGymPhoto(imageUrl: string): Promise<OgFamilyPhotoArt | null> {
   const fetchUrl = resolveGymPhotoFetchUrl(imageUrl, getMediaPublicBaseUrl());
   if (!fetchUrl) return null;
+  const bytes = await fetchPhotoBytes(fetchUrl, GYM_PHOTO_FETCH_TIMEOUT_MS);
+  if (!bytes) return null;
   try {
-    const bytes = await fetchAllowedImage(fetchUrl, 'place-photo', {
-      timeoutMs: PHOTO_FETCH_TIMEOUT_MS,
-      maxBytes: PHOTO_MAX_BYTES,
-    });
     return await decodeGymPhoto(bytes);
-  } catch (error) {
-    // Expected for a dead link or a bad upload, and always survivable: the card
-    // draws the board instead. Only the host goes in the log.
-    logger.info('[OGFamily] gym photo skipped', {
-      reason: error instanceof UnsafeImageHostError ? 'unsafe' : 'fetch-or-decode',
-      host: new URL(fetchUrl).hostname,
-    });
+  } catch {
+    logger.info('[OGFamily] gym photo could not be decoded', { host: new URL(fetchUrl).hostname });
     return null;
   }
 }
@@ -113,14 +141,17 @@ async function readGymPhoto(imageUrl: string): Promise<OgFamilyPhotoArt | null> 
 /**
  * A gym's photo ready to draw, or null for "draw the board instead". Never throws:
  * a broken photo must not fail the card. Called only after the gym's gate passed.
- * Failures are remembered too, so a dead link costs one timeout every ten minutes.
+ * A photo that is final-answer bad is remembered for ten minutes. A timeout or a
+ * full photo queue is not, so the gym gets its photo back on the next request.
  */
-export function loadGymPhoto(
-  imageUrl: string | null | undefined,
-  withReadCap: <T>(read: () => Promise<T>) => Promise<T>,
-): Promise<OgFamilyPhotoArt | null> {
-  if (!imageUrl) return Promise.resolve(null);
-  return gymPhotoCache.read(imageUrl, () => withReadCap(() => readGymPhoto(imageUrl)));
+export async function loadGymPhoto(imageUrl: string | null | undefined): Promise<OgFamilyPhotoArt | null> {
+  if (!imageUrl) return null;
+  try {
+    return await gymPhotoCache.read(imageUrl, () => runPhotoRead(() => readGymPhoto(imageUrl)));
+  } catch (error) {
+    if (error instanceof PlacePhotoTemporarilyUnavailableError || error instanceof CardReadsSaturatedError) return null;
+    throw error;
+  }
 }
 
 /** A singular matrix leaves the photo without its holds rather than breaking a shared link. */
@@ -134,12 +165,14 @@ function canonicalToPhotoMatrix(version: SprayOgVersionRow): Homography | null {
 
 /**
  * Fetch and draw one wall's public photo, climb on top, sized to fit the art slot.
+ * The caller runs this under the photo cap.
  *
  * `fit: 'inside'` as `spray-og-card.ts` does: a wall is photographed at whatever
  * aspect the climber's phone produced, and cropping it would cut off the wall the
- * card is meant to show. Null when the photo cannot be read or decoded: a wall has
+ * card is meant to show. Null when the object is gone or undecodable: a wall has
  * no board art to fall back to, and "a wall with no usable photo" is the same
  * answer as the gates above.
+ * @throws PlacePhotoTemporarilyUnavailableError when the photo may read fine in a moment.
  */
 export async function renderSprayWallPhoto(params: {
   photoUrl: string;
@@ -149,13 +182,9 @@ export async function renderSprayWallPhoto(params: {
 }): Promise<OgFamilyPhotoArt | null> {
   const { photoUrl, version, holds, frames } = params;
   const box = ogFamilyBoardBox('full');
+  const bytes = await fetchPhotoBytes(photoUrl, WALL_PHOTO_FETCH_TIMEOUT_MS);
+  if (!bytes || !isDecodableAvatarBytes(bytes)) return null;
   try {
-    const bytes = await fetchAllowedImage(photoUrl, 'place-photo', {
-      timeoutMs: PHOTO_FETCH_TIMEOUT_MS,
-      maxBytes: PHOTO_MAX_BYTES,
-    });
-    if (!isDecodableAvatarBytes(bytes)) return null;
-
     const source = openPhoto(bytes);
     const [metadata, placed] = await Promise.all([
       source.metadata(),
@@ -192,11 +221,8 @@ export async function renderSprayWallPhoto(params: {
         source: { w: width, h: height },
       },
     };
-  } catch (error) {
-    logger.info('[OGFamily] wall photo skipped', {
-      reason: error instanceof UnsafeImageHostError ? 'unsafe' : 'fetch-or-decode',
-      host: new URL(photoUrl).hostname,
-    });
+  } catch {
+    logger.info('[OGFamily] wall photo could not be decoded', { host: new URL(photoUrl).hostname });
     return null;
   }
 }

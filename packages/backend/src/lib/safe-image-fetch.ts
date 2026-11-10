@@ -32,6 +32,17 @@ export class UnsafeImageHostError extends Error {
   }
 }
 
+/**
+ * The host may answer differently in a moment: a failed DNS lookup, a 5xx or a
+ * 429. Still a refusal for this request, but not a fact about the image.
+ */
+export class TransientImageFetchError extends UnsafeImageHostError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TransientImageFetchError';
+  }
+}
+
 // Returns true for IPs that should never be reachable from a server-side
 // fetch initiated on behalf of a user — loopback, RFC1918 private space,
 // link-local (incl. AWS instance metadata at 169.254.169.254), CGNAT,
@@ -109,7 +120,7 @@ export async function assertAllowedImageHost(rawUrl: string, kind: ImageHostKind
   try {
     addresses = await lookup(parsed.hostname, { all: true });
   } catch {
-    throw new UnsafeImageHostError(`Could not resolve ${parsed.hostname}`);
+    throw new TransientImageFetchError(`Could not resolve ${parsed.hostname}`);
   }
 
   for (const { address } of addresses) {
@@ -173,7 +184,11 @@ export async function fetchAllowedImage(
     signal: AbortSignal.timeout(options.timeoutMs),
     headers: { Accept: 'image/*' },
   });
-  if (!response.ok) throw new UnsafeImageHostError(`Image fetch answered ${response.status}`);
+  if (!response.ok) {
+    const failure = `Image fetch answered ${response.status}`;
+    if (response.status >= 500 || response.status === 429) throw new TransientImageFetchError(failure);
+    throw new UnsafeImageHostError(failure);
+  }
   const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().startsWith('image/')) {
     throw new UnsafeImageHostError(`Refusing non-image content type: ${contentType}`);

@@ -148,21 +148,13 @@ export const OG_SETTER_TOP_CLIMB = parse(/* GraphQL */ `
   }
 `);
 
-/**
- * The gym card's gate and everything it draws, from one read. `boardTypes` and
- * `boardSummaries` name what the gym has without `gymBoards`, which spends a
- * rate-limit bucket and shows an anonymous caller only its public boards.
- */
+/** The gym card's gate. What boards it has is read after it, with a stranger's visibility. */
 export const OG_PLACE_GYM = parse(/* GraphQL */ `
   query OgPlaceGym($slug: String!) {
     gymBySlug(slug: $slug) {
+      uuid
       name
       imageUrl
-      boardTypes
-      boardSummaries {
-        boardType
-        angle
-      }
     }
   }
 `);
@@ -179,17 +171,6 @@ export const OG_PLACE_BOARD = parse(/* GraphQL */ `
       name
       angle
       locationName
-    }
-  }
-`);
-
-/** One climb to light: `searchClimbs`' own filters keep drafts, hidden and unlisted climbs out. */
-export const OG_PLACE_TOP_CLIMB = parse(/* GraphQL */ `
-  query OgPlaceTopClimb($input: ClimbSearchInput!) {
-    searchClimbs(input: $input) {
-      climbs {
-        frames
-      }
     }
   }
 `);

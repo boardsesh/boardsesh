@@ -32,3 +32,19 @@ export function runCardRead<T>(read: () => Promise<T>): Promise<T> {
   if (cardReads.pending >= MAX_QUEUED_CARD_READS) return Promise.reject(new CardReadsSaturatedError());
   return cardReads.run(read);
 }
+
+/**
+ * Photo fetches and decodes have their own small cap. They wait on a CDN rather
+ * than the database, so inside the slot above a brownout would stall every other
+ * family card. Two at a time: a stalled host costs its timeout, not the route.
+ */
+const PHOTO_READ_CONCURRENCY = 2;
+const MAX_QUEUED_PHOTO_READS = 4;
+
+const photoReads = createSemaphore(PHOTO_READ_CONCURRENCY);
+
+/** Run a photo fetch and decode under its own cap, shedding with the same 503 as a card read. */
+export function runPhotoRead<T>(read: () => Promise<T>): Promise<T> {
+  if (photoReads.pending >= MAX_QUEUED_PHOTO_READS) return Promise.reject(new CardReadsSaturatedError());
+  return photoReads.run(read);
+}

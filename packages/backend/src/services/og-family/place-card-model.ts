@@ -67,12 +67,9 @@ export function digestPlaceCard(
 
 // --- gym --------------------------------------------------------------------
 
-export type GymForCard = {
-  name: string;
-  imageUrl: string | null;
-  boardTypes: string[];
-  boardSummaries: { boardType: string; angle: number }[];
-};
+export type GymForCard = { uuid: string; name: string; imageUrl: string | null };
+
+export type GymBoardsForCard = { boardTypes: string[]; boardSummaries: { boardType: string; angle: number }[] };
 
 export type GymBoardArtChoice = { config: BoardConfig; angle: number };
 
@@ -83,7 +80,7 @@ export type GymBoardArtChoice = { config: BoardConfig; angle: number };
  */
 export function pickGymBoardConfig(
   boardTypes: readonly string[],
-  boardSummaries: GymForCard['boardSummaries'],
+  boardSummaries: GymBoardsForCard['boardSummaries'],
 ): GymBoardArtChoice | null {
   for (const [boardName, config] of Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS)) {
     if (!boardTypes.includes(boardName)) continue;
@@ -103,7 +100,7 @@ export function pickGymBoardConfig(
 /** `Kilter 30°` for one board at one angle, `Kilter + Tension` for several, null for none. */
 export function describeGymBoards(
   boardTypes: readonly string[],
-  boardSummaries: GymForCard['boardSummaries'],
+  boardSummaries: GymBoardsForCard['boardSummaries'],
 ): string | null {
   const types = [...new Set(boardTypes)];
   if (types.length === 0) return null;
@@ -125,7 +122,7 @@ const NO_ART_FIELD_GLOW: NonNullable<OgFamilyCardContent['fieldGlow']> = {
 };
 
 export function buildGymCardContent(params: {
-  gym: Pick<GymForCard, 'name' | 'boardTypes' | 'boardSummaries'>;
+  gym: Pick<GymForCard, 'name'> & GymBoardsForCard;
   hasArt: boolean;
   fontFamily: string;
 }): OgFamilyCardContent {
@@ -191,9 +188,10 @@ function catalogueNames(config: BoardConfig): { layoutName?: string; sizeName?: 
  *
  * The create flow names a board `Marco's Kilter Original 12×12` when the owner
  * leaves the field blank (`formatDefaultBoardName` in mobile). The config is
- * printed under the name already, so the card keeps `Marco's Kilter`. Only an
- * exact default tail is touched, directly after the board's own label: a name
- * somebody chose stays as they wrote it.
+ * printed under the name already, so the card keeps `Marco's Kilter`, or
+ * `Kilter Original` when there was no owner to keep. Only an exact default tail is
+ * touched, directly after the board's own label: a name somebody chose stays as
+ * they wrote it.
  */
 export function stripDefaultBoardNameTail(name: string, config: BoardConfig): string {
   const label = BOARD_TYPE_LABELS[config.boardName];
@@ -208,8 +206,11 @@ export function stripDefaultBoardNameTail(name: string, config: BoardConfig): st
     .map((part) => part.split(/\s+/).map(escapeRegExp).join('\\s+'))
     .join('\\s*[x×]\\s*');
   const tail = new RegExp(`^(.*\\b${escapeRegExp(label)})\\s+${layout}\\s+${size}\\s*$`, 'iu');
-  const stripped = tail.exec(name)?.[1];
-  return stripped?.trim() ?? name;
+  const stripped = tail.exec(name)?.[1]?.trim();
+  if (stripped === undefined) return name;
+  // With no owner the tail was the whole name, and the brand alone says nothing
+  // the line above the name does not.
+  return stripped.toLowerCase() === label.toLowerCase() ? `${label} ${cleanLayoutName(layoutName, label)}` : stripped;
 }
 
 /** `Mirror · 12 x 8`: what the board's config is, without the brand the line above already says. */

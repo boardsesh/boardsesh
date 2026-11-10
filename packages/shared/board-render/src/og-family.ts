@@ -713,6 +713,7 @@ export type OgFamilyHeroRect = { left: number; top: number; width: number; heigh
 
 /** Where the optional blocks landed, for the geometry tests. Absent when not drawn. */
 export type OgFamilyBlockRects = {
+  eyebrow?: { left: number; top: number; width: number; height: number };
   identity?: { left: number; top: number; width: number; height: number };
   dots?: { left: number; top: number; width: number; height: number };
   bars?: { left: number; top: number; width: number; height: number };
@@ -754,7 +755,7 @@ export async function renderOgFamilyTextLayers(
 
   const stacked: { input: Buffer; left: number; offset: number }[] = [];
   const blocks: OgFamilyBlockRects = {};
-  const blockOffsets: { identity?: number; dots?: number } = {};
+  const blockOffsets: { identity?: number; dots?: number; eyebrow?: number } = {};
   let cursor = 0;
 
   if (identity) {
@@ -819,7 +820,10 @@ export async function renderOgFamilyTextLayers(
 
   if (eyebrow) {
     const raster = await renderRow(eyebrow, rowWidth, fontFamily, direction);
-    stacked.push({ input: raster.buffer, left: anchor(raster.width), offset: cursor });
+    const left = anchor(raster.width);
+    stacked.push({ input: raster.buffer, left, offset: cursor });
+    blocks.eyebrow = { left, top: 0, width: raster.width, height: raster.height };
+    blockOffsets.eyebrow = cursor;
     cursor += raster.height + (eyebrow.gapBelow ?? 6);
   }
 
@@ -881,6 +885,7 @@ export async function renderOgFamilyTextLayers(
     top: blockTop + row.offset,
   }));
   if (blocks.identity) blocks.identity.top = blockTop + (blockOffsets.identity ?? 0);
+  if (blocks.eyebrow) blocks.eyebrow.top = blockTop + (blockOffsets.eyebrow ?? 0);
   if (blocks.dots) blocks.dots.top = blockTop + (blockOffsets.dots ?? 0);
 
   if (drawBars && bars) {

@@ -15,7 +15,15 @@ import {
 } from '../services/og-family/place-card-model';
 import { decodeGymPhoto, resolveGymPhotoFetchUrl } from '../services/og-family/place-photo';
 import { passSprayCardGates } from '../services/og-family/load-place-cards';
-import { assertAllowedImageHost, UnsafeImageHostError } from '../lib/safe-image-fetch';
+import {
+  assertAllowedImageHost,
+  fetchAllowedImage,
+  TransientImageFetchError,
+  UnsafeImageHostError,
+} from '../lib/safe-image-fetch';
+import { getBoardDetailsForBoard } from '@boardsesh/board-render';
+import { BOARD_TYPE_LABELS } from '@boardsesh/board-constants';
+import { listCatalogueEntries } from '@boardsesh/board-render/render-version-projection';
 import type { SprayOgCardDeps, SprayOgWallRow } from '../services/spray-og-card';
 
 vi.mock('node:dns/promises', async (importOriginal) => ({
@@ -118,6 +126,30 @@ describe('default board names', () => {
     expect(stripDefaultBoardNameTail("Marco's Kilter Original 12×12 with kickboard", kilter)).toBe("Marco's Kilter");
   });
 
+  it('keeps the layout when the app made up a name with no owner', () => {
+    expect(stripDefaultBoardNameTail('Kilter Original 12×12 with kickboard', kilter)).toBe('Kilter Original');
+  });
+
+  it('never collapses an ownerless default name to the brand, on any config', () => {
+    const named = listCatalogueEntries().filter((entry) => entry.boardName !== 'spray');
+    expect(named.length).toBeGreaterThan(40);
+    for (const { boardName, layoutId, sizeId, setIds } of named) {
+      const config: BoardConfig = { boardName, layoutId, sizeId, setIds: setIds.join(',') };
+      const { layout_name: layoutName, size_name: sizeName } = getBoardDetailsForBoard({
+        board_name: boardName,
+        layout_id: layoutId,
+        size_id: sizeId,
+        set_ids: setIds,
+      });
+      const label = BOARD_TYPE_LABELS[boardName];
+      const layout = (layoutName ?? '').replace(new RegExp(`\\b${label}\\b`, 'gi'), '').replace(/\bBoard\b/gi, '');
+
+      expect(stripDefaultBoardNameTail(`${label} ${layout} ${sizeName}`.replace(/\s+/g, ' ').trim(), config)).not.toBe(
+        label,
+      );
+    }
+  });
+
   it('leaves a name somebody chose alone', () => {
     expect(stripDefaultBoardNameTail('Backspace', kilter)).toBe('Backspace');
     expect(stripDefaultBoardNameTail('The Original 12 x 12 with kickboard', kilter)).toBe(
@@ -200,6 +232,32 @@ describe('the photo host kind', () => {
     await expect(assertAllowedImageHost('https://lh3.googleusercontent.com/x', 'place-photo')).rejects.toBeInstanceOf(
       UnsafeImageHostError,
     );
+  });
+});
+
+describe('which fetch failures are worth retrying', () => {
+  const imageUrl = 'https://media.boardsesh.com/x.jpg';
+  const answering = (status: number) =>
+    vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('nope', { status, headers: { 'content-type': 'image/jpeg' } }));
+  const options = { timeoutMs: 1000, maxBytes: 1000 };
+
+  it.each([500, 503, 429])('treats %i as transient', async (status) => {
+    const fetchStub = answering(status);
+
+    await expect(fetchAllowedImage(imageUrl, 'place-photo', options)).rejects.toBeInstanceOf(TransientImageFetchError);
+    fetchStub.mockRestore();
+  });
+
+  it.each([403, 404])('treats %i as final', async (status) => {
+    const fetchStub = answering(status);
+
+    const failure = await fetchAllowedImage(imageUrl, 'place-photo', options).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(UnsafeImageHostError);
+    expect(failure).not.toBeInstanceOf(TransientImageFetchError);
+    fetchStub.mockRestore();
   });
 });
 

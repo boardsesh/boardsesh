@@ -319,3 +319,31 @@ describe('family blocks stay clear of each other', () => {
     }
   });
 });
+
+describe('a place card eyebrow', () => {
+  const eyebrow = (text: string) => ({ runs: [{ text, color: OG_FAMILY_MUTED }], sizePt: 26, weight: 700 });
+  const hero = (text: string) => ({ runs: [{ text, color: OG_FAMILY_WHITE }], maxPt: 66, minPt: 28, wrap: true });
+
+  it.each<[string, Exclude<OgFamilySlot, 'narrow'>, string, string]>([
+    ['a short name', 'full', 'Kilter 40°', 'Kaserne'],
+    ['a three-line name', 'full', 'Kilter + Tension + MoonBoard', 'The Climbing Hangar, Plymouth'],
+    ['a very long boards line', 'full', 'Kilter + Tension + MoonBoard + Decoy + Touchstone + Grasshopper', 'Lab'],
+    ['a card with no art', 'none', 'Spray wall 40°', 'The Barn'],
+  ])('stays above the hero and clear of the art with %s', async (_label, slot, line, name) => {
+    const { hero: heroRect, blocks } = await renderOgFamilyTextLayers({
+      slot,
+      fontFamily: 'Noto Sans',
+      eyebrow: eyebrow(line),
+      hero: hero(name),
+      rows: [],
+    });
+
+    const rect = blocks.eyebrow!;
+    expect(rect.top + rect.height).toBeLessThanOrEqual(heroRect.top);
+    expect(heroRect.left).toBeGreaterThanOrEqual(OG_FAMILY_CROP_LEFT);
+    expect(heroRect.left + heroRect.width).toBeLessThanOrEqual(OG_FAMILY_CROP_RIGHT);
+    expect(rect.left + rect.width).toBeLessThanOrEqual(1176);
+    const art = ogFamilyArtBounds(slot);
+    if (art) expect(rect.left).toBeGreaterThanOrEqual(art.right);
+  });
+});

@@ -462,26 +462,33 @@ placement and sharing it could serve a misplaced plane and evict climb bases.
 
 **Places (`/og/place?kind=gym|board&slug=`).** `gymBySlug` or `boardBySlug` is the
 gate, run as an anonymous caller on every request; a gym or board a stranger cannot
-open answers the one 404 before any photo, climb or byte-cache read. `boardBySlug`
-opens a home board for whoever holds its slug, so a card also takes the no-link
-reading: an Unlisted board gets no card. Nothing on the URL is a capability, so no
-invite token can appear in one.
+open answers the one 404 before any photo, climb or byte-cache read. That means
+private, followers-only, invite-only and admin-hidden boards get no card. An Unlisted
+home board does: its slug is its link, and the link holder already reads that name
+and config. An Unlisted spray wall does not, because a wall's slug is derived from
+its name and is not its link (see `docs/spray-walls.md`). Nothing on the URL is a
+capability, so no invite token can appear in one.
 
-A gym prints its own name and the boards it has, from `boardTypes` and
-`boardSummaries` (never `gymBoards`). Its public photo takes the art slot, fetched
-under the `place-photo` host kind with the avatar path's byte sniff, pixel cap and
-timeouts; a photo that fails for any reason falls back to board art and never fails
-the card. With no photo it lights the most-climbed listable climb on the type's
-`FALLBACK_BOARD_PREVIEW_CONFIGS` entry. No boards and no photo is a centred name with
-no art. A board card draws its own config and whatever `boardBySlug` returned, so a
-`hideLocation` board has no location on it, and the config tail is stripped from an
-app-generated default name. A spray wall goes through `spray-og-card.ts`'s gates
-(public, not hidden, published, public photo) and its compositing, and any failure
-answers the 404, since a wall has no board art to fall back to.
+A gym prints its own name and the boards a stranger can see on its page, read with
+`gymBoards`' own visibility rule and held for 60 s. `Gym.boardTypes` is not used
+here: it counts every linked board, Only-me ones included. Its public photo takes the
+art slot, fetched under the `place-photo` host kind with the avatar path's byte sniff,
+pixel cap and timeouts, in a photo-only cap of its own so a CDN brownout cannot stall
+other family cards. A photo that fails for any reason falls back to board art and
+never fails the card; a timeout or 5xx is not remembered. With no photo it lights the
+most-climbed listable climb on the type's `FALLBACK_BOARD_PREVIEW_CONFIGS` entry. No
+boards and no photo is a centred name with no art. A board card draws its own config
+and whatever `boardBySlug` returned, so a `hideLocation` board has no location on it,
+and the config tail is stripped from an app-generated default name. A spray wall goes
+through `spray-og-card.ts`'s gates (public, not hidden, published, public photo) and
+its compositing. A photo that is gone or undecodable answers the 404, since a wall
+has no board art to fall back to; a timeout or server error answers a 503 with
+`Retry-After` and is not held.
 
-The climb a card lights is read through `searchClimbs`, so drafts, unlisted and
-community-hidden climbs are out, and held for 60 s. `Kilter 40°` on a gym card is what
-`boardSummaries` says. No catalogue climb count is ever printed about a place.
+The climb a card lights comes straight from the `searchClimbs` query, so drafts,
+unlisted and community-hidden climbs are out, and is held for 60 s. It deliberately
+skips the GraphQL resolver, whose anonymous catalogue pages stay in Redis for a day
+with no invalidation. No catalogue climb count is ever printed about a place.
 
 **Site default.** `packages/web/app/default-share-card.jpg` is served by
 `opengraph-image.tsx` and `twitter-image.tsx`: a real Kilter board with holds lit in

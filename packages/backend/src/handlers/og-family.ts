@@ -21,6 +21,7 @@ import {
   loadSetterCard,
 } from '../services/og-family/load-cards';
 import { loadBoardPlaceCard, loadGymPlaceCard } from '../services/og-family/load-place-cards';
+import { PlacePhotoTemporarilyUnavailableError } from '../services/og-family/place-photo';
 import type { LoadedOgFamilyCard } from '../services/og-family/card-model';
 
 // The same limits as `/og/climb`: one image per crawl, and a card costs a render.
@@ -129,7 +130,7 @@ async function serveOgFamilyCard(
       sendNotFound(req, res);
       return;
     }
-    if (error instanceof CardReadsSaturatedError) {
+    if (error instanceof CardReadsSaturatedError || error instanceof PlacePhotoTemporarilyUnavailableError) {
       sendSaturated(req, res, error.message);
       return;
     }

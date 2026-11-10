@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CardReadsSaturatedError, runCardRead } from '../services/og-family/card-read-limit';
+import { CardReadsSaturatedError, runCardRead, runPhotoRead } from '../services/og-family/card-read-limit';
 
 function deferred() {
   let release: () => void = () => {};
@@ -44,5 +44,36 @@ describe('runCardRead', () => {
     await expect(runCardRead(() => Promise.reject(new Error('database down')))).rejects.toThrow('database down');
 
     await expect(runCardRead(async () => 'next')).resolves.toBe('next');
+  });
+});
+
+describe('runPhotoRead', () => {
+  it('runs two at a time and sheds past its own queue', async () => {
+    const { gate, release } = deferred();
+    let running = 0;
+    const read = async () => {
+      running += 1;
+      await gate;
+      running -= 1;
+    };
+
+    const accepted = Array.from({ length: 6 }, () => runPhotoRead(read));
+    await settle();
+    expect(running).toBe(2);
+    await expect(runPhotoRead(read)).rejects.toBeInstanceOf(CardReadsSaturatedError);
+
+    release();
+    await Promise.all(accepted);
+  });
+
+  it('leaves the card read slot free while every photo slot is stuck', async () => {
+    const { gate, release } = deferred();
+    const stuck = [runPhotoRead(() => gate), runPhotoRead(() => gate)];
+    await settle();
+
+    await expect(runCardRead(async () => 'read')).resolves.toBe('read');
+
+    release();
+    await Promise.all(stuck);
   });
 });
