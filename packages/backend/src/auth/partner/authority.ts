@@ -61,7 +61,7 @@ export interface PartnerAuthorityRuntime {
   close(): Promise<void>;
 }
 
-const ADMISSION_LIMITS: PartnerAdmissionLimits = {
+export const PARTNER_ADMISSION_LIMITS: PartnerAdmissionLimits = {
   permits: PARTNER_POOL_MAX,
   authorizePermits: 1,
   queueLimitPerLane: 16,
@@ -207,7 +207,7 @@ export async function createPartnerAuthorityRuntime(
     authority,
     database,
     configuration,
-    admission: createPartnerAdmissionGate(ADMISSION_LIMITS),
+    admission: createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS),
     registeredOrigins: createPartnerOriginDirectory(database),
     handleRequest: (request, options) => handlePartnerRequest(database, request, authority.handler, options),
     discoveryResponse: (logContext) =>

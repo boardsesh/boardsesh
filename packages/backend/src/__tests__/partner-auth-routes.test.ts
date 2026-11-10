@@ -6,7 +6,12 @@ import { connect as openTcpConnection, type AddressInfo, type Socket } from 'nod
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
-import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../auth/partner/authority';
+import { createPartnerAdmissionGate } from '../auth/partner/admission';
+import {
+  createPartnerAuthorityRuntime,
+  PARTNER_ADMISSION_LIMITS,
+  type PartnerAuthorityRuntime,
+} from '../auth/partner/authority';
 import { PARTNER_DISABLED_PATHS, PARTNER_ROUTES } from '../auth/partner/routes';
 import { createPartnerDatabaseHandle, PARTNER_POOL_MAX } from '../auth/partner/transaction';
 import { db } from '../db/client';
@@ -1511,16 +1516,19 @@ describe('partner OAuth routes on the API host', () => {
   });
 
   describe('the bounded queue', () => {
+    // The gate's own rules run on a gate of their own, with the deployed limits,
+    // so no other test's traffic on the shared one can hold or free a permit here.
+    const freshGate = () => createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+
     it('refuses work at once when the queue is full', async () => {
+      const gate = freshGate();
       const permits: Array<{ release(): void }> = [];
-      const acquired = await Promise.all(
-        Array.from({ length: PARTNER_POOL_MAX }, () => runtime.admission.acquire('token')),
-      );
+      const acquired = await Promise.all(Array.from({ length: PARTNER_POOL_MAX }, () => gate.acquire('token')));
       for (const permit of acquired) permits.push(permit!);
-      const queued = Array.from({ length: 16 }, () => runtime.admission.acquire('token'));
+      const queued = Array.from({ length: 16 }, () => gate.acquire('token'));
       try {
         const started = performance.now();
-        expect(await runtime.admission.acquire('token')).toBeNull();
+        expect(await gate.acquire('token')).toBeNull();
         expect(performance.now() - started).toBeLessThan(50);
       } finally {
         for (const permit of permits) permit.release();
@@ -1547,15 +1555,17 @@ describe('partner OAuth routes on the API host', () => {
     });
 
     it('caps how long a queued request waits', async () => {
-      const permits = await Promise.all(
-        Array.from({ length: PARTNER_POOL_MAX }, () => runtime.admission.acquire('token')),
-      );
+      const gate = freshGate();
+      const permits = await Promise.all(Array.from({ length: PARTNER_POOL_MAX }, () => gate.acquire('token')));
       try {
         const started = performance.now();
-        const waited = await runtime.admission.acquire('token');
-        const waitedMs = performance.now() - started;
-        expect(waited).toBeNull();
-        expect(waitedMs).toBeGreaterThanOrEqual(900);
+        const waited = await gate.acquire('token');
+        const waitedMs = Math.round(performance.now() - started);
+        // Both in one assertion, so a failure says what happened.
+        expect({ granted: waited !== null, waitedAtLeast900Ms: waitedMs >= 900, waitedMs }).toMatchObject({
+          granted: false,
+          waitedAtLeast900Ms: true,
+        });
         // Loose above: it proves a deadline exists, not how precisely a busy machine keeps it.
         expect(waitedMs).toBeLessThan(5000);
       } finally {
@@ -1564,11 +1574,10 @@ describe('partner OAuth routes on the API host', () => {
     });
 
     it('never gives a queued authorize a permit a token request can use first', async () => {
-      const held = await Promise.all(
-        Array.from({ length: PARTNER_POOL_MAX }, () => runtime.admission.acquire('token')),
-      );
-      const queuedAuthorize = runtime.admission.acquire('authorize');
-      const queuedToken = runtime.admission.acquire('token');
+      const gate = freshGate();
+      const held = await Promise.all(Array.from({ length: PARTNER_POOL_MAX }, () => gate.acquire('token')));
+      const queuedAuthorize = gate.acquire('authorize');
+      const queuedToken = gate.acquire('token');
       held[0]?.release();
       const tokenPermit = await queuedToken;
       expect(tokenPermit).not.toBeNull();
@@ -1581,8 +1590,9 @@ describe('partner OAuth routes on the API host', () => {
     });
 
     it('limits authorize to one permit, however many are free', async () => {
-      const first = await runtime.admission.acquire('authorize');
-      const second = runtime.admission.acquire('authorize');
+      const gate = freshGate();
+      const first = await gate.acquire('authorize');
+      const second = gate.acquire('authorize');
       let secondSettled = false;
       void second.then(() => {
         secondSettled = true;
