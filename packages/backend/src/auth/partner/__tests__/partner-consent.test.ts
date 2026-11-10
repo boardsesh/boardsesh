@@ -562,11 +562,7 @@ describe('partner consent', () => {
         let armed = false;
         // Runs after the consent guard checked generation 0 (no row yet) and the
         // provider wrote the code, before the fence binds it: the window the
-        // after-hook re-check closes. A whole Disconnect cannot commit here any
-        // more: it also deletes the consent link this request holds locked (F10),
-        // so it waits on this request. The hook moves the connection row the way
-        // Disconnect does, which is what the fence's re-check reads, so the
-        // re-check is still the thing under test.
+        // after-hook re-check closes.
         const racing = environment.createInstance([
           {
             id: 'disconnect-during-consent',
@@ -576,17 +572,17 @@ describe('partner consent', () => {
                   matcher: (context) => armed && context.path === '/oauth2/authorize',
                   handler: createAuthMiddleware(async () => {
                     armed = false;
-                    const connectionId = randomUUID();
                     await db.insert(oauthConnections).values({
-                      id: connectionId,
+                      id: randomUUID(),
                       userId: climber.userId,
                       clientId: client.clientId,
                       connectedAt: new Date(),
                     });
-                    await db
-                      .update(oauthConnections)
-                      .set({ generation: 1, revokedAt: new Date(), revocationReason: 'climber_disconnect' })
-                      .where(eq(oauthConnections.id, connectionId));
+                    await disconnectPartnerConnection(environment.database, {
+                      userId: climber.userId,
+                      clientId: client.clientId,
+                      reason: 'climber_disconnect',
+                    });
                   }),
                 },
               ],
