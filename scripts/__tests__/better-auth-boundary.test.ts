@@ -31,7 +31,11 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
     '../../auth/partner/load-authority',
     '../../auth/partner/mode',
   ],
+  // The retention sweep's job (F11), which runs whatever the mode and so must never load Better Auth.
+  'packages/backend/src/services/partner-oauth-sweep.ts': ['../auth/partner/retention'],
 };
+/** The sweep itself: plain SQL on the partner tables. */
+const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
 
 interface Manifest {
   dependencies?: Record<string, string>;
@@ -179,7 +183,7 @@ describe('Better Auth dependency boundary', () => {
     expect(runtimeImporters.sort()).toEqual([...PARTNER_RUNTIME_IMPORTERS].sort());
   });
 
-  it('lets exactly the listed entry points outside the partner folder reach into it', () => {
+  it('lets only the listed production modules outside the partner folder reach into it', () => {
     const productionModules = trackedSourceFiles.filter(
       (path) =>
         path.startsWith('packages/backend/src/') &&
@@ -206,6 +210,13 @@ describe('Better Auth dependency boundary', () => {
       expect(importSpecifiers(entrySource).some(isBetterAuthSpecifier)).toBe(false);
     },
   );
+
+  it('keeps the sweep off every other partner module, so running it with the mode off loads nothing more', () => {
+    const sweepSource = readRepoFile(PARTNER_SWEEP_MODULE);
+    const relativeImports = runtimeImportSpecifiers(sweepSource).filter((specifier) => specifier.startsWith('.'));
+    expect(relativeImports).toEqual(['../../utils/postgres-errors']);
+    expect(importSpecifiers(sweepSource).some(isBetterAuthSpecifier)).toBe(false);
+  });
 
   it('reaches the authority only through a dynamic import in the loader', () => {
     const loaderPath = `${PARTNER_ROOT}load-authority.ts`;

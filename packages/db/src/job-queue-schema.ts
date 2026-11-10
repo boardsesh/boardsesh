@@ -118,6 +118,26 @@ export const POSTHOG_PERSON_DELETION_QUEUE_OPTIONS = {
  */
 export const CRON_JOB_DELETE_AFTER_SECONDS = 24 * 60 * 60;
 
+/**
+ * The backend's hourly partner OAuth retention sweep (docs/integration-platform.md,
+ * "Retention sweep"). Lives here because the migrator creates the queue.
+ */
+export const PARTNER_OAUTH_SWEEP_QUEUE = 'partner-oauth-sweep';
+
+/**
+ * `exclusive`: one run queued or running across every replica. A run stops
+ * starting batches after 30 s, far under this expiry, so pg-boss never starts a
+ * second copy beside a live one (a second copy would still be safe: the sweep
+ * skips every row another transaction holds). A failed run is retried once; the
+ * next hour's run covers anything it left.
+ */
+const PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS = {
+  policy: 'exclusive',
+  expireInSeconds: 600,
+  retryLimit: 1,
+  retryDelay: 300,
+} as const;
+
 type TablePrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 
 /** One GRANT on a `public` table, optionally limited to some columns. */
@@ -842,6 +862,12 @@ export async function initializeJobQueueSchema(
       ...POSTHOG_PERSON_DELETION_QUEUE_OPTIONS,
     });
     await boss.updateQueue(POSTHOG_PERSON_DELETION_QUEUE, POSTHOG_PERSON_DELETION_QUEUE_OPTIONS);
+    await boss.createQueue(PARTNER_OAUTH_SWEEP_QUEUE, {
+      partition: false,
+      ...PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS,
+    });
+    const { policy: _partnerSweepPolicy, ...mutablePartnerSweepOptions } = PARTNER_OAUTH_SWEEP_QUEUE_OPTIONS;
+    await boss.updateQueue(PARTNER_OAUTH_SWEEP_QUEUE, mutablePartnerSweepOptions);
     // Family queues are stately. A queue created under an earlier policy keeps
     // it (pg-boss cannot change a policy), which is why these are new names
     // rather than the retired `background-probe-<role>` queues.
