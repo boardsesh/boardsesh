@@ -34,6 +34,8 @@ export interface PartnerRequestState {
   consentApproved: boolean;
   /** Set only by the consent guard, after it has checked and spent the climber's consent link. */
   consent: PartnerConsentDecision | null;
+  /** The connection whose code this token request redeems, set once the fence holds its lock. */
+  redemption: { userId: string; clientId: string } | null;
 }
 
 interface ActivePartnerTransaction {
@@ -111,7 +113,7 @@ export async function runInPartnerTransaction<Result>(
   root: PartnerDatabase,
   work: (transaction: PartnerDatabase, state: PartnerRequestState) => Promise<Result>,
 ): Promise<Result> {
-  const state: PartnerRequestState = { databaseBusy: false, consentApproved: false, consent: null };
+  const state: PartnerRequestState = { databaseBusy: false, consentApproved: false, consent: null, redemption: null };
   return root.transaction(async (transaction) => {
     // Written to pg_settings for this transaction only. SET cannot take bind
     // parameters, and these are constants, so this stays a single round trip.

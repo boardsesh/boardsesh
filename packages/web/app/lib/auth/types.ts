@@ -27,6 +27,9 @@ declare module 'next-auth/jwt' {
     // Epoch seconds of the sign-in that produced this cookie. Absent on cookies
     // from before the claim and on native transfer sign-ins: age unknown.
     auth_time?: number;
+    // Set beside auth_time only by a sign-in made while OAuth account links were
+    // guarded (PARTNER_OAUTH_MODE not off). Partner consent requires it.
+    link_guarded?: true;
     // Cached userProfiles claims so the `session` callback doesn't run a DB
     // query on every /api/auth/session read. `null` means "fetched, but the
     // profile has none" (distinct from `undefined` = never fetched yet).

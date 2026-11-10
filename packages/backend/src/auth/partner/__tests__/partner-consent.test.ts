@@ -54,15 +54,21 @@ interface SignIn {
   authTime?: unknown;
   /** Null leaves the login id out. Defaults to a new login. */
   authSessionId?: string | null;
+  /** `link_guarded`, which the web writes only while it guards links. Defaults to true. */
+  linkGuarded?: unknown;
 }
 
-async function signInAs(userId: string, { authTime = nowSeconds() - 3600, authSessionId }: SignIn = {}) {
+async function signInAs(
+  userId: string,
+  { authTime = nowSeconds() - 3600, authSessionId, linkGuarded = true }: SignIn = {},
+) {
   const login = authSessionId === undefined ? randomUUID() : authSessionId;
   const credential = await encodeNextAuthSession({
     token: {
       sub: userId,
       ...(login === null ? {} : { authSessionId: login }),
       ...(authTime === null ? {} : { auth_time: authTime }),
+      ...(linkGuarded === null ? {} : { link_guarded: linkGuarded }),
     },
     secret: TEST_CONFIGURATION.nextAuthSecret,
     maxAge: 30 * DAY_SECONDS,
@@ -188,6 +194,16 @@ describe('partner consent', () => {
   const consentClient = (options: Parameters<PartnerTestEnvironment['createClient']>[0] = {}) =>
     environment.createClient({ skipConsent: false, ...options });
 
+  /** Approves and has the app redeem the code: the connection is live once this returns 200. */
+  async function connect(climber: WebClimber, client: TestClient, target = instance) {
+    const { authorization, approved } = await approve(climber, client, target);
+    return environment.exchange(
+      client,
+      { location: approved.body.url as string, verifier: authorization.verifier },
+      target,
+    );
+  }
+
   async function approve(climber: WebClimber, client: TestClient, target = instance) {
     const authorization = await authorize(target, client, climber.cookie);
     expect(authorization.location.startsWith(TEST_OAUTH_OPTIONS.consentPage)).toBe(true);
@@ -230,6 +246,10 @@ describe('partner consent', () => {
       ['with a sign-in time that is a string', { authTime: String(nowSeconds()) }],
       ['with a non-positive sign-in time', { authTime: -1 }],
       ['without a login id', { authSessionId: null }],
+      // Its auth_time could have been bought by linking a provider while the web
+      // did not guard links, so it needs a sign-in made with the guard on.
+      ['made while the web did not guard links', { linkGuarded: null }],
+      ['claiming a guarded sign-in with anything but true', { linkGuarded: 'true' }],
     ] satisfies [string, SignIn][])('sends a session %s to sign in, and creates nothing', async (_label, signIn) => {
       const client = await consentClient();
       const climber = await webClimber(signIn);
@@ -380,9 +400,17 @@ describe('partner consent', () => {
       const { authorization, approved } = await approve(climber, client);
       expect((await interactionFor(authorization.oauthQuery)).connectionGeneration).toBe(1);
       expect(codeIn(approved.body.url)).not.toBeNull();
-      const connection = await connectionOf(climber, client);
-      expect(connection.revokedAt).toBeNull();
+      // Approved, so no longer revoked, but not live until the app redeems the code.
+      const pending = await connectionOf(climber, client);
+      expect(pending.revokedAt).toBeNull();
+      expect(pending.connectedAt).toBeNull();
       expect((await grantsOf(climber, client)).map((grant) => grant.generation)).toEqual([1]);
+      const exchanged = await environment.exchange(client, {
+        location: approved.body.url as string,
+        verifier: authorization.verifier,
+      });
+      expect(exchanged.response.status).toBe(200);
+      expect((await connectionOf(climber, client)).connectedAt).not.toBeNull();
     });
 
     it('belongs to the climber it was shown to', async () => {
@@ -436,6 +464,52 @@ describe('partner consent', () => {
       });
       expect(expired.response.status).toBe(400);
     });
+
+    it(
+      'approved twice at the same moment, issues one code',
+      async () => {
+        const client = await consentClient();
+        const climber = await webClimber();
+        // Holds both requests just before the consent guard reads the link, so
+        // both read it at once; only the row lock makes the second wait and
+        // find it spent.
+        let arrived = 0;
+        let releaseBoth!: () => void;
+        const bothArrived = new Promise<void>((resolve) => {
+          releaseBoth = resolve;
+        });
+        const racing = environment.createInstance([
+          {
+            id: 'meet-before-the-consent-guard',
+            hooks: {
+              before: [
+                {
+                  matcher: (context) => context.path === '/oauth2/consent',
+                  handler: createAuthMiddleware(async () => {
+                    arrived += 1;
+                    if (arrived === 2) releaseBoth();
+                    await bothArrived;
+                  }),
+                },
+              ],
+            },
+          },
+        ]);
+        const authorization = await authorize(racing, client, climber.cookie);
+        const body = { accept: true, oauth_query: authorization.oauthQuery };
+        const answers = await Promise.all([
+          postJson(racing, '/oauth2/consent', climber.cookie, body),
+          postJson(racing, '/oauth2/consent', climber.cookie, body),
+        ]);
+
+        expect(answers.map((answer) => answer.response.status).sort((first, second) => first - second)).toEqual([
+          200, 400,
+        ]);
+        expect(answers.map((answer) => codeIn(answer.body.url)).filter(Boolean)).toHaveLength(1);
+        expect(await grantsOf(climber, client)).toHaveLength(1);
+      },
+      TEST_DEADLINE_MS,
+    );
 
     it('is refused when tampered with, before anything is looked up', async () => {
       const client = await consentClient();
@@ -591,9 +665,9 @@ describe('partner consent', () => {
   });
 
   describe('connection caps', () => {
-    it('refuse a climber once the app has its active connections, and leave nothing behind', async () => {
+    it('turn a climber away at once when the app has its active connections, leaving nothing behind', async () => {
       const client = await consentClient({ policy: { maxActiveConnections: 1 } });
-      await approve(await webClimber(), client);
+      expect((await connect(await webClimber(), client)).response.status).toBe(200);
       const turnedAway = await webClimber();
       const { authorization, approved } = await approve(turnedAway, client);
 
@@ -609,10 +683,38 @@ describe('partner consent', () => {
       expect((await interactionFor(authorization.oauthQuery)).consumedAt).toBeNull();
     });
 
+    it('count nothing for an approval the app never redeems, so throwaway approvals fill no place', async () => {
+      const client = await consentClient({ policy: { maxActiveConnections: 1, maxNewConnectionsPerDay: 1 } });
+      const throwaways = await Promise.all([webClimber(), webClimber(), webClimber()]);
+      const pending = [];
+      for (const throwaway of throwaways) pending.push(await approve(throwaway, client));
+      for (const throwaway of throwaways) expect((await connectionOf(throwaway, client)).connectedAt).toBeNull();
+
+      // A real climber still gets the one place.
+      const real = await webClimber();
+      expect((await connect(real, client)).response.status).toBe(200);
+      expect((await connectionOf(real, client)).connectedAt).not.toBeNull();
+
+      // Once it is taken, redeeming a waiting approval is what gets refused.
+      const late = pending[0];
+      const exchanged = await environment.exchange(client, {
+        location: late.approved.body.url as string,
+        verifier: late.authorization.verifier,
+      });
+      expect(exchanged.response.status).toBe(400);
+      expect(exchanged.body.error).toBe('invalid_grant');
+      expect(exchanged.body.error_description).toMatch(/limit of connected climbers/);
+      expect(exchanged.body.access_token).toBeUndefined();
+      expect((await connectionOf(throwaways[0], client)).connectedAt).toBeNull();
+      expect(
+        await db.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.userId, throwaways[0].userId)),
+      ).toEqual([]);
+    });
+
     it('count a reconnect as a new connection for the day', async () => {
       const client = await consentClient({ policy: { maxNewConnectionsPerDay: 1 } });
       const first = await webClimber();
-      await approve(first, client);
+      expect((await connect(first, client)).response.status).toBe(200);
       await disconnectPartnerConnection(environment.database, {
         userId: first.userId,
         clientId: client.clientId,
@@ -624,14 +726,13 @@ describe('partner consent', () => {
       expect(new URL(approved.body.url as string).searchParams.get('error_description')).toMatch(/today/);
     });
 
-    it('count only approved connections, not rows a code created and nobody approved', async () => {
+    it('count only connections the app redeemed, not rows nobody did', async () => {
       const client = await consentClient({ policy: { maxActiveConnections: 1, maxNewConnectionsPerDay: 1 } });
-      const neverApproved = await webClimber();
+      const neverRedeemed = await webClimber();
       await db
         .insert(oauthConnections)
-        .values({ id: randomUUID(), userId: neverApproved.userId, clientId: client.clientId, connectedAt: null });
-      const { approved } = await approve(await webClimber(), client);
-      expect(codeIn(approved.body.url)).not.toBeNull();
+        .values({ id: randomUUID(), userId: neverRedeemed.userId, clientId: client.clientId, connectedAt: null });
+      expect((await connect(await webClimber(), client)).response.status).toBe(200);
     });
 
     it('refuse every connection to an app with no policy row', async () => {
@@ -641,23 +742,56 @@ describe('partner consent', () => {
     });
 
     it(
-      'hold under two climbers taking the last place at once, on two instances',
+      'hold under two codes redeemed for the last place at the same moment',
       async () => {
         const client = await consentClient({ policy: { maxActiveConnections: 1 } });
         const [left, right] = await Promise.all([webClimber(), webClimber()]);
-        const [leftLink, rightLink] = await Promise.all([
-          authorize(instance, client, left.cookie),
-          authorize(environment.secondaryInstance, client, right.cookie),
-        ]);
+        // Both approvals pass: nothing is live yet.
+        const leftApproval = await approve(left, client);
+        const rightApproval = await approve(right, client, environment.secondaryInstance);
+        // Holds both exchanges after their tokens are minted and before the
+        // fence counts, so both count at once; only the policy row lock makes
+        // the second count after the first commits.
+        let arrived = 0;
+        let releaseBoth!: () => void;
+        const bothArrived = new Promise<void>((resolve) => {
+          releaseBoth = resolve;
+        });
+        const meetBeforeCounting = {
+          id: 'meet-before-the-cap-count',
+          hooks: {
+            after: [
+              {
+                matcher: (context: { path?: string }) => context.path === '/oauth2/token',
+                handler: createAuthMiddleware(async () => {
+                  arrived += 1;
+                  if (arrived === 2) releaseBoth();
+                  await bothArrived;
+                }),
+              },
+            ],
+          },
+        };
+        const [first, second] = [
+          environment.createInstance([meetBeforeCounting]),
+          environment.createInstance([meetBeforeCounting]),
+        ];
         const answers = await Promise.all([
-          postJson(instance, '/oauth2/consent', left.cookie, { accept: true, oauth_query: leftLink.oauthQuery }),
-          postJson(environment.secondaryInstance, '/oauth2/consent', right.cookie, {
-            accept: true,
-            oauth_query: rightLink.oauthQuery,
-          }),
+          environment.exchange(
+            client,
+            { location: leftApproval.approved.body.url as string, verifier: leftApproval.authorization.verifier },
+            first,
+          ),
+          environment.exchange(
+            client,
+            { location: rightApproval.approved.body.url as string, verifier: rightApproval.authorization.verifier },
+            second,
+          ),
         ]);
-        const codes = answers.map((answer) => codeIn(answer.body.url)).filter(Boolean);
-        expect(codes).toHaveLength(1);
+        expect(arrived).toBe(2);
+        expect(answers.map((answer) => answer.response.status).sort((first, second) => first - second)).toEqual([
+          200, 400,
+        ]);
         const connected = await db
           .select()
           .from(oauthConnections)

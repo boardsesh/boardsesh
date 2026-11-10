@@ -794,6 +794,14 @@ export const desiredRailwayState: RailwayDesiredState = {
           allowedValues: ['1'],
           reason: 'The Docker image enables the www-to-app auth bridge; any other dashboard override disables it.',
         },
+        {
+          name: 'PARTNER_OAUTH_MODE',
+          allowedValues: ['off', 'hold', 'allowlist', 'open'],
+          reason:
+            'The web reads any other value as off: it stops guarding OAuth account links and stops marking ' +
+            'sign-ins link_guarded, so partner consent on the backend asks every climber to sign in again, ' +
+            'forever. Set it to the same value as boardsesh-backend at every change, web first when turning on.',
+        },
       ],
       requiredOneOfVars: [
         {

@@ -439,11 +439,15 @@ may import. Backend and web parse it with the same function
 value is `off`.
 
 **Set it on the web service too, every time it changes.** The web reads its own
-environment to decide whether to guard OAuth account links (see
-[Consent and the www session](#consent-and-the-www-session)). Turn the web on
-before or with the backend, and turn it off after the backend: a backend serving
-consent while the web still reads `off` would let an old session's link buy a
-fresh sign-in time.
+environment to decide whether to guard OAuth account links and to mark new
+sign-ins `link_guarded` (see [Consent and the www session](#consent-and-the-www-session)).
+Turn the web on first, then the backend; turn the backend off first. A mismatch
+fails closed rather than open: while the web reads `off`, no sign-in carries
+`link_guarded`, so a backend serving consent asks every climber to sign in, and
+signing in does not help. `infra/railway/config.ts` refuses any web value but
+`off`, `hold`, `allowlist` or `open`, since the web would read a typo as `off`. It
+cannot compare the web's value with the backend's: the plan reads one service at
+a time, and the backend is inventory-only there.
 
 | Mode | What the backend does |
 | --- | --- |
@@ -550,9 +554,12 @@ still signs no one in. A signed-out authorize is one with no NextAuth cookie,
 which is why it can run outside a transaction.
 
 **When a sign-in counts** (decision 19). The cookie must carry an `auth_time`
-the web wrote at sign-in (#6981 F5), under 30 days old, and more than 60 seconds
-after the climber's last password write (`user_credentials.updated_at`, from the
-database clock). The 60 seconds cover a web clock running ahead of the database.
+the web wrote at sign-in (#6981 F5), under 30 days old, written beside
+`link_guarded: true` (so the web was guarding links when it was minted), and more
+than 60 seconds after the climber's last password write
+(`user_credentials.updated_at`, from the database clock). The 60 seconds cover a
+web clock running ahead of the database. Web and backend apply this as one
+function, `isSignInGoodForPartnerConsent` in `@boardsesh/auth-protocol/auth-time`.
 A missing, fractional, non-positive or future (beyond 60 s of skew) `auth_time`
 is unknown, and unknown is too old. A cookie that fails any of this sends authorize
 to `/oauth/sign-in`, and consent answers `401 login_required`. A deleted account's
@@ -566,16 +573,25 @@ The bridge keeps one `oauth_session` row per NextAuth login (user, `authSessionI
 time. The provider takes a code's auth time and `max_age` from that column.
 
 The web side closes the one way an old cookie could get a new `auth_time`: an
-OAuth callback that links an unlinked provider account into a live session.
-`oauth-link-guard.server.ts` gives legacy-mode callbacks a request-local adapter
-whose `linkAccount` refuses that link unless the session's own sign-in is under
-30 days old (NextAuth's `error=Callback`). Signing in with a provider account
-already linked to the climber, creating an account, and linking by verified
-provider email with no session all work as before. The guard is on only while
-the web's `PARTNER_OAUTH_MODE` is not `off`: every cookie from before the claim
-lacks `auth_time`, so guarding before partner consent exists would refuse every
-signed-in climber's link and protect nothing. By the time the mode leaves `off`,
-sessions will have carried the claim for weeks.
+OAuth callback that links an unlinked provider account into a live session, after
+which NextAuth's jwt callback writes `auth_time` as if the climber had just signed
+in. `oauth-link-guard.server.ts` gives legacy-mode callbacks a request-local
+adapter whose `linkAccount` refuses that link (NextAuth's `error=Callback`) unless
+the session's own sign-in passes the same rule consent applies, password write
+included, so a cookie from before a reset cannot buy a new sign-in time either.
+Requiring `link_guarded` there too means a sign-in bought while the guard was off
+cannot be laundered through a second link once it is on. Signing in with a
+provider account already linked to the climber, creating an account, and linking
+by verified provider email with no session all work as before.
+
+The guard, and the `link_guarded` mark, are on only while the web's
+`PARTNER_OAUTH_MODE` is not `off`. This defers the cost; it does not avoid it.
+NextAuth re-issues the session cookie on every use, but writes `auth_time` and
+`link_guarded` only on a sign-in, so a climber who stays active and never signs
+out keeps a cookie without them indefinitely. On the day the mode leaves `off`,
+every climber is in that position: they are asked to sign in again before they
+can approve an app, and before they can link a Google, Apple or Facebook account
+into their session. Signing in once clears both.
 
 **`prompt=login`** is dropped. Stock Better Auth answers it by asking for a
 Better Auth sign-in, which never happens here, so it would loop; the 30-day rule
@@ -599,14 +615,32 @@ every `*.boardsesh.com` subdomain send the session cookie, so a cookie is no pro
 of where a request came from.
 
 **Caps** (decision 22). An app holds at most `max_active_connections` (25)
-approved, unrevoked connections and gains at most `max_new_connections_per_day`
-(20) in any 24 hours; a reconnect counts as new. A connection counts once
-`connected_at` is set, never as a row a code created. The check runs when a
-connection is about to go live, under the connection lock and then the app's
-`oauth_app_policy` row FOR NO KEY UPDATE, so two climbers cannot both take the last
-place. An app with no policy row cannot gain connections. A refusal rolls the
-request back (consent, code and the spent link alike) and sends the browser to the
-app with `error=temporarily_unavailable` (`access_denied` with no policy row).
+live, unrevoked connections and gains at most `max_new_connections_per_day` (20)
+in any 24 hours; a reconnect counts as new. A connection goes live, and
+`connected_at` is set, when the app first redeems a code for it, not when the
+climber approves. An approval nobody redeems counts for nothing: its code dies in
+60 seconds, a first-time connection stays a row with no `connected_at`, and an
+approved reconnect stays not revoked but not live. So throwaway accounts that
+approve and walk away fill no place.
+
+The caps are enforced at the exchange, under the connection lock the redemption
+already holds and then the app's `oauth_app_policy` row FOR NO KEY UPDATE, so two
+codes redeemed at once cannot both take the last place. A refusal there rolls the
+token request back and answers `400 invalid_grant` with the reason; the code is
+not spent. The same check also runs when the climber approves, only so a full app
+turns them away at once: that refusal rolls the request back (consent, code and
+the spent link alike) and sends the browser to the app with
+`error=temporarily_unavailable` (`access_denied` for an app with no policy row,
+which can never gain connections).
+
+Public clients are the limit of this. A confidential app's code can only be
+redeemed with its secret, so only the app itself can make a connection live. A
+public app authenticates by `client_id` and PKCE, and anyone can run its flow end
+to end, for example to their own loopback redirect, so someone with N accounts
+can take N of its places and up to 20 a day. The caps bound the blast radius
+during allowlisted stages; they are not abuse-proof for public apps. The owner
+raises the app's caps in its policy row, and `revoke-user` (F12) ends the
+offending accounts' connections.
 
 **What the screen shows.** `POST /api/auth/oauth2/consent-details` with
 `{ "oauth_query": "<the page's query>" }` answers, for an open link and the same

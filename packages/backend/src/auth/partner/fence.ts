@@ -156,6 +156,28 @@ function connectionRefusal(
   );
 }
 
+/**
+ * The same caps at the code exchange, where they are enforced: the token
+ * response becomes this error and everything the provider wrote rolls back.
+ */
+function exchangeRefusal(refusal: ConnectionCapRefusal): PartnerRefusal {
+  return new PartnerRefusal(
+    Response.json(
+      { error: 'invalid_grant', error_description: CAP_DESCRIPTIONS[refusal].description },
+      { status: 400, headers: { 'cache-control': 'no-store' } },
+    ),
+  );
+}
+
+/** A token endpoint answer that issued tokens, as opposed to an error the provider returned. */
+function issuedTokens(returned: unknown): boolean {
+  return (
+    typeof returned === 'object' &&
+    returned !== null &&
+    typeof (returned as { access_token?: unknown }).access_token === 'string'
+  );
+}
+
 /** Where the provider sent the browser, whether it answered JSON or a 302. */
 export function authorizeRedirectTarget(context: {
   context: { returned?: unknown; responseHeaders?: Headers };
@@ -299,6 +321,7 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             if (await isSpentCodeWithNoTokens(transaction, authorizationCodeId)) return invalidGrant();
             const owner = { userId: grant.userId, clientId: grant.clientId, authorizationCodeId };
             if (!(await lockCurrentGrant(transaction, owner))) return invalidGrant();
+            currentPartnerTransaction().state.redemption = { userId: grant.userId, clientId: grant.clientId };
             // RFC 6749 section 4.1.2: a code used twice takes its tokens with it.
             // Done here, under the lock, because the provider only does it after
             // its own checks, and a replay that fails those (no code_verifier)
@@ -354,12 +377,19 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
             }
             const issuedAt = new Date();
             if (connection.revokedAt || !connection.connectedAt) {
+              // Nothing is counted here; the caps are enforced when the app
+              // redeems a code. Checked now only so a full app turns the climber
+              // away at once instead of after they approve.
               const capRefusal = await checkConnectionCaps(transaction, connection, issuedAt);
               if (capRefusal) throw connectionRefusal(context, codeOwner, capRefusal);
-              await transaction
-                .update(oauthConnections)
-                .set({ revokedAt: null, revocationReason: null, connectedAt: issuedAt, updatedAt: issuedAt })
-                .where(eq(oauthConnections.id, connection.id));
+              if (connection.revokedAt) {
+                // An approved reconnect: no longer revoked, but not live again
+                // (and not counted) until the app redeems a code.
+                await transaction
+                  .update(oauthConnections)
+                  .set({ revokedAt: null, revocationReason: null, connectedAt: null, updatedAt: issuedAt })
+                  .where(eq(oauthConnections.id, connection.id));
+              }
             }
             await transaction
               .insert(oauthGrants)
@@ -371,6 +401,32 @@ export function partnerFencePlugin(oauthOptions: OAuthOptions<string[]>): Better
           }),
         },
         ...(family.after ?? []),
+        // A code became tokens: the connection goes live now, if the app's caps
+        // allow, under the connection lock the redemption holds and then the
+        // app's policy row. Approvals nobody redeems hold no place: a code lives
+        // 60 seconds, and only an exchange, which a confidential app makes with
+        // its secret, can fill an app's caps.
+        {
+          matcher: (context) => context.path === '/oauth2/token' && context.body?.grant_type === 'authorization_code',
+          handler: createAuthMiddleware(async (context) => {
+            const { transaction, state } = currentPartnerTransaction();
+            if (!state.redemption || !issuedTokens(context.context.returned)) return;
+            const connection = await selectConnectionForUpdate(
+              transaction,
+              state.redemption.userId,
+              state.redemption.clientId,
+            );
+            if (!connection) throw new Error('Redeemed a code for a missing connection.');
+            if (connection.connectedAt) return;
+            const liveAt = new Date();
+            const capRefusal = await checkConnectionCaps(transaction, connection, liveAt);
+            if (capRefusal) throw exchangeRefusal(capRefusal);
+            await transaction
+              .update(oauthConnections)
+              .set({ connectedAt: liveAt, updatedAt: liveAt })
+              .where(eq(oauthConnections.id, connection.id));
+          }),
+        },
       ],
     },
   } satisfies BetterAuthPlugin;

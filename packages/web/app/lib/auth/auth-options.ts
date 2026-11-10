@@ -13,6 +13,7 @@ import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-tran
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 import { applyCanonicalAuthUrl } from '@/app/lib/auth/canonical-auth-url';
+import { partnerLinkGuardActive } from '@/app/lib/auth/partner-link-guard-mode';
 import { parseAccountCreationReceipt } from '@boardsesh/analytics';
 
 // Must run before anything below reads NEXTAUTH_URL (the cookie block does, via
@@ -409,6 +410,15 @@ export const authOptions: NextAuthOptions = {
           token.auth_time = Math.floor(Date.now() / 1000);
         } else {
           delete token.auth_time;
+        }
+        // Marks a sign-in made while OAuth account links are guarded, so this
+        // auth_time cannot have been bought by linking a provider into an old
+        // session. Partner consent accepts no sign-in without it. Like auth_time,
+        // only a completed sign-in writes or clears it; a rotation keeps it.
+        if (token.auth_time !== undefined && partnerLinkGuardActive()) {
+          token.link_guarded = true;
+        } else {
+          delete token.link_guarded;
         }
         // Only this completed provider sign-in knows whether its adapter created a user.
         if ((account?.provider === 'apple' || account?.provider === 'google') && typeof isNewUser === 'boolean') {

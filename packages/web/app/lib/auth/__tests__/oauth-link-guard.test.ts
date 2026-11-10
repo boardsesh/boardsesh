@@ -16,12 +16,24 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
   return { baseUrl: fixtureUrl, sessionSecret: fixtureSecret };
 });
 
+const database = vi.hoisted(() => ({ rows: new Map<unknown, unknown[]>(), failing: false }));
+
 vi.mock('server-only', () => ({}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: vi.fn(() => ({})) }));
-// The callbacks' best-effort profile and attribution reads find nothing.
+// Reads answer per table: the guard's password read, and the callbacks'
+// best-effort profile and attribution reads, which find nothing.
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+    select: () => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            if (database.failing) throw new Error('database unavailable');
+            return database.rows.get(table) ?? [];
+          },
+        }),
+      }),
+    }),
     insert: () => ({ values: () => ({ onConflictDoNothing: async () => {} }) }),
   }),
 }));
@@ -30,7 +42,9 @@ vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
   withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
 }));
 
+import { isLinkGuardedSignIn } from '@boardsesh/auth-protocol/auth-time';
 import { GET } from '@/app/api/auth/[...nextauth]/route';
+import * as schema from '@/app/lib/db/schema';
 import { authOptions } from '../auth-options';
 
 // The production route, NextAuth handler, callback handler, callbacks and JWE
@@ -151,6 +165,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'], now: NOW_MS });
+  database.rows.clear();
+  database.failing = false;
   users.clear();
   links.clear();
   linkAccount.mockClear();
@@ -174,6 +190,9 @@ const STALE_SESSIONS: Array<[string, Record<string, unknown>]> = [
   ['with a non-positive sign-in time', { auth_time: 0 }],
 ];
 
+/** A sign-in five days ago, made while the web guarded links. */
+const GUARDED_SIGN_IN = { auth_time: NOW_SECONDS - 5 * DAY_SECONDS, link_guarded: true };
+
 /** Partner OAuth modes the backend could be in, as the web reads them. */
 const MODES_OFF: Array<[string, string | undefined]> = [
   ['unset', undefined],
@@ -196,20 +215,42 @@ function withPartnerMode(rawMode: string | undefined) {
   });
 }
 
+function passwordChangedAt(changedAtSeconds: number) {
+  database.rows.set(schema.userCredentials, [{ updatedAt: new Date(changedAtSeconds * 1000) }]);
+}
+
+function expectRefused(response: Response) {
+  expect(response.status).toBe(302);
+  expect(new URL(response.headers.get('location')!).searchParams.get('error')).toBe('Callback');
+  expect(linkAccount).not.toHaveBeenCalled();
+  expect(links.size).toBe(0);
+  expect(issuedSession(response)).toBeNull();
+}
+
+async function expectLinked(response: Response) {
+  expect(linkAccount).toHaveBeenCalledWith(
+    expect.objectContaining({ userId: climber.id, provider: 'google', providerAccountId: providerProfile.sub }),
+  );
+  const session = await issuedSession(response);
+  expect(session?.sub).toBe(climber.id);
+  expect(session?.auth_time).toBe(NOW_SECONDS);
+  return session;
+}
+
 // Every cookie from before F5 lacks auth_time, so the guard waits for partner
 // consent to exist. Until then a link behaves exactly as it always has.
 describe.each(MODES_OFF)('with partner OAuth %s', (_label, rawMode) => {
   withPartnerMode(rawMode);
 
   it.each(STALE_SESSIONS)('links into a session %s, as today', async (_session, claims) => {
-    const response = await providerCallback(await sessionCookie(claims));
+    const session = await expectLinked(await providerCallback(await sessionCookie(claims)));
+    // A sign-in made with the guard off never says it was guarded.
+    expect(session).not.toHaveProperty('link_guarded');
+  });
 
-    expect(linkAccount).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: climber.id, provider: 'google', providerAccountId: providerProfile.sub }),
-    );
-    const session = await issuedSession(response);
-    expect(session?.sub).toBe(climber.id);
-    expect(session?.auth_time).toBe(NOW_SECONDS);
+  it('links into a session from before a password change, as today', async () => {
+    passwordChangedAt(NOW_SECONDS - DAY_SECONDS);
+    await expectLinked(await providerCallback(await sessionCookie(GUARDED_SIGN_IN)));
   });
 });
 
@@ -217,13 +258,32 @@ describe.each(MODES_ON)('with partner OAuth %s', (_label, rawMode) => {
   withPartnerMode(rawMode);
 
   it.each(STALE_SESSIONS)('refuses a link into a session %s, and mints no sign-in time', async (_session, claims) => {
-    const response = await providerCallback(await sessionCookie(claims));
+    expectRefused(await providerCallback(await sessionCookie(claims)));
+  });
 
-    expect(response.status).toBe(302);
-    expect(new URL(response.headers.get('location')!).searchParams.get('error')).toBe('Callback');
-    expect(linkAccount).not.toHaveBeenCalled();
-    expect(links.size).toBe(0);
-    expect(issuedSession(response)).toBeNull();
+  it('refuses a recent sign-in made while the guard was off, so it cannot be laundered', async () => {
+    expectRefused(await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - DAY_SECONDS })));
+  });
+
+  it('refuses a session from before the last password change', async () => {
+    passwordChangedAt(NOW_SECONDS - DAY_SECONDS);
+    expectRefused(await providerCallback(await sessionCookie(GUARDED_SIGN_IN)));
+  });
+
+  it('refuses a sign-in inside the clock tolerance after a password change', async () => {
+    passwordChangedAt(GUARDED_SIGN_IN.auth_time - 30);
+    expectRefused(await providerCallback(await sessionCookie(GUARDED_SIGN_IN)));
+  });
+
+  it('refuses when the password write cannot be read', async () => {
+    database.failing = true;
+    expectRefused(await providerCallback(await sessionCookie(GUARDED_SIGN_IN)));
+  });
+
+  it('links into a guarded sign-in made over a minute after the last password change', async () => {
+    passwordChangedAt(GUARDED_SIGN_IN.auth_time - 61);
+    const session = await expectLinked(await providerCallback(await sessionCookie(GUARDED_SIGN_IN)));
+    expect(session?.link_guarded).toBe(true);
   });
 });
 
@@ -231,16 +291,12 @@ describe.each([...MODES_OFF.slice(0, 1), ...MODES_ON.slice(0, 1)])(
   'first-party OAuth sign-in with partner OAuth %s',
   (_label, rawMode) => {
     withPartnerMode(rawMode);
+    const guarded = rawMode !== undefined;
 
-    it('links into a session signed in under 30 days ago', async () => {
-      const response = await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 29 * DAY_SECONDS }));
-
-      expect(linkAccount).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: climber.id, provider: 'google', providerAccountId: providerProfile.sub }),
+    it('links into a guarded session signed in under 30 days ago', async () => {
+      await expectLinked(
+        await providerCallback(await sessionCookie({ auth_time: NOW_SECONDS - 29 * DAY_SECONDS, link_guarded: true })),
       );
-      const session = await issuedSession(response);
-      expect(session?.sub).toBe(climber.id);
-      expect(session?.auth_time).toBe(NOW_SECONDS);
     });
 
     it('signs in a provider account already linked to the climber, even from an old session', async () => {
@@ -260,6 +316,8 @@ describe.each([...MODES_OFF.slice(0, 1), ...MODES_ON.slice(0, 1)])(
       const session = await issuedSession(response);
       expect(session?.sub).toBe('created-1');
       expect(session?.auth_time).toBe(NOW_SECONDS);
+      // Written beside auth_time only while links are guarded, under the name the backend reads.
+      expect(isLinkGuardedSignIn(session ?? {})).toBe(guarded);
     });
 
     it('links by verified provider email when no one is signed in', async () => {

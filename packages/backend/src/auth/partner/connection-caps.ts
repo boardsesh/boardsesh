@@ -9,15 +9,17 @@ export type ConnectionCapRefusal = 'no_policy' | 'active_connections' | 'new_con
 /**
  * Decision 22: an app holds at most `max_active_connections` live connections
  * and gains at most `max_new_connections_per_day` in any 24 hours (25 and 20 by
- * default). A connection counts once it has been approved (`connected_at` set);
- * a row created for a code that was never approved does not. A reconnect counts
- * as a new connection for the day.
+ * default). A connection counts once the app has redeemed a code for it
+ * (`connected_at` set); an approval nobody redeemed does not, so throwaway
+ * approvals cannot fill an app. A reconnect counts as a new connection for the
+ * day.
  *
  * Call it with the connection row locked, just before that connection becomes
- * live. It locks the app's policy row until the transaction ends, so two
- * climbers connecting to one app at once count one after the other and cannot
- * both take the last place. The order is the issuer's: `users`, connection,
- * then policy. An app with no policy row cannot gain connections.
+ * live (and, as an early answer, when the climber approves). It locks the app's
+ * policy row until the transaction ends, so two connections going live at once
+ * count one after the other and cannot both take the last place. The order is
+ * the issuer's: `users`, connection, then policy. An app with no policy row
+ * cannot gain connections.
  */
 export async function checkConnectionCaps(
   transaction: PartnerDatabase,
