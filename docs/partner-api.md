@@ -927,8 +927,9 @@ still readable through the API.
 
 A limit "per client IP" counts an IPv6 client as its /64. An app on Cloudflare
 Workers counts per Worker zone (the `CF-Worker` header Cloudflare adds), because
-every Worker reaches us from the same address; all Worker zones together share 10
-times each per-IP limit.
+every Worker reaches us from the same address; on the OAuth routes all Worker
+zones together share 10 times each per-IP limit. Failed token lookups on the API
+count per zone only.
 
 Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset` for the tightest limit that applies. Over the limit returns
