@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
+import { appendFileSync } from 'node:fs';
 import { createServer, request, type IncomingMessage } from 'node:http';
 import { connect as openTcpConnection, type AddressInfo, type Socket } from 'node:net';
 import { eq, sql } from 'drizzle-orm';
@@ -49,6 +50,13 @@ async function seedLimiter(identity: string, operation: string, count: number): 
 
 async function limiterCount(identity: string, operation: string): Promise<number> {
   return Number(await redisClientManager.getClients().publisher.get(limiterKey(identity, operation)));
+}
+
+/** Set this to get the measured overshoot: one JSON line per burst. */
+function recordOvershoot(values: Record<string, number>): void {
+  const measurementsFile = process.env.PARTNER_MEASUREMENTS_FILE;
+  if (measurementsFile)
+    appendFileSync(measurementsFile, `${JSON.stringify({ scenario: 'connection-burst', ...values })}\n`);
 }
 
 /** Limits use fixed one-minute windows, so a counting test must not straddle a rollover. */
@@ -712,27 +720,39 @@ describe('partner OAuth routes on the API host', () => {
     it(
       'holds no database connection while endless bodies arrive',
       async () => {
-        const refreshCount = 4;
-        const client = await environment.createClient({ publicClient: true });
-        const issued = await environment.issueTokens(client);
-        const slowPosts = Array.from({ length: PARTNER_POOL_MAX * 3 }, () =>
-          partnerHost.openEndlessPost(TOKEN_PATH, randomClientIp()),
-        );
-        const started = performance.now();
-        const results = await Promise.all(
-          Array.from({ length: refreshCount }, () =>
-            sendToken({
-              grant_type: 'refresh_token',
-              refresh_token: issued.refresh_token!,
-              ...clientCredentials(client),
-            }),
-          ),
-        );
-        const refreshedMs = performance.now() - started;
-        // Without buffering these would wait for the slow posts' deadline.
-        expect(refreshedMs).toBeLessThan(350);
-        expect(results.filter((result) => result.status === 200).length).toBeGreaterThanOrEqual(1);
-        expect((await Promise.all(slowPosts)).every((result) => result.status === 408)).toBe(true);
+        // A deadline far above the bound below, so the test separates the two cases under load.
+        const slowHost = await startPartnerHost({
+          mode: 'allowlist',
+          loadRuntime: async () => runtime,
+          bodyReadDeadlineMs: 3000,
+        });
+        try {
+          const refreshCount = 4;
+          const client = await environment.createClient({ publicClient: true });
+          const issued = await environment.issueTokens(client);
+          const slowPosts = Array.from({ length: PARTNER_POOL_MAX * 3 }, () =>
+            slowHost.openEndlessPost(TOKEN_PATH, randomClientIp()),
+          );
+          const started = performance.now();
+          const results = await Promise.all(
+            Array.from({ length: refreshCount }, () =>
+              slowHost.send('POST', TOKEN_PATH, {
+                ...formBody({
+                  grant_type: 'refresh_token',
+                  refresh_token: issued.refresh_token!,
+                  ...clientCredentials(client),
+                }),
+              }),
+            ),
+          );
+          const refreshedMs = performance.now() - started;
+          // Had the slow bodies held connections, these would wait for the 3 s deadline.
+          expect(refreshedMs).toBeLessThan(1500);
+          expect(results.filter((result) => result.status === 200).length).toBeGreaterThanOrEqual(1);
+          expect((await Promise.all(slowPosts)).every((result) => result.status === 408)).toBe(true);
+        } finally {
+          await slowHost.close();
+        }
       },
       TEST_DEADLINE_MS,
     );
@@ -1212,6 +1232,101 @@ describe('partner OAuth routes on the API host', () => {
           expect(answered.status).not.toBe(429);
         }
         expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(0);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'does not let the current token, sent without the secret, spend the connection limit',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        const attempts: Array<Record<string, string>> = [
+          { client_id: client.clientId },
+          { client_id: client.clientId, client_secret: 'not-the-secret' },
+        ];
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const answered = await sendToken({
+            grant_type: 'refresh_token',
+            refresh_token: issued.refresh_token!,
+            ...attempts[attempt % attempts.length],
+          });
+          expect(answered.status).not.toBe(429);
+          expect(JSON.parse(answered.body).error).toBe('invalid_client');
+        }
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(0);
+
+        const realRefresh = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(realRefresh.status).toBe(200);
+        expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(1);
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'charges a public app for every attempt, failed ones included',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        const issued = await environment.issueTokens(client);
+        const connectionId = await connectionIdFor(client);
+        // Dropping offline_access is refused after the client authenticates.
+        for (let attempt = 1; attempt <= 10; attempt += 1) {
+          const refused = await sendToken({
+            grant_type: 'refresh_token',
+            refresh_token: issued.refresh_token!,
+            scope: 'profile:read',
+            ...clientCredentials(client),
+          });
+          expect(JSON.parse(refused.body).error).toBe('invalid_scope');
+          expect(await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh')).toBe(attempt);
+        }
+        const limited = await sendToken({
+          grant_type: 'refresh_token',
+          refresh_token: issued.refresh_token!,
+          ...clientCredentials(client),
+        });
+        expect(limited.status).toBe(429);
+        expect(limited.headers['ratelimit-limit']).toBe('10');
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'holds a burst of valid refreshes on one connection to the limit plus one per running request',
+      async () => {
+        const client = await environment.createClient({ publicClient: true });
+        // 30 token families on one connection, so 30 refreshes can run at once.
+        const refreshTokens: string[] = [];
+        for (let family = 0; family < 30; family += 1) {
+          refreshTokens.push((await environment.issueTokens(client)).refresh_token!);
+        }
+        const connectionId = await connectionIdFor(client);
+        await seedLimiter(`${client.clientId}:${connectionId}`, 'oauth-refresh', 5);
+
+        const burst = await Promise.all(
+          refreshTokens.map((refreshToken) =>
+            sendToken({ grant_type: 'refresh_token', refresh_token: refreshToken, ...clientCredentials(client) }),
+          ),
+        );
+        const statusCounts = burst.reduce<Record<number, number>>((counts, { status }) => {
+          counts[status] = (counts[status] ?? 0) + 1;
+          return counts;
+        }, {});
+        const succeeded = statusCounts[200] ?? 0;
+        const charged = await limiterCount(`${client.clientId}:${connectionId}`, 'oauth-refresh');
+        recordOvershoot({ succeeded, charged, ...statusCounts });
+
+        // 5 left in the budget, plus at most one fewer than the running permits.
+        expect(succeeded).toBeGreaterThanOrEqual(5);
+        expect(succeeded).toBeLessThanOrEqual(5 + PARTNER_POOL_MAX - 1);
+        expect(charged).toBe(5 + succeeded);
+        expect(charged).toBeLessThanOrEqual(10 + PARTNER_POOL_MAX - 1);
+        expect(statusCounts[429]).toBeGreaterThan(0);
       },
       TEST_DEADLINE_MS,
     );

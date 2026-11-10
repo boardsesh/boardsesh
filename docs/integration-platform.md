@@ -462,6 +462,12 @@ Availability is protected before any transaction opens:
   would let anyone spend an app's budget. Revoke is not charged at all, since it
   answers `200` for any token. A burst can pass the check together, so one instance
   can overshoot by up to 19 requests (3 running, 16 queued).
+- The per-connection refresh count applies only to a current, unexpired refresh
+  token. It is checked before the transaction and charged after the response unless
+  the provider answered `invalid_client`, so a confidential app's token without its
+  secret cannot spend it. A public app authenticates by `client_id` alone, so every
+  attempt it makes is charged. The charge lands before the request's admission
+  permit is released, so one instance can overshoot by at most 2 (3 permits).
 - A `client_id` outside `[A-Za-z0-9_-]`, at most 128 characters, cannot name a real
   app and bills a shared invalid bucket.
 - The client address for a limit is `CF-Connecting-IP` only from a verified
