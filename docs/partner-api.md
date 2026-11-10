@@ -57,6 +57,7 @@ account whose email is verified, and create an app. It is usable immediately.
 | Field | Notes |
 | --- | --- |
 | Name | Shown on the consent screen. Names of Boardsesh and of board brands are refused |
+| Publisher name | Required. The person or company that makes the app, shown on the consent screen as "Made by". Same rules as the name |
 | Homepage URL | Linked from the consent screen |
 | Privacy policy URL | Linked from the consent screen. Required |
 | Type | **Confidential** if the token exchange happens on your server (you get a client secret). **Public** if it happens in a mobile app, a desktop or CLI tool, or a browser (no secret; PKCE protects the code). Registration also records web versus native redirect behavior separately |

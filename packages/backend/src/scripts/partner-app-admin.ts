@@ -5,6 +5,7 @@
  *   vp exec tsx packages/backend/src/scripts/partner-app-admin.ts suspend --client-id <id> --reason "<shown to the developer>"
  *   vp exec tsx packages/backend/src/scripts/partner-app-admin.ts unsuspend --client-id <id>
  *   vp exec tsx packages/backend/src/scripts/partner-app-admin.ts revoke-user --user-id <id>
+ *   vp exec tsx packages/backend/src/scripts/partner-app-admin.ts set-publisher --client-id <id> --publisher "<shown to climbers>"
  *
  * suspend      Sets `oauth_client.disabled`, which the provider checks on every
  *              authorize, token and revoke call, and records when and why on
@@ -17,6 +18,10 @@
  *              revoked, and every token, consent, ancestor, pending code, grant,
  *              consent screen and partner session deleted. The climber's own
  *              first-party sign-ins are untouched.
+ * set-publisher Sets the "Made by" name the consent screen shows, under the
+ *              same rules registration applies: an app registered before
+ *              publishers were recorded, or one whose publisher must be
+ *              corrected. Works on a suspended app too.
  *
  * Connects with DATABASE_URL. partner_revoke_user is SECURITY INVOKER, so the
  * login needs UPDATE on users (it locks the climber's row FOR NO KEY UPDATE) and
@@ -43,6 +48,7 @@ import {
   oauthVerification,
   users,
 } from '@boardsesh/db/schema/auth';
+import { PartnerRegistrationError, validatePartnerPublisherName } from '../auth/partner/registration-rules';
 import { db, type Database } from '../db/client';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 
@@ -58,6 +64,7 @@ export const PARTNER_ADMIN_USAGE = `Usage:
   partner-app-admin.ts suspend --client-id <id> --reason "<text the developer sees>" [--apply]
   partner-app-admin.ts unsuspend --client-id <id> [--apply]
   partner-app-admin.ts revoke-user --user-id <id> [--apply]
+  partner-app-admin.ts set-publisher --client-id <id> --publisher "<text climbers see>" [--apply]
 Without --apply nothing is written.`;
 
 export class PartnerAdminUsageError extends Error {
@@ -70,13 +77,21 @@ export class PartnerAdminUsageError extends Error {
 export type PartnerAdminCommand =
   | { command: 'suspend'; clientId: string; reason: string; apply: boolean }
   | { command: 'unsuspend'; clientId: string; apply: boolean }
-  | { command: 'revoke-user'; userId: string; apply: boolean };
+  | { command: 'revoke-user'; userId: string; apply: boolean }
+  | { command: 'set-publisher'; clientId: string; publisherName: string; apply: boolean };
 
 const FLAGS_BY_COMMAND = {
   suspend: ['--client-id', '--reason'],
   unsuspend: ['--client-id'],
   'revoke-user': ['--user-id'],
+  'set-publisher': ['--client-id', '--publisher'],
 } as const;
+
+const COMMANDS = Object.keys(FLAGS_BY_COMMAND) as ReadonlyArray<keyof typeof FLAGS_BY_COMMAND>;
+
+function isCommand(candidate: string | undefined): candidate is keyof typeof FLAGS_BY_COMMAND {
+  return COMMANDS.some((command) => command === candidate);
+}
 
 function singleId(value: string, flag: string): string {
   if (value.length === 0 || value.length > MAX_ID_LENGTH || /[\s,*%]/.test(value)) {
@@ -88,7 +103,7 @@ function singleId(value: string, flag: string): string {
 /** Every value must be given explicitly: no defaults, no lists, no repeated flags. */
 export function parsePartnerAdminArguments(argv: readonly string[]): PartnerAdminCommand {
   const [command, ...rest] = argv;
-  if (command !== 'suspend' && command !== 'unsuspend' && command !== 'revoke-user') {
+  if (!isCommand(command)) {
     throw new PartnerAdminUsageError(`Unknown command ${JSON.stringify(command ?? '')}.`);
   }
   const allowed: readonly string[] = FLAGS_BY_COMMAND[command];
@@ -116,6 +131,14 @@ export function parsePartnerAdminArguments(argv: readonly string[]): PartnerAdmi
   }
   const clientId = singleId(values.get('--client-id') as string, '--client-id');
   if (command === 'unsuspend') return { command, clientId, apply };
+  if (command === 'set-publisher') {
+    try {
+      return { command, clientId, publisherName: validatePartnerPublisherName(values.get('--publisher')), apply };
+    } catch (error) {
+      if (error instanceof PartnerRegistrationError) throw new PartnerAdminUsageError(`--publisher: ${error.message}`);
+      throw error;
+    }
+  }
   const reason = (values.get('--reason') as string).trim();
   if (reason.length === 0 || reason.length > MAX_REASON_LENGTH) {
     throw new PartnerAdminUsageError(`--reason must be 1 to ${MAX_REASON_LENGTH} characters; the developer sees it.`);
@@ -349,9 +372,53 @@ export async function revokePartnerUser(
   });
 }
 
+export interface PartnerPublisherReport {
+  command: 'set-publisher';
+  applied: boolean;
+  clientId: string;
+  name: string | null;
+  before: string | null;
+  /** The publisher after --apply, or the one --apply would write. */
+  after: string;
+  /** False when the app already has this publisher. */
+  changes: boolean;
+}
+
+/**
+ * Sets the "Made by" name on one app's policy row. An app with no policy row is
+ * refused rather than given one: without a policy row it can gain no connections,
+ * and naming its publisher must not change that.
+ */
+export async function setPartnerAppPublisher(
+  database: PartnerAdminDatabase,
+  { clientId, publisherName, apply }: { clientId: string; publisherName: string; apply: boolean },
+): Promise<PartnerPublisherReport> {
+  return inAdminTransaction(database, apply, async (transaction) => {
+    const { app, policy } = await readApp(transaction, clientId);
+    if (!policy) throw new PartnerAdminUsageError(`App ${clientId} has no policy row, so it has no publisher to set.`);
+    const changes = policy.publisherName !== publisherName;
+    if (apply && changes) {
+      await transaction
+        .update(oauthAppPolicy)
+        .set({ publisherName, updatedAt: new Date() })
+        .where(eq(oauthAppPolicy.clientId, clientId));
+    }
+    return {
+      command: 'set-publisher',
+      applied: apply && changes,
+      clientId,
+      name: app.name,
+      before: policy.publisherName,
+      after: publisherName,
+      changes,
+    };
+  });
+}
+
 export function runPartnerAdminCommand(database: PartnerAdminDatabase, command: PartnerAdminCommand) {
   if (command.command === 'suspend') return suspendPartnerApp(database, command);
   if (command.command === 'unsuspend') return unsuspendPartnerApp(database, command);
+  if (command.command === 'set-publisher') return setPartnerAppPublisher(database, command);
   return revokePartnerUser(database, command);
 }
 

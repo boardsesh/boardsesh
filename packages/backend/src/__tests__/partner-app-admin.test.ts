@@ -10,6 +10,7 @@ import {
   parsePartnerAdminArguments,
   PartnerAdminUsageError,
   revokePartnerUser,
+  setPartnerAppPublisher,
   suspendPartnerApp,
   unsuspendPartnerApp,
   type PartnerAdminDatabase,
@@ -38,6 +39,10 @@ describe('partner-app-admin arguments', () => {
     ],
     [['unsuspend', '--client-id', 'abc'], { command: 'unsuspend', clientId: 'abc', apply: false }],
     [['revoke-user', '--user-id', 'user-1', '--apply'], { command: 'revoke-user', userId: 'user-1', apply: true }],
+    [
+      ['set-publisher', '--client-id', 'abc', '--publisher', '  Crimp   Labs '],
+      { command: 'set-publisher', clientId: 'abc', publisherName: 'Crimp Labs', apply: false },
+    ],
   ])('reads %j', (argv, expected) => {
     expect(parsePartnerAdminArguments(argv)).toEqual(expected);
   });
@@ -59,6 +64,11 @@ describe('partner-app-admin arguments', () => {
     [['revoke-user', '--user-id', 'a', '--apply', '--apply'], /given twice/],
     [['revoke-user', '--client-id', 'abc'], /does not take --client-id/],
     [['unsuspend', '--client-id', 'abc', '--reason', 'x'], /does not take --reason/],
+    [['set-publisher', '--client-id', 'abc'], /needs --publisher/],
+    [['set-publisher', '--client-id', 'abc', '--publisher', 'Boardsesh Team'], /--publisher: .*imitate "Boardsesh"/],
+    [['set-publisher', '--client-id', 'abc', '--publisher', 'K1lter Labs'], /--publisher: .*imitate "Kilter"/],
+    [['set-publisher', '--client-id', 'abc', '--publisher', 'Moon Climbing'], /imitate "Moon Climbing"/],
+    [['set-publisher', '--client-id', 'abc', '--publisher', 'ab'], /--publisher: .*3 to 50/],
   ])('refuses %j', (argv, message) => {
     expect(() => parsePartnerAdminArguments(argv)).toThrow(PartnerAdminUsageError);
     expect(() => parsePartnerAdminArguments(argv)).toThrow(message);
@@ -152,6 +162,53 @@ describe('suspend and unsuspend', () => {
       changes: false,
       applied: false,
     });
+  });
+});
+
+describe('set-publisher', () => {
+  async function publisherOf(clientId: string): Promise<string | null | undefined> {
+    const [policy] = await db
+      .select({ publisherName: oauthAppPolicy.publisherName })
+      .from(oauthAppPolicy)
+      .where(eq(oauthAppPolicy.clientId, clientId));
+    return policy?.publisherName;
+  }
+
+  it('reports without --apply, writes with it, and reports when nothing would change', async () => {
+    const clientId = await createApp(await createUser('developer'));
+    expect(await publisherOf(clientId)).toBeNull();
+
+    const dryRun = await setPartnerAppPublisher(db, { clientId, publisherName: 'Crimp Labs', apply: false });
+    expect(dryRun).toMatchObject({ applied: false, changes: true, before: null, after: 'Crimp Labs' });
+    expect(await publisherOf(clientId)).toBeNull();
+
+    const applied = await setPartnerAppPublisher(db, { clientId, publisherName: 'Crimp Labs', apply: true });
+    expect(applied).toMatchObject({ applied: true, changes: true, before: null, after: 'Crimp Labs' });
+    expect(await publisherOf(clientId)).toBe('Crimp Labs');
+
+    expect(await setPartnerAppPublisher(db, { clientId, publisherName: 'Crimp Labs', apply: true })).toMatchObject({
+      applied: false,
+      changes: false,
+    });
+  });
+
+  it('works on a suspended app, which registration refuses to change', async () => {
+    const clientId = await createApp(await createUser('developer'));
+    await suspendPartnerApp(db, { clientId, reason: 'Impersonation', apply: true });
+    await setPartnerAppPublisher(db, { clientId, publisherName: 'Crimp Labs', apply: true });
+    expect(await publisherOf(clientId)).toBe('Crimp Labs');
+  });
+
+  it('refuses a missing app, and an app with no policy row rather than creating one', async () => {
+    await expect(
+      setPartnerAppPublisher(db, { clientId: `missing-${randomUUID()}`, publisherName: 'Crimp Labs', apply: true }),
+    ).rejects.toThrow(PartnerAdminUsageError);
+    const clientId = await createApp(await createUser('developer'));
+    await db.delete(oauthAppPolicy).where(eq(oauthAppPolicy.clientId, clientId));
+    await expect(setPartnerAppPublisher(db, { clientId, publisherName: 'Crimp Labs', apply: true })).rejects.toThrow(
+      /no policy row/,
+    );
+    expect(await publisherOf(clientId)).toBeUndefined();
   });
 });
 
@@ -290,7 +347,8 @@ describe('revoke-user', () => {
       await revokePartnerUser(probing, { userId: rows.climberId, apply: false });
       await suspendPartnerApp(probing, { clientId: rows.clientId, reason: 'Spam', apply: false });
       await unsuspendPartnerApp(probing, { clientId: rows.clientId, apply: false });
-      expect(observed).toEqual(['on', 'on', 'on']);
+      await setPartnerAppPublisher(probing, { clientId: rows.clientId, publisherName: 'Crimp Labs', apply: false });
+      expect(observed).toEqual(['on', 'on', 'on', 'on']);
       expect(countsOf(await readPartnerState(rows))).toEqual(INTACT_COUNTS);
     });
   });

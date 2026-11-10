@@ -8,6 +8,7 @@ import {
   PartnerRegistrationError,
   validatePartnerAppLink,
   validatePartnerAppName,
+  validatePartnerPublisherName,
   validatePartnerRedirectUris,
 } from '../registration-rules';
 
@@ -129,6 +130,7 @@ describe('app names', () => {
         'Woods',
       ]),
     );
+    expect(PARTNER_APP_NAME_DENYLIST).toContain('Moon Climbing');
     expect(PARTNER_APP_NAME_DENYLIST).not.toContain('Spray wall');
   });
 
@@ -170,6 +172,93 @@ describe('app names', () => {
   });
 });
 
+describe('lookalike letters', () => {
+  // Each of these once passed: the skeleton dropped the foreign letter, so the
+  // denylist saw "lter labs" for "Κilter Labs".
+  const lookalikes = [
+    'Κilter Labs', // Greek capital kappa
+    'Kılter Labs', // Latin dotless i
+    'Tεnsion Ltd', // Greek epsilon
+    'ʙoardsesh', // Latin small capital B
+    'MօօnBoard', // Armenian oh
+    'Auroгa Climbing', // Cyrillic ghe
+    'Kɪlter', // Latin small capital I
+    'ᴋilter', // Latin small capital K
+    'Aurorɑ', // Latin alpha
+  ];
+
+  it.each(lookalikes)('refuses %j as an app name and as a publisher', (name) => {
+    expect(refusalMessage(() => validatePartnerAppName(name))).toMatch(/cannot use or imitate|cannot mix Latin/);
+    expect(refusalMessage(() => validatePartnerPublisherName(name))).toMatch(
+      /publisher name (cannot use or imitate|cannot mix Latin)/,
+    );
+  });
+
+  it.each(['Crimp Lаbs', 'Sеquence', 'Hangboard Ρlanner', 'Fingerboard ᏟLI', 'Planner Լabs'])(
+    'refuses Latin mixed with Greek, Cyrillic, Armenian or Cherokee letters, brand or not: %j',
+    (name) => {
+      expect(refusalMessage(() => validatePartnerAppName(name))).toBe(
+        'The app name cannot mix Latin letters with Greek, Cyrillic, Armenian or Cherokee ones.',
+      );
+    },
+  );
+
+  it.each(['Κρίμπ Λαμπ', 'Скалолазный дневник', 'Մագլցում', 'Ξενία Παπαδοπούλου', 'Crimp ラボ', 'Café Crimp 2'])(
+    'allows a name written in one script, or Latin with a script that has no lookalikes: %j',
+    (name) => {
+      expect(validatePartnerAppName(name)).toBe(name);
+      expect(validatePartnerPublisherName(name)).toBe(name);
+    },
+  );
+});
+
+describe('publisher names', () => {
+  // The same list the app names are checked against: "Made by" sits right
+  // under the app's name, so it cannot be the place to pass as Boardsesh.
+  it.each([
+    'Boardsesh',
+    'Boardsesh Team',
+    'The B0ardsesh Crew',
+    'Bоardsesh Labs',
+    'Aurora Climbing',
+    'Moon Climbing',
+    'MoonClimbing Ltd',
+    'M00n Climbing',
+    'Kilter Grips',
+    'K1lter',
+    'Tension Climbing',
+    'So iLL Holds',
+    'Decoy Holds',
+    'Woods Holds',
+  ])('refuses %j', (name) => {
+    expect(refusalMessage(() => validatePartnerPublisherName(name))).toMatch(/publisher name cannot use or imitate/);
+  });
+
+  it.each(['Crimp Labs', 'Sequence Climbing Ltd', 'Ana Ruiz', 'DivePeaks', 'Moonlight Software'])(
+    'allows %j',
+    (name) => {
+      expect(validatePartnerPublisherName(name)).toBe(name);
+    },
+  );
+
+  it('applies the app-name length and character rules, worded for the publisher', () => {
+    expect(validatePartnerPublisherName('  Crimp   Labs ')).toBe('Crimp Labs');
+    expect(validatePartnerPublisherName('Ｃｒｉｍｐ Labs')).toBe('Crimp Labs');
+    expect(refusalMessage(() => validatePartnerPublisherName('ab'))).toBe(
+      'The publisher name must be 3 to 50 characters.',
+    );
+    expect(refusalMessage(() => validatePartnerPublisherName('a'.repeat(51)))).toMatch(/3 to 50/);
+    expect(refusalMessage(() => validatePartnerPublisherName('...'))).toMatch(
+      /publisher name needs at least one letter/,
+    );
+    expect(refusalMessage(() => validatePartnerPublisherName('Crimp\u202eLabs'))).toMatch(
+      /publisher name cannot contain control characters/,
+    );
+    expect(refusalMessage(() => validatePartnerPublisherName(undefined))).toMatch(/who makes the app/);
+    expect(refusalMessage(() => validatePartnerPublisherName(42))).toMatch(/who makes the app/);
+  });
+});
+
 describe('consent screen links', () => {
   it('accepts https and writes the URL as the parser does', () => {
     expect(validatePartnerAppLink('https://Example.com/privacy', 'privacy policy URL')).toBe(
@@ -192,6 +281,7 @@ describe('consent screen links', () => {
 describe('a registration request', () => {
   const valid = {
     name: 'Crimp Lab',
+    publisherName: 'Crimp Labs',
     homepageUrl: 'https://crimp.example.com',
     privacyPolicyUrl: 'https://crimp.example.com/privacy',
     applicationType: 'native',
@@ -202,6 +292,7 @@ describe('a registration request', () => {
   it('keeps only the fields the rules know', () => {
     expect(normalizePartnerAppInput({ ...valid, skip_consent: true, require_pkce: false, jwks_uri: 'x' })).toEqual({
       name: 'Crimp Lab',
+      publisherName: 'Crimp Labs',
       homepageUrl: 'https://crimp.example.com/',
       privacyPolicyUrl: 'https://crimp.example.com/privacy',
       applicationType: 'native',
@@ -218,6 +309,30 @@ describe('a registration request', () => {
       );
     },
   );
+
+  it('requires a publisher, under the same rules as the app name', () => {
+    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: undefined }))).toMatch(
+      /who makes the app/,
+    );
+    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: '' }))).toMatch(/3 to 50/);
+    expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, publisherName: 'Aurora Labs' }))).toMatch(
+      /imitate "Aurora"/,
+    );
+  });
+
+  it('lets an edit change the publisher but never clear it', () => {
+    expect(normalizePartnerAppPatch({ publisherName: ' Crimp  Labs ' }, 'web')).toEqual({
+      publisherName: 'Crimp Labs',
+    });
+    expect(refusalMessage(() => normalizePartnerAppPatch({ publisherName: 'Boardsesh' }, 'web'))).toMatch(
+      /imitate "Boardsesh"/,
+    );
+    expect(refusalMessage(() => normalizePartnerAppPatch({ publisherName: '' }, 'web'))).toMatch(/3 to 50/);
+    // Null and a missing field both mean "keep it", like the app name.
+    expect(refusalMessage(() => normalizePartnerAppPatch({ publisherName: null }, 'web'))).toMatch(
+      /at least one field/,
+    );
+  });
 
   it('refuses an unknown app type and a missing privacy policy', () => {
     expect(refusalMessage(() => normalizePartnerAppInput({ ...valid, applicationType: 'spa' }))).toMatch(

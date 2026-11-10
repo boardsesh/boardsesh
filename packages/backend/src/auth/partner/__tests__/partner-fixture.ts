@@ -143,7 +143,7 @@ export interface PartnerTestEnvironment {
     /** For a confidential client. Defaults to `client_secret_post`. */
     secretMethod?: 'client_secret_post' | 'client_secret_basic';
     /** The app's caps, or false for an app with no policy row. Defaults to decision 22's 25 and 20. */
-    policy?: { maxActiveConnections?: number; maxNewConnectionsPerDay?: number } | false;
+    policy?: { maxActiveConnections?: number; maxNewConnectionsPerDay?: number; publisherName?: string } | false;
   }): Promise<TestClient>;
   authorize(
     client: TestClient,

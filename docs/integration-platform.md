@@ -656,6 +656,7 @@ checks as the post, without spending it:
     "homepageUrl": "https://…",
     "privacyPolicyUrl": "https://…",
     "termsUrl": null,
+    "publisherName": "Sequence Climbing Ltd",
     "redirectHost": "com.example.app"
   },
   "scopes": [{ "scope": "profile:read", "includesOnlyMeTicks": false }],
@@ -670,9 +671,10 @@ is true for `logbook:read` (decision 21), so the screen can say that approving
 shares ticks the climber keeps to "only me". `logbook:read` is in the scope list
 (`PARTNER_SCOPES`) and in discovery since its routes shipped (L4). Nothing about the
 account that registered the app is sent: its display or account name is the
-developer's own, not something a climber should see. A `publisherName` from the
-registration record joins `client` once that column exists (F12); until then the
-screen shows no "Made by" line.
+developer's own, not something a climber should see. `publisherName` is the
+publisher the developer typed at registration (`oauth_app_policy.publisher_name`),
+and `null` for an app registered before that column existed; the screen then shows
+no "Made by" line, with nothing in its place.
 
 **Refusals on both consent routes.** Each is `{ "error": "<code>",
 "error_description": "<English text>" }` with `cache-control: no-store`. Switch on
@@ -1027,8 +1029,8 @@ A developer console at `https://www.boardsesh.com/developers/apps`
 `packages/backend` (`createOAuthClient`, `updateOAuthClient`,
 `rotateOAuthClientSecret`, `deleteOAuthClient`, `myOAuthClients`).
 
-Form fields: name, homepage URL, privacy policy URL, client authentication
-type, web/native application topology and redirect URIs. Registration binds
+Form fields: name, publisher name, homepage URL, privacy policy URL, client
+authentication type, web/native application topology and redirect URIs. Registration binds
 the client to the published `https://api.boardsesh.com/v1` resource; developers
 cannot expand its resource permissions. The secret (confidential clients) is shown once. No icon upload in the
 first version: the consent page shows a lettered avatar, so there is no image
@@ -1043,12 +1045,12 @@ Rules enforced without a human:
 | Redirect URIs per app | 10 | |
 | Redirect URI forms | `https://…` (any host); `http://127.0.0.1:{any port}/…` and `http://[::1]…` (loopback, RFC 8252 §7.3, port ignored when matching); private-use schemes with a dot, `com.example.app:/…` (RFC 8252 §7.1). Rejected: `http://` elsewhere, `javascript:`, `data:`, `file:`, fragments, wildcards, any URI on a `boardsesh.com` host, and the schemes `boardsesh` and `com.boardsesh*` (our own app's) | Loopback lets scripts and local AI-built tools integrate with no hosting |
 | Matching | Exact string, except the loopback port | |
-| Names | Case-insensitive denylist: Boardsesh, Aurora, every board brand in `BOARD_TYPE_LABELS` (Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Woods), and lookalikes | Consent phishing |
+| Names | App and publisher names alike. Case-insensitive denylist: Boardsesh, Aurora, Moon Climbing, every board brand in `BOARD_TYPE_LABELS` (Kilter, Tension, MoonBoard, Decoy, Touchstone, Grasshopper, So iLL, Woods), and lookalikes | Consent phishing |
 | New connections per app per day | 200 by default; a developer can ask for more through the console form | Bounds the damage of a phishing app; ordinary apps never hit it |
 | Scopes | Any app may request any published scope. The consent page lists them | No approval tier |
 
-The consent screen shows: the app name, "Made by {publisher name}" once
-registration records one (never the developer's account name),
+The consent screen shows: the app name, "Made by {publisher name}" when the app
+has one (never the developer's account name),
 the redirect host, the app's homepage and privacy links, one line per scope,
 and "Boardsesh hasn't reviewed this app. Only connect apps you trust." That
 line is on every app; a verified-domain badge (the developer proves control of
@@ -1114,14 +1116,19 @@ then the app, whose cascade takes tokens, consent, grants, subjects and policy.
 **What the consent screen can show.** The app name is `oauth_client.name`, the
 homepage `oauth_client.uri` and the privacy policy `oauth_client.policy`
 (`name`, `homepageUrl`, `privacyPolicyUrl` in GraphQL). This plan has no
-per-app terms URL; `oauth_client.tos` exists and stays empty. There is no
-publisher name yet, and "Made by" must not read the developer's `users.name`:
-that can be their Google full name, and anyone signed in can open a consent
-screen for any `client_id`. The smallest change is one nullable column,
-`oauth_app_policy.publisher_name` (`publisherName: text('publisher_name')` in
-`partner-oauth.ts`, generated as `ADD COLUMN`), which takes ACCESS EXCLUSIVE on an
-`oauth_` table and so uses the 3-second guard and deploys alone. Registration
-would then require it, under the same length and lookalike rules as the app name.
+per-app terms URL; `oauth_client.tos` exists and stays empty.
+
+"Made by" is `oauth_app_policy.publisher_name` (`publisherName` in GraphQL and in
+the consent details), migration 0302. `createOAuthClient` requires it, under the
+app name's rules (3 to 50 characters after trimming, a letter or number, no
+control characters, nothing that imitates a denied name), and `updateOAuthClient`
+can change it but never clear it. The column is nullable only for apps registered
+before it existed; for those the screen shows no "Made by" line. It never falls
+back to the developer's `users.name`: that can be their Google full name, and
+anyone signed in can open a consent screen for any `client_id`. Migration 0302
+adds the column with the 3-second lock guard and deploys alone, because ADD
+COLUMN takes ACCESS EXCLUSIVE on `oauth_app_policy`, and every account deletion
+cascades into that table.
 
 **Exact redirect URI rule** (`partnerRedirectUriProblem` in `auth/partner/registration-rules.ts`):
 
@@ -1139,7 +1146,13 @@ twice. A URI must be written exactly as a URL parser writes it back
 is what the exact comparison sees. Homepage and privacy policy URLs must be
 `https://` and not on `boardsesh.com`. Names are refused if, after folding case,
 accents, spacing, punctuation and lookalike characters (`0` for `o`, `1` or `i` for
-`l`, Cyrillic letters), they contain Boardsesh, Aurora or a board brand.
+`l`, Cyrillic letters, `ı`, `ʙ` and other Latin small capitals), they contain
+Boardsesh, Aurora, Moon Climbing or a board brand. A name that mixes Latin letters
+with Greek, Cyrillic, Armenian or Cherokee ones is refused outright, because the
+fold only knows the lookalikes it lists and drops every other letter outside a-z
+(`Κilter` with a Greek Κ would otherwise reach the denylist as `lter`). A name
+written entirely in one of those scripts is allowed. Publisher names follow the
+same rules.
 
 **Admin commands** (`packages/backend/src/scripts/partner-app-admin.ts`). Each
 acts on exactly one id given on the command line and writes nothing without
@@ -1149,6 +1162,7 @@ acts on exactly one id given on the command line and writes nothing without
 vp exec tsx packages/backend/src/scripts/partner-app-admin.ts suspend --client-id <id> --reason "<shown to the developer>" [--apply]
 vp exec tsx packages/backend/src/scripts/partner-app-admin.ts unsuspend --client-id <id> [--apply]
 vp exec tsx packages/backend/src/scripts/partner-app-admin.ts revoke-user --user-id <id> [--apply]
+vp exec tsx packages/backend/src/scripts/partner-app-admin.ts set-publisher --client-id <id> --publisher "<shown to climbers>" [--apply]
 ```
 
 `suspend` sets `oauth_client.disabled`, which the provider checks on every
@@ -1156,7 +1170,11 @@ authorize, token and revoke call, and records `suspended_at` and the reason on
 the policy row. Tokens are kept, so `unsuspend` brings the app back. Other
 backend instances drop its browser origins within the 60-second origin cache.
 `revoke-user` calls `public.partner_revoke_user()`, the function the password
-trigger calls, and reports the rows before and after.
+trigger calls, and reports the rows before and after. `set-publisher` sets the
+"Made by" name under registration's rules, for an app registered before the column
+existed or one whose publisher must be corrected; it works on a suspended app and
+refuses an app with no policy row rather than creating one, since an app without
+one can gain no connections.
 
 `partner_revoke_user` is `SECURITY INVOKER`. It locks the climber's `users` row
 `FOR NO KEY UPDATE`, which needs UPDATE on `users`, and needs SELECT, UPDATE and

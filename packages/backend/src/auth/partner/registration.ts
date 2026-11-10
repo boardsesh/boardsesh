@@ -141,6 +141,7 @@ function toRecord(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | undefi
   return {
     clientId: row.clientId,
     name: row.name ?? '',
+    publisherName: policy?.publisherName ?? null,
     homepageUrl: row.uri,
     privacyPolicyUrl: row.policy ?? '',
     applicationType: (row.applicationType === 'native' ? 'native' : 'web') satisfies PartnerAppApplicationType,
@@ -317,6 +318,7 @@ export function createPartnerRegistration({
           .values({
             clientId: row.clientId,
             ownerUserId: developerId,
+            publisherName: input.publisherName,
             maxActiveConnections: PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS,
             maxNewConnectionsPerDay: PARTNER_LAUNCH_MAX_NEW_CONNECTIONS_PER_DAY,
           })
@@ -332,6 +334,7 @@ export function createPartnerRegistration({
         await lockDeveloper(transaction, developerId);
         const { row } = await requireOwnedApp(transaction, developerId, clientId);
         const patch = normalizePartnerAppPatch(rawPatch, row.applicationType === 'native' ? 'native' : 'web');
+        const now = new Date();
         // Written directly: the provider's update could also reach consent,
         // PKCE and the auth method, and none of those may ever change here.
         await transaction
@@ -341,9 +344,17 @@ export function createPartnerRegistration({
             ...(patch.homepageUrl !== undefined ? { uri: patch.homepageUrl } : {}),
             ...(patch.privacyPolicyUrl !== undefined ? { policy: patch.privacyPolicyUrl } : {}),
             ...(patch.redirectUris !== undefined ? { redirectUris: patch.redirectUris } : {}),
-            updatedAt: new Date(),
+            updatedAt: now,
           })
           .where(and(eq(oauthClient.clientId, clientId), eq(oauthClient.userId, developerId)));
+        if (patch.publisherName !== undefined) {
+          // An update, never an insert: an app without a policy row can gain no
+          // connections, and an edit must not change that.
+          await transaction
+            .update(oauthAppPolicy)
+            .set({ publisherName: patch.publisherName, updatedAt: now })
+            .where(eq(oauthAppPolicy.clientId, clientId));
+        }
         const current = await assertManagedClient(transaction, developerId, clientId, configuration.resource);
         return toRecord(current.row, current.policy);
       });

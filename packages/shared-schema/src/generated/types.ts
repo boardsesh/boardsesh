@@ -2193,6 +2193,8 @@ export type CreateOAuthClientInput = {
   name: Scalars['String']['input'];
   /** https:// only. */
   privacyPolicyUrl: Scalars['String']['input'];
+  /** The person or company that makes the app. Same rules as name. */
+  publisherName: Scalars['String']['input'];
   /** 1 to 10. */
   redirectUris: Array<Scalars['String']['input']>;
   tokenEndpointAuthMethod: OAuthClientAuthMethod;
@@ -6205,6 +6207,8 @@ export type OAuthClient = {
   /** Shown on the consent screen. */
   name: Scalars['String']['output'];
   privacyPolicyUrl: Scalars['String']['output'];
+  /** Who makes the app: the consent screen's Made by line. Null only for an app registered before publishers were recorded. */
+  publisherName?: Maybe<Scalars['String']['output']>;
   /** Matched as exact strings, except the port of a loopback redirect. */
   redirectUris: Array<Scalars['String']['output']>;
   /** ISO 8601 when Boardsesh suspended the app, otherwise null. A suspended app gets no tokens. */
@@ -12149,12 +12153,13 @@ export type UpdateGymKioskInput = {
   slug?: InputMaybe<Scalars['String']['input']>;
 };
 
-/** Fields left out keep their value. A null homepageUrl removes it. The app type and auth method never change. */
+/** Fields left out keep their value. A null homepageUrl removes it; publisherName can change but never be removed. The app type and auth method never change. */
 export type UpdateOAuthClientInput = {
   clientId: Scalars['ID']['input'];
   homepageUrl?: InputMaybe<Scalars['String']['input']>;
   name?: InputMaybe<Scalars['String']['input']>;
   privacyPolicyUrl?: InputMaybe<Scalars['String']['input']>;
+  publisherName?: InputMaybe<Scalars['String']['input']>;
   redirectUris?: InputMaybe<Array<Scalars['String']['input']>>;
 };
 
@@ -17213,6 +17218,7 @@ export type OAuthClientResolvers<
   maxNewConnectionsPerDay?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   privacyPolicyUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  publisherName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   redirectUris?: Resolver<Array<ResolversTypes['String']>, ParentType, ContextType>;
   suspendedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   suspensionReason?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

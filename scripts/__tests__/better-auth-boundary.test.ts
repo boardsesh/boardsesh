@@ -41,6 +41,8 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   ],
   // The retention sweep's job (F11), which runs whatever the mode and so must never load Better Auth.
   'packages/backend/src/services/partner-oauth-sweep.ts': ['../auth/partner/retention'],
+  // The ops script's set-publisher command applies registration's own name rules.
+  'packages/backend/src/scripts/partner-app-admin.ts': ['../auth/partner/registration-rules'],
 };
 /** The sweep itself: plain SQL on the partner tables. */
 const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
