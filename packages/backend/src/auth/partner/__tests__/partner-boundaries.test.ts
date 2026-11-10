@@ -30,7 +30,9 @@ vi.mock('@boardsesh/db/client', async (importOriginal) => {
 const PARTNER_MODULES = [
   '../adapter-guard',
   '../admission',
+  '../api-access',
   '../authority',
+  '../bearer',
   '../configuration',
   '../connection',
   '../family-guard',
@@ -45,6 +47,9 @@ const PARTNER_MODULES = [
   '../transaction',
   '../../../handlers/partner-auth',
   '../../../handlers/partner-cors',
+  '../../../handlers/partner-rate-limits',
+  '../../../handlers/public-api/http',
+  '../../../handlers/public-api/router',
 ];
 
 const VALID_SECRET = 'partner-oauth-test-secret-never-deployed-0123456789';
@@ -138,6 +143,53 @@ describe('the F9 entry point', () => {
     vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
     await expect(
       handler({ method: 'GET', url: '/api/auth/error', headers: { host: 'api.boardsesh.com' } } as never, {} as never),
+    ).resolves.toBe(false);
+    expect(loadRuntime).not.toHaveBeenCalled();
+  });
+});
+
+describe('the F10 entry point', () => {
+  it('builds nothing with the mode off, however many requests arrive', async () => {
+    let authorityLoaded = false;
+    vi.doMock('../authority', () => {
+      authorityLoaded = true;
+      return { getPartnerAuthorityRuntime: () => 'runtime' };
+    });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    callCounts.betterAuth = 0;
+    callCounts.createDedicatedPool = 0;
+    const { createPublicApiHandler } = await import('../../../handlers/public-api/router');
+    const handler = createPublicApiHandler();
+    const requests = [
+      { method: 'GET', url: '/v1/me' },
+      { method: 'DELETE', url: '/v1/connection' },
+      { method: 'OPTIONS', url: '/v1/me' },
+    ];
+    for (const { method, url } of requests) {
+      await expect(
+        handler(
+          {
+            method,
+            url,
+            headers: { host: 'api.boardsesh.com', authorization: 'Bearer abcdefghijklmnopqrstuvwxyzABCDEF' },
+          } as never,
+          {} as never,
+        ),
+      ).resolves.toBe(false);
+    }
+    expect(callCounts.betterAuth).toBe(0);
+    expect(callCounts.createDedicatedPool).toBe(0);
+    expect(authorityLoaded).toBe(false);
+  });
+
+  it('reads the mode once, from the environment', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
+    const { createPublicApiHandler } = await import('../../../handlers/public-api/router');
+    const loadRuntime = vi.fn(async () => null);
+    const handler = createPublicApiHandler({ loadRuntime });
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    await expect(
+      handler({ method: 'GET', url: '/v1/me', headers: { host: 'api.boardsesh.com' } } as never, {} as never),
     ).resolves.toBe(false);
     expect(loadRuntime).not.toHaveBeenCalled();
   });

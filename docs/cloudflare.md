@@ -355,8 +355,9 @@ shapes for now:
 
 The backend already guards the name. For `Host: api.boardsesh.com` it answers `GET /health` and returns 404 for every
 other request, and it refuses WebSocket upgrades (`packages/backend/src/handlers/api-host.ts`). The partner OAuth routes
-are the one addition, served by `handlers/partner-auth.ts` ahead of that filter, and only when `PARTNER_OAUTH_MODE` is
-not `off`. See [Routes and the mode switch](./integration-platform.md#routes-and-the-mode-switch).
+(`handlers/partner-auth.ts`) and the `/v1` API (`handlers/public-api/router.ts`) are the only additions, served ahead of
+that filter, and only when `PARTNER_OAUTH_MODE` is not `off`. See
+[Routes and the mode switch](./integration-platform.md#routes-and-the-mode-switch).
 
 To turn it on, as the owner:
 

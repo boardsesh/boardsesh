@@ -248,6 +248,12 @@ describe('the running server on the API host', () => {
     ['GET', '/.well-known/oauth-authorization-server/api/auth'],
     ['GET', '/api/auth/.well-known/oauth-authorization-server'],
     ['GET', '/api/auth/error'],
+    // The public /v1 API shares the mode, so it is off too.
+    ['GET', '/v1/me'],
+    ['DELETE', '/v1/connection'],
+    ['OPTIONS', '/v1/me'],
+    ['OPTIONS', '/v1/connection'],
+    ['GET', '/v1/openapi.json'],
   ])('answers %s %s with 404', async (method, path) => {
     expect(await send(method, path, API_HOSTNAME)).toEqual({
       status: 404,

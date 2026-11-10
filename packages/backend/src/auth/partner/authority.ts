@@ -13,6 +13,7 @@ import { createDedicatedPool, withConnectRetry } from '@boardsesh/db/client';
 import { oauthConnections, oauthRefreshToken } from '@boardsesh/db/schema/auth';
 import { guardPartnerAdapter } from './adapter-guard';
 import { createPartnerAdmissionGate, type PartnerAdmissionGate, type PartnerAdmissionLimits } from './admission';
+import { createPartnerApiAccess, type PartnerApiAccess } from './api-access';
 import {
   assertPartnerTelemetryOff,
   PARTNER_SCOPES,
@@ -58,12 +59,17 @@ export interface PartnerAuthorityRuntime {
    * token, with or without the client secret, cannot spend that connection's limit.
    */
   findRefreshConnection(refreshToken: string): Promise<PartnerRefreshConnection | null>;
+  /** The `/v1` resource server: bearer check, `/v1/me` and `DELETE /v1/connection`. */
+  api: PartnerApiAccess;
   close(): Promise<void>;
 }
 
 export const PARTNER_ADMISSION_LIMITS: PartnerAdmissionLimits = {
   permits: PARTNER_POOL_MAX,
   authorizePermits: 1,
+  apiPermits: PARTNER_POOL_MAX - 1,
+  flaggedApiPermits: 1,
+  flaggedApiQueueLimit: 4,
   queueLimitPerLane: 16,
   queueDeadlineMs: 1000,
 };
@@ -199,8 +205,8 @@ export async function createPartnerAuthorityRuntime(
   await authority.$context;
   const oauthOptions = partnerOAuthOptions(configuration);
   // hashToken never reads the endpoint context; only client authentication does.
-  const hashRefreshToken = (refreshToken: string) =>
-    getOAuthProviderApi({} as GenericEndpointContext, oauthOptions).hashToken(refreshToken, 'refresh_token');
+  const tokenHasher = getOAuthProviderApi({} as GenericEndpointContext, oauthOptions);
+  const hashRefreshToken = (refreshToken: string) => tokenHasher.hashToken(refreshToken, 'refresh_token');
   const publishedDiscovery = JSON.stringify(publishedPartnerMetadata(await authority.api.getOAuthServerConfig()));
 
   return {
@@ -242,6 +248,11 @@ export async function createPartnerAuthorityRuntime(
         );
       return current ?? null;
     },
+    api: createPartnerApiAccess({
+      database,
+      resource: configuration.resource,
+      hashAccessToken: async (accessToken) => tokenHasher.hashToken(accessToken, 'access_token'),
+    }),
     close,
   };
 }
