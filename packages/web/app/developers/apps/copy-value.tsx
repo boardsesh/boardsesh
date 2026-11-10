@@ -76,7 +76,7 @@ export default function CopyValue({ value, label, copyLabel, onCopyFailed }: Cop
         onClick={copy}
         startIcon={copied ? <CheckOutlined /> : <ContentCopyOutlined />}
         aria-live="polite"
-        sx={{ flexShrink: 0, minHeight: 44 }}
+        sx={{ flex: { xs: '1 1 100%', sm: '0 0 auto' }, minHeight: 44 }}
       >
         {copied ? t('secret.copied') : (copyLabel ?? t('secret.copy'))}
       </Button>
