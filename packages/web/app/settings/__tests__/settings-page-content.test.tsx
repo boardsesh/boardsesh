@@ -47,7 +47,7 @@ vi.mock('next-auth/react', () => ({
   }),
 }));
 
-// The two kept sections are stubbed so this file asserts what the page renders,
+// The kept sections are stubbed so this file asserts what the page renders,
 // not what they render. Both carry their own render coverage —
 // `components/account/__tests__/set-password-section.test.tsx` and
 // `components/account/__tests__/controllers-section.test.tsx`.
@@ -57,6 +57,12 @@ vi.mock('@/app/components/account/controllers-section', () => ({
 
 vi.mock('@/app/components/account/set-password-section', () => ({
   default: () => <div data-testid="set-password-section" />,
+}));
+
+// Connected apps fetches its own list; its render coverage is in
+// `components/account/__tests__/connected-apps-section.test.tsx`.
+vi.mock('@/app/components/account/connected-apps-section', () => ({
+  default: () => <div data-testid="connected-apps-section" />,
 }));
 
 import SettingsPageContent from '../settings-page-content';
@@ -84,6 +90,7 @@ describe('SettingsPageContent', () => {
 
     expect(screen.getByTestId('set-password-section')).toBeTruthy();
     expect(screen.getByTestId('controllers-section')).toBeTruthy();
+    expect(screen.getByTestId('connected-apps-section')).toBeTruthy();
   });
 
   it('renders the page title', async () => {

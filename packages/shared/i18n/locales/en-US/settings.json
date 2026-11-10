@@ -577,6 +577,33 @@
     },
     "garmin": {
       "title": "Garmin"
+    },
+    "partnerApps": {
+      "title": "Apps with access",
+      "empty": "No apps connected yet. Apps you connect to your Boardsesh account show up here.",
+      "footer": "Disconnecting an app stops it reading anything new. What it already copied stays with the app.",
+      "unnamedApp": "Unnamed app",
+      "publisher": "By {{publisher}}",
+      "connected": "Connected {{date}}",
+      "lastUsed": "Last used {{time}}",
+      "lastUsedRecently": "Used in the last hour",
+      "notUsedYet": "Not used yet",
+      "suspended": "Boardsesh paused this app. It can't read anything right now.",
+      "scopes": {
+        "logbookRead": "Sees every tick in your logbook, on every board",
+        "logbookOnlyMe": "Including ticks you keep to “Only me”",
+        "logbookUnlisted": "Including unlisted climbs and drafts in your logbook, even ones set by others",
+        "profileRead": "Sees your display name and profile photo",
+        "offlineAccess": "Keeps this access until you disconnect it",
+        "other": "Other access: {{scope}}"
+      },
+      "disconnect": "Disconnect",
+      "disconnectA11y": "Disconnect {{app}}",
+      "disconnectConfirmTitle": "Disconnect {{app}}?",
+      "disconnectConfirmBody": "{{app}} stops seeing your account right away. Anything it already copied stays with the app. To use it again, connect it from the app.",
+      "disconnected": "{{app}} disconnected",
+      "disconnectFailed": "Couldn't disconnect {{app}}. Try again.",
+      "cancel": "Cancel"
     }
   },
   "watchPairing": {

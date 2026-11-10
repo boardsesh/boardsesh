@@ -42,6 +42,7 @@
     "@boardsesh/climb-actions": "workspace:*",
     "@boardsesh/climb-filters": "workspace:*",
     "@boardsesh/community-roles": "workspace:*",
+    "@boardsesh/connected-apps": "workspace:*",
     "@boardsesh/consent": "workspace:*",
     "@boardsesh/create-climb-react": "workspace:*",
     "@boardsesh/crypto": "workspace:*",

@@ -577,6 +577,33 @@
     },
     "garmin": {
       "title": "Garmin"
+    },
+    "partnerApps": {
+      "title": "Apps mit Zugriff",
+      "empty": "Noch keine Apps verbunden. Apps, die du mit deinem Boardsesh-Konto verbindest, erscheinen hier.",
+      "footer": "Eine getrennte App liest nichts Neues mehr. Was sie schon kopiert hat, bleibt bei ihr.",
+      "unnamedApp": "Unbenannte App",
+      "publisher": "Von {{publisher}}",
+      "connected": "Verbunden am {{date}}",
+      "lastUsed": "Zuletzt genutzt {{time}}",
+      "lastUsedRecently": "In der letzten Stunde genutzt",
+      "notUsedYet": "Noch nicht genutzt",
+      "suspended": "Boardsesh hat diese App pausiert. Sie kann gerade nichts lesen.",
+      "scopes": {
+        "logbookRead": "Sieht jeden Eintrag in deinem Routenbuch, auf jedem Board",
+        "logbookOnlyMe": "Auch Einträge, die du auf „Nur ich“ gestellt hast",
+        "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe in deinem Routenbuch, selbst wenn andere sie gebaut haben",
+        "profileRead": "Sieht deinen Anzeigenamen und dein Profilbild",
+        "offlineAccess": "Behält diesen Zugriff, bis du die App trennst",
+        "other": "Weiterer Zugriff: {{scope}}"
+      },
+      "disconnect": "Trennen",
+      "disconnectA11y": "{{app}} trennen",
+      "disconnectConfirmTitle": "{{app}} trennen?",
+      "disconnectConfirmBody": "{{app}} sieht dein Konto ab sofort nicht mehr. Was die App schon kopiert hat, bleibt bei ihr. Um sie wieder zu nutzen, verbinde sie aus der App heraus.",
+      "disconnected": "{{app}} getrennt",
+      "disconnectFailed": "{{app}} konnte nicht getrennt werden. Versuch es noch mal.",
+      "cancel": "Abbrechen"
     }
   },
   "watchPairing": {

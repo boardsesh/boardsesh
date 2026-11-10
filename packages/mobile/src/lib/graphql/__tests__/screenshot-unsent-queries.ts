@@ -58,6 +58,7 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   // ConsentGate skips account privacy synchronization in screenshot mode.
   'GetMyAnalyticsConsent',
   'GetMyBoardSerialConfigs',
+  'GetMyConnectedApps', // Only Settings › Connected apps; no capture flow opens it.
   'GetMyGyms',
   'GetMyRoles',
   'GetMySprayWallLifecycle',

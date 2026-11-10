@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import ControllersSection from '@/app/components/account/controllers-section';
 import SetPasswordSection from '@/app/components/account/set-password-section';
+import ConnectedAppsSection from '@/app/components/account/connected-apps-section';
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
@@ -158,6 +159,9 @@ export default function SettingsPageContent() {
           linkedProviders={profile?.linkedProviders ?? []}
           onPasswordSet={fetchProfile}
         />
+
+        {/* Draws its own divider, and nothing at all while it has nothing to show. */}
+        <ConnectedAppsSection />
 
         <MuiDivider sx={{ my: 2 }} />
 

@@ -825,7 +825,7 @@
       },
       "settings": {
         "draftLabel": "Save as draft",
-        "draftDescription": "Drafts stay private until you publish them.",
+        "draftDescription": "Drafts stay unlisted until you publish them. Apps connected by climbers who log one can still see it.",
         "noMatchLabel": "No matching",
         "noMatchDescription": "Hands can't match on the same hold",
         "noKickboardLabel": "No kickboard",
@@ -834,7 +834,7 @@
         "campusDescription": "Hands only — no feet allowed",
         "anyFeetLabel": "Any feet",
         "anyFeetDescription": "Feet can use any hold, not just the marked ones",
-        "wallDraftDescription": "Everyone with access to this Spraywall can climb your saved drafts."
+        "wallDraftDescription": "Everyone with access to this Spraywall can climb your saved drafts. Apps connected by climbers who log one can see it too."
       },
       "drafts": {
         "holds_one": "{{count}} hold",

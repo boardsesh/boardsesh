@@ -825,7 +825,7 @@
       },
       "settings": {
         "draftLabel": "Salva come bozza",
-        "draftDescription": "Le bozze restano private finché non le pubblichi.",
+        "draftDescription": "Le bozze restano non in elenco finché non le pubblichi. Le app collegate da chi ne registra una possono comunque vederla.",
         "noMatchLabel": "Vietato accoppiare",
         "noMatchDescription": "Non puoi accoppiare le mani sulla stessa presa",
         "noKickboardLabel": "Niente kickboard",
@@ -834,7 +834,7 @@
         "campusDescription": "Solo mani: niente piedi",
         "anyFeetLabel": "Piedi liberi",
         "anyFeetDescription": "I piedi possono usare qualsiasi presa, non solo quelle segnate",
-        "wallDraftDescription": "Chiunque abbia accesso a questa Spraywall può provare le bozze che hai salvato."
+        "wallDraftDescription": "Chiunque abbia accesso a questa Spraywall può provare le bozze che hai salvato. Anche le app collegate da chi ne registra una possono vederla."
       },
       "drafts": {
         "holds_one": "{{count}} presa",
