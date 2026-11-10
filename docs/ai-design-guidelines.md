@@ -1520,9 +1520,6 @@ The web app renders Velvet Send in **dark only**. Wiring notes specific to web:
   4.81:1 on `background`. Don't reach for `neutral[400]` here; it lands at 2.72:1 on `surfaceElevated`.
   The parity test fences both tokens, including that `--separator` stays *below* 3:1 — that is its
   job, not a bug to fix.
-- **The one place light values survive** is `printSurfaceTokens` in `theme-config.ts`: the Satori OG
-  cards for `/api/og/{profile,setter,playlist}` render on `#FFFFFF`. It is not a light theme and must
-  not be imported into a product component.
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
 climbing **grade colours** (`@boardsesh/board-constants`). Both are platform-agnostic and stay shared.

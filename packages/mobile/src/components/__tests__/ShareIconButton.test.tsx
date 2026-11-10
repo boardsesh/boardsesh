@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   share: vi.fn(),
   setStringAsync: vi.fn(),
   showToast: vi.fn(),
+  prewarmShareCaches: vi.fn(),
 }));
 vi.mock('react-native', () => ({ Platform: mocks.platform, Share: { share: mocks.share } }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: mocks.setStringAsync }));
@@ -16,6 +17,7 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast: mocks.showToast }) }));
 vi.mock('../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../lib/share-prewarm', () => ({ prewarmShareCaches: mocks.prewarmShareCaches }));
 vi.mock('../GlassIconButton', () => ({
   GlassIconButton: ({ onPress, accessibilityLabel }: { onPress: () => void; accessibilityLabel: string }) =>
     createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }),
@@ -26,7 +28,7 @@ import { ShareIconButton } from '../ShareIconButton';
 const URL_TO_SHARE = 'https://www.boardsesh.com/playlists/abc';
 const onShare = vi.fn();
 
-function tapShare() {
+function tapShare(prewarmOgImageUrl?: string) {
   const { getByRole } = render(
     <ShareIconButton
       url={URL_TO_SHARE}
@@ -35,6 +37,7 @@ function tapShare() {
       copiedMessage="copied"
       errorMessage="failed"
       onShare={onShare}
+      prewarmOgImageUrl={prewarmOgImageUrl}
     />,
   );
   fireEvent.click(getByRole('button', { name: 'Share' }));
@@ -50,6 +53,7 @@ beforeEach(() => {
   mocks.setStringAsync.mockReset().mockResolvedValue(true);
   mocks.showToast.mockReset();
   onShare.mockReset();
+  mocks.prewarmShareCaches.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -58,6 +62,23 @@ afterEach(() => {
 });
 
 describe('ShareIconButton', () => {
+  it('warms the page and its card before the sheet opens, when it is given one', () => {
+    tapShare('https://ws.boardsesh.com/og/playlist?uuid=abc');
+
+    expect(mocks.prewarmShareCaches).toHaveBeenCalledWith(
+      URL_TO_SHARE,
+      'https://ws.boardsesh.com/og/playlist?uuid=abc',
+    );
+    expect(mocks.prewarmShareCaches.mock.invocationCallOrder[0]).toBeLessThan(mocks.share.mock.invocationCallOrder[0]);
+  });
+
+  it('warms nothing for a link with no card', () => {
+    tapShare();
+
+    expect(mocks.prewarmShareCaches).not.toHaveBeenCalled();
+    expect(mocks.share).toHaveBeenCalled();
+  });
+
   it('sends the url in its own field on iOS and reports the tap', () => {
     tapShare();
     expect(mocks.share).toHaveBeenCalledWith({ message: 'Check this out', url: URL_TO_SHARE });

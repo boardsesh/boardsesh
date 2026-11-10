@@ -8,7 +8,14 @@
       "notFoundDescription": "No se ha podido encontrar este perfil de escalada.",
       "ogAlt": "Perfil de escalada de {{name}}",
       "title": "Sesiones de escalada de {{name}}",
-      "titleWithBoard": "Sesiones de {{board}} de {{name}}"
+      "titleWithBoard": "Sesiones de {{board}} de {{name}}",
+      "ogTitleSent": "{{name}} encadenó {{grade}}",
+      "ogTitleNoSends": "{{name}} en Boardsesh",
+      "ogDescriptionHardest_one": "{{climb}} es su primer encadene en {{boards}}. Mira su logbook.",
+      "ogDescriptionHardest_other": "{{climb}} es el más duro de {{count}} bloques encadenados en {{boards}}. Mira su logbook.",
+      "ogDescriptionCount_one": "{{count}} bloque encadenado en {{boards}}. Mira su logbook.",
+      "ogDescriptionCount_other": "{{count}} bloques encadenados en {{boards}}. Mira su logbook.",
+      "ogDescriptionNoSends": "Todavía no hay encadenes registrados. Mira el perfil."
     },
     "statistics": {
       "title": "Estadísticas"
@@ -24,7 +31,18 @@
       "description": "Bloques creados por {{name}} en Boardsesh",
       "fallbackTitle": "Perfil de aperturista",
       "fallbackDescription": "Mira el perfil del aperturista y sus bloques en Boardsesh",
-      "ogAlt": "Perfil de aperturista de {{name}}"
+      "ogAlt": "Perfil de aperturista de {{name}}",
+      "ogTitleSends": "{{name}}: {{sends}} encadenes en sus bloques",
+      "ogTitleSetCount_one": "{{name}} ha abierto {{climbs}} bloque",
+      "ogTitleSetCount_other": "{{name}} ha abierto {{climbs}} bloques",
+      "ogSetCount_one": "{{climbs}} bloque abierto.",
+      "ogSetCount_other": "{{climbs}} bloques abiertos.",
+      "ogMostSent_one": "El más encadenado: {{climb}}, con {{sends}} encadene.",
+      "ogMostSent_other": "El más encadenado: {{climb}}, con {{sends}} encadenes.",
+      "ogMostSentSoFar": "El más encadenado hasta ahora: {{climb}}.",
+      "ogOnBoards": "En {{boards}}.",
+      "ogPickOne": "Elige uno y pruébalo.",
+      "ogGoGetOnIt": "Ve a por él."
     }
   },
   "page": {

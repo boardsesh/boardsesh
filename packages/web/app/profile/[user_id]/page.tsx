@@ -8,9 +8,10 @@ import ProfileJsonLd from './profile-json-ld';
 import { getProfileData } from './server-profile-data';
 import { fetchProfileStatsData } from './server-profile-stats';
 import { getUserBetaLinks } from '@/app/lib/server-user-beta-links';
-import { buildVersionedOgImagePath } from '@/app/lib/seo/og';
+import { boardTypeLabel } from '@boardsesh/board-constants';
 import { createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
-import { getProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { getProfileOgSummary, type ProfileOgSummary } from '@/app/lib/seo/dynamic-og-data';
+import { buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -19,6 +20,37 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 type PageProps = {
   params: Promise<{ user_id: string }>;
 };
+
+type ProfileTranslate = Awaited<ReturnType<typeof getServerTranslation>>['t'];
+
+/**
+ * What a chat app shows above the card: the hardest send, as the card's hero
+ * does. Separate from the search title, which leads with what people type.
+ */
+function buildProfileShareCopy(
+  summary: ProfileOgSummary,
+  displayName: string,
+  locale: string,
+  t: ProfileTranslate,
+): { ogTitle: string; ogDescription: string } {
+  const boards = new Intl.ListFormat(locale, { type: 'conjunction' }).format(
+    summary.sentBoardTypes.map(boardTypeLabel),
+  );
+  const count = summary.sentClimbCount;
+  const { hardestSend } = summary;
+
+  if (hardestSend?.grade) {
+    return {
+      ogTitle: t('metadata.profile.ogTitleSent', { name: displayName, grade: hardestSend.grade }),
+      ogDescription: t('metadata.profile.ogDescriptionHardest', { count, climb: hardestSend.climbName, boards }),
+    };
+  }
+  const ogTitle = t('metadata.profile.ogTitleNoSends', { name: displayName });
+  // Sends with none to name: every one can be on a community-hidden climb,
+  // which a card never features but the public stats still count.
+  if (count > 0) return { ogTitle, ogDescription: t('metadata.profile.ogDescriptionCount', { count, boards }) };
+  return { ogTitle, ogDescription: t('metadata.profile.ogDescriptionNoSends') };
+}
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { user_id } = await params;
@@ -40,7 +72,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       });
     }
 
-    const displayName = summary.displayName;
+    const displayName = summary.displayName ?? t('page.displayNameFallback');
     // Lead with what people search for — a climber's name plus the board they
     // actually climb on — instead of a bare "{name} | Boardsesh".
     const title = summary.topBoardType
@@ -50,13 +82,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         })
       : t('metadata.profile.title', { name: displayName });
 
+    const { ogTitle, ogDescription } = buildProfileShareCopy(summary, displayName, locale, t);
+    // A private profile returned null above, which is the backend card's own gate.
+    const imageUrl = buildOgFamilyImageUrl('profile', { user_id }, summary.version);
+
     return createPageMetadata({
       title,
       description: t('metadata.profile.description', { name: displayName }),
+      ogTitle,
+      ogDescription,
       path,
       locale,
       openGraphType: 'profile',
-      imagePath: buildVersionedOgImagePath('/api/og/profile', { user_id }, summary.version),
+      ...(imageUrl ? { imagePath: imageUrl } : {}),
       imageAlt: t('metadata.profile.ogAlt', { name: displayName }),
     });
   } catch {

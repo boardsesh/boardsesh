@@ -142,7 +142,11 @@
     "sprayWallCount_other": "{{count}} Spraywalls",
     "sprayWallsIntro": "This gym's Spraywalls, hold for hold. Open one to see what's been set on it.",
     "sprayWallPhotoAlt": "Photo of {{wallName}}",
-    "sprayWallMeta": "{{angle}}° · {{holds}} holds"
+    "sprayWallMeta": "{{angle}}° · {{holds}} holds",
+    "ogTitle": "{{gymName}} · {{boards}}",
+    "ogDescriptionOneType": "{{board}} board at {{gymName}}. See what's set on it and log your sends.",
+    "ogDescriptionManyTypes": "{{boards}} boards at {{gymName}}. See what's set on them and log your sends.",
+    "ogDescriptionNoBoards": "No boards listed here yet. Climb here? Claim the gym and add them."
   },
   "boardPoster": {
     "metaTitle": "QR poster for {{boardName}}",

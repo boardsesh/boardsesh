@@ -5,7 +5,12 @@ import type { ResolvedBoard } from '@/app/lib/board-slug-utils';
 import SprayWallFrontDoor from '@/app/components/spray-wall/spray-wall-front-door';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
-import { readWallCapability, resolveSprayWallAccess } from '@/app/lib/spray/spray-visibility';
+import {
+  readWallCapability,
+  resolveSprayWallAccess,
+  resolveSprayWallVisibility,
+} from '@/app/lib/spray/spray-visibility';
+import { buildOgContentVersion, buildOgFamilyImageUrl } from '@/app/lib/seo/og-family';
 import { buildNativeBoardListUrl } from '@/app/lib/native-app-link';
 import {
   fetchSprayWallArtChoice,
@@ -74,13 +79,45 @@ export async function buildSprayWallListMetadata(
     });
   }
 
+  const title = t('spray.wall.metadata.title', { wallName: board.name });
+  const description = t('spray.wall.metadata.description', { wallName: board.name, angle: board.angle });
+  // Always, for every wall. See the docblock above: the URL a shared wall is
+  // read at carries a capability, so there is no clean twin to canonicalise to.
+  const robots = { index: false, follow: true };
+
+  // Only a public wall gets a card, and only when it has a public photo copy:
+  // the backend draws that copy and 404s anything else. An unlisted wall keeps
+  // the generic site card, so its capability never reaches an image URL and its
+  // photo, which lives behind short-lived signatures, never reaches a preview.
+  // The read is anonymous and the page body makes the same one.
+  const wallData =
+    resolveSprayWallVisibility(board) === 'public' ? await fetchSprayWallPageData(board.uuid).catch(() => null) : null;
+  if (!wallData?.wall.publicPhotoUrl) {
+    return createBoardContentPageMetadata({ title, description, locale, robots });
+  }
+
+  const imageUrl = buildOgFamilyImageUrl(
+    'place',
+    { kind: 'board', slug: board.slug },
+    buildOgContentVersion(
+      board.name,
+      board.angle,
+      wallData.versionNumber,
+      wallData.wall.holdCount,
+      wallData.wall.publicPhotoUrl,
+    ),
+  );
   return createBoardContentPageMetadata({
-    title: t('spray.wall.metadata.title', { wallName: board.name }),
-    description: t('spray.wall.metadata.description', { wallName: board.name, angle: board.angle }),
+    title,
+    description,
+    ogTitle: t('spray.wall.metadata.ogTitle', { wallName: board.name }),
+    ogDescription: t('spray.wall.metadata.ogDescription', {
+      angle: board.angle,
+      count: wallData.wall.holdCount,
+    }),
     locale,
-    // Always, for every wall. See the docblock above: the URL a shared wall is
-    // read at carries a capability, so there is no clean twin to canonicalise to.
-    robots: { index: false, follow: true },
+    robots,
+    ...(imageUrl ? { imagePath: imageUrl } : {}),
   });
 }
 

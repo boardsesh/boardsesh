@@ -11,7 +11,15 @@
       "privateDescription": "Diese Playlist ist privat.",
       "generatedDescription_one": "{{count}} {{board}}-Boulder in {{name}}. Öffne die Playlist in Boardsesh und klettere ihn.",
       "generatedDescription_other": "{{count}} {{board}}-Boulder in {{name}}. Öffne die Playlist in Boardsesh und klettere sie.",
-      "ogAlt": "Die Playlist {{name}} auf Boardsesh"
+      "ogAlt": "Die Playlist {{name}} auf Boardsesh",
+      "ogTitle": "{{name}} · {{board}}-Liste",
+      "ogTitleWithBand": "{{name}} · {{band}} {{board}}-Liste",
+      "ogDescriptionRange_one": "{{count}} {{board}}-Boulder von {{low}} bis {{high}}. Probier ihn.",
+      "ogDescriptionRange_other": "{{count}} {{board}}-Boulder von {{low}} bis {{high}}. Such dir einen aus und probier ihn.",
+      "ogDescriptionOneGrade_one": "{{count}} {{board}}-Boulder im Grad {{grade}}. Probier ihn.",
+      "ogDescriptionOneGrade_other": "{{count}} {{board}}-Boulder im Grad {{grade}}. Such dir einen aus und probier ihn.",
+      "ogDescriptionNoBand_one": "{{count}} {{board}}-Boulder. Probier ihn.",
+      "ogDescriptionNoBand_other": "{{count}} {{board}}-Boulder. Such dir einen aus und probier ihn."
     }
   },
   "library": {

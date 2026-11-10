@@ -29,7 +29,9 @@
       "description": "Stöber durch Boulder auf {{boardName}} bei {{angle}}°",
       "fallbackTitle": "Boulder",
       "fallbackDescription": "Boulder durchstöbern",
-      "paginatedTitle": "{{boardName}}-Boulder bei {{angle}}° — Seite {{page}}"
+      "paginatedTitle": "{{boardName}}-Boulder bei {{angle}}° — Seite {{page}}",
+      "ogTitle": "Boulder an {{name}} bei {{angle}}°",
+      "ogDescription": "Such dir einen aus, beleuchte ihn am Board und trag die Begehung ein."
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -1079,7 +1081,10 @@
       },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
-        "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Spraywall an und öffne sie in der Boardsesh-App."
+        "description": "{{wallName}}, eine Spraywall mit {{angle}}°. Sieh dir die Spraywall an und öffne sie in der Boardsesh-App.",
+        "ogTitle": "{{wallName}} · Spraywall",
+        "ogDescription_one": "Eine Spraywall mit {{angle}}° und {{count}} Griff. Sieh dir die Spraywall an und probier, was geschraubt ist.",
+        "ogDescription_other": "Eine Spraywall mit {{angle}}° und {{count}} Griffen. Sieh dir die Spraywall an und probier, was geschraubt ist."
       }
     },
     "install": {

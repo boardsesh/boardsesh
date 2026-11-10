@@ -24,7 +24,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 
 vi.stubGlobal('fetch', fetchMock);
 
-import { resolveBoardBySlug, type ResolvedBoard } from '../board-slug-utils';
+import { resolveBoardBySlug, resolveBoardBySlugAsStranger, type ResolvedBoard } from '../board-slug-utils';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '../ssr-fetch-deadline';
 
 const publicBoard: ResolvedBoard = {
@@ -233,5 +233,38 @@ describe('resolveBoardBySlug', () => {
     expect(authenticatedRequest).toMatchObject({ cache: 'no-store' });
     expect(authenticatedRequest).not.toHaveProperty('next');
     expect(new Headers(authenticatedRequest?.headers).get('Authorization')).toBe('Bearer signed-session-token');
+  });
+});
+
+// What the board share card is gated on: the board as a stranger holding only
+// its slug sees it. A signed-in viewer's token must never reach this read, or a
+// follower's page would advertise a card the backend answers 404 for.
+describe('resolveBoardBySlugAsStranger', () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    getServerAuthTokenMock.mockReset();
+  });
+
+  it("leaves a signed-in viewer's token off the lookup", async () => {
+    getServerAuthTokenMock.mockResolvedValue('signed-session-token');
+    fetchMock.mockResolvedValueOnce(graphQlResponse(null));
+
+    await expect(resolveBoardBySlugAsStranger(privateBoard.slug)).resolves.toBeNull();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(new Headers(requestInit?.headers).get('Authorization')).toBeNull();
+    const body = JSON.parse(requestInit?.body as string) as { variables: object };
+    expect(body.variables).toEqual({ slug: privateBoard.slug });
+  });
+
+  it("is the page's own anonymous read when there is no viewer", async () => {
+    getServerAuthTokenMock.mockResolvedValue(undefined);
+    fetchMock.mockResolvedValueOnce(graphQlResponse(publicBoard));
+
+    await expect(resolveBoardBySlugAsStranger(publicBoard.slug)).resolves.toEqual(publicBoard);
+
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(new Headers(requestInit?.headers).get('Authorization')).toBeNull();
   });
 });

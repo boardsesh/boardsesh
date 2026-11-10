@@ -8,7 +8,14 @@
       "notFoundDescription": "Impossibile trovare questo profilo di arrampicata.",
       "ogAlt": "Il profilo di arrampicata di {{name}}",
       "title": "Le session di arrampicata di {{name}}",
-      "titleWithBoard": "Le session di {{name}} su {{board}}"
+      "titleWithBoard": "Le session di {{name}} su {{board}}",
+      "ogTitleSent": "{{name}} ha chiuso un {{grade}}",
+      "ogTitleNoSends": "{{name}} su Boardsesh",
+      "ogDescriptionHardest_one": "{{climb}} è il primo blocco chiuso su {{boards}}. Guarda il diario.",
+      "ogDescriptionHardest_other": "{{climb}} è il più duro di {{count}} blocchi chiusi su {{boards}}. Guarda il diario.",
+      "ogDescriptionCount_one": "{{count}} blocco chiuso su {{boards}}. Guarda il diario.",
+      "ogDescriptionCount_other": "{{count}} blocchi chiusi su {{boards}}. Guarda il diario.",
+      "ogDescriptionNoSends": "Ancora nessuna ripetizione registrata. Guarda il profilo."
     },
     "statistics": {
       "title": "Statistiche"
@@ -24,7 +31,18 @@
       "description": "Blocchi creati da {{name}} su Boardsesh",
       "fallbackTitle": "Profilo del tracciatore",
       "fallbackDescription": "Guarda il profilo e i blocchi del tracciatore su Boardsesh",
-      "ogAlt": "Il profilo da tracciatore di {{name}}"
+      "ogAlt": "Il profilo da tracciatore di {{name}}",
+      "ogTitleSends": "{{name}}: {{sends}} ripetizioni sui suoi blocchi",
+      "ogTitleSetCount_one": "{{name}} ha tracciato {{climbs}} blocco",
+      "ogTitleSetCount_other": "{{name}} ha tracciato {{climbs}} blocchi",
+      "ogSetCount_one": "{{climbs}} blocco tracciato.",
+      "ogSetCount_other": "{{climbs}} blocchi tracciati.",
+      "ogMostSent_one": "Il più ripetuto: {{climb}}, {{sends}} ripetizione.",
+      "ogMostSent_other": "Il più ripetuto: {{climb}}, {{sends}} ripetizioni.",
+      "ogMostSentSoFar": "Il più ripetuto finora: {{climb}}.",
+      "ogOnBoards": "Su {{boards}}.",
+      "ogPickOne": "Scegline uno e provalo.",
+      "ogGoGetOnIt": "Vai a provarlo."
     }
   },
   "page": {

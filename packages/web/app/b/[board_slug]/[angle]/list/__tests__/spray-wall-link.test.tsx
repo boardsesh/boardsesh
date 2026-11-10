@@ -49,6 +49,10 @@ function boardFor(visibility: 'public' | 'unlisted' | 'private') {
 
 const resolveBoardBySlug = vi.fn(async (_slug: string, _wallUuid?: string) => boardFor('unlisted'));
 
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => 'https://ws.boardsesh.com',
+}));
+
 vi.mock('@/app/lib/board-slug-utils', () => ({
   resolveBoardBySlug,
   boardToRouteParamsFromAngleSegment: vi.fn(() => ({
@@ -244,6 +248,49 @@ describe('the wall page metadata', () => {
 
     resolveBoardBySlug.mockResolvedValue(boardFor('unlisted'));
     expect(JSON.stringify((await generateMetadata(propsWith(WALL_UUID))).title)).toContain('spray.wall.metadata.title');
+  });
+});
+
+function imageUrlOf(metadata: Awaited<ReturnType<typeof generateMetadata>>): string | undefined {
+  const images = metadata.openGraph?.images as Array<{ url: string }> | undefined;
+  return images?.[0]?.url;
+}
+
+describe('the wall share preview', () => {
+  it('gives a public wall with a public photo the backend place card, on its slug alone', async () => {
+    resolveBoardBySlug.mockResolvedValue(boardFor('public'));
+
+    const metadata = await generateMetadata(propsWith(WALL_UUID));
+
+    expect(imageUrlOf(metadata)).toMatch(
+      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=garage-wall&v=[0-9a-z]+$/,
+    );
+    expect(metadata.openGraph?.title).toBe('spray.wall.metadata.ogTitle');
+    expect(metadata.openGraph?.description).toBe('spray.wall.metadata.ogDescription');
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps an unlisted wall on the generic card, so its capability and photo stay out of the preview', async () => {
+    resolveBoardBySlug.mockResolvedValue(boardFor('unlisted'));
+
+    const metadata = await generateMetadata(propsWith(WALL_UUID));
+
+    expect(imageUrlOf(metadata)).toBe('/opengraph-image');
+    expect(JSON.stringify(metadata)).not.toContain(WALL_UUID);
+    expect(JSON.stringify(metadata)).not.toContain('presigned');
+    expect(fetchSprayWallPageData).not.toHaveBeenCalled();
+  });
+
+  it('keeps a public wall with no public photo copy on the generic card, which the backend would 404', async () => {
+    resolveBoardBySlug.mockResolvedValue(boardFor('public'));
+    fetchSprayWallPageData.mockResolvedValue({
+      ...WALL_DATA,
+      wall: { ...WALL_DATA.wall, publicPhotoUrl: null },
+    } as never);
+
+    const metadata = await generateMetadata(propsWith());
+
+    expect(imageUrlOf(metadata)).toBe('/opengraph-image');
   });
 });
 

@@ -11,6 +11,10 @@ vi.mock('@/app/lib/i18n/server', () => ({
   })),
 }));
 
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => 'https://ws.boardsesh.com',
+}));
+
 const mockGetPlaylistOgSummary = vi.fn();
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
   getPlaylistOgSummary: (...args: unknown[]) => mockGetPlaylistOgSummary(...args),
@@ -26,6 +30,7 @@ const baseSummary = {
   isPublic: true,
   boardType: 'kilter',
   climbCount: 12,
+  gradeSummary: null as { p10Difficulty: number; p90Difficulty: number } | null,
   version: 'v1',
 };
 
@@ -77,6 +82,69 @@ describe('generatePlaylistMetadata description', () => {
     expect(metadata.description).toBe(
       '1 Tension climb in Tension slopers. Open the playlist in Boardsesh and climb it.',
     );
+  });
+});
+
+describe('generatePlaylistMetadata share preview', () => {
+  it('points at the backend playlist card with the data token', async () => {
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+    const [image] = (metadata.openGraph?.images ?? []) as Array<{ url: string }>;
+
+    expect(image.url).toBe('https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=v1');
+    expect(metadata.twitter?.images).toEqual(['https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=v1']);
+  });
+
+  it('leads with the grade band, as the card does, and keeps the creator off both lines', async () => {
+    // Kilter difficulty 20 is 6c/V5 and 26 is 7c/V9.
+    mockGetPlaylistOgSummary.mockResolvedValue({
+      ...baseSummary,
+      name: 'Benchmarks - vukylebeta',
+      climbCount: 117,
+      gradeSummary: { p10Difficulty: 20, p90Difficulty: 26 },
+    });
+
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+
+    expect(metadata.openGraph?.title).toBe('Benchmarks - vukylebeta · V5–V9 Kilter list');
+    expect(metadata.openGraph?.description).toBe('117 Kilter climbs from V5 to V9. Pick one and get on the wall.');
+    // The search title stays the playlist's own name.
+    expect(metadata.title).toEqual({ absolute: 'Benchmarks - vukylebeta | Boardsesh' });
+  });
+
+  it('says one grade once when the whole band is one V-grade', async () => {
+    mockGetPlaylistOgSummary.mockResolvedValue({
+      ...baseSummary,
+      gradeSummary: { p10Difficulty: 20, p90Difficulty: 21 },
+    });
+
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+
+    expect(metadata.openGraph?.title).toBe('Crimpy warm-ups · V5 Kilter list');
+    expect(metadata.openGraph?.description).toBe('12 Kilter climbs at V5. Pick one and get on the wall.');
+  });
+
+  it('falls back to the count when the list has no band', async () => {
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+
+    expect(metadata.openGraph?.title).toBe('Crimpy warm-ups · Kilter list');
+    expect(metadata.openGraph?.description).toBe('12 Kilter climbs. Pick one and get on the wall.');
+  });
+
+  it("lets an owner's real description win the preview too", async () => {
+    const ownerDescription = 'Thirty moves of shoulder-friendly crimping to start a session';
+    mockGetPlaylistOgSummary.mockResolvedValue({ ...baseSummary, description: ownerDescription });
+
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+
+    expect(metadata.openGraph?.description).toBe(ownerDescription);
+  });
+
+  it('advertises no card for a private playlist, which the backend would 404', async () => {
+    mockGetPlaylistOgSummary.mockResolvedValue({ ...baseSummary, isPublic: false });
+
+    const metadata = await generatePlaylistMetadata('pl-1', 'en-US');
+
+    expect(metadata.openGraph?.images).toBeUndefined();
   });
 });
 

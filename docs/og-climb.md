@@ -499,6 +499,62 @@ regenerate it, from the repo root on a machine with Noto Sans:
 vp exec tsx packages/backend/src/scripts/render-default-share-card.ts
 ```
 
+### Where www points, and what it says
+
+Every page that has a family card puts it in `og:image` and `twitter:image` as an
+absolute URL on the backend origin, built by `buildOgFamilyImageUrl`
+(`packages/web/app/lib/seo/og-family.ts`) from the same `getPublicBackendHttpUrl`
+the climb card uses. With no backend origin configured the page keeps the site
+default card.
+
+| Page | Card | Advertised only when |
+|---|---|---|
+| `/playlists/{uuid}` | `/og/playlist?uuid=` | the playlist is public |
+| `/profile/{user_id}` | `/og/profile?user_id=` | the profile is not private |
+| `/setter/{username}` | `/og/setter?username=` | the setter has a visible climb |
+| `/session/{id}` | `/og/session?sessionId=` | a stranger can see at least one tick |
+| `/join/{id}` | `/og/session?sessionId=&variant=join` | the session is live, or has a tick to recap |
+| `/gym/{slug}` | `/og/place?kind=gym&slug=` (canonical slug) | the gym is public |
+| `/b/{slug}/{angle}/list` | `/og/place?kind=board&slug=` | a stranger holding only the slug can open the board |
+| same, on a spray wall | `/og/place?kind=board&slug=` | the wall is public and has a public photo copy |
+
+Each rule is the backend card's own gate, so a page never advertises an image that
+answers 404. A page that fails it keeps the site default card or none. The board
+check asks `boardBySlug` again without the viewer's token when one is present
+(`resolveBoardBySlugAsStranger`): a follower can open a board a stranger cannot. A
+URL carries a public id or slug and its `v` token only, so `?invite=` and `?wall=`
+never reach an image URL, and an unlisted wall keeps the default card. A climb
+on a spray wall keeps its own climb card.
+
+The `v` token follows the data the card draws: a hash of the numbers and names on
+it where there is no single timestamp (`buildOgContentVersion`), including the
+playlist's grade band and the setter's send total and top climb. The backend ignores
+it; it is there so a chat app that caches previews by URL asks again once the card
+has changed.
+
+`og:title` and `og:description` are the share copy from the design doc, translated
+in all five locales, and set separately from `<title>` and the meta description so
+search titles do not move (`ogTitle` / `ogDescription` on `createPageMetadata`). They
+never claim live state. An unnamed climber is `profile.page.displayNameFallback`. Session copy names grades and
+counts, never a climb: the anonymous `sessionDetail` ticks carry no community-hidden
+flag, and the backend card never features a hidden climb.
+
+**`daily:` session ids.** A daily feed group is not a session and `/og/session`
+refuses it, so its session and join pages keep advertising the web route's card,
+`/api/og/session`, which still draws those groups, on the app's dark ground.
+
+**Legacy URLs.** `/api/og/{playlist,profile,setter}` are 307 redirects to the
+backend card, like `/api/og/climb`, so links shared before the move still unfurl.
+They carry the id and `v` across and drop anything else, and cache for an hour at
+the edge (`redirectToOgFamilyCard`). `/api/og/session` redirects every id except a
+`daily:` one, which it still draws.
+
+**The app.** The playlist and setter Share buttons and the session invite sheet
+call `prewarmShareCaches` with the token-free card URL. The backend keys family
+bytes on the drawn data, so that render is the one the advertised URL will hit, and
+the advertised URL is not fetched a second time. `extractOgImageUrl` follows only
+`/og/{climb,playlist,session,profile,setter,place}` on `BACKEND_URL`.
+
 `/og/climb` also grew a guard for later changes: a request whose `v` differs from the
 compiled `BOARD_RENDER_VERSION` answers the daily tier rather than `immutable`, so a
 render change cannot pin old bytes for a year. A URL with no `v` stays immutable.

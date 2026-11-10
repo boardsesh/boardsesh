@@ -3,7 +3,8 @@
     "home": {
       "title": "App de grimpe compatible avec Kilter, Tension et MoonBoard",
       "description": "Partage une file en direct avec ton crew et suis tes croix sur chaque board. Compatible avec Kilter, Tension, MoonBoard et plus.",
-      "ogDescription": "Partage une file en direct avec ton crew et suis tes croix sur chaque board. Compatible avec Kilter, Tension, MoonBoard et plus."
+      "ogDescription": "Allume des blocs, fais la croix et grimpe avec ton crew. Compatible avec Kilter, Tension, MoonBoard et plus.",
+      "ogTitle": "Boardsesh : une app pour tes boards"
     },
     "about": {
       "title": "Créée par des grimpeurs, ouverte à tous",

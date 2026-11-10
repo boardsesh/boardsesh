@@ -4,92 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 
-/**
- * `sqlTagMock` stands in for the tagged-template function `getReadPool()`
- * returns. Tests control exactly when it "resolves" — the mechanism the
- * first test below depends on to catch a specific regression: the route used
- * to do `rowsFromResult(await sql\`...\`)` *inside* the `Promise.all` array
- * literal, which resolves the query before `Promise.all`/`withReadDeadline`
- * ever run, silently leaving it unbounded despite the deadline wrap.
- */
-const profileRouteState = vi.hoisted(() => ({
-  getProfileOgSummaryMock: vi.fn(),
-  sqlTagMock: vi.fn(),
-  recordedReads: [] as { label: string; ms: number | undefined }[],
-  capturedElement: null as unknown,
-}));
+const backend = vi.hoisted(() => ({ origin: 'https://ws.boardsesh.com' as string | null }));
 
-vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
-  getProfileOgSummary: profileRouteState.getProfileOgSummaryMock,
-}));
-
-vi.mock('@/app/lib/db/db', () => ({
-  getReadPool: () => profileRouteState.sqlTagMock,
-  rowsFromResult: (result: unknown) => (Array.isArray(result) ? result : []),
-}));
-
-vi.mock('@/app/lib/db/read-deadline', () => ({
-  withReadDeadline: async (label: string, pending: Promise<unknown>, ms?: number) => {
-    profileRouteState.recordedReads.push({ label, ms });
-    return pending;
-  },
-}));
-
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
-
-vi.mock('@/app/theme/theme-config', () => ({
-  printSurfaceTokens: {
-    neutral: {
-      200: '#E0E0E0',
-      300: '#D0D0D0',
-      400: '#B0B0B0',
-      500: '#909090',
-      900: '#101010',
-    },
-  },
-}));
-
-vi.mock('@/app/lib/grade-colors', () => ({
-  FONT_GRADE_COLORS: {
-    v5: '#00AAFF',
-  },
-  getGradeColorWithOpacity: vi.fn(() => 'rgba(0, 170, 255, 0.5)'),
-}));
-
-vi.mock('@/app/lib/board-data', () => ({
-  BOULDER_GRADES: [{ difficulty_id: 10, font_grade: 'V5' }],
-}));
-
-vi.mock('@/app/lib/seo/og', () => ({
-  OG_IMAGE_WIDTH: 1200,
-  OG_IMAGE_HEIGHT: 630,
-  createOgImageHeaders: vi.fn(
-    ({ contentType, version, serverTiming }: { contentType: string; version?: string; serverTiming?: string }) => ({
-      'Content-Type': contentType,
-      'Cache-Control': version
-        ? 'public, max-age=31536000, s-maxage=31536000, immutable'
-        : 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
-      'CDN-Cache-Control': version
-        ? 'public, s-maxage=31536000, immutable'
-        : 'public, s-maxage=300, stale-while-revalidate=86400',
-      'Vercel-CDN-Cache-Control': version
-        ? 'public, s-maxage=31536000, immutable'
-        : 'public, s-maxage=300, stale-while-revalidate=86400',
-      'Server-Timing': serverTiming ?? '',
-    }),
-  ),
-}));
-
-vi.mock('@vercel/og', () => ({
-  ImageResponse: vi.fn(function ImageResponse(element: unknown, init?: ResponseInit) {
-    profileRouteState.capturedElement = element;
-    return new Response('mock-image', {
-      status: 200,
-      headers: new Headers(init?.headers),
-    });
-  }),
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => backend.origin,
 }));
 
 function makeRequest(params: Record<string, string>): NextRequest {
@@ -100,62 +18,38 @@ function makeRequest(params: Record<string, string>): NextRequest {
   return new NextRequest(url);
 }
 
-describe('api/og/profile route', () => {
+describe('api/og/profile legacy redirect', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    profileRouteState.recordedReads.length = 0;
-    profileRouteState.capturedElement = null;
+    backend.origin = 'https://ws.boardsesh.com';
   });
 
-  it('keeps the authorized backend read under the OG deadline', async () => {
-    let resolveSummary: (summary: unknown) => void = () => {};
-    profileRouteState.getProfileOgSummaryMock.mockReturnValue(
-      new Promise((resolve) => {
-        resolveSummary = resolve;
-      }),
-    );
-    const pending = GET(makeRequest({ user_id: 'user-1', v: 'old-public-version' }));
-    expect(profileRouteState.recordedReads.map((read) => read.label)).toEqual(['og-profile']);
-    resolveSummary({ displayName: 'Alex', avatarUrl: null, fallbackImageUrl: null, gradeRows: [] });
-    const response = await pending;
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(profileRouteState.sqlTagMock).not.toHaveBeenCalled();
+  it('sends an already-shared URL to the backend card, version token and all', () => {
+    const response = GET(makeRequest({ user_id: 'user-123', v: 'abc123' }));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://ws.boardsesh.com/og/profile?user_id=user-123&v=abc123');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=300, s-maxage=3600');
   });
 
-  it('renders a 200 PNG with the profile summary and grade bars', async () => {
-    profileRouteState.sqlTagMock.mockResolvedValue([{ difficulty: 10, cnt: 3 }]);
-    profileRouteState.getProfileOgSummaryMock.mockResolvedValue({
-      displayName: 'Alex',
-      gradeRows: [{ difficulty: 10, cnt: 3 }],
-      avatarUrl: null,
-      fallbackImageUrl: null,
-    });
+  it('carries the id and nothing else the backend does not read', () => {
+    const response = GET(makeRequest({ user_id: 'user-123', utm_source: 'chat' }));
 
-    const response = await GET(makeRequest({ user_id: 'user-1' }));
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/png');
+    expect(response.headers.get('location')).toBe('https://ws.boardsesh.com/og/profile?user_id=user-123');
   });
 
-  it('redirects to the branded fallback card on a DbReadTimeoutError-shaped rejection', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const timeoutError = Object.assign(new Error('[db] front-door read "og-profile" exceeded 6000ms'), {
-      name: 'DbReadTimeoutError',
-      code: 'DB_READ_TIMEOUT',
-    });
-    profileRouteState.getProfileOgSummaryMock.mockRejectedValue(timeoutError);
-    profileRouteState.sqlTagMock.mockResolvedValue([]);
+  it('answers 400 without an id, as the old route did', () => {
+    const response = GET(makeRequest({}));
 
-    const response = await GET(makeRequest({ user_id: 'user-1' }));
-    const body = await response.text();
+    expect(response.status).toBe(400);
+  });
 
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/opengraph-image');
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=60');
-    expect(response.headers.get('CDN-Cache-Control')).toBe('public, s-maxage=60');
-    expect(body).not.toContain('SELECT');
+  it('answers an uncached 404 when this deployment has no backend origin', () => {
+    backend.origin = null;
 
-    consoleErrorSpy.mockRestore();
+    const response = GET(makeRequest({ user_id: 'user-123' }));
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('location')).toBeNull();
   });
 });

@@ -7,6 +7,11 @@ import { GET } from '../route';
 const sessionRouteState = vi.hoisted(() => ({
   getSessionOgSummaryMock: vi.fn(),
   capturedElement: null as unknown,
+  backendOrigin: 'https://ws.boardsesh.com' as string | null,
+}));
+
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => sessionRouteState.backendOrigin,
 }));
 
 vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
@@ -121,13 +126,58 @@ function collectImageSources(node: unknown): string[] {
   return [...sources, ...collectImageSources(typedNode.props?.children)];
 }
 
-describe('api/og/session route', () => {
+describe('api/og/session legacy redirect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionRouteState.backendOrigin = 'https://ws.boardsesh.com';
+  });
+
+  it('sends a recap URL to the backend card, carrying the version token', async () => {
+    const response = await GET(makeRequest({ sessionId: 'session-123', v: 'abc123' }));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://ws.boardsesh.com/og/session?sessionId=session-123&v=abc123');
+    expect(sessionRouteState.getSessionOgSummaryMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the join variant on the way through', async () => {
+    const response = await GET(makeRequest({ sessionId: 'session-123', variant: 'join' }));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://ws.boardsesh.com/og/session?sessionId=session-123&variant=join',
+    );
+  });
+
+  it('drops parameters the backend card does not read', async () => {
+    const response = await GET(makeRequest({ sessionId: 'session-123', extra: 'x' }));
+
+    expect(response.headers.get('location')).toBe('https://ws.boardsesh.com/og/session?sessionId=session-123');
+  });
+
+  it('answers 400 with no session id, as before', async () => {
+    const response = await GET(makeRequest({}));
+
+    expect(response.status).toBe(400);
+  });
+
+  it('answers an uncached 404 when there is no backend origin to send the reader to', async () => {
+    sessionRouteState.backendOrigin = null;
+
+    const response = await GET(makeRequest({ sessionId: 'session-123' }));
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+  });
+});
+
+describe('api/og/session daily feed groups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionRouteState.capturedElement = null;
   });
 
-  it('renders the join variant with non-cacheable PNG headers', async () => {
+  it('still draws a daily group here, since the backend refuses those ids', async () => {
     sessionRouteState.getSessionOgSummaryMock.mockResolvedValue({
       sessionType: 'party',
       sessionName: 'Lunch Laps',
@@ -144,7 +194,7 @@ describe('api/og/session route', () => {
       found: true,
     });
 
-    const response = await GET(makeRequest({ sessionId: 'session-123', variant: 'join', v: 'abc123' }));
+    const response = await GET(makeRequest({ sessionId: 'daily:user-1:2026-11-01', variant: 'join', v: 'abc123' }));
     const textContent = collectText(sessionRouteState.capturedElement);
     const imageSources = collectImageSources(sessionRouteState.capturedElement);
 
@@ -180,7 +230,7 @@ describe('api/og/session route', () => {
       found: false,
     });
 
-    const response = await GET(makeRequest({ sessionId: 'missing-session' }));
+    const response = await GET(makeRequest({ sessionId: 'daily:user-1:2026-11-02' }));
 
     expect(response.status).toBe(404);
   });

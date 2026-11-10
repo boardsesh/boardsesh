@@ -8,7 +8,14 @@
       "notFoundDescription": "Impossible de trouver ce profil de grimpe.",
       "ogAlt": "Profil de grimpe de {{name}}",
       "title": "Les sessions de grimpe de {{name}}",
-      "titleWithBoard": "Les sessions {{board}} de {{name}}"
+      "titleWithBoard": "Les sessions {{board}} de {{name}}",
+      "ogTitleSent": "{{name}} a enchaîné du {{grade}}",
+      "ogTitleNoSends": "{{name}} sur Boardsesh",
+      "ogDescriptionHardest_one": "{{climb}} est sa première croix sur {{boards}}. Ouvre le carnet.",
+      "ogDescriptionHardest_other": "{{climb}} est le plus dur de {{count}} blocs enchaînés sur {{boards}}. Ouvre le carnet.",
+      "ogDescriptionCount_one": "{{count}} bloc enchaîné sur {{boards}}. Ouvre le carnet.",
+      "ogDescriptionCount_other": "{{count}} blocs enchaînés sur {{boards}}. Ouvre le carnet.",
+      "ogDescriptionNoSends": "Aucune croix pour l'instant. Découvre le profil."
     },
     "statistics": {
       "title": "Statistiques"
@@ -24,7 +31,18 @@
       "description": "Blocs ouverts par {{name}} sur Boardsesh",
       "fallbackTitle": "Profil d'ouvreur",
       "fallbackDescription": "Profil d'ouvreur et ses blocs sur Boardsesh",
-      "ogAlt": "Profil d'ouvreur de {{name}}"
+      "ogAlt": "Profil d'ouvreur de {{name}}",
+      "ogTitleSends": "{{name}} : {{sends}} croix sur ses blocs",
+      "ogTitleSetCount_one": "{{name}} a ouvert {{climbs}} bloc",
+      "ogTitleSetCount_other": "{{name}} a ouvert {{climbs}} blocs",
+      "ogSetCount_one": "{{climbs}} bloc ouvert.",
+      "ogSetCount_other": "{{climbs}} blocs ouverts.",
+      "ogMostSent_one": "Le plus enchaîné : {{climb}}, {{sends}} croix.",
+      "ogMostSent_other": "Le plus enchaîné : {{climb}}, {{sends}} croix.",
+      "ogMostSentSoFar": "Le plus enchaîné pour l'instant : {{climb}}.",
+      "ogOnBoards": "Sur {{boards}}.",
+      "ogPickOne": "Choisis-en un et essaie-le.",
+      "ogGoGetOnIt": "À toi de jouer."
     }
   },
   "page": {

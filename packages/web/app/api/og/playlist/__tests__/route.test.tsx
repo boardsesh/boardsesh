@@ -4,69 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { GET } from '../route';
 
-const playlistRouteState = vi.hoisted(() => ({
-  getPlaylistOgSummaryMock: vi.fn(),
-  capturedElement: null as unknown,
-  capturedOptions: null as ({ emoji?: string } & ResponseInit) | null,
-}));
+const backend = vi.hoisted(() => ({ origin: 'https://ws.boardsesh.com' as string | null }));
 
-vi.mock('@/app/lib/seo/dynamic-og-data', () => ({
-  getPlaylistOgSummary: playlistRouteState.getPlaylistOgSummaryMock,
-}));
-
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
-
-vi.mock('@/app/theme/theme-config', () => ({
-  printSurfaceTokens: {
-    neutral: {
-      300: '#D0D0D0',
-      400: '#B0B0B0',
-      500: '#909090',
-      600: '#707070',
-      900: '#101010',
-    },
-    primary: '#123456',
-  },
-}));
-
-vi.mock('@/app/lib/string-utils', () => ({
-  formatBoardDisplayName: vi.fn((boardType: string) => {
-    if (boardType === 'moonboard') return 'MoonBoard';
-    return boardType.charAt(0).toUpperCase() + boardType.slice(1);
-  }),
-}));
-
-vi.mock('@/app/lib/seo/og', () => ({
-  OG_IMAGE_WIDTH: 1200,
-  OG_IMAGE_HEIGHT: 630,
-  createOgImageHeaders: vi.fn(
-    ({ contentType, version, serverTiming }: { contentType: string; version?: string; serverTiming?: string }) => ({
-      'Content-Type': contentType,
-      'Cache-Control': version
-        ? 'public, max-age=31536000, s-maxage=31536000, immutable'
-        : 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400',
-      'CDN-Cache-Control': version
-        ? 'public, s-maxage=31536000, immutable'
-        : 'public, s-maxage=300, stale-while-revalidate=86400',
-      'Vercel-CDN-Cache-Control': version
-        ? 'public, s-maxage=31536000, immutable'
-        : 'public, s-maxage=300, stale-while-revalidate=86400',
-      'Server-Timing': serverTiming ?? '',
-    }),
-  ),
-}));
-
-vi.mock('@vercel/og', () => ({
-  ImageResponse: vi.fn(function ImageResponse(element: unknown, init?: { emoji?: string } & ResponseInit) {
-    playlistRouteState.capturedElement = element;
-    playlistRouteState.capturedOptions = init ?? null;
-    return new Response('mock-image', {
-      status: 200,
-      headers: new Headers(init?.headers),
-    });
-  }),
+vi.mock('@/app/lib/backend-url', () => ({
+  getPublicBackendHttpUrl: () => backend.origin,
 }));
 
 function makeRequest(params: Record<string, string>): NextRequest {
@@ -77,163 +18,42 @@ function makeRequest(params: Record<string, string>): NextRequest {
   return new NextRequest(url);
 }
 
-/**
- * Mirrors real drizzle-orm@0.45.2's `DrizzleQueryError`: `.name` stays the
- * inherited "Error" (the class never overrides it), the message embeds the
- * full SQL + params, and `.cause` is always the underlying driver error.
- */
-function makeDrizzleQueryError(sql: string, params: string, causeMessage = 'CONNECT_TIMEOUT'): Error {
-  const cause = Object.assign(new Error(causeMessage), { code: causeMessage });
-  return Object.assign(new Error(`Failed query: ${sql}\nparams: ${params}`), { cause });
-}
-
-function collectText(node: unknown): string {
-  if (typeof node === 'string' || typeof node === 'number') {
-    return String(node);
-  }
-
-  if (!node || typeof node !== 'object') {
-    return '';
-  }
-
-  if (Array.isArray(node)) {
-    return node.map(collectText).join(' ');
-  }
-
-  const children = (node as { props?: { children?: unknown } }).props?.children;
-  return collectText(children);
-}
-
-describe('api/og/playlist route', () => {
+describe('api/og/playlist legacy redirect', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    playlistRouteState.capturedElement = null;
-    playlistRouteState.capturedOptions = null;
+    backend.origin = 'https://ws.boardsesh.com';
   });
 
-  it('renders a playlist OG image with ASCII-safe fallback markup and truncated copy', async () => {
-    playlistRouteState.getPlaylistOgSummaryMock.mockResolvedValue({
-      name: 'A very long playlist name that should be shortened for the OG image',
-      description:
-        'This description is intentionally much longer than the OG image should render so the route has to trim it before handing the tree to ImageResponse.',
-      color: '',
-      icon: '',
-      isPublic: true,
-      boardType: 'kilter',
-      climbCount: 12,
-      version: 'abc123',
-    });
+  it('sends an already-shared URL to the backend card, version token and all', () => {
+    const response = GET(makeRequest({ uuid: '3f2b8c1e-1d2a-4b5c-9e8f-0a1b2c3d4e5f', v: 'abc123' }));
 
-    const response = await GET(makeRequest({ uuid: 'playlist-123', v: 'abc123' }));
-    const textContent = collectText(playlistRouteState.capturedElement);
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get('Content-Type')).toBe('image/png');
-    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(textContent).toContain('AV');
-    expect(textContent).toContain('A very long playlist name that...');
-    expect(textContent).toContain(
-      'This description is intentionally much longer than the OG image should render so the route has to trim it before hand...',
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://ws.boardsesh.com/og/playlist?uuid=3f2b8c1e-1d2a-4b5c-9e8f-0a1b2c3d4e5f&v=abc123',
     );
-    expect(textContent).not.toContain('before handing the tree to ImageResponse.');
-    expect(textContent).toContain('12');
-    expect(textContent).toContain('Kilter');
-    expect(textContent).not.toContain('\u{1F3B5}');
+    expect(response.headers.get('Cache-Control')).toBe('public, max-age=300, s-maxage=3600');
   });
 
-  it('returns 404 for private playlists', async () => {
-    playlistRouteState.getPlaylistOgSummaryMock.mockResolvedValue({
-      name: 'Private Playlist',
-      description: null,
-      color: null,
-      icon: null,
-      isPublic: false,
-      boardType: 'kilter',
-      climbCount: 0,
-      version: 'abc123',
-    });
+  it('carries the id and nothing else the backend does not read', () => {
+    const response = GET(makeRequest({ uuid: '3f2b8c1e-1d2a-4b5c-9e8f-0a1b2c3d4e5f', utm_source: 'chat' }));
 
-    const response = await GET(makeRequest({ uuid: 'private-playlist' }));
+    expect(response.headers.get('location')).toBe(
+      'https://ws.boardsesh.com/og/playlist?uuid=3f2b8c1e-1d2a-4b5c-9e8f-0a1b2c3d4e5f',
+    );
+  });
+
+  it('answers 400 without an id, as the old route did', () => {
+    const response = GET(makeRequest({}));
+
+    expect(response.status).toBe(400);
+  });
+
+  it('answers an uncached 404 when this deployment has no backend origin', () => {
+    backend.origin = null;
+
+    const response = GET(makeRequest({ uuid: '3f2b8c1e-1d2a-4b5c-9e8f-0a1b2c3d4e5f' }));
 
     expect(response.status).toBe(404);
-  });
-
-  it.each([
-    ['a ZWJ emoji', '🧗‍♀️'],
-    ['a flag', '🇫🇷'],
-    ['a keycap', '1️⃣'],
-  ])('keeps %s as one grapheme in the playlist mark', async (_label, icon) => {
-    playlistRouteState.getPlaylistOgSummaryMock.mockResolvedValue({
-      name: 'Emoji Playlist',
-      description: null,
-      color: '#123456',
-      icon: `${icon} extra`,
-      isPublic: true,
-      boardType: 'kilter',
-      climbCount: 1,
-      version: 'emoji-test',
-    });
-
-    const response = await GET(makeRequest({ uuid: 'emoji-playlist' }));
-    const textContent = collectText(playlistRouteState.capturedElement);
-
-    expect(response.status).toBe(200);
-    expect(playlistRouteState.capturedOptions?.emoji).toBe('twemoji');
-    expect(textContent).toContain(icon);
-  });
-
-  it('retains ASCII identifiers in the playlist mark', async () => {
-    playlistRouteState.getPlaylistOgSummaryMock.mockResolvedValue({
-      name: 'Steep Projects',
-      description: null,
-      color: '#123456',
-      icon: 'StarOutlined',
-      isPublic: true,
-      boardType: 'kilter',
-      climbCount: 1,
-      version: 'ascii-test',
-    });
-
-    await GET(makeRequest({ uuid: 'ascii-playlist' }));
-    expect(collectText(playlistRouteState.capturedElement)).toContain('ST');
-  });
-
-  it('falls back to playlist initials when the icon is empty', async () => {
-    playlistRouteState.getPlaylistOgSummaryMock.mockResolvedValue({
-      name: 'Steep Projects',
-      description: null,
-      color: '#123456',
-      icon: '',
-      isPublic: true,
-      boardType: 'kilter',
-      climbCount: 1,
-      version: 'initials-test',
-    });
-
-    await GET(makeRequest({ uuid: 'initials-playlist' }));
-    expect(collectText(playlistRouteState.capturedElement)).toContain('SP');
-  });
-
-  it('redirects to the branded fallback card instead of leaking the underlying error', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    playlistRouteState.getPlaylistOgSummaryMock.mockRejectedValue(
-      makeDrizzleQueryError('SELECT * FROM playlists WHERE uuid = $1', 'leaky-playlist'),
-    );
-
-    const response = await GET(makeRequest({ uuid: 'leaky-playlist' }));
-    const body = await response.text();
-
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('/opengraph-image');
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=0, s-maxage=60');
-    expect(body).not.toContain('SELECT');
-    expect(body).not.toContain('leaky-playlist');
-
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-    const [, loggedMessage] = consoleErrorSpy.mock.calls[0] as [string, string];
-    expect(loggedMessage).not.toContain('SELECT');
-    expect(loggedMessage).not.toContain('leaky-playlist');
-
-    consoleErrorSpy.mockRestore();
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('location')).toBeNull();
   });
 });

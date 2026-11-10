@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { BACKEND_URL } from '../env';
-import { PAGE_READ_TIMEOUT_MS, buildOgImageUrl, extractOgImageUrl, prewarmShareCaches } from '../share-prewarm';
+import {
+  PAGE_READ_TIMEOUT_MS,
+  buildOgImageUrl,
+  buildPlaylistOgImageUrl,
+  buildSessionInviteOgImageUrl,
+  buildSetterOgImageUrl,
+  extractOgImageUrl,
+  prewarmShareCaches,
+} from '../share-prewarm';
 
 /**
  * The app cannot compute the card URL www advertises — that angle comes from
@@ -89,6 +97,29 @@ describe('extractOgImageUrl', () => {
         `<head><meta property="og:image" content="https://ws.boardsesh.com.evil.example/og/climb"/></head>`,
       ),
     ).toBeNull();
+  });
+
+  it.each([
+    'https://ws.boardsesh.com/og/playlist?uuid=pl-1&v=abc',
+    'https://ws.boardsesh.com/og/profile?user_id=u1&v=abc',
+    'https://ws.boardsesh.com/og/setter?username=Jimmy+Webb&v=abc',
+    'https://ws.boardsesh.com/og/session?sessionId=s1&variant=join&v=abc',
+    'https://ws.boardsesh.com/og/place?kind=gym&slug=kaserne&v=abc',
+  ])('reads a family card on our backend: %s', (card) => {
+    expect(extractOgImageUrl(`<head><meta property="og:image" content="${card}"/></head>`)).toBe(card);
+  });
+
+  it('follows only the card endpoints, not anything else our backend answers', () => {
+    for (const content of [
+      'https://ws.boardsesh.com/graphql?query=x',
+      'https://ws.boardsesh.com/og/playlists?uuid=x',
+      'https://ws.boardsesh.com/og/playlist',
+      'https://ws.boardsesh.com/og/../graphql?x=1',
+      'https://evil.example.com/og/playlist?uuid=x',
+      'https://ws.boardsesh.com.evil.example/og/playlist?uuid=x',
+    ]) {
+      expect(extractOgImageUrl(`<head><meta property="og:image" content="${content}"/></head>`)).toBeNull();
+    }
   });
 
   it('returns null rather than throwing when there is no card', () => {
@@ -261,6 +292,39 @@ describe('prewarmShareCaches', () => {
     await prewarmShareCaches(PAGE, null);
 
     expect(fetched).toEqual([PAGE]);
+  });
+});
+
+describe('family card URLs', () => {
+  it('build the token-free card for a playlist, a setter and an invite', () => {
+    expect(buildPlaylistOgImageUrl('pl-1')).toBe(`${BACKEND_URL}/og/playlist?uuid=pl-1`);
+    expect(buildSetterOgImageUrl('Jimmy Webb/2')).toBe(`${BACKEND_URL}/og/setter?username=Jimmy%20Webb%2F2`);
+    expect(buildSessionInviteOgImageUrl('s 1')).toBe(`${BACKEND_URL}/og/session?sessionId=s%201&variant=join`);
+  });
+
+  it('warms a family card once when the page advertises it with its data token', async () => {
+    // The backend keys the card on its drawn data, so the token-free fallback and
+    // www's tokened URL are the same render: a second fetch would only queue.
+    const page = 'https://www.boardsesh.com/playlists/pl-1';
+    const fallback = buildPlaylistOgImageUrl('pl-1');
+    const fetched: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        fetched.push(url);
+        return url === page
+          ? ({
+              ok: true,
+              text: async () => `<head><meta property="og:image" content="${fallback}&amp;v=k3x9"/></head>`,
+            } as Response)
+          : ({ ok: true } as Response);
+      }),
+    );
+
+    await prewarmShareCaches(page, fallback);
+    vi.unstubAllGlobals();
+
+    expect(fetched).toEqual([fallback, page]);
   });
 });
 

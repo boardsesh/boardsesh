@@ -15,8 +15,9 @@ vi.mock('@/app/lib/i18n/server', () => ({
   })),
 }));
 
+const viewer = vi.hoisted(() => ({ token: undefined as string | undefined }));
 vi.mock('@/app/lib/auth/server-auth', () => ({
-  getServerAuthToken: vi.fn(async () => undefined),
+  getServerAuthToken: vi.fn(async () => viewer.token),
 }));
 
 const executeAuthenticatedGraphQL = vi.hoisted(() => vi.fn());
@@ -57,6 +58,7 @@ const metadataFor = (slug: string, params: Record<string, string | string[] | un
 
 beforeEach(() => {
   executeAuthenticatedGraphQL.mockReset();
+  viewer.token = undefined;
 });
 
 describe('gym page metadata', () => {
@@ -164,48 +166,100 @@ describe('gym page metadata', () => {
   });
 });
 
-const PHOTO_PATH = '/static/gym-photos/11111111-2222-4333-8444-555555555555.jpg?v=abc';
-
 type OgImage = { url: string; width?: number; height?: number };
 
 function ogImages(metadata: Awaited<ReturnType<typeof generateMetadata>>): OgImage[] {
   return (metadata.openGraph?.images ?? []) as OgImage[];
 }
 
+/** Answers the gym read and, for the boards a stranger sees, `boards`. */
+function serveGym(gymRow: Gym, boards: Array<{ boardType: string; angle: number }> = []) {
+  executeAuthenticatedGraphQL.mockImplementation(async (document: unknown) =>
+    String(document).includes('gymBoards') ? { gymBoards: boards } : { gymBySlug: gymRow },
+  );
+}
+
+const CARD_URL = (slug: string) =>
+  new RegExp(`^https://ws\\.boardsesh\\.com/og/place\\?kind=gym&slug=${slug}&v=[0-9a-z]+$`);
+
 describe('gym page share card', () => {
-  it('uses the owner-uploaded photo, resolved absolute and with no claimed dimensions', async () => {
-    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gym('with-photo', { imageUrl: PHOTO_PATH }) });
+  it('points a public gym at the backend place card, which draws its photo itself', async () => {
+    serveGym(gym('with-photo', { imageUrl: '/static/gym-photos/a.jpg' }), [{ boardType: 'kilter', angle: 40 }]);
 
     const metadata = await metadataFor('with-photo', {});
 
     const [image] = ogImages(metadata);
-    expect(image.url).toBe(`https://ws.boardsesh.com${PHOTO_PATH}`);
-    // A user photo's aspect ratio is unknown; claiming 1200×630 makes scrapers crop.
-    expect(image.width).toBeUndefined();
-    expect(image.height).toBeUndefined();
-    expect(metadata.twitter?.images).toEqual([`https://ws.boardsesh.com${PHOTO_PATH}`]);
-  });
-
-  it('falls back to the generic card when the gym has no photo', async () => {
-    executeAuthenticatedGraphQL.mockResolvedValue({ gymBySlug: gym('no-photo') });
-
-    const metadata = await metadataFor('no-photo', {});
-
-    const [image] = ogImages(metadata);
-    expect(image.url).toBe('/opengraph-image');
+    expect(image.url).toMatch(CARD_URL('with-photo'));
     expect(image.width).toBe(1200);
+    expect(metadata.twitter?.images).toEqual([image.url]);
   });
 
-  it('refuses a legacy javascript: row and falls back to the generic card', async () => {
-    // gyms.image_url was validated with a bare z.string().url() until this
-    // feature landed, and that accepted javascript:/data: URLs.
-    executeAuthenticatedGraphQL.mockResolvedValue({
-      gymBySlug: gym('hostile-photo', { imageUrl: 'javascript:alert(1)' }),
-    });
+  it('uses the canonical slug when a merged twin was requested', async () => {
+    serveGym(gym('survivor'));
 
-    const metadata = await metadataFor('hostile-photo', {});
+    const metadata = await metadataFor('old-twin', {});
 
-    const [image] = ogImages(metadata);
-    expect(image.url).toBe('/opengraph-image');
+    expect(ogImages(metadata)[0].url).toMatch(CARD_URL('survivor'));
+  });
+
+  it('keeps the generic card for a private gym, which the backend card refuses', async () => {
+    serveGym(gym('private-card', { isPublic: false, canEdit: true, imageUrl: '/static/gym-photos/a.jpg' }));
+
+    const metadata = await metadataFor('private-card', {});
+
+    expect(ogImages(metadata)[0].url).toBe('/opengraph-image');
+    expect(metadata.openGraph?.title).toBe('gymPage.metaTitle:Boulderwelt | Boardsesh');
+  });
+
+  it("titles the preview with the gym's own name and the boards a stranger sees", async () => {
+    serveGym(gym('copy-boards', { description: null }), [
+      { boardType: 'kilter', angle: 40 },
+      { boardType: 'tension', angle: 40 },
+    ]);
+
+    const metadata = await metadataFor('copy-boards', {});
+
+    // The mocked `t` prints the key and the gym name.
+    expect(metadata.openGraph?.title).toBe('gymPage.ogTitle:Boulderwelt');
+    expect(metadata.openGraph?.description).toBe('gymPage.ogDescriptionManyTypes:Boulderwelt');
+  });
+
+  it("prefers the gym's own description, and a gym with no boards keeps just its name", async () => {
+    serveGym(gym('copy-none'));
+
+    const metadata = await metadataFor('copy-none', {});
+
+    expect(metadata.openGraph?.title).toBe('Boulderwelt');
+    expect(metadata.openGraph?.description).toBe('A big gym');
+  });
+
+  it("reads the boards a stranger sees, never a signed-in member's view", async () => {
+    // A member can see the gym's Only-me boards; the card and its words cannot.
+    viewer.token = 'member-token';
+    serveGym(gym('member-view'), [{ boardType: 'kilter', angle: 40 }]);
+
+    await metadataFor('member-view', {});
+
+    const boardReads = executeAuthenticatedGraphQL.mock.calls.filter(([document]) =>
+      String(document).includes('gymBoards'),
+    );
+    expect(boardReads.length).toBeGreaterThan(0);
+    for (const [, , token] of boardReads) expect(token).toBeUndefined();
+    const gymRead = executeAuthenticatedGraphQL.mock.calls.find(
+      ([document]) => !String(document).includes('gymBoards'),
+    );
+    expect(gymRead?.[2]).toBe('member-token');
+  });
+
+  it('changes the token when the boards a stranger sees change', async () => {
+    serveGym(gym('token-a'), [{ boardType: 'kilter', angle: 40 }]);
+    const first = ogImages(await metadataFor('token-a', {}))[0].url;
+    serveGym(gym('token-b', { slug: 'token-a' }), [
+      { boardType: 'kilter', angle: 40 },
+      { boardType: 'tension', angle: 40 },
+    ]);
+    const second = ogImages(await metadataFor('token-b', {}))[0].url;
+
+    expect(second).not.toBe(first);
   });
 });

@@ -89,6 +89,37 @@ function buildSprayOgImageUrl(
   return `${BACKEND_URL}/og/climb?${query}`;
 }
 
+// The share cards for everything that is not a climb (docs/og-climb.md, "The
+// share-card family"). www puts a data token (`v`) on the URL it advertises,
+// which the app cannot compute; the backend ignores it and keys its byte cache on
+// the card's drawn data, so the token-free URL renders exactly the bytes the
+// advertised one will. Each takes a public id or slug only: no invite token or
+// wall capability is ever part of a card URL.
+export function buildPlaylistOgImageUrl(playlistUuid: string): string {
+  return `${BACKEND_URL}/og/playlist?uuid=${encodeURIComponent(playlistUuid)}`;
+}
+
+export function buildSetterOgImageUrl(username: string): string {
+  return `${BACKEND_URL}/og/setter?username=${encodeURIComponent(username)}`;
+}
+
+export function buildSessionInviteOgImageUrl(sessionId: string): string {
+  return `${BACKEND_URL}/og/session?sessionId=${encodeURIComponent(sessionId)}&variant=join`;
+}
+
+// The card endpoints a page may advertise. Anything else on BACKEND_URL (the
+// GraphQL endpoint, an upload route) is not a card and is never fetched.
+const OG_CARD_PATH_PATTERN = /^\/og\/(?:climb|playlist|session|profile|setter|place)\?/;
+
+function isBackendCardUrl(url: string): boolean {
+  return url.startsWith(`${BACKEND_URL}/`) && OG_CARD_PATH_PATTERN.test(url.slice(BACKEND_URL.length));
+}
+
+// The same card with or without www's data token: `v` never changes the bytes.
+function withoutVersionParam(url: string): string {
+  return url.replace(/([?&])v=[^&]*(&|$)/, (_whole, separator: string, next: string) => (next ? separator : ''));
+}
+
 // The card the unfurler will ask for, read from the page that advertises it.
 //
 // This exists because the app cannot compute that URL (see `buildOgImageUrl`)
@@ -148,9 +179,10 @@ export function extractOgImageUrl(html: string): string | null {
     const content = META_CONTENT_PATTERN.exec(tag);
     if (!content?.[1]) continue;
     const url = decodeHtmlAttribute(content[1]);
-    // Only ever fetch our own backend. The page is ours, but a prewarm that
-    // follows whatever a response puts in og:image is a request forwarder.
-    if (!url.startsWith(`${BACKEND_URL}/`)) continue;
+    // Only ever fetch our own backend's card endpoints. The page is ours, but a
+    // prewarm that follows whatever a response puts in og:image is a request
+    // forwarder.
+    if (!isBackendCardUrl(url)) continue;
     return url;
   }
   return null;
@@ -207,8 +239,11 @@ export async function prewarmShareCaches(pageUrl: string, fallbackOgImageUrl: st
   const backdrop = fallbackOgImageUrl ? warm(fallbackOgImageUrl) : Promise.resolve();
 
   const advertised = await readAdvertisedCard(pageUrl);
-  // A public spray wall's fallback IS the advertised card, so it is already in
+  // A public spray wall's fallback IS the advertised card, and a family card's
+  // fallback is the advertised one minus its token, so either is already in
   // flight; a second request would only queue behind the first.
-  if (advertised && advertised !== fallbackOgImageUrl) await warm(advertised);
+  const alreadyWarming =
+    !!advertised && !!fallbackOgImageUrl && withoutVersionParam(advertised) === withoutVersionParam(fallbackOgImageUrl);
+  if (advertised && !alreadyWarming) await warm(advertised);
   await backdrop;
 }

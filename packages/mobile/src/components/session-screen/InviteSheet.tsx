@@ -14,6 +14,7 @@ import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { buildSessionShareUrl } from '../../lib/session-share';
+import { buildSessionInviteOgImageUrl, prewarmShareCaches } from '../../lib/share-prewarm';
 
 type InviteSheetProps = {
   visible: boolean;
@@ -44,8 +45,11 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
 
   const handleShare = useCallback(() => {
     hapticSelection();
+    // Warm the join page and its invite card before the sheet opens, so the
+    // friend's chat app finds both rendered. Best effort, never awaited.
+    void prewarmShareCaches(shareUrl, buildSessionInviteOgImageUrl(sessionId));
     void Share.share({ message: shareUrl, url: shareUrl });
-  }, [shareUrl]);
+  }, [sessionId, shareUrl]);
 
   return (
     <ModalSheet

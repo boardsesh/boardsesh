@@ -29,7 +29,9 @@
       "description": "Parcourez les blocs sur {{boardName}} à {{angle}}°",
       "fallbackTitle": "Blocs",
       "fallbackDescription": "Parcourez les blocs",
-      "paginatedTitle": "Blocs {{boardName}} à {{angle}}° — Page {{page}}"
+      "paginatedTitle": "Blocs {{boardName}} à {{angle}}° — Page {{page}}",
+      "ogTitle": "Blocs sur {{name}} à {{angle}}°",
+      "ogDescription": "Choisis-en un, allume-le et fais la croix."
     },
     "view": {
       "title": "{{climbName}} - {{grade}}",
@@ -1079,7 +1081,10 @@
       },
       "metadata": {
         "title": "{{wallName}} | Spraywall",
-        "description": "{{wallName}}, un Spraywall à {{angle}}°. Vois le Spraywall et ouvre-le dans l’app Boardsesh."
+        "description": "{{wallName}}, un Spraywall à {{angle}}°. Vois le Spraywall et ouvre-le dans l’app Boardsesh.",
+        "ogTitle": "{{wallName}} · Spraywall",
+        "ogDescription_one": "Un Spraywall à {{angle}}° avec {{count}} prise. Découvre le Spraywall et essaie ce qui est ouvert.",
+        "ogDescription_other": "Un Spraywall à {{angle}}° avec {{count}} prises. Découvre le Spraywall et essaie ce qui est ouvert."
       }
     },
     "install": {

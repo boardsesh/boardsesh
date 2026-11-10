@@ -5,6 +5,7 @@ import { GlassIconButton } from './GlassIconButton';
 import { useTheme } from '../providers/theme-provider';
 import { useToast } from '../providers/toast-provider';
 import { hapticSelection } from '../lib/haptics';
+import { prewarmShareCaches } from '../lib/share-prewarm';
 
 type ShareIconButtonProps = {
   url: string;
@@ -15,6 +16,11 @@ type ShareIconButtonProps = {
   errorMessage: string;
   /** Runs on the tap: the share is tracked as an intent, like `ClimbShared`. */
   onShare: () => void;
+  /**
+   * The backend share card behind `url`, warmed before the sheet opens so a chat
+   * app's unfurler finds it rendered. Omit for a link with no card.
+   */
+  prewarmOgImageUrl?: string;
   iconColor?: ColorValue;
 };
 
@@ -26,6 +32,7 @@ export function ShareIconButton({
   copiedMessage,
   errorMessage,
   onShare,
+  prewarmOgImageUrl,
   iconColor,
 }: ShareIconButtonProps) {
   const { systemColors } = useTheme();
@@ -34,6 +41,8 @@ export function ShareIconButton({
   const handlePress = useCallback(() => {
     hapticSelection();
     onShare();
+    // Fire-and-forget, the way a climb share does: it never delays the sheet.
+    if (prewarmOgImageUrl) void prewarmShareCaches(url, prewarmOgImageUrl);
 
     // On web expo-clipboard resolves `false` rather than rejecting when the copy is blocked.
     const copyLink = () =>
@@ -62,7 +71,7 @@ export function ShareIconButton({
         showToast(errorMessage, 'error');
       },
     );
-  }, [copiedMessage, errorMessage, message, onShare, showToast, url]);
+  }, [copiedMessage, errorMessage, message, onShare, prewarmOgImageUrl, showToast, url]);
 
   return (
     <GlassIconButton
