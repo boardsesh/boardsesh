@@ -238,6 +238,67 @@ describe('resolveBackendTracesSampleRate: root spans with no HTTP request', () =
   });
 });
 
+describe('resolveBackendTracesSampleRate: requests the dispatcher refuses', () => {
+  // The shapes httpServerSpansIntegration really produces: `http.url` joins
+  // X-Forwarded-Host or Host to the target unless the target starts with "http".
+  const sampled = (httpUrl: string, headers: Record<string, string> = {}) => ({
+    name: 'GET /',
+    attributes: { 'http.url': httpUrl, 'http.method': 'GET', 'url.path': '/' },
+    normalizedRequest: { url: httpUrl, method: 'GET', headers },
+  });
+
+  it.each([
+    ['a scheme-relative target', 'http://localhost//', { host: 'localhost' }],
+    ['a backslash target', 'http://localhost/\\', { host: 'localhost' }],
+    [
+      'a target behind a forwarded host',
+      'https://proxy.example//',
+      { host: 'internal', 'x-forwarded-host': 'proxy.example' },
+    ],
+    ['a junk forwarded scheme', 'junk://localhost//', { host: 'localhost', 'x-forwarded-proto': 'junk' }],
+    ['a bad port in the Host', 'http://x:abc/nope', { host: 'x:abc' }],
+    ['an unbracketed IPv6 Host', 'http://::1/nope', { host: '::1' }],
+    ['an absolute-form target with a bad authority', 'http://[', { host: 'localhost' }],
+    ['an absolute-form target naming the Host, invalid whole', 'http://localhost[/', { host: 'localhost' }],
+    ['no Host and a scheme-relative target', '//', {}],
+  ])('never records %s', (_label, httpUrl, headers) => {
+    expect(resolveBackendTracesSampleRate(sampled(httpUrl, headers))).toBe(0);
+  });
+
+  // Both URLs parse by themselves, so only the Host attribute can reveal the refusal.
+  it.each([
+    ['a relative target under a bad Host', '/nope', 'x:abc'],
+    ['a scheme-relative target', 'http://localhost//', 'localhost'],
+  ])('reads the Host from the span attribute for %s', (_label, httpUrl, host) => {
+    expect(
+      resolveBackendTracesSampleRate({
+        name: 'GET /nope',
+        attributes: { 'http.url': httpUrl, 'http.host': host, 'http.method': 'GET' },
+      }),
+    ).toBe(0);
+  });
+
+  it.each([
+    ['an ordinary request', 'https://ws.boardsesh.com/join/abc', { host: 'ws.boardsesh.com' }],
+    [
+      'a request behind a forwarded host',
+      'https://ws.boardsesh.com/join/abc',
+      { host: 'internal:8080', 'x-forwarded-host': 'ws.boardsesh.com' },
+    ],
+    ['a bracketed IPv6 Host', 'http://[fd12::1]:8080/join/abc', { host: '[fd12::1]:8080' }],
+    ['a valid absolute-form target', 'http://example.com/join/abc', { host: 'localhost' }],
+    ['an empty Host', 'http://localhost/join/abc', { host: '' }],
+    ['a request with no headers in the context', 'https://ws.boardsesh.com/join/abc', {}],
+  ])('keeps the default rate for %s', (_label, httpUrl, headers) => {
+    expect(
+      resolveBackendTracesSampleRate({
+        ...sampled(httpUrl, headers),
+        attributes: { 'http.url': httpUrl, 'http.method': 'GET' },
+      }),
+    ).toBe(BACKEND_DEFAULT_SAMPLE_RATE);
+  });
+});
+
 describe('resolveBackendRequestPath / resolveBackendRequestMethod', () => {
   it('prefers url.path over everything else', () => {
     expect(

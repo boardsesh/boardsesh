@@ -243,6 +243,38 @@ describe('Kilter credential OAuth handlers', () => {
     expect(JSON.parse(response.body)).toMatchObject({ code: 'account_already_linked' });
   });
 
+  it.each([
+    ['an empty Host', { host: '' }, 'http://localhost/'],
+    [
+      'a forwarded proto that is not a scheme',
+      { host: 'ws.boardsesh.test', 'x-forwarded-proto': 'foo bar' },
+      'http://ws.boardsesh.test/',
+    ],
+    [
+      'a proxy-joined forwarded proto',
+      { host: 'ws.boardsesh.test', 'x-forwarded-proto': 'https,http' },
+      'http://ws.boardsesh.test/',
+    ],
+    [
+      'a plain https forwarded proto',
+      { host: 'ws.boardsesh.test', 'x-forwarded-proto': 'https' },
+      'https://ws.boardsesh.test/',
+    ],
+  ])('handoff builds its start URL from %s', async (_label, headers, expectedOrigin) => {
+    validateTokenMock.mockResolvedValue({ userId: 'handoff-user' });
+    const request = makeRequest({
+      method: 'POST',
+      headers: { authorization: 'Bearer boardsesh-token', ...headers },
+      body: JSON.stringify({}),
+    });
+    const response = makeResponse();
+
+    await oauthHandlers.handleKilterCredentialsHandoff(request as never, response as never);
+
+    expect(response.statusCode).toBe(200);
+    expect((JSON.parse(response.body) as { startUrl: string }).startUrl.startsWith(expectedOrigin)).toBe(true);
+  });
+
   it('password rejects unauthenticated requests', async () => {
     const request = makeRequest({
       method: 'POST',

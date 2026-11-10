@@ -15,6 +15,46 @@ describe('isApiHost', () => {
     [`${API_HOSTNAME}.`],
     [`${API_HOSTNAME}.:8443`],
     [` ${API_HOSTNAME} `],
+    [`${API_HOSTNAME}..`],
+    [`${API_HOSTNAME}:abc`],
+    [`${API_HOSTNAME}:1:2`],
+    [`${API_HOSTNAME}/`],
+    [`${API_HOSTNAME}/x`],
+    [`${API_HOSTNAME}?x`],
+    [`${API_HOSTNAME}#x`],
+    [`u@${API_HOSTNAME}`],
+    [`a@b@${API_HOSTNAME}`],
+    [`${API_HOSTNAME}\\`],
+    [`${API_HOSTNAME}, x`],
+    [`/${API_HOSTNAME}`],
+    [`\\${API_HOSTNAME}`],
+    ['%61pi.boardsesh.com'],
+    ['api%2eboardsesh.com'],
+    ['a\tpi.boardsesh.com'],
+    [`\xad${API_HOSTNAME}`],
+    ['\xaapi.boardsesh.com'],
+    ['api.b\xbaardsesh.com'],
+    [`${API_HOSTNAME} x`],
+    [`${API_HOSTNAME}<`],
+    [`${API_HOSTNAME}>`],
+    [`${API_HOSTNAME}|`],
+    [`${API_HOSTNAME}%`],
+    [`${API_HOSTNAME}[`],
+    [`${API_HOSTNAME}]`],
+    [`${API_HOSTNAME}^`],
+    [`${API_HOSTNAME};`],
+    [`${API_HOSTNAME}&`],
+    [`${API_HOSTNAME}!`],
+    [`${API_HOSTNAME}$`],
+    [`${API_HOSTNAME}'`],
+    [`${API_HOSTNAME}(`],
+    [`${API_HOSTNAME})`],
+    [`${API_HOSTNAME}*`],
+    [`${API_HOSTNAME}+`],
+    [`${API_HOSTNAME}=`],
+    [`${API_HOSTNAME}_`],
+    [`${API_HOSTNAME}~`],
+    [`${API_HOSTNAME}\xe9`],
   ])('recognises %j', (hostHeader) => {
     expect(isApiHost(hostHeader)).toBe(true);
   });
@@ -27,10 +67,51 @@ describe('isApiHost', () => {
     ['notapi.boardsesh.com'],
     [`${API_HOSTNAME}.evil.example`],
     [`evil.example/${API_HOSTNAME}`],
+    [`evil.com/${API_HOSTNAME}`],
+    [`evil.com?${API_HOSTNAME}`],
+    [`evil.com#${API_HOSTNAME}`],
+    [`${API_HOSTNAME}@evil.com`],
+    [`evil.com:${API_HOSTNAME}`],
+    [`x.${API_HOSTNAME}`],
+    [`x-${API_HOSTNAME}`],
+    [`${API_HOSTNAME}-x`],
+    [`${API_HOSTNAME}x`],
     [''],
     [undefined],
   ])('does not recognise %j', (hostHeader) => {
     expect(isApiHost(hostHeader)).toBe(false);
+  });
+
+  // The dispatcher trusts what `new URL` reads, so nothing it reads as the API
+  // host may slip past the filter. Latin-1, as Node decodes header bytes.
+  // `@` is left out because what follows it is the host, and here nothing does.
+  it('recognises the API host followed by any byte that cannot continue a name', () => {
+    const missed: string[] = [];
+    for (let byte = 1; byte <= 255; byte += 1) {
+      const character = String.fromCharCode(byte);
+      if (/[a-z0-9.@-]/i.test(character)) continue;
+      if (!isApiHost(`${API_HOSTNAME}${character}`)) missed.push(`${API_HOSTNAME}${character}`);
+    }
+    expect(missed).toEqual([]);
+  });
+
+  it('recognises every single-byte variation that new URL reads as the API host', () => {
+    const missed: string[] = [];
+    for (let position = 0; position <= API_HOSTNAME.length; position += 1) {
+      for (let byte = 1; byte <= 255; byte += 1) {
+        const character = String.fromCharCode(byte);
+        const candidates = [
+          API_HOSTNAME.slice(0, position) + character + API_HOSTNAME.slice(position),
+          API_HOSTNAME.slice(0, position) + character + API_HOSTNAME.slice(position + 1),
+        ];
+        for (const candidate of candidates) {
+          if (URL.canParse(`http://${candidate}`) && new URL(`http://${candidate}`).hostname === API_HOSTNAME) {
+            if (!isApiHost(candidate)) missed.push(candidate);
+          }
+        }
+      }
+    }
+    expect(missed).toEqual([]);
   });
 });
 

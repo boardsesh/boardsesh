@@ -13,6 +13,8 @@
  * rules, extract then.
  */
 
+import { parseRequestTarget } from './request-url';
+
 /**
  * ---------------------------------------------------------------------------
  * Span budget. Re-derive this before changing any rate below.
@@ -277,6 +279,37 @@ export function isGraphqlWsOperation(name: string | undefined): boolean {
   return name === GRAPHQL_EXECUTE_SPAN_NAME || GRAPHQL_WS_OPERATION_NAME.test(name);
 }
 
+/** The target out of Sentry's `<proto>://<authority><target>`, or the whole URL when it has no such prefix. */
+function targetFromSampledUrl(sampledUrl: string, authority: string | undefined): string {
+  if (!authority) return sampledUrl;
+  const authorityPrefix = `://${authority}`;
+  const prefixIndex = sampledUrl.indexOf(authorityPrefix);
+  return prefixIndex === -1 ? sampledUrl : sampledUrl.slice(prefixIndex + authorityPrefix.length);
+}
+
+/**
+ * True for a request the dispatcher will refuse with a 400 (handlers/request-guard.ts).
+ *
+ * The decision has to happen here because sampling runs before the handler, and
+ * a refused request's span would carry the sender's own target and Host to
+ * Sentry. The sampler is never given the raw target, only Sentry's URL, which
+ * joins `X-Forwarded-Host` or `Host` to it unless the target starts with `http`.
+ * Both readings are checked: `GET //` is a valid `http://host//`, and
+ * `GET http://host[/` is only invalid whole. A wrong guess here costs one trace
+ * of a request no real client sends.
+ */
+export function isRefusedRequest(request: BackendSamplingRequest): boolean {
+  const attributeUrl = request.attributes?.['http.url'];
+  const sampledUrl = typeof attributeUrl === 'string' ? attributeUrl : request.normalizedRequest?.url;
+  if (!sampledUrl) return false;
+
+  const headers = request.normalizedRequest?.headers;
+  const attributeHost = request.attributes?.['http.host'];
+  const host = headers?.host ?? (typeof attributeHost === 'string' ? attributeHost : undefined);
+  const target = targetFromSampledUrl(sampledUrl, headers?.['x-forwarded-host'] || host);
+  return parseRequestTarget(target, host) === null || parseRequestTarget(sampledUrl, host) === null;
+}
+
 function stripLeadingMethod(name: string | undefined): string {
   if (!name) return '';
 
@@ -311,6 +344,8 @@ export function resolveBackendTracesSampleRate(request: BackendSamplingRequest):
   if (!hasHttpRequest(request)) {
     return isGraphqlWsOperation(request.name) ? GRAPHQL_SAMPLE_RATE : 0;
   }
+
+  if (isRefusedRequest(request)) return 0;
 
   const path = resolveBackendRequestPath(request);
 

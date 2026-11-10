@@ -104,8 +104,11 @@ if (replicaId) {
   Sentry.setTag('railway_replica_id', replicaId);
 }
 
-// Sentry's default integrations install onUncaughtExceptionIntegration and
-// onUnhandledRejectionIntegration, which capture *and* preserve Node's
-// "exit on unhandled" behavior. Don't add manual process.on() handlers here:
-// they'd shadow Sentry's, and a bare captureException without exit leaves
-// the process in an undefined state (per Node docs).
+// Sentry's default integrations install two process handlers when it is enabled.
+// onUncaughtExceptionIntegration captures the error and exits, as Node would.
+// onUnhandledRejectionIntegration runs in its default `warn` mode: it captures
+// the rejection, logs it and continues, where Node alone would exit. With Sentry
+// disabled neither is installed, so an unhandled rejection exits the process.
+// Don't add manual process.on() handlers here: they'd shadow Sentry's, and a
+// bare captureException without exit leaves the process in an undefined state
+// (per Node docs).
