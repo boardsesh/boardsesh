@@ -1,11 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { oauthAccessToken, oauthSubjects, userProfiles, users } from '@boardsesh/db/schema/auth';
+import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { findPartnerApiPrincipal, type PartnerApiPrincipal, type PartnerBearerResult } from './bearer';
 import { endPartnerConnection } from './connection';
 import { lockPartnerConnection } from './locks';
 import type { PartnerDatabase } from './tables';
 import { isPartnerDatabaseBusy, runInPartnerTransaction } from './transaction';
+
+/** foreign_key_violation */
+const FOREIGN_KEY_VIOLATION = '23503';
 
 /** What `/v1/me` reads. The handler shapes it into the public contract. */
 export interface PartnerClimberRecord {
@@ -108,15 +112,23 @@ export function createPartnerApiAccess({
       return findPartnerApiPrincipal(database, { accessTokenHash: await hashAccessToken(accessToken), resource });
     },
 
-    readClimber(principal) {
-      return runInPartnerTransaction(database, async (transaction) => {
-        // Read even without profile:read, so a climber deleted since the token
-        // check gets a 401 rather than a subject minted for nobody.
-        const profile = await readProfile(transaction, principal.userId);
-        if (!profile) return null;
-        const subject = await ensurePartnerSubject(transaction, principal.userId, principal.clientId);
-        return principal.scopes.includes('profile:read') ? { subject, profile } : { subject };
-      });
+    async readClimber(principal) {
+      try {
+        return await runInPartnerTransaction(database, async (transaction) => {
+          // Read even without profile:read, so a climber deleted since the token
+          // check gets a 401 rather than a subject minted for nobody.
+          const profile = await readProfile(transaction, principal.userId);
+          if (!profile) return null;
+          const subject = await ensurePartnerSubject(transaction, principal.userId, principal.clientId);
+          return principal.scopes.includes('profile:read') ? { subject, profile } : { subject };
+        });
+      } catch (error) {
+        // A deletion of the climber or the app that commits between the profile
+        // read and the subject insert fails the insert's foreign key. The token
+        // went with it, so this is the same answer as a token that is gone.
+        if (getPostgresErrorCode(error) === FOREIGN_KEY_VIOLATION) return null;
+        throw error;
+      }
     },
 
     /**

@@ -8,12 +8,7 @@ import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { isApiHost } from '../api-host';
 import { partnerPreflightHeaders, partnerResponseCorsHeaders } from '../partner-cors';
-import {
-  chargePartnerLimit,
-  PartnerRateLimited,
-  partnerRateLimitedHeaders,
-  RateLimitLedger,
-} from '../partner-rate-limits';
+import { PartnerRateLimited, partnerRateLimitedHeaders, RateLimitLedger } from '../partner-rate-limits';
 import {
   apiErrorBody,
   matchPublicApiPreflight,
@@ -32,11 +27,14 @@ type PartnerApiPrincipal = Parameters<PartnerRuntime['api']['readClimber']>[0];
 const API_PER_CONNECTION = 120;
 const API_PER_APP = 6000;
 /**
- * Token lookups that found nothing, per client address. Checked before the
- * lookup and charged only after it fails, so an app's server polling many
- * climbers from one address is never held by it. One address refreshing every
- * climber's hourly token at this rate serves 36,000 climbers, the same sizing
- * as the refresh bound on the token endpoint.
+ * Token lookups that found nothing, per client address. Charged, and refused
+ * with 429, only after a lookup has failed: never before one. Many partners
+ * share one address (every Cloudflare Worker reaches us as the same
+ * `CF-Connecting-IP`, and carrier and cloud NAT do the same), so a check before
+ * the lookup would let one sender of junk lock every neighbour's valid token
+ * out. The database work junk can cause is bounded by the `/v1` admission lane
+ * instead. One address refreshing every climber's hourly token at this rate
+ * serves 36,000 climbers, the sizing of the token endpoint's refresh bound.
  */
 const INVALID_TOKENS_PER_IP = 600;
 
@@ -142,10 +140,11 @@ export function createPublicApiHandler({
   }
 
   /**
-   * The order matters for who can spend what. Nothing reads the database
-   * before the address check; an app's and a connection's budgets are charged
-   * only once a token for them has passed, so a caller without one cannot
-   * spend either.
+   * The order matters for who can spend what. The lookup runs inside the
+   * two-permit `/v1` lane, which bounds what junk can cost the database. A
+   * failed lookup charges its address; a passed one never reads that count.
+   * An app's and a connection's budgets are charged only once a token for
+   * them has passed, so a caller without one cannot spend either.
    */
   async function serveRequest(
     req: IncomingMessage,
@@ -162,13 +161,13 @@ export function createPublicApiHandler({
       return unauthorized(requestId, challenge, bearer.problem);
     }
 
-    await ledger.check(clientIp, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
     const permit = await runtime.admission.acquire('api');
     if (!permit) return unavailable(requestId);
     try {
       const result = await runtime.api.authenticate(bearer.token);
       if (!result.principal) {
-        await chargePartnerLimit(clientIp, 'api-invalid-token-ip');
+        // Counts this failure and refuses with 429 once the address is past its limit.
+        await ledger.consume(clientIp, 'api-invalid-token-ip', INVALID_TOKENS_PER_IP);
         return unauthorized(requestId, CHALLENGE_INVALID_TOKEN, result.refusal);
       }
       const { principal } = result;

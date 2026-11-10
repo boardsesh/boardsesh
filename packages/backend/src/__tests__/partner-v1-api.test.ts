@@ -277,7 +277,13 @@ describe('the public /v1 API', () => {
       ['data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', null],
       ['ftp://files.example.test/alex.png', null],
       ['avatars/alex.webp', null],
-      ['https://cdn.example.test/alex.webp', 'https://cdn.example.test/alex.webp'],
+      // What updateProfile accepts and a partner's server must never fetch.
+      ['http://boardsesh-backend.railway.internal/x', null],
+      ['https://user:pass@evil.example/x.png', null],
+      ['http://instance-data.ec2.internal/latest/meta-data/', null],
+      ['https://cdn.example.test/alex.webp', null],
+      [`${MEDIA_BASE_URL}/avatars/alex.webp?v=2`, `${MEDIA_BASE_URL}/avatars/alex.webp?v=2`],
+      ['https://lh3.googleusercontent.com/a/ACg8ocAlex=s96-c', 'https://lh3.googleusercontent.com/a/ACg8ocAlex=s96-c'],
     ])('maps a stored avatar of %j to %j', async (stored, expected) => {
       const client = await environment.createClient();
       await db.insert(userProfiles).values({ userId: client.owner.userId, avatarUrl: stored });
@@ -291,12 +297,12 @@ describe('the public /v1 API', () => {
       const client = await environment.createClient();
       await db
         .update(users)
-        .set({ name: 'Sam', image: 'https://lh3.googleusercontent.test/sam.png' })
+        .set({ name: 'Sam', image: 'https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=7' })
         .where(eq(users.id, client.owner.userId));
       const issued = await environment.issueTokens(client, ['profile:read']);
       expect(JSON.parse((await getMe(issued.access_token)).body)).toMatchObject({
         displayName: 'Sam',
-        avatarUrl: 'https://lh3.googleusercontent.test/sam.png',
+        avatarUrl: 'https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=7',
       });
     });
 
@@ -803,7 +809,7 @@ describe('the public /v1 API', () => {
       expect(limited.headers['ratelimit-limit']).toBe('6000');
     });
 
-    it('counts failed lookups per address, and refuses that address before any lookup', async () => {
+    it('counts failed lookups per address, and answers 429 past 600 only after a lookup failed', async () => {
       await enoughWindowLeft();
       const clientIp = randomClientIp();
       const client = await environment.createClient();
@@ -819,14 +825,30 @@ describe('the public /v1 API', () => {
       await seedLimiter(clientIp, 'api-invalid-token-ip', 600);
       const authenticate = vi.spyOn(runtime.api, 'authenticate');
       try {
-        const limited = await getMe(issued.access_token, { clientIp });
+        const limited = await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp });
         expect(limited.status).toBe(429);
         expect(limited.headers['ratelimit-limit']).toBe('600');
-        expect(authenticate).not.toHaveBeenCalled();
+        expect(Number(limited.headers['retry-after'])).toBeGreaterThan(0);
+        expect(ApiErrorResponseSchema.parse(JSON.parse(limited.body)).error).toBe('rate_limited');
+        expect(authenticate).toHaveBeenCalledTimes(1);
       } finally {
         authenticate.mockRestore();
       }
-      expect((await getMe(issued.access_token)).status).toBe(200);
+    });
+
+    it("never refuses a valid token for a neighbour's failed lookups at the same address", async () => {
+      await enoughWindowLeft();
+      // One Cloudflare Worker address, carrier NAT or cloud NAT gateway: many partners, one bucket.
+      const sharedAddress = randomClientIp();
+      await seedLimiter(sharedAddress, 'api-invalid-token-ip', 5000);
+      const client = await environment.createClient();
+      const issued = await environment.issueTokens(client);
+      const answered = await getMe(issued.access_token, { clientIp: sharedAddress });
+      expect(answered.status).toBe(200);
+      // The neighbour's count is never read, and never published to this app.
+      expect(answered.headers['ratelimit-limit']).toBe('120');
+      expect((await disconnect(issued.access_token, { clientIp: sharedAddress })).status).toBe(204);
+      expect(await limiterCount(sharedAddress, 'api-invalid-token-ip')).toBe(5000);
     });
   });
 
@@ -848,6 +870,84 @@ describe('the public /v1 API', () => {
         for (const permit of running) permit?.release();
       }
       for (const permit of await Promise.all(queued)) permit?.release();
+    });
+
+    it('holds lookups for junk tokens to the two /v1 permits, leaving one for token work', async () => {
+      const realAuthenticate = runtime.api.authenticate.bind(runtime.api);
+      let inFlight = 0;
+      let mostInFlight = 0;
+      const authenticate = vi.spyOn(runtime.api, 'authenticate').mockImplementation(async (token) => {
+        inFlight += 1;
+        mostInFlight = Math.max(mostInFlight, inFlight);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return await realAuthenticate(token);
+        } finally {
+          inFlight -= 1;
+        }
+      });
+      try {
+        const sharedAddress = randomClientIp();
+        const junk = Array.from({ length: 10 }, () =>
+          getMe(`junk${randomUUID().replaceAll('-', '')}`, { clientIp: sharedAddress }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const tokenPermit = await runtime.admission.acquire('token');
+        expect(tokenPermit).not.toBeNull();
+        tokenPermit?.release();
+        const statuses = (await Promise.all(junk)).map((answer) => answer.status);
+        expect(statuses.every((status) => status === 401)).toBe(true);
+        expect(authenticate).toHaveBeenCalledTimes(10);
+        expect(mostInFlight).toBe(2);
+      } finally {
+        authenticate.mockRestore();
+      }
+    });
+
+    it('answers 401 when the climber is deleted between the profile read and the subject insert', async () => {
+      const developer = await environment.createClimber();
+      const client = await environment.createClient({ owner: developer });
+      const climber = await environment.createClimber();
+      const authorization = await environment.authorize(client, { climber });
+      const accessToken = (await environment.exchange(client, authorization)).body.access_token!;
+      const deleter = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      try {
+        let commit: () => void = () => {};
+        const committing = new Promise<void>((resolve) => {
+          commit = resolve;
+        });
+        let deleted: () => void = () => {};
+        const rowDeleted = new Promise<void>((resolve) => {
+          deleted = resolve;
+        });
+        // The deletion runs (and cascades) first, then waits to commit.
+        const deletion = deleter.begin(async (transaction) => {
+          await transaction`delete from users where id = ${climber.userId}`;
+          deleted();
+          await committing;
+        });
+        await rowDeleted;
+        const answering = getMe(accessToken);
+        // Commit only once /v1/me is waiting on the foreign key of its subject insert.
+        const waitingOnInsert = async () =>
+          (
+            await db.execute(sql`
+              select 1 from pg_stat_activity
+              where datname = current_database() and wait_event_type = 'Lock'
+                and query ilike 'insert into "oauth_subjects"%'
+            `)
+          ).length > 0;
+        const deadline = Date.now() + 5000;
+        while (!(await waitingOnInsert()) && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(await waitingOnInsert()).toBe(true);
+        commit();
+        await deletion;
+        expectInvalidToken(await answering);
+      } finally {
+        await deleter.end({ timeout: 5 });
+      }
     });
 
     it('answers 500 in the documented shape when the database fails, and logs no token or hash', async () => {

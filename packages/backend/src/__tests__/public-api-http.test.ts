@@ -75,17 +75,49 @@ describe('the bearer header', () => {
 });
 
 describe('avatar URLs', () => {
+  const GOOGLE_PICTURE = 'https://lh3.googleusercontent.com/a/ACg8ocKxYz=s96-c';
+  const FACEBOOK_PICTURE = 'https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=1&height=50&width=50';
+
   it.each([
-    ['https://cdn.example.test/alex.webp', 'https://cdn.example.test/alex.webp'],
-    ['http://cdn.example.test/alex.webp', 'http://cdn.example.test/alex.webp'],
-    ['  https://cdn.example.test/alex.webp  ', 'https://cdn.example.test/alex.webp'],
     ['/static/avatars/abc.webp?v=3', `${MEDIA}/avatars/abc.webp?v=3`],
     ['/static/avatars/abc.webp', `${MEDIA}/avatars/abc.webp`],
+    [`${MEDIA}/avatars/abc.webp?v=3`, `${MEDIA}/avatars/abc.webp?v=3`],
+    [GOOGLE_PICTURE, GOOGLE_PICTURE],
+    ['https://lh5.googleusercontent.com/-abc/photo.jpg', 'https://lh5.googleusercontent.com/-abc/photo.jpg'],
+    [FACEBOOK_PICTURE, FACEBOOK_PICTURE],
+    [
+      'https://scontent-lhr8-1.xx.fbcdn.net/v/t1.30497-1/p50x50.jpg',
+      'https://scontent-lhr8-1.xx.fbcdn.net/v/t1.30497-1/p50x50.jpg',
+    ],
+    [`  ${GOOGLE_PICTURE}  `, GOOGLE_PICTURE],
   ])('keeps or resolves %j', (stored, expected) => {
     expect(publicAvatarUrl(stored, MEDIA)).toBe(expected);
   });
 
   it.each([
+    // Hosts a server-side fetch must never be sent to.
+    ['http://boardsesh-backend.railway.internal/x'],
+    ['http://instance-data.ec2.internal/latest/meta-data/'],
+    ['http://169.254.169.254/latest/meta-data/'],
+    ['https://metadata.google.internal/computeMetadata/v1/'],
+    ['https://localhost/avatar.png'],
+    ['https://127.0.0.1/avatar.png'],
+    // Any other host a climber typed.
+    ['https://cdn.example.test/alex.webp'],
+    ['https://evil.example/x.png'],
+    ['https://user:pass@evil.example/x.png'],
+    // The allowed hosts, but not over https, with credentials, a port, or as a suffix.
+    ['http://lh3.googleusercontent.com/a/ACg8ocKxYz'],
+    ['https://user:pass@lh3.googleusercontent.com/a/ACg8ocKxYz'],
+    ['https://lh3.googleusercontent.com:8443/a/ACg8ocKxYz'],
+    ['https://lh3.googleusercontent.com.evil.example/a'],
+    ['https://drive.googleusercontent.com/a'],
+    ['https://evilfbcdn.net/x.jpg'],
+    ['https://scontent.fbcdn.net.evil.example/x.jpg'],
+    ['http://platform-lookaside.fbsbx.com/platform/profilepic/'],
+    ['http://media.boardsesh.test/avatars/abc.webp'],
+    ['https://media.boardsesh.test:8443/avatars/abc.webp'],
+    ['https://media.boardsesh.test.evil.example/avatars/abc.webp'],
     ['javascript:alert(1)'],
     ['JAVASCRIPT:alert(1)'],
     ['data:image/png;base64,iVBORw0KGgo='],

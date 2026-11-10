@@ -495,14 +495,19 @@ Availability is protected before any transaction opens:
 For `/v1`, in this order:
 
 1. No `Authorization: Bearer` header is a `401` at once, with no lookup.
-2. The address's count of failed token lookups is checked: 600 a minute, the same
-   sizing as the token endpoint's per-address refresh bound. It is charged only
-   when a lookup finds no usable token, so an app's server polling many climbers
-   from one address is never held by it.
-3. A `/v1` admission permit, then the token lookup on the primary.
-4. Only then are the connection (120 a minute, `api-connection`) and the app (6,000
-   a minute, `api-app`) charged. A caller without a valid token for them cannot
-   spend either.
+2. A `/v1` admission permit, then the token lookup on the primary. The two `/v1`
+   permits, 16 waiting and the 1 s deadline are what bound the database work junk
+   tokens can cause.
+3. A lookup that finds no usable token is charged to the address: 600 a minute, the
+   sizing of the token endpoint's per-address refresh bound. Past that the address
+   gets `429` instead of `401`. The count is never read before a lookup, and a
+   valid token never sees it. Many partners share one address (every Cloudflare
+   Worker reaches us as the same `CF-Connecting-IP`; carrier NAT, cloud NAT
+   gateways and shared hosting do the same), so a check before the lookup would let
+   one sender of junk lock all of them out.
+4. Only once a token has passed are the connection (120 a minute,
+   `api-connection`) and the app (6,000 a minute, `api-app`) charged. A caller
+   without a valid token for them cannot spend either.
 
 ### Browser access
 
@@ -732,6 +737,14 @@ Milestone 1 routes:
 | `DELETE /v1/connection` | any | Disconnect this token's app/climber connection; `204`, or `401` if its credentials are already invalid |
 | `GET /v1/logbook/changes?cursor=&limit=` | `logbook:read` | The change feed below |
 | `GET /v1/logbook/ticks/{id}` | `logbook:read` | One tick, or `404` if it was deleted or never existed |
+
+`avatarUrl` is only ever an https URL on our media host (an uploaded avatar, stored
+as a `/static/avatars/…` path, is resolved to it) or on a sign-in provider's image
+host: Google's `lh<n>.googleusercontent.com`, Facebook's
+`platform-lookaside.fbsbx.com` and `*.fbcdn.net`. Sign in with Apple shares no
+picture. A profile can hold any URL the climber typed, and an app that fetches
+avatars on its server must never be pointed at an internal host or a cloud metadata
+service, so everything else, including credentials or a port in the URL, is `null`.
 
 Milestone 3 adds `/v1/workouts` (see partner-api.md).
 
@@ -1328,7 +1341,7 @@ What LEGAL.md implies:
 | Token endpoint, whole app | 6,000 requests/min | `oauth-client:<clientId>` |
 | API, per connection | 120 requests/min per (app, climber) | `<clientId>:<userId>` under `api-connection`, charged once the token has passed |
 | API, per app | 6,000 requests/min across all its climbers | `<clientId>` under `api-app`, charged once the token has passed |
-| API, failed token lookups | 600/min per client IP | `<ip>` under `api-invalid-token-ip`; checked before the lookup, charged only when it fails |
+| API, failed token lookups | 600/min per client IP | `<ip>` under `api-invalid-token-ip`; charged, and refused with 429, only after a lookup fails, never before one |
 | Page size | 200 | |
 | Snapshot creation | 2 per minute per connection, one active build | Only a real creation counts: a retry joins the snapshot that already exists. Incomplete snapshots never become a partial full download |
 | New connections | 200/day per app | Postgres count, not Redis, so it cannot fail open |

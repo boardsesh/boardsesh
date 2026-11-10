@@ -73,12 +73,38 @@ export function parseBearerAuthorization(header: string | undefined): ParsedBear
 }
 
 /**
- * An http(s) URL an app can put in an `<img>`, or null. Uploaded avatars are
+ * The image hosts of the sign-in providers whose picture lands in
+ * `users.image` (`web/app/lib/auth/auth-options.ts`): Google's profile photo
+ * hosts, and Facebook's `picture.data.url` host and CDN. Sign in with Apple
+ * shares no picture, so it has none.
+ */
+const SIGN_IN_PROVIDER_IMAGE_HOSTS: ReadonlyArray<(hostname: string) => boolean> = [
+  (hostname) => /^lh\d+\.googleusercontent\.com$/.test(hostname),
+  (hostname) => hostname === 'platform-lookaside.fbsbx.com' || hostname.endsWith('.fbcdn.net'),
+];
+
+/**
+ * Only a URL on our own media host or a sign-in provider's image host, over
+ * https, with no credentials and no port. A climber can type any URL into
+ * their profile, and an app that fetches avatars on its server must never be
+ * pointed at an internal host or its own cloud metadata service.
+ */
+function isServableAvatarUrl(candidate: string, mediaBaseUrl: string | null): boolean {
+  if (!URL.canParse(candidate)) return false;
+  const url = new URL(candidate);
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+  const mediaOrigin = mediaBaseUrl && URL.canParse(mediaBaseUrl) ? new URL(mediaBaseUrl).origin : null;
+  if (url.origin === mediaOrigin) return true;
+  return SIGN_IN_PROVIDER_IMAGE_HOSTS.some((isProviderHost) => isProviderHost(url.hostname));
+}
+
+/**
+ * An https URL an app can put in an `<img>`, or null. Uploaded avatars are
  * stored as backend-relative `/static/avatars/…` paths, so those become the
- * public media URL the backend would redirect them to. Anything else that is
- * not http or https (`javascript:`, `data:`, a bare path, junk) is null. The
- * contract's own `z.httpUrl()` decides, so this can never send a value the
- * response schema would refuse.
+ * public media URL the backend would redirect them to. A sign-in provider's
+ * picture passes as it is. Anything else (`javascript:`, `data:`, a bare path,
+ * another host, junk) is null. The contract's own `z.httpUrl()` has the last
+ * word, so this can never send a value the response schema would refuse.
  */
 export function publicAvatarUrl(stored: string | null, mediaBaseUrl: string | null): string | null {
   const trimmed = stored?.trim();
@@ -89,7 +115,8 @@ export function publicAvatarUrl(stored: string | null, mediaBaseUrl: string | nu
     const relative = new URL(trimmed, 'https://backend.invalid');
     candidate = staticPathToMediaRedirect(relative.pathname, relative.searchParams, mediaBaseUrl);
   }
-  return candidate && MeResponseSchema.shape.avatarUrl.safeParse(candidate).success ? candidate : null;
+  if (!candidate || !isServableAvatarUrl(candidate, mediaBaseUrl)) return null;
+  return MeResponseSchema.shape.avatarUrl.safeParse(candidate).success ? candidate : null;
 }
 
 export interface ClimberRecord {
