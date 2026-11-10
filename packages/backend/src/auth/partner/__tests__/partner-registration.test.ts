@@ -641,6 +641,58 @@ describe('partner app registration', () => {
       throw new Error(`Fewer than ${minimum} sessions ever waited on a lock`);
     }
 
+    it('makes a password reset racing an app delete wait for it, instead of deadlocking', async () => {
+      // The reset trigger takes the climber's users row, then their connections
+      // and consent screens. The delete takes users FOR SHARE before any of
+      // those, so the two queue in one order instead of crossing.
+      const developerId = await createDeveloper();
+      const created = await register(developerId);
+      const { clientId } = created.app;
+      expect((await connect(testClient(created, await environment.createClimber()))).response.status).toBe(200);
+      expect((await connect(testClient(created, await environment.createClimber()))).response.status).toBe(200);
+      const rows = await db
+        .select({ id: oauthConnections.id, userId: oauthConnections.userId })
+        .from(oauthConnections)
+        .where(eq(oauthConnections.clientId, clientId));
+      rows.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+      // The delete locks connections in id order, so it parks on the first.
+      const [held, target] = rows;
+      await db.insert(oauthConsentInteractions).values({
+        digest: `digest-${randomUUID()}`,
+        userId: target.userId,
+        authSessionId: `session-${randomUUID()}`,
+        clientId,
+        connectionGeneration: 1,
+        expiresAt: new Date(Date.now() + 600_000),
+      });
+
+      const issuer = await raw.reserve();
+      const reset = await raw.reserve();
+      try {
+        await issuer`BEGIN`;
+        await issuer`SELECT 1 FROM oauth_connections WHERE id = ${held.id} FOR UPDATE`;
+        const deleting = runtime.registration.deleteApp(consoleDatabase, developerId, clientId);
+        await waitForLockWaiters(1);
+        await reset`BEGIN`;
+        const resetting = reset`
+          INSERT INTO user_credentials (user_id, password_hash) VALUES (${target.userId}, 'hash')
+          ON CONFLICT (user_id) DO UPDATE SET password_hash = 'hash-' || now()::text`.then(
+          () => 'written',
+          (error: unknown) => getPostgresErrorCode(error),
+        );
+        await waitForLockWaiters(2);
+        await issuer`ROLLBACK`;
+        expect(await deleting).toBe(true);
+        expect(await resetting).toBe('written');
+        await reset`COMMIT`;
+      } finally {
+        await issuer`ROLLBACK`.catch(() => undefined);
+        await reset`ROLLBACK`.catch(() => undefined);
+        issuer.release();
+        reset.release();
+      }
+    });
+
     it('gives way as busy, never deadlocking, to a consent answer holding a screen opened mid-delete', async () => {
       const developerId = await createDeveloper();
       const climber = await environment.createClimber();

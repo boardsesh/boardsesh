@@ -1,18 +1,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { BetterAuthPlugin } from 'better-auth';
 import { createAuthMiddleware, isAPIError } from 'better-auth/api';
-import { and, asc, count, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   oauthAppPolicy,
   oauthClient,
   oauthClientResource,
   oauthConnections,
-  oauthConsentInteractions,
   oauthGrants,
   oauthVerification,
   users,
 } from '@boardsesh/db/schema/auth';
 import type { PartnerAuthority } from './authority';
+import { lockAppForDeletion } from './locks';
 import type { PartnerAuthorityConfiguration } from './configuration';
 import { PARTNER_SCOPES } from './configuration';
 import type { PartnerRegisteredOrigins } from './registered-origins';
@@ -187,58 +187,6 @@ async function countActiveConnections(
 
 async function activeConnectionsOf(database: PartnerDatabase, clientId: string): Promise<number> {
   return (await countActiveConnections(database, [clientId])).get(clientId) ?? 0;
-}
-
-/**
- * Takes, before an app's delete cascades, every lock the cascade would
- * otherwise take in Postgres's own order, and takes them in the partner lock
- * order instead (`locks.ts`): each climber's `users` row FOR SHARE, then the
- * app's open consent screens, then its connections, then provider rows (the
- * cascade itself). A consent answer locks its screen before the connection, so
- * the screens come first here too; Disconnect and the password trigger lock the
- * connection and then skip or wait for nothing this holds. Without this, a
- * cascade holding a connection could wait on a screen that a consent answer
- * holds while that answer waits on the connection.
- *
- * Rows are locked in key order, so two deletions of overlapping state queue
- * instead of crossing. A screen opened after the first pass and already held by
- * a consent answer is the one wait that could still close a cycle: that answer
- * waits on a connection this now holds. The second pass refuses to wait for it
- * (NOWAIT), so the deletion gives up as "busy" and the developer retries, rather
- * than Postgres aborting the climber's answer.
- */
-async function lockAppForDeletion(transaction: PartnerDatabase, clientId: string): Promise<void> {
-  const connectionClimbers = transaction
-    .select({ userId: oauthConnections.userId })
-    .from(oauthConnections)
-    .where(eq(oauthConnections.clientId, clientId));
-  const screenClimbers = transaction
-    .select({ userId: oauthConsentInteractions.userId })
-    .from(oauthConsentInteractions)
-    .where(eq(oauthConsentInteractions.clientId, clientId));
-  await transaction
-    .select({ id: users.id })
-    .from(users)
-    .where(or(inArray(users.id, connectionClimbers), inArray(users.id, screenClimbers)))
-    .orderBy(asc(users.id))
-    .for('share');
-  await transaction
-    .select({ digest: oauthConsentInteractions.digest })
-    .from(oauthConsentInteractions)
-    .where(eq(oauthConsentInteractions.clientId, clientId))
-    .orderBy(asc(oauthConsentInteractions.digest))
-    .for('update');
-  await transaction
-    .select({ id: oauthConnections.id })
-    .from(oauthConnections)
-    .where(eq(oauthConnections.clientId, clientId))
-    .orderBy(asc(oauthConnections.id))
-    .for('update');
-  await transaction
-    .select({ digest: oauthConsentInteractions.digest })
-    .from(oauthConsentInteractions)
-    .where(eq(oauthConsentInteractions.clientId, clientId))
-    .for('update', { noWait: true });
 }
 
 function isSuspended(row: OAuthClientRow, policy: OAuthAppPolicyRow | null | undefined): boolean {

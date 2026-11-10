@@ -2223,6 +2223,68 @@ describe('partner OAuth on, in the real server', () => {
       },
       SUITE_DEADLINE_MS,
     );
+
+    it(
+      "deleting a developer's account while a consent answer, a refresh and a Disconnect queue on its app: no deadlock",
+      async () => {
+        // The users delete cascades into the developer's apps, so account
+        // deletion takes the same partner-order locks as an app delete first
+        // (lockOwnedAppsForDeletion). Same gun as above: a key share on the app
+        // row parks the cascade at the moment it would delete the app.
+        const app = await registerApp();
+        const climber = await newClimber();
+        const narrow = await connect(app, climber, { scopes: ['offline_access'] });
+        const other = await connect(app, await newClimber());
+        const wider = await startAuthorization(app);
+        const { location } = await openAuthorize(wider.url, climber);
+        expect(location.startsWith(`${CONSENT_PAGE}?`)).toBe(true);
+        const developerBearer = await firstPartyToken(app.developerId);
+
+        const holder = await rawSql.reserve();
+        try {
+          await holder`BEGIN`;
+          await holder`SELECT 1 FROM oauth_client WHERE client_id = ${app.clientId} FOR KEY SHARE`;
+          let deleteFinished = false;
+          const deleting = server
+            .graphql(`mutation { deleteAccount(input: { removeSetterName: false }) }`, {}, { bearer: developerBearer })
+            .finally(() => {
+              deleteFinished = true;
+            });
+          await waitForLockWaiters(1, () => deleteFinished);
+          const consenting = approve(location, climber);
+          await waitForLockWaiters(2);
+          const refreshing = refresh(app, narrow.tokens.refresh_token);
+          await waitForLockWaiters(3);
+          const disconnecting = disconnectByApp(app, other.tokens.access_token);
+          await waitForLockWaiters(4);
+          await holder`ROLLBACK`;
+
+          const [deleted, consented, refreshed, disconnected] = await Promise.all([
+            deleting,
+            consenting,
+            refreshing,
+            disconnecting,
+          ]);
+          expect({ errors: deleted.errors, deleted: deleted.data?.deleteAccount }).toEqual({
+            errors: undefined,
+            deleted: true,
+          });
+          expect({
+            consent: consented.reply.status,
+            refreshIssued: refreshed.ok,
+            refreshServerError: !refreshed.ok && (refreshed.status ?? 0) >= 500,
+            disconnectServerError: disconnected.status >= 500,
+          }).toEqual({ consent: 400, refreshIssued: false, refreshServerError: false, disconnectServerError: false });
+        } finally {
+          holder.release();
+        }
+        expect(await db.$count(users, eq(users.id, app.developerId))).toBe(0);
+        for (const table of [oauthConnections, oauthConsentInteractions, oauthRefreshToken] as const) {
+          expect(await db.$count(table, eq(table.clientId, app.clientId))).toBe(0);
+        }
+      },
+      SUITE_DEADLINE_MS,
+    );
   });
 
   // -------------------------------------------------------------------------

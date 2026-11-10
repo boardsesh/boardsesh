@@ -43,6 +43,9 @@ const PARTNER_ENTRY_POINTS: Readonly<Record<string, readonly string[]>> = {
   'packages/backend/src/services/partner-oauth-sweep.ts': ['../auth/partner/retention'],
   // The ops script's set-publisher command applies registration's own name rules.
   'packages/backend/src/scripts/partner-app-admin.ts': ['../auth/partner/registration-rules'],
+  // Account deletion takes a developer's partner app locks in the partner order
+  // before its cascade reaches them (plain SQL, whatever the mode).
+  'packages/backend/src/graphql/resolvers/users/mutations.ts': ['../../../auth/partner/locks'],
 };
 /** The sweep itself: plain SQL on the partner tables. */
 const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
@@ -51,7 +54,7 @@ const PARTNER_SWEEP_MODULE = `${PARTNER_ROOT}retention.ts`;
  * the authority is dynamic (checked below). They import no Better Auth and no
  * other partner module but `mode`.
  */
-const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts'];
+const PARTNER_ENTRY_TARGETS = ['mode.ts', 'routes.ts', 'registration-rules.ts', 'locks.ts'];
 
 interface Manifest {
   dependencies?: Record<string, string>;

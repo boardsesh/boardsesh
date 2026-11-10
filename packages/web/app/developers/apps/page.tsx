@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { DEVELOPER_CONSOLE_FLAG } from '@/app/flags';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { PageShell } from '@/app/components/ui/page-shell';
-import { getPosthogDistinctId } from '@/app/lib/feature-flags/server-distinct-id';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { getServerFeatureFlag } from '@/app/lib/feature-flags/server-feature-flag';
 import { localeHref } from '@/app/lib/i18n/locale-href';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -33,9 +33,16 @@ export async function generateMetadata(): Promise<Metadata> {
  * unreachable, the page is a 404. The backend gates every operation again
  * (PARTNER_OAUTH_MODE and its developer allowlist), and the page says which
  * of those refused.
+ *
+ * The session is read directly rather than through `getPosthogDistinctId`,
+ * which reads a credential-authority outage as "signed out": here that would
+ * send a signed-in developer to sign in again. The outage throws instead, and
+ * the error page says so.
  */
 export default async function DeveloperAppsPage() {
-  const [{ t, locale }, distinctId] = await Promise.all([getServerTranslation('developers'), getPosthogDistinctId()]);
+  const [{ t, locale }, session] = await Promise.all([getServerTranslation('developers'), getAdmittedServerSession()]);
+  // `users.id`, the id PostHog knows the developer by (see getPosthogDistinctId).
+  const distinctId = session?.user?.id ?? null;
   if (!distinctId) {
     const returnPath = localeHref(CONSOLE_PATH, locale);
     redirect(`${localeHref('/auth/login', locale)}?callbackUrl=${encodeURIComponent(returnPath)}`);

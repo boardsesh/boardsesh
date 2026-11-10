@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({
-  distinctId: vi.fn(),
+  session: vi.fn(),
   flag: vi.fn(),
   locale: { current: 'en-US' },
 }));
@@ -14,7 +14,7 @@ vi.mock('next/navigation', () => ({
     throw new Error(`REDIRECT:${href}`);
   },
 }));
-vi.mock('@/app/lib/feature-flags/server-distinct-id', () => ({ getPosthogDistinctId: mocks.distinctId }));
+vi.mock('@/app/lib/auth/admitted-session.server', () => ({ getAdmittedServerSession: mocks.session }));
 vi.mock('@/app/lib/feature-flags/server-feature-flag', () => ({ getServerFeatureFlag: mocks.flag }));
 vi.mock('@/app/lib/i18n/server', () => ({
   getServerTranslation: async () => ({ t: (key: string) => key, locale: mocks.locale.current }),
@@ -25,7 +25,7 @@ const { default: DeveloperAppsPage, generateMetadata } = await import('../page')
 
 beforeEach(() => {
   mocks.locale.current = 'en-US';
-  mocks.distinctId.mockReset().mockResolvedValue('developer-account');
+  mocks.session.mockReset().mockResolvedValue({ user: { id: 'developer-account' } });
   mocks.flag.mockReset().mockResolvedValue(true);
 });
 
@@ -42,10 +42,16 @@ describe('developer console page', () => {
 
   it('sends a signed-out visitor to sign in first, keeping the locale, and shows them nothing', async () => {
     mocks.locale.current = 'de';
-    mocks.distinctId.mockResolvedValue(null);
+    mocks.session.mockResolvedValue(null);
     await expect(DeveloperAppsPage()).rejects.toThrow(
       `REDIRECT:/de/auth/login?callbackUrl=${encodeURIComponent('/de/developers/apps')}`,
     );
+    expect(mocks.flag).not.toHaveBeenCalled();
+  });
+
+  it('shows an error, not a sign-in loop, when the credential authority is down', async () => {
+    mocks.session.mockRejectedValue(new Error('credential authority unavailable'));
+    await expect(DeveloperAppsPage()).rejects.toThrow('credential authority unavailable');
     expect(mocks.flag).not.toHaveBeenCalled();
   });
 
