@@ -592,9 +592,13 @@ For `/v1`, in this order:
    8 overflow places. The Worker writes the zone header, so every zone behind the
    Worker address together also holds at most 12 of the shared lane's places and
    8 of overflow's, and the give-up rule weighs a Worker request by that shared
-   count. Forged zones can fill the Worker share and slow every Worker-hosted
-   app, but never take the 6 shared and 5 overflow places left for everyone
-   else, and they are the first to give a place up to anyone else.
+   count. Forged zones can fill the Worker share, but never take the 6 shared and
+   5 overflow places left for everyone else, and they are the first to give a
+   place up to anyone else. Inside a full Worker share the same give-up rule runs
+   among the zones: the zone holding the most places gives its newest waiting
+   place to a zone that would hold fewer. So two junk zones holding all 12 shared
+   and 8 overflow Worker places cannot shut out a third zone with nothing in
+   flight; before this, its valid token answered `503` at once.
 3. A lookup that finds no usable token is charged to the address: 600 a minute, the
    sizing of the token endpoint's per-address refresh bound. Past that the address
    gets `429` instead of `401`. Only a failed lookup is ever refused for this count;
@@ -603,12 +607,12 @@ For `/v1`, in this order:
    (carrier NAT, cloud NAT gateways and shared hosting), so refusing on the count
    before a lookup would let one sender of junk lock all of them out. A Worker is
    counted by zone, so one zone's junk never turns another zone's expired-token
-   `401`s into `429`s. Every zone together also counts against 6,000 a minute on
-   the Worker address (`api-invalid-token-ip-worker-egress`, the OAuth routes'
-   10-times rule), so forged zones cannot multiply the budget without end. The
-   trade-off: a sender that fails 6,000 lookups a minute through Workers makes
-   every Worker-hosted app's failed lookups answer `429` for the rest of that
-   minute, while their valid tokens are still served.
+   `401`s into `429`s. Unlike the OAuth routes, nothing counts every zone
+   together: this count is charged after the lookup, so a ceiling on it would
+   save no database work, and its only effect would be to let one junk Worker
+   turn every Worker partner's `401`s into `429`s. A Worker that forges new zone
+   names dodges its own 600; the lanes above still hold every Worker zone
+   together to its share of the database.
 
 Measured on a laptop, two runs, with 48 concurrent junk loops from one address for
 2 s and a valid token sent every 20 ms from another address and from the flooding

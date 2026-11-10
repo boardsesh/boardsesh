@@ -692,6 +692,60 @@ describe('the admission gate', () => {
       await releaseAll([...zones, neighbour, ...moreZones]);
     });
 
+    it('holds every Worker zone together to 12 shared places (production limits)', async () => {
+      const gate = createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+      const zones = Array.from({ length: 13 }, (_, index) =>
+        gate.acquire('api', `cf-worker:pin-${index}.example`, WORKER_EGRESS),
+      );
+      const waiting = zones.slice(2).map(releaseOnGrant);
+      await releaseAll(zones.slice(0, 2));
+      const lanes = (await Promise.all(waiting)).map((permit) => permit?.lane);
+      // Twelve zones in the shared lane; the thirteenth, as large as each of them, overflows.
+      expect(lanes.slice(0, 10)).toEqual(Array(10).fill('api'));
+      expect(lanes[10]).toBe('api-overflow');
+    });
+
+    it('lets a zone in when two junk zones hold every Worker place (production limits)', async () => {
+      const gate = createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+      const zone = (name: string) => `cf-worker:${name}.example`;
+      // 16 from one zone (8 shared, 8 overflow) and 4 from another: the Worker
+      // share's 12 shared and 8 overflow places, all of them junk.
+      const junk = [
+        ...Array.from({ length: 16 }, () => gate.acquire('api', zone('junk-a'), WORKER_EGRESS)),
+        ...Array.from({ length: 4 }, () => gate.acquire('api', zone('junk-b'), WORKER_EGRESS)),
+      ];
+      const newestSharedOfBusiest = settledFlag(junk[7]);
+      const honest = releaseOnGrant(gate.acquire('api', zone('honest'), WORKER_EGRESS));
+      const honestState = settledFlag(honest);
+      await pause();
+      expect(honestState.settled).toBe(false);
+      // The zone holding the most Worker places gave its newest shared place up;
+      // with its overflow places full too, that waiter was refused.
+      expect(newestSharedOfBusiest.settled).toBe(true);
+      expect(await junk[7]).toBeNull();
+      const waiting = [...junk.slice(2, 7), ...junk.slice(8)].map(releaseOnGrant);
+      await releaseAll(junk.slice(0, 2));
+      expect((await honest)?.lane).toBe('api');
+      expect((await Promise.all(waiting)).every((permit) => permit !== null)).toBe(true);
+    });
+
+    it('never moves a zone out for one that would hold as many', async () => {
+      const gate = createPartnerAdmissionGate(PARTNER_ADMISSION_LIMITS);
+      // Twelve zones at one place each fill the Worker share; a thirteenth would
+      // hold one too, so it overflows and nobody gives a place up.
+      const zones = Array.from({ length: 12 }, (_, index) =>
+        gate.acquire('api', `cf-worker:even-${index}.example`, WORKER_EGRESS),
+      );
+      const states = zones.map(settledFlag);
+      const thirteenth = releaseOnGrant(gate.acquire('api', 'cf-worker:even-12.example', WORKER_EGRESS));
+      await pause();
+      expect(states.slice(2).every((state) => !state.settled)).toBe(true);
+      const waiting = zones.slice(2).map(releaseOnGrant);
+      await releaseAll(zones.slice(0, 2));
+      expect((await thirteenth)?.lane).toBe('api-overflow');
+      expect((await Promise.all(waiting)).every((permit) => permit?.lane === 'api')).toBe(true);
+    });
+
     it('weighs a Worker request by every zone together, so forged zones give a place up first', async () => {
       const gate = createPartnerAdmissionGate(limits);
       // 12 zones at one place each, and 6 ordinary groups at one: the shared lane's 18.

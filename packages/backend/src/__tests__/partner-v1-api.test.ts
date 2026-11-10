@@ -1514,20 +1514,19 @@ describe('the public /v1 API', () => {
       );
 
       it(
-        "counts failed lookups per zone, so one zone's junk never turns another zone's 401s into 429s",
+        "counts failed lookups per zone only, so no zone's junk turns another zone's 401s into 429s",
         async () => {
           await inOneLimitWindow(async () => {
             const junkZone = randomZone();
             const honestZone = randomZone();
             await seedLimiter(`cf-worker:${junkZone}`, 'api-invalid-token-ip', 600);
             expect((await getMe(junkToken(), fromWorker(junkZone))).status).toBe(429);
-            const ceilingBefore = await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress');
             expectInvalidToken(await getMe(junkToken(), fromWorker(honestZone)));
             expect(await limiterCount(`cf-worker:${honestZone}`, 'api-invalid-token-ip')).toBe(1);
-            // Every zone together also counts on the Worker address, under its own name.
-            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress')).toBe(
-              ceilingBefore + 1,
-            );
+            // Nothing counts every zone together: such a count would be charged
+            // after the lookup, save no database work, and let one junk Worker
+            // turn every Worker partner's expired-token 401s into 429s.
+            expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress')).toBe(0);
             expect(await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip')).toBe(0);
           });
         },
@@ -1535,20 +1534,38 @@ describe('the public /v1 API', () => {
       );
 
       it(
-        'holds every zone together to 6,000 failed lookups, which a forged zone cannot dodge, and never refuses a valid token',
+        'serves an honest zone while two junk zones hold every Worker place',
         async () => {
           await inOneLimitWindow(async () => {
             const client = await environment.createClient();
             const issued = await environment.issueTokens(client);
-            const previous = await limiterCount(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress');
-            await seedLimiter(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress', 6000);
+            const [busyJunkZone, otherJunkZone, honestZone] = [randomZone(), randomZone(), randomZone()];
+            const held = holdAdmissions(20, (token) => token.startsWith('junk'));
             try {
-              const limited = await getMe(junkToken(), fromWorker(randomZone()));
-              expect(limited.status).toBe(429);
-              expect(limited.headers['ratelimit-limit']).toBe('6000');
-              expect((await getMe(issued.access_token, fromWorker(randomZone()))).status).toBe(200);
+              // 16 from one zone (8 shared, 8 overflow) and 4 from another: every one
+              // of the Worker share's 12 shared and 8 overflow places is junk.
+              const junk = [
+                ...Array.from({ length: 16 }, () => getMe(junkToken(), fromWorker(busyJunkZone))),
+                ...Array.from({ length: 4 }, () => getMe(junkToken(), fromWorker(otherJunkZone))),
+              ];
+              await held.allAsked();
+              let honestAnswered = false;
+              const honest = getMe(issued.access_token, fromWorker(honestZone)).then((answer) => {
+                honestAnswered = true;
+                return answer;
+              });
+              await new Promise((resolve) => setTimeout(resolve, 100));
+              // Waiting for a place, not refused at once.
+              expect(honestAnswered).toBe(false);
+              held.release();
+              expect((await honest).status).toBe(200);
+              expect(held.admissions.filter(({ group }) => group === `cf-worker:${honestZone}`)).toEqual([
+                { group: `cf-worker:${honestZone}`, lane: 'api' },
+              ]);
+              const junkStatuses = (await Promise.all(junk)).map((answer) => answer.status);
+              expect(junkStatuses.every((status) => status === 401 || status === 503)).toBe(true);
             } finally {
-              await seedLimiter(WORKER_ADDRESS_KEY, 'api-invalid-token-ip-worker-egress', previous);
+              held.restore();
             }
           });
         },
