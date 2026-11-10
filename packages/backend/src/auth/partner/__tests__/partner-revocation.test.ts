@@ -646,14 +646,22 @@ describe('lock order', () => {
       await deleter.sql`SELECT id FROM users WHERE id = ${climberId} FOR UPDATE`;
 
       await inserter.sql`BEGIN`;
-      const insert =
-        inserter.sql`INSERT INTO user_credentials (user_id, password_hash) VALUES (${climberId}, ${NEW_HASH})`.execute();
+      // Settle the insert at once: it rejects as soon as the deleter commits, which can be
+      // before this test reaches its expectation, and an unobserved rejection fails the run.
+      const insertOutcome =
+        inserter.sql`INSERT INTO user_credentials (user_id, password_hash) VALUES (${climberId}, ${NEW_HASH})`
+          .execute()
+          .then(
+            () => ({ status: 'fulfilled' as const }),
+            (reason: unknown) => ({ status: 'rejected' as const, reason }),
+          );
       await waitUntilBlocked(inserter.pid);
 
       await deleter.sql`DELETE FROM users WHERE id = ${climberId}`;
       await deleter.sql`COMMIT`;
       // The user is gone, so the insert's foreign key rejects it: a clean failure, not a deadlock.
-      await expect(insert).rejects.toMatchObject({ code: '23503' });
+      const outcome = await withinDeadline(insertOutcome, 'first-password insert after deletion');
+      expect(outcome).toMatchObject({ status: 'rejected', reason: { code: '23503' } });
       await inserter.sql`ROLLBACK`;
     },
     RACE_TIMEOUT_MS,
