@@ -40,6 +40,7 @@ import { sessionWorkoutsTypeDefs } from './session-workouts';
 import { userDataExportTypeDefs } from './user-data-export';
 import { analyticsConsentTypeDefs } from './analytics-consent';
 import { oauthClientsTypeDefs } from './oauth-clients';
+import { connectedAppsTypeDefs } from './connected-apps';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
 
@@ -90,4 +91,5 @@ export const typeDefs = [
   userDataExportTypeDefs,
   analyticsConsentTypeDefs,
   oauthClientsTypeDefs,
+  connectedAppsTypeDefs,
 ];

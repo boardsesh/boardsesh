@@ -20,6 +20,7 @@ import {
   userProfiles,
   users,
 } from '@boardsesh/db/schema/auth';
+import { touchPartnerConnectionLastUsed } from '../auth/partner/api-access';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../auth/partner/authority';
 import { disconnectPartnerConnection } from '../auth/partner/connection';
 import { createPartnerDatabaseHandle } from '../auth/partner/transaction';
@@ -875,6 +876,135 @@ describe('the public /v1 API', () => {
       },
       TEST_DEADLINE_MS,
     );
+  });
+
+  describe("Connected apps' last use", () => {
+    /** The row's transaction id: it moves on every write, so an unchanged one proves nothing wrote. */
+    async function rowVersion(connectionId: string) {
+      const [row] = await db.execute<{ xmin: string; last_used_at: string | null }>(
+        sql`select xmin::text as xmin, last_used_at::text as last_used_at from oauth_connections where id = ${connectionId}`,
+      );
+      return row;
+    }
+
+    async function backdateLastUse(connectionId: string, minutesAgo: number) {
+      await db
+        .update(oauthConnections)
+        .set({ lastUsedAt: sql`now() - make_interval(mins => ${minutesAgo})` })
+        .where(eq(oauthConnections.id, connectionId));
+    }
+
+    it('is stamped on the first call that passes, then at most once an hour', async () => {
+      const client = await environment.createClient();
+      const issued = await environment.issueTokens(client);
+      const connection = await connectionOf(client);
+      expect(connection.lastUsedAt).toBeNull();
+
+      expect((await getMe(issued.access_token)).status).toBe(200);
+      const stamped = await connectionOf(client);
+      expect(stamped.lastUsedAt).not.toBeNull();
+      expect(Math.abs(stamped.lastUsedAt!.getTime() - Date.now())).toBeLessThan(60_000);
+      const afterFirst = await rowVersion(connection.id);
+
+      // A busy app inside the hour: no write at all, not even a no-op one.
+      for (let call = 0; call < 3; call += 1) expect((await getMe(issued.access_token)).status).toBe(200);
+      expect(await rowVersion(connection.id)).toEqual(afterFirst);
+
+      await backdateLastUse(connection.id, 59);
+      const at59 = await rowVersion(connection.id);
+      expect((await getMe(issued.access_token)).status).toBe(200);
+      expect(await rowVersion(connection.id)).toEqual(at59);
+
+      await backdateLastUse(connection.id, 61);
+      expect((await getMe(issued.access_token)).status).toBe(200);
+      const restamped = await connectionOf(client);
+      expect(Math.abs(restamped.lastUsedAt!.getTime() - Date.now())).toBeLessThan(60_000);
+    });
+
+    it('is not stamped by a token that is refused', async () => {
+      const client = await environment.createClient();
+      const issued = await environment.issueTokens(client);
+      expect((await environment.revoke(client, { token: issued.access_token })).response.status).toBe(200);
+      expectInvalidToken(await getMe(issued.access_token));
+      expect((await connectionOf(client)).lastUsedAt).toBeNull();
+    });
+
+    it(
+      'never waits for a connection someone else holds, and stamps it on a later call',
+      async () => {
+        const client = await environment.createClient();
+        const issued = await environment.issueTokens(client);
+        const connection = await connectionOf(client);
+        const holder = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+        try {
+          let release!: () => void;
+          const released = new Promise<void>((resolve) => (release = resolve));
+          let holding!: () => void;
+          const heldLock = new Promise<void>((resolve) => (holding = resolve));
+          // Disconnect, a refresh and a consent answer all hold the row like this.
+          const held = holder.begin(async (transaction) => {
+            await transaction`select id from oauth_connections where id = ${connection.id} for update`;
+            holding();
+            await released;
+          });
+          await heldLock;
+          const startedAt = Date.now();
+          const answered = await getMe(issued.access_token);
+          const tookMs = Date.now() - startedAt;
+          release();
+          await held;
+          expect(answered.status).toBe(200);
+          // Well under the 2 s lock wait: the stamp skipped the row instead of queueing.
+          expect(tookMs).toBeLessThan(1_500);
+          expect((await connectionOf(client)).lastUsedAt).toBeNull();
+        } finally {
+          await holder.end({ timeout: 5 });
+        }
+        expect((await getMe(issued.access_token)).status).toBe(200);
+        expect((await connectionOf(client)).lastUsedAt).not.toBeNull();
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it('writes once when many stale requests race', async () => {
+      const client = await environment.createClient();
+      await environment.issueTokens(client);
+      const connection = await connectionOf(client);
+      const wrote = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          touchPartnerConnectionLastUsed(environment.database, {
+            connectionId: connection.id,
+            connectionGeneration: connection.generation,
+          }),
+        ),
+      );
+      expect(wrote.filter(Boolean)).toHaveLength(1);
+    });
+
+    it('leaves a connection alone once it has ended or moved to a newer generation', async () => {
+      const client = await environment.createClient();
+      await environment.issueTokens(client);
+      const connection = await connectionOf(client);
+      expect(
+        await touchPartnerConnectionLastUsed(environment.database, {
+          connectionId: connection.id,
+          connectionGeneration: connection.generation + 1,
+        }),
+      ).toBe(false);
+      await disconnectPartnerConnection(environment.database, {
+        userId: client.owner.userId,
+        clientId: client.clientId,
+        reason: 'climber_disconnect',
+      });
+      const ended = await connectionOf(client);
+      expect(
+        await touchPartnerConnectionLastUsed(environment.database, {
+          connectionId: ended.id,
+          connectionGeneration: ended.generation,
+        }),
+      ).toBe(false);
+      expect((await connectionOf(client)).lastUsedAt).toBeNull();
+    });
   });
 
   describe('rate limits', () => {
