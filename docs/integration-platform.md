@@ -930,14 +930,20 @@ hour old as "Used in the last hour".
 `@boardsesh/connected-apps`, shared by both platforms. The section is hidden while
 signed out, before the first answer, after a failed first load, and when there is
 nothing connected while partner apps are off; with partner apps on and nothing
-connected it says so. Under `logbook:read` it carries the same two lines as the
-consent screen: ticks kept to "Only me" (decision 21), and unlisted climbs and drafts
-set by others (#7387, owner decision 2026-11-10: a connected app gets the full climb
-for every tick). Setters hear the same from the other side, only once partner apps
-are on (`partnerAppsEnabled`; with the mode `off` nothing changes): the "Save as
-draft" switch says drafts stay unlisted and that apps connected by climbers who log
-one can still see it, and a Spraywall's Link only and private hints add that apps
-connected by climbers who log its climbs still see them.
+connected it says so. The detail page opened by a cold link whose first load failed
+says so and offers a retry. Under `logbook:read` the detail carries the same three
+lines as the consent screen, matching what the logbook serializer sends (see [Data
+boundaries](#data-boundaries-and-legalmd)): ticks kept to "Only me" (decision 21);
+other setters' unlisted climbs and drafts the climber logged, which arrive in full
+(#7387, owner decision 2026-11-10); and climbs on someone else's Private or Link only
+Spraywall, which arrive without their names.
+
+Setters hear the same from the other side only once partner apps are on
+(`partnerAppsEnabled`; with the mode `off` nothing changes): the "Save as draft"
+switch says drafts stay unlisted and that apps connected by climbers who log one can
+still see it, on a board and on a public Spraywall. A Private or Link only
+Spraywall's draft line and its visibility hints say nothing about apps, because apps
+get those climbs without their names.
 
 ### Retention sweep
 

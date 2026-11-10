@@ -583,6 +583,8 @@
       "empty": "Noch keine Apps verbunden. Apps, die du mit deinem Boardsesh-Konto verbindest, erscheinen hier.",
       "footer": "Eine getrennte App liest nichts Neues mehr. Was sie schon kopiert hat, bleibt bei ihr.",
       "gone": "Diese App ist nicht mehr verbunden.",
+      "loadFailed": "Diese App konnte nicht geladen werden. Prüf deine Verbindung und versuch es noch mal.",
+      "retry": "Erneut versuchen",
       "scopesHeading": "Was {{app}} sehen kann",
       "unnamedApp": "Unbenannte App",
       "publisher": "Von {{publisher}}",
@@ -595,7 +597,8 @@
       "scopes": {
         "logbookRead": "Sieht jeden Eintrag in deinem Routenbuch, auf jedem Board",
         "logbookOnlyMe": "Auch Einträge, die du auf „Nur ich“ gestellt hast",
-        "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe in deinem Routenbuch, selbst wenn andere sie gebaut haben",
+        "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe von anderen, die du eingetragen hast",
+        "logbookSpraywall": "Boulder von der Spraywall einer anderen Person mit „Privat“ oder „Nur mit Link“ kommen ohne Namen an",
         "profileRead": "Sieht deinen Anzeigenamen und dein Profilbild",
         "offlineAccess": "Behält diesen Zugriff, bis du die App trennst",
         "other": "Weiterer Zugriff: {{scope}}"

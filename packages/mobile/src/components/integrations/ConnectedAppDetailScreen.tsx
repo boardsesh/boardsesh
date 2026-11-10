@@ -35,7 +35,7 @@ export function ConnectedAppDetailScreen() {
   const { t } = useTranslation('settings');
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { isAuthenticated } = useAuth();
-  const { data } = useMyConnectedApps();
+  const { data, isError, refetch } = useMyConnectedApps();
   const formatters = useConnectedAppsFormatters();
   const router = useRouter();
 
@@ -45,11 +45,14 @@ export function ConnectedAppDetailScreen() {
         signedIn: isAuthenticated,
         data,
         connectionId: typeof id === 'string' ? id : '',
+        // A cold deep link whose first load failed: say so, with a retry, never an endless spinner.
+        loadFailed: isError,
         t: t as ConnectedAppsTranslate,
         formatters,
       }),
-    [isAuthenticated, data, id, t, formatters],
+    [isAuthenticated, data, id, isError, t, formatters],
   );
+  const retry = useCallback(() => void refetch(), [refetch]);
 
   // Once Disconnect succeeds the row leaves the list at once; keep drawing the
   // app while the page slides away instead of flashing "not connected".
@@ -64,7 +67,9 @@ export function ConnectedAppDetailScreen() {
   }, [router]);
   const { disconnect, disconnecting } = usePartnerAppDisconnect(leave);
 
-  return <ConnectedAppDetailPage detail={visible} onDisconnect={disconnect} disconnecting={disconnecting} />;
+  return (
+    <ConnectedAppDetailPage detail={visible} onDisconnect={disconnect} disconnecting={disconnecting} onRetry={retry} />
+  );
 }
 
 /** Confirm, then end the connection and say how it went. `onDisconnected` leaves the page. */
@@ -104,9 +109,11 @@ type ConnectedAppDetailPageProps = {
   detail: ConnectedAppDetailView;
   onDisconnect: (row: ConnectedAppRowView) => void;
   disconnecting: boolean;
+  /** Loads the list again after a failed first load. */
+  onRetry: () => void;
 };
 
-export function ConnectedAppDetailPage({ detail, onDisconnect, disconnecting }: ConnectedAppDetailPageProps) {
+export function ConnectedAppDetailPage({ detail, onDisconnect, disconnecting, onRetry }: ConnectedAppDetailPageProps) {
   const { systemColors, brandColors } = useTheme();
   const { scrollBottomPadding } = useBottomChromeMetrics();
   const pageStyle = { backgroundColor: systemColors.groupedBackground };
@@ -120,6 +127,17 @@ export function ConnectedAppDetailPage({ detail, onDisconnect, disconnecting }: 
       <View style={[styles.page, styles.centered, pageStyle]}>
         <Stack.Screen options={{ title: '' }} />
         <ActivityIndicator />
+      </View>
+    );
+  }
+  if (detail.kind === 'error') {
+    return (
+      <View style={[styles.page, styles.centered, pageStyle]}>
+        <Stack.Screen options={{ title: '' }} />
+        <Text variant="body" color={systemColors.secondaryLabel} style={styles.message}>
+          {detail.message}
+        </Text>
+        <Button title={detail.retryLabel} variant="outlined" size="small" onPress={onRetry} />
       </View>
     );
   }

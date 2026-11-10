@@ -1013,6 +1013,74 @@ describe('the public /v1 API', () => {
       expect((await connectionOf(client)).lastUsedAt).not.toBeNull();
     });
 
+    /** Runs `body` while another connection holds the connection row with `lock`, then releases it. */
+    async function whileRowHeld<Result>(
+      connectionId: string,
+      lock: 'for update' | 'for key share',
+      body: () => Promise<Result>,
+    ) {
+      const holder = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      try {
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => (release = resolve));
+        let holding!: () => void;
+        const heldLock = new Promise<void>((resolve) => (holding = resolve));
+        const held = holder.begin(async (transaction) => {
+          await transaction.unsafe(`select id from oauth_connections where id = $1 ${lock}`, [connectionId]);
+          holding();
+          await released;
+        });
+        await heldLock;
+        try {
+          return await body();
+        } finally {
+          release();
+          await held;
+        }
+      } finally {
+        await holder.end({ timeout: 5 });
+      }
+    }
+
+    it(
+      'skips a row someone else holds: no lock wait, no 55P03, nothing written',
+      async () => {
+        const client = await environment.createClient();
+        await environment.issueTokens(client);
+        const connection = await connectionOf(client);
+        // Without SKIP LOCKED this waits out the 50 ms lock_timeout and throws 55P03.
+        const outcome = await whileRowHeld(connection.id, 'for update', () =>
+          touchPartnerConnectionLastUsed(environment.database, {
+            connectionId: connection.id,
+            connectionGeneration: connection.generation,
+          }),
+        );
+        expect(outcome).toBe(false);
+        expect((await connectionOf(client)).lastUsedAt).toBeNull();
+      },
+      TEST_DEADLINE_MS,
+    );
+
+    it(
+      'takes only FOR NO KEY UPDATE, so a foreign-key reader holding FOR KEY SHARE never blocks it',
+      async () => {
+        const client = await environment.createClient();
+        await environment.issueTokens(client);
+        const connection = await connectionOf(client);
+        // A grant or snapshot insert checks its foreign key with FOR KEY SHARE. A
+        // plain FOR UPDATE would conflict with it and skip the row; NO KEY UPDATE does not.
+        const outcome = await whileRowHeld(connection.id, 'for key share', () =>
+          touchPartnerConnectionLastUsed(environment.database, {
+            connectionId: connection.id,
+            connectionGeneration: connection.generation,
+          }),
+        );
+        expect(outcome).toBe(true);
+        expect((await connectionOf(client)).lastUsedAt).not.toBeNull();
+      },
+      TEST_DEADLINE_MS,
+    );
+
     it('writes once when many stale requests race', async () => {
       const client = await environment.createClient();
       await environment.issueTokens(client);

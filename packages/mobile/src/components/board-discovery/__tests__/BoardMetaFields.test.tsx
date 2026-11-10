@@ -1,9 +1,6 @@
 // @vitest-environment jsdom
 // The warning reads the gym over GraphQL; its own suite covers it.
 vi.mock('../OwnPublicGymWarning', () => ({ OwnPublicGymWarning: () => null }));
-// Whether partner apps are on, for the Link only and private hints (#7387).
-const partnerApps = vi.hoisted(() => ({ enabled: false }));
-vi.mock('../../../lib/graphql/hooks/use-connected-apps', () => ({ usePartnerAppsEnabled: () => partnerApps.enabled }));
 vi.mock('../../AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };
@@ -231,27 +228,6 @@ describe('SprayWallVisibilityField', () => {
   it('explains Link only', () => {
     const { getByText } = renderField({ isPublic: false, isUnlisted: true });
     expect(getByText('mobile.sprayVisibility.unlistedHint')).toBeTruthy();
-  });
-
-  it('adds the connected-apps line to Link only and private once partner apps are on, never to Public', () => {
-    partnerApps.enabled = true;
-    try {
-      expect(
-        renderField({ isPublic: false, isUnlisted: true }).getByText(
-          'mobile.sprayVisibility.unlistedHint mobile.sprayVisibility.appsNote',
-        ),
-      ).toBeTruthy();
-      expect(
-        renderField({ isPublic: false, isUnlisted: false }).getByText(
-          'mobile.sprayVisibility.privateHint mobile.sprayVisibility.appsNote',
-        ),
-      ).toBeTruthy();
-      expect(
-        renderField({ isPublic: true, isUnlisted: false }).getByText('mobile.sprayVisibility.publicHint'),
-      ).toBeTruthy();
-    } finally {
-      partnerApps.enabled = false;
-    }
   });
 
   it('reads both flags on as Public', () => {

@@ -63,7 +63,8 @@
       "profileRead": "Deinen Anzeigenamen und dein Profilbild sehen",
       "logbookRead": "Jeden Eintrag in deinem Routenbuch sehen, auf jedem Board",
       "logbookOnlyMe": "Auch Einträge, die du auf „Nur ich“ gestellt hast",
-      "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe in deinem Routenbuch, selbst wenn andere sie gebaut haben",
+      "logbookUnlisted": "Auch nicht gelistete Boulder und Entwürfe von anderen, die du eingetragen hast",
+      "logbookSpraywall": "Boulder von der Spraywall einer anderen Person mit „Privat“ oder „Nur mit Link“ kommen ohne Namen an",
       "offlineAccess": "Diesen Zugriff behalten, bis du die App trennst",
       "other": "Weiterer Zugriff: {{scope}}"
     },

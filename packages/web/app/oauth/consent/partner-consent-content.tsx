@@ -105,6 +105,12 @@ function ScopeLine({ scope, includesOnlyMeTicks }: ConsentDetails['scopes'][numb
             {t('consent.scopes.logbookUnlisted')}
           </Typography>
         ) : null}
+        {/* The serializer's one exception: someone else's non-public Spraywall keeps its climbs' names. */}
+        {scope === 'logbook:read' ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, pl: 2.5 }}>
+            {t('consent.scopes.logbookSpraywall')}
+          </Typography>
+        ) : null}
       </Box>
     </Box>
   );

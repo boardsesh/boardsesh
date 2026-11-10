@@ -30,6 +30,8 @@ type CreateDrawerFormProps = {
   anyFeetAvailable: boolean;
   isDraft: boolean;
   onChangeIsDraft: (next: boolean) => void;
+  /** The Spraywall is public: only then do apps get its drafts' names, so only then does the draft line mention them. */
+  sprayWallPublic?: boolean;
 };
 
 /**
@@ -53,11 +55,14 @@ export function CreateDrawerForm({
   anyFeetAvailable,
   isDraft,
   onChangeIsDraft,
+  sprayWallPublic = false,
 }: CreateDrawerFormProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, textStyles = fallbackTextStyles } = useTheme();
   // Once partner apps are on, a draft is unlisted rather than private: apps
-  // connected by climbers who log it can see it (#7387). Off, nothing changes.
+  // connected by climbers who log it can see it (#7387), on any board and on a
+  // public Spraywall. A Private or Link only wall's climbs reach those apps
+  // without their names, so its line stays as it was. Off, nothing changes.
   const partnerAppsEnabled = usePartnerAppsEnabled();
 
   const inputStyle = useMemo<TextStyle>(
@@ -122,7 +127,7 @@ export function CreateDrawerForm({
         />
         <SwitchRow
           label={t('mobile.create.settings.draftLabel')}
-          description={draftDescription(boardName, partnerAppsEnabled, t)}
+          description={draftDescription(boardName, partnerAppsEnabled, sprayWallPublic, t)}
           value={isDraft}
           onValueChange={onChangeIsDraft}
         />
@@ -131,10 +136,18 @@ export function CreateDrawerForm({
   );
 }
 
-/** The draft switch's description: on a Spraywall or a board, with the apps line once partner apps are on. */
-function draftDescription(boardName: string, partnerAppsEnabled: boolean, t: (key: string) => string): string {
+/**
+ * The draft switch's description: on a board, or on a Spraywall, with the apps
+ * line once partner apps are on, and on a Spraywall only when the wall is public.
+ */
+function draftDescription(
+  boardName: string,
+  partnerAppsEnabled: boolean,
+  sprayWallPublic: boolean,
+  t: (key: string) => string,
+): string {
   if (boardName === 'spray') {
-    return partnerAppsEnabled
+    return partnerAppsEnabled && sprayWallPublic
       ? t('mobile.create.settings.wallDraftDescriptionApps')
       : t('mobile.create.settings.wallDraftDescription');
   }

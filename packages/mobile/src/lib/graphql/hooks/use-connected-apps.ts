@@ -19,16 +19,24 @@ const HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Whether partner apps are switched on, for the notes that mention them (the
- * draft switch, the Spraywall visibility picker). The answer changes only with a
- * deploy, so one request an hour at most, shared by every screen that asks; never
- * one per editor open. False until it answers, offline, or on any failure, so a
- * climber sees nothing new while the mode is off.
+ * draft switch). The answer changes only with a deploy, so one request an hour at
+ * most, shared by every screen that asks; never one per editor open. A failure
+ * (offline, an older server, an error) is cached as `false` for the same hour,
+ * rather than left as an error React Query would retry on the next mount: the
+ * note fails closed, and a broken backend costs one request an hour, not one per
+ * open.
  */
 export function usePartnerAppsEnabled(): boolean {
   const { isAuthenticated } = useAuth();
   const { data } = useQuery({
     queryKey: PARTNER_APPS_ENABLED_QUERY_KEY,
-    queryFn: () => getHttpClient().request<GetPartnerAppsEnabledResponse>(GET_PARTNER_APPS_ENABLED),
+    queryFn: async (): Promise<GetPartnerAppsEnabledResponse> => {
+      try {
+        return await getHttpClient().request<GetPartnerAppsEnabledResponse>(GET_PARTNER_APPS_ENABLED);
+      } catch {
+        return { partnerAppsEnabled: false };
+      }
+    },
     select: (response) => response.partnerAppsEnabled,
     enabled: isAuthenticated,
     staleTime: HOUR_MS,

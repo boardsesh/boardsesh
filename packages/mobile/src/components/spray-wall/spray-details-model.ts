@@ -11,8 +11,6 @@ export type SprayDetailsModelInput = {
   defaultName: string;
   onRename: () => void;
   visibility: SprayWallVisibility;
-  /** Partner apps are on: a Link only or private wall's hint adds that connected apps still see its climbs. */
-  partnerAppsEnabled: boolean;
   /**
    * A segment was picked, by key. Handed straight to the control, so it must be
    * stable; `parseSprayVisibility` turns the key back into a visibility.
@@ -72,19 +70,14 @@ function visibilityOptions(t: Translate): (MoreOption & { key: SprayWallVisibili
 
 /**
  * What choosing this visibility means, said under the control, here and on Edit
- * board. Once partner apps are on, Link only and private add that apps connected
- * by climbers who log the wall's climbs still see them (#7387): the climbs are
- * unlisted, not private. With the mode off, nothing changes.
+ * board. Nothing about connected apps: a climber's apps get a Link only or
+ * private wall's climbs without their names (`logbook-tick-serializer.ts`), so
+ * there is nothing for the owner to weigh.
  */
-export function sprayVisibilityHint(
-  visibility: SprayWallVisibility,
-  t: Translate,
-  partnerAppsEnabled: boolean,
-): string {
+export function sprayVisibilityHint(visibility: SprayWallVisibility, t: Translate): string {
   if (visibility === 'public') return t('mobile.sprayVisibility.publicHint');
-  const hint =
-    visibility === 'unlisted' ? t('mobile.sprayVisibility.unlistedHint') : t('mobile.sprayVisibility.privateHint');
-  return partnerAppsEnabled ? `${hint} ${t('mobile.sprayVisibility.appsNote')}` : hint;
+  if (visibility === 'unlisted') return t('mobile.sprayVisibility.unlistedHint');
+  return t('mobile.sprayVisibility.privateHint');
 }
 
 /**
@@ -126,7 +119,7 @@ export function buildSprayDetailsModel(input: SprayDetailsModelInput): MoreFormM
   sections.push({
     key: 'visibility',
     title: t('mobile.sprayVisibility.label'),
-    footer: sprayVisibilityHint(input.visibility, t, input.partnerAppsEnabled),
+    footer: sprayVisibilityHint(input.visibility, t),
     rows: [
       {
         // Three states in one control: two switches made "Public and Link only"

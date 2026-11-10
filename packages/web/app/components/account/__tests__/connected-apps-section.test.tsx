@@ -125,8 +125,9 @@ describe('ConnectedAppsSection', () => {
     expect(dialog.textContent).toContain('Last used 3 hours ago');
     expect(within(dialog).getByRole('heading', { name: 'What Sequence can see' })).toBeTruthy();
     expect(dialog.textContent).toContain('Sees every tick in your logbook, on every board');
+    expect(dialog.textContent).toContain("Including other setters' unlisted climbs and drafts you've logged");
     expect(dialog.textContent).toContain(
-      'Including unlisted climbs and drafts in your logbook, even ones set by others',
+      "Climbs on someone else's Private or Link only Spraywall arrive without their names",
     );
     expect(dialog.textContent).toContain('Sees your display name and profile photo');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }));

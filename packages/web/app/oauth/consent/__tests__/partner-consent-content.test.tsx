@@ -158,9 +158,12 @@ describe('PartnerConsentContent', () => {
     const [logbook, profile] = within(screen.getByRole('region', { name: 'Sequence will be able to' })).getAllByRole(
       'listitem',
     );
-    const unlisted = 'Including unlisted climbs and drafts in your logbook, even ones set by others';
+    const unlisted = "Including other setters' unlisted climbs and drafts you've logged";
+    const spraywall = "Climbs on someone else's Private or Link only Spraywall arrive without their names";
     expect(logbook.textContent).toContain(unlisted);
+    expect(logbook.textContent).toContain(spraywall);
     expect(profile.textContent).not.toContain(unlisted);
+    expect(profile.textContent).not.toContain(spraywall);
   });
 
   it('names a reconnect in the title and explains it', async () => {

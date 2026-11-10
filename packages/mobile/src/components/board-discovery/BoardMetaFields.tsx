@@ -33,7 +33,6 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { SegmentedControl } from '../SegmentedControl';
 import { sprayWallVisibility, type SprayWallVisibility } from '../../lib/spray/spray-share';
-import { usePartnerAppsEnabled } from '../../lib/graphql/hooks/use-connected-apps';
 import { sprayVisibilityHint } from '../spray-wall/spray-details-model';
 import type { PickedGym } from './GymPickerSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -214,7 +213,6 @@ export function SprayWallVisibilityField({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const partnerAppsEnabled = usePartnerAppsEnabled();
   const visibility = sprayWallVisibility(builder);
   const { setIsPublic, setIsUnlisted } = builder;
   const onSelect = useCallback(
@@ -243,7 +241,7 @@ export function SprayWallVisibilityField({
         accessibilityLabel={t('mobile.sprayVisibility.label')}
       />
       <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.visibilityHint}>
-        {sprayVisibilityHint(visibility, t, partnerAppsEnabled)}
+        {sprayVisibilityHint(visibility, t)}
       </Text>
     </>
   );
