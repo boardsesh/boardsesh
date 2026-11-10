@@ -53,6 +53,11 @@ export async function startAppRouterHarness(options: {
         TSX_TSCONFIG_PATH: fileURLToPath(new URL('../../../../../../web/tsconfig.json', import.meta.url)),
         DATABASE_URL: 'postgresql://owned:unused@127.0.0.1:1/unused',
         READ_REPLICA_URL: 'postgresql://owned:unused@127.0.0.1:1/unused',
+        // The probe loads the backend's GraphQL server and then the web's auth
+        // routes into one process, which no deployment does. The backend's
+        // shared pool is built first, so the web's applyRequestPoolDefaults()
+        // would refuse to run; 0 says this process sends no idle timeout.
+        DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: '0',
       },
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     },

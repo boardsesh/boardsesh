@@ -410,7 +410,9 @@ summary and popular-config refreshes, PostHog person deletion). They use the sam
 
 If the import order is ever wrong, the process will not start:
 `applyRequestPoolDefaults()` throws when a shared pool was already built without
-the setting, instead of letting the server run uncovered.
+the setting, instead of letting the server run uncovered. The one process that
+loads backend and web code together, the App Router test harness
+(`app-router-harness.ts`), sets `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=0` for that reason.
 
 ### What is not covered, and why
 
