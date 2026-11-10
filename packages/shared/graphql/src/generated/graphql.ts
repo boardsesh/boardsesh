@@ -6192,6 +6192,8 @@ export type NotificationType =
 /** An app a developer registered for the Boardsesh API. Never carries its secret. */
 export type OAuthClient = {
   __typename?: 'OAuthClient';
+  /** Climbers connected now. Deleting the app disconnects every one of them. */
+  activeConnections: Scalars['Int']['output'];
   applicationType: OAuthClientApplicationType;
   clientId: Scalars['ID']['output'];
   /** ISO 8601. */

@@ -28,9 +28,15 @@ export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as const;
 
+// Gates the developer console at /developers/apps, where a developer registers
+// partner OAuth apps (docs/integration-platform.md, milestone 1.6). Server-side
+// and failing closed: with the flag off, or PostHog unreachable, the route is a
+// 404. The backend gates the same operations again on PARTNER_OAUTH_MODE and
+// its developer allowlist, so this flag only decides who sees the page.
+export const DEVELOPER_CONSOLE_FLAG = 'developer-console';
+
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
-// route renders at all. Empty since `/gyms` launched unconditionally; the
-// machinery stays because that is a different gate from the client keys above
-// (see docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
+// route renders at all — a different gate from the client keys above (see
+// docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
 // browser provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS = [] as const;
+export const SERVER_FEATURE_FLAG_KEYS = [DEVELOPER_CONSOLE_FLAG] as const;

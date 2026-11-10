@@ -34,6 +34,7 @@ const CREATE_MUTATION = /* GraphQL */ `
         redirectUris
         maxActiveConnections
         maxNewConnectionsPerDay
+        activeConnections
         suspendedAt
       }
     }
@@ -299,6 +300,7 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
         tokenEndpointAuthMethod: 'CLIENT_SECRET_BASIC',
         maxActiveConnections: 25,
         maxNewConnectionsPerDay: 20,
+        activeConnections: 0,
         suspendedAt: null,
       });
       const [row] = await db.select().from(oauthClient).where(eq(oauthClient.clientId, result.client.clientId));

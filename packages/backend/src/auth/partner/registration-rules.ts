@@ -66,6 +66,8 @@ export interface PartnerAppRecord {
   suspensionReason: string | null;
   maxActiveConnections: number;
   maxNewConnectionsPerDay: number;
+  /** Climbers connected now: the app redeemed a code and nobody has ended it. Deleting the app ends these. */
+  activeConnections: number;
 }
 
 /** A new or rotated secret, returned once and never readable again. Null for a public app. */
@@ -88,8 +90,9 @@ export class PartnerRegistrationError extends Error {
   constructor(
     readonly reason: PartnerRegistrationRefusal,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = 'PartnerRegistrationError';
   }
 }
