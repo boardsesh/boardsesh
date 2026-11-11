@@ -7,7 +7,7 @@ import {
   type SprayWallLedSetupData,
 } from '@boardsesh/graphql/operations/spray-walls';
 import { isSprayWallLedSaveRefused } from '@boardsesh/graphql/errors';
-import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import { LED_CONTROLLER_TYPES, normalizeLocalControllerUrl, type LedControllerType } from '@boardsesh/led-controller';
 import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import { getPreference, removePreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
@@ -114,10 +114,14 @@ function localAddressOrEmpty(url: string): string {
 }
 
 function settingsFromServer(setup: SprayWallLedSetupData): SprayWallLedSettings {
+  const knownType = (LED_CONTROLLER_TYPES as readonly string[]).includes(setup.controllerType)
+    ? (setup.controllerType as LedControllerType)
+    : null;
   return {
     version: 1,
-    enabled: setup.controllerType === 'wled' && setup.enabled,
-    controller: { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
+    // A controller type from a newer app is no controller this phone can drive.
+    enabled: knownType !== null && setup.enabled,
+    controller: { type: knownType ?? 'wled', url: knownType ? localAddressOrEmpty(setup.controllerUrl) : '' },
     // A server from before these settings sends neither; read them with the defaults.
     ...readSprayWallLedLighting(setup),
   };
@@ -167,6 +171,7 @@ function sameLayout(left: TnutLayout | null, right: TnutLayout | null): boolean 
 function sameSettings(left: SprayWallLedSettings, right: SprayWallLedSettings): boolean {
   return (
     left.enabled === right.enabled &&
+    left.controller.type === right.controller.type &&
     left.controller.url === right.controller.url &&
     left.brightness === right.brightness &&
     left.autoOffMinutes === right.autoOffMinutes

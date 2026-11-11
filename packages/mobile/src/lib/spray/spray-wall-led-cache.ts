@@ -1,10 +1,16 @@
-import { DEFAULT_LED_BRIGHTNESS, resolveLedLightingOptions } from '@boardsesh/led-controller';
+import {
+  DEFAULT_LED_BRIGHTNESS,
+  LED_CONTROLLER_TYPES,
+  resolveLedLightingOptions,
+  type LedControllerType,
+} from '@boardsesh/led-controller';
 import { removePreference, removePreferencesMatching } from '../preference-store';
 
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
-  controller: { type: 'wled'; url: string };
+  /** `wled-ble` reaches the controller over Bluetooth; `url` then stays as the Wi-Fi address, unused. */
+  controller: { type: LedControllerType; url: string };
   /** WLED master brightness, 1–255, shared by every phone at the wall. */
   brightness: number;
   /** Minutes after the last lighting before the controller turns the wall off; 0 never does. */
@@ -21,11 +27,18 @@ export type SprayWallLedField = 'settings' | 'layout';
  */
 export const sprayWallLedSettingsKey = (wallUuid: string) => `sprayWallLedSettings:${wallUuid}`;
 export const sprayWallLedLayoutKey = (wallUuid: string) => `sprayWallTnutLayout:${wallUuid}`;
+/** This phone's Bluetooth controller for the wall. Never uploaded: iOS ids differ per phone. */
+export const sprayWallLedBleDeviceKey = (wallUuid: string) => `sprayWallLedBleDevice:${wallUuid}`;
 /** Set before a save writes the copy, and cleared once the server has it. */
 export const sprayWallLedUnsentKey = (field: SprayWallLedField, wallUuid: string) =>
   `sprayWallLedUnsent:${field}:${wallUuid}`;
 
-const CACHE_KEY_PREFIXES = ['sprayWallLedSettings:', 'sprayWallTnutLayout:', 'sprayWallLedUnsent:'];
+const CACHE_KEY_PREFIXES = [
+  'sprayWallLedSettings:',
+  'sprayWallTnutLayout:',
+  'sprayWallLedUnsent:',
+  'sprayWallLedBleDevice:',
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -46,7 +59,7 @@ export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings 
     stored.version !== 1 ||
     typeof stored.enabled !== 'boolean' ||
     !isRecord(stored.controller) ||
-    stored.controller.type !== 'wled' ||
+    !(LED_CONTROLLER_TYPES as readonly unknown[]).includes(stored.controller.type) ||
     typeof stored.controller.url !== 'string' ||
     (stored.brightness !== undefined && typeof stored.brightness !== 'number') ||
     (stored.autoOffMinutes !== undefined && typeof stored.autoOffMinutes !== 'number')
@@ -61,7 +74,7 @@ export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings 
   return {
     version: 1,
     enabled: stored.enabled,
-    controller: { type: 'wled', url: stored.controller.url },
+    controller: { type: stored.controller.type as LedControllerType, url: stored.controller.url },
     brightness: lighting.brightness,
     autoOffMinutes: lighting.autoOffMinutes,
   };
@@ -150,6 +163,7 @@ export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
     Promise.allSettled([
       removePreference(sprayWallLedSettingsKey(wallUuid)),
       removePreference(sprayWallLedLayoutKey(wallUuid)),
+      removePreference(sprayWallLedBleDeviceKey(wallUuid)),
       removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
       removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
     ]),

@@ -259,6 +259,23 @@ describe('reading a wall’s LED setup', () => {
     expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ controller: { url: '' } });
   });
 
+  it('keeps a Bluetooth controller type and its Wi-Fi address from the server', async () => {
+    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType: 'wled-ble' })));
+    await prepareSprayWallLedRead(WALL, 'settings');
+    expect(storage.records.get(SETTINGS_KEY)).toEqual({
+      ...local,
+      controller: { type: 'wled-ble', url: 'http://wled.local' },
+    });
+  });
+
+  it('switches off a controller type from a newer app instead of driving it as WLED', async () => {
+    storage.records.set(SETTINGS_KEY, local);
+    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType: 'future-controller' })));
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await settle();
+    expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ enabled: false, controller: { type: 'wled', url: '' } });
+  });
+
   it('drops the copy when the server says this viewer can no longer read the wall', async () => {
     storage.records.set(SETTINGS_KEY, local);
     storage.records.set(LAYOUT_KEY, layout());
@@ -502,6 +519,7 @@ describe('forgetting a wall', () => {
   it('drops the copy, the unsent marks and any answer still on the wire when access is withdrawn', async () => {
     storage.records.set(LAYOUT_KEY, layout());
     storage.records.set(SETTINGS_KEY, local);
+    storage.records.set('sprayWallLedBleDevice:wall-one', { id: 'AA:BB', name: 'Spraywall' });
     await markSprayWallLedSaveStarted(WALL, 'layout');
 
     const answer = deferred<unknown>();
@@ -520,6 +538,7 @@ describe('forgetting a wall', () => {
     storage.records.set(SETTINGS_KEY, local);
     storage.records.set('sprayWallTnutLayout:wall-two', layout());
     storage.records.set('sprayWallLedUnsent:settings:wall-two', true);
+    storage.records.set('sprayWallLedBleDevice:wall-two', { id: 'AA:BB', name: 'Spraywall' });
     storage.records.set('someOtherPreference', 'kept');
 
     const upload = deferred<unknown>();

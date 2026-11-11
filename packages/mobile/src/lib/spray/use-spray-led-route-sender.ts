@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { accumulateFramesToMaps, toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { buildSprayLedMapping } from '@boardsesh/spray-wall-geometry';
 import {
+  bleControllerTarget,
   createLedPreviewSession,
   getLedControllerDriver,
   type LedPixel,
@@ -16,6 +17,27 @@ import { sprayLedPhotoKey } from './spray-led-photo-key';
 import { lookPreviewSourceFromRenderData } from './spray-look-preview';
 import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawals } from './spray-wall-registry';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
+
+/**
+ * This phone's Bluetooth controller for the wall. A phone that never picked one
+ * (a climber who cannot edit the wall) uses the only controller advertising
+ * nearby, and remembers it; with none or several, there is nothing to light.
+ */
+async function bluetoothTarget(wallUuid: string): Promise<string> {
+  const [{ loadSprayWallBleDevice, saveSprayWallBleDevice }, { findOnlySprayLedController }] = await Promise.all([
+    import('./spray-wall-led-ble-device'),
+    // Also registers the transport with the driver before the session uses it.
+    import('./spray-led-ble-transport-loader').then(({ loadSprayLedBleTransport }) => loadSprayLedBleTransport()),
+  ]);
+  let device = await loadSprayWallBleDevice(wallUuid);
+  if (!device) {
+    const only = await findOnlySprayLedController();
+    if (!only) return '';
+    device = { id: only.id, name: only.name };
+    await saveSprayWallBleDevice(wallUuid, device, { restartLighting: false });
+  }
+  return bleControllerTarget(device.id);
+}
 
 type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
 
@@ -164,27 +186,27 @@ export function useSprayLedRouteSender({
           return null;
         }
         enabled = true;
-        if (!settings.controller.url || mirrored) return fail();
+        if (mirrored) return fail();
+        const target =
+          settings.controller.type === 'wled-ble' ? await bluetoothTarget(wallUuid) : settings.controller.url;
+        if (!isCurrent()) return false;
+        if (!target) return fail();
         let current = runtime.current;
         // A changed brightness or auto-off needs a fresh session: its first write applies them.
         const lighting = { brightness: settings.brightness, autoOffMinutes: settings.autoOffMinutes };
         const lightingKey = `${lighting.brightness}:${lighting.autoOffMinutes}`;
         if (
           !current ||
-          current.url !== settings.controller.url ||
+          current.url !== target ||
           current.wallUuid !== wallUuid ||
           current.lightingKey !== lightingKey
         ) {
           if (current) void current.session.close().catch(() => undefined);
           current = {
             wallUuid,
-            url: settings.controller.url,
+            url: target,
             lightingKey,
-            session: createLedPreviewSession(
-              getLedControllerDriver(settings.controller.type),
-              settings.controller.url,
-              lighting,
-            ),
+            session: createLedPreviewSession(getLedControllerDriver(settings.controller.type), target, lighting),
           };
           runtime.current = current;
         }

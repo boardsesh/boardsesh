@@ -39,6 +39,12 @@ vi.mock('@boardsesh/spray-wall-geometry', () => ({ buildSprayLedMapping: mocks.m
 vi.mock('@boardsesh/led-controller', () => ({
   createLedPreviewSession: mocks.create,
   getLedControllerDriver: () => 'wled-driver',
+  bleControllerTarget: (id: string) => 'ble:' + id,
+}));
+const ble = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), findOnly: vi.fn() }));
+vi.mock('../spray-wall-led-ble-device', () => ({ loadSprayWallBleDevice: ble.load, saveSprayWallBleDevice: ble.save }));
+vi.mock('../spray-led-ble-transport-loader', () => ({
+  loadSprayLedBleTransport: async () => ({ findOnlySprayLedController: ble.findOnly }),
 }));
 vi.mock('../../privacy/privacy-cache', () => ({
   getCredentialGeneration: () => mocks.credential,
@@ -151,6 +157,43 @@ describe('spray route transport', () => {
         { index: 5, color },
       ],
     );
+  });
+
+  describe('a Bluetooth Spraywall', () => {
+    const bluetooth = { enabled: true, controller: { type: 'wled-ble', url: 'http://wall.local' } };
+
+    it('lights through the controller this phone picked, never the Wi-Fi address', async () => {
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.load.mockResolvedValue({ id: 'AA:BB', name: 'Spraywall' });
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(mocks.create).toHaveBeenCalledWith('wled-driver', 'ble:AA:BB', expect.anything());
+      expect(ble.findOnly).not.toHaveBeenCalled();
+    });
+
+    it('adopts the only controller nearby on a phone that never picked one', async () => {
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.load.mockResolvedValue(null);
+      ble.findOnly.mockResolvedValue({ id: 'CC:DD', name: 'Spraywall', rssi: -50 });
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(ble.save).toHaveBeenCalledWith(
+        'spray-wall',
+        { id: 'CC:DD', name: 'Spraywall' },
+        { restartLighting: false },
+      );
+      expect(mocks.create).toHaveBeenCalledWith('wled-driver', 'ble:CC:DD', expect.anything());
+    });
+
+    it('fails with the usual toast when no single controller is nearby', async () => {
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.load.mockResolvedValue(null);
+      ble.findOnly.mockResolvedValue(null);
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(false);
+      expect(mocks.create).not.toHaveBeenCalled();
+      expect(mocks.failure).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('uses the same role overrides as other board lights', async () => {
