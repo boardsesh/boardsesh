@@ -46,6 +46,11 @@
       "types": "./src/account-email.ts",
       "import": "./src/account-email.ts",
       "default": "./src/account-email.ts"
+    },
+    "./native-v1": {
+      "types": "./src/native-v1.ts",
+      "import": "./src/native-v1.ts",
+      "default": "./src/native-v1.ts"
     }
   },
   "scripts": {
