@@ -6,7 +6,9 @@ import {
   applyWledCommand,
   createWledSimulatorState,
   litIndices,
+  nightlightRemaining,
   renderStrip,
+  tickNightlight,
   wledInfo,
   wledState,
   type WledSimulatorState,
@@ -36,9 +38,10 @@ describe('WLED simulator', () => {
       version: '0.15.0-sim',
       ledCount: 120,
     });
-    const session = createLedPreviewSession(driver, 'http://sim.local:8080');
+    const session = createLedPreviewSession(driver, 'http://sim.local:8080', { brightness: 200 });
     await session.show([3, 7], [{ index: 3, color: [255, 0, 0] }]);
     expect(state.on).toBe(true);
+    expect(state.bri).toBe(200);
     expect(litIndices(state)).toEqual([3, 7]);
     expect(state.pixels[3]).toEqual([255, 0, 0]);
     expect(state.pixels[7]).toEqual([255, 255, 255]);
@@ -46,6 +49,26 @@ describe('WLED simulator', () => {
     expect(litIndices(state)).toEqual([8]);
     await session.stop();
     expect(litIndices(state)).toEqual([]);
+    await session.close();
+  });
+
+  it('runs the auto-off timer the driver arms and restarts it on later selections', async () => {
+    const state = createWledSimulatorState(50);
+    const clock = { now: 0 };
+    const driver = createWledDriver({ fetch: simulatedFetch(state, clock) });
+    const session = createLedPreviewSession(driver, 'http://timer.local', { autoOffMinutes: 1 });
+    await session.show([1]);
+    expect(nightlightRemaining(state, clock.now)).toBe(60);
+    clock.now = 50_000;
+    await session.show([2]);
+    // The later selection restarted the countdown.
+    expect(nightlightRemaining(state, clock.now)).toBe(60);
+    clock.now = 50_000 + 60_000;
+    expect(tickNightlight(state, clock.now)).toBe(true);
+    expect(litIndices(state)).toEqual([]);
+    // The next selection wakes the wall again.
+    await session.show([3]);
+    expect(litIndices(state)).toEqual([3]);
     await session.close();
   });
 
