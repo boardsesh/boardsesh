@@ -5,7 +5,7 @@ import * as schema from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { soleAccount } from '@boardsesh/auth-protocol/account-email';
-import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
+import { findAccountsByEmail, lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
@@ -92,7 +92,8 @@ export async function POST(request: NextRequest) {
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
     // Delete existing tokens and create new one atomically
-    await db.transaction(async (tx) => {
+    const issued = await db.transaction(async (tx) => {
+      if (!(await lockAccountEmailSnapshot(tx, account))) return false;
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, email));
 
       await tx.insert(schema.verificationTokens).values({
@@ -100,7 +101,12 @@ export async function POST(request: NextRequest) {
         token,
         expires,
       });
+      return true;
     });
+    if (!issued) {
+      await consistentDelay(startTime);
+      return NextResponse.json({ message: genericMessage }, { status: 200 });
+    }
 
     // `?.trim() ||`, not `??`: Dockerfile.web's runner stage declares
     // `ENV BASE_URL=$BASE_URL`, which is the EMPTY STRING in an image built
