@@ -18,13 +18,13 @@ type Lane = {
 };
 const lanes = new Map<string, Lane>();
 
-/** Latest selection wins; HTTP writes never overlap, including across screens. */
+/** Latest selection wins; controller writes never overlap, including across screens. */
 export function createLedPreviewSession(
   driver: LedControllerDriver,
   controllerUrl: string,
   lighting: LedLightingOptions = {},
 ) {
-  const url = normalizeLocalControllerUrl(controllerUrl);
+  const url = driver.normalizeTarget ? driver.normalizeTarget(controllerUrl) : normalizeLocalControllerUrl(controllerUrl);
   const resolvedLighting = resolveLedLightingOptions(lighting);
   const lightingKey = JSON.stringify(resolvedLighting);
   const lane = lanes.get(url) ?? {

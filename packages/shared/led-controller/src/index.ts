@@ -1,13 +1,25 @@
 import type { LedControllerDriver } from './types';
 import { wledDriver } from './wled';
+import { wledBleDriver } from './wled-ble';
 
 export * from './types';
 export { isLocalControllerHost, normalizeControllerUrl, normalizeLocalControllerUrl } from './url';
 export { createLedPreviewSession, type LedPreviewSession } from './preview';
 export { discoverLedControllers, wledScanHosts, type DiscoverOptions, type DiscoveredLedController } from './discovery';
 export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
+export {
+  bleControllerTarget,
+  createWledBleDriver,
+  normalizeBleControllerTarget,
+  registerWledBleTransport,
+  wledBleDriver,
+  type BleLedLink,
+  type BleLedTransport,
+  type WledBleDriverOptions,
+} from './wled-ble';
+export * from './wled-ble-protocol';
 
-const drivers = { wled: wledDriver } satisfies Record<string, LedControllerDriver>;
+const drivers = { wled: wledDriver, 'wled-ble': wledBleDriver } satisfies Record<string, LedControllerDriver>;
 export type LedControllerType = keyof typeof drivers;
 /** Every controller type the app can drive. The server stores nothing else. */
 export const LED_CONTROLLER_TYPES = Object.keys(drivers) as [LedControllerType, ...LedControllerType[]];

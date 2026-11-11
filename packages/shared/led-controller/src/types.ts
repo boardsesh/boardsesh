@@ -6,6 +6,8 @@ export type LedControllerErrorCode =
   | 'timeout'
   | 'command-failed'
   | 'invalid-indices'
+  /** A Bluetooth controller that speaks a protocol version this app does not. */
+  | 'unsupported-version'
   | 'cancelled';
 
 export class LedControllerError extends Error {
@@ -51,6 +53,11 @@ export type LedPixel = { index: number; color: readonly [number, number, number]
 
 /** Drivers own transport and hardware details; the wall editor owns settings. */
 export interface LedControllerDriver {
+  /**
+   * Validate and canonicalize a controller address before anything contacts it.
+   * Absent: the address is a local-network HTTP URL (`normalizeLocalControllerUrl`).
+   */
+  normalizeTarget?(target: string): string;
   probe(url: string, signal?: AbortSignal): Promise<LedControllerInfo>;
   lightAll(url: string, signal?: AbortSignal, options?: LedLightingOptions): Promise<void>;
   turnOff(url: string, signal?: AbortSignal): Promise<void>;

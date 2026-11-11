@@ -442,7 +442,7 @@ const SprayWallLedLayoutSchema = z.unknown().transform((layout, context) => {
 export const SaveSprayWallLedSetupInputSchema = z
   .object({
     boardUuid: UUIDSchema,
-    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled'" }).nullish(),
+    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled' or 'wled-ble'" }).nullish(),
     controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
     enabled: z.boolean().nullish(),
     brightness: z.number().int().min(1).max(255).nullish(),
