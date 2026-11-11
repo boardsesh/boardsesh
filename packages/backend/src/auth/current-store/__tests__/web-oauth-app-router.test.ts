@@ -337,10 +337,10 @@ describe('shipping App Router identity delegation over actual provider and backe
       expect(result.response.location).toBe(`${current.harness.origin}/signed-in`);
       if (provider === 'apple') expect(result.handoff.status).toBe(303);
       const [owner] = await db.select().from(users);
-      // The installed public getProfile lowercases upstream email before signIn.
-      // Preserve that exact asserted string, including whitespace; only the
-      // reservation key is independently trimmed/lowercased by the backend.
-      expect(owner.email).toBe(profile.email!.toLowerCase());
+      // The installed public getProfile lowercases upstream email before signIn;
+      // the backend stores the normalized form (BA-02), so surrounding
+      // whitespace is trimmed too, matching the reservation key.
+      expect(owner.email).toBe(profile.email!.trim().toLowerCase());
       expect(owner.name).toBe(profile.name);
       expect(owner.emailVerified).toBe(null);
       expect(await db.select({ userId: userProfiles.userId }).from(userProfiles)).toEqual([{ userId: owner.id }]);
@@ -497,10 +497,9 @@ describe('shipping App Router identity delegation over actual provider and backe
     expectUnavailable(current, result.response);
     expect(current.browser.session().length).toBe(0);
     const [owner] = await db.select().from(users);
-    // The installed public getProfile lowercases upstream email before signIn.
-    // Preserve that exact asserted string, including whitespace; only the
-    // reservation key is independently trimmed/lowercased by the backend.
-    expect(owner.email).toBe(profile.email!.toLowerCase());
+    // The installed public getProfile lowercases upstream email before signIn;
+    // the backend stores the normalized form (BA-02), trimmed as well.
+    expect(owner.email).toBe(profile.email!.trim().toLowerCase());
     expect(await db.select({ userId: accounts.userId }).from(accounts)).toEqual([{ userId: owner.id }]);
     expect(current.requests).toEqual([
       { operation: 'intent', status: 200 },

@@ -4,7 +4,8 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { hash } from 'bcryptjs';
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
-import { eq } from 'drizzle-orm';
+import { normalizeAccountEmail } from '@boardsesh/auth-protocol/account-email';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -55,13 +56,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email, password, name } = validationResult.data;
+    const { password, name } = validationResult.data;
+    const typedEmail = validationResult.data.email;
+    // Stored in the one normalized form, so the planned unique index on
+    // lower(email) holds and any capitalisation signs in.
+    const email = normalizeAccountEmail(typedEmail);
     const db = getDb();
 
-    // Check if user already exists
-    const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    // Taken in any capitalisation, including by several accounts at once:
+    // never add another account for the same address.
+    const existingUser = await findAccountsByEmail(db, typedEmail);
 
-    if (existingUser.length > 0) {
+    if (existingUser.kind !== 'none') {
       // An account with this email already exists
       // Do not allow registering again - user should use their existing authentication method
       // This prevents account takeover attacks where someone registers with an OAuth user's email
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
         await tx.insert(schema.users).values({
           id: userId,
           email,
-          name: name || email.split('@')[0],
+          name: name || typedEmail.split('@')[0],
           emailVerified: emailVerificationEnabled ? null : new Date(),
         });
 

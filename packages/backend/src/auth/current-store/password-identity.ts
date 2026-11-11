@@ -3,6 +3,7 @@ import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
 import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import type { DbInstance } from '@boardsesh/db/client';
+import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, users, userCredentials, userProfiles } from '@boardsesh/db/schema/auth';
 import { normalizeAccountEmail } from '../normalize-email';
 
@@ -149,15 +150,16 @@ export function parseCurrentStorePasswordRegistration(
 }
 
 /**
- * Keep the existing exact-email precheck and bcrypt work before the transaction.
- * This is not a normalized reservation or a concurrent-registration guarantee.
+ * Precheck the address in any capitalisation, then bcrypt, before the
+ * transaction. Any row holding it, or several, makes it taken (BA-02). This is
+ * not a normalized reservation or a concurrent-registration guarantee.
  */
 export async function prepareCurrentStorePasswordRegistration(
   database: PasswordIdentityReader,
   registration: PasswordRegistration,
 ): Promise<PreparedPasswordRegistration | null> {
   const { email, password, name } = registration;
-  const existing = await database.select().from(users).where(eq(users.email, email)).limit(1);
+  const existing = await database.select({ id: users.id }).from(users).where(accountEmailCandidates(email)).limit(1);
   if (existing[0]) return null;
   const passwordHash = await hash(password, PASSWORD_HASH_COST);
   return { email, name, passwordHash };

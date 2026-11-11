@@ -57,6 +57,9 @@ function makeChain() {
     where() {
       return chain;
     },
+    orderBy() {
+      return chain;
+    },
     limit() {
       const rows = admissionProjection ? [{ id: 'unit-subject', deletedAt: null }] : (mockDbSelectQueue.shift() ?? []);
       return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
@@ -332,7 +335,8 @@ describe('handleNativeAuthOAuth', () => {
     });
     queueSelect([]); // no account link by sub
     const createdAt = new Date('2025-01-01T00:00:00.000Z');
-    queueSelect([{ id: 'web-user', emailVerified: null, createdAt }]); // matched by email
+    queueSelect([{ id: 'web-user', email: 'web-user@example.com', emailVerified: null, createdAt }]); // matched by email
+    queueSelect([{ userId: 'web-user' }]); // the persisted link owner, read back after the insert
 
     const req = makeRequest({
       method: 'POST',
@@ -362,7 +366,15 @@ describe('handleNativeAuthOAuth', () => {
       payload: { sub: 'apple-sub-9', email: 'verified@example.com', email_verified: true },
     });
     queueSelect([]); // no account link
-    queueSelect([{ id: 'verified-user', emailVerified: new Date('2024-01-01') }]);
+    queueSelect([
+      {
+        id: 'verified-user',
+        email: 'verified@example.com',
+        emailVerified: new Date('2024-01-01'),
+        createdAt: new Date(),
+      },
+    ]);
+    queueSelect([{ userId: 'verified-user' }]);
 
     const req = makeRequest({ method: 'POST', body: { provider: 'apple', identityToken: 'tok' } });
     const res = makeResponse();
@@ -375,23 +387,75 @@ describe('handleNativeAuthOAuth', () => {
   it('does NOT link to an existing account when the provider email is unverified', async () => {
     // Security: auto-linking an unverified provider email would let an attacker
     // who can mint a token for a victim's email claim take over that account.
-    // The unverified identity must create its own user, anchored on its sub.
+    // BA-02: nor may it create a second account for an address already held.
     jwtVerify.mockResolvedValueOnce({
-      payload: { sub: 'google-sub-unverified', email: 'victim@example.com', email_verified: false },
+      payload: { sub: 'google-sub-unverified', email: 'Victim@Example.com', email_verified: false },
     });
-    queueSelect([]); // no account link by sub; the email-link path is skipped (unverified)
+    queueSelect([]); // no account link by sub
+    queueSelect([{ id: 'victim', email: 'victim@example.com', emailVerified: null, createdAt: new Date() }]);
 
     const req = makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } });
     const res = makeResponse();
     await callHandler(req, res);
 
-    expect(res.statusCode).toBe(200);
-    // A fresh user is created (not linked) and owns the new account row.
-    expect(insertsFor(users)).toHaveLength(1);
-    expect(insertsFor(accounts)).toHaveLength(1);
-    const newUserId = (insertsFor(users)[0].values as Record<string, unknown>).id;
-    expect((insertsFor(accounts)[0].values as Record<string, unknown>).userId).toBe(newUserId);
+    expect(res.statusCode).toBe(409);
+    expect(insertsFor(users)).toHaveLength(0);
+    expect(insertsFor(accounts)).toHaveLength(0);
+    expect(insertsFor(mobileRefreshTokens)).toHaveLength(0);
     // No existing user's email was promoted to verified.
+    expect(updateCalls.filter((call) => call.table === users)).toHaveLength(0);
+  });
+
+  it('creates its own user, anchored on the sub, for an unverified email nobody holds', async () => {
+    jwtVerify.mockResolvedValueOnce({
+      payload: { sub: 'google-sub-unverified-free', email: 'Free@Example.com', email_verified: false },
+    });
+    queueSelect([]); // no account link by sub
+    queueSelect([]); // nobody holds the address
+
+    const res = makeResponse();
+    await callHandler(makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } }), res);
+
+    expect(res.statusCode).toBe(200);
+    expect(insertsFor(users)).toHaveLength(1);
+    const created = insertsFor(users)[0].values as Record<string, unknown>;
+    expect(created.email).toBe('free@example.com');
+    expect(created.emailVerified).toBeNull();
+    expect((insertsFor(accounts)[0].values as Record<string, unknown>).userId).toBe(created.id);
+  });
+
+  it('refuses an address several accounts share in other capitals: no link, no user, no token', async () => {
+    jwtVerify.mockResolvedValueOnce({
+      payload: { sub: 'apple-sub-shared', email: 'shared@example.com', email_verified: true },
+    });
+    queueSelect([]);
+    queueSelect([
+      { id: 'title', email: 'Shared@example.com', emailVerified: null, createdAt: new Date() },
+      { id: 'upper', email: 'SHARED@example.com', emailVerified: null, createdAt: new Date() },
+    ]);
+
+    const res = makeResponse();
+    await callHandler(makeRequest({ method: 'POST', body: { provider: 'apple', identityToken: 'tok' } }), res);
+
+    expect(res.statusCode).toBe(409);
+    expect(insertsFor(users)).toHaveLength(0);
+    expect(insertsFor(accounts)).toHaveLength(0);
+    expect(insertsFor(mobileRefreshTokens)).toHaveLength(0);
+  });
+
+  it('mints nothing when the persisted link belongs to another account after its insert', async () => {
+    jwtVerify.mockResolvedValueOnce({
+      payload: { sub: 'apple-sub-raced', email: 'raced@example.com', email_verified: true },
+    });
+    queueSelect([]);
+    queueSelect([{ id: 'matched', email: 'Raced@example.com', emailVerified: null, createdAt: new Date() }]);
+    queueSelect([{ userId: 'someone-else' }]); // a concurrent sign-in linked the subject first
+
+    const res = makeResponse();
+    await callHandler(makeRequest({ method: 'POST', body: { provider: 'apple', identityToken: 'tok' } }), res);
+
+    expect(res.statusCode).toBe(409);
+    expect(insertsFor(mobileRefreshTokens)).toHaveLength(0);
     expect(updateCalls.filter((call) => call.table === users)).toHaveLength(0);
   });
 

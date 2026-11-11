@@ -11,6 +11,7 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
+import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
@@ -230,13 +231,43 @@ const useSecureCookies = isSecureCookieContext();
 // *.boardsesh.com hosts.
 const cookieDomain = sessionCookieDomain();
 
+type AccountAdapter = ReturnType<typeof DrizzleAdapter>;
+
+/**
+ * NextAuth links a Google or Apple sign-in to the account its email names, and
+ * creates an account when none does. Both follow the BA-02 address rule: the
+ * account storing the address exactly, else the one storing it in other
+ * capitals. An address several accounts share names nobody, and creating
+ * another account for it is refused, so a provider sign-in never adds to a
+ * shared address. New accounts store the normalized form.
+ */
+function withAccountEmailRule(adapter: AccountAdapter): AccountAdapter {
+  return {
+    ...adapter,
+    async getUserByEmail(email) {
+      const account = soleAccount(await findAccountsByEmail(getDb(), email));
+      if (!account) return null;
+      if (!adapter.getUser) throw new Error('The account adapter cannot read users');
+      return adapter.getUser(account.id);
+    },
+    async createUser(user) {
+      if ((await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        throw new Error('An account already holds this email address');
+      if (!adapter.createUser) throw new Error('The account adapter cannot create users');
+      return adapter.createUser({ ...user, email: normalizeAccountEmail(user.email) });
+    },
+  };
+}
+
 export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(getDb(), {
-    usersTable: schema.users,
-    accountsTable: schema.accounts,
-    sessionsTable: schema.sessions,
-    verificationTokensTable: schema.verificationTokens,
-  }),
+  adapter: withAccountEmailRule(
+    DrizzleAdapter(getDb(), {
+      usersTable: schema.users,
+      accountsTable: schema.accounts,
+      sessionsTable: schema.sessions,
+      verificationTokensTable: schema.verificationTokens,
+    }),
+  ),
   providers,
   cookies: {
     // The session token is the login itself. SameSite=Lax (NOT None) is correct

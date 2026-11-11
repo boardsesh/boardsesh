@@ -11,9 +11,10 @@ vi.mock('@boardsesh/db/queries/account-email', async () => {
   return fakeAccountEmailLookup(() => lookup.stored);
 });
 
-const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
+const { mockAdapterCreateUser, mockAdapterUpdateUser, mockAdapterGetUser } = vi.hoisted(() => ({
   mockAdapterCreateUser: vi.fn(),
   mockAdapterUpdateUser: vi.fn(),
+  mockAdapterGetUser: vi.fn(),
 }));
 
 // Mock server-only before any imports
@@ -32,6 +33,7 @@ vi.mock('@auth/drizzle-adapter', () => ({
   DrizzleAdapter: vi.fn(() => ({
     createUser: mockAdapterCreateUser,
     updateUser: mockAdapterUpdateUser,
+    getUser: mockAdapterGetUser,
   })),
 }));
 
@@ -1126,6 +1128,83 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
     await import('../auth-options');
 
     expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
+  });
+});
+
+// =============================================================================
+// Adapter — NextAuth's provider sign-in links and creates by email (BA-02)
+// =============================================================================
+
+describe('authOptions.adapter — one account per address in any capitalisation', () => {
+  type AdapterUserInput = Extract<
+    Parameters<NonNullable<NonNullable<typeof authOptions.adapter>['createUser']>>[0],
+    { id: string }
+  >;
+  const adapter = () => {
+    const configured = authOptions.adapter;
+    if (!configured?.getUserByEmail || !configured.createUser) throw new Error('adapter not wrapped');
+    return { getUserByEmail: configured.getUserByEmail, createUser: configured.createUser };
+  };
+  const providerProfile = (email: string): AdapterUserInput => ({
+    id: 'provider-profile',
+    email,
+    name: 'Provider Climber',
+    emailVerified: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lookup.stored = [];
+    mockAdapterGetUser.mockImplementation(async (id: string) => ({ id, email: 'stored', emailVerified: null }));
+    mockAdapterCreateUser.mockImplementation(async (user: AdapterUserInput) => ({ ...user, id: 'created' }));
+  });
+
+  // NextAuth lowercases the provider email before it asks.
+  it('links a Google or Apple sign-in to the account that stores its email in capitals', async () => {
+    lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
+
+    await adapter().getUserByEmail('mixed.case@example.test');
+
+    expect(mockAdapterGetUser).toHaveBeenCalledWith('mixed');
+  });
+
+  it('links to the account storing the address exactly when a sibling has other capitals', async () => {
+    lookup.stored = [
+      { id: 'mixed', email: 'Mixed.Case@Example.test' },
+      { id: 'lower', email: 'mixed.case@example.test' },
+    ];
+
+    await adapter().getUserByEmail('mixed.case@example.test');
+
+    expect(mockAdapterGetUser).toHaveBeenCalledWith('lower');
+  });
+
+  it('names nobody for an address several accounts share in other capitals', async () => {
+    lookup.stored = [
+      { id: 'title', email: 'Shared@Example.test' },
+      { id: 'upper', email: 'SHARED@EXAMPLE.TEST' },
+    ];
+
+    expect(await adapter().getUserByEmail('shared@example.test')).toBeNull();
+    expect(mockAdapterGetUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses to create another account for an address any account already holds', async () => {
+    lookup.stored = [
+      { id: 'title', email: 'Shared@Example.test' },
+      { id: 'upper', email: 'SHARED@EXAMPLE.TEST' },
+    ];
+
+    await expect(adapter().createUser(providerProfile('shared@example.test'))).rejects.toThrow();
+    expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+  });
+
+  it('creates a new account with the normalized address', async () => {
+    await adapter().createUser(providerProfile('New.Climber@Example.test'));
+
+    expect(mockAdapterCreateUser).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'new.climber@example.test', name: 'Provider Climber' }),
+    );
   });
 });
 

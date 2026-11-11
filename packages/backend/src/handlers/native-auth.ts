@@ -4,6 +4,8 @@ import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 import { eq, and, isNull, lt, or, isNotNull, DrizzleQueryError } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
+import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
+import { findAccountHoldersByEmail } from '@boardsesh/db/queries/account-email';
 import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
@@ -1113,16 +1115,22 @@ type FindOrCreateResult =
       userId: string;
       accountCreation?: AccountCreationReceipt;
     }
-  | { status: 'no_email' };
+  | { status: 'no_email' }
+  | { status: 'conflict' };
 
 /**
  * Resolve the Boardsesh user for a verified identity and mint a token pair,
  * all inside one transaction:
  *   1. Existing `accounts` row for (provider, sub) → that user.
- *   2. Else a `users` row matching the normalized email → link it (insert the
- *      accounts row; mark email verified when the provider asserts it).
- *   3. Else create the user + profile + accounts link.
- * Apple resubmissions omit the email but always resolve via step 1.
+ *   2. Else the one `users` row the email names under the BA-02 rule (stored
+ *      exactly as the normalized address, else the single row storing it in
+ *      other capitals) → link it (insert the accounts row; mark email verified
+ *      when the provider asserts it).
+ *   3. Else, when no row holds the address in any capitalisation, create the
+ *      user + profile + accounts link, storing the normalized address.
+ * An address that is taken but names no single linkable account (several
+ * capitalisations, two rows with the same text, or an unverified provider
+ * email) is a conflict: no link and no new account. Apple resubmissions omit the email but always resolve via step 1.
  */
 async function findOrCreateOAuthUser(
   provider: OAuthProvider,
@@ -1150,41 +1158,47 @@ async function findOrCreateOAuthUser(
       };
     }
 
-    const normalizedEmail = identity.email ? identity.email.trim().toLowerCase() : null;
+    const normalizedEmail = identity.email ? normalizeAccountEmail(identity.email) : null;
+    const holders = normalizedEmail ? await findAccountHoldersByEmail(tx, normalizedEmail) : null;
 
     // 2. Link by email — ONLY when the provider asserts the email is verified.
     // This is the security boundary NextAuth's allowDangerousEmailAccountLinking
     // leaves to the provider: auto-linking an *unverified* provider email to an
     // existing account would let anyone able to mint a token for an arbitrary
     // email claim take over that account. Apple always verifies (real or relay);
-    // Google's email_verified is almost always true. An unverified email falls
-    // through to creation, which anchors on the provider sub instead.
-    if (normalizedEmail && identity.emailVerified) {
-      const matchedRows = await tx
-        .select({ id: users.id, emailVerified: users.emailVerified, createdAt: users.createdAt })
-        .from(users)
-        .where(eq(users.email, normalizedEmail))
+    // Google's email_verified is almost always true.
+    const matched = holders && identity.emailVerified ? soleAccount(holders) : null;
+    if (matched) {
+      await transactionSettings(tx);
+      await requireHumanSubjectForIssuance(tx, matched.id);
+      await tx
+        .insert(accounts)
+        .values({ userId: matched.id, type: 'oauth', provider, providerAccountId: identity.sub })
+        .onConflictDoNothing();
+      // The insert does nothing when a concurrent sign-in linked this subject
+      // first. Confirm who owns the link now; never mint for an unconfirmed owner.
+      const [link] = await tx
+        .select({ userId: accounts.userId })
+        .from(accounts)
+        .where(and(eq(accounts.provider, provider), eq(accounts.providerAccountId, identity.sub)))
         .limit(1);
-      const matched = matchedRows[0];
-      if (matched) {
-        await transactionSettings(tx);
-        await requireHumanSubjectForIssuance(tx, matched.id);
-        await tx
-          .insert(accounts)
-          .values({ userId: matched.id, type: 'oauth', provider, providerAccountId: identity.sub })
-          .onConflictDoNothing();
-        if (!matched.emailVerified) {
-          await tx.update(users).set({ emailVerified: new Date() }).where(eq(users.id, matched.id));
-        }
-        const tokenPair = await generateTokenPair(matched.id, tx, origin);
-        return {
-          status: 'ok',
-          tokenPair,
-          userId: matched.id,
-          accountCreation: accountCreationReceipt(matched.id, false, provider, matched.createdAt),
-        };
+      if (link?.userId !== matched.id) return { status: 'conflict' };
+      if (!matched.emailVerified) {
+        await tx.update(users).set({ emailVerified: new Date() }).where(eq(users.id, matched.id));
       }
+      const tokenPair = await generateTokenPair(matched.id, tx, origin);
+      return {
+        status: 'ok',
+        tokenPair,
+        userId: matched.id,
+        accountCreation: accountCreationReceipt(matched.id, false, provider, matched.createdAt),
+      };
     }
+
+    // The address is taken but names no single account to link (several
+    // capitalisations, two rows with the same text, or an unverified provider
+    // email): another account for it would add to a shared address.
+    if (holders && holders.kind !== 'none') return { status: 'conflict' };
 
     // 3. Create. Email is NOT NULL on `users`; Apple/Google both return an
     // email on first authorization (Apple's relay address when hidden), so a
@@ -1317,6 +1331,13 @@ export async function handleNativeAuthOAuth(
     if (result.status === 'no_email') {
       logger.warn(`[NativeAuth] ${provider} sign-in for a new account without an email — rejecting`);
       sendJson(res, 401, { error: 'An email is required to create an account' });
+      return;
+    }
+    if (result.status === 'conflict') {
+      logger.warn(`[NativeAuth] ${provider} sign-in names no single account for its email — rejecting`);
+      sendJson(res, 409, {
+        error: 'This sign-in method is not linked to that account. Use your existing sign-in method.',
+      });
       return;
     }
     logger.info(`[NativeAuth] ${provider} sign-in successful for user ${result.userId}`);
