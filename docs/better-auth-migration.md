@@ -363,6 +363,19 @@ production, so the only live code touched is native issuance:
 - `recordSecurityMutation` takes `users FOR UPDATE` itself, so every generation
   writer excludes an issuer holding `users FOR KEY SHARE`.
 
+Measured on the local test Postgres, the same handlers over HTTP, legacy modes,
+before and after, three alternating rounds (median per round):
+
+| Path | Before | After |
+| --- | --- | --- |
+| Native password sign-in, bcrypt cost 10, 40 runs | 55.6 to 57.7 ms | 57.0 to 57.9 ms |
+| Native password sign-in, bcrypt cost 4 (database share), 300 runs | 3.04 to 3.53 ms | 3.11 to 3.21 ms |
+| Native refresh, 300 runs | 3.44 to 3.93 ms | 2.55 to 2.75 ms |
+| Statements per sign-in / per refresh, besides BEGIN and COMMIT | 7 / 11 | 7 / 6 |
+| Unrelated staged sign-in while a deletion holds another account and 16 sign-ins name it | 3,942 to 3,962 ms | 21 to 25 ms |
+
+The first row's spread is bcrypt's; the second isolates the database work.
+
 **Known gap, staged web only.** The web stamps a password sign-in's cookie with a
 generation it reads after the backend's `authenticated` reply
 (`auth-options.ts`, `signInGeneration`). A reset committing in that gap yields a
