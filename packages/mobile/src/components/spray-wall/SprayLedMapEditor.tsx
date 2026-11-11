@@ -348,9 +348,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     <View style={{ gap: spacing[2] }}>
       <Text variant="footnote">{t('sprayLedSetup.wiringLegend')}</Text>
       <Text>
-        {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, paths: wiring?.paths.length ?? 0 })}
+        {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, count: wiring?.paths.length ?? 0 })}
       </Text>
-      {cableComplete ? <Text variant="footnote">{t('sprayLedSetup.cableComplete')}</Text> : null}
       {mode === 'light' ? (
         <>
           {available ? (
@@ -459,7 +458,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   );
   return (
     <>
-      <Text>{t('sprayLedSetup.cableEditorHint')}</Text>
+      {/* Lay cable is hidden once every LED is wired, so its hint gives way to how to reroute. */}
+      <Text>{t(cableComplete ? 'sprayLedSetup.cableComplete' : 'sprayLedSetup.cableEditorHint')}</Text>
       {tools}
       <SprayPhotoStage
         width={width}
