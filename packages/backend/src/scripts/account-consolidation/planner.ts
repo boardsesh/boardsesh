@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { EvidenceWorksheet, WorksheetGroup, WorksheetMember } from '../../auth/email-audit/evidence';
 
 export type ConsolidationErrorCode =
+  | 'COUPLED_GROUPS'
   | 'CONFIGURATION'
   | 'INVALID_EVIDENCE'
   | 'INPUT_LIMIT'

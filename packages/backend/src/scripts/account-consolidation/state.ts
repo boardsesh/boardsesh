@@ -1,6 +1,6 @@
 /** Server-side row digests: credential values never cross the connection. */
 import { sql, type SQL } from 'drizzle-orm';
-import { ConsolidationError, consolidationDigest } from './planner';
+import { ConsolidationError, consolidationDigest, type ConsolidationGroupPlan } from './planner';
 import type { ConsolidationContext, ConsolidationTransaction } from './executor';
 
 export interface ConsolidationTableState {
@@ -133,17 +133,7 @@ function predicates(table: TableSelection, userIds: readonly string[]): SQL {
   return sql`(${sql.join(clauses, sql` OR `)})`;
 }
 
-/** Unknown user-FK tables are included, even when the mutation registry refuses them. */
-export async function captureConsolidationGroupState(
-  transaction: Pick<ConsolidationTransaction, 'execute'>,
-  userIds: readonly string[],
-  checkTime: () => void = () => {},
-): Promise<ConsolidationGroupState> {
-  if (userIds.length < 2 || userIds.length > 1000 || new Set(userIds).size !== userIds.length)
-    throw new ConsolidationError('INVALID_EVIDENCE');
-  await transaction.execute(
-    sql`SELECT pg_catalog.set_config('TimeZone','UTC',true),pg_catalog.set_config('DateStyle','ISO, YMD',true)`,
-  );
+async function loadConsolidationSelections(transaction: Pick<ConsolidationTransaction, 'execute'>) {
   const references = await transaction.execute<{
     schema: string;
     table: string;
@@ -179,6 +169,21 @@ export async function captureConsolidationGroupState(
       columns: [...new Set([...(existing?.columns ?? []), ...configured.columns])],
     });
   }
+  return selections;
+}
+
+/** Unknown user-FK tables are included, even when the mutation registry refuses them. */
+export async function captureConsolidationGroupState(
+  transaction: Pick<ConsolidationTransaction, 'execute'>,
+  userIds: readonly string[],
+  checkTime: () => void = () => {},
+): Promise<ConsolidationGroupState> {
+  if (userIds.length < 2 || userIds.length > 1000 || new Set(userIds).size !== userIds.length)
+    throw new ConsolidationError('INVALID_EVIDENCE');
+  await transaction.execute(
+    sql`SELECT pg_catalog.set_config('TimeZone','UTC',true),pg_catalog.set_config('DateStyle','ISO, YMD',true)`,
+  );
+  const selections = await loadConsolidationSelections(transaction);
   const tables: ConsolidationTableState[] = [];
   let totalRows = 0;
   let totalBytes = 0;
@@ -259,4 +264,75 @@ export async function captureAfterConsolidationGroupFingerprint(
   context: ConsolidationContext,
 ) {
   return (await captureConsolidationGroupState(transaction, context.group.memberUserIds)).fingerprint;
+}
+
+/** No row payload or credential material leaves the server during the overlap scan. */
+export class ConsolidationCouplingError extends ConsolidationError {
+  constructor(
+    readonly table: string,
+    readonly groupReferences: readonly string[],
+  ) {
+    super('COUPLED_GROUPS');
+  }
+}
+/** Reject intersecting physical preimages before any batch/domain DML. No baseline is replaced. */
+export async function preflightConsolidationGroups(
+  transaction: Pick<ConsolidationTransaction, 'execute'>,
+  groups: readonly ConsolidationGroupPlan[],
+  checkTime: () => void = () => {},
+) {
+  if (!groups.length) return;
+  const userIds = groups.flatMap((group) => [...group.memberUserIds]);
+  if (userIds.length > 1000 || new Set(userIds).size !== userIds.length)
+    throw new ConsolidationError('INVALID_EVIDENCE');
+  let firstState: ConsolidationGroupState | undefined;
+  let totalRows = 0;
+  let totalBytes = 0;
+  for (const group of groups) {
+    if (!group.referenceState) throw new ConsolidationError('UNSAFE_PLAN');
+    checkTime();
+    const current = await captureConsolidationGroupState(transaction, group.memberUserIds, checkTime);
+    if (current.fingerprint !== group.referenceState.fingerprint) throw new ConsolidationError('INVALID_EVIDENCE');
+    totalRows += current.tables.reduce((count, table) => count + table.rows, 0);
+    totalBytes += current.tables.reduce((count, table) => count + table.bytes, 0);
+    if (totalRows > LIMIT_ROWS || totalBytes > LIMIT_BYTES) throw new ConsolidationError('INPUT_LIMIT');
+    firstState ??= current;
+  }
+  if (groups.length < 2) return;
+  const selections = await loadConsolidationSelections(transaction);
+  for (const selection of selections.values()) {
+    checkTime();
+    if (
+      !firstState?.tables.find((table) => table.schema === selection.schema && table.table === selection.table)?.present
+    )
+      continue;
+    const memberships = groups.map((group) => predicates(selection, group.memberUserIds));
+    // Each physical source row is evaluated once; equal payloads on distinct rows do not overlap.
+    const [overlap] = await transaction.execute<{ memberships: boolean[] }>(sql`
+      SELECT pg_catalog.to_jsonb(ARRAY[${sql.join(
+        memberships.map((predicate) => sql`COALESCE(${predicate},false)`),
+        sql`, `,
+      )}]) AS memberships
+      FROM ${sql.identifier(selection.schema)}.${sql.identifier(selection.table)} original
+      WHERE ${predicates(selection, userIds)} AND (${sql.join(
+        memberships.map((predicate) => sql`CASE WHEN ${predicate} THEN 1 ELSE 0 END`),
+        sql` + `,
+      )}) > 1 LIMIT 1`);
+    if (overlap) {
+      if (
+        !Array.isArray(overlap.memberships) ||
+        overlap.memberships.length !== groups.length ||
+        overlap.memberships.some((member) => typeof member !== 'boolean')
+      )
+        throw new ConsolidationError('DATABASE');
+      throw new ConsolidationCouplingError(
+        `${selection.schema}.${selection.table}`,
+        groups
+          .filter((_group, index) => overlap.memberships[index])
+          .map((group) =>
+            consolidationDigest(JSON.stringify([group.normalizedEmail, [...group.memberUserIds].sort()])),
+          ),
+      );
+    }
+  }
 }

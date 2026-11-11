@@ -176,6 +176,16 @@ policy is version 2; earlier automatic-transfer plans cannot be applied.
    existing-family provider jobs and group audit commit atomically. Drift or
    unsupported conflicts roll back the affected group. Reuse plan/batch IDs
    with a new receipt path to resume; completed groups are not applied twice.
+
+   Before any new database writes, every pending group's exact approved baseline
+   is revalidated and shared physical preimages are checked across the same full
+   table registry. `COUPLED_GROUPS` rejects the combined batch before its first
+   group changes anything; the private receipt identifies the table and hashed
+   group references, without row contents. Connected groups need separately
+   reviewed serial plans, with a fresh snapshot after each completed repair.
+   Existing approved baselines are never replaced with live state. Resume skips
+   only groups whose committed audit is bound to this exact batch and plan;
+   external drift in any remaining group still rejects before further writes.
 5. Verify the private final receipt and queued provider work before restoring
    writers. The five-minute limit stops further groups and requires inspection.
    The final global percentile refresh is derived work after all groups;

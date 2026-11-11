@@ -74,7 +74,7 @@ const state = await drizzle(operator).transaction((transaction) =>
 const secondState = await drizzle(operator).transaction((transaction) =>
   captureConsolidationGroupState(transaction, ['canonical-two', 'source-two']),
 );
-const plan = buildAccountConsolidationPlan(
+let plan = buildAccountConsolidationPlan(
   evidenceFixture([
     { userId: 'canonical', email: 'fixture@example.test', ticks: 1 },
     { userId: 'source', email: 'Fixture@example.test', ticks: 1 },
@@ -121,8 +121,55 @@ assert.equal(plan.groups[0].blockers.length, 0);
 const directory = mkdtempSync('/private/tmp/consolidation-rehearsal-');
 chmodSync(directory, 0o700);
 const planFile = join(directory, 'plan.json');
-writeFileSync(planFile, `${JSON.stringify(plan, null, 2)}\n`, { mode: 0o600 });
+async function refreshReferenceStates(connection: postgres.Sql, previous: typeof plan) {
+  const refreshed = [];
+  for (const group of previous.groups)
+    refreshed.push({
+      ...group,
+      referenceState: await drizzle(connection).transaction((transaction) =>
+        captureConsolidationGroupState(transaction, group.memberUserIds),
+      ),
+    });
+  return { ...previous, groups: refreshed };
+}
+await operator`INSERT INTO user_follows(follower_id,following_id) VALUES('source','source-two')`;
+const coupledPlan = await refreshReferenceStates(operator, plan);
+const coupledPlanFile = join(directory, 'coupled-plan.json');
+writeFileSync(coupledPlanFile, `${JSON.stringify(coupledPlan, null, 2)}\n`, { mode: 0o600 });
 await operator.end({ timeout: 1 });
+await assert.rejects(
+  runAccountConsolidationApply(
+    {
+      planFile: coupledPlanFile,
+      expectedPlanSha256: fingerprintConsolidationPlan(coupledPlan),
+      batchId: 'coupled-rehearsal',
+      out: join(directory, 'coupled-receipt.jsonl'),
+    },
+    { ACCOUNT_CONSOLIDATION_DATABASE_URL: operatorUrl },
+  ),
+  { code: 'COUPLED_GROUPS' },
+);
+const rejected = postgres(operatorUrl, { max: 1, onnotice: () => {} });
+assert.equal((await rejected`SELECT count(*)::int AS count FROM account_consolidation_batches`)[0].count, 0);
+assert.equal((await rejected`SELECT count(*)::int AS count FROM account_consolidation_group_audits`)[0].count, 0);
+assert.equal((await rejected`SELECT count(*)::int AS count FROM user_credentials`)[0].count, 4);
+assert.equal((await rejected`SELECT count(*)::int AS count FROM boardsesh_ticks`)[0].count, 4);
+assert.equal(
+  (
+    await rejected`SELECT count(*)::int AS count FROM user_follows WHERE follower_id='source' AND following_id='source-two'`
+  )[0].count,
+  1,
+);
+const coupledReceipt = JSON.parse(
+  readFileSync(join(directory, 'coupled-receipt.jsonl'), 'utf8').trim().split('\n').slice(1).join('\n'),
+) as { blocker: { code: string; table: string; groupReferences: string[] } };
+assert.equal(coupledReceipt.blocker.code, 'COUPLED_GROUPS');
+assert.equal(coupledReceipt.blocker.table, 'public.user_follows');
+assert.equal(coupledReceipt.blocker.groupReferences.length, 2);
+await rejected`DELETE FROM user_follows`;
+plan = await refreshReferenceStates(rejected, plan);
+await rejected.end({ timeout: 1 });
+writeFileSync(planFile, `${JSON.stringify(plan, null, 2)}\n`, { mode: 0o600 });
 const environment = { ACCOUNT_CONSOLIDATION_DATABASE_URL: operatorUrl };
 const options = {
   planFile,
@@ -200,15 +247,27 @@ assert.equal(
 );
 assert.equal((await verification`SELECT count(*)::int AS count FROM climb_stats_recompute_pending`)[0].count, 2);
 assert.match((await verification`SELECT notes FROM board_sessions`)[0].notes, /Keep source notes/);
+const [audit] =
+  await verification`SELECT merge_id,before_fingerprint FROM account_consolidation_group_audits ORDER BY merge_id LIMIT 1`;
+await verification`UPDATE account_consolidation_group_audits SET before_fingerprint=${'0'.repeat(64)} WHERE merge_id=${audit.merge_id}`;
 await verification.end({ timeout: 1 });
+await assert.rejects(
+  runAccountConsolidationApply({ ...options, out: join(directory, 'unbound-audit-receipt.jsonl') }, environment),
+  { code: 'UNSAFE_PLAN' },
+);
+const restoreAudit = postgres(operatorUrl, { max: 1, onnotice: () => {} });
+await restoreAudit`UPDATE account_consolidation_group_audits SET before_fingerprint=${audit.before_fingerprint} WHERE merge_id=${audit.merge_id}`;
+await restoreAudit.end({ timeout: 1 });
 process.stdout.write(
   JSON.stringify({
     status: 'passed',
     groups: 2,
     domains: 6,
     idempotentResume: true,
+    unboundAuditRejected: true,
     actualMaintenanceFence: true,
     actualCli: true,
+    coupledBatchRejectedBeforeDatabaseWrites: true,
     freshSigninRequired: true,
     sourceSessionsRetiredCanonicalSessionsPreserved: true,
     derivedStatsRecomputedInline: true,

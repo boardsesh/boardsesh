@@ -1,12 +1,12 @@
 /** Bounded operator batch execution; every group commits independently and can be resumed. */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { refreshUserClimbPercentiles } from '@boardsesh/db/queries';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { PgBoss } from 'pg-boss';
 import { randomUUID, createHash } from 'node:crypto';
 import { openSync, writeFileSync, closeSync, fsyncSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { accountConsolidationBatches } from '@boardsesh/db/schema/auth';
+import { accountConsolidationBatches, accountConsolidationGroupAudits } from '@boardsesh/db/schema/auth';
 import { writePrivateFileExclusively } from '../../auth/email-audit/private-file';
 import { resolveWorksheetPath } from '../account-email-evidence';
 import { applyAccountConsolidationGroup, type ConsolidationContext } from './executor';
@@ -18,6 +18,8 @@ import {
 } from './planner';
 import { createConsolidationRuntime } from './runtime';
 import { verifyPostgresMaintenanceFence } from './maintenance';
+import { lockAuthorityGateExclusively } from '../../auth/current-store/foundation-context';
+import { preflightConsolidationGroups, ConsolidationCouplingError } from './state';
 
 export async function applyConsolidationBatch(
   database: PostgresJsDatabase,
@@ -71,6 +73,10 @@ export async function applyConsolidationBatch(
   let globalStatsStatus: 'not-refreshed' | 'refreshed' | 'already-refreshed' = 'not-refreshed';
   try {
     await database.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`SELECT pg_catalog.set_config('lock_timeout','2000ms',true),pg_catalog.set_config('statement_timeout','60000ms',true)`,
+      );
+      await lockAuthorityGateExclusively(transaction);
       await verifyPostgresMaintenanceFence(transaction);
       const [existing] = await transaction
         .select()
@@ -79,6 +85,31 @@ export async function applyConsolidationBatch(
         .for('update');
       if (existing && (existing.planSha256 !== options.expectedPlanSha256 || existing.policyVersion !== 2))
         throw new ConsolidationError('UNSAFE_PLAN');
+      const audits = await transaction
+        .select()
+        .from(accountConsolidationGroupAudits)
+        .where(eq(accountConsolidationGroupAudits.batchId, batchId))
+        .limit(1001);
+      if (audits.length > plan.groups.length) throw new ConsolidationError('UNSAFE_PLAN');
+      const expected = new Map(
+        plan.groups.map((group) => [
+          consolidationDigest(JSON.stringify([batchId, [...group.memberUserIds].sort()])),
+          group,
+        ]),
+      );
+      for (const audit of audits) {
+        const group = expected.get(audit.mergeId);
+        if (!existing || !group || audit.beforeFingerprint !== consolidationDigest(JSON.stringify(group)))
+          throw new ConsolidationError('UNSAFE_PLAN');
+      }
+      const appliedIds = new Set(audits.map((audit) => audit.mergeId));
+      const pending = plan.groups.filter(
+        (group) => !appliedIds.has(consolidationDigest(JSON.stringify([batchId, [...group.memberUserIds].sort()]))),
+      );
+      if (existing?.status === 'applied' && pending.length) throw new ConsolidationError('UNSAFE_PLAN');
+      await preflightConsolidationGroups(transaction, pending, () => {
+        if (Date.now() - startedAt > 300000) throw new ConsolidationError('INPUT_LIMIT');
+      });
       if (!existing)
         await transaction
           .insert(accountConsolidationBatches)
@@ -124,6 +155,9 @@ export async function applyConsolidationBatch(
     status: failure ? 'incomplete' : 'applied',
     applied,
     archives,
+    ...(failure instanceof ConsolidationCouplingError
+      ? { blocker: { code: failure.code, table: failure.table, groupReferences: failure.groupReferences } }
+      : {}),
     derivedStats: { status: globalStatsStatus, groupAuditFingerprints: 'before-final-global-derived-refresh' },
   };
   const receiptBytes = `${JSON.stringify(receipt, null, 2)}\n`;
