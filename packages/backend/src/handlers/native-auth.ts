@@ -27,7 +27,12 @@ import {
   currentStoreNativeRegistrationConfiguration,
   currentStoreNativeOAuthConfiguration,
 } from '../auth/current-store/authority-configuration';
-import { preflight, transactionSettings, type WebPasswordAuthority } from '../auth/current-store/command-context';
+import {
+  preflight,
+  signInTransactionSettings,
+  transactionSettings,
+  type WebPasswordAuthority,
+} from '../auth/current-store/command-context';
 import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
 import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
 import {
@@ -451,12 +456,12 @@ async function generateTokenPair(
 }> {
   let generations = lockedState;
   if (!generations) {
-    await transactionSettings(transaction);
-    generations = await requireHumanSubjectForIssuance(
-      transaction,
-      userId,
-      origin.kind === 'sign-in' ? origin.passwordProof : undefined,
-    );
+    const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
+    // A password sign-in gives up on a held user row after 250 ms and answers
+    // 503, which the app retries; issuance that must win keeps 4 s.
+    if (passwordProof) await signInTransactionSettings(transaction);
+    else await transactionSettings(transaction);
+    generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
   }
   if (origin.kind === 'refresh') {
     // A child copies its parent's stamps, so a parent from before a reset or an

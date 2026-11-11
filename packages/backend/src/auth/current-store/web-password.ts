@@ -32,6 +32,7 @@ export { WebPasswordCommandError, isWebPasswordCommandFresh, type WebPasswordAut
 import {
   captureAuthority,
   assertFresh,
+  boundSignInLockWaits,
   preflight,
   transactionSettings,
   claimCommand,
@@ -211,13 +212,27 @@ export async function authenticateWebPassword(
         outcome: 'error',
         code: 'replayed',
       };
+    // A password that matched no one is wrong whatever the rows say now, so it
+    // takes no user lock: a burst of wrong guesses naming a held account never
+    // waits or holds a pool connection behind it.
+    if (!matched) {
+      assertFresh(issuedAt);
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId,
+        outcome: 'invalid_credentials',
+      };
+    }
     // Gate, then users FOR KEY SHARE: a sign-in writes no identity row, so it
     // only has to keep every credential writer out until it answers. Every such
     // writer takes users FOR UPDATE first, which KEY SHARE excludes, while the
     // foreign-key KEY SHARE an ordinary write (a logbook sync page) holds does not
     // conflict, so a sign-in never waits for one. No other climber's command
     // shares a lock with this one. Old writers are explicitly NOT assumed to
-    // take the gate or the user lock.
+    // take the gate or the user lock. A held row is given up on after 250 ms
+    // and answered unavailable, never as a wrong password.
+    await boundSignInLockWaits(transaction);
     const currentUsers = await transaction
       .select({ id: users.id })
       .from(users)

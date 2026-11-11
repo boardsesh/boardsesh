@@ -83,6 +83,10 @@ export async function lockEnforcedProjection(
   await transaction.execute(
     sql`SELECT pg_catalog.pg_advisory_xact_lock_shared(${AUTHORITY_GATE_NAMESPACE}, ${AUTHORITY_GATE_KEY})`,
   );
+  // No row lock: only the gate keeps this row still until commit. So every
+  // writer of the manifest (PR 5's activate, PR 11's switch) must hold
+  // lockAuthorityGateExclusively; one that skips it is caught only by a later
+  // re-validation in the same command, if there is one.
   const [manifest] = await transaction
     .select()
     .from(authEmailProjection)
@@ -107,6 +111,12 @@ export async function lockEnforcedProjection(
  * commits, so it must stay one short transaction. A command still running after
  * the limit fails the switch with 55P03, never the command. Take it first, before
  * any row lock: a command holding the gate never waits on the switch's rows.
+ *
+ * For PR 5 and PR 11: an account deletion holds the shared gate through its
+ * whole content and cascade. A switch started during one queues for its 2 s, and
+ * every staged command arriving meanwhile queues behind the switch, so staged
+ * auth stalls for about 2 s and the switch then fails. Retry it; do not raise
+ * the limit.
  */
 export async function lockAuthorityGateExclusively(transaction: CurrentStoreTransaction): Promise<void> {
   await requireReadCommitted(transaction);

@@ -104,8 +104,6 @@ let blocker: RawSql;
 let observer: RawSql;
 /** The unrelated climber's own session: the second connection of "one deletion blocks nobody else". */
 let bystander: RawSql;
-/** A burst arriving at other backend instances: its own connections, not this process's pool. */
-let burstPool: RawSql;
 let partnerConnection: RawSql;
 
 function track<Result>(operation: Promise<Result>): Promise<Result> {
@@ -364,7 +362,6 @@ describe('per-user sign-in locks against the owned primary database', () => {
     bystander = postgres(getWorkerDatabaseUrl(), single);
     // One connection per partner flow in flight: three park at once below.
     partnerConnection = postgres(getWorkerDatabaseUrl(), { ...single, max: 4 });
-    burstPool = postgres(getWorkerDatabaseUrl(), { ...single, max: 16 });
     httpServer = createServer((request, response) => {
       const handler = routes[new URL(request.url ?? '/', 'http://localhost').pathname];
       if (!handler) {
@@ -403,8 +400,7 @@ describe('per-user sign-in locks against the owned primary database', () => {
 
   afterAll(async () => {
     await clearAuthority();
-    for (const connection of [blocker, observer, bystander, partnerConnection, burstPool])
-      await connection?.end({ timeout: 3 });
+    for (const connection of [blocker, observer, bystander, partnerConnection]) await connection?.end({ timeout: 3 });
     if (httpServer)
       await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
   });
@@ -475,43 +471,64 @@ describe('per-user sign-in locks against the owned primary database', () => {
   });
 
   describe('one deletion no longer blocks another climber', () => {
-    it('leaves an unrelated sign-in on a second connection unaffected by a deletion and a burst naming that account', async () => {
+    it('keeps an unrelated sign-in fast while a deletion and a burst naming that account share its pool', async () => {
       const cascadeKey = randomInt(1, 2_147_483_647);
       await installPark('public.users', 'BEFORE DELETE', `OLD.id='${ownerId}'`, cascadeKey);
       const park = await holdKey(cascadeKey);
       let deletion: Promise<boolean> | undefined;
-      const burst: Promise<unknown>[] = [];
+      const burst: Promise<{ status: 'fulfilled'; value: unknown } | { status: 'rejected'; reason: unknown }>[] = [];
       try {
         deletion = track(deleteAccount(ownerId));
         const deletionPid = await waiterOn(cascadeKey);
-        // 16 commands naming the account, from other instances: each waits on its row.
-        const burstDatabase = drizzle(burstPool) as unknown as DbInstance;
-        for (let index = 0; index < 16; index += 1) {
-          burst.push(track(settled(signIn(burstDatabase, ownerEmail, `wrong-${index}`))));
-        }
-        await waitBlockedBy(deletionPid, Promise.race(burst), 16);
+        // 20 unauthenticated requests naming the account, through this process's
+        // own pool (5 connections, one held by the deletion), as one backend gets them.
+        for (let index = 0; index < 16; index += 1)
+          burst.push(track(settled(signIn(db, ownerEmail, `wrong-${index}`))));
+        for (let index = 0; index < 4; index += 1)
+          burst.push(
+            track(
+              settled(requestPasswordRecovery(db, authority, webCommand('forgot-password', { email: ownerEmail }))),
+            ),
+          );
+        // The forgot-passwords queue on the deletion's row and give up after 250 ms; wait to see them start.
+        await bounded(
+          (async () => {
+            for (;;) {
+              const [row] = await observer<
+                { waiting: number }[]
+              >`SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE ${deletionPid}=ANY(pg_blocking_pids(pid))`;
+              if (row.waiting >= 1) return;
+              await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+          })(),
+          3000,
+        );
 
-        // The unrelated climber, on its own connection, while all of that is held.
+        // The unrelated climber, through the same pool, while all of that is queued.
         const webStartedAt = performance.now();
-        const web = await bounded(signIn(drizzle(bystander) as unknown as DbInstance, otherEmail, password), 3000);
+        const web = await bounded(signIn(db, otherEmail, password), 5000);
         const webMs = performance.now() - webStartedAt;
         const nativeStartedAt = performance.now();
-        const nativePair = await bounded(issued('/credentials', { email: otherEmail, password }), 3000);
+        const nativePair = await bounded(issued('/credentials', { email: otherEmail, password }), 5000);
         const nativeMs = performance.now() - nativeStartedAt;
         expect(web.outcome).toBe('authenticated');
         expect(nativePair.userId).toBe(otherId);
-        // Waiting behind 16 commands at 250 ms each took ~4 s and failed (55P03).
-        expect(webMs).toBeLessThan(1000);
-        expect(nativeMs).toBeLessThan(1000);
         console.info(
-          `[per-user-locks] unrelated sign-in during deletion: web ${webMs.toFixed(0)} ms, native ${nativeMs.toFixed(0)} ms`,
+          `[per-user-locks] unrelated sign-in through a shared pool: web ${webMs.toFixed(0)} ms, native ${nativeMs.toFixed(0)} ms`,
         );
+        // At a 4 s limit the burst held the pool and this took about 16 s.
+        expect(webMs).toBeLessThan(500);
+        expect(nativeMs).toBeLessThan(500);
 
-        // The commands naming the account give up on their own lock limit.
+        // A wrong password is wrong without the row, so those answered at once.
+        // A forgot-password gave up after 250 ms: 55P03, answered with the
+        // retryable 503 "unavailable" reply, never a different answer.
         const outcomes = await bounded(Promise.all(burst), 8000);
-        for (const outcome of outcomes) {
-          expect(outcome).toMatchObject({ status: 'rejected' });
-          expect(getPostgresErrorCode((outcome as { reason: unknown }).reason)).toBe('55P03');
+        for (const outcome of outcomes.slice(0, 16)) {
+          expect(outcome).toMatchObject({ status: 'fulfilled', value: { outcome: 'invalid_credentials' } });
+        }
+        for (const outcome of outcomes.slice(16)) {
+          expect(outcome.status === 'rejected' && getPostgresErrorCode(outcome.reason)).toBe('55P03');
         }
       } finally {
         park.release();
@@ -520,6 +537,43 @@ describe('per-user sign-in locks against the owned primary database', () => {
       expect(await bounded(deletion!)).toBe(true);
       expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
     }, 30_000);
+
+    it('tells a sign-in that finds the account held to retry, within 250 ms, never that the password is wrong', async () => {
+      const cascadeKey = randomInt(1, 2_147_483_647);
+      await installPark('public.users', 'BEFORE DELETE', `OLD.id='${ownerId}'`, cascadeKey);
+      const park = await holdKey(cascadeKey);
+      let deletion: Promise<boolean> | undefined;
+      try {
+        deletion = track(deleteAccount(ownerId));
+        await waiterOn(cascadeKey);
+        // The right password, so only the held row can stop it.
+        const webStartedAt = performance.now();
+        const web = await bounded(settled(signIn(db, ownerEmail, password)), 6000);
+        const webMs = performance.now() - webStartedAt;
+        expect(web.status === 'rejected' && getPostgresErrorCode(web.reason)).toBe('55P03');
+        const nativeStartedAt = performance.now();
+        const response = await bounded(native('/credentials', { email: ownerEmail, password }), 6000);
+        const nativeMs = performance.now() - nativeStartedAt;
+        expect(response.status).toBe(503);
+        expect(await response.json()).toEqual({ error: 'Authentication is temporarily unavailable' });
+        expect(webMs).toBeLessThan(1000);
+        expect(nativeMs).toBeLessThan(1000);
+      } finally {
+        park.release();
+        await park.held;
+      }
+      expect(await bounded(deletion!)).toBe(true);
+    }, 20_000);
+
+    /** Unauthenticated or sign-in requests that give up on a held row after 250 ms. */
+    const BOUNDED_COMMANDS = new Set(['forgot password', 'resend verification', 'web sign-in']);
+    /** Commands that read the account's reservation after its users row. */
+    const RESERVATION_COMMANDS = new Set([
+      'forgot password',
+      'password reset',
+      'resend verification',
+      'email verification',
+    ]);
 
     /**
      * Each command waits on the account's users row while the deletion holds it,
@@ -619,9 +673,43 @@ describe('per-user sign-in locks against the owned primary database', () => {
         }
         expect(await bounded(deletion!)).toBe(true);
         const outcome = await bounded(settled(command!));
-        if (outcome.status === 'rejected') throw outcome.reason;
+        if (outcome.status === 'rejected') {
+          // A request that need not win may have given up first (250 ms): the
+          // retryable unavailable reply, never a deadlock or a different answer.
+          if (!BOUNDED_COMMANDS.has(_name) || getPostgresErrorCode(outcome.reason) !== '55P03') throw outcome.reason;
+          return;
+        }
         expect(outcome.value).toMatchObject(expected as Record<string, unknown>);
         expect(outcome.value).not.toHaveProperty('mailPlan');
+      },
+      20_000,
+    );
+
+    it.each(commandsNamingTheAccount.filter(([name]) => RESERVATION_COMMANDS.has(name)))(
+      '%s holds no lock on the reservation while it waits for the climber',
+      async (_name, prepare) => {
+        const run = await prepare();
+        // The deletion's place: the climber's row held FOR UPDATE.
+        const holder = await hold(blocker, (transaction) =>
+          transaction.select({ id: users.id }).from(users).where(eq(users.id, ownerId)).for('update'),
+        );
+        let command: Promise<unknown> | undefined;
+        try {
+          command = track(settled(run(drizzle(bystander) as unknown as DbInstance)));
+          await waitBlockedBy(holder.pid, command);
+          // What the deletion's bookkeeping asks for next. Free, so no cycle can form.
+          const probe = await settled(
+            observer.begin(
+              (transaction) =>
+                transaction`SELECT 1 FROM auth_email_reservations WHERE normalized_email = ${ownerEmail} FOR UPDATE NOWAIT`,
+            ),
+          );
+          expect(probe.status === 'rejected' ? getPostgresErrorCode(probe.reason) : 'free').toBe('free');
+        } finally {
+          holder.release();
+          await holder.held;
+        }
+        await bounded(command!);
       },
       20_000,
     );

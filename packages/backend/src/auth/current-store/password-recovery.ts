@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
   assertFresh,
+  boundSignInLockWaits,
   captureAuthority,
   claimCommand,
   claimLegacyLink,
@@ -146,6 +147,9 @@ export async function requestPasswordRecovery(
       };
     const key = normalizeAccountEmail(email);
     const hinted = await ownerHint(transaction, key);
+    // Unauthenticated, so it must not hold a pool connection for 4 s behind a
+    // held row: 250 ms, then unavailable (SIGN_IN_LOCK_TIMEOUT).
+    await boundSignInLockWaits(transaction);
     const user = hinted ? await lockSubjectRow(transaction, hinted) : undefined;
     const userId = await owner(transaction, authority, key);
     assertFresh(issuedAt);

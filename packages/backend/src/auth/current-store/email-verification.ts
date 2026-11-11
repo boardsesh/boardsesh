@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
   assertFresh,
+  boundSignInLockWaits,
   captureAuthority,
   claimCommand,
   claimLegacyLink,
@@ -178,7 +179,9 @@ export async function resendEmailVerification(
       };
     if (!authority.emailVerificationEnabled) return { ...base, outcome: 'accepted' };
     // issueEmailVerification locks this climber, then re-reads the owner locked.
+    // Unauthenticated like forgot-password: 250 ms on a held row, then unavailable.
     const owner = await reservationOwnerHint(transaction, normalizeAccountEmail(email));
+    if (owner) await boundSignInLockWaits(transaction);
     const mailPlan = owner ? await issueEmailVerification(transaction, authority, owner) : null;
     assertFresh(issuedAt);
     return { ...base, outcome: 'accepted', ...(mailPlan ? { mailPlan } : {}) };
