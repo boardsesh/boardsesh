@@ -5,7 +5,12 @@ import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
-import { AuthAdmissionUnavailableError, admitsCredential, readHumanSubjectState } from '../auth/human-admission';
+import {
+  AuthAdmissionUnavailableError,
+  AuthCredentialRefusedError,
+  admitsCredential,
+  readHumanSubjectState,
+} from '../auth/human-admission';
 import { decideCredential, type PresentedCredential } from '../auth/credential-cutoffs';
 
 export type AuthResult = {
@@ -66,12 +71,28 @@ function cacheCryptoResult(token: string, result: AuthResult, format: TokenCache
   });
 }
 
-async function admitCryptoResult(result: AuthResult | null): Promise<AuthResult | null> {
+export type ValidateTokenOptions = {
+  /**
+   * Throw `AuthCredentialRefusedError` for a credential we signed that
+   * `decideCredential` refuses, instead of returning null. The optional-credential
+   * transports (GraphQL HTTP, the WebSocket handshake) need it to tell a refused
+   * credential, which must sign the app out, from an expired or foreign one,
+   * which stays anonymous.
+   */
+  readonly throwOnRefusal?: boolean;
+};
+
+async function admitCryptoResult(
+  result: AuthResult | null,
+  { throwOnRefusal = false }: ValidateTokenOptions,
+): Promise<AuthResult | null> {
   // Keep database uncertainty OUTSIDE cryptographic catches. Every invocation,
   // including a warm cache and either direct exported validator, checks primary.
   if (!result) return null;
   const subject = await readHumanSubjectState(result.userId);
-  return admitsCredential(decideCredential(result.credential, subject, Date.now()), 'request') ? result : null;
+  if (admitsCredential(decideCredential(result.credential, subject, Date.now()), 'request')) return result;
+  if (throwOnRefusal) throw new AuthCredentialRefusedError();
+  return null;
 }
 
 /**
@@ -122,8 +143,11 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
   }
 }
 
-export async function validateNextAuthToken(token: string): Promise<AuthResult | null> {
-  return admitCryptoResult(await verifyNextAuthToken(token, requireSigningSecret()));
+export async function validateNextAuthToken(
+  token: string,
+  options: ValidateTokenOptions = {},
+): Promise<AuthResult | null> {
+  return admitCryptoResult(await verifyNextAuthToken(token, requireSigningSecret()), options);
 }
 
 /**
@@ -173,8 +197,8 @@ async function verifyMobileJwt(token: string, secret: string): Promise<AuthResul
   }
 }
 
-export async function validateMobileJwt(token: string): Promise<AuthResult | null> {
-  return admitCryptoResult(await verifyMobileJwt(token, requireSigningSecret()));
+export async function validateMobileJwt(token: string, options: ValidateTokenOptions = {}): Promise<AuthResult | null> {
+  return admitCryptoResult(await verifyMobileJwt(token, requireSigningSecret()), options);
 }
 
 /**
@@ -188,14 +212,14 @@ export async function validateMobileJwt(token: string): Promise<AuthResult | nul
  * @param token - The token from the client (JWE or JWS)
  * @returns Auth result with userId if valid, null if invalid
  */
-export async function validateToken(token: string): Promise<AuthResult | null> {
+export async function validateToken(token: string, options: ValidateTokenOptions = {}): Promise<AuthResult | null> {
   // JWE tokens (NextAuth) have 5 dot-separated segments,
   // JWS tokens (mobile JWT) have 3 segments.
   const segments = token.split('.').length;
   if (segments === 5) {
-    return validateNextAuthToken(token);
+    return validateNextAuthToken(token, options);
   } else if (segments === 3) {
-    return validateMobileJwt(token);
+    return validateMobileJwt(token, options);
   }
   return null;
 }
