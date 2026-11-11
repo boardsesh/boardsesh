@@ -10,7 +10,7 @@ vi.mock('../credential-admission.server', async (importOriginal) => ({
   admitPresentedWebCredential: admission,
 }));
 
-import { withAuthResponseAdmission } from '../auth-response-admission.server';
+import { withAuthResponseAdmission, type SignOutCompletion } from '../auth-response-admission.server';
 import { CredentialAuthorityUnavailable } from '../credential-admission.server';
 
 const secret = 'owned-response-public-codec-fixture-secret';
@@ -155,6 +155,154 @@ describe('buffered auth response admission', () => {
     );
     expect(await response.json()).toEqual({});
     expect(handler).not.toHaveBeenCalled();
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('publishes only the exact acknowledged signout response after its own credential denial', async () => {
+    const original = new Response(null, { headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' } });
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        complete(original, credentialA);
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response).toBe(original);
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+  });
+  it('refuses a completion bound to different encoded bytes even for the same subject', async () => {
+    const equivalent = await encode({ secret, token: { sub: 'owner-a' } });
+    expect(equivalent === credentialA).toBe(false);
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, equivalent);
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('does not transfer completion to an identical cloned response', async () => {
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, credentialA);
+        admission.mockResolvedValue(null);
+        return original.clone();
+      },
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('rejects signout completion on another action', async () => {
+    const response = await withAuthResponseAdmission(
+      request('session', `__Secure-next-auth.session-token=${credentialA}`),
+      context('session'),
+      async (complete) => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, credentialA);
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('requires a genuine clear before completion, not one added afterward', async () => {
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        const original = new Response(null);
+        complete(original, credentialA);
+        original.headers.append('Set-Cookie', '__Secure-next-auth.session-token=; Max-Age=0');
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('requires the acknowledged clear to remain present at publication', async () => {
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, credentialA);
+        original.headers.delete('Set-Cookie');
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+  it('always admits a newly emitted credential even on an acknowledged signout response', async () => {
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, credentialA);
+        original.headers.append(
+          'Set-Cookie',
+          `__Secure-next-auth.session-token=${credentialB}; Path=/; Secure; HttpOnly`,
+        );
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(admission).toHaveBeenCalledWith(credentialB);
+  });
+  it('cannot replay a completion capability in a later request', async () => {
+    let previousCompletion: SignOutCompletion | undefined;
+    await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async (complete) => {
+        previousCompletion = complete;
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        complete(original, credentialA);
+        return original;
+      },
+    );
+    expect(typeof previousCompletion).toBe('function');
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${credentialA}`),
+      context('signout'),
+      async () => {
+        const original = new Response(null, {
+          headers: { 'Set-Cookie': '__Secure-next-auth.session-token=; Max-Age=0' },
+        });
+        previousCompletion?.(original, credentialA);
+        admission.mockResolvedValue(null);
+        return original;
+      },
+    );
+    expect(response.status).toBe(401);
     expect(response.headers.getSetCookie()).toEqual([]);
   });
 });

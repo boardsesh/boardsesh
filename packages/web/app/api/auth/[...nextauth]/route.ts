@@ -1,11 +1,11 @@
 import { requiresWebSignOutForwarding } from '@boardsesh/auth-protocol';
 import { forwardWebSignOut, responseClearsNextAuthSession } from '@/app/lib/auth/web-signout-command.server';
 import { capturePresentedWebCredential } from '@/app/lib/auth/admitted-session.server';
-import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
+import { withAuthResponseAdmission, type SignOutCompletion } from '@/app/lib/auth/auth-response-admission.server';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
 import { getToken } from 'next-auth/jwt';
-import { type NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
 import {
@@ -168,6 +168,7 @@ async function postAuth(
   request: NextRequest,
   context: NextAuthRouteContext,
   options: NextAuthOptions,
+  completeSignOut: SignOutCompletion,
 ): Promise<Response> {
   const handler = handlerFor(options);
   // Match the public NextAuth App Router dispatch exactly. URL suffixes can
@@ -205,11 +206,24 @@ async function postAuth(
   // currently picks, a session living under the other name would fail the
   // comparison and turn every sign-out into a 409 the user cannot get past.
   const [preferredCookieName, fallbackCookieName] = sessionCookieNameCandidates();
-  const tokenOptions = { req: request, secret: process.env.NEXTAUTH_SECRET, secureCookie: isSecureCookieContext() };
+  // getToken also accepts Authorization bearer credentials. Sign-out is bound
+  // to the browser cookie: a bearer must not disguise which name was selected.
+  const cookieRequest = new NextRequest(request.url, {
+    headers: { cookie: request.headers.get('cookie') ?? '' },
+  });
+  const tokenOptions = {
+    req: cookieRequest,
+    secret: process.env.NEXTAUTH_SECRET,
+    secureCookie: isSecureCookieContext(),
+  };
   let token: Awaited<ReturnType<typeof getToken>>;
+  let selectedCookieName = preferredCookieName;
   try {
     token = await getToken({ ...tokenOptions, cookieName: preferredCookieName });
-    token ??= await getToken({ ...tokenOptions, cookieName: fallbackCookieName });
+    if (!token) {
+      token = await getToken({ ...tokenOptions, cookieName: fallbackCookieName });
+      selectedCookieName = fallbackCookieName;
+    }
   } catch {
     return guardedSignOutResponse(503, 'signout_identity_unavailable');
   }
@@ -220,17 +234,32 @@ async function postAuth(
   // NextAuth's sign-out clears only the Domain-scoped cookie under the one name
   // it picked. Clear both names in both scopes, so the read fallback above can't
   // resurrect a session the user just signed out of.
-  const response = await handler(request, context);
+  // The public handler must consume the same selected cookie as the identity
+  // guard. Otherwise a fallback-only session produces a redirect with no clear,
+  // which cannot prove a successful sign-out or trigger the backend denial.
+  const signOutHandler = handlerFor({
+    ...options,
+    cookies: {
+      ...options.cookies,
+      sessionToken: {
+        name: selectedCookieName,
+        options: options.cookies?.sessionToken?.options ?? {},
+      },
+    },
+  });
+  const response = await signOutHandler(request, context);
   // Only a successful public NextAuth CSRF flow emits its session clear. Buffer
   // those headers until the independent backend SID denial is acknowledged.
   const clearedSession = responseClearsNextAuthSession(response);
+  // A CSRF refusal must not be transformed into cookie clearing or a denial,
+  // including when the legacy sign-out writer is selected.
+  if (!clearedSession) return response;
   try {
     if (requiresWebSignOutForwarding(process.env)) {
-      // A CSRF refusal must not be transformed into cookie clearing or a denial.
-      if (!clearedSession) return response;
       const presented = await capturePresentedWebCredential(request);
       if (!presented) return guardedSignOutResponse(503, 'signout_identity_unavailable');
       await forwardWebSignOut(presented.credential);
+      completeSignOut(response, presented.credential);
     }
   } catch {
     return guardedSignOutResponse(503, 'signout_authority_unavailable');
@@ -261,9 +290,11 @@ async function getAuth(
 }
 
 async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return withAuthResponseAdmission(request, context, () =>
+  return withAuthResponseAdmission(request, context, (completeSignOut) =>
     withWebOAuthIdentity(request, context, authOptions, (current, options) =>
-      current.method === 'POST' ? postAuth(current, context, options) : getAuth(current, context, options),
+      current.method === 'POST'
+        ? postAuth(current, context, options, completeSignOut)
+        : getAuth(current, context, options),
     ),
   );
 }
