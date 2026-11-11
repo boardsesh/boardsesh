@@ -27,6 +27,7 @@ export type AccountEmailEvidenceErrorCode =
   | 'CONFIGURATION'
   | 'OUTPUT_EXISTS'
   | 'OUTPUT_INSIDE_REPOSITORY'
+  | 'OUTPUT_FOLDER_NOT_PRIVATE'
   | 'OUTPUT_UNAVAILABLE'
   | 'NOT_READ_ONLY'
   | 'PRIMARY_NOT_ALLOWED'
@@ -34,6 +35,7 @@ export type AccountEmailEvidenceErrorCode =
   | 'INPUT_LIMIT'
   | 'INVALID_ROW'
   | 'COUNT_MISMATCH'
+  | 'GROUPING_MISMATCH'
   | 'TIME_LIMIT'
   | 'LOCK_TIMEOUT'
   | 'STANDBY_CONFLICT'
@@ -86,15 +88,30 @@ export interface OwnDataRules {
   readonly housekeepingTablePrefixes: readonly string[];
   /** Computed for every user, so a row says nothing about use of the account. */
   readonly derivedTables: readonly string[];
-  /** Rows another person caused: feed and notification recipient, follows received. */
+  /** Columns whose every row another person caused: things received rather than done. */
   readonly causedByOthers: readonly { readonly table: string; readonly column: string }[];
+  /**
+   * Rows of an otherwise own-data column that another person caused, split out
+   * by a fixed SQL condition and counted under `<schema.table.column>:<label>`.
+   */
+  readonly causedByOthersRows: readonly CausedByOthersRowRule[];
+}
+
+export interface CausedByOthersRowRule {
+  readonly table: string;
+  readonly column: string;
+  readonly label: string;
+  /** Code constant over the referencing table's own columns. Never user input. */
+  readonly condition: string;
 }
 
 /**
  * Owner decision of 2026-11-11: "real data" means OWN data. That is the plan's
  * rule (any row referencing users, minus identity housekeeping) minus
- * `user_climb_percentiles` and minus rows other people caused. It matches the
- * audit's q2 "own_data" definition.
+ * `user_climb_percentiles` and minus rows other people caused. It is the
+ * audit's q2 "own_data" definition plus three received-row exclusions q2 did
+ * not have: follow requests received, community roles granted, and pending
+ * invites from someone else. Analytics activity days stay own data.
  */
 export const OWN_DATA_RULES: OwnDataRules = Object.freeze({
   housekeepingTables: Object.freeze([
@@ -115,6 +132,17 @@ export const OWN_DATA_RULES: OwnDataRules = Object.freeze({
     Object.freeze({ table: 'feed_items', column: 'recipient_id' }),
     Object.freeze({ table: 'notifications', column: 'recipient_id' }),
     Object.freeze({ table: 'user_follows', column: 'following_id' }),
+    Object.freeze({ table: 'user_follow_requests', column: 'recipient_id' }),
+    // An admin grants the role; the grantor's `granted_by` stays own data.
+    Object.freeze({ table: 'community_roles', column: 'user_id' }),
+  ]),
+  causedByOthersRows: Object.freeze([
+    Object.freeze({
+      table: 'resource_grants',
+      column: 'user_id',
+      label: 'pending-invite',
+      condition: "status = 'pending' AND invited_by IS NOT NULL AND invited_by <> user_id",
+    }),
   ]),
 });
 
@@ -137,6 +165,42 @@ export function referencingColumnRole(
 
 export function referencingColumnKey(column: Pick<ReferencingColumn, 'schema' | 'table' | 'column'>): string {
   return `${column.schema}.${column.table}.${column.column}`;
+}
+
+/** The row-split rules the snapshot applies to a column: at most one. */
+export function causedByOthersRowRule(
+  column: Pick<ReferencingColumn, 'table' | 'column'>,
+  rules: OwnDataRules = OWN_DATA_RULES,
+): CausedByOthersRowRule | undefined {
+  const matching = rules.causedByOthersRows.filter(
+    (rule) => rule.table === column.table && rule.column === column.column,
+  );
+  if (matching.length > 1) throw new AccountEmailEvidenceError('CATALOG_MISMATCH');
+  return matching[0];
+}
+
+/**
+ * Every row key a snapshot may report, with its role under `rules`. A split
+ * key the rules no longer exclude falls back to its column's role, so a
+ * mutated rule set still reads a snapshot taken under the default rules.
+ */
+export function referencingRowKeyRoles(
+  columns: readonly ReferencingColumn[],
+  rules: OwnDataRules = OWN_DATA_RULES,
+): Map<string, { readonly column: ReferencingColumn; readonly role: ReferencingColumnRole }> {
+  const roles = new Map<string, { readonly column: ReferencingColumn; readonly role: ReferencingColumnRole }>();
+  for (const column of columns) {
+    const key = referencingColumnKey(column);
+    const role = referencingColumnRole(column, rules);
+    roles.set(key, { column, role });
+    const split = causedByOthersRowRule(column, OWN_DATA_RULES);
+    if (split)
+      roles.set(`${key}:${split.label}`, {
+        column,
+        role: causedByOthersRowRule(column, rules)?.label === split.label ? 'caused-by-others' : role,
+      });
+  }
+  return roles;
 }
 
 export type GroupKind = 'A' | 'B' | 'C' | 'D' | 'E';
@@ -185,6 +249,8 @@ export interface EvidenceUserRow {
   readonly email: string;
   /** SQL `lower(email)` from the same snapshot. */
   readonly sqlLower: string;
+  /** SQL `lower(lower(email))`: shows whether SQL lowercasing is stable on this row. */
+  readonly sqlLowerTwice: string;
 }
 
 export interface PendingLinks {
@@ -218,7 +284,7 @@ export interface EvidenceMemberFacts {
   readonly gymAdminMemberships: number;
   readonly pendingLinks: PendingLinks;
   readonly stagedVerificationCompleted: boolean;
-  /** Non-zero row counts keyed by `schema.table.column`, for every referencing column. */
+  /** Non-zero row counts keyed by `schema.table.column` (plus `:label` for a split), for every referencing column. */
   readonly rowsByColumn: Readonly<Record<string, number>>;
 }
 
@@ -229,8 +295,6 @@ export interface CollectedEvidence {
   readonly members: ReadonlyMap<string, EvidenceMemberFacts>;
   readonly usersWithoutLoginMethod: number;
   readonly fixedSystemAccountsWithoutLogin: number;
-  /** JS-normalized non-ASCII addresses that would fail `email = lower(email) AND email = btrim(email)`. */
-  readonly normalizedFormsFailingSqlCheck: number;
 }
 
 export interface SharedAddressGroup {
@@ -372,7 +436,12 @@ export interface EvidenceSummary {
     readonly empty: number;
     readonly nonAscii: number;
     readonly sqlLowerDiffersFromJs: number;
-    readonly normalizedFormsFailingSqlCheck: number;
+    /**
+     * Rows whose JS-normalized form is not proven to pass PR 5's
+     * `email = lower(email)` check: SQL and JS lowercase it differently, or
+     * SQL lowercasing is not stable on it. Only non-ASCII rows can count.
+     */
+    readonly normalizedFormsAtRiskInSqlCheck: number;
   };
   readonly login: {
     readonly usersWithoutLoginMethod: number;
@@ -403,6 +472,7 @@ export interface EvidenceWorksheet {
     readonly housekeepingTablePrefixes: readonly string[];
     readonly derivedTables: readonly string[];
     readonly causedByOthers: readonly string[];
+    readonly causedByOthersRows: readonly string[];
     readonly kinds: Readonly<Record<GroupKind, string>>;
   };
   readonly summary: EvidenceSummary;
@@ -485,10 +555,7 @@ export function buildAccountEmailEvidence(
   collected: CollectedEvidence,
   rules: OwnDataRules = OWN_DATA_RULES,
 ): { readonly worksheet: EvidenceWorksheet; readonly summary: EvidenceSummary } {
-  const columnsByKey = new Map(collected.referencingColumns.map((column) => [referencingColumnKey(column), column]));
-  const roleByKey = new Map(
-    collected.referencingColumns.map((column) => [referencingColumnKey(column), referencingColumnRole(column, rules)]),
-  );
+  const rowKeys = referencingRowKeyRoles(collected.referencingColumns, rules);
   const rawEmailCounts = new Map<string, number>();
   const normalizedAddresses = new Set<string>();
   for (const user of collected.users) {
@@ -516,10 +583,9 @@ export function buildAccountEmailEvidence(
       const ownRows: Record<string, number> = {};
       const excludedRows: Record<string, number> = {};
       for (const [key, rows] of Object.entries(facts.rowsByColumn)) {
-        const column = columnsByKey.get(key);
-        const role = roleByKey.get(key);
-        if (!column || !role || !Number.isSafeInteger(rows) || rows < 0)
-          throw new AccountEmailEvidenceError('INVALID_ROW');
+        const rowKey = rowKeys.get(key);
+        if (!rowKey || !Number.isSafeInteger(rows) || rows < 0) throw new AccountEmailEvidenceError('INVALID_ROW');
+        const { column, role } = rowKey;
         if (rows === 0) continue;
         if (role !== 'own-data') {
           addCount(excludedRows, key, rows);
@@ -615,6 +681,7 @@ export function buildAccountEmailEvidence(
   let empty = 0;
   let nonAscii = 0;
   let sqlLowerDiffersFromJs = 0;
+  let normalizedFormsAtRiskInSqlCheck = 0;
   for (const user of collected.users) {
     const normalized = normalizeAccountEmail(user.email);
     if (user.email !== normalized) {
@@ -626,6 +693,10 @@ export function buildAccountEmailEvidence(
     if (hasNonAscii(user.email)) nonAscii += 1;
     // Lowercasing never adds or removes whitespace, so this isolates case folding.
     if (user.sqlLower !== user.email.toLowerCase()) sqlLowerDiffersFromJs += 1;
+    // When SQL and JS agree and SQL lowercasing is stable, lower(normalized) = normalized
+    // (trimming never meets case), so the stored-form check passes.
+    if (user.sqlLower !== user.email.toLowerCase() || user.sqlLowerTwice !== user.sqlLower)
+      normalizedFormsAtRiskInSqlCheck += 1;
   }
   const kindTotal = GROUP_KINDS.reduce((total, kind) => total + groupsByKind[kind], 0);
   const ownDataColumns = collected.referencingColumns.filter(
@@ -664,7 +735,7 @@ export function buildAccountEmailEvidence(
       empty,
       nonAscii,
       sqlLowerDiffersFromJs,
-      normalizedFormsFailingSqlCheck: collected.normalizedFormsFailingSqlCheck,
+      normalizedFormsAtRiskInSqlCheck,
     },
     login: {
       usersWithoutLoginMethod: collected.usersWithoutLoginMethod,
@@ -679,7 +750,7 @@ export function buildAccountEmailEvidence(
     },
     checks: {
       kindsSumToGroups: kindTotal === groups.length,
-      sqlLowerMatchesJs: sqlLowerDiffersFromJs === 0 && collected.normalizedFormsFailingSqlCheck === 0,
+      sqlLowerMatchesJs: sqlLowerDiffersFromJs === 0 && normalizedFormsAtRiskInSqlCheck === 0,
       noLoginRowsAreFixedSystemAccounts:
         collected.usersWithoutLoginMethod === FIXED_SYSTEM_ACCOUNT_IDS.length &&
         collected.fixedSystemAccountsWithoutLogin === FIXED_SYSTEM_ACCOUNT_IDS.length,
@@ -711,6 +782,9 @@ export function buildAccountEmailEvidence(
       housekeepingTablePrefixes: rules.housekeepingTablePrefixes,
       derivedTables: rules.derivedTables,
       causedByOthers: rules.causedByOthers.map((rule) => `${rule.table}.${rule.column}`),
+      causedByOthersRows: rules.causedByOthersRows.map(
+        (rule) => `${rule.table}.${rule.column}:${rule.label} (${rule.condition})`,
+      ),
       kinds: GROUP_KIND_MEANINGS,
     },
     summary,

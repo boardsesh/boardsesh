@@ -145,27 +145,64 @@ ACCOUNT_EMAIL_EVIDENCE_DATABASE_URL='postgresql://<role>@<standby-host>/boardses
   confirmed read-only and the connection is closed. A standby replay conflict
   ends the run with `STANDBY_CONFLICT` and a lock held for 5 s with
   `LOCK_TIMEOUT`; rerun either.
+- **No IDs or addresses on the wire.** Every statement works out the
+  shared-address members itself, from a subquery that groups by the JS trim
+  and lowercase rule. Every bind parameter is a number from the code, so a
+  server that logs slow or all statements records no user ID or address. If
+  that SQL grouping and the JS normalizer find different members, the run stops
+  with `GROUPING_MISMATCH`.
 - **Tables.** Every foreign key to `users(id)` is read from the live catalog, so
   a new table counts without a code change. Partitions are counted once through
-  their parent. References without a foreign key are not seen.
+  their parent. References without a foreign key are not seen. Unlike the
+  audit's q2 query, which skipped unindexed columns on tables of 256 MB or more,
+  every column is scanned.
+- **Runtime.** Expect 10 s to 2 minutes on the standby. About 100 statements
+  each take tens of milliseconds. Each unindexed column on a large table adds
+  one sequential scan, roughly 5 s per GB from a cold cache. One scan above about
+  10 GB hits the 60 s statement timeout and ends the run with `TIME_LIMIT`.
 - **Own data.** A member has data when any of their rows sits in a referencing
-  column, except identity housekeeping (profile, credentials, provider links,
-  tokens, sessions, devices, `auth_*`, `oauth_*`), `user_climb_percentiles`
-  (computed for everyone), and rows other people caused (feed and notification
-  recipient, follows received). Those rows still appear in the worksheet as
-  `excludedRows`.
+  column, with three exceptions:
+  - identity housekeeping: profile, credentials, provider links, tokens,
+    sessions, devices, `auth_*` and `oauth_*`;
+  - `user_climb_percentiles`, which is computed for everyone;
+  - rows other people caused: feed and notification recipient, follows
+    received, follow requests received, community roles granted
+    (`community_roles.user_id`), and pending invites from someone else
+    (`resource_grants` rows that are `pending` with another user as
+    `invited_by`).
+
+  Analytics activity days count as own data. Excluded rows still appear in the
+  worksheet as `excludedRows`.
 - **Kinds.** A: two or more members have data, so the address gets the contact
   email. B: the only data holder is unstamped and an empty member is stamped; a
   bare stamp is not proof, so B follows the C/D rule with no email. C: one data
   holder, the rest have no live provider link or token. D: one data holder, an
   empty member still has a Google/Apple link or a live refresh token. E: nobody
   has data. Facebook-only links count as no login method.
-- **Output.** The worksheet (mode 0600, never overwritten, refused inside the
-  repository) holds addresses, names, user IDs, the proposal per group and the
-  contact list. Stdout holds counts only, plus the worksheet's SHA-256.
+- **Output.** The worksheet holds addresses, names, user IDs, the proposal per
+  group and the contact list. It is created with mode 0600 and never overwritten.
+  It must go in a folder you own with mode 0700, and is refused if that folder
+  or any parent holds `.git`. That covers this checkout, a sibling worktree and
+  any other repository. A failed write removes the partial file, so a rerun can
+  use the same path. Stdout holds counts only, plus the worksheet's SHA-256.
 
 Accept a run when stdout shows `status: "complete"` and all three `checks` are
 `true`: kinds sum to the group count, SQL `lower()` agrees with the JS rule on
 every row, and the rows without a login method are exactly the three fixed
 system accounts. A `false` check means stop and report the counts, never the
 worksheet.
+
+If the run hits `TIME_LIMIT`, list the unindexed foreign-key columns by table
+size first (the audit's Q0 query). The largest unindexed one is the likely
+cause. Rerun when the standby is quiet, or report that column's name.
+
+If the kind counts differ from the audit's (A 17, B 3, C 5, D 5), two changes
+explain it:
+
+1. This report scans the large unindexed columns that q2 skipped. A member whose
+   only data sits there moves from C or D to A. Compare
+   `catalog.unindexedColumns` with Q0's list.
+2. It excludes three kinds of received rows that q2 counted. A member whose only
+   data was one of them moves from A to B, C or D.
+
+Report the counts by kind, never the worksheet.

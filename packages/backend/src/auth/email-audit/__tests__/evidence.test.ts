@@ -7,6 +7,7 @@ import {
   FIXED_SYSTEM_ACCOUNT_IDS,
   OWN_DATA_RULES,
   referencingColumnRole,
+  referencingRowKeyRoles,
   type CollectedEvidence,
   type EvidenceMemberFacts,
   type EvidenceUserRow,
@@ -26,7 +27,13 @@ const COLUMNS: ReferencingColumn[] = [
   { schema: 'public', table: 'user_profiles', column: 'user_id', indexed: true },
   { schema: 'public', table: 'auth_password_recovery_tokens', column: 'user_id', indexed: false },
   { schema: 'public', table: 'oauth_grants', column: 'user_id', indexed: false },
+  { schema: 'public', table: 'user_follow_requests', column: 'recipient_id', indexed: true },
+  { schema: 'public', table: 'user_follow_requests', column: 'requester_id', indexed: false },
+  { schema: 'public', table: 'community_roles', column: 'user_id', indexed: false },
+  { schema: 'public', table: 'community_roles', column: 'granted_by', indexed: false },
+  { schema: 'public', table: 'resource_grants', column: 'user_id', indexed: true },
 ];
+const PENDING_INVITE = 'public.resource_grants.user_id:pending-invite';
 
 const TICKS = 'public.boardsesh_ticks.user_id';
 const PERCENTILES = 'public.user_climb_percentiles.user_id';
@@ -76,7 +83,12 @@ function collect(
 ): CollectedEvidence {
   const shapes = groups.flat();
   const users = [
-    ...shapes.map((shape) => ({ userId: shape.id, email: shape.email, sqlLower: shape.email.toLowerCase() })),
+    ...shapes.map((shape) => ({
+      userId: shape.id,
+      email: shape.email,
+      sqlLower: shape.email.toLowerCase(),
+      sqlLowerTwice: shape.email.toLowerCase(),
+    })),
     ...(extra.users ?? []),
   ];
   return {
@@ -92,7 +104,6 @@ function collect(
     referencingColumns: COLUMNS,
     usersWithoutLoginMethod: FIXED_SYSTEM_ACCOUNT_IDS.length,
     fixedSystemAccountsWithoutLogin: FIXED_SYSTEM_ACCOUNT_IDS.length,
-    normalizedFormsFailingSqlCheck: 0,
     ...extra,
     users,
     members: new Map(shapes.map((shape) => [shape.id, memberFacts(shape)])),
@@ -138,7 +149,17 @@ describe('own-data rules', () => {
       'user_profiles.user_id': 'housekeeping',
       'auth_password_recovery_tokens.user_id': 'housekeeping',
       'oauth_grants.user_id': 'housekeeping',
+      'user_follow_requests.recipient_id': 'caused-by-others',
+      'user_follow_requests.requester_id': 'own-data',
+      'community_roles.user_id': 'caused-by-others',
+      'community_roles.granted_by': 'own-data',
+      'resource_grants.user_id': 'own-data',
     });
+    // A pending invite from someone else is split out of resource_grants and excluded; other grants stay own data.
+    const rowKeys = referencingRowKeyRoles(COLUMNS);
+    expect(rowKeys.get(PENDING_INVITE)?.role).toBe('caused-by-others');
+    expect(rowKeys.get('public.resource_grants.user_id')?.role).toBe('own-data');
+    expect(rowKeys.has('public.boardsesh_ticks.user_id:pending-invite')).toBe(false);
     // A table nobody listed is own data, so a new table counts by default.
     expect(referencingColumnRole({ table: 'trip_reports', column: 'author_id' })).toBe('own-data');
   });
@@ -299,19 +320,27 @@ describe('mutation checks on the own-data exclusions', () => {
     pair({ data: true, stamped: true }, { rows: { 'public.feed_items.recipient_id': 1 } }),
     pair({ data: true, stamped: true }, { rows: { 'public.notifications.recipient_id': 1 } }),
     pair({ data: true, stamped: true }, { rows: { 'public.user_follows.following_id': 1 } }),
+    pair({ data: true, stamped: true }, { rows: { 'public.user_follow_requests.recipient_id': 1 } }),
+    pair({ data: true, stamped: true }, { rows: { 'public.community_roles.user_id': 1 } }),
+    pair({ data: true, stamped: true }, { rows: { [PENDING_INVITE]: 1 } }),
     pair({ data: true, stamped: true }, {}),
   ];
   const baseline = buildAccountEmailEvidence(collect(groups)).summary.groupsByKind;
 
   it('classifies the baseline as one-data-holder groups', () => {
-    expect(baseline).toEqual({ A: 0, B: 0, C: 4, D: 0, E: 0 });
+    expect(baseline).toEqual({ A: 0, B: 0, C: 7, D: 0, E: 0 });
   });
 
   it('dropping the user_climb_percentiles exclusion turns every group into a contact group', () => {
     const mutated = buildAccountEmailEvidence(collect(groups), { ...OWN_DATA_RULES, derivedTables: [] }).summary;
     expect(mutated.groupsByKind).not.toEqual(baseline);
-    expect(mutated.groupsByKind).toEqual({ A: 4, B: 0, C: 0, D: 0, E: 0 });
-    expect(mutated.contactEmails).toBe(4);
+    expect(mutated.groupsByKind).toEqual({ A: 7, B: 0, C: 0, D: 0, E: 0 });
+    expect(mutated.contactEmails).toBe(7);
+  });
+
+  it('dropping the pending-invite row exclusion changes the counts', () => {
+    const mutated = buildAccountEmailEvidence(collect(groups), { ...OWN_DATA_RULES, causedByOthersRows: [] }).summary;
+    expect(mutated.groupsByKind).toEqual({ A: 1, B: 0, C: 6, D: 0, E: 0 });
   });
 
   it.each(OWN_DATA_RULES.causedByOthers.map((rule) => [`${rule.table}.${rule.column}`, rule] as const))(
@@ -323,14 +352,14 @@ describe('mutation checks on the own-data exclusions', () => {
       };
       const mutated = buildAccountEmailEvidence(collect(groups), rules).summary.groupsByKind;
       expect(mutated).not.toEqual(baseline);
-      expect(mutated).toEqual({ A: 1, B: 0, C: 3, D: 0, E: 0 });
+      expect(mutated).toEqual({ A: 1, B: 0, C: 6, D: 0, E: 0 });
     },
   );
 
   it('dropping the housekeeping exclusion changes the counts', () => {
     const mutated = buildAccountEmailEvidence(collect(groups), { ...OWN_DATA_RULES, housekeepingTables: [] }).summary
       .groupsByKind;
-    expect(mutated).toEqual({ A: 4, B: 0, C: 0, D: 0, E: 0 });
+    expect(mutated).toEqual({ A: 7, B: 0, C: 0, D: 0, E: 0 });
   });
 });
 
@@ -407,11 +436,31 @@ describe('address and login checks', () => {
     const { summary } = buildAccountEmailEvidence(
       collect([], {
         users: [
-          { userId: 'u1', email: 'plain@example.test', sqlLower: 'plain@example.test' },
-          { userId: 'u2', email: 'Mixed@example.test', sqlLower: 'mixed@example.test' },
+          {
+            userId: 'u1',
+            email: 'plain@example.test',
+            sqlLower: 'plain@example.test',
+            sqlLowerTwice: 'plain@example.test',
+          },
+          {
+            userId: 'u2',
+            email: 'Mixed@example.test',
+            sqlLower: 'mixed@example.test',
+            sqlLowerTwice: 'mixed@example.test',
+          },
           // JS lowercases U+0130 to "i" plus a combining dot; a libc locale gives a bare "i".
-          { userId: 'u3', email: 'İnan@example.test', sqlLower: 'inan@example.test' },
-          { userId: 'u4', email: ' pad@example.test', sqlLower: ' pad@example.test' },
+          {
+            userId: 'u3',
+            email: 'İnan@example.test',
+            sqlLower: 'inan@example.test',
+            sqlLowerTwice: 'inan@example.test',
+          },
+          {
+            userId: 'u4',
+            email: ' pad@example.test',
+            sqlLower: ' pad@example.test',
+            sqlLowerTwice: ' pad@example.test',
+          },
         ],
       }),
     );
@@ -421,11 +470,19 @@ describe('address and login checks', () => {
       edgeWhitespace: 1,
       nonAscii: 1,
       sqlLowerDiffersFromJs: 1,
+      normalizedFormsAtRiskInSqlCheck: 1,
     });
     expect(summary.checks.sqlLowerMatchesJs).toBe(false);
-    expect(
-      buildAccountEmailEvidence(collect([], { normalizedFormsFailingSqlCheck: 1 })).summary.checks.sqlLowerMatchesJs,
-    ).toBe(false);
+    // SQL agrees with JS, but lowercasing again changes the text: the stored form is not proven stable.
+    const unstable = buildAccountEmailEvidence(
+      collect([], {
+        users: [
+          { userId: 'u5', email: 'Åse@example.test', sqlLower: 'åse@example.test', sqlLowerTwice: 'ase@example.test' },
+        ],
+      }),
+    ).summary;
+    expect(unstable.addresses).toMatchObject({ sqlLowerDiffersFromJs: 0, normalizedFormsAtRiskInSqlCheck: 1 });
+    expect(unstable.checks.sqlLowerMatchesJs).toBe(false);
   });
 
   it('passes the no-login check only when the no-login rows are exactly the three fixed system accounts', () => {

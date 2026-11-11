@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ import {
   accountEmailEvidenceConnectionOptions,
   parseAccountEmailEvidenceArguments,
   resolveWorksheetPath,
+  writeEvidenceWorksheet,
   runAccountEmailEvidenceCli,
 } from '../../../scripts/account-email-evidence';
 
@@ -83,6 +84,10 @@ CREATE TABLE board_climb_events_2026 PARTITION OF board_climb_events FOR VALUES 
 -- Outside the public schema.
 CREATE SCHEMA archive;
 CREATE TABLE archive.legacy_notes (id bigserial PRIMARY KEY, author_id text NOT NULL REFERENCES public.users(id));
+CREATE TABLE user_follow_requests (requester_id text NOT NULL REFERENCES users(id), recipient_id text NOT NULL REFERENCES users(id),
+  created_at timestamp NOT NULL DEFAULT now(), PRIMARY KEY (requester_id, recipient_id));
+CREATE TABLE resource_grants (kind text NOT NULL, resource_id text NOT NULL, user_id text NOT NULL REFERENCES users(id),
+  status text NOT NULL DEFAULT 'pending', invited_by text REFERENCES users(id), PRIMARY KEY (kind, resource_id, user_id));
 `;
 
 type OwnKind =
@@ -94,8 +99,17 @@ type OwnKind =
   | 'climb-event'
   | 'archive-note'
   | 'feed-actor'
-  | 'role';
-type ExcludedKind = 'feed-recipient' | 'notification-recipient' | 'followed' | 'web-session' | 'staged-token';
+  | 'role-granter'
+  | 'grant-accepted';
+type ExcludedKind =
+  | 'feed-recipient'
+  | 'notification-recipient'
+  | 'followed'
+  | 'web-session'
+  | 'staged-token'
+  | 'follow-request-received'
+  | 'role-granted'
+  | 'pending-invite';
 
 interface MemberSpec {
   readonly own?: readonly OwnKind[];
@@ -124,7 +138,8 @@ const OWN_ROTATION: readonly OwnKind[] = [
   'climb-event',
   'archive-note',
   'feed-actor',
-  'role',
+  'role-granter',
+  'grant-accepted',
 ];
 
 function auditShapedGroups(): GroupSpec[] {
@@ -153,7 +168,7 @@ function auditShapedGroups(): GroupSpec[] {
       { own: ['tick'], stamped: true, password: true },
       { own: ['playlist'], stamped: true, password: true, exactDuplicate: true },
       { own: ['tick'], providers: ['google'], exactDuplicate: true },
-      { password: true, exactDuplicate: true },
+      { password: true, exactDuplicate: true, excluded: ['pending-invite'] },
       { stamped: true, password: true },
       { password: true, excluded: ['feed-recipient'] },
       { password: true },
@@ -164,7 +179,11 @@ function auditShapedGroups(): GroupSpec[] {
       kind: 'B',
       members: [
         { own: ['tick'], stamped: false, password: true, liveToken: true },
-        { stamped: true, password: true, excluded: ['followed'] },
+        {
+          stamped: true,
+          password: true,
+          excluded: ['followed', 'follow-request-received', ...(index === 0 ? (['role-granted'] as const) : [])],
+        },
       ],
     });
   for (let index = 0; index < 5; index += 1)
@@ -251,7 +270,13 @@ async function insertOwn(kind: OwnKind, userId: string, otherUserId: string) {
   if (kind === 'archive-note') await writer`INSERT INTO archive.legacy_notes (author_id) VALUES (${userId})`;
   if (kind === 'feed-actor')
     await writer`INSERT INTO feed_items (recipient_id, actor_id) VALUES (${otherUserId}, ${userId})`;
-  if (kind === 'role') await writer`INSERT INTO community_roles (user_id, role) VALUES (${userId}, 'admin')`;
+  if (kind === 'role-granter')
+    await writer`INSERT INTO community_roles (user_id, role, granted_by) VALUES (${otherUserId}, 'tester', ${userId})`;
+  if (kind === 'grant-accepted') {
+    rowSequence += 1;
+    await writer`INSERT INTO resource_grants (kind, resource_id, user_id, status, invited_by)
+      VALUES ('board', ${`r${rowSequence}`}, ${userId}, 'approved', ${otherUserId})`;
+  }
 }
 
 async function insertExcluded(kind: ExcludedKind, userId: string, otherUserId: string) {
@@ -264,6 +289,13 @@ async function insertExcluded(kind: ExcludedKind, userId: string, otherUserId: s
     await writer`INSERT INTO user_follows (follower_id, following_id) VALUES (${otherUserId}, ${userId})`;
   if (kind === 'web-session')
     await writer`INSERT INTO sessions ("sessionToken", "userId", expires) VALUES (${`${secretCanary}-s${rowSequence}`}, ${userId}, '2099-01-01')`;
+  if (kind === 'follow-request-received')
+    await writer`INSERT INTO user_follow_requests (requester_id, recipient_id) VALUES (${otherUserId}, ${userId})`;
+  if (kind === 'role-granted')
+    await writer`INSERT INTO community_roles (user_id, role, granted_by) VALUES (${userId}, 'admin', ${otherUserId})`;
+  if (kind === 'pending-invite')
+    await writer`INSERT INTO resource_grants (kind, resource_id, user_id, status, invited_by)
+      VALUES ('board', ${`r${rowSequence}`}, ${userId}, 'pending', ${otherUserId})`;
   if (kind === 'staged-token')
     await writer`INSERT INTO auth_password_recovery_tokens (token_hash, user_id, expires_at)
       VALUES (${`${secretCanary}-r${rowSequence}`}, ${userId}, '2099-01-01T00:00:00Z')`;
@@ -328,13 +360,15 @@ async function collectDirectly(): Promise<CollectedEvidence> {
 }
 
 /** No synthetic address, ID or name reaches the given text. Report stdout also carries no "@" at all. */
-function expectNoPrivateData(text: string, { reportStdout = true } = {}) {
+function expectNoPrivateData(text: string, { reportStdout = true, sqlText = false } = {}) {
   expect(text).not.toContain(marker);
   expect(text).not.toContain('example.test');
   expect(text).not.toContain(secretCanary);
   if (reportStdout) expect(text).not.toContain('@');
+  // The three fixed system IDs are public code constants; SQL text may name them, output never does.
+  const fixedIds = new Set(FIXED_SYSTEM_ACCOUNT_IDS);
   for (const value of [...fixture.userIds, ...fixture.emails, ...fixture.names, ...FIXED_SYSTEM_ACCOUNT_IDS])
-    expect(text).not.toContain(value);
+    if (!(sqlText && fixedIds.has(value))) expect(text).not.toContain(value);
 }
 
 let firstGroupMemberIds: string[][] = [];
@@ -398,13 +432,13 @@ describe.sequential('account email evidence on real Postgres', () => {
       addresses: { nonNormalizedStandalone: 50, nonAscii: 0, sqlLowerDiffersFromJs: 0, edgeWhitespace: 0 },
       login: { usersWithoutLoginMethod: 3, fixedSystemAccountsWithoutLogin: 3 },
       members: { total: 66, withPendingLink: 2 },
-      // 23 foreign keys to users: partitions and the archive schema are found from the catalog.
+      // 27 foreign keys to users: partitions and the archive schema are found from the catalog.
       catalog: {
-        referencingColumns: 23,
-        referencingTables: 19,
-        ownDataColumns: 12,
-        excludedColumns: 11,
-        unindexedColumns: 18,
+        referencingColumns: 27,
+        referencingTables: 21,
+        ownDataColumns: 14,
+        excludedColumns: 13,
+        unindexedColumns: 21,
       },
       checks: { kindsSumToGroups: true, sqlLowerMatchesJs: true, noLoginRowsAreFixedSystemAccounts: true },
     });
@@ -434,7 +468,25 @@ describe.sequential('account email evidence on real Postgres', () => {
     expect(byUser.get(firstGroupMemberIds[6]?.[0] ?? '')?.member.ownData.rows).toEqual({
       'archive.legacy_notes.author_id': 1,
     });
-    expect(byUser.get(firstGroupMemberIds[8]?.[0] ?? '')?.member.roles.community).toEqual(['admin:global']);
+    // Granting a role is own data; an accepted grant is own data.
+    expect(byUser.get(firstGroupMemberIds[8]?.[0] ?? '')?.member.ownData.rows).toEqual({
+      'public.community_roles.granted_by': 1,
+    });
+    expect(byUser.get(firstGroupMemberIds[9]?.[0] ?? '')?.member.ownData.rows).toEqual({
+      'public.resource_grants.user_id': 1,
+    });
+    // Rows others caused: a role granted, a follow request received, a pending invite from someone else.
+    const receivedOnly = byUser.get(firstGroupMemberIds[17]?.[1] ?? '');
+    expect(receivedOnly?.group.kind).toBe('B');
+    expect(receivedOnly?.member).toMatchObject({ hasOwnData: false, roles: { community: ['admin:global'] } });
+    expect(receivedOnly?.member.excludedRows).toMatchObject({
+      'public.community_roles.user_id': 1,
+      'public.user_follow_requests.recipient_id': 1,
+      'public.user_follows.following_id': 1,
+    });
+    const invited = byUser.get(firstGroupMemberIds[16]?.[3] ?? '')?.member;
+    expect(invited?.hasOwnData).toBe(false);
+    expect(invited?.excludedRows).toMatchObject({ 'public.resource_grants.user_id:pending-invite': 1 });
     // Groups 0-16 are kind A, 17-19 B, 20-24 C, 25-29 D.
     const cGroup = byUser.get(firstGroupMemberIds[20]?.[0] ?? '');
     expect(cGroup?.group).toMatchObject({ kind: 'C', proposal: { contact: false, keep: 'A', retireAddress: ['B'] } });
@@ -499,6 +551,30 @@ describe.sequential('account email evidence on real Postgres', () => {
     expect(collected.snapshot).toMatchObject({ readOnly: true, isolation: 'repeatable read', target: 'primary' });
   });
 
+  it('sends no user ID or address as a bind parameter: every parameter is a numeric constant', async () => {
+    const queries: string[] = [];
+    const parameters: unknown[] = [];
+    const client = postgres({
+      ...accountEmailEvidenceConnectionOptions(databaseUrl, 'false'),
+      debug: (_connection: number, query: string, queryParameters: unknown[]) => {
+        queries.push(query);
+        parameters.push(...queryParameters);
+      },
+    });
+    let collected: CollectedEvidence;
+    try {
+      collected = await collectAccountEmailEvidence(client, { allowPrimary: true });
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+    expect(collected.members.size).toBe(66);
+    // Twenty-odd named reads plus one count per referencing column.
+    expect(queries.length).toBeGreaterThan(collected.referencingColumns.length + 15);
+    expect(parameters.length).toBeGreaterThan(0);
+    for (const parameter of parameters) expect(String(parameter)).toMatch(/^[0-9]+$/);
+    expectNoPrivateData(queries.join('\n'), { sqlText: true });
+  });
+
   it('mutation check: dropping an own-data exclusion changes the audit-shaped counts', async () => {
     const collected = await collectDirectly();
     const baseline = buildAccountEmailEvidence(collected).summary;
@@ -513,6 +589,9 @@ describe.sequential('account email evidence on real Postgres', () => {
       };
       expect(buildAccountEmailEvidence(collected, rules).summary.groupsByKind).not.toEqual(baseline.groupsByKind);
     }
+    // The pending invite sits in a group that is kind A anyway, so it shows in the member count.
+    const withInvites = buildAccountEmailEvidence(collected, { ...OWN_DATA_RULES, causedByOthersRows: [] }).summary;
+    expect(withInvites.members.withOwnData).toBe(baseline.members.withOwnData + 1);
   });
 
   it('counts a new table and a new group automatically, and flags no-login and non-ASCII rows', async () => {
@@ -531,10 +610,10 @@ describe.sequential('account email evidence on real Postgres', () => {
     await insertUser({ id: `${marker}-nologin`, email: `nologin.${marker}@example.test`, joined: at(3) });
     const nonAscii = `İnan.${marker}@example.test`;
     await insertUser({ id: `${marker}-tr`, email: nonAscii, joined: at(4), password: true });
+    // The test's own writer may send the address; the report never does.
     const [locale] = await writer<
-      { lowered: string; failing: boolean }[]
-    >`SELECT pg_catalog.lower(${nonAscii}) AS lowered,
-      (${nonAscii.trim().toLowerCase()} <> pg_catalog.lower(${nonAscii.trim().toLowerCase()})) AS failing`;
+      { lowered: string; twice: string }[]
+    >`SELECT pg_catalog.lower(${nonAscii}) AS lowered, pg_catalog.lower(pg_catalog.lower(${nonAscii})) AS twice`;
 
     const out = join(outputDirectory, 'evidence-after-changes.json');
     const { exitCode, stdout, summary } = await runCli(['--out', out, '--allow-primary']);
@@ -544,12 +623,13 @@ describe.sequential('account email evidence on real Postgres', () => {
       groups: 31,
       groupsByKind: { A: 18, B: 3, C: 4, D: 5, E: 1 },
       contactEmails: 18,
-      catalog: { referencingColumns: 24, ownDataColumns: 13 },
+      catalog: { referencingColumns: 28, ownDataColumns: 15 },
       login: { usersWithoutLoginMethod: 4, fixedSystemAccountsWithoutLogin: 3 },
       addresses: {
         nonAscii: 1,
         sqlLowerDiffersFromJs: locale?.lowered === nonAscii.toLowerCase() ? 0 : 1,
-        normalizedFormsFailingSqlCheck: locale?.failing ? 1 : 0,
+        normalizedFormsAtRiskInSqlCheck:
+          locale?.lowered === nonAscii.toLowerCase() && locale?.twice === locale?.lowered ? 0 : 1,
       },
       checks: { kindsSumToGroups: true, noLoginRowsAreFixedSystemAccounts: false },
     });
@@ -620,21 +700,51 @@ describe('evidence arguments and worksheet path', () => {
       );
   });
 
-  it('refuses a path inside the repository, an existing path and a missing folder', () => {
-    expect(() => resolveWorksheetPath(join(checkoutRoot, 'evidence.json'), checkoutRoot)).toThrow(
+  it('refuses a folder inside any git repository or worktree, including a sibling worktree', () => {
+    for (const inside of [join(checkoutRoot, 'evidence.json'), join(checkoutRoot, 'packages', 'x.json')])
+      expect(() => resolveWorksheetPath(inside)).toThrow(expect.objectContaining({ code: 'OUTPUT_INSIDE_REPOSITORY' }));
+    // A sibling worktree marks itself with a `.git` file; a clone with a `.git` folder, further up.
+    const worktree = join(outputDirectory, 'sibling-worktree');
+    mkdirSync(join(worktree, 'private'), { recursive: true, mode: 0o700 });
+    writeFileSync(join(worktree, '.git'), 'gitdir: /nowhere\n', { flag: 'wx' });
+    expect(() => resolveWorksheetPath(join(worktree, 'private', 'x.json'))).toThrow(
       expect.objectContaining({ code: 'OUTPUT_INSIDE_REPOSITORY' }),
     );
-    expect(() => resolveWorksheetPath(join(checkoutRoot, 'packages', 'x.json'), checkoutRoot)).toThrow(
+    const clone = join(outputDirectory, 'clone');
+    mkdirSync(join(clone, '.git'), { recursive: true });
+    mkdirSync(join(clone, 'a', 'b'), { recursive: true, mode: 0o700 });
+    expect(() => resolveWorksheetPath(join(clone, 'a', 'b', 'x.json'))).toThrow(
       expect.objectContaining({ code: 'OUTPUT_INSIDE_REPOSITORY' }),
     );
+  });
+
+  it('requires a 0700 folder, refuses an existing path and a missing folder', () => {
+    const open = join(outputDirectory, 'open-folder');
+    mkdirSync(open);
+    chmodSync(open, 0o755);
+    expect(() => resolveWorksheetPath(join(open, 'x.json'))).toThrow(
+      expect.objectContaining({ code: 'OUTPUT_FOLDER_NOT_PRIVATE' }),
+    );
+    chmodSync(open, 0o700);
+    expect(resolveWorksheetPath(join(open, 'x.json'))).toMatch(/x\.json$/);
     const existing = join(outputDirectory, 'path-exists.json');
     writeFileSync(existing, '', { flag: 'wx', mode: 0o600 });
-    expect(() => resolveWorksheetPath(existing, checkoutRoot)).toThrow(
-      expect.objectContaining({ code: 'OUTPUT_EXISTS' }),
-    );
-    expect(() => resolveWorksheetPath(join(outputDirectory, 'missing', 'x.json'), checkoutRoot)).toThrow(
+    expect(() => resolveWorksheetPath(existing)).toThrow(expect.objectContaining({ code: 'OUTPUT_EXISTS' }));
+    expect(() => resolveWorksheetPath(join(outputDirectory, 'missing', 'x.json'))).toThrow(
       expect.objectContaining({ code: 'OUTPUT_UNAVAILABLE' }),
     );
-    expect(resolveWorksheetPath(join(outputDirectory, 'fresh.json'), checkoutRoot)).toMatch(/fresh\.json$/);
+  });
+
+  it('removes a partial worksheet on failure, so a rerun can use the same path', () => {
+    const out = join(outputDirectory, 'over-limit.json');
+    const worksheet = { formatVersion: 1, note: 'x'.repeat(64) } as unknown as EvidenceWorksheet;
+    expect(() => writeEvidenceWorksheet(out, worksheet, 16)).toThrow(expect.objectContaining({ code: 'INPUT_LIMIT' }));
+    expect(existsSync(out)).toBe(false);
+    const written = writeEvidenceWorksheet(out, worksheet);
+    expect(written.bytes).toBe(readFileSync(out).length);
+    expect(statSync(out).mode & 0o777).toBe(0o600);
+    // A path that already existed is refused and never removed.
+    expect(() => writeEvidenceWorksheet(out, worksheet)).toThrow(expect.objectContaining({ code: 'OUTPUT_EXISTS' }));
+    expect(existsSync(out)).toBe(true);
   });
 });
