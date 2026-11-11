@@ -145,6 +145,42 @@ function VariantStack({ variants, compact = false }: { variants: readonly Varian
   );
 }
 
+/** A second climb, so the moving frost has somewhere to glide to. */
+const GLOW_NEXT: WallGlowInput = {
+  key: 'drive-mode-story-next',
+  holds: [
+    { x: 60, y: 10, color: '#FF00FF' },
+    { x: 20, y: 28, color: '#00DD00' },
+    { x: 80, y: 45, color: '#4DF5FD' },
+    { x: 45, y: 62, color: '#FFA500' },
+    { x: 15, y: 90, color: '#FF00FF' },
+    { x: 85, y: 105, color: '#4DF5FD' },
+    { x: 50, y: 128, color: '#00DD00' },
+    { x: 30, y: 145, color: '#FFA500' },
+  ],
+  boardWidth: 100,
+  boardHeight: 150,
+};
+
+/** Driving, with Next every 2.5 s: the lights breathe, then glide to the next climb. */
+function MovingFrost() {
+  const [next, setNext] = useState(false);
+  useEffect(() => {
+    const timer = setInterval(() => setNext((current) => !current), 2500);
+    return () => clearInterval(timer);
+  }, []);
+  const model = useMemo(() => storyModel('lit', 'self', { driveMode: 'live' }), []);
+  return (
+    <StoryVariant label="Driving, Next every 2.5 s (still on Android, older binaries and Reduce Motion)">
+      <StorySurface>
+        <View style={styles.buttonRow}>
+          <WallControlButton model={model} glow={next ? GLOW_NEXT : GLOW} onPress={noop} onLongPress={noop} />
+        </View>
+      </StorySurface>
+    </StoryVariant>
+  );
+}
+
 /** Arming lasts this long before the story's drive goes live, like a quick connect. */
 const STORY_ARMING_MS = 700;
 
@@ -201,6 +237,10 @@ const stories: StoryModule = {
     workout: {
       name: "The workout's narrower button: chevrons, peek and a drag",
       render: () => <VariantStack compact variants={[HINTS[1], HINTS[2], DRAG[1]]} />,
+    },
+    movingFrost: {
+      name: 'Driving: the frost breathes and glides on Next',
+      render: () => <MovingFrost />,
     },
     tryIt: {
       name: 'Try it: swipe the button',

@@ -264,6 +264,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description:
       "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.",
   },
+  {
+    key: 'wall-frost-motion',
+    label: 'Moving frost on the driving wall button',
+    description:
+      "While you drive the wall, the wall button's frost is drawn by a Metal shader: its lights breathe slowly and slide to the next climb's holds on Next. iOS builds with the native module only; Android, the web and older binaries keep the still frost. Reduce Motion keeps it still too. A POSITIVE rollout flag: unresolved or off is today's still frost. Dev builds read it as on unless it is set to off here; screenshot mode keeps it off so captures stay identical.",
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
@@ -660,6 +666,23 @@ export function useWorkoutTimedBlocksFlag(): boolean {
  */
 export function useWallSwipeToDriveEnabled(): boolean {
   return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
+}
+
+/**
+ * The driving wall button's moving frost: the Metal-drawn lights that breathe
+ * and glide to the next climb. A POSITIVE rollout flag read strictly, like
+ * `wall-swipe-to-drive`: unresolved or off is today's still frost. Dev builds
+ * read it as on unless a tester turns it off; screenshot mode keeps it off so
+ * store captures and their baselines never catch a light mid-drift.
+ */
+export function useWallFrostMotionEnabled(): boolean {
+  return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
+}
+
+/** The rule behind `useWallFrostMotionEnabled`, for tests. */
+export function wallFrostMotionOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  return __DEV__ ? flag !== false : flag === true;
 }
 
 /** The rule behind `useWallSwipeToDriveEnabled`, for tests. */

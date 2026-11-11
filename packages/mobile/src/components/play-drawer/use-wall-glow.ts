@@ -33,6 +33,8 @@ export type WallGlowLayer = {
   blend: WallGlowBlend;
   opacityScale: number;
   readableZone?: WallGlowReadableZone;
+  /** Drawn moving on the GPU: the fade covers its worst frame. */
+  motion?: boolean;
 };
 
 /**
@@ -58,6 +60,7 @@ export function useWallGlowLayer(
   height: number,
   scheme: 'light' | 'dark',
   readableZone: WallGlowReadableZone = 'center',
+  motion = false,
 ): WallGlowLayer | null {
   return useMemo(() => {
     if (!input || width <= 0 || height <= 0) return null;
@@ -74,11 +77,12 @@ export function useWallGlowLayer(
     return {
       key: input.key,
       blobs: blobs.map((blob) => ({ ...blob, gradient: blobGradient(blob, opacityScale) })),
-      fade: wallGlowLabelFade(blobs, pill, { surface, blend, opacityScale, readableZone }),
+      fade: wallGlowLabelFade(blobs, pill, { surface, blend, opacityScale, readableZone, motion }),
       surface,
       blend,
       opacityScale,
       readableZone,
+      motion,
     };
-  }, [input, width, height, scheme, readableZone]);
+  }, [input, width, height, scheme, readableZone, motion]);
 }

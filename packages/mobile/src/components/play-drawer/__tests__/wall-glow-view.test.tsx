@@ -2,12 +2,35 @@
 // The lit wall button's fill (#7000, F1b): blobs, fade, frost and grain from a
 // layer, and a 200 ms cross-fade between climbs that Reduce Motion skips.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const motion = vi.hoisted(() => ({ reduce: false, timings: [] as { toValue: number; duration: number }[] }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => motion.reduce }));
 vi.mock('@boardsesh/frosted-bokeh/grain.png', () => ({ default: 1 }));
+
+// The Metal view: present (an iOS binary with the module) unless a test says not.
+type GpuProps = {
+  testID?: string;
+  blobs: { peak: number }[];
+  layerKey: string;
+  reduceMotion: boolean;
+  drift: number;
+  swell: number;
+  glideMs: number;
+  onRenderError?: () => void;
+};
+const gpu = vi.hoisted(() => ({ present: true, last: null as GpuProps | null }));
+vi.mock('../../../../modules/frosted-bokeh-gpu/src/index', () => ({
+  get NativeFrostedBokehGPU() {
+    return gpu.present
+      ? (props: GpuProps) => {
+          gpu.last = props;
+          return createElement('canvas', { 'data-testid': props.testID, 'data-key': props.layerKey });
+        }
+      : null;
+  },
+}));
 
 type Style = Record<string, unknown> | null | undefined | false | Style[];
 const flatten = (style: Style): Record<string, unknown> =>
@@ -62,6 +85,9 @@ afterEach(() => {
   cleanup();
   motion.reduce = false;
   motion.timings = [];
+  gpu.present = true;
+  gpu.last = null;
+  vi.useRealTimers();
 });
 
 function layer(overrides: Partial<WallGlowLayer> = {}): WallGlowLayer {
@@ -173,5 +199,74 @@ describe('WallGlow', () => {
     motion.reduce = false;
     view.rerender(createElement(WallGlow, { layer: layer({ key: 'climb-2' }), width: 239 }));
     expect(motion.timings).toEqual([]);
+  });
+});
+
+describe('WallGlow, moving on the GPU', () => {
+  it('hands the blobs, the motion constants and the key to the Metal view instead of drawing them', () => {
+    const view = render(
+      createElement(WallGlow, { layer: layer({ blend: 'multiply', opacityScale: 0.6 }), width: 360, moving: true }),
+    );
+    expect(view.getByTestId('wall-glow-gpu').dataset.key).toBe('climb-1');
+    expect(view.queryByTestId('wall-glow-blobs')).toBeNull();
+    // The gradients bake the opacity scale in; the shader gets it in peak.
+    expect(gpu.last?.blobs.map((blob) => blob.peak)).toEqual([0.18, 0.18]);
+    expect(gpu.last).toMatchObject({ drift: 3.5, swell: 0.14, glideMs: 700, reduceMotion: false });
+    // The fade, the frost and the grain stay React Native, over the shader.
+    expect(view.getByTestId('wall-glow-label-fade')).toBeTruthy();
+    expect(view.getByTestId('wall-glow-frost')).toBeTruthy();
+  });
+
+  it('glides in the shader, so React Native runs no cross-fade of its own', () => {
+    const view = render(createElement(WallGlow, { layer: layer(), width: 360, moving: true }));
+    view.rerender(createElement(WallGlow, { layer: layer({ key: 'climb-2' }), width: 360, moving: true }));
+    expect(motion.timings).toEqual([]);
+    expect(view.getByTestId('wall-glow-gpu').dataset.key).toBe('climb-2');
+  });
+
+  it('keeps the still blobs on a binary without the module', () => {
+    gpu.present = false;
+    const view = render(createElement(WallGlow, { layer: layer(), width: 360, moving: true }));
+    expect(view.queryByTestId('wall-glow-gpu')).toBeNull();
+    expect(view.getByTestId('wall-glow-blobs').children).toHaveLength(2);
+  });
+
+  it('falls back to the still blobs for good when the shader reports it cannot draw', () => {
+    const view = render(createElement(WallGlow, { layer: layer(), width: 360, moving: true }));
+    act(() => gpu.last?.onRenderError?.());
+    expect(view.queryByTestId('wall-glow-gpu')).toBeNull();
+    expect(view.getByTestId('wall-glow-blobs').children).toHaveLength(2);
+  });
+
+  it('holds the stronger of the two fades through the glide, then settles on the new one', () => {
+    vi.useFakeTimers();
+    const view = render(createElement(WallGlow, { layer: layer({ fade: 0.5 }), width: 360, moving: true }));
+    view.rerender(createElement(WallGlow, { layer: layer({ key: 'climb-2', fade: 0.2 }), width: 360, moving: true }));
+    expect(view.getByTestId('wall-glow-label-fade').dataset.image).toContain('rgba(14, 13, 18, 0.5)');
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    expect(view.getByTestId('wall-glow-label-fade').dataset.image).toContain('rgba(14, 13, 18, 0.2)');
+  });
+
+  it('switches to the new fade at once when the new climb needs the stronger one, or nothing moves', () => {
+    const view = render(createElement(WallGlow, { layer: layer({ fade: 0.2 }), width: 360, moving: true }));
+    view.rerender(createElement(WallGlow, { layer: layer({ key: 'climb-2', fade: 0.65 }), width: 360, moving: true }));
+    expect(view.getByTestId('wall-glow-label-fade').dataset.image).toContain('rgba(14, 13, 18, 0.65)');
+
+    const still = render(createElement(WallGlow, { layer: layer({ fade: 0.5 }), width: 360 }));
+    still.rerender(createElement(WallGlow, { layer: layer({ key: 'climb-2', fade: 0.2 }), width: 360 }));
+    expect(still.getAllByTestId('wall-glow-label-fade').at(-1)?.dataset.image).toContain('rgba(14, 13, 18, 0.2)');
+  });
+
+  it('drops the hold for good once the climb’s own fade rises past it', () => {
+    vi.useFakeTimers();
+    const glow = (key: string, fade: number) =>
+      createElement(WallGlow, { layer: layer({ key, fade }), width: 360, moving: true });
+    const view = render(glow('climb-1', 0.8));
+    view.rerender(glow('climb-2', 0.2));
+    view.rerender(glow('climb-2', 0.9));
+    view.rerender(glow('climb-2', 0.3));
+    expect(view.getByTestId('wall-glow-label-fade').dataset.image).toContain('rgba(14, 13, 18, 0.3)');
   });
 });
