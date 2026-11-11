@@ -559,6 +559,11 @@ describe('the logbook routes', () => {
     it('answers 410 exactly below the watermark a real prune set, and serves a cursor at it in full', async () => {
       const { climber, token } = await connectedApp();
       await insertTicks(climber.userId, 1);
+      // Settled first, so the sync ends past this tick's change. Otherwise a
+      // transaction open anywhere on this Postgres holds the horizon below it,
+      // the sync ends there, and the next page serves this tick again, ahead of
+      // the three below.
+      await waitForWritesToSettle();
       const { cursor: caughtUp } = await sync(token);
       // Three more, each its own transaction, so each change has its own position.
       const added: string[] = [];
