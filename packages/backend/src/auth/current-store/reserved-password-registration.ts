@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { users } from '@boardsesh/db/schema/auth';
 import { sql } from 'drizzle-orm';
 import { normalizeAccountEmail } from '../normalize-email';
-import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
+import { lockKeyReservation } from './email-reservations';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+} from '../authority/router';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -25,12 +30,18 @@ export async function insertReservedPasswordIdentity(
     readonly prepared: PreparedPasswordRegistration | null;
     readonly emailVerificationEnabled: boolean;
   },
+  receiptInput?: IdentityAuthorityReceipt,
 ): Promise<{ outcome: 'exists' } | { outcome: 'created'; identity: { userId: string; createdAt: Date } }> {
   const authority = captureExpectedAuthority(authorityInput);
   const { email, emailVerificationEnabled } = options;
   const prepared = options.prepared ? { ...options.prepared } : null;
+  const suppliedReceipt = receiptInput ? Object.freeze({ ...receiptInput }) : undefined;
   const key = normalizeAccountEmail(email);
+  // Explicit helper callers keep their qualified epoch contract. Entry-point
+  // commands derive this expectation from their pre-bcrypt manifest receipt.
   const manifest = await lockEnforcedProjection(transaction, authority);
+  const receipt = suppliedReceipt ?? (await captureIdentityAuthority(transaction, authority));
+  await revalidateIdentityAuthority(transaction, receipt);
   // The gate no longer serializes registrations: the key does (section 4).
   await lockEmailKeyForCreation(transaction, key);
   // A deleted account's address answers like a taken one until its digest expires.
@@ -52,7 +63,10 @@ export async function insertReservedPasswordIdentity(
   if (existing || !prepared || prepared.email !== email)
     throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   const userId = randomUUID();
-  await reserveEnforcedEmail(transaction, { ...authority, rawEmail: email, requestedUserId: userId });
-  const identity = await insertCurrentStorePasswordIdentity(transaction, prepared, emailVerificationEnabled, userId);
+  const identity = await insertCurrentStorePasswordIdentity(transaction, prepared, emailVerificationEnabled, userId, {
+    receipt,
+    reservationAuthority: authority,
+  });
+  await revalidateIdentityAuthority(transaction, receipt);
   return { outcome: 'created', identity };
 }

@@ -1,6 +1,11 @@
 import crypto from 'node:crypto';
-import { identityMirrorMode } from '../authority/mirror-configuration';
-import { lockIdentityMirrorGate, mirrorIdentityIfEnabled } from '../authority/sync-identity';
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
+import { bindIdentityAuthority } from '../authority/identity-authority';
+import { mirrorAuthorityToCurrentStore } from '../authority/reverse-identity';
+import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from '../authority/router';
+import { assertLegacyIdentityWriterAllowed } from './identity-writer-gate';
+import { reserveEnforcedEmail } from './email-reservations';
+import { captureExpectedAuthority, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
 import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
@@ -185,22 +190,45 @@ export async function insertCurrentStorePasswordIdentity(
   registration: PreparedPasswordRegistration,
   emailVerificationEnabled: boolean,
   reservedUserId?: string,
+  selected?: {
+    readonly receipt: IdentityAuthorityReceipt;
+    readonly reservationAuthority: ExpectedCurrentStoreAuthority;
+  },
 ): Promise<{ userId: string; createdAt: Date }> {
-  if (identityMirrorMode() === 'on') await lockIdentityMirrorGate(transaction);
+  // Snapshot caller-owned prepared credentials, authority and time before a gate
+  // wait. Registration never reruns bcrypt or chooses a newer authority here.
   const { email, name, passwordHash } = registration;
+  const receipt = selected ? Object.freeze({ ...selected.receipt }) : undefined;
+  const reservationAuthority = selected ? captureExpectedAuthority(selected.reservationAuthority) : undefined;
   // Only a trusted backend stage may supply the ID it just reserved. Legacy
   // callers omit it and retain the existing server-generated ID behavior.
   const userId = reservedUserId ?? crypto.randomUUID();
   const createdAt = new Date();
-  await transaction.insert(users).values({
+  const user = {
     id: userId,
     createdAt,
     email,
     name: name ?? email.split('@')[0],
-    emailVerified: emailVerificationEnabled ? null : new Date(),
-  });
-  await transaction.insert(userCredentials).values({ userId, passwordHash });
+    emailVerified: emailVerificationEnabled ? null : new Date(createdAt.getTime()),
+  };
+  if (receipt) {
+    await revalidateIdentityAuthority(transaction, receipt);
+    const identity = bindIdentityAuthority(transaction, receipt);
+    await identity.createUser(user);
+    // Creation owns its new users row before the reservation/cutoff. Any
+    // inconsistent or occupied key aborts this same caller transaction.
+    if (!reservationAuthority) throw new Error('Registration reservation authority missing');
+    await reserveEnforcedEmail(transaction, { ...reservationAuthority, rawEmail: email, requestedUserId: userId });
+    await identity.insertPassword(userId, passwordHash, 0);
+  } else {
+    await assertLegacyIdentityWriterAllowed(transaction);
+    await transaction.insert(users).values(user);
+    await transaction.insert(userCredentials).values({ userId, passwordHash });
+  }
   await transaction.insert(userProfiles).values({ userId }).onConflictDoNothing();
-  await mirrorIdentityIfEnabled(transaction, userId);
+  if (receipt?.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, userId);
+  else await mirrorIdentityIfEnabled(transaction, userId);
+  if (receipt) await revalidateIdentityAuthority(transaction, receipt);
+  else await assertLegacyIdentityWriterAllowed(transaction);
   return { userId, createdAt };
 }

@@ -17,7 +17,7 @@ import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
+import { CurrentStoreFoundationError } from './foundation-context';
 import {
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
@@ -40,7 +40,6 @@ import {
   captureAuthority,
   assertFresh,
   boundSignInLockWaits,
-  preflight,
   transactionSettings,
   claimCommand,
   type WebPasswordAuthority,
@@ -69,7 +68,7 @@ export async function registerWebPassword(
   authorityInput: WebPasswordAuthority,
   input: RegisterCommand,
 ): Promise<RegisterReply> {
-  const authority = captureAuthority(authorityInput);
+  const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const validation = registrationSchema.safeParse(input.payload);
   // Stored in the one normalized form (BA-02), as native registration stores it.
@@ -77,13 +76,17 @@ export async function registerWebPassword(
     ? { ...validation.data, email: normalizeAccountEmail(validation.data.email) }
     : undefined;
   const invalidMessage = validation.success ? undefined : validationMessage(validation.error.issues[0].message);
-  await preflight(database, authority);
+  const receipt = await database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    return captureIdentityAuthority(transaction, configuredAuthority);
+  });
+  const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   // The any-capitalisation precheck and bcrypt12 are shared with native; the final
   // transaction still checks ownership/reservation before every insert.
   const prepared = registration ? await prepareCurrentStorePasswordRegistration(database, registration) : null;
   return database.transaction(async (transaction): Promise<RegisterReply> => {
     await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
+    await revalidateIdentityAuthority(transaction, receipt);
     const claimed = await claimCommand(transaction, { requestId, issuedAt, operation: 'register' });
     assertFresh(issuedAt);
     if (!claimed)
@@ -103,11 +106,16 @@ export async function registerWebPassword(
         code: 'validation_error',
         message: invalidMessage ?? 'Invalid input: expected object, received undefined',
       };
-    const inserted = await insertReservedPasswordIdentity(transaction, authority, {
-      email: registration.email,
-      prepared,
-      emailVerificationEnabled: authority.emailVerificationEnabled,
-    });
+    const inserted = await insertReservedPasswordIdentity(
+      transaction,
+      authority,
+      {
+        email: registration.email,
+        prepared,
+        emailVerificationEnabled: authority.emailVerificationEnabled,
+      },
+      receipt,
+    );
     assertFresh(issuedAt);
     // Every occupied normalized key is unavailable to a newly generated ID;
     // there is no existing-user takeover or collision-owner selection.
@@ -122,6 +130,7 @@ export async function registerWebPassword(
     const { identity } = inserted;
     const { userId } = identity;
     assertFresh(issuedAt);
+    await revalidateIdentityAuthority(transaction, receipt);
     if (!authority.emailVerificationEnabled)
       return {
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -135,6 +144,7 @@ export async function registerWebPassword(
     const mailPlan = await issueEmailVerification(transaction, authority, userId);
     if (!mailPlan) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     assertFresh(issuedAt);
+    await revalidateIdentityAuthority(transaction, receipt);
     return {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'register',

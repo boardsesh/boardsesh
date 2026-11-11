@@ -1,3 +1,5 @@
+import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
+import { captureIdentityAuthority, revalidateIdentityAuthority } from '../auth/authority/router';
 import { authenticateIdentityPassword } from '../auth/authority/password-verification';
 import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
 import { legacyBridgeMode } from '../auth/authority/bridge';
@@ -931,6 +933,7 @@ export async function handleNativeAuthRegister(
   }
 
   try {
+    await database.transaction(assertLegacyIdentityWriterAllowed);
     const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
     if (!prepared) {
       sendJson(res, 409, {
@@ -946,6 +949,7 @@ export async function handleNativeAuthRegister(
     const result = await database.transaction(async (tx) => {
       const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
       const tokenPair = await generateTokenPair(identity.userId, tx, origin);
+      await assertLegacyIdentityWriterAllowed(tx);
       return {
         userId: identity.userId,
         tokenPair,
@@ -998,26 +1002,38 @@ function isNativeAuthInfrastructureFailure(error: unknown): boolean {
 async function handleReservedNativeRegistration(
   response: ServerResponse,
   database: DbInstance,
-  authority: WebPasswordAuthority,
+  authorityInput: WebPasswordAuthority,
   registration: Parameters<typeof prepareCurrentStorePasswordRegistration>[1],
 ) {
+  const configuredAuthority = { ...authorityInput };
+  const capturedRegistration = { ...registration };
   try {
     // Validate authority before even an exact-email precheck can report409.
     // Bcrypt remains outside the global manifest's locked transaction.
-    await preflight(database, authority);
-    const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const receipt = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      return captureIdentityAuthority(transaction, configuredAuthority);
+    });
+    const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
+    const prepared = await prepareCurrentStorePasswordRegistration(database, capturedRegistration);
     const origin = signedInNow();
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
-      const inserted = await insertReservedPasswordIdentity(transaction, authority, {
-        email: registration.email,
-        prepared,
-        emailVerificationEnabled: authority.emailVerificationEnabled,
-      });
+      const inserted = await insertReservedPasswordIdentity(
+        transaction,
+        authority,
+        {
+          email: capturedRegistration.email,
+          prepared,
+          emailVerificationEnabled: authority.emailVerificationEnabled,
+        },
+        receipt,
+      );
       if (inserted.outcome === 'exists') return inserted;
       const { identity } = inserted;
       // This remains the installed native issuer, bound to the identity's tx.
       const tokenPair = await generateTokenPair(identity.userId, transaction, origin);
+      await revalidateIdentityAuthority(transaction, receipt);
       return {
         outcome: 'created' as const,
         tokenPair,
