@@ -80,6 +80,15 @@ export function createConsolidationTickHandler(archive: ConsolidationArchive): C
           (merge.resultingLinkage.boardId !== null && !Number.isSafeInteger(Number(merge.resultingLinkage.boardId)))
         )
           throw new ConsolidationError('UNSAFE_PLAN');
+        // The sessions domain may already have remapped inferred IDs. Preserve
+        // the sole current assignment, including one carried only by the source.
+        const currentSessionIds = [
+          ...new Set(
+            [retained.sessionId, retired.sessionId].filter((sessionId): sessionId is string => sessionId !== null),
+          ),
+        ];
+        if (currentSessionIds.length > 1) throw new ConsolidationError('UNSAFE_PLAN');
+        const resultingSessionId = currentSessionIds[0] ?? null;
         const policies = await transaction
           .select()
           .from(contentPrivacy)
@@ -132,6 +141,13 @@ export function createConsolidationTickHandler(archive: ConsolidationArchive): C
         const kilterRow = allTicks.find(
           (tick) => tick.kilterId !== null && tick.kilterId === merge.resultingLinkage.kilterId,
         );
+        // Attach the retained tick before removing the last source tick in a
+        // session, so a sole assignment never disappears during the transaction.
+        if (retained.sessionId !== resultingSessionId)
+          await transaction
+            .update(boardseshTicks)
+            .set({ sessionId: resultingSessionId })
+            .where(eq(boardseshTicks.uuid, retained.uuid));
         // Free the globally unique provider IDs before assigning retained linkage.
         await transaction.delete(boardseshTicks).where(eq(boardseshTicks.uuid, retired.uuid));
         await transaction
