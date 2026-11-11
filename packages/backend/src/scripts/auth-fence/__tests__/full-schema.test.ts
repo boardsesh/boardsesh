@@ -52,7 +52,7 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     if (!resolutionLog.present) {
       // The local image is at 0303; apply the actual stacked PR4 migration.
       await owner.unsafe(
-        readFileSync(new URL('../../../../../db/drizzle/0304_auth_email_resolution_log.sql', import.meta.url), 'utf8'),
+        readFileSync(new URL('../../../../../db/drizzle/0305_auth_email_resolution_log.sql', import.meta.url), 'utf8'),
       );
     }
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
