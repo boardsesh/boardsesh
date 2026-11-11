@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { eq, and, or, inArray, sql, isNull, ilike } from 'drizzle-orm';
+import { eq, and, or, inArray, sql, isNull, ilike, exists } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   boardseshTicks,
@@ -24,6 +24,7 @@ import {
   populateDenormalizedColumns,
   recomputeClimbStatsBulk,
   foreignPlaylistOwnerGuard,
+  myPlaylistOwnerEdge,
   type ClimbStatsKey,
   loadConsolidationImportHistory,
 } from '@boardsesh/db/queries';
@@ -1708,7 +1709,7 @@ export async function importJsonExportData(
         generateJsonImportCircuitAuroraId(owner, boardType, circuit.name, circuit.created_at),
       ),
     );
-    if (historicalCircuit !== undefined) {
+    if (historicalCircuit === null) {
       result.circuits.skipped++;
       continue;
     }
@@ -1717,6 +1718,15 @@ export async function importJsonExportData(
 
     try {
       const outcome = await db.transaction(async (tx): Promise<'imported' | 'refused'> => {
+        // A mapping identifies an existing resource; it never authorizes creating or adopting one.
+        if (historicalCircuit !== undefined) {
+          const [mapped] = await tx
+            .select({ boardType: playlists.boardType, auroraType: playlists.auroraType })
+            .from(playlists)
+            .where(eq(playlists.uuid, historicalCircuit))
+            .for('update');
+          if (!mapped || mapped.boardType !== boardType || mapped.auroraType !== 'circuits') return 'refused';
+        }
         const owners = await tx
           .select({ ownerUserId: playlistOwnership.userId })
           .from(playlists)
@@ -1724,8 +1734,13 @@ export async function importJsonExportData(
             playlistOwnership,
             and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
           )
-          .where(eq(playlists.auroraId, circuitAuroraId));
+          .where(
+            historicalCircuit === undefined
+              ? eq(playlists.auroraId, circuitAuroraId)
+              : eq(playlists.uuid, historicalCircuit),
+          );
 
+        if (historicalCircuit !== undefined && !owners.some((owner) => owner.ownerUserId === userId)) return 'refused';
         const decision = resolveUpstreamPlaylistWrite(
           owners.map((row) => row.ownerUserId),
           userId,
@@ -1746,51 +1761,75 @@ export async function importJsonExportData(
           return 'refused';
         }
 
-        const [playlist] = await tx
-          .insert(playlists)
-          .values({
-            uuid: randomUUID(),
-            boardType,
-            layoutId: null,
-            name: circuit.name,
-            description: circuit.description ?? null,
-            isPublic: false,
-            color: formattedColor,
-            auroraType: 'circuits',
-            auroraId: circuitAuroraId,
-            auroraSyncedAt: circuitNow,
-            createdAt: circuit.created_at ? new Date(circuit.created_at) : circuitNow,
-            updatedAt: circuitNow,
-          })
-          .onConflictDoUpdate({
-            target: playlists.auroraId,
-            set: {
-              name: circuit.name,
-              description: circuit.description ?? null,
-              isPublic: false,
-              color: formattedColor,
-              updatedAt: circuitNow,
-              auroraSyncedAt: circuitNow,
-            },
-            // SQL-level twin of the decision gate above — see the identical
-            // guard on the aurora user-sync circuits upsert.
-            setWhere: foreignPlaylistOwnerGuard(userId),
-          })
-          .returning({ id: playlists.id });
+        const circuitMetadata = {
+          name: circuit.name,
+          description: circuit.description ?? null,
+          isPublic: false,
+          color: formattedColor,
+          updatedAt: circuitNow,
+          auroraSyncedAt: circuitNow,
+        };
+        const [playlist] =
+          historicalCircuit !== undefined
+            ? await tx
+                .update(playlists)
+                .set(circuitMetadata)
+                .where(
+                  and(
+                    eq(playlists.uuid, historicalCircuit),
+                    eq(playlists.boardType, boardType),
+                    eq(playlists.auroraType, 'circuits'),
+                    exists(myPlaylistOwnerEdge(userId)),
+                    foreignPlaylistOwnerGuard(userId),
+                  ),
+                )
+                .returning({ id: playlists.id })
+            : await tx
+                .insert(playlists)
+                .values({
+                  uuid: randomUUID(),
+                  boardType,
+                  layoutId: null,
+                  name: circuit.name,
+                  description: circuit.description ?? null,
+                  isPublic: false,
+                  color: formattedColor,
+                  auroraType: 'circuits',
+                  auroraId: circuitAuroraId,
+                  auroraSyncedAt: circuitNow,
+                  createdAt: circuit.created_at ? new Date(circuit.created_at) : circuitNow,
+                  updatedAt: circuitNow,
+                })
+                .onConflictDoUpdate({
+                  target: playlists.auroraId,
+                  set: {
+                    name: circuit.name,
+                    description: circuit.description ?? null,
+                    isPublic: false,
+                    color: formattedColor,
+                    updatedAt: circuitNow,
+                    auroraSyncedAt: circuitNow,
+                  },
+                  // SQL-level twin of the decision gate above — see the identical
+                  // guard on the aurora user-sync circuits upsert.
+                  setWhere: foreignPlaylistOwnerGuard(userId),
+                })
+                .returning({ id: playlists.id });
 
         // Empty when the ON CONFLICT guard suppressed the DO UPDATE (a
         // concurrent claim won the race). Same outcome as the decision gate
         // above, so it lands in the same bucket.
         if (!playlist) return 'refused';
 
-        await tx
-          .insert(playlistOwnership)
-          .values({
-            playlistId: playlist.id,
-            userId,
-            role: 'owner',
-          })
-          .onConflictDoNothing();
+        if (historicalCircuit === undefined)
+          await tx
+            .insert(playlistOwnership)
+            .values({
+              playlistId: playlist.id,
+              userId,
+              role: 'owner',
+            })
+            .onConflictDoNothing();
 
         // Only replace playlist climbs when we have resolved climbs to insert.
         // This avoids wiping out previously-resolved climbs if name resolution
