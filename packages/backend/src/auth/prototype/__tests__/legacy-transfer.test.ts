@@ -34,9 +34,15 @@ function sign(payload: unknown, secret = verificationSecret) {
   return `${encoded}.${createHmac('sha256', secret).update(encoded).digest('base64url')}`;
 }
 
-function payload(userId = randomUUID(), additions: Record<string, unknown> = {}) {
+function payload(userId: string = randomUUID(), additions: Record<string, unknown> = {}) {
   const now = Math.floor(Date.now() / 1000);
   return { userId, nextPath: '/settings', iat: now, exp: now + 120, ...additions };
+}
+
+// Historical no-receipt transfers omitted their source SID and authentication
+// age. Sign that exact wire shape instead of asking the corrected live issuer.
+function historicalIdentifierStrippedTransfer(userId: string, nextPath = '/') {
+  return sign(payload(userId, { nextPath }));
 }
 
 function lineageId(userId: string, authSessionId: string) {
@@ -71,13 +77,23 @@ describe('released browser-native transfer transport', () => {
     expect(proof!.validUntil.getTime() - proof!.expiresAt.getTime()).toBe(6000);
   });
 
-  it('records the released issuer dropping a returning browser session identifier without creation proof', () => {
+  it('the current issuer retains a returning browser SID without creation proof', () => {
+    const userId = randomUUID();
     const token = issuer.issueNativeOAuthTransferToken({
-      userId: randomUUID(),
+      userId,
       nextPath: '/',
       authSessionId: 'browser',
     });
-    expect(verifyPrototypeLegacyTransfer(token, verificationSecret)?.authSessionId).toBeNull();
+    const proof = verifyPrototypeLegacyTransfer(token, verificationSecret);
+    expect(proof).toMatchObject({ userId, authSessionId: 'browser', originalAuthenticatedAt: null });
+    expect(proof?.accountCreation).toBeUndefined();
+  });
+
+  it('accepts the historical signed identifier-stripped wire shape without inventing age', () => {
+    const userId = randomUUID();
+    const proof = verifyPrototypeLegacyTransfer(historicalIdentifierStrippedTransfer(userId), verificationSecret);
+    expect(proof).toMatchObject({ userId, authSessionId: null, originalAuthenticatedAt: null });
+    expect(proof?.accountCreation).toBeUndefined();
   });
 
   it('accepts signed creation metadata only with its immutable user, provider, session and attempt binding', () => {
@@ -467,11 +483,7 @@ describe('durable transfer redemption and the canonical native authority', () =>
           .set({ expiresAt: new Date(0) })
           .where(eq(environment.schema.session.id, user.sessionId));
       }
-      const ambiguousToken = issuer.issueNativeOAuthTransferToken({
-        userId: user.userId,
-        nextPath: '/',
-        authSessionId: user.authSessionId,
-      });
+      const ambiguousToken = historicalIdentifierStrippedTransfer(user.userId);
       expect(verifyPrototypeLegacyTransfer(ambiguousToken, verificationSecret)?.authSessionId).toBeNull();
       await expect(second.exchange(ambiguousToken)).rejects.toMatchObject({ status: 401 });
     },
@@ -496,11 +508,8 @@ describe('durable transfer redemption and the canonical native authority', () =>
       attemptId,
       provider: 'google',
     });
-    const unusedUnknownSource = issuer.issueNativeOAuthTransferToken({
-      userId: user.userId,
-      nextPath: '/different-path',
-      authSessionId: user.authSessionId,
-    });
+    const unusedUnknownSource = historicalIdentifierStrippedTransfer(user.userId, '/different-path');
+    expect(verifyPrototypeLegacyTransfer(unusedUnknownSource, verificationSecret)?.authSessionId).toBeNull();
     await native.revoke(pair.refreshToken);
     await expect(second.exchange(unusedSameSource)).rejects.toMatchObject({ status: 401 });
     await expect(second.exchange(unusedUnknownSource)).rejects.toMatchObject({ status: 401 });
