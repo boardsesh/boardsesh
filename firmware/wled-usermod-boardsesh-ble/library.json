@@ -1,0 +1,9 @@
+{
+  "name": "boardsesh_ble",
+  "version": "0.1.0",
+  "description": "Boardsesh Spraywall LEDs over Bluetooth LE (unbuilt, untested reference usermod)",
+  "build": { "libArchive": false },
+  "dependencies": {
+    "h2zero/NimBLE-Arduino": "^1.4.3"
+  }
+}
