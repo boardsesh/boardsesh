@@ -693,13 +693,13 @@ is a safe target. See [sync-deletions-cutoff.md](sync-deletions-cutoff.md).
 
 ### Credential cutoff rollback floor
 
-BA-04 PR 2 (#__PR__) makes every backend reader refuse a credential stamped
+BA-04 PR 2 (#7420) makes every backend reader refuse a credential stamped
 before the climber's last password reset, change, set or deletion
 ([better-auth-migration.md](better-auth-migration.md), "Credential cutoffs").
 An older backend ignores `auth_subject_cutoffs.generation`, so rolling back below
 it brings every session that a reset ended back to life, and no code can stop it.
 
-- **The floor is the merge commit of #__PR__.** Record its SHA here when it merges:
+- **The floor is the merge commit of #7420.** Record its SHA here when it merges:
   `floor: (not merged yet)`.
 - **It binds once any cutoff row exists.** Check on the standby:
   `SELECT count(*) FROM auth_subject_cutoffs;` Zero means no staged writer has run
