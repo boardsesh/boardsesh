@@ -1078,7 +1078,9 @@ Decision rules and their tests: `scripts/production-deploy-watchdog.mjs`,
 
 Before any web sign-out path writes `auth_session_denials`, deploy PR 9a's
 primary denial reader to every backend instance and surviving web admission
-path. Record its eventual merge SHA here and in owner runbook #7430 before
+path. Both backend primary admission roles and any web primary reader role
+must retain SELECT on `auth_session_denials`; the fence verifier checks the web
+role explicitly. Record its eventual merge SHA here and in owner runbook #7430 before
 writing the first denial. Until that record exists, the SID writer stays dark.
 
 Once a denial exists, the minimum backend rollback build must include PR 9a's

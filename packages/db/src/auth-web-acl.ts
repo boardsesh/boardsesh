@@ -324,6 +324,10 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
     { readable: boolean }[]
   >`SELECT has_table_privilege(${WEB_ROLE},'public.auth_subject_cutoffs','SELECT') AS readable`;
   if (!cutoff?.readable) throw new Error('CUTOFF_READ_REQUIRED');
+  const [sessionDenials] = await client<
+    { readable: boolean }[]
+  >`SELECT has_table_privilege(${WEB_ROLE},'public.auth_session_denials','SELECT') AS readable`;
+  if (!sessionDenials?.readable) throw new Error('SESSION_DENIAL_READ_REQUIRED');
   return { role: WEB_ROLE, verified: true as const, catalogSha256: fencePlan(catalog).sha256 };
 }
 
