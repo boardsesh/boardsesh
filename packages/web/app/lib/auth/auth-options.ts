@@ -117,7 +117,9 @@ if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     FacebookProvider({
       clientId: process.env.FACEBOOK_CLIENT_ID,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true,
+      // Facebook has no trusted email_verified assertion. A free address may
+      // create an account, but must never automatically link an existing one.
+      allowDangerousEmailAccountLinking: false,
     }),
   );
 }
@@ -366,7 +368,7 @@ export const authOptions: NextAuthOptions = {
       }
       return baseUrl;
     },
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified
       if (account?.provider !== 'credentials' && account?.provider !== 'native-oauth') {
@@ -379,6 +381,37 @@ export const authOptions: NextAuthOptions = {
         if (!hasUsableEmail(user.email)) {
           reportMissingOAuthEmail(account?.provider ?? 'unknown');
           return OAUTH_EMAIL_REQUIRED_REDIRECT;
+        }
+
+        // Native rejects an unverified email claim for an existing account.
+        // Older iOS clients then try this browser flow, so it must require the
+        // same ownership proof before NextAuth's automatic email linking.
+        // A persisted provider subject remains authoritative even when its
+        // current profile omits or changes its verified-email assertion.
+        const emailVerifiedAssertion = profile && 'email_verified' in profile ? profile.email_verified : undefined;
+        const verifiedEmailClaim =
+          (account?.provider === 'google' || account?.provider === 'apple') &&
+          (emailVerifiedAssertion === true || emailVerifiedAssertion === 'true');
+        // Require stable proof even if the address is currently free: a
+        // registration can commit before NextAuth's later adapter lookup.
+        // Facebook cannot automatically link at that boundary (provider config
+        // above), so its existing free-address signup remains safe.
+        if (
+          !verifiedEmailClaim &&
+          (account?.provider !== 'facebook' || (await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        ) {
+          if (!account?.providerAccountId) return false;
+          const [linkedAccount] = await getDb()
+            .select({ userId: schema.accounts.userId })
+            .from(schema.accounts)
+            .where(
+              and(
+                eq(schema.accounts.provider, account.provider),
+                eq(schema.accounts.providerAccountId, account.providerAccountId),
+              ),
+            )
+            .limit(1);
+          if (!linkedAccount || linkedAccount.userId !== user.id) return false;
         }
 
         // Mark email as verified if not already (provider already verified it)
