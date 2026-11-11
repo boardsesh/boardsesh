@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { buildAccountConsolidationPlan, fingerprintConsolidationPlan, fingerprintConsolidationTick } from '../planner';
 import { evidenceFixture, tickFixture } from './fixtures';
-import { parseConsolidationArguments, runAccountConsolidationCli } from '../../../scripts/consolidate-account-emails';
+import { parseConsolidationArguments, runAccountConsolidationCli } from '../../consolidate-account-emails';
 const options = { evidenceSha256: 'a'.repeat(64) };
 const pair = [
   { userId: 'canonical', email: 'case@example.test', ticks: 1 },

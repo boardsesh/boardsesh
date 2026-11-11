@@ -3,7 +3,7 @@ import {
   buildAccountEmailEvidence,
   type CollectedEvidence,
   type EvidenceMemberFacts,
-} from '../../email-audit/evidence';
+} from '../../../auth/email-audit/evidence';
 import {
   buildAccountConsolidationPlan,
   fingerprintConsolidationPlan,

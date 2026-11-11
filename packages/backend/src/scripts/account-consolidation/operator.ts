@@ -7,8 +7,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import { openSync, writeFileSync, closeSync, fsyncSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { accountConsolidationBatches } from '@boardsesh/db/schema/auth';
-import { writePrivateFileExclusively } from '../email-audit/private-file';
-import { resolveWorksheetPath } from '../../scripts/account-email-evidence';
+import { writePrivateFileExclusively } from '../../auth/email-audit/private-file';
+import { resolveWorksheetPath } from '../account-email-evidence';
 import { applyAccountConsolidationGroup, type ConsolidationContext } from './executor';
 import {
   ConsolidationError,

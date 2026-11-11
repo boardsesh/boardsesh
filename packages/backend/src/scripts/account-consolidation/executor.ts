@@ -2,9 +2,9 @@
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { accountConsolidationBatches, accountConsolidationGroupAudits, users } from '@boardsesh/db/schema/auth';
-import { lockAuthorityGateExclusively } from '../current-store/foundation-context';
+import { lockAuthorityGateExclusively } from '../../auth/current-store/foundation-context';
 import { acquireUserTickMutationLock } from '@boardsesh/db/queries';
-import { sqlAccountKey } from '../email-audit/evidence-snapshot';
+import { sqlAccountKey } from '../../auth/email-audit/evidence-snapshot';
 import {
   ConsolidationError,
   consolidationDigest,

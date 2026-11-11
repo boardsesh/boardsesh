@@ -15,7 +15,7 @@ import { evidenceFixture, tickFixture } from './fixtures';
 import { captureConsolidationGroupState } from '../state';
 import { buildAccountConsolidationPlan, fingerprintConsolidationPlan } from '../planner';
 import { verifyPostgresMaintenanceFence } from '../maintenance';
-import { runAccountConsolidationApply } from '../../../scripts/consolidate-account-emails';
+import { runAccountConsolidationApply } from '../../consolidate-account-emails';
 
 const url = process.env.CONSOLIDATION_REHEARSAL_URL;
 if (url !== 'postgresql://postgres:synthetic-rehearsal@127.0.0.1:55437/consolidation_rehearsal')

@@ -2,7 +2,7 @@ import {
   buildAccountEmailEvidence,
   type EvidenceMemberFacts,
   type CollectedEvidence,
-} from '../../email-audit/evidence';
+} from '../../../auth/email-audit/evidence';
 import type { ConsolidationTick } from '../planner';
 export interface MemberSpec {
   userId: string;

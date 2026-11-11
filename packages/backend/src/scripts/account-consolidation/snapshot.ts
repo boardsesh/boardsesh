@@ -2,8 +2,8 @@ import { captureConsolidationGroupState } from './state';
 import { sql } from 'drizzle-orm';
 import type postgres from 'postgres';
 import { z } from 'zod';
-import { buildAccountEmailEvidence } from '../email-audit/evidence';
-import { collectAccountEmailEvidenceWith, sqlAccountKey } from '../email-audit/evidence-snapshot';
+import { buildAccountEmailEvidence } from '../../auth/email-audit/evidence';
+import { collectAccountEmailEvidenceWith, sqlAccountKey } from '../../auth/email-audit/evidence-snapshot';
 import { ConsolidationError, type ConsolidationTick } from './planner';
 
 const text = z.string().max(4096);

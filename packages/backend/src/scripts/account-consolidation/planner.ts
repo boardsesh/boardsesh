@@ -1,6 +1,6 @@
 import type { ConsolidationGroupState } from './state';
 import { createHash } from 'node:crypto';
-import type { EvidenceWorksheet, WorksheetGroup, WorksheetMember } from '../email-audit/evidence';
+import type { EvidenceWorksheet, WorksheetGroup, WorksheetMember } from '../../auth/email-audit/evidence';
 
 export type ConsolidationErrorCode =
   | 'CONFIGURATION'

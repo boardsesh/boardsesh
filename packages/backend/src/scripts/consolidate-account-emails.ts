@@ -6,9 +6,9 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { PgBoss } from 'pg-boss';
 import { jobQueueTransactionAdapter } from '@boardsesh/db/background-jobs';
-import { applyConsolidationBatch } from '../auth/account-consolidation/operator';
-import { verifyPostgresMaintenanceFence } from '../auth/account-consolidation/maintenance';
-import { fingerprintConsolidationPlan, type AccountConsolidationPlan } from '../auth/account-consolidation/planner';
+import { applyConsolidationBatch } from './account-consolidation/operator';
+import { verifyPostgresMaintenanceFence } from './account-consolidation/maintenance';
+import { fingerprintConsolidationPlan, type AccountConsolidationPlan } from './account-consolidation/planner';
 import { z } from 'zod';
 import { explicitReadOnlyConnectionOptions } from '../auth/email-audit/connection';
 import { writePrivateFileExclusively } from '../auth/email-audit/private-file';
@@ -18,8 +18,8 @@ import {
   consolidationDigest,
   ConsolidationError,
   type ApprovedConsolidationException,
-} from '../auth/account-consolidation/planner';
-import { collectAccountConsolidationSnapshot } from '../auth/account-consolidation/snapshot';
+} from './account-consolidation/planner';
+import { collectAccountConsolidationSnapshot } from './account-consolidation/snapshot';
 
 export const ACCOUNT_CONSOLIDATION_DATABASE_URL_VARIABLE = 'ACCOUNT_CONSOLIDATION_DATABASE_URL';
 export interface ConsolidationArguments {

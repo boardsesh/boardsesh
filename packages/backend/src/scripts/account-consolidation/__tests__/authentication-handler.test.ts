@@ -4,7 +4,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { getWorkerDatabaseName } from '../../../__tests__/worker-db';
 import { authenticationConsolidationHandler } from '../authentication-handler';
-import { decideCredential, isCredentialAdmitted } from '../../credential-cutoffs';
+import { decideCredential, isCredentialAdmitted } from '../../../auth/credential-cutoffs';
 import type { ConsolidationContext } from '../executor';
 
 const databaseName = getWorkerDatabaseName('bs_consolidation_auth');
@@ -60,7 +60,7 @@ describe('fresh-signin consolidation authentication finalization', () => {
     CREATE TABLE auth_email_projection(projection_id text PRIMARY KEY,is_current boolean,normalizer_version text,phase text,writer_epoch integer,source_user_count integer,key_count integer,ambiguous_key_count integer,created_at timestamptz,prepared_at timestamptz);
     CREATE TABLE auth_email_reservations(normalized_email text PRIMARY KEY,basis_projection_id text,state text,owner_user_id text,created_at timestamptz DEFAULT now());
     CREATE TABLE auth_email_reservation_members(normalized_email text,user_id text,observed_at timestamptz DEFAULT now(),PRIMARY KEY(normalized_email,user_id));`);
-    vi.doMock('../../admission-pool', () => ({
+    vi.doMock('../../../auth/admission-pool', () => ({
       readOnAdmissionConnection: async (
         markExecuting: () => void,
         operation: (database: ReturnType<typeof drizzle>) => Promise<unknown>,
@@ -122,7 +122,7 @@ describe('fresh-signin consolidation authentication finalization', () => {
 
   it('requires fresh signin for source web and native credentials, including cutoff observation mode', async () => {
     await apply();
-    const { readHumanSubjectStates } = await import('../../human-admission');
+    const { readHumanSubjectStates } = await import('../../../auth/human-admission');
     const states = await readHumanSubjectStates(['source', 'target']);
     expect(states.get('source')).toBeUndefined();
     expect(states.get('target')).toMatchObject({ generation: 7, nativeGeneration: 8 });
