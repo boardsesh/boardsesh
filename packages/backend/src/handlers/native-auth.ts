@@ -1,3 +1,4 @@
+import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
 import { legacyBridgeMode } from '../auth/authority/bridge';
 import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
 import { cleanupNativeRefreshRows } from '../auth/authority/native-refresh-retention';
@@ -582,7 +583,14 @@ async function generateTokenPair(
   if (origin.kind === 'refresh') {
     // The parent stays readable through rollback; the canonical binding is additive.
     const parentExpiresAt = origin.parent.expiresAt;
-    await bindNativeRefreshSession(transaction, userId, stamps, parentExpiresAt);
+    await bindNativeRefreshSession(
+      transaction,
+      userId,
+      stamps,
+      parentExpiresAt,
+      new Date(),
+      currentNativeRevocationMode(),
+    );
   }
 
   // Generate JWT. Clients read only `sub`; the stamps are for the server.
@@ -1688,7 +1696,7 @@ export async function handleNativeAuthRevoke(req: IncomingMessage, res: ServerRe
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
   try {
-    const matchedToken = await revokeNativeCredentials(db, tokenHash);
+    const matchedToken = await revokeNativeCredentials(db, tokenHash, currentNativeRevocationMode());
     if (!matchedToken) {
       sendJson(res, 401, { error: 'Invalid refresh token' });
       return;

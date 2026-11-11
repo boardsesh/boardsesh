@@ -1,3 +1,4 @@
+import { revokeAdministrativeCredentials } from '../admin-revocation';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,10 +64,11 @@ describe('private web signout and administrative revoke commands', () => {
       status: 'denied',
     });
   });
-  it('admin plan is read-only; exact approved digest applies once and a stale plan cannot reapply', async () => {
+  it('admin plan stays read-only, apply stays gated, and the qualified core rejects stale generations', async () => {
     const userId = await fixture();
+    const projectionId = randomUUID();
     await environment.database.insert(authEmailProjection).values({
-      projectionId: randomUUID(),
+      projectionId,
       isCurrent: true,
       normalizerVersion: 'js-trim-lower-v1',
       writerEpoch: 1,
@@ -95,9 +97,18 @@ describe('private web signout and administrative revoke commands', () => {
       await expect(
         runRevokeSessions(['apply', ...flags, '--plan-sha256', 'wrong'], operatorEnvironment),
       ).rejects.toThrow('PLAN_DIGEST_MISMATCH');
+      await expect(
+        runRevokeSessions(['apply', ...flags, '--plan-sha256', plan.planDigest], operatorEnvironment),
+      ).rejects.toThrow('NATIVE_REVOCATION_ACTIVATION_BLOCKED');
       expect(
-        (await runRevokeSessions(['apply', ...flags, '--plan-sha256', plan.planDigest], operatorEnvironment)).status,
-      ).toBe('revoked');
+        await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
+      ).toHaveLength(0);
+      await revokeAdministrativeCredentials(
+        environment.database,
+        { expectedProjectionId: projectionId, expectedNormalizerVersion: 'js-trim-lower-v1', expectedWriterEpoch: 1 },
+        userId,
+        0,
+      );
       const [cutoff] = await environment.database
         .select()
         .from(authSubjectCutoffs)

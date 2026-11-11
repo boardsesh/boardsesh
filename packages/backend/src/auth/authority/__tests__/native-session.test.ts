@@ -26,7 +26,7 @@ describe('additive native refresh lineage and ancestor retention', () => {
     const bind = (expiresAt: Date) =>
       environment.database.transaction(async (transaction) => {
         await requireHumanSubjectForIssuance(transaction, userId);
-        await bindNativeRefreshSession(transaction, userId, proof, expiresAt);
+        await bindNativeRefreshSession(transaction, userId, proof, expiresAt, new Date(), 'generation');
       });
     vi.stubEnv('AUTH_LEGACY_BRIDGE_MODE', 'off');
     await bind(firstExpiry);

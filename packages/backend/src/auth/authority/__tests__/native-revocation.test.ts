@@ -58,7 +58,7 @@ describe('native-only revocation evidence and lock order', () => {
       expiresAt: new Date(Date.now() + 86400000),
       scopes: ['logbook:read'],
     });
-    expect(await revokeNativeCredentials(environment.database, subject.tokenHash)).toBe(true);
+    expect(await revokeNativeCredentials(environment.database, subject.tokenHash, 'generation')).toBe(true);
     expect(
       (await environment.database.select().from(oauthRefreshToken).where(eq(oauthRefreshToken.id, partnerTokenId)))[0]
         .revoked,
@@ -118,7 +118,7 @@ describe('native-only revocation evidence and lock order', () => {
       writerEpoch: 0,
       projectionId: 'legacy-native',
     });
-    expect(await revokeNativeCredentials(environment.database, subject.tokenHash)).toBe(false);
+    expect(await revokeNativeCredentials(environment.database, subject.tokenHash, 'generation')).toBe(false);
     expect(
       await environment.database
         .select()
@@ -128,7 +128,7 @@ describe('native-only revocation evidence and lock order', () => {
   });
   it('records successive native generations without colliding with an account-wide mutation generation', async () => {
     const subject = await fixture();
-    expect(await revokeNativeCredentials(environment.database, subject.tokenHash)).toBe(true);
+    expect(await revokeNativeCredentials(environment.database, subject.tokenHash, 'generation')).toBe(true);
     const nextTokenHash = randomUUID();
     await environment.database.insert(mobileRefreshTokens).values({
       userId: subject.userId,
@@ -137,7 +137,7 @@ describe('native-only revocation evidence and lock order', () => {
       nativeGeneration: 1,
       subjectGeneration: 0,
     });
-    expect(await revokeNativeCredentials(environment.database, nextTokenHash)).toBe(true);
+    expect(await revokeNativeCredentials(environment.database, nextTokenHash, 'generation')).toBe(true);
     await environment.database.insert(authSecurityMutationEvents).values({
       operationId: randomUUID(),
       userId: subject.userId,
@@ -170,7 +170,7 @@ describe('native-only revocation evidence and lock order', () => {
       .update(mobileRefreshTokens)
       .set({ subjectGeneration: 1, nativeGeneration: 0 })
       .where(eq(mobileRefreshTokens.tokenHash, subject.tokenHash));
-    expect(await revokeNativeCredentials(environment.database, subject.tokenHash)).toBe(true);
+    expect(await revokeNativeCredentials(environment.database, subject.tokenHash, 'generation')).toBe(true);
     const [cutoff] = await environment.database
       .select()
       .from(authSubjectCutoffs)
@@ -191,7 +191,7 @@ describe('native-only revocation evidence and lock order', () => {
     });
     try {
       const isolatedDatabase = drizzle(isolatedClient, { schema });
-      await expect(revokeNativeCredentials(isolatedDatabase, subject.tokenHash)).rejects.toMatchObject({
+      await expect(revokeNativeCredentials(isolatedDatabase, subject.tokenHash, 'generation')).rejects.toMatchObject({
         code: 'UNSUPPORTED_ISOLATION',
       });
       expect(
@@ -231,7 +231,7 @@ describe('native-only revocation evidence and lock order', () => {
         .where(eq(mobileRefreshTokens.userId, subject.userId));
     });
     await locked;
-    const revocation = revokeNativeCredentials(environment.database, subject.tokenHash);
+    const revocation = revokeNativeCredentials(environment.database, subject.tokenHash, 'generation');
     // Observe the actual blocked user lock, then let reset take refresh rows.
     const observer = postgres(
       process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',

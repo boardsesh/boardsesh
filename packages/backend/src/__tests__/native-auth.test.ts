@@ -8,7 +8,7 @@ import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { decodeJwt, SignJWT } from 'jose';
 import { notificationDevices } from '@boardsesh/db/schema/app';
-import { mobileRefreshTokens, authSessionDenials, authCredentialLineage } from '@boardsesh/db/schema/auth';
+import { mobileRefreshTokens, authSessionDenials } from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what verifyTransferToken reads from env
@@ -1043,8 +1043,8 @@ describe('handleNativeAuthRevoke', () => {
     // 1. Revoke the submitted token (with returning() to get userId)
     // 2. Revoke ALL remaining tokens for that user (by userId)
     // 3. Disable account push registrations.
-    expect(mockDbUpdateSet).toHaveBeenCalledTimes(4);
-    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(4);
+    expect(mockDbUpdateSet).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(3);
     expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
     expect(mockedDatabase.update).not.toHaveBeenCalled();
     expect(mockedDatabase.transaction).toHaveBeenCalledOnce();
@@ -1115,8 +1115,8 @@ describe('handleNativeAuthRevoke', () => {
     expect(body.revoked).toBe(true);
 
     // Bearer expiry does not prevent push cleanup with a live refresh secret.
-    expect(mockDbUpdateSet).toHaveBeenCalledTimes(4);
-    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(4);
+    expect(mockDbUpdateSet).toHaveBeenCalledTimes(3);
+    expect(mockDbUpdateWhere).toHaveBeenCalledTimes(3);
     expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
   });
 
@@ -1192,12 +1192,7 @@ describe('handleNativeAuthRevoke', () => {
     const res = makeResponse();
     await handleNativeAuthRevoke(req as unknown as IncomingMessage, res as unknown as ServerResponse);
     expect(res.statusCode).toBe(500);
-    expect(updatedTables).toEqual([
-      mobileRefreshTokens,
-      mobileRefreshTokens,
-      authCredentialLineage,
-      notificationDevices,
-    ]);
+    expect(updatedTables).toEqual([mobileRefreshTokens, mobileRefreshTokens, notificationDevices]);
     expect(committedTokenRevocation).toBe(false);
     expect(mockedDatabase.update).not.toHaveBeenCalled();
   });

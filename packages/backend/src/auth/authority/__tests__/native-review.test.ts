@@ -1,3 +1,4 @@
+import { revokeAdministrativeCredentials } from '../admin-revocation';
 import { hkdf } from '@panva/hkdf';
 import { EncryptJWT } from 'jose';
 import { signOutLegacyWebSession } from '../web-signout';
@@ -48,7 +49,7 @@ it('an expired refresh secret cannot sign out a newer live native login', async 
       nativeGeneration: 0,
     },
   ]);
-  expect(await revokeNativeCredentials(first.database, expired)).toBe(false);
+  expect(await revokeNativeCredentials(first.database, expired, 'generation')).toBe(false);
   expect(
     await first.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId)),
   ).toHaveLength(0);
@@ -141,8 +142,22 @@ it('administrative all-domain revocation invalidates actual partner connections,
   const settings = { AUTH_OPERATOR_DATABASE_URL: url.toString() };
   try {
     const plan = await runRevokeSessions(['plan', ...flags], settings);
-    expect((await runRevokeSessions(['apply', ...flags, '--plan-sha256', plan.planDigest], settings)).status).toBe(
-      'revoked',
+    await expect(runRevokeSessions(['apply', ...flags, '--plan-sha256', plan.planDigest], settings)).rejects.toThrow(
+      'NATIVE_REVOCATION_ACTIVATION_BLOCKED',
+    );
+    const [manifest] = await first.database
+      .select()
+      .from(authEmailProjection)
+      .where(eq(authEmailProjection.isCurrent, true));
+    await revokeAdministrativeCredentials(
+      first.database,
+      {
+        expectedProjectionId: manifest.projectionId,
+        expectedNormalizerVersion: manifest.normalizerVersion,
+        expectedWriterEpoch: manifest.writerEpoch,
+      },
+      userId,
+      0,
     );
     const [connection] = await first.database
       .select()
@@ -170,7 +185,7 @@ it('rolls back cutoff and event on a semantic secret-disappearance failure after
   await first.client.unsafe(
     "CREATE FUNCTION review_pause_native_event() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN PERFORM pg_sleep(0.4); RETURN NEW; END'; CREATE TRIGGER review_pause_native_event BEFORE INSERT ON auth_security_mutation_events FOR EACH ROW EXECUTE FUNCTION review_pause_native_event()",
   );
-  const revoking = revokeNativeCredentials(first.database, tokenHash);
+  const revoking = revokeNativeCredentials(first.database, tokenHash, 'generation');
   try {
     let paused = false;
     for (let attempt = 0; attempt < 50; attempt++) {
@@ -263,7 +278,7 @@ it('a live refresh secret from an older native generation cannot end a newer log
       expiresAt: new Date(Date.now() + 86400000),
     },
   ]);
-  expect(await revokeNativeCredentials(first.database, oldSecret)).toBe(false);
+  expect(await revokeNativeCredentials(first.database, oldSecret, 'generation')).toBe(false);
   const [cutoff] = await first.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, userId));
   expect(cutoff.nativeGeneration).toBe(1);
   const [current] = await first.database

@@ -561,15 +561,19 @@ denials are independent of that selector and remain enforced when it is off.
 Never mount a SID writer before recording PR 9a's backend rollback floor in
 `docs/production-deploy.md` and owner runbook #7430.
 
-PR 9b keeps the native endpoint response fields unchanged. Sign-out takes the
-shared authority gate and the user lock before cutoff or refresh rows, verifies
-the submitted refresh row against current generations, increments only
-`native_generation`, and records a `native-signout` event with only the
-`first-party` domain. Web sessions and partner grants remain intact. New native
-JWTs carry an additive `sid`; old consumers continue to read `sub`.
+PR 9b keeps the native endpoint response fields unchanged. Default
+`AUTH_NATIVE_REVOCATION_MODE=legacy` keeps existing refresh-row and push-device
+cleanup while taking the shared gate and user lock before refresh rows. It
+does not create cutoffs/events, bump `native_generation`, or delete canonical
+sessions. Generation-wide revocation has an independently qualified core, but
+selecting `generation` hard-refuses startup while the Garmin compatibility gate
+is open. No environment or operator override closes that code gate. Web sessions
+and partner grants remain intact. New native JWTs carry an additive `sid`; old
+consumers continue to read `sub`.
 
-A refresh binds a canonical session only with bridge mode `on` (shadow performs
-checks without writes). It inherits generation, authentication age, and source
+A refresh can bind a canonical session only with bridge mode `on` and a
+qualified generation revocation writer (shadow performs checks without writes).
+Startup refuses canonical issuance while that writer is unavailable. It inherits generation, authentication age, and source
 expiry. Consumed parents with NULL family metadata are retained while any
 unrevoked, unexpired refresh row for that subject can live. This deliberately
 keeps more evidence than a known-family cleanup would.
@@ -579,7 +583,10 @@ TLS, an exact `--confirm-host`, and private files outside Git (0700 directory,
 0600 files). `plan` is the default; `apply` needs its keyed `planDigest` and
 refuses if generation or manifest epoch changed. The subject file contains one
 account ID; the key file contains 32 random bytes as 64 hexadecimal characters.
-Neither is printed. Run only after the enforced authority and rehearsal gates:
+Neither is printed. Read-only planning is available; `apply` currently
+hard-refuses while the Garmin compatibility code gate is open. The qualified
+admin core is exercised only on isolated fixtures. The commands below describe
+the eventual flow after all authority and rehearsal gates, not activation approval:
 
 ```sh
 vp run auth:revoke-sessions -- plan --confirm-host <host> \

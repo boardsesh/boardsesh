@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -7,8 +6,8 @@ import * as schema from '@boardsesh/db/schema';
 import { authEmailProjection, authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { operatorClient, operatorConnectionOptions, parseOperatorArguments } from './auth-fence/operator';
 import { digestKey, keyedDigest, privateText } from './auth-identities/private-state';
-import { recordSecurityMutation } from '../auth/current-store/security-mutations';
-import { lockEnforcedProjection } from '../auth/current-store/foundation-context';
+import { revokeAdministrativeCredentials } from '../auth/authority/admin-revocation';
+import { assertNativeGenerationRevocationActivation } from '../auth/authority/native-revocation-configuration';
 
 /** Explicit operator connection only. Outputs contain counts and keyed digests. */
 export async function runRevokeSessions(
@@ -44,28 +43,17 @@ export async function runRevokeSessions(
     ]);
     if (options.command === 'plan') return { status: 'planned', subjects: 1, planDigest };
     if (options.planSha256 !== planDigest) throw new Error('PLAN_DIGEST_MISMATCH');
-    await database.transaction(async (transaction) => {
-      const expected = {
+    assertNativeGenerationRevocationActivation();
+    await revokeAdministrativeCredentials(
+      database,
+      {
         expectedProjectionId: manifest.projectionId,
         expectedNormalizerVersion: manifest.normalizerVersion,
         expectedWriterEpoch: manifest.writerEpoch,
-      };
-      await lockEnforcedProjection(transaction, expected);
-      const [lockedSubject] = await transaction
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.id, userId))
-        .for('update');
-      if (!lockedSubject) throw new Error('ACTIVE_SUBJECT_REQUIRED');
-      await recordSecurityMutation(transaction, {
-        ...expected,
-        userId,
-        expectedGeneration: generation,
-        operationId: randomUUID(),
-        kind: 'admin-revocation',
-        domains: ['first-party', 'partner'],
-      });
-    });
+      },
+      userId,
+      generation,
+    );
     return { status: 'revoked', subjects: 1, planDigest };
   } finally {
     await client.end({ timeout: 5 });

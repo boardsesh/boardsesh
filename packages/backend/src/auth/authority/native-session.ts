@@ -1,3 +1,4 @@
+import type { NativeRevocationMode } from './native-revocation-configuration';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { authCredentialLineage, authSession, authSessionDenials } from '@boardsesh/db/schema/auth';
@@ -18,9 +19,12 @@ export async function bindNativeRefreshSession(
   proof: RefreshSessionProof,
   sourceExpiresAt: Date,
   now = new Date(),
+  revocationMode: NativeRevocationMode = 'legacy',
 ): Promise<void> {
   const mode = legacyBridgeMode(process.env);
   if (mode === 'off') return;
+  if (mode === 'on' && revocationMode !== 'generation')
+    throw new Error('NATIVE_CANONICAL_ISSUANCE_REQUIRES_GENERATION_REVOCATION');
   const lineageId = `native-refresh:${createHash('sha256')
     .update(JSON.stringify([userId, proof.sessionId]))
     .digest('hex')}`;
