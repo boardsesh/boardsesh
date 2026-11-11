@@ -16,25 +16,33 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
   return { baseUrl: fixtureUrl, sessionSecret: fixtureSecret };
 });
 // Rows each table's `select ... limit` resolves to; an Error makes that read fail.
+// A left join adds the joined table's first row to each row of the first table.
 const databaseRows = vi.hoisted(() => new Map<unknown, unknown[] | Error>());
 
 vi.mock('server-only', () => ({}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: vi.fn(() => ({})) }));
-vi.mock('@/app/lib/db/db', () => ({
-  getDb: () => ({
-    select: () => ({
-      from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            const rows = databaseRows.get(table);
-            if (rows instanceof Error) throw rows;
-            return rows ?? [];
-          },
-        }),
+vi.mock('@/app/lib/db/db', () => {
+  function readRows(table: unknown): unknown[] {
+    const rows = databaseRows.get(table);
+    if (rows instanceof Error) throw rows;
+    return rows ?? [];
+  }
+  function query(table: unknown, joinedTables: unknown[]) {
+    return {
+      leftJoin: (joined: unknown) => query(table, [...joinedTables, joined]),
+      where: () => ({
+        limit: async () =>
+          readRows(table).map((row) =>
+            joinedTables.reduce<object>(
+              (merged, joined) => ({ ...(readRows(joined)[0] as object | undefined), ...merged }),
+              row as object,
+            ),
+          ),
       }),
-    }),
-  }),
-}));
+    };
+  }
+  return { getDb: () => ({ select: () => ({ from: (table: unknown) => query(table, []) }) }) };
+});
 // Admission is a backend round trip with its own coverage; it reads only `sub`.
 vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
   withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),

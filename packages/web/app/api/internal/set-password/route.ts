@@ -5,6 +5,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { hash } from 'bcryptjs';
+import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import { eq, and, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Hash password and insert
-    const passwordHash = await hash(password, 12);
+    const passwordHash = await hash(password, PASSWORD_HASH_COST);
 
     try {
       await db.transaction(async (tx) => {

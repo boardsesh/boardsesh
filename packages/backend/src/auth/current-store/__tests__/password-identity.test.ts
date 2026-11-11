@@ -69,10 +69,23 @@ describe('comparison for an address with no password', () => {
     expect(getRounds(comparedHashes[0])).toBe(getRounds(prepared.passwordHash));
   });
 
-  it('leaves released native login on its existing comparison', async () => {
+  // Native sign-in answered in 50 ms for an unknown address and 198 ms for a
+  // wrong password while its stand-in hash was cost 10, which named the
+  // addresses that have accounts. Both paths must run bcrypt at the stored cost.
+  it('native login runs bcrypt at the stored cost whether or not the address has an account', async () => {
+    const prepared = await preparedRegistration(`${randomUUID()}@example.test`, 'native-owned-password');
+    await db.transaction((transaction) => insertCurrentStorePasswordIdentity(transaction, prepared, false));
+    const storedCost = getRounds(prepared.passwordHash);
+    comparedHashes.length = 0;
+
     expect(await authenticateCurrentStorePassword(db, `${randomUUID()}@example.test`, 'submitted')).toBeNull();
     expect(comparedHashes).toHaveLength(1);
-    expect(getRounds(comparedHashes[0])).toBe(10);
+    expect(getRounds(comparedHashes[0])).toBe(storedCost);
+
+    comparedHashes.length = 0;
+    expect(await authenticateCurrentStorePassword(db, prepared.email, 'wrong-password')).toBeNull();
+    expect(comparedHashes).toEqual([prepared.passwordHash]);
+    expect(getRounds(comparedHashes[0])).toBe(storedCost);
   });
 });
 

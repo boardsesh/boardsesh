@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
+import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import type { DbInstance } from '@boardsesh/db/client';
 import { users, userCredentials, userProfiles } from '@boardsesh/db/schema/auth';
 import { normalizeAccountEmail } from '../normalize-email';
@@ -8,18 +9,11 @@ import { normalizeAccountEmail } from '../normalize-email';
 type PasswordIdentityReader = Pick<DbInstance, 'select'>;
 type PasswordIdentityTransaction = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
 
-// Hash of a discarded random string, at the cost of a stored password, so an
-// address with no password takes as long to reject as one with a wrong password.
-const ABSENT_PASSWORD_HASH = '$2b$12$3qFGDie2IfjRh92IVzRFQeHL0ovw3iRwVMfkudP3XYTfMmfFrmUt6';
-// Released native login still runs with every staged mode off, so it keeps its
-// existing comparison until a deliberate native change moves it to the one above.
-const NATIVE_LOGIN_ABSENT_PASSWORD_HASH = '$2b$10$CwTycUXWue0Thq9StjUM0uJ8/oQbk1Ec7T0p/7K8nXfRzC2VyM4dy';
 export const MAX_CURRENT_STORE_PASSWORD_CANDIDATES = 8;
 const REGISTER_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_MAX_LENGTH = 128;
 const NAME_MAX_LENGTH = 100;
-const BCRYPT_COST = 12;
 
 interface PasswordRegistration {
   readonly email: string;
@@ -39,11 +33,14 @@ export interface CurrentStorePasswordCandidate {
   readonly createdAt: Date;
 }
 
-/** One bounded comparison engine; callers own their explicit legacy lookup policy. */
+/**
+ * One bounded comparison engine; callers own their explicit legacy lookup policy.
+ * An address with no password still runs one comparison at the stored cost, so
+ * it takes as long to reject as an address with a wrong password.
+ */
 export async function matchCurrentStorePasswordCandidate(
   candidates: readonly CurrentStorePasswordCandidate[],
   password: string,
-  absentPasswordHash: string = ABSENT_PASSWORD_HASH,
 ): Promise<{ userId: string; createdAt: Date } | null> {
   const snapshot = candidates.map((candidate) => ({
     userId: candidate.userId,
@@ -51,7 +48,7 @@ export async function matchCurrentStorePasswordCandidate(
     createdAt: candidate.createdAt instanceof Date ? new Date(candidate.createdAt.getTime()) : candidate.createdAt,
   }));
   if (snapshot.length === 0) {
-    await compare(password, absentPasswordHash);
+    await compare(password, ABSENT_PASSWORD_HASH);
     return null;
   }
   if (snapshot.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) {
@@ -87,7 +84,7 @@ export async function authenticateCurrentStorePassword(
     .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
     .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  return matchCurrentStorePasswordCandidate(candidates, password, NATIVE_LOGIN_ABSENT_PASSWORD_HASH);
+  return matchCurrentStorePasswordCandidate(candidates, password);
 }
 
 /** Shared native creation email policy; subjects and login passwords are separate. */
@@ -134,7 +131,7 @@ export async function prepareCurrentStorePasswordRegistration(
   const { email, password, name } = registration;
   const existing = await database.select().from(users).where(eq(users.email, email)).limit(1);
   if (existing[0]) return null;
-  const passwordHash = await hash(password, BCRYPT_COST);
+  const passwordHash = await hash(password, PASSWORD_HASH_COST);
   return { email, name, passwordHash };
 }
 

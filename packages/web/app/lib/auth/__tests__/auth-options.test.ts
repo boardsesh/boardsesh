@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import type { Session } from 'next-auth';
+import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { authOptions } from '../auth-options';
 
 const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
@@ -689,11 +690,15 @@ function getNativeOAuthProvider(): CredentialProviderLike {
 }
 
 describe('CredentialsProvider.authorize — email/password', () => {
+  const mockDbLeftJoin = vi.fn();
+  const storedUser = { id: 'user-1', email: 'user@example.com', name: 'Test', image: null };
+
   beforeEach(() => {
     vi.clearAllMocks();
 
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbFrom.mockReturnValue({ leftJoin: mockDbLeftJoin, where: mockDbWhere });
+    mockDbLeftJoin.mockReturnValue({ where: mockDbWhere });
     mockDbWhere.mockReturnValue({ limit: mockDbLimit });
     mockDbLimit.mockResolvedValue([]);
   });
@@ -716,45 +721,39 @@ describe('CredentialsProvider.authorize — email/password', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when user is not found', async () => {
-    // First select (users lookup) → empty
-    mockDbLimit.mockResolvedValue([]);
-
-    const provider = getEmailCredentialsProvider();
-    const result = await provider.authorize?.({ email: 'notfound@example.com', password: 'pass' });
-    expect(result).toBeNull();
-  });
-
-  it('returns null when user has no password (OAuth-only account)', async () => {
-    // First select (users) → user found; second select (userCredentials) → empty
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([]);
-
-    const provider = getEmailCredentialsProvider();
-    const result = await provider.authorize?.({
-      email: 'user@example.com',
-      password: 'mypassword',
-    });
-    expect(result).toBeNull();
-  });
-
-  it('returns null when password is incorrect', async () => {
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+  // An unknown address, an OAuth-only account and a wrong password must cost the
+  // same: one query, then one bcrypt comparison at the stored cost. Answering
+  // any of them sooner tells a caller which addresses have accounts.
+  it.each([
+    ['an unknown address', [], ABSENT_PASSWORD_HASH],
+    ['an account with no password (OAuth only)', [{ ...storedUser, passwordHash: null }], ABSENT_PASSWORD_HASH],
+    ['a wrong password', [{ ...storedUser, passwordHash: '$2a$12$hashed' }], '$2a$12$hashed'],
+  ])('rejects %s after one query and one bcrypt comparison', async (_case, rows, comparedHash) => {
+    mockDbLimit.mockResolvedValue(rows);
     mockBcryptCompare.mockResolvedValue(false);
 
     const provider = getEmailCredentialsProvider();
-    const result = await provider.authorize?.({ email: 'user@example.com', password: 'wrongpass' });
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'submitted' });
+
     expect(result).toBeNull();
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    expect(mockDbLeftJoin).toHaveBeenCalledTimes(1);
+    expect(mockDbLimit).toHaveBeenCalledTimes(1);
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+    expect(mockBcryptCompare).toHaveBeenCalledWith('submitted', comparedHash);
+  });
+
+  it('never signs in an account with no password, even if the stand-in comparison passed', async () => {
+    mockDbLimit.mockResolvedValue([{ ...storedUser, passwordHash: null }]);
+    mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    expect(await provider.authorize?.({ email: 'user@example.com', password: 'submitted' })).toBeNull();
   });
 
   it('returns user object when credentials are valid', async () => {
     const user = { id: 'user-1', email: 'user@example.com', name: 'Test User', image: null };
-    mockDbLimit
-      .mockResolvedValueOnce([user])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+    mockDbLimit.mockResolvedValue([{ ...user, passwordHash: '$2a$12$hashed' }]);
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();

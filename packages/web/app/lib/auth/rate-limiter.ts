@@ -60,6 +60,17 @@ export function checkRateLimit(
 }
 
 /**
+ * Gives back one attempt that `checkRateLimit` counted, for a caller that only
+ * wants to count attempts that failed. Counting first and giving back on
+ * success, rather than counting after a failure, keeps a burst of parallel
+ * requests from all passing the check before any of them is counted.
+ */
+export function releaseRateLimitAttempt(identifier: string): void {
+  const entry = memoryStore.get(identifier);
+  if (entry && entry.count > 0 && Date.now() <= entry.resetAt) entry.count--;
+}
+
+/**
  * Get client IP address from request headers.
  * Handles common proxy headers (x-forwarded-for, x-real-ip).
  */

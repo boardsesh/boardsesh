@@ -5,7 +5,8 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { compare, hash } from 'bcryptjs';
+import { compare, getRounds, hash } from 'bcryptjs';
+import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 
 vi.mock('bcryptjs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('bcryptjs')>();
@@ -363,6 +364,40 @@ describe('handleNativeAuthCredentials', () => {
 
     expect(res.statusCode).toBe(401);
     expect(parseBody(res).error).toBe('Invalid email or password');
+  });
+
+  // An unknown address must cost the same bcrypt work as a wrong password. A
+  // cost-10 stand-in answered in 50 ms against 198 ms for a stored cost-12 hash,
+  // which told a caller which addresses have accounts.
+  describe('bcrypt cost does not reveal whether an account exists', () => {
+    async function signIn(email: string, password: string): Promise<MockRes> {
+      const req = makeRequest({ method: 'POST', body: { email, password } });
+      const res = makeResponse();
+      await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+      return res;
+    }
+
+    it('runs bcrypt at the stored cost when no account matches the address', async () => {
+      queueSelect([]);
+
+      const res = await signIn('nobody@example.com', 'whatever');
+
+      expect(res.statusCode).toBe(401);
+      expect(vi.mocked(compare)).toHaveBeenCalledTimes(1);
+      const [, comparedHash] = vi.mocked(compare).mock.calls[0];
+      expect(getRounds(comparedHash)).toBe(PASSWORD_HASH_COST);
+    });
+
+    it('runs bcrypt at the stored cost for a wrong password', async () => {
+      const storedHash = await hash('correct-horse', PASSWORD_HASH_COST);
+      queueSelect([{ userId: 'user-1', passwordHash: storedHash }]);
+
+      const res = await signIn('test@example.com', 'wrong-password');
+
+      expect(res.statusCode).toBe(401);
+      expect(vi.mocked(compare)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(compare)).toHaveBeenCalledWith('wrong-password', storedHash);
+    });
   });
 
   it('returns 400 when email is missing', async () => {

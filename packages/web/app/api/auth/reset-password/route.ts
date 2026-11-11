@@ -7,6 +7,7 @@ import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
 import { isVersionedPasswordRecoveryToken, passwordRecoveryTokenSchema } from '@boardsesh/auth-protocol';
+import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
 import {
   INVALID_PASSWORD_RESET_MESSAGE,
@@ -129,7 +130,7 @@ async function handleResetPassword(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, PASSWORD_HASH_COST);
 
     await db.transaction(async (tx) => {
       const existingCredentials = await tx

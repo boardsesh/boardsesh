@@ -9,6 +9,7 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
+import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
@@ -160,39 +161,35 @@ providers.push(
 
       const db = getDb();
 
-      // Look up user by email
-      const users = await db.select().from(schema.users).where(eq(schema.users.email, credentials.email)).limit(1);
-
-      if (users.length === 0) {
-        return null;
-      }
-
-      const user = users[0];
-
-      // Get user credentials (password hash)
-      const userCredentials = await db
-        .select()
-        .from(schema.userCredentials)
-        .where(eq(schema.userCredentials.userId, user.id))
+      // An unknown address, an account with no password (OAuth only) and a
+      // wrong password must take the same time to reject, or the answer tells a
+      // caller which addresses have accounts. So every path makes this one
+      // query and then one bcrypt comparison at the stored cost.
+      const [account] = await db
+        .select({
+          id: schema.users.id,
+          email: schema.users.email,
+          name: schema.users.name,
+          image: schema.users.image,
+          passwordHash: schema.userCredentials.passwordHash,
+        })
+        .from(schema.users)
+        .leftJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
+        .where(eq(schema.users.email, credentials.email))
         .limit(1);
 
-      if (userCredentials.length === 0) {
-        // User exists but has no password (e.g., OAuth only)
-        return null;
-      }
+      const storedHash = account?.passwordHash ?? null;
+      const isValidPassword = await compare(credentials.password, storedHash ?? ABSENT_PASSWORD_HASH);
 
-      // Verify password
-      const isValidPassword = await compare(credentials.password, userCredentials[0].passwordHash);
-
-      if (!isValidPassword) {
+      if (!account || storedHash === null || !isValidPassword) {
         return null;
       }
 
       return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        image: user.image,
+        id: account.id,
+        email: account.email,
+        name: account.name,
+        image: account.image,
       };
     },
   }),

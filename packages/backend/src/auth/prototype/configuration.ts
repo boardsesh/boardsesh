@@ -1,5 +1,6 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { compare, hash } from 'bcryptjs';
+import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import { PROTOTYPE_ISSUER } from './oauth-options';
 
 /** Synthetic secrets and origins. This configuration is never a production authority. */
@@ -11,7 +12,7 @@ export const PROTOTYPE_CONFIGURATION = {
   emailAndPassword: {
     enabled: true,
     password: {
-      hash: (password: string) => hash(password, 12),
+      hash: (password: string) => hash(password, PASSWORD_HASH_COST),
       verify: ({ hash: passwordHash, password }: { hash: string; password: string }) => compare(password, passwordHash),
     },
   },

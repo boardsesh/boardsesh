@@ -13,8 +13,8 @@ There is no new endpoint, schema, dependency, database grant or Better Auth impo
 | Submitted email | Shared pure `normalizeAccountEmail` applies the existing native `trim().toLowerCase()` rule; dots and plus suffixes remain intact. |
 | Stored legacy lookup | Credentials still use literal `LOWER(users.email) = submittedKey`; they do not newly trim or rewrite stored rows or use SQL wildcard matching. |
 | Duplicate credential candidates | Read at most nine candidates; permit at most eight comparisons. Check every admitted hash and authenticate only exactly one password match. Oversized or ambiguous matches return the same generic failure. |
-| Missing password identity | Unknown email and OAuth-only accounts retain one dummy bcrypt comparison and the same generic credential error. |
-| Password policy | Registration keeps 8–128 characters and bcrypt cost 12. Existing login gains no registration-length restriction; password whitespace, Unicode and existing bcrypt behavior are retained. Stored hashes are never rehashed. |
+| Missing password identity | Unknown email and OAuth-only accounts run one bcrypt comparison against `ABSENT_PASSWORD_HASH`, at the stored cost, and get the same generic credential error. |
+| Password policy | Registration keeps 8–128 characters and bcrypt cost 12 (`PASSWORD_HASH_COST` in `@boardsesh/auth-protocol/password-hash`). Existing login gains no registration-length restriction; password whitespace, Unicode and existing bcrypt behavior are retained. Stored hashes are never rehashed. |
 | Verification flag | Native registration stores null verification when enabled and a timestamp otherwise; native password login still does not enforce the web verification gate. |
 | Issuance | Existing signing key, JWT claims/lifetime, refresh-secret storage, response fields and account-creation receipts remain owned by the existing native issuer. |
 

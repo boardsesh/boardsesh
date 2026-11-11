@@ -10,8 +10,8 @@ import {
   withPartnerSignInFailureReturn,
 } from '@/app/lib/partner-oauth/sign-in-failure-return';
 import {
+  admitPasswordLogin,
   createPasswordCommandAuthRequest,
-  limitPasswordLoginPerClient,
   unavailablePasswordAuthResponse,
 } from '@/app/lib/auth/password-command-auth.server';
 import {
@@ -174,9 +174,9 @@ async function postAuth(
     ? request.nextUrl.pathname.slice(0, -1)
     : request.nextUrl.pathname;
   if (action === 'callback' && provider === 'credentials') {
-    const limitedResponse = limitPasswordLoginPerClient(request);
-    if (limitedResponse) return limitedResponse;
-    const commandRequest = createPasswordCommandAuthRequest(options);
+    const admission = admitPasswordLogin(request);
+    if (admission.limitedResponse) return admission.limitedResponse;
+    const commandRequest = createPasswordCommandAuthRequest(options, undefined, admission.passwordAccepted);
     const commandHandler = NextAuth(commandRequest.options) as NextAuthHandler;
     const response = await commandHandler(request, context);
     return commandRequest.unavailable()
