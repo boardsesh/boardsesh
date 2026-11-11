@@ -26,8 +26,8 @@ describe('reading a wall’s cached LED settings', () => {
   });
 
   it('reads a Bluetooth controller type and refuses one this app does not know', () => {
-    const bluetooth = { ...base, controller: { type: 'wled-ble', url: '' } };
-    expect(readSprayWallLedSettings(bluetooth).controller).toEqual({ type: 'wled-ble', url: '' });
+    const bluetooth = { ...base, controller: { type: 'ble', url: '' } };
+    expect(readSprayWallLedSettings(bluetooth).controller).toEqual({ type: 'ble', url: '' });
     expect(() => readSprayWallLedSettings({ ...base, controller: { type: 'hue', url: '' } })).toThrow();
   });
 });

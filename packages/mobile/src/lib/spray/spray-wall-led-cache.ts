@@ -9,7 +9,7 @@ import { removePreference, removePreferencesMatching } from '../preference-store
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
-  /** `wled-ble` reaches the controller over Bluetooth; `url` then stays as the Wi-Fi address, unused. */
+  /** `ble` reaches the controller over Bluetooth; `url` then stays as the Wi-Fi address, unused. */
   controller: { type: LedControllerType; url: string };
   /** WLED master brightness, 1–255, shared by every phone at the wall. */
   brightness: number;

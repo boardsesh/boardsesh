@@ -14,10 +14,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "devDependencies": {
-    "typescript": "~7.0.2"
-  },
   "dependencies": {
     "@boardsesh/ble-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~7.0.2"
   }
 }

@@ -187,8 +187,7 @@ export function useSprayLedRouteSender({
         }
         enabled = true;
         if (mirrored) return fail();
-        const target =
-          settings.controller.type === 'wled-ble' ? await bluetoothTarget(wallUuid) : settings.controller.url;
+        const target = settings.controller.type === 'ble' ? await bluetoothTarget(wallUuid) : settings.controller.url;
         if (!isCurrent()) return false;
         if (!target) return fail();
         let current = runtime.current;

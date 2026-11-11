@@ -1,34 +1,31 @@
 import { Platform } from 'react-native';
 import type { Device } from 'react-native-ble-plx';
-import {
-  BLE_LED_CONTROL_CHARACTERISTIC_UUID,
-  BLE_LED_INFO_CHARACTERISTIC_UUID,
-  BLE_LED_SERVICE_UUID,
-  BLE_LED_STATUS_CHARACTERISTIC_UUID,
-  DEFAULT_ATT_MTU,
-  LedControllerError,
-  type BleLedLink,
-  type BleLedTransport,
-} from '@boardsesh/led-controller';
+import { isSprayLedControllerName } from '@boardsesh/ble-protocol';
+import { UART_SERVICE_UUID, UART_WRITE_CHARACTERISTIC_UUID } from '@boardsesh/ble-protocol/transport';
+import { LedControllerError, type BleLedLink, type BleLedTransport } from '@boardsesh/led-controller';
 import { getBleManager } from '../ble/ble-manager';
 import { waitForBlePoweredOn } from '../ble/availability';
 import { uint8ArrayToBase64 } from '../ble/base64';
+import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../ble/scan-options';
 import { requestBleRuntimePermissions } from '../ble/use-ble-permissions';
 
 /**
- * The Spraywall's Bluetooth LED controller (docs/spray-wall-led-ble.md) over the
- * app's one ble-plx manager.
+ * The Spraywall's Bluetooth LED controller (docs/spray-wall-led-ble.md): the
+ * board-controller firmware's `gledopto-c015-spraywall` build, which takes
+ * Aurora API v3 frames on the Nordic UART write characteristic, like a Kilter
+ * board, with no pairing.
  *
  * Kept apart from the board stack on purpose: Kilter, Tension and MoonBoard run
- * through `BluetoothAdapter` (and on iOS a native manager), this only ever
+ * through `BluetoothAdapter` (and on iOS a native manager); this only ever
  * touches the device ids it connected itself. It never stops another
- * connection; it scans only when the climber asks, or briefly when a route
+ * connection, and scans only when the climber asks, or briefly when a route
  * needs a controller and the phone has none stored.
  */
 
 const CONNECTION_TIMEOUT_MS = 12_000;
-// The board adapter's choice: DLE-friendly, and well above a 40-run frame.
+// The board adapter's choice: DLE-friendly, and chunks clamp to 244 anyway.
 const REQUESTED_ATT_MTU = 247;
+const DEFAULT_ATT_MTU = 23;
 /** Let go after a minute without writes, so the next climber's phone can connect. */
 export const SPRAY_LED_BLE_IDLE_MS = 60_000;
 export const SPRAY_LED_BLE_SCAN_MS = 10_000;
@@ -36,17 +33,9 @@ const FIND_ONLY_SCAN_MS = 4_000;
 
 export type SprayLedBleCandidate = { id: string; name: string; rssi: number };
 
-type OpenLink = { device: Device; link: BleLedLink; idle: ReturnType<typeof setTimeout> | null };
+type OpenLink = { link: BleLedLink; idle: ReturnType<typeof setTimeout> | null };
 
 const links = new Map<string, Promise<OpenLink>>();
-
-function base64ToBytes(base64: string | null | undefined): Uint8Array {
-  if (!base64) return new Uint8Array();
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-  return bytes;
-}
 
 async function ensureRadio(): Promise<void> {
   if (!(await requestBleRuntimePermissions())) throw new LedControllerError('unavailable');
@@ -92,60 +81,38 @@ async function open(deviceId: string): Promise<OpenLink> {
       try {
         device = await connected.requestMTU(REQUESTED_ATT_MTU);
       } catch {
-        // The default MTU still works: frames shrink to two runs.
+        // The default MTU still works: the packet goes out in 20-byte chunks.
       }
     }
     device = await device.discoverAllServicesAndCharacteristics();
-    const statusListeners = new Set<(frame: Uint8Array) => void>();
-    // Subscribing to the encrypted status characteristic is what makes the OS
-    // ask for the controller's passkey the first time.
-    const monitor = device.monitorCharacteristicForService(
-      BLE_LED_SERVICE_UUID,
-      BLE_LED_STATUS_CHARACTERISTIC_UUID,
-      (error, characteristic) => {
-        if (error || !characteristic?.value) return;
-        const frame = base64ToBytes(characteristic.value);
-        for (const listener of statusListeners) listener(frame);
-      },
+    const characteristics = await device.characteristicsForService(UART_SERVICE_UUID);
+    const write = characteristics.find(
+      (characteristic) => characteristic.uuid.toLowerCase() === UART_WRITE_CHARACTERISTIC_UUID.toLowerCase(),
     );
+    if (!write) throw new LedControllerError('not-wled');
     const mtu = device.mtu && device.mtu >= DEFAULT_ATT_MTU ? device.mtu : DEFAULT_ATT_MTU;
     const entry: OpenLink = {
-      device,
       idle: null,
       link: {
         mtu,
-        async readInfo() {
+        name: device.localName ?? device.name ?? '',
+        async write(chunk) {
           touch(deviceId, entry);
-          const characteristic = await device.readCharacteristicForService(
-            BLE_LED_SERVICE_UUID,
-            BLE_LED_INFO_CHARACTERISTIC_UUID,
-          );
-          return base64ToBytes(characteristic.value);
-        },
-        async writeControl(frame) {
-          touch(deviceId, entry);
-          await device.writeCharacteristicWithResponseForService(
-            BLE_LED_SERVICE_UUID,
-            BLE_LED_CONTROL_CHARACTERISTIC_UUID,
-            uint8ArrayToBase64(frame),
-          );
-        },
-        onStatus(listener) {
-          statusListeners.add(listener);
-          return () => statusListeners.delete(listener);
+          // With response: each chunk is acknowledged before the next, so no
+          // pacing delay is needed and a lost chunk fails the send.
+          await write.writeWithResponse(uint8ArrayToBase64(chunk));
         },
       },
     };
     const disconnected = manager.onDeviceDisconnected(deviceId, () => {
       disconnected.remove();
-      monitor.remove();
       forget(deviceId, entry);
     });
     touch(deviceId, entry);
     return entry;
-  } catch {
+  } catch (error) {
     void manager.cancelDeviceConnection(deviceId).catch(() => undefined);
-    throw new LedControllerError('unavailable');
+    throw error instanceof LedControllerError ? error : new LedControllerError('unavailable');
   }
 }
 
@@ -166,8 +133,8 @@ export const sprayLedBleTransport: BleLedTransport = {
 };
 
 /**
- * List controllers advertising the service. Calls `onUpdate` with the growing
- * list and `onStopped` when the scan ends by itself. Returns the stop function.
+ * List Spraywall controllers nearby. Calls `onUpdate` with the growing list
+ * and `onStopped` when the scan ends by itself. Returns the stop function.
  */
 export function scanForSprayLedControllers(
   onUpdate: (candidates: SprayLedBleCandidate[]) => void,
@@ -198,21 +165,19 @@ export function scanForSprayLedControllers(
     }
     if (stopped) return;
     started = true;
-    // The usermod puts the 128-bit service UUID in the advertising packet
-    // itself, so a filtered scan finds it on Android and iOS alike.
-    void getBleManager().startDeviceScan([BLE_LED_SERVICE_UUID], null, (error, device) => {
+    // Unfiltered, matched by name: the controller advertises only its name
+    // (no service UUID, so no board picker lists it), as the board pickers
+    // match Kilter-built boxes by name.
+    void getBleManager().startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (error, device) => {
       if (stopped) return;
       if (error) {
         stop();
         onStopped('unavailable');
         return;
       }
-      if (!device) return;
-      const candidate = {
-        id: device.id,
-        name: device.localName ?? device.name ?? device.id,
-        rssi: device.rssi ?? -100,
-      };
+      const name = device?.localName ?? device?.name ?? null;
+      if (!device || !name || !isSprayLedControllerName(name)) return;
+      const candidate = { id: device.id, name: name.trim(), rssi: device.rssi ?? -100 };
       const previous = found.get(candidate.id);
       if (previous && previous.name === candidate.name) return;
       found.set(candidate.id, candidate);

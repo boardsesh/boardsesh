@@ -23,7 +23,7 @@ vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   getLedControllerDriver: (type: string) => ({
     ...controller,
     createPreview: () => controller,
-    ...(type === 'wled-ble' ? { normalizeTarget: (target: string) => target } : {}),
+    ...(type === 'ble' ? { normalizeTarget: (target: string) => target } : {}),
   }),
   createWledDriver: () => ({ probe: (url: string, signal?: AbortSignal) => controller.probe(url, signal) }),
 }));
@@ -208,7 +208,7 @@ describe('SprayWallLedSection', () => {
   const bleDeviceKey = 'sprayWallLedBleDevice:wall-1';
   const bluetoothSettings = (): SprayWallLedSettings => ({
     ...savedSettings(true, 'http://wled.local'),
-    controller: { type: 'wled-ble', url: 'http://wled.local' },
+    controller: { type: 'ble', url: 'http://wled.local' },
   });
 
   it('switches the Spraywall to Bluetooth, finds a controller and keeps it on this phone only', async () => {
@@ -216,16 +216,21 @@ describe('SprayWallLedSection', () => {
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();
     expect(lightingControls.connection?.selectedKey).toBe('wled');
-    act(() => lightingControls.connection?.onSelect('wled-ble'));
+    act(() => lightingControls.connection?.onSelect('ble'));
     // The type is the wall's; the Wi-Fi address stays for climbers on the Wi-Fi.
     await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings()));
     expect(screen.queryByRole('textbox', { name: 'sprayLed.url' })).toBeNull();
     expect(bluetooth.scan).not.toHaveBeenCalled();
+    // The Aurora frames carry no brightness or auto-off: the controller keeps its own.
+    expect(screen.queryByText('sprayLed.bleLightingHint')).not.toBeNull();
+    expect(screen.queryByText('sprayLed.brightnessHint')).toBeNull();
+    expect(screen.queryByText('sprayLed.autoOffHint')).toBeNull();
+    expect(screen.queryByText('sprayLed.blePasskeyHint')).toBeNull();
 
     fireEvent.click(button('bleFind'));
     await waitFor(() => expect(bluetooth.scan).toHaveBeenCalled());
     expect(screen.queryByText('sprayLed.bleFinding')).not.toBeNull();
-    act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'WLED-Spraywall', rssi: -60 }]));
+    act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'Boardsesh Spraywall 1A2B', rssi: -60 }]));
     fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleResult' }));
     expect(bluetooth.stop).toHaveBeenCalled();
     await waitFor(() =>
@@ -233,7 +238,7 @@ describe('SprayWallLedSection', () => {
     );
     expect(controller.probe).toHaveBeenCalledWith('ble:AA:BB:CC:DD:EE:FF', expect.any(AbortSignal));
     expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings());
-    expect(screen.queryByText('sprayLed.connected')).not.toBeNull();
+    expect(screen.queryByText('sprayLed.bleConnected')).not.toBeNull();
 
     await waitFor(() => expect((button('lightAll') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(button('lightAll'));
@@ -244,16 +249,16 @@ describe('SprayWallLedSection', () => {
     expect(controller.turnOff).toHaveBeenCalledWith('ble:AA:BB:CC:DD:EE:FF');
   });
 
-  it('checks the stored Bluetooth controller only on a tap, and says when it speaks another protocol version', async () => {
+  it('checks the stored Bluetooth controller only on a tap, and says when it is no Spraywall controller', async () => {
     storage.records.set(settingsKey, bluetoothSettings());
     storage.records.set(bleDeviceKey, { id: 'AA:BB:CC:DD:EE:FF', name: 'Home wall' });
-    controller.probe.mockRejectedValue(new LedControllerError('unsupported-version'));
+    controller.probe.mockRejectedValue(new LedControllerError('not-wled'));
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();
     expect(await screen.findByText('sprayLed.bleSaved')).toBeTruthy();
     expect(controller.probe).not.toHaveBeenCalled();
     fireEvent.click(button('bleCheck'));
-    expect(await screen.findByText('sprayLed.bleUnsupportedVersion')).toBeTruthy();
+    expect(await screen.findByText('sprayLed.bleNotController')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'sprayLed.lightAll' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'sprayLed.keepUrl' })).toBeNull();
   });

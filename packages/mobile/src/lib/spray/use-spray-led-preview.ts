@@ -26,7 +26,7 @@ export function sprayLedControllerTarget(
   bleDevice: SprayWallBleDevice | null,
 ): string {
   if (!settings) return '';
-  if (settings.controller.type !== 'wled-ble') return settings.controller.url;
+  if (settings.controller.type !== 'ble') return settings.controller.url;
   return bleDevice ? bleControllerTarget(bleDevice.id) : '';
 }
 
@@ -36,8 +36,7 @@ export function useSprayLedPreviewForSettings(
   { settings, loading }: { settings: SprayWallLedSettings | null; loading: boolean },
 ) {
   const bleDevice = useSprayWallBleDevice(wallUuid);
-  const enabled =
-    !loading && settings?.enabled === true && (settings.controller.type !== 'wled-ble' || !bleDevice.loading);
+  const enabled = !loading && settings?.enabled === true && (settings.controller.type !== 'ble' || !bleDevice.loading);
   const url = sprayLedControllerTarget(settings, bleDevice.device);
   const controllerType = settings?.controller.type ?? 'wled';
   const brightness = settings?.brightness;

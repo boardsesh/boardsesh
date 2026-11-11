@@ -71,14 +71,13 @@ type BleScanState =
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
-  | { kind: 'unavailable' | 'timeout' | 'notWled' | 'unsupportedVersion'; url: string }
+  | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
   | { kind: 'invalidUrl' | 'notLocal'; url: null };
 
-function probeFailureKind(failure: unknown): 'timeout' | 'notWled' | 'unsupportedVersion' | 'unavailable' {
+function probeFailureKind(failure: unknown): 'timeout' | 'notWled' | 'unavailable' {
   if (!(failure instanceof LedControllerError)) return 'unavailable';
   if (failure.code === 'timeout') return 'timeout';
   if (failure.code === 'not-wled') return 'notWled';
-  if (failure.code === 'unsupported-version') return 'unsupportedVersion';
   return 'unavailable';
 }
 
@@ -138,7 +137,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     }
   }, [disabled, cancelRequest, cancelScan, cancelBleScan]);
 
-  const bluetooth = settings?.controller.type === 'wled-ble';
+  const bluetooth = settings?.controller.type === 'ble';
   const url = draftUrl ?? settings?.controller.url ?? '';
   // What the preview and route lighting contact: the Wi-Fi address, or this phone's controller.
   const target = bluetooth ? (bleDevice ? bleControllerTarget(bleDevice.id) : '') : url;
@@ -203,7 +202,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setResult(null);
     setLighting(null);
     try {
-      const info = await getLedControllerDriver('wled-ble').probe(bleTarget, controller.signal);
+      const info = await getLedControllerDriver('ble').probe(bleTarget, controller.signal);
       if (request.current !== controller || controller.signal.aborted) return;
       await saveSprayWallBleDevice(wallUuid, { id: candidate.id, name: info.name });
       if (request.current !== controller || controller.signal.aborted) return;
@@ -343,20 +342,20 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     pending === 'probe'
       ? t('sprayLed.checking')
       : result?.kind === 'connected'
-        ? t('sprayLed.connected', { name: result.name, count: result.ledCount })
+        ? bluetooth
+          ? t('sprayLed.bleConnected', { name: result.name })
+          : t('sprayLed.connected', { name: result.name, count: result.ledCount })
         : result?.kind === 'invalidUrl'
           ? t('sprayLed.invalidUrl')
           : result?.kind === 'notLocal'
             ? t('sprayLed.notLocal')
-            : result?.kind === 'unsupportedVersion'
-              ? t('sprayLed.bleUnsupportedVersion')
-              : result?.kind === 'notWled'
-                ? t(bluetooth ? 'sprayLed.bleNotController' : 'sprayLed.notWled')
-                : result?.kind === 'timeout'
-                  ? t(bluetooth ? 'sprayLed.bleTimeout' : 'sprayLed.timeout')
-                  : result?.kind === 'unavailable'
-                    ? t(bluetooth ? 'sprayLed.bleUnreachable' : 'sprayLed.unavailable')
-                    : null;
+            : result?.kind === 'notWled'
+              ? t(bluetooth ? 'sprayLed.bleNotController' : 'sprayLed.notWled')
+              : result?.kind === 'timeout'
+                ? t(bluetooth ? 'sprayLed.bleTimeout' : 'sprayLed.timeout')
+                : result?.kind === 'unavailable'
+                  ? t(bluetooth ? 'sprayLed.bleUnreachable' : 'sprayLed.unavailable')
+                  : null;
   const canLight = result?.kind === 'connected' && savedTarget === result.url && target === result.url;
   const canKeep = !bluetooth && result?.url && result.kind !== 'connected' && settings?.controller.url !== result.url;
 
@@ -401,7 +400,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
               <SegmentedControl
                 options={[
                   { key: 'wled', label: t('sprayLed.connectionWifi') },
-                  { key: 'wled-ble', label: t('sprayLed.connectionBluetooth') },
+                  { key: 'ble', label: t('sprayLed.connectionBluetooth') },
                 ]}
                 selectedKey={settings.controller.type}
                 onSelect={(key) => void chooseControllerType(key as LedControllerType)}
@@ -461,9 +460,6 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                         />
                       ))
                     : null}
-                  <Text variant="caption1" color={systemColors.secondaryLabel}>
-                    {t('sprayLed.blePasskeyHint')}
-                  </Text>
                 </>
               ) : null}
               {!bluetooth ? (
@@ -590,36 +586,45 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                         : t('sprayLed.lightFailed')}
                 </Text>
               ) : null}
-              <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
-              <ValueSlider
-                value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
-                min={MIN_BRIGHTNESS_PERCENT}
-                max={100}
-                round={roundBrightnessPercent}
-                notch={brightnessNotch}
-                format={(percent) => t('sprayLed.brightnessValue', { percent })}
-                accessibilityLabel={t('sprayLed.brightness')}
-                adjust={adjustBrightnessPercent}
-                disabled={locked}
-                onLiveChange={() => undefined}
-                onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
-              />
-              <Text variant="caption1" color={systemColors.secondaryLabel}>
-                {t('sprayLed.brightnessHint')}
-              </Text>
-              <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
-              <SegmentedControl
-                options={AUTO_OFF_CHOICES.map((minutes) => ({
-                  key: String(minutes),
-                  label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
-                }))}
-                selectedKey={String(settings.autoOffMinutes)}
-                onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
-                accessibilityLabel={t('sprayLed.autoOff')}
-              />
-              <Text variant="caption1" color={systemColors.secondaryLabel}>
-                {t('sprayLed.autoOffHint')}
-              </Text>
+              {bluetooth ? (
+                // The Aurora frames carry no brightness or auto-off: the controller keeps its own.
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('sprayLed.bleLightingHint')}
+                </Text>
+              ) : (
+                <>
+                  <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
+                  <ValueSlider
+                    value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
+                    min={MIN_BRIGHTNESS_PERCENT}
+                    max={100}
+                    round={roundBrightnessPercent}
+                    notch={brightnessNotch}
+                    format={(percent) => t('sprayLed.brightnessValue', { percent })}
+                    accessibilityLabel={t('sprayLed.brightness')}
+                    adjust={adjustBrightnessPercent}
+                    disabled={locked}
+                    onLiveChange={() => undefined}
+                    onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
+                  />
+                  <Text variant="caption1" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.brightnessHint')}
+                  </Text>
+                  <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
+                  <SegmentedControl
+                    options={AUTO_OFF_CHOICES.map((minutes) => ({
+                      key: String(minutes),
+                      label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
+                    }))}
+                    selectedKey={String(settings.autoOffMinutes)}
+                    onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
+                    accessibilityLabel={t('sprayLed.autoOff')}
+                  />
+                  <Text variant="caption1" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.autoOffHint')}
+                  </Text>
+                </>
+              )}
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

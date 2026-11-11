@@ -160,7 +160,7 @@ describe('spray route transport', () => {
   });
 
   describe('a Bluetooth Spraywall', () => {
-    const bluetooth = { enabled: true, controller: { type: 'wled-ble', url: 'http://wall.local' } };
+    const bluetooth = { enabled: true, controller: { type: 'ble', url: 'http://wall.local' } };
 
     it('lights through the controller this phone picked, never the Wi-Fi address', async () => {
       mocks.settings.mockResolvedValue(bluetooth);

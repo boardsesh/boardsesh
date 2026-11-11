@@ -1,4 +1,4 @@
-import { registerWledBleTransport } from '@boardsesh/led-controller';
+import { registerBleLedTransport } from '@boardsesh/led-controller';
 
 /**
  * The Spraywall Bluetooth transport, loaded the first time a Bluetooth wall is
@@ -10,4 +10,4 @@ export function loadSprayLedBleTransport() {
   return import('./spray-led-ble-transport');
 }
 
-registerWledBleTransport(() => loadSprayLedBleTransport().then((module) => module.sprayLedBleTransport));
+registerBleLedTransport(() => loadSprayLedBleTransport().then((module) => module.sprayLedBleTransport));

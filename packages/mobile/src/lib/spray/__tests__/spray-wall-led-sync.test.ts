@@ -260,11 +260,11 @@ describe('reading a wall’s LED setup', () => {
   });
 
   it('keeps a Bluetooth controller type and its Wi-Fi address from the server', async () => {
-    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType: 'wled-ble' })));
+    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType: 'ble' })));
     await prepareSprayWallLedRead(WALL, 'settings');
     expect(storage.records.get(SETTINGS_KEY)).toEqual({
       ...local,
-      controller: { type: 'wled-ble', url: 'http://wled.local' },
+      controller: { type: 'ble', url: 'http://wled.local' },
     });
   });
 

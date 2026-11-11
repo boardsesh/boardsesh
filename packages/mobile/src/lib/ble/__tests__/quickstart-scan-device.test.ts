@@ -127,4 +127,10 @@ describe('compareBySignal', () => {
       'unknown',
     ]);
   });
+
+  it('does not offer a Spraywall LED controller as a board', () => {
+    expect(
+      classifyQuickstartDevice({ deviceId: 'spray', name: 'Boardsesh Spraywall 1A2B', serviceUuids: [], rssi: -50 }),
+    ).toBeNull();
+  });
 });

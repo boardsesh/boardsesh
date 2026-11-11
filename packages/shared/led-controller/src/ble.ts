@@ -4,13 +4,14 @@ import { LedControllerError, type LedControllerDriver, type LedControllerInfo } 
 import { snapshotLedPixels } from './led-pixels';
 
 /**
- * A Spraywall's WLED controller over Bluetooth (docs/spray-wall-led-ble.md).
+ * A Spraywall's LED controller over Bluetooth (docs/spray-wall-led-ble.md):
+ * the board-controller firmware's gledopto-c015-spraywall build.
  *
  * The controller speaks the Aurora API v3 frames Kilter and Tension boards
  * use, over Nordic UART, with LED indices as positions. Every packet replaces
  * what is lit, as on an Aurora board, and the empty packet clears. Brightness
- * and auto-off are the controller's own WLED settings: the protocol has no
- * field for them, so this driver ignores the wall's lighting options.
+ * and auto-off are the controller's own settings: the protocol has no field
+ * for them, so this driver ignores the wall's lighting options.
  */
 
 /**
@@ -32,7 +33,7 @@ export interface BleLedTransport {
   connect(deviceId: string, signal?: AbortSignal): Promise<BleLedLink>;
 }
 
-export interface WledBleDriverOptions {
+export interface BleLedDriverOptions {
   /**
    * Resolved on every operation, so the app can register its transport after
    * import, or load the Bluetooth library only when a Bluetooth wall is lit.
@@ -42,13 +43,13 @@ export interface WledBleDriverOptions {
   timeoutMs?: number;
   /**
    * How many LEDs "Light all" sends. The protocol does not report the cable
-   * length, and the controller ignores positions past its strip, so this
-   * covers the GL-C-015WL-D's two 800-IC outputs.
+   * length, and the controller ignores positions past its string, so this is
+   * the board-controller firmware's MAX_LEDS.
    */
   lightAllLeds?: number;
 }
 
-export const DEFAULT_BLE_LIGHT_ALL_LEDS = 1600;
+export const DEFAULT_BLE_LIGHT_ALL_LEDS = 500;
 
 const TARGET_PREFIX = 'ble:';
 const DEVICE_ID = /^[A-Za-z0-9:_-]{1,128}$/u;
@@ -102,7 +103,7 @@ async function withDeadline<Result>(
   }
 }
 
-export function createWledBleDriver(options: WledBleDriverOptions): LedControllerDriver {
+export function createBleLedDriver(options: BleLedDriverOptions): LedControllerDriver {
   const timeoutMs = options.timeoutMs ?? 3000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('Invalid BLE timeout');
   const lightAllLeds = options.lightAllLeds ?? DEFAULT_BLE_LIGHT_ALL_LEDS;
@@ -183,10 +184,10 @@ let registeredTransport: TransportSource = null;
  * The app registers its Bluetooth transport, or a loader for it, once; until
  * then every operation is `unavailable`.
  */
-export function registerWledBleTransport(transport: TransportSource): void {
+export function registerBleLedTransport(transport: TransportSource): void {
   registeredTransport = transport;
 }
 
-export const wledBleDriver = createWledBleDriver({
+export const bleLedDriver = createBleLedDriver({
   transport: () => (typeof registeredTransport === 'function' ? registeredTransport() : registeredTransport),
 });
