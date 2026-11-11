@@ -20,7 +20,9 @@ import { pubsub } from '../../../pubsub/index';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
 import { currentStoreSystemBoardOwnerConfiguration } from '../../../auth/current-store/authority-configuration';
-import { ensureReservedSystemBoardOwner } from '../../../auth/current-store/system-board-owner';
+import { ensureSelectedSystemBoardOwner } from '../../../auth/current-store/system-board-owner';
+import { assertLegacyIdentityWriterAllowed } from '../../../auth/current-store/identity-writer-gate';
+import { transactionSettings } from '../../../auth/current-store/command-context';
 import { assertKnownBoardConfig } from './board-catalog';
 import { lockBoardSerialWrite, type BoardSerialWriteCommandDb } from '../board-serial-write-lock';
 import {
@@ -1088,7 +1090,7 @@ async function ensureSystemBoardOwner(): Promise<void> {
   try {
     configuration = currentStoreSystemBoardOwnerConfiguration();
     if (configuration.mode === 'reserved-staging') {
-      await ensureReservedSystemBoardOwner(db, configuration.authority);
+      await ensureSelectedSystemBoardOwner(db, configuration.authority);
       return;
     }
   } catch {
@@ -1097,16 +1099,27 @@ async function ensureSystemBoardOwner(): Promise<void> {
       extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
     });
   }
-  await db
-    .insert(dbSchema.users)
-    .values({
-      id: SYSTEM_BOARD_OWNER_ID,
-      email: SYSTEM_BOARD_OWNER_EMAIL,
-      name: SYSTEM_BOARD_OWNER_NAME,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .onConflictDoNothing();
+  try {
+    await db.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      await assertLegacyIdentityWriterAllowed(transaction);
+      await transaction
+        .insert(dbSchema.users)
+        .values({
+          id: SYSTEM_BOARD_OWNER_ID,
+          email: SYSTEM_BOARD_OWNER_EMAIL,
+          name: SYSTEM_BOARD_OWNER_NAME,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .onConflictDoNothing();
+    });
+  } catch {
+    logger.warn('[board-presence] System board owner unavailable', { category: 'authority-or-database' });
+    throw new GraphQLError('Shared board creation is temporarily unavailable.', {
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+  }
 }
 
 /**

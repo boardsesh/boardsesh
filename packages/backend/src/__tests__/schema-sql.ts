@@ -47,7 +47,7 @@ const legacyWebSignoutSchema = readFileSync(
   'utf8',
 );
 const authWriterAuthoritySchema = readFileSync(
-  new URL('../../../db/drizzle/0308_lucky_iceman.sql', import.meta.url),
+  new URL('../../../db/drizzle/0310_identity_writer_authority.sql', import.meta.url),
   'utf8',
 );
 const authCurrentStoreFoundationSchema = readFileSync(
