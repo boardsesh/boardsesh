@@ -394,7 +394,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     if (failures.length) throw new AggregateError(failures, 'Owned staged web password cleanup failed');
   });
 
-  it('creates raw web identity/profile with native bcrypt12 and normalized reservation over real authenticated HTTP', async () => {
+  it('creates web identity/profile with native bcrypt12, the normalized address and its reservation over real authenticated HTTP', async () => {
     const email = `Web.Mixed.${randomUUID()}+Tag@Example.TEST`;
     const password = '  café 山🧗\u0000 password  ';
     const command = registerCommand(email, password, '  Raw Web Name  ');
@@ -409,7 +409,8 @@ describe('default-off staged web password commands against the current PostgreSQ
     const [credential] = await db.select().from(userCredentials);
     const [profile] = await db.select().from(userProfiles);
     const [reservation] = await db.select().from(authEmailReservations);
-    expect(user).toMatchObject({ id: reply.userId, email, name: '  Raw Web Name  ' });
+    // BA-02: the address is stored in its normalized form; the name stays raw.
+    expect(user).toMatchObject({ id: reply.userId, email: email.toLowerCase(), name: '  Raw Web Name  ' });
     expect(user.emailVerified).toBeInstanceOf(Date);
     expect(profile.userId).toBe(reply.userId);
     expect(reservation).toMatchObject({ normalizedEmail: email.toLowerCase(), ownerUserId: reply.userId });
@@ -422,9 +423,10 @@ describe('default-off staged web password commands against the current PostgreSQ
       user: { id: reply.userId },
       verification: { userId: reply.userId, required: false, verified: true },
     });
+    // BA-02: the same address in other capitals reaches the one account holding it.
     expect(
-      (await authenticateWebPassword(writer, authority, passwordCommand(email.toLowerCase(), password))).outcome,
-    ).toBe('invalid_credentials');
+      await authenticateWebPassword(writer, authority, passwordCommand(email.toLowerCase(), password)),
+    ).toMatchObject({ outcome: 'authenticated', user: { id: reply.userId } });
     await expect(
       db.transaction(async (transaction) => {
         await transaction.execute(sql`SET LOCAL ROLE ${sql.identifier(legacyRole)}`);
@@ -433,7 +435,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     ).rejects.toMatchObject({ cause: { code: '42501' } });
   });
 
-  it('binds a private24h mail plan to exact committed mixed-case email and leaves verification-required verdict UID-bound', async () => {
+  it('binds a private24h mail plan to the committed normalized email and leaves verification-required verdict UID-bound', async () => {
     authority = { ...authority, emailVerificationEnabled: true };
     const email = `Mail.Mixed.${randomUUID()}@Example.TEST`;
     const command = registerCommand(email);
@@ -441,9 +443,9 @@ describe('default-off staged web password commands against the current PostgreSQ
     const reply = await registerWebPassword(writer, authority, command);
     expect(reply.outcome).toBe('created');
     if (reply.outcome !== 'created' || !reply.requiresVerification) throw new Error('Missing private mail fixture');
-    expect(reply.mailPlan).toMatchObject({ kind: 'uid-email-verification-v1', recipient: email });
+    expect(reply.mailPlan).toMatchObject({ kind: 'uid-email-verification-v1', recipient: email.toLowerCase() });
     const [receipt] = await db.select().from(authEmailVerificationTokens);
-    expect(receipt.deliveredEmail).toBe(email);
+    expect(receipt.deliveredEmail).toBe(email.toLowerCase());
     expect(receipt.expiresAt.toISOString()).toBe(reply.mailPlan.expiresAt);
     expect(receipt.expiresAt.getTime() - receipt.issuedAt.getTime()).toBe(86_400_000);
     expect(receipt.expiresAt.getTime() - before).toBeGreaterThan(86_395_000);
@@ -513,7 +515,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     expect(reply).toMatchObject({ outcome: 'created', requiresVerification: false });
     const [user] = await db.select().from(users);
     const [credential] = await db.select().from(userCredentials);
-    expect(user).toMatchObject({ email: originalEmail, name: ' Original name ' });
+    expect(user).toMatchObject({ email: originalEmail.toLowerCase(), name: ' Original name ' });
     expect(await compare('original-registration-password', credential.passwordHash)).toBe(true);
     expect(await compare(payload.password, credential.passwordHash)).toBe(false);
   });
@@ -743,6 +745,51 @@ describe('default-off staged web password commands against the current PostgreSQ
     expect((await authenticateWebPassword(writer, required, passwordCommand(first.email))).outcome).toBe(
       'invalid_credentials',
     );
+  });
+
+  describe('any capitalisation (BA-02)', () => {
+    it('signs in a mixed-case stored address typed exactly as stored and typed in lowercase', async () => {
+      const stored = await seed(`Mixed.Case.${randomUUID()}@Example.TEST`);
+      for (const typed of [stored.email, stored.email.toLowerCase(), stored.email.toUpperCase()])
+        expect(await authenticateWebPassword(writer, authority, passwordCommand(typed))).toMatchObject({
+          outcome: 'authenticated',
+          user: { id: stored.id, email: stored.email },
+        });
+    });
+
+    it('signs in the group member typed exactly and refuses a form no member stores', async () => {
+      const upper = await seed(`Shared.${randomUUID()}@example.test`);
+      const lower = await seed(upper.email.toLowerCase());
+      expect(await authenticateWebPassword(writer, authority, passwordCommand(upper.email))).toMatchObject({
+        outcome: 'authenticated',
+        user: { id: upper.id },
+      });
+      expect(await authenticateWebPassword(writer, authority, passwordCommand(lower.email))).toMatchObject({
+        outcome: 'authenticated',
+        user: { id: lower.id },
+      });
+      // Both rows hold the same password here; even a password unique to one of
+      // them must not pick it from a form neither stores.
+      expect(
+        (await authenticateWebPassword(writer, authority, passwordCommand(upper.email.toUpperCase()))).outcome,
+      ).toBe('invalid_credentials');
+      await db
+        .update(userCredentials)
+        .set({ passwordHash: await hash('only-lower', 4) })
+        .where(eq(userCredentials.userId, lower.id));
+      expect(
+        (await authenticateWebPassword(writer, authority, passwordCommand(upper.email.toUpperCase(), 'only-lower')))
+          .outcome,
+      ).toBe('invalid_credentials');
+    });
+
+    it('refuses when another capitalisation of the typed address is committed during bcrypt', async () => {
+      const stored = await seed(`During.${randomUUID()}@example.test`);
+      const reply = await duringComparison(passwordCommand(stored.email.toUpperCase()), async () => {
+        await seed(stored.email.replace('During', 'DURING'), null);
+      });
+      expect(reply.outcome).toBe('invalid_credentials');
+    });
   });
 
   it('keeps short legacy password bytes while rejecting unknown, OAuth-only and oversized cohorts', async () => {

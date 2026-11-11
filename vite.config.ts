@@ -157,6 +157,7 @@ export default defineConfig({
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
+      './packages/shared/led-controller/vite.config.ts',
       './packages/shared/privacy/vite.config.ts',
       './packages/shared/offline-sync/vite.config.ts',
       './packages/shared/logbook/vite.config.ts',
@@ -939,6 +940,9 @@ export default defineConfig({
       'typecheck:key-value-storage': {
         command: 'pnpm --filter @boardsesh/key-value-storage run typecheck',
       },
+      'typecheck:led-controller': {
+        command: 'pnpm --filter @boardsesh/led-controller run typecheck',
+      },
       'typecheck:board-config': {
         command: 'pnpm --filter @boardsesh/board-config run typecheck',
         dependsOn: ['codegen'],
@@ -1101,6 +1105,7 @@ export default defineConfig({
           'typecheck:analytics',
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
+          'typecheck:led-controller',
           'typecheck:board-config',
           'typecheck:board-render',
           'typecheck:frosted-bokeh',

@@ -271,7 +271,7 @@ async function publishedVersionIdUnderLock(tx: SprayWriteTransaction, wallId: nu
  * angle and visibility. `undefined` for a missing or soft-deleted wall — callers
  * turn that into a null query result or a not-found mutation error.
  */
-async function loadWall(where: 'uuid' | 'layoutId', value: string | number): Promise<LoadedWall | undefined> {
+export async function loadWall(where: 'uuid' | 'layoutId', value: string | number): Promise<LoadedWall | undefined> {
   const [row] = await db
     .select({ wall: dbSchema.sprayWalls, board: dbSchema.userBoards })
     .from(dbSchema.sprayWalls)

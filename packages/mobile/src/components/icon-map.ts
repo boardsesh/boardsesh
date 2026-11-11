@@ -157,6 +157,7 @@ export const iconMap = {
   eraser: { ios: 'eraser', android: 'eraser' },
   'hand.raised': { ios: 'hand.raised', android: 'hand-back-right-outline' },
   undo: { ios: 'arrow.uturn.backward', android: 'undo' },
+  move: { ios: 'arrow.up.and.down.and.arrow.left.and.right', android: 'cursor-move' },
   redo: { ios: 'arrow.uturn.forward', android: 'redo' },
 
   // Status

@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 
 const mockSetMoonboardLightAdjacentHolds = vi.fn();
 const mockReassertWall = vi.fn();
 const mockBluetooth = {
   isConnected: true,
+  canDriveWall: false,
   boardName: 'moonboard',
   moonboardLightAdjacentHolds: false,
   setMoonboardLightAdjacentHolds: mockSetMoonboardLightAdjacentHolds,
@@ -14,6 +15,7 @@ const mockBluetooth = {
   armUndoWallChangeToast: vi.fn(),
   clearBoard: vi.fn(),
   turnOffAllLights: vi.fn((): Promise<boolean> | undefined => undefined),
+  releaseVirtualWall: vi.fn(),
 };
 const mockBluetoothContext = vi.hoisted(() => ({
   current: null as typeof mockBluetooth | null,
@@ -25,6 +27,8 @@ const mockBleControlSheet = vi.hoisted(() => ({
     onClearLights: () => void;
     onReassert: () => void;
     showLightingSwitches?: boolean;
+    showDisconnectWhenDrivingEnds?: boolean;
+    onDisconnect?: () => void;
     linked?: boolean;
     onDrive?: () => void;
     status?: unknown;
@@ -366,6 +370,29 @@ describe('BleControlSheetHost', () => {
     expect(container.firstChild).toBeNull();
     expect(mockBleControlSheet.props).toBeNull();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps LAN controls open, hides the Bluetooth timer and releases its virtual hold', () => {
+    mockBluetoothContext.current = { ...mockBluetooth, boardName: 'spray', isConnected: false, canDriveWall: true };
+    const onClose = vi.fn();
+    render(<BleControlSheetHost visible onClose={onClose} />);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockBleControlSheet.props?.linked).toBe(true);
+    expect(mockBleControlSheet.props?.showDisconnectWhenDrivingEnds).toBe(false);
+    mockBleControlSheet.props?.onDisconnect?.();
+    expect(mockBluetooth.releaseVirtualWall).toHaveBeenCalledOnce();
+  });
+
+  it('marks a LAN wall dark only after a successful physical clear', async () => {
+    resetWallCleared();
+    mockBluetoothContext.current = { ...mockBluetooth, boardName: 'spray', isConnected: false, canDriveWall: true };
+    mockBluetooth.turnOffAllLights.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    render(<BleControlSheetHost visible onClose={vi.fn()} clearedClimbUuid="lan-route" />);
+    const cleared = renderHook(() => useWallClearedClimbUuid());
+    await act(async () => mockBleControlSheet.props?.onClearLights());
+    expect(cleared.result.current).toBeNull();
+    await act(async () => mockBleControlSheet.props?.onClearLights());
+    expect(cleared.result.current).toBe('lan-route');
   });
 
   // #7113: a sheet offering Light every climb opens with no link, showing that row.

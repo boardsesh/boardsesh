@@ -1,4 +1,3 @@
-/** Identity policy only: preserve dots, plus suffixes and the complete mailbox. */
-export function normalizeAccountEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+// One rule for web and backend: trim, then lowercase. It lives in the shared
+// protocol package so the web's legacy auth routes apply the same rule.
+export { normalizeAccountEmail } from '@boardsesh/auth-protocol/account-email';

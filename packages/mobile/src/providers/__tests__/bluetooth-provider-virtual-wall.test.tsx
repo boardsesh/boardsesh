@@ -38,6 +38,17 @@ const wallConfirm = vi.hoisted(() => ({ emitWallConfirm: vi.fn() }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const haptics = vi.hoisted(() => ({ hapticLight: vi.fn(), hapticSuccess: vi.fn(), hapticError: vi.fn() }));
+const lan = vi.hoisted(() => ({
+  send: vi.fn<(...arguments_: unknown[]) => Promise<boolean | null>>(async () => null),
+  release: vi.fn(),
+  invalidate: null as ((retry?: boolean) => void) | null,
+}));
+vi.mock('../../lib/spray/use-spray-led-route-sender', () => ({
+  useSprayLedRouteSender: ({ onInvalidated }: { onInvalidated: (retry?: boolean) => void }) => {
+    lan.invalidate = onInvalidated;
+    return lan;
+  },
+}));
 
 const queue = vi.hoisted(() => ({
   currentClimbQueueItem: null as ClimbQueueItem | null,
@@ -255,6 +266,9 @@ function renderProvider(options?: Parameters<typeof providerElement>[0]) {
 }
 
 beforeEach(() => {
+  lan.send.mockReset();
+  lan.send.mockResolvedValue(null);
+  lan.release.mockClear();
   queue.items = [];
   presence.lastConnectionSeq = 0;
   presence.currentClimb = null;
@@ -374,6 +388,79 @@ describe('BluetoothProvider — taking a wall with no LED light kit', () => {
     );
     // Zero bytes: nothing reached the radio.
     expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('waits for the configured LAN write before confirming the route', async () => {
+    let complete!: (written: boolean) => void;
+    lan.send.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    renderProvider();
+    await takeTheWall();
+    await settle();
+    expect(lan.send).toHaveBeenCalledTimes(1);
+    expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+    await act(async () => complete(true));
+    await settle();
+    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
+    expect(wallConfirm.emitWallConfirm).toHaveBeenCalledWith('climb-1', 'self');
+    expect(bluetooth.state.sendFramesToBoard).not.toHaveBeenCalled();
+  });
+
+  it('never falls back to a virtual confirmation after a failed LAN write', async () => {
+    lan.send.mockResolvedValue(false);
+    renderProvider();
+    await takeTheWall();
+    await settle();
+    expect(lan.send).toHaveBeenCalledTimes(1);
+    expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
+    expect(wallConfirm.emitWallConfirm).not.toHaveBeenCalled();
+  });
+
+  it('uses the same LAN commit for create previews and explicit clearing', async () => {
+    lan.send.mockResolvedValue(true);
+    renderProvider();
+    expect(await capturedBluetooth?.sendFramesToBoard('p7r1')).toBe(false);
+    expect(lan.send).not.toHaveBeenCalled();
+    await takeTheWall();
+    await settle();
+    await act(async () => {
+      expect(await capturedBluetooth?.sendFramesToBoard('p7r1')).toBe(true);
+      expect(await capturedBluetooth?.clearBoard()).toBe(true);
+    });
+    expect(lan.send).toHaveBeenCalledWith('p7r1', undefined, undefined);
+    expect(lan.send).toHaveBeenLastCalledWith('', false, undefined);
+    await act(async () => capturedBluetooth?.releaseVirtualWall());
+    expect(lan.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('reasserts identical frames after the setup configuration changes', async () => {
+    lan.send.mockResolvedValue(true);
+    renderProvider();
+    await takeTheWall();
+    await settle();
+    expect(lan.send).toHaveBeenCalledTimes(1);
+    await act(async () => lan.invalidate?.(true));
+    await settle();
+    expect(lan.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards a late physical acknowledgement after the wall was released', async () => {
+    let complete!: (written: boolean) => void;
+    lan.send.mockReturnValueOnce(
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+    );
+    renderProvider();
+    await takeTheWall();
+    await act(async () => capturedBluetooth?.releaseVirtualWall());
+    await act(async () => complete(true));
+    await settle();
+    expect(lan.release).toHaveBeenCalledTimes(1);
+    expect(presence.reportClimbForBoard).not.toHaveBeenCalled();
   });
 
   it('coalesces a fast swipe, so the gym kiosk history gets two entries and not five', async () => {

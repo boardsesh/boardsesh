@@ -1,7 +1,14 @@
 import { listOverlayCacheEntries } from '../../hooks/overlay-cache-warmup';
 import { forgetSprayOverlays } from '../overlay-index';
 import { deleteCachedSprayPhotos } from './spray-photo-cache';
-import { unregisterSprayWall, withdrawAllSprayWalls, setSprayWallPrivacyCleanup } from './spray-wall-registry';
+import { eraseAllSprayWallLedCaches } from './spray-wall-led-cache';
+import { recheckSprayWallLedAccess } from './spray-wall-led-sync';
+import {
+  unregisterSprayWall,
+  withdrawAllSprayWalls,
+  setSprayWallPrivacyCleanup,
+  subscribeToSprayWallWithdrawals,
+} from './spray-wall-registry';
 import { sprayOverlayLayoutId } from './spray-privacy-generation';
 
 /** Withdraw first, so suspended native writes cannot repopulate these caches. */
@@ -27,6 +34,13 @@ function erasePrivateCaches(layoutId?: number): void {
 // A loader that discovers deletion/visibility withdrawal must erase its files
 // too. The registry owns withdrawal; this platform module supplies its I/O.
 setSprayWallPrivacyCleanup(erasePrivateCaches);
+
+// A withdrawal for one wall can be routine, so the server decides whether its LED
+// copy goes. Withdrawing every wall is an account change, and everything goes.
+subscribeToSprayWallWithdrawals((layoutId, wallUuid) => {
+  if (layoutId == null) void eraseAllSprayWallLedCaches();
+  else if (wallUuid) recheckSprayWallLedAccess(wallUuid);
+});
 
 export function clearSprayWallPrivateCaches(layoutId?: number): void {
   if (layoutId == null) withdrawAllSprayWalls();

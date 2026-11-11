@@ -241,7 +241,7 @@ export async function resolveWebOAuthIdentity(
         authority,
         provider,
         { sub: subject, email, name, image, emailVerified: false },
-        { emailStorage: 'provided', emailVerification: 'unverified', actorUserId: captured.actor?.userId ?? null },
+        { storeProviderImage: true, emailVerification: 'unverified', actorUserId: captured.actor?.userId ?? null },
       );
       assertFresh(Date.parse(issuedAt));
       if (

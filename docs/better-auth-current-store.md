@@ -24,7 +24,7 @@ Password authentication retains its existing read/compare/issuance boundaries. T
 
 ## Known limits deliberately retained
 
-`users.email` has no final normalized unique constraint. Registration's existing precheck compares the normalized submitted address with the exact stored email outside the transaction. It can miss legacy mixed-case rows and concurrent requests can both pass. The new module makes that policy explicit; it does not call this a normalized reservation, solve collisions, choose an account owner, or authorize a reassignment. A regression characterizes the retained gap without creating a second identity.
+`users.email` has no final normalized unique constraint. Since BA-02 PR 2, registration's precheck matches the normalized submitted address against `lower(email)` outside the transaction, so a legacy mixed-case row counts as taken. Concurrent requests can still both pass until the unique index exists. The new module makes that policy explicit; it does not call this a normalized reservation, solve collisions, choose an account owner, or authorize a reassignment. A regression characterizes the retained gap without creating a second identity.
 
 Other credential/account writers remain independent, including web registration, recovery and set-password, NextAuth adapter mutations and verification callbacks, native social linking, account deletion, system-principal jobs and fixture scripts. These two adopted native paths do not establish a sole database writer or fence stale deployments.
 

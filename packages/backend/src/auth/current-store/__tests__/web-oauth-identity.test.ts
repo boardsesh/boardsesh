@@ -381,13 +381,14 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
   }, 30000);
 
   it.each(['google', 'apple', 'facebook'] as const)(
-    'creates %s user/profile/plain link atomically with raw email and NULL verification',
+    'creates %s user/profile/plain link atomically with the normalized email and NULL verification',
     async (provider) => {
       const binding = await intent(provider);
       const email = `Case+${randomUUID()}@EXAMPLE.test`;
       const result = resolved(await post('resolve', resolveCommand(binding, { email })));
       expect(result.createdUser).toBe(true);
-      expect(result.user.email).toBe(email);
+      // BA-02: every new account stores the one normalized form.
+      expect(result.user.email).toBe(email.toLowerCase());
       expect(result.user.emailVerified).toBe(null);
       expect(result.user.image).toBe('https://images.example.test/avatar');
       const [link] = await db.select().from(accounts);

@@ -667,7 +667,7 @@ describe('per-user sign-in locks against the owned primary database', () => {
                 authority,
                 'google',
                 { sub: subject, email: ownerEmail, emailVerified: true, name: null },
-                { emailStorage: 'normalized', emailVerification: 'provider', actorUserId: null },
+                { storeProviderImage: false, emailVerification: 'provider', actorUserId: null },
               );
             });
         },

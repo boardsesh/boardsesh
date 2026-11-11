@@ -26,8 +26,12 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
-const mockUserLimit = vi.fn();
-const mockCredentialsLimit = vi.fn();
+const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
+vi.mock('@boardsesh/db/queries/account-email', async () => {
+  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
+  return fakeAccountEmailLookup(() => lookup.stored);
+});
+
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockValues = vi.fn().mockResolvedValue(undefined);
 const mockTxDelete = vi.fn(() => ({ where: mockDeleteWhere }));
@@ -36,31 +40,20 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({ delete: mockTxDelete, insert: mockTxInsert });
 });
 
-const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
-  const limitMock = selection?.id ? mockUserLimit : mockCredentialsLimit;
-  return {
-    from: () => ({
-      where: () => ({
-        limit: limitMock,
-      }),
-    }),
-  };
-});
-
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: (selection?: Record<string, unknown>) => mockSelect(selection),
     transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  users: { id: 'users.id', email: 'users.email' },
-  userCredentials: { userId: 'user_credentials.userId' },
   verificationTokens: { identifier: 'verificationTokens.identifier' },
 }));
 
+import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
 import { POST } from '../route';
+
+const passwordAccount: StoredAccount = { id: 'user-1', email: 'test@example.com', passwordHash: '$2b$12$stored' };
 
 function createRequest(
   body: Record<string, unknown>,
@@ -82,6 +75,7 @@ const edgeHeaders = {
 describe('POST /api/auth/forgot-password', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    lookup.stored = [];
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
   });
@@ -120,8 +114,6 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('returns generic response when user is not found', async () => {
-    mockUserLimit.mockResolvedValue([]);
-
     const response = await POST(createRequest({ email: 'missing@example.com' }));
     const data = await response.json();
 
@@ -131,8 +123,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('sends reset email for valid credential account', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
 
     const response = await POST(createRequest({ email: 'test@example.com' }));
 
@@ -147,8 +138,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('uses BASE_URL env var instead of request origin when set', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
 
     const savedBaseUrl = process.env.BASE_URL;
     process.env.BASE_URL = 'https://www.boardsesh.com';
@@ -167,8 +157,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('falls back to request origin when BASE_URL is not set', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
 
     const savedBaseUrl = process.env.BASE_URL;
     delete process.env.BASE_URL;
@@ -185,8 +174,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('returns generic response and does not send email for OAuth-only account', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'oauth-user' }]);
-    mockCredentialsLimit.mockResolvedValue([]);
+    lookup.stored = [{ id: 'oauth-user', email: 'oauth@example.com', passwordHash: null }];
 
     const response = await POST(createRequest({ email: 'oauth@example.com' }));
     const data = await response.json();
@@ -197,8 +185,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('returns 200 generic message when email delivery fails (no user enumeration)', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
     mockSendPasswordResetEmail.mockRejectedValue(new Error('smtp failed'));
 
     const response = await POST(createRequest({ email: 'test@example.com' }));
@@ -208,8 +195,7 @@ describe('POST /api/auth/forgot-password', () => {
   });
 
   it('reports the SMTP failure to Sentry while keeping the response generic', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
     const smtpError = new Error('smtp private-password fixture-token fixture@example.test');
     mockSendPasswordResetEmail.mockRejectedValue(smtpError);
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -232,9 +218,59 @@ describe('POST /api/auth/forgot-password', () => {
     }
   });
 
+  describe('any capitalisation (BA-02)', () => {
+    const mixedCase: StoredAccount = { id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' };
+
+    it.each([
+      ['exactly as stored', 'Mixed.Case@Example.test'],
+      ['in lowercase', 'mixed.case@example.test'],
+      ['in capitals', 'MIXED.CASE@EXAMPLE.TEST'],
+    ])('sends the link to the stored address when it is typed %s', async (_case, typed) => {
+      lookup.stored = [mixedCase];
+
+      const response = await POST(createRequest({ email: typed }));
+
+      expect(response.status).toBe(200);
+      expect(mockSendPasswordResetEmail).toHaveBeenCalledOnce();
+      expect(mockSendPasswordResetEmail.mock.calls[0][0]).toBe('Mixed.Case@Example.test');
+      expect(mockValues).toHaveBeenCalledWith(
+        expect.objectContaining({ identifier: 'password-reset:Mixed.Case@Example.test' }),
+      );
+    });
+
+    it('reaches the group member stored exactly as typed', async () => {
+      lookup.stored = [mixedCase, { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' }];
+
+      await POST(createRequest({ email: 'Mixed.Case@Example.test' }));
+
+      expect(mockSendPasswordResetEmail.mock.calls[0][0]).toBe('Mixed.Case@Example.test');
+    });
+
+    it('sends nothing for an address several accounts share in other capitals', async () => {
+      lookup.stored = [mixedCase, { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' }];
+
+      const response = await POST(createRequest({ email: 'MIXED.CASE@EXAMPLE.TEST' }));
+
+      expect(response.status).toBe(200);
+      expect((await response.json()).message).toContain('If an account exists');
+      expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing for an address two accounts store as the same text', async () => {
+      lookup.stored = [
+        { id: 'twin-a', email: 'twin@example.test', passwordHash: '$2b$12$a' },
+        { id: 'twin-b', email: 'twin@example.test', passwordHash: '$2b$12$b' },
+      ];
+
+      await POST(createRequest({ email: 'twin@example.test' }));
+
+      expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+  });
+
   it('returns 500 when database transaction fails', async () => {
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
-    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [passwordAccount];
     mockTransaction.mockRejectedValueOnce(new Error('db transaction failed'));
 
     const response = await POST(createRequest({ email: 'test@example.com' }));

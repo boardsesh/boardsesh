@@ -166,9 +166,9 @@ let server: ReturnType<typeof createServer> | undefined;
 let closing: Promise<void> | undefined;
 let cleanupFailed = false;
 const usedOrigins = new Set<string>();
-function createOwnedServer() {
+function createOwnedServer(isAdmitted: () => boolean) {
   const listener = createServer((request, response) => {
-    if (!accepting) {
+    if (!isAdmitted() || !accepting) {
       response.destroy();
       return;
     }
@@ -203,6 +203,52 @@ function createOwnedServer() {
 
   return listener;
 }
+async function allocateOwnedServer(firstPort = 0) {
+  const reservations: ReturnType<typeof createServer>[] = [];
+  let selected: ReturnType<typeof createServer> | undefined;
+  try {
+    // Keep retired ports bound until a fresh origin is selected: listen(0) can
+    // otherwise return the same just-closed port on every attempt.
+    for (let attempt = 0; attempt <= usedOrigins.size; attempt += 1) {
+      let admitted = false;
+      const candidate = createOwnedServer(() => admitted);
+      reservations.push(candidate);
+      await bounded(
+        new Promise<void>((resolve, reject) => {
+          candidate.once('error', reject);
+          candidate.listen(attempt === 0 ? firstPort : 0, '127.0.0.1', resolve);
+        }),
+      );
+      const address = candidate.address();
+      if (!address || typeof address === 'string') throw new Error('Missing owned HTTP address');
+      const candidateOrigin = `http://127.0.0.1:${address.port}`;
+      if (usedOrigins.has(candidateOrigin)) continue;
+      admitted = true;
+      selected = candidate;
+      return { server: candidate, origin: candidateOrigin };
+    }
+    throw new Error('Owned HTTP fixture exhausted fresh origins');
+  } finally {
+    await bounded(
+      Promise.all(
+        reservations
+          .filter((candidate) => candidate !== selected)
+          .map(
+            (candidate) =>
+              new Promise<void>((resolve, reject) => {
+                candidate.closeAllConnections();
+                candidate.close((error) => {
+                  if (error && candidate.listening) reject(error);
+                  else resolve();
+                });
+              }),
+          ),
+      ),
+      3000,
+    );
+  }
+}
+
 async function closeOwnedServer() {
   accepting = false;
   const owned = server;
@@ -230,18 +276,8 @@ beforeEach(async () => {
   handle = (_request, response, command) => {
     jsonReply(response, command.operation === 'intent' ? intentReply(command) : resolveReply(command));
   };
-  server = createOwnedServer();
   closing = undefined;
-  const owned = server;
-  await bounded(
-    new Promise<void>((resolve, reject) => {
-      owned.once('error', reject);
-      owned.listen(0, '127.0.0.1', resolve);
-    }),
-  );
-  const address = owned.address();
-  if (!address || typeof address === 'string') throw new Error('Missing owned HTTP address');
-  origin = `http://127.0.0.1:${address.port}`;
+  ({ server, origin } = await allocateOwnedServer());
   if (usedOrigins.has(origin)) throw new Error('Owned HTTP fixture reused a retired origin');
   usedOrigins.add(origin);
 });
@@ -262,6 +298,72 @@ afterAll(async () => {
 });
 
 describe('private web OAuth commands over actual owned HTTP', () => {
+  it('refuses traffic before local admission', async () => {
+    const denied = createOwnedServer(() => false);
+    try {
+      await new Promise<void>((resolve) => denied.listen(0, '127.0.0.1', resolve));
+      const address = denied.address();
+      if (!address || typeof address === 'string') throw new Error('Missing denied address');
+      await expect(nativeFetch(`http://127.0.0.1:${address.port}`, { method: 'POST', body: '{}' })).rejects.toThrow();
+      expect(captured).toHaveLength(0);
+    } finally {
+      denied.closeAllConnections();
+      await new Promise<void>((resolve) => denied.close(() => resolve()));
+      fixtureFailures = 0;
+    }
+  });
+
+  it('closes retired reservations when later allocation fails', async () => {
+    const retiredPort = Number(new URL(origin).port);
+    await closeOwnedServer();
+    closing = undefined;
+    accepting = true;
+    const prototype = Object.getPrototypeOf(server) as { listen: NonNullable<typeof server>['listen'] };
+    server = undefined;
+    const originalListen = prototype.listen;
+    let calls = 0;
+    const observed: ReturnType<typeof createServer>[] = [];
+    const spy = vi.spyOn(prototype, 'listen').mockImplementation(function (
+      this: ReturnType<typeof createServer>,
+      ...args: unknown[]
+    ) {
+      calls += 1;
+      observed.push(this);
+      if (calls === 2) throw new Error('injected-owned-allocation-failure');
+      return Reflect.apply(originalListen, this, args) as ReturnType<typeof createServer>;
+    });
+    try {
+      await expect(allocateOwnedServer(retiredPort)).rejects.toThrow('injected-owned-allocation-failure');
+      expect(observed.length).toBe(2);
+      expect(observed.every((listener) => !listener.listening)).toBe(true);
+    } finally {
+      spy.mockRestore();
+      await Promise.all(
+        observed.map(
+          (listener) =>
+            new Promise<void>((resolve) => {
+              listener.closeAllConnections();
+              listener.close(() => resolve());
+            }),
+        ),
+      );
+    }
+  });
+
+  it('reserves a forcibly reused retired port before serving the next fixture', async () => {
+    const retiredOrigin = origin;
+    const retiredPort = Number(new URL(retiredOrigin).port);
+    await closeOwnedServer();
+    closing = undefined;
+    accepting = true;
+    ({ server, origin } = await allocateOwnedServer(retiredPort));
+    expect(origin).not.toBe(retiredOrigin);
+    if (usedOrigins.has(origin)) throw new Error('Owned HTTP fixture reused a retired origin');
+    usedOrigins.add(origin);
+    await expect(ownedClient().intent(intentPayload())).resolves.toMatchObject({ outcome: 'recorded' });
+    expect(captured).toHaveLength(1);
+  });
+
   it('uses the fixed intent and resolve paths, header-only RPC credential and fresh correlated request IDs', async () => {
     const client = ownedClient({ environment: environment() });
     await expect(client.intent(intentPayload())).resolves.toMatchObject({ outcome: 'recorded', flow });

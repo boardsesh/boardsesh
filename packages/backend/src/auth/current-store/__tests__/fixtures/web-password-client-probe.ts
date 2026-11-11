@@ -107,7 +107,8 @@ process.once('message', (message: unknown) => {
         templateRoundTrip =
           htmlLink === textLink &&
           link.searchParams.get('token') === registered.mailPlan.token &&
-          link.searchParams.get('email') === request.email;
+          // BA-02: registration stores and mails the normalized address.
+          link.searchParams.get('email') === request.email.trim().toLowerCase();
         phase = 'public-verify';
         const requireWeb = createRequire(new URL('../../../../../../web/package.json', import.meta.url));
         const next = requireWeb('next/server') as {
@@ -168,7 +169,7 @@ process.once('message', (message: unknown) => {
         verified: matched ? authenticated.verification.verified : null,
         mailIdentityMatches:
           created && registered.requiresVerification
-            ? registered.mailPlan.recipient === request.email &&
+            ? registered.mailPlan.recipient === request.email.trim().toLowerCase() &&
               registered.mailPlan.kind === 'uid-email-verification-v1'
             : null,
         templateRoundTrip,

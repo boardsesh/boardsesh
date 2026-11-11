@@ -132,8 +132,7 @@ export type LightbulbControl = {
   /**
    * Long-press: opens the BLE controls sheet when this device holds the link.
    * No-op when disconnected (short press connects) or when no `onOpenControls`
-   * was supplied. Gated on `localConnected` (BLE only), so a virtual hold never
-   * offers a Re-light / Turn off / Disconnect sheet for a wall with no lights.
+   * was supplied. Also available while this phone drives a spray wall over LAN.
    */
   onLongPress: () => void;
   /**
@@ -312,9 +311,9 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
     // Long-press is a power-user shortcut into the controls sheet; only meaningful
     // while THIS device holds the link (the sheet self-guards too). Disconnected,
     // long-press does nothing — short press connects.
-    if (!localConnected) return;
+    if (!localConnected && !(bluetooth?.boardName === 'spray' && bluetooth.canDriveWall)) return;
     onOpenControls?.({ surface, placement });
-  }, [localConnected, onOpenControls, surface, placement]);
+  }, [localConnected, bluetooth, onOpenControls, surface, placement]);
 
   return {
     bluetooth,

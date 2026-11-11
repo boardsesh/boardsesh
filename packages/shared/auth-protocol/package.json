@@ -41,6 +41,11 @@
       "types": "./src/password-hash.ts",
       "import": "./src/password-hash.ts",
       "default": "./src/password-hash.ts"
+    },
+    "./account-email": {
+      "types": "./src/account-email.ts",
+      "import": "./src/account-email.ts",
+      "default": "./src/account-email.ts"
     }
   },
   "scripts": {

@@ -14,6 +14,7 @@ type PanHandlers = {
   onFinalize?: () => void;
 };
 const pans = vi.hoisted(() => ({ built: [] as PanHandlers[] }));
+const animated = vi.hoisted(() => ({ props: [] as (() => { d: string })[] }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -27,6 +28,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('react-native-svg', () => ({
   default: ({ children }: { children?: ReactNode }) => createElement('svg', null, children),
   Path: ({ stroke }: { stroke?: string }) => createElement('path', { 'data-stroke': stroke }),
+  Circle: () => createElement('circle'),
 }));
 vi.mock('../../../theme/tokens', () => ({ borderRadius: { lg: 12 } }));
 
@@ -38,7 +40,10 @@ vi.mock('react-native-reanimated', async () => {
       createAnimatedComponent: (component: unknown) => component,
     },
     useAnimatedStyle: () => ({}),
-    useAnimatedProps: () => ({}),
+    useAnimatedProps: (compute: () => { d: string }) => {
+      animated.props.push(compute);
+      return compute();
+    },
     // One object for the life of the component, as the real hook gives.
     useSharedValue: (initial: number) => useRef({ value: initial }).current,
     runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
@@ -74,9 +79,39 @@ function props(overrides: Partial<SprayCornerMarkerProps> = {}): SprayCornerMark
 afterEach(() => {
   cleanup();
   pans.built.length = 0;
+  animated.props.length = 0;
 });
 
 describe('SprayCornerMarker', () => {
+  it('uses the fitted rectified backdrop and updates the T-nut path before a drag commits', () => {
+    const onChange = vi.fn();
+    const renderBackdrop = vi.fn((width: number, height: number) =>
+      createElement('div', { 'data-testid': 'rectified', 'data-width': width, 'data-height': height }),
+    );
+    const { container } = render(
+      createElement(
+        SprayCornerMarker,
+        props({
+          onChange,
+          renderBackdrop,
+          tnutGrid: { pattern: 'grid', rows: 8, columns: 8, firstRowOffset: false },
+        }),
+      ),
+    );
+    expect(renderBackdrop).toHaveBeenCalledWith(315, 420);
+    expect(container.querySelector('img')).toBeNull();
+    const grid = animated.props[1];
+    const initial = grid().d;
+    expect(initial.match(/M/g)).toHaveLength(64);
+    pans.built[0].onBegin?.();
+    pans.built[0].onUpdate?.({ translationX: 12, translationY: 6 });
+    expect(grid().d).not.toBe(initial);
+    expect(grid().d.match(/M/g)).toHaveLength(64);
+    expect(onChange).not.toHaveBeenCalled();
+    pans.built[0].onEnd?.();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
   it('draws photo guides in scheme-independent light tints over a dark halo', () => {
     const { container, rerender } = render(createElement(SprayCornerMarker, props()));
     const strokes = () =>

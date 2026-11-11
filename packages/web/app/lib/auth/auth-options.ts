@@ -11,6 +11,8 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
+import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
@@ -115,7 +117,9 @@ if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     FacebookProvider({
       clientId: process.env.FACEBOOK_CLIENT_ID,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true,
+      // Facebook has no trusted email_verified assertion. A free address may
+      // create an account, but must never automatically link an existing one.
+      allowDangerousEmailAccountLinking: false,
     }),
   );
 }
@@ -169,31 +173,27 @@ providers.push(
         return null;
       }
 
-      const db = getDb();
-
-      // An unknown address, an account with no password (OAuth only) and a
-      // wrong password must take the same time to reject, or the answer tells a
+      // An unknown address, an account with no password (OAuth only), an
+      // address several accounts share in different capitals and a wrong
+      // password must take the same time to reject, or the answer tells a
       // caller which addresses have accounts. So every path makes this one
       // query and then one bcrypt comparison at the stored cost.
-      const [account] = await db
-        .select({
-          id: schema.users.id,
-          email: schema.users.email,
-          name: schema.users.name,
-          image: schema.users.image,
-          passwordHash: schema.userCredentials.passwordHash,
-        })
-        .from(schema.users)
-        .leftJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
-        .where(eq(schema.users.email, credentials.email))
-        .limit(1);
-
-      const storedHash = account?.passwordHash ?? null;
-      const isValidPassword = await compare(credentials.password, storedHash ?? ABSENT_PASSWORD_HASH);
-
-      if (!account || storedHash === null || !isValidPassword) {
+      const found = await findAccountsByEmail(getDb(), credentials.email);
+      const candidates = found.rows.flatMap((account) =>
+        account.passwordHash === null ? [] : [{ ...account, passwordHash: account.passwordHash }],
+      );
+      if (candidates.length === 0) {
+        await compare(credentials.password, ABSENT_PASSWORD_HASH);
         return null;
       }
+      // Several rows can store the very same text. The password decides, as
+      // native sign-in's bounded match does: exactly one of them must accept it.
+      const accepted = await Promise.all(
+        candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
+      );
+      const matched = candidates.filter((_candidate, index) => accepted[index]);
+      if (matched.length !== 1) return null;
+      const [account] = matched;
 
       return {
         id: account.id,
@@ -233,13 +233,43 @@ const useSecureCookies = isSecureCookieContext();
 // *.boardsesh.com hosts.
 const cookieDomain = sessionCookieDomain();
 
+type AccountAdapter = ReturnType<typeof DrizzleAdapter>;
+
+/**
+ * NextAuth links a Google or Apple sign-in to the account its email names, and
+ * creates an account when none does. Both follow the BA-02 address rule: the
+ * account storing the address exactly, else the one storing it in other
+ * capitals. An address several accounts share names nobody, and creating
+ * another account for it is refused, so a provider sign-in never adds to a
+ * shared address. New accounts store the normalized form.
+ */
+function withAccountEmailRule(adapter: AccountAdapter): AccountAdapter {
+  return {
+    ...adapter,
+    async getUserByEmail(email) {
+      const account = soleAccount(await findAccountsByEmail(getDb(), email));
+      if (!account) return null;
+      if (!adapter.getUser) throw new Error('The account adapter cannot read users');
+      return adapter.getUser(account.id);
+    },
+    async createUser(user) {
+      if ((await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        throw new Error('An account already holds this email address');
+      if (!adapter.createUser) throw new Error('The account adapter cannot create users');
+      return adapter.createUser({ ...user, email: normalizeAccountEmail(user.email) });
+    },
+  };
+}
+
 export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(getDb(), {
-    usersTable: schema.users,
-    accountsTable: schema.accounts,
-    sessionsTable: schema.sessions,
-    verificationTokensTable: schema.verificationTokens,
-  }),
+  adapter: withAccountEmailRule(
+    DrizzleAdapter(getDb(), {
+      usersTable: schema.users,
+      accountsTable: schema.accounts,
+      sessionsTable: schema.sessions,
+      verificationTokensTable: schema.verificationTokens,
+    }),
+  ),
   providers,
   cookies: {
     // The session token is the login itself. SameSite=Lax (NOT None) is correct
@@ -338,7 +368,7 @@ export const authOptions: NextAuthOptions = {
       }
       return baseUrl;
     },
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified
       if (account?.provider !== 'credentials' && account?.provider !== 'native-oauth') {
@@ -351,6 +381,37 @@ export const authOptions: NextAuthOptions = {
         if (!hasUsableEmail(user.email)) {
           reportMissingOAuthEmail(account?.provider ?? 'unknown');
           return OAUTH_EMAIL_REQUIRED_REDIRECT;
+        }
+
+        // Native rejects an unverified email claim for an existing account.
+        // Older iOS clients then try this browser flow, so it must require the
+        // same ownership proof before NextAuth's automatic email linking.
+        // A persisted provider subject remains authoritative even when its
+        // current profile omits or changes its verified-email assertion.
+        const emailVerifiedAssertion = profile && 'email_verified' in profile ? profile.email_verified : undefined;
+        const verifiedEmailClaim =
+          (account?.provider === 'google' || account?.provider === 'apple') &&
+          (emailVerifiedAssertion === true || emailVerifiedAssertion === 'true');
+        // Require stable proof even if the address is currently free: a
+        // registration can commit before NextAuth's later adapter lookup.
+        // Facebook cannot automatically link at that boundary (provider config
+        // above), so its existing free-address signup remains safe.
+        if (
+          !verifiedEmailClaim &&
+          (account?.provider !== 'facebook' || (await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        ) {
+          if (!account?.providerAccountId) return false;
+          const [linkedAccount] = await getDb()
+            .select({ userId: schema.accounts.userId })
+            .from(schema.accounts)
+            .where(
+              and(
+                eq(schema.accounts.provider, account.provider),
+                eq(schema.accounts.providerAccountId, account.providerAccountId),
+              ),
+            )
+            .limit(1);
+          if (!linkedAccount || linkedAccount.userId !== user.id) return false;
         }
 
         // Mark email as verified if not already (provider already verified it)
@@ -379,8 +440,10 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
 
+      // By the ID authorize proved, never by address: another account can
+      // share this address in different capitals or even as the same text.
       const db = getDb();
-      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
+      const existingUser = await db.select().from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
 
       // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
       const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';

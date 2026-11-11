@@ -153,6 +153,7 @@ const TICK_COMMENT = 'Zqx Sentinel Tick Comment Zqx';
 // Deliberately NOT an Instagram or TikTok URL: those two enrich through a live
 // outbound fetch that has nothing to answer it in CI, and the row is dropped.
 const BETA_LINK = 'https://beta.example/ZqxSentinelBetaZqx';
+const LED_CONTROLLER_URL = 'http://zqx-sentinel-led.local';
 
 /**
  * The spray catalogue sequences are restarted to these before seeding, so the
@@ -1177,6 +1178,8 @@ async function seedWorld(): Promise<SeededWorld> {
     VALUES (${uuidv4()}, 'climb', ${savedClimb.uuid}, ${OWNER}, ${COMMENT_BODY}, now(), now())
   `);
 
+  await db.insert(dbSchema.sprayWallLedSetups).values({ boardId, controllerUrl: LED_CONTROLLER_URL, enabled: true });
+
   return {
     climbUuid: savedClimb.uuid,
     frames,
@@ -1286,6 +1289,7 @@ beforeAll(async () => {
     { name: 'hide-proposal uuid', value: world.hideProposalUuid, kind: 'identifier' },
     { name: 'tick comment', value: TICK_COMMENT, kind: 'secret' },
     { name: 'beta link', value: BETA_LINK, kind: 'secret' },
+    { name: 'LED controller address', value: LED_CONTROLLER_URL, kind: 'secret' },
     { name: 'photo id', value: world.photoId, kind: 'secret' },
     { name: 'climb frames', value: world.frames, kind: 'secret' },
     ...world.holdIds.map((holdId) => ({ name: `hold id ${holdId}`, value: holdId, kind: 'secret' as const })),

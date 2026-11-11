@@ -19,7 +19,7 @@
 // Coordinates leaving this component are PHOTO pixels, which is what
 // `createSprayWallVersion` stores and what the homography is solved in.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useTranslation } from 'react-i18next';
@@ -32,7 +32,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import type { Quad } from '@boardsesh/spray-wall-geometry';
+import { tnutGridPath, type Quad, type TnutGridOptions } from '@boardsesh/spray-wall-geometry';
 import { borderRadius } from '../../theme/tokens';
 import { brandColorsDark } from '../../theme/colors';
 import {
@@ -44,6 +44,8 @@ import {
   quadToRender,
   rescaleRenderCoordinate,
 } from './corner-photo-fit';
+import { ZoomableTnutMarker } from './ZoomableTnutMarker';
+import { activeTnutCorners } from './tnut-corner-viewport';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -78,6 +80,14 @@ export type SprayCornerMarkerProps = {
    * being moved.
    */
   onDragActiveChange?: (active: boolean) => void;
+  /** Optional canonical-frame backdrop for calibration over an already rectified wall. */
+  renderBackdrop?: (width: number, height: number) => ReactNode;
+  /** Live T-nut preview follows the handles entirely on the UI thread. */
+  tnutGrid?: Omit<TnutGridOptions, 'corners'>;
+  /** Zoom the rectified T-nut preview without changing persisted wall coordinates. */
+  enableZoom?: boolean;
+  /** Fit the photo to the supplied width without the legacy handle overhang. */
+  edgeToEdge?: boolean;
 };
 
 const CORNER_ORDER = [0, 1, 2, 3] as const;
@@ -106,6 +116,9 @@ export function SprayCornerMarker(props: SprayCornerMarkerProps) {
   // against a zero-sized box would seed all eight from a division by zero.
   // (A photo with no size never gets here: `SprayCornerStep` says so instead.)
   if (!fit) return null;
+  if (props.enableZoom && props.tnutGrid) {
+    return <ZoomableTnutMarker {...props} renderWidth={fit.width} renderHeight={fit.height} />;
+  }
   return <FittedCornerMarker {...props} renderWidth={fit.width} renderHeight={fit.height} renderScale={fit.scale} />;
 }
 
@@ -115,6 +128,8 @@ function FittedCornerMarker({
   onChange,
   invalid = false,
   onDragActiveChange,
+  renderBackdrop,
+  tnutGrid,
   renderWidth,
   renderHeight,
   renderScale,
@@ -233,10 +248,32 @@ function FittedCornerMarker({
   // the screen still does not re-render per frame.
   const outlineProps = useAnimatedProps(() => {
     'worklet';
+    if (tnutGrid?.rows === 1 && tnutGrid.columns === 1) return { d: '' };
+    if (tnutGrid?.rows === 1) return { d: `M${x0.value} ${y0.value}L${x1.value} ${y1.value}` };
+    if (tnutGrid?.columns === 1) return { d: `M${x0.value} ${y0.value}L${x3.value} ${y3.value}` };
     return {
       d: `M${x0.value} ${y0.value}L${x1.value} ${y1.value}L${x2.value} ${y2.value}L${x3.value} ${y3.value}Z`,
     };
   });
+
+  const gridProps = useAnimatedProps(() => ({
+    d: tnutGrid
+      ? tnutGridPath(
+          {
+            ...tnutGrid,
+            corners: {
+              topLeft: { x: x0.value / renderWidth, y: y0.value / renderHeight },
+              topRight: { x: x1.value / renderWidth, y: y1.value / renderHeight },
+              bottomRight: { x: x2.value / renderWidth, y: y2.value / renderHeight },
+              bottomLeft: { x: x3.value / renderWidth, y: y3.value / renderHeight },
+            },
+          },
+          renderWidth,
+          renderHeight,
+          3,
+        )
+      : '',
+  }));
 
   const guideColor = invalid ? SPRAY_GUIDE_COLORS.invalid : SPRAY_GUIDE_COLORS.valid;
 
@@ -258,14 +295,27 @@ function FittedCornerMarker({
     // frame's rounded clip.
     <View style={layout.layer}>
       <View style={[styles.frame, layout.frame, { borderRadius: borderRadius.lg }]}>
-        <Image
-          source={{ uri: photo.uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          accessibilityIgnoresInvertColors
-        />
+        {renderBackdrop ? (
+          renderBackdrop(renderWidth, renderHeight)
+        ) : (
+          <Image
+            source={{ uri: photo.uri }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            accessibilityIgnoresInvertColors
+          />
+        )}
       </View>
       <Svg pointerEvents="none" style={[styles.outline, layout.frame]} width={renderWidth} height={renderHeight}>
+        {tnutGrid ? (
+          <AnimatedPath
+            animatedProps={gridProps}
+            fill={SPRAY_GUIDE_COLORS.valid}
+            stroke={SPRAY_GUIDE_COLORS.halo}
+            strokeWidth={1.5}
+            opacity={0.48}
+          />
+        ) : null}
         {/* Dark halo under the light guide, so the outline reads on a bright photo too. */}
         <AnimatedPath
           animatedProps={outlineProps}
@@ -273,17 +323,21 @@ function FittedCornerMarker({
           stroke={SPRAY_GUIDE_COLORS.halo}
           strokeWidth={4}
           strokeLinejoin="round"
+          strokeDasharray={tnutGrid ? '6 5' : undefined}
+          opacity={tnutGrid ? 0.4 : 1}
         />
         <AnimatedPath
           animatedProps={outlineProps}
           fill={guideColor}
-          fillOpacity={0.12}
+          fillOpacity={tnutGrid ? 0 : 0.12}
           stroke={guideColor}
           strokeWidth={2}
           strokeLinejoin="round"
+          strokeDasharray={tnutGrid ? '6 5' : undefined}
+          opacity={tnutGrid ? 0.6 : 1}
         />
       </Svg>
-      {CORNER_ORDER.map((corner) => (
+      {(tnutGrid ? activeTnutCorners(tnutGrid.rows, tnutGrid.columns) : CORNER_ORDER).map((corner) => (
         <CornerHandle
           key={corner}
           x={xs[corner]}
@@ -296,6 +350,7 @@ function FittedCornerMarker({
           color={guideColor}
           label={cornerLabels[corner]}
           onCommit={commit}
+          subdued={Boolean(tnutGrid)}
         />
       ))}
     </View>
@@ -324,6 +379,7 @@ function CornerHandle({
   color,
   label,
   onCommit,
+  subdued = false,
 }: {
   x: SharedValue<number>;
   y: SharedValue<number>;
@@ -339,6 +395,7 @@ function CornerHandle({
   label: string;
   /** Stable for the life of the marker. */
   onCommit: () => void;
+  subdued?: boolean;
 }) {
   // Where the drag started, in PHOTO pixels. Not render points: if the frame is
   // re-fitted while this finger is still down (another ring released into a
@@ -387,7 +444,7 @@ function CornerHandle({
         accessibilityRole="adjustable"
         accessibilityLabel={label}
       >
-        <View style={styles.ringHalo}>
+        <View style={[styles.ringHalo, subdued && { opacity: 0.65 }]}>
           <View style={[styles.ring, { borderColor: color }]} />
         </View>
       </Animated.View>

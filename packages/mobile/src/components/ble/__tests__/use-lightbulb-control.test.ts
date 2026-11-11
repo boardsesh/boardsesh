@@ -338,6 +338,17 @@ describe('useLightbulbControl on a wall with no LED light kit', () => {
     expect(openControls).not.toHaveBeenCalled();
   });
 
+  it('opens wall controls while this phone drives a spray wall over LAN', () => {
+    const openControls = vi.fn();
+    ctrl.bluetooth = makeBluetooth({ boardName: 'spray', ledless: true, virtualWallHeld: true, canDriveWall: true });
+    const { result } = renderHook(() => useLightbulbControl({ surface: 'toolbar', onOpenControls: openControls }), {
+      wrapper,
+    });
+    result.current.onLongPress();
+    expect(openControls).toHaveBeenCalledOnce();
+    expect(ctrl.bluetooth.connect).not.toHaveBeenCalled();
+  });
+
   it('still disconnects a ledless board that somehow holds a live link', () => {
     // Recovery path for a board wrongly flagged as having no lights, and for the
     // back doors that can connect one (creator header toggle, iOS reconnect intent).

@@ -22,6 +22,8 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useTheme } from '../../providers/theme-provider';
 import { useNavigation, useRouter } from 'expo-router';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useKeyboardHeight } from '../../hooks/use-keyboard-height';
+import { useAndroidKeyboardScroll } from '../../hooks/use-android-keyboard-scroll';
 import { useHeaderActions } from '../../hooks/use-header-actions';
 import { useTransparentHeaderInset } from '../../hooks/use-transparent-header-inset';
 import { useForeignSerialBoard } from '../../lib/boards/use-foreign-serial-board';
@@ -87,6 +89,8 @@ type BoardFormProps = {
   currentBoardUuid?: string;
   /** A spray wall's background picker, drawn under its visibility rows. */
   sprayBackgroundSection?: ReactNode;
+  /** Device-local spray wall lighting, immediately above More options. */
+  sprayLedSection?: ReactNode;
   /**
    * The owner's "Help train hold finding" switch. Drawn beside whichever control
    * says who sees the wall: under the three-way one, or directly above the
@@ -113,6 +117,7 @@ export function BoardForm({
   errorMessage = null,
   currentBoardUuid,
   sprayBackgroundSection,
+  sprayLedSection,
   sprayTrainingSection,
 }: BoardFormProps) {
   const headerHeight = useHeaderHeight();
@@ -138,6 +143,9 @@ export function BoardForm({
   const foreignSerialBoard = useForeignSerialBoard(builder.serialNumber, currentBoardUuid, serialConflictConfig);
   const foreignSerialDisclosure = foreignSerialBoard ? serialReuseDisclosure(foreignSerialBoard) : null;
   const bottomChrome = useBottomChromeMetrics();
+  // Android draws the keyboard over edge-to-edge routes instead of resizing
+  // them. Keep the lower fields scrollable above it, as on the profile form.
+  const keyboardHeight = useKeyboardHeight(Platform.OS === 'android');
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [timerPairingOpen, setTimerPairingOpen] = useState(false);
@@ -233,11 +241,12 @@ export function BoardForm({
     clearOnUnmount: true,
   });
 
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const keyboardScroll = useAndroidKeyboardScroll(scrollRef, keyboardHeight, headerHeight + spacing[4]);
   // A submit failure shows at the top of the form, so the form scrolls back up
   // to it from wherever the climber was, and a screen reader hears it. The
   // header inset is the rest offset under `automatic` on a glass header. Runs
   // once per attempt, when the save has settled with an error.
-  const scrollRef = useRef<ScrollViewInstance>(null);
   const headerInset = useTransparentHeaderInset();
   const headerInsetRef = useRef(headerInset);
   headerInsetRef.current = headerInset;
@@ -256,9 +265,10 @@ export function BoardForm({
       <ScrollView
         ref={scrollRef}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding }]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomChrome.scrollBottomPadding + keyboardHeight }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        {...keyboardScroll}
       >
         {/* Above everything, so it never pushes a control the climber is
             looking at; the scroll above brings it into view. */}
@@ -441,6 +451,8 @@ export function BoardForm({
             <OwnPublicGymWarning gymUuid={builder.selectedGym?.uuid} />
           </View>
         ) : null}
+
+        {isSprayWall ? sprayLedSection : null}
 
         {/* Advanced — hold sets (default all), visibility, location, serial. */}
         <PressableSurface

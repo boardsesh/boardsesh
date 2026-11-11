@@ -463,7 +463,7 @@ const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => 
             authority,
             'google',
             { sub: subject, email: ownerEmail, emailVerified: true, name: null },
-            { emailStorage: 'normalized', emailVerification: 'provider', actorUserId: null },
+            { storeProviderImage: false, emailVerification: 'provider', actorUserId: null },
           );
         });
     },

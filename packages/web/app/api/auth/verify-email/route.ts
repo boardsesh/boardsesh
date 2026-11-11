@@ -8,6 +8,8 @@ import {
   isReservedAuthRecordIdentifier,
   isVersionedEmailVerificationToken,
 } from '@boardsesh/auth-protocol';
+import { soleAccount } from '@boardsesh/auth-protocol/account-email';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { webPasswordMode } from '@/app/lib/auth/password-command-client.server';
 import {
   emailVerificationRedirect,
@@ -87,21 +89,27 @@ export async function GET(request: NextRequest) {
     return emailVerificationRedirect(request, '/auth/verify-request?error=TokenExpired');
   }
 
-  // Verify user exists before updating
-  const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+  // Verify user exists before updating. The link's address is matched exactly
+  // first, then in other capitals only when one account has it.
+  const found = await findAccountsByEmail(db, email);
+  const account = soleAccount(found);
 
-  if (user.length === 0) {
-    // Token exists but user doesn't - cleanup the orphan token
-    await db
-      .delete(schema.verificationTokens)
-      .where(and(eq(schema.verificationTokens.identifier, email), eq(schema.verificationTokens.token, token)));
+  if (!account) {
+    // Token exists but user doesn't - cleanup the orphan token. An address
+    // several accounts share is not an orphan: refuse and let the link expire.
+    if (found.kind === 'none') {
+      await db
+        .delete(schema.verificationTokens)
+        .where(and(eq(schema.verificationTokens.identifier, email), eq(schema.verificationTokens.token, token)));
+    }
 
     return emailVerificationRedirect(request, '/auth/verify-request?error=InvalidToken');
   }
 
-  // Update user and delete token atomically
+  // Update user and delete token atomically. Only the one account this link
+  // names, never every row that stores the same text.
   await db.transaction(async (tx) => {
-    await tx.update(schema.users).set({ emailVerified: new Date() }).where(eq(schema.users.email, email));
+    await tx.update(schema.users).set({ emailVerified: new Date() }).where(eq(schema.users.id, account.id));
 
     await tx
       .delete(schema.verificationTokens)

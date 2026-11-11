@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { announceQueued } from '../../lib/announce-queued';
@@ -72,7 +72,11 @@ export function BleControlSheetHost({
 }: BleControlSheetHostProps) {
   const { t } = useTranslation('common');
   const bluetooth = useOptionalBluetoothContext();
-  const isConnected = bluetooth?.isConnected ?? false;
+  const isConnected =
+    (bluetooth?.isConnected ?? false) || (bluetooth?.boardName === 'spray' && Boolean(bluetooth.canDriveWall));
+  const wallIdentity = `${bluetooth?.boardName}:${bluetooth?.layoutId}:${bluetooth?.sizeId}`;
+  const currentWall = useRef(wallIdentity);
+  currentWall.current = wallIdentity;
   const [disconnectWhenDrivingEnds, setDisconnectWhenDrivingEnds] = useSetting('disconnectWhenDrivingEnds');
   const showLightAdjacentHolds = isMoonboardBoardName(bluetooth?.boardName);
   const [alwaysDrive, setAlwaysDrive] = useSetting('alwaysDrive');
@@ -129,11 +133,21 @@ export function BleControlSheetHost({
       stopDrivingForLink({ disconnectAfter: () => cleared });
       announceQueued(t('session:playView.wallControl.stoppedDriving'));
     }
-    markWallCleared(clearedClimbUuid === undefined ? activeClimbUuid : clearedClimbUuid);
+    const targetClimbUuid = clearedClimbUuid === undefined ? activeClimbUuid : clearedClimbUuid;
+    // A LAN write can fail or be cancelled, so a spray wall with no radio reads
+    // dark only once its controller has acknowledged the blank frame.
+    if (bluetooth?.boardName === 'spray' && !bluetooth.isConnected) {
+      void bluetooth.turnOffAllLights().then((lightsAreOff) => {
+        lightsOff();
+        if (lightsAreOff && currentWall.current === wallIdentity) markWallCleared(targetClimbUuid);
+      }, lightsOff);
+      return;
+    }
+    markWallCleared(targetClimbUuid);
     const write = bluetooth?.turnOffAllLights();
     if (write) void write.then(lightsOff, lightsOff);
     else lightsOff();
-  }, [bluetooth, activeClimbUuid, clearedClimbUuid, t]);
+  }, [bluetooth, activeClimbUuid, clearedClimbUuid, t, wallIdentity]);
 
   const handleToggleLightAdjacentHolds = useCallback(
     (enabled: boolean) => {
@@ -143,6 +157,10 @@ export function BleControlSheetHost({
     },
     [bluetooth],
   );
+  const handleDisconnect = useCallback(() => {
+    if (bluetooth?.boardName === 'spray' && !bluetooth.isConnected) bluetooth.releaseVirtualWall();
+    else disconnectAllBluetooth();
+  }, [bluetooth]);
 
   // The same `Setting Changed` the Board page's rows send, so a switch flipped
   // here (the lightbulb's long press) is counted too.
@@ -168,7 +186,7 @@ export function BleControlSheetHost({
       visible={visible}
       onReassert={handleReassert}
       onClearLights={handleClearLights}
-      onDisconnect={disconnectAllBluetooth}
+      onDisconnect={handleDisconnect}
       disconnectWhenDrivingEnds={disconnectWhenDrivingEnds}
       onToggleDisconnectWhenDrivingEnds={handleToggleDisconnectWhenDrivingEnds}
       showLightAdjacentHolds={showLightAdjacentHolds}
@@ -177,6 +195,7 @@ export function BleControlSheetHost({
       alwaysDrive={alwaysDrive}
       onToggleAlwaysDrive={handleToggleAlwaysDrive}
       showLightingSwitches={showLightingSwitches}
+      showDisconnectWhenDrivingEnds={bluetooth.isConnected}
       linked={isConnected}
       onDrive={onDrive}
       status={status}
