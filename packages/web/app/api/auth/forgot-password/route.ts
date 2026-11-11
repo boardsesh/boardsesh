@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { soleAccount } from '@boardsesh/auth-protocol/account-email';
-import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
+import { findAccountsByEmail, lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
 import { sendPasswordResetEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
@@ -87,7 +87,8 @@ async function handleForgotPassword(request: NextRequest) {
     const expires = new Date(Date.now() + 60 * 60 * 1000);
     const identifier = getPasswordResetIdentifier(email);
 
-    await db.transaction(async (tx) => {
+    const issued = await db.transaction(async (tx) => {
+      if (!(await lockAccountEmailSnapshot(tx, account))) return false;
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
 
       // Store the hash, not the raw token — raw token is only in the email link.
@@ -96,7 +97,12 @@ async function handleForgotPassword(request: NextRequest) {
         token: tokenHash,
         expires,
       });
+      return true;
     });
+    if (!issued) {
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
+      return NextResponse.json({ message: genericMessage }, { status: 200 });
+    }
 
     // `?.trim() ||`, not `??`: Dockerfile.web's runner stage declares
     // `ENV BASE_URL=$BASE_URL`, which is the EMPTY STRING in an image built

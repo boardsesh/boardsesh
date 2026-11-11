@@ -3,7 +3,13 @@ import { z } from 'zod';
 import { logger } from '../utils/logger';
 
 // Validate recipient format before it ever goes into a URL or header.
-const emailSchema = z.string().email();
+const emailSchema = z
+  .string()
+  .email()
+  .refine(
+    (address) => !address.toLowerCase().split('@')[1]?.replace(/\.$/, '').endsWith('.invalid'),
+    'Recipient is unavailable.',
+  );
 
 // Where claim-review notifications go. Override with ADMIN_EMAIL.
 export const ADMIN_NOTIFICATION_EMAIL = process.env.ADMIN_EMAIL || 'admin@boardsesh.com';

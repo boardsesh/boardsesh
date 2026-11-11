@@ -28,5 +28,10 @@ export function fakeAccountEmailLookup(stored: () => readonly StoredAccount[]) {
       .slice(0, ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
     return resolveAccountEmail(typedEmail, rows);
   });
-  return { findAccountsByEmail };
+  return {
+    findAccountsByEmail,
+    lockAccountEmailSnapshot: vi.fn(async (_transaction: unknown, snapshot: Pick<AccountEmailRow, 'id' | 'email'>) =>
+      stored().some((account) => account.id === snapshot.id && account.email === snapshot.email),
+    ),
+  };
 }

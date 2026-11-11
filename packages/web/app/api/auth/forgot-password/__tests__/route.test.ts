@@ -36,8 +36,8 @@ const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockValues = vi.fn().mockResolvedValue(undefined);
 const mockTxDelete = vi.fn(() => ({ where: mockDeleteWhere }));
 const mockTxInsert = vi.fn(() => ({ values: mockValues }));
-const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-  await fn({ delete: mockTxDelete, insert: mockTxInsert });
+const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+  return await fn({ delete: mockTxDelete, insert: mockTxInsert });
 });
 
 vi.mock('@/app/lib/db/db', () => ({
@@ -52,6 +52,7 @@ vi.mock('@/app/lib/db/schema', () => ({
 
 import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
 import { POST } from '../route';
+import { lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
 
 const passwordAccount: StoredAccount = { id: 'user-1', email: 'test@example.com', passwordHash: '$2b$12$stored' };
 
@@ -78,6 +79,15 @@ describe('POST /api/auth/forgot-password', () => {
     lookup.stored = [];
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
+  });
+
+  it('does not issue or mail a link after the account address changed', async () => {
+    lookup.stored = [passwordAccount];
+    vi.mocked(lockAccountEmailSnapshot).mockResolvedValueOnce(false);
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+    expect(response.status).toBe(200);
+    expect(mockValues).not.toHaveBeenCalled();
+    expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
   it('returns 429 when rate limited', async () => {

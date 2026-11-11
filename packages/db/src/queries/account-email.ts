@@ -89,3 +89,20 @@ export async function findAccountHoldersByEmail(
     .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
   return resolveAccountEmail(typedEmail, rows);
 }
+
+/**
+ * A legacy email-keyed link must not be issued for a stale address snapshot.
+ * The resolution tool also locks users before checking live links, so issuance
+ * either commits first (resolution defers), or observes the changed address.
+ */
+export async function lockAccountEmailSnapshot(
+  transaction: AccountEmailReader,
+  snapshot: Pick<AccountEmailRow, 'id' | 'email'>,
+): Promise<boolean> {
+  const [current] = await transaction
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, snapshot.id))
+    .for('update');
+  return current?.email === snapshot.email;
+}
