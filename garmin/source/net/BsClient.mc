@@ -122,13 +122,18 @@ class BsClient {
         }
         var pending = TokenStore.beginRotation(latest);
         if (pending == null) {
-            request.fail(401);
             // A restarted/ambiguous flight may keep its old access JWT and
             // owned offline logs. Once that JWT is rejected, explicit pairing
             // is required; never submit the old refresh secret again.
             if (TokenStore.currentRevision(latest) && AuthState.statusIs(latest, "rotating")) {
+                request.fail(401);
                 TokenStore.clear();
                 _authLost();
+            } else {
+                // No refresh secret was sent. A failed pre-send storage write
+                // is unavailable, not proof of sign-out. Let the caller show
+                // its retry path while preserving credentials and every tick.
+                request.fail(503);
             }
             return;
         }
@@ -250,7 +255,11 @@ class BsRequest {
         if (_settled) { return; }
         if (!TokenStore.current(_captured)) { fail(BsResponse.STALE); return; }
         if (_authed && !AuthState.canUseAccess(_captured)) {
-            if (!_retried && AuthState.statusIs(_captured, "bootstrap")) {
+            if (!_retried && (AuthState.statusIs(_captured, "bootstrap") ||
+                    AuthState.statusIs(_captured, "rotating"))) {
+                // An unbound durable marker cannot use an access credential or
+                // retry its refresh secret. The client owns the explicit
+                // pairing transition; a bare 401 would strand LoadingView.
                 _retried = true;
                 _client.handleUnauthorized(self);
             } else { fail(401); }

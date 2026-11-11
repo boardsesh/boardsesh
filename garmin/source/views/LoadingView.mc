@@ -40,14 +40,14 @@ class LoadingView extends WatchUi.View {
         }
         if (code < 200 || code >= 300 || data == null) {
             // Treat any error as "no session"; NoSessionView offers Retry.
-            Router.toNoSession();
+            showNoSession();
             return;
         }
 
         AppState.authContext = origin;
         var active = AppState.activeSessions(data);
         if (active.size() == 0) {
-            Router.toNoSession();
+            showNoSession();
         } else if (active.size() == 1) {
             _attach(active[0]);
             Router.toClimb();
@@ -55,6 +55,9 @@ class LoadingView extends WatchUi.View {
             Router.toSessionPicker(active);
         }
     }
+
+    // Shared by unavailable reads and a successful empty-session reply.
+    function showNoSession() as Void { Router.toNoSession(); }
 
     private function _attach(session as Lang.Dictionary) as Void {
         AppState.attachSession(session["id"], session["name"]);
