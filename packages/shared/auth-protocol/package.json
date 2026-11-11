@@ -36,6 +36,11 @@
       "types": "./src/private-command-transport.ts",
       "import": "./src/private-command-transport.ts",
       "default": "./src/private-command-transport.ts"
+    },
+    "./password-hash": {
+      "types": "./src/password-hash.ts",
+      "import": "./src/password-hash.ts",
+      "default": "./src/password-hash.ts"
     }
   },
   "scripts": {

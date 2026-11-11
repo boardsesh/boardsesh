@@ -9,6 +9,7 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
+import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
@@ -163,7 +164,11 @@ providers.push(
       // Look up user by email
       const users = await db.select().from(schema.users).where(eq(schema.users.email, credentials.email)).limit(1);
 
+      // Every rejection below runs one bcrypt comparison at the stored cost, so
+      // an address with no account or no password takes as long to reject as a
+      // wrong password. Answering sooner would tell a caller which addresses exist.
       if (users.length === 0) {
+        await compare(credentials.password, ABSENT_PASSWORD_HASH);
         return null;
       }
 
@@ -178,6 +183,7 @@ providers.push(
 
       if (userCredentials.length === 0) {
         // User exists but has no password (e.g., OAuth only)
+        await compare(credentials.password, ABSENT_PASSWORD_HASH);
         return null;
       }
 

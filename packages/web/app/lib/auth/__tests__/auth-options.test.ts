@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import type { Session } from 'next-auth';
+import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
 import { authOptions } from '../auth-options';
 
 const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
@@ -716,13 +717,16 @@ describe('CredentialsProvider.authorize — email/password', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when user is not found', async () => {
+  it('returns null when user is not found, after the same bcrypt work as a wrong password', async () => {
     // First select (users lookup) → empty
     mockDbLimit.mockResolvedValue([]);
 
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'notfound@example.com', password: 'pass' });
     expect(result).toBeNull();
+    // Skipping bcrypt here would answer sooner and reveal that no account exists.
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+    expect(mockBcryptCompare).toHaveBeenCalledWith('pass', ABSENT_PASSWORD_HASH);
   });
 
   it('returns null when user has no password (OAuth-only account)', async () => {
@@ -737,6 +741,8 @@ describe('CredentialsProvider.authorize — email/password', () => {
       password: 'mypassword',
     });
     expect(result).toBeNull();
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+    expect(mockBcryptCompare).toHaveBeenCalledWith('mypassword', ABSENT_PASSWORD_HASH);
   });
 
   it('returns null when password is incorrect', async () => {

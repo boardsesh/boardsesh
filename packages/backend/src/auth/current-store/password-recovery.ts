@@ -10,6 +10,7 @@ import {
   type ResetPasswordCommand,
   type ResetPasswordReply,
 } from '@boardsesh/auth-protocol';
+import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import {
   authEmailReservationMembers,
   authPasswordRecoveryState,
@@ -374,7 +375,7 @@ export async function consumePasswordRecovery(
       : undefined;
   const passwordHash =
     body && ((initial && initialCredential && !initial.consumedAt && !initial.supersededAt) || legacyPreview)
-      ? await bcrypt.hash(body.password, 12)
+      ? await bcrypt.hash(body.password, PASSWORD_HASH_COST)
       : undefined;
   return database.transaction(async (transaction): Promise<ResetPasswordReply> => {
     await transactionSettings(transaction);
