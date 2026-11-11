@@ -1,3 +1,4 @@
+import { rejectConsolidatedSessionEdit } from '../sessions/consolidation-alias';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../../db/client';
@@ -40,6 +41,7 @@ export const sessionEditMutations = {
     requireAuthenticated(ctx);
     const validated = validateInput(SetHealthKitWorkoutIdSchema, args, 'args');
     const userId = ctx.userId!;
+    await rejectConsolidatedSessionEdit(db, validated.sessionId, userId);
 
     const [session] = await db
       .select({ createdByUserId: dbSchema.boardSessions.createdByUserId })
@@ -113,6 +115,7 @@ export const sessionEditMutations = {
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, 'updateSession');
     const validated = validateInput(UpdateSessionInputSchema, input, 'input');
     const userId = ctx.userId!;
+    await rejectConsolidatedSessionEdit(db, validated.sessionId, userId);
 
     const [session] = await db
       .select({
@@ -156,6 +159,7 @@ export const sessionEditMutations = {
       if (hasNotes) updates.notes = nextNotes;
       if (hasIsPublic) updates.isPublic = nextIsPublic;
       await db.transaction(async (transaction) => {
+        await rejectConsolidatedSessionEdit(transaction, validated.sessionId, userId);
         const [locked] = await transaction
           .select({ ownerId: dbSchema.boardSessions.createdByUserId, isPublic: dbSchema.boardSessions.isPublic })
           .from(dbSchema.boardSessions)

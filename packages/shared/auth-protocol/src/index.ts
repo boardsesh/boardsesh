@@ -323,3 +323,6 @@ export function authCommandReplyStatus(reply: AuthCommandReply): number {
   if (reply.code === 'rate_limited') return 429;
   return 503;
 }
+
+export { parseAccountConsolidationReceipt, type AccountConsolidationReceipt } from './account-consolidation';
+export * from './account-consolidation-transition';

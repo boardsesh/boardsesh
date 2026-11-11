@@ -1,3 +1,4 @@
+import { setOnAccountConsolidated } from '../lib/account-consolidation-client';
 import { deactivateNotificationDevice } from '../notifications/device-registration';
 import { markStartup } from '../lib/profiling/startup-profile';
 import { invalidateConsentAccount } from '../lib/consent-state';
@@ -600,7 +601,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   );
 
   const handleAuthenticatedTransition = useCallback(
-    async (transitionEpoch: number, authSession: { userId?: string; authSessionId?: string }): Promise<boolean> => {
+    async (
+      transitionEpoch: number,
+      authSession: {
+        userId?: string;
+        authSessionId?: string;
+        accountConsolidation?: { fromUserId: string; toUserId: string };
+      },
+    ): Promise<boolean> => {
       const wasAuthenticated = authStateRef.current.isAuthenticated;
       let authenticatedIdentityChanged = false;
       if (Platform.OS === 'web') {
@@ -617,9 +625,18 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           setCurrentUserStorageOwner(null);
           authStateRef.current = { ...authStateRef.current, isLoading: true };
           setIsLoading(true);
-          const cleanedPreviousUser = await runSignedOutCleanup(transitionEpoch, previousStorageOwner, {
-            wasAuthenticated: true,
-          });
+          const consolidatedOwner =
+            authSession.accountConsolidation?.fromUserId === previousStorageOwner.userId &&
+            authSession.accountConsolidation.toUserId === nextUserId;
+          const cleanedPreviousUser = consolidatedOwner
+            ? true
+            : await runSignedOutCleanup(transitionEpoch, previousStorageOwner, {
+                wasAuthenticated: true,
+              });
+          if (consolidatedOwner) {
+            disposeWsClient();
+            queryClient.clear();
+          }
           if (!cleanedPreviousUser || !isAuthTransitionCurrent(transitionEpoch)) return false;
         }
         setCurrentUserStorageOwner(nextStorageOwner);
@@ -744,6 +761,14 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
             setIsSessionUnavailable(false);
           } else {
             reportError(authSession.error);
+            if (authSession.pendingAccountConsolidation) {
+              setCurrentUserStorageOwner(null);
+              disposeWsClient();
+              queryClient.clear();
+              setIsAuthenticated(false);
+              setIsSessionUnavailable(true);
+              return;
+            }
             const previousStorageOwner = authenticatedStorageOwnerRef.current;
             const confirmedIdentityChanged =
               authSession.identityInvalidated === true ||
@@ -876,6 +901,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     const transitionEpoch = beginAuthTransition();
     return enqueueAuthTransition(() => checkAuthForTransition(transitionEpoch));
   }, [beginAuthTransition, checkAuthForTransition, enqueueAuthTransition]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    setOnAccountConsolidated(() => {
+      disposeWsClient();
+      queryClient.clear();
+      void checkAuth();
+    });
+    return () => setOnAccountConsolidated(null);
+  }, [checkAuth, queryClient]);
 
   const checkAuthAfterSuccessfulBrowserFallback = useCallback(async (): Promise<void> => {
     if (!authProviderMountedRef.current) return;

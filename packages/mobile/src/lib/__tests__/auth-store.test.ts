@@ -211,7 +211,7 @@ describe('auth-store', () => {
 
     await expect(clearTokens()).resolves.toBeUndefined();
 
-    expect(store.deleteItemAsync).toHaveBeenCalledTimes(4);
+    expect(store.deleteItemAsync).toHaveBeenCalledTimes(5);
     expect(store.setItemAsync).not.toHaveBeenCalled();
     await expect(getAuthToken()).resolves.toBeNull();
   });
@@ -226,8 +226,8 @@ describe('auth-store', () => {
 
     await expect(clearTokens()).resolves.toBeUndefined();
 
-    expect(store.deleteItemAsync).toHaveBeenCalledTimes(6);
-    expect(store.setItemAsync).toHaveBeenCalledTimes(3);
+    expect(store.deleteItemAsync).toHaveBeenCalledTimes(8);
+    expect(store.setItemAsync).toHaveBeenCalledTimes(4);
     await expect(getAuthToken()).resolves.toBeNull();
     await expect(getRefreshToken()).resolves.toBeNull();
     await expect(getTokenExpiresAt()).resolves.toBeNull();
@@ -241,7 +241,7 @@ describe('auth-store', () => {
     store.setItemAsync.mockRejectedValue(new Error('write unavailable'));
 
     await expect(clearTokens()).rejects.toMatchObject({ name: 'AuthCredentialCleanupError' });
-    expect(store.deleteItemAsync).toHaveBeenCalledTimes(6);
+    expect(store.deleteItemAsync).toHaveBeenCalledTimes(8);
   });
 
   it('cannot restore refreshed credentials when clear starts during a token write', async () => {
@@ -315,7 +315,7 @@ describe('auth-store', () => {
     );
 
     const oldClear = clearTokensForGeneration(oldGeneration);
-    await vi.waitFor(() => expect(store.deleteItemAsync).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(store.deleteItemAsync).toHaveBeenCalledTimes(4));
     const newerLogin = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
     releaseFirstDelete();
 
@@ -349,8 +349,9 @@ describe('auth-store', () => {
     store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
     store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
 
+    store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
     const oldClear = clearTokensForGeneration(oldGeneration);
-    await vi.waitFor(() => expect(store.setItemAsync).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(store.setItemAsync).toHaveBeenCalledTimes(4));
     const newerLogin = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
     rejectTombstones(new Error('tombstone unavailable'));
 

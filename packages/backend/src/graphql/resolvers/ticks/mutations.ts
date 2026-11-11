@@ -1,3 +1,5 @@
+import { resolveConsolidatedSessionAddress } from '../sessions/consolidation-alias';
+import { resolveConsolidatedTickAddress, tombstoneConsolidatedTicks } from './consolidation-alias';
 import { setContentPrivacy, betaPrivacyEntityId, resourceAccessCondition } from '../../../services/privacy';
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -970,9 +972,12 @@ export const tickMutations = {
   deleteTick: async (_: unknown, { uuid }: { uuid: string }, ctx: ConnectionContext): Promise<boolean> => {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
+    const presentedUuid = uuid;
+    uuid = await resolveConsolidatedTickAddress(db, uuid, userId, { mutation: 'delete' });
 
     const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
+      uuid = await resolveConsolidatedTickAddress(tx, presentedUuid, userId, { mutation: 'delete' });
       const affectedTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'delete');
       const affectedUuids = affectedTicks.map((tick) => tick.uuid);
 
@@ -1017,6 +1022,7 @@ export const tickMutations = {
         .returning({ link: dbSchema.boardBetaLinks.link });
 
       // The trigger writes one offline tombstone per UUID.
+      await tombstoneConsolidatedTicks(tx, userId, affectedUuids);
       await tx.delete(dbSchema.boardseshTicks).where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids));
 
       const sessionIds = distinctTickSessions(affectedTicks);
@@ -1066,17 +1072,19 @@ export const tickMutations = {
    */
   saveTick: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<unknown> => {
     requireAuthenticated(ctx);
+    const userId = ctx.userId!;
 
     // Validate input with business rules
     const validatedInput = validateInput(SaveTickInputSchema, input, 'input');
+    if (validatedInput.uuid)
+      validatedInput.uuid = await resolveConsolidatedTickAddress(db, validatedInput.uuid, userId);
 
-    const userId = ctx.userId!;
     logger.info(
       `[saveTick] user=${userId} ${validatedInput.boardType}/${validatedInput.climbUuid.slice(0, 8)}/${validatedInput.angle} ` +
         `status=${validatedInput.status}` +
         (validatedInput.sessionId ? ` session=${validatedInput.sessionId}` : ''),
     );
-    const uuid = validatedInput.uuid ?? uuidv4();
+    let uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date().toISOString();
     const climbedAt = normalizeClimbedAt(validatedInput.climbedAt);
 
@@ -1212,11 +1220,15 @@ export const tickMutations = {
     let resolvedSessionId: string | null = null;
     let sessionBoardId: number | null = null;
     if (validatedInput.sessionId) {
-      const [session] = await db
-        .select({ id: dbSchema.boardSessions.id, boardId: dbSchema.boardSessions.boardId })
-        .from(dbSchema.boardSessions)
-        .where(eq(dbSchema.boardSessions.id, validatedInput.sessionId))
-        .limit(1);
+      const requestedSessionId = await resolveConsolidatedSessionAddress(db, validatedInput.sessionId, userId);
+      const [session] =
+        requestedSessionId === null
+          ? []
+          : await db
+              .select({ id: dbSchema.boardSessions.id, boardId: dbSchema.boardSessions.boardId })
+              .from(dbSchema.boardSessions)
+              .where(eq(dbSchema.boardSessions.id, requestedSessionId))
+              .limit(1);
 
       if (session) {
         resolvedSessionId = session.id;
@@ -1414,6 +1426,24 @@ export const tickMutations = {
     // we detect that, return the original row, and skip every side effect below.
     const [tick] = await db.transaction(
       async (tx) => {
+        // Applied UUID mappings outlive session-exchange rollout flags. Recheck
+        // after taking the same user lock DELETE holds, so stale creates cannot
+        // race a committed tombstone or insert a newly retired alias UUID.
+        await acquireUserTickMutationLock(tx, userId);
+        uuid = await resolveConsolidatedTickAddress(tx, uuid, userId);
+        if (validatedInput.sessionId) {
+          const sessionAddress = await resolveConsolidatedSessionAddress(tx, validatedInput.sessionId, userId);
+          const [currentSession] =
+            sessionAddress === null
+              ? []
+              : await tx
+                  .select({ id: dbSchema.boardSessions.id })
+                  .from(dbSchema.boardSessions)
+                  .where(eq(dbSchema.boardSessions.id, sessionAddress))
+                  .for('key share')
+                  .limit(1);
+          resolvedSessionId = currentSession?.id ?? null;
+        }
         // A spray climb can be hard-deleted by its setter while nobody has
         // logged it (`deleteClimb`, #5960). The visibility check above ran
         // outside this transaction, so it cannot stop a delete committing
@@ -1780,6 +1810,8 @@ export const tickMutations = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
+    const presentedUuid = uuid;
+    uuid = await resolveConsolidatedTickAddress(db, uuid, userId, { mutation: 'update' });
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
     const canonicalClimbedAt =
       validatedInput.climbedAt === undefined ? undefined : normalizeClimbedAt(validatedInput.climbedAt);
@@ -1790,6 +1822,7 @@ export const tickMutations = {
     const mutationResult = await retryTickMutationOnChangedSurface(() =>
       db.transaction(async (tx) => {
         await acquireUserTickMutationLock(tx, userId);
+        uuid = await resolveConsolidatedTickAddress(tx, presentedUuid, userId, { mutation: 'update' });
         const lockContext = await lockUpdateTickMutationSurface(tx, uuid, userId, validatedInput.boardUuid);
         const { selectedBoard, selectedByLink } = lockContext;
         const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');

@@ -64,6 +64,24 @@ describe('synchronizeWebSession', () => {
     );
   });
 
+  it('keeps consolidation pending when the confirmed canonical session cannot yet supply a token pair', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          user: { id: 'target' },
+          authSessionId: 'mapped',
+          accountConsolidation: { mergeId: 'merge', fromUserId: 'source', toUserId: 'target' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({}, 503));
+    await expect(synchronizeWebSession()).resolves.toMatchObject({
+      status: 'unavailable',
+      pendingAccountConsolidation: true,
+      confirmedIdentity: { userId: 'target', authSessionId: 'mapped' },
+    });
+    expect(await getAuthToken()).toBeNull();
+  });
+
   it('clears the memory token only after a confirmed anonymous session', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))

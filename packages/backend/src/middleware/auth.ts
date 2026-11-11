@@ -182,6 +182,7 @@ async function verifyMobileJwt(token: string, secret: string): Promise<AuthResul
       ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
       credential: {
         kind: 'native-access',
+        sessionKeyClaim: payload.sid,
         generationClaim: payload.gen,
         nativeGenerationClaim: payload.ngen,
         authTimeClaim: payload.auth_time,

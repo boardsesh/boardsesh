@@ -1,3 +1,8 @@
+vi.mock('../account-consolidation-client', () => ({
+  resumePendingAccountConsolidation: vi.fn().mockResolvedValue(undefined),
+  acceptNativeAccountConsolidation: vi.fn(),
+  setOnAccountConsolidated: vi.fn(),
+}));
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 // ── Mock expo-secure-store ──────────────────────────────────────────────

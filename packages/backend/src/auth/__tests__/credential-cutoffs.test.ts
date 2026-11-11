@@ -33,6 +33,16 @@ const denialOf = (credential: PresentedCredential, state: SubjectCutoffState | u
   decideCredential(credential, state, NOW_MS).denial;
 
 describe('decideCredential: BA-04 section 4', () => {
+  it('refuses revoked transferred native and web lineage even when cutoff observation is enabled', () => {
+    const state = { ...subject(0), revokedConsolidationSessionKeys: new Set(['mapped-session']) };
+    for (const credential of [web(0, 'mapped-session'), { ...nativeAccess(0, 0), sessionKeyClaim: 'mapped-session' }]) {
+      const decision = decideCredential(credential, state, NOW_MS);
+      expect(decision.denial).toBe('consolidation-lineage');
+      expect(isCredentialAdmitted(decision, 'observe')).toBe(false);
+    }
+    expect(denialOf({ ...nativeAccess(0, 0), sessionKeyClaim: 'unrelated' }, state)).toBeNull();
+  });
+
   describe('old web JWE (no gen)', () => {
     it('is used while the generation is 0', () => {
       expect(denialOf(web(undefined), subject(0))).toBeNull();

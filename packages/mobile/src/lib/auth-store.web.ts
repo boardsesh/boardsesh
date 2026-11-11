@@ -1,10 +1,20 @@
+import {
+  parseAccountConsolidationReceipt,
+  type AccountConsolidationReceipt,
+} from '@boardsesh/auth-protocol/account-consolidation';
 import { invalidateCredentialSnapshots } from './privacy/privacy-cache';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { webApiUrl } from './env';
 import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';
 
 export type AuthSessionResult =
-  | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
+  | {
+      status: 'authenticated';
+      token: string;
+      userId: string;
+      authSessionId: string;
+      accountConsolidation?: AccountConsolidationReceipt;
+    }
   | { status: 'anonymous' }
   | { status: 'superseded' }
   | {
@@ -12,6 +22,7 @@ export type AuthSessionResult =
       error: unknown;
       confirmedIdentity?: WebAuthIdentity;
       identityInvalidated?: boolean;
+      pendingAccountConsolidation?: boolean;
     };
 
 export type WebAuthIdentity = {
@@ -20,6 +31,7 @@ export type WebAuthIdentity = {
 };
 
 type NextAuthSession = {
+  accountConsolidation?: unknown;
   authSessionId?: unknown;
   user?: {
     id?: unknown;
@@ -300,6 +312,16 @@ export function isAuthCredentialGenerationCurrent(generation: number): boolean {
 }
 
 async function fetchWebSession(generation: number, signal: AbortSignal): Promise<AuthSessionResult> {
+  let pendingAccountConsolidation = false;
+  const unavailableDuringTransition = (
+    error: unknown,
+    identity?: WebAuthIdentity,
+    invalidated?: boolean,
+  ): AuthSessionResult => ({
+    ...unavailable(error, identity, invalidated),
+    ...(pendingAccountConsolidation ? { pendingAccountConsolidation: true } : {}),
+  });
+
   let activeGeneration = generation;
   let lastConfirmedIdentity: WebAuthIdentity | undefined;
   let identityChangedDuringSynchronization = false;
@@ -320,7 +342,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       );
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
       if (!sessionResponse.ok) {
-        return unavailable(
+        return unavailableDuringTransition(
           new Error(`Session endpoint failed: HTTP ${sessionResponse.status}`),
           lastConfirmedIdentity,
           identityChangedDuringSynchronization,
@@ -336,11 +358,33 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       }
       if (typeof session.user.id !== 'string' || !session.user.id) {
         activeGeneration = invalidateUnscopedAuthenticatedIdentity(activeGeneration);
-        return unavailable(new Error('Authenticated session returned no user identity'), undefined, true);
+        return unavailableDuringTransition(
+          new Error('Authenticated session returned no user identity'),
+          undefined,
+          true,
+        );
       }
       if (typeof session.authSessionId !== 'string' || !session.authSessionId) {
         activeGeneration = invalidateUnscopedAuthenticatedIdentity(activeGeneration);
-        return unavailable(new Error('Authenticated session returned no login identity'), undefined, true);
+        return unavailableDuringTransition(
+          new Error('Authenticated session returned no login identity'),
+          undefined,
+          true,
+        );
+      }
+      if (
+        typeof session.accountConsolidation === 'object' &&
+        session.accountConsolidation !== null &&
+        'fromUserId' in session.accountConsolidation &&
+        typeof session.accountConsolidation.fromUserId === 'string'
+      ) {
+        pendingAccountConsolidation = Boolean(
+          parseAccountConsolidationReceipt(
+            session.accountConsolidation,
+            session.accountConsolidation.fromUserId,
+            session.user.id,
+          ),
+        );
       }
       const resolvedIdentity = { userId: session.user.id, authSessionId: session.authSessionId };
       lastConfirmedIdentity = resolvedIdentity;
@@ -359,7 +403,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       );
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
       if (!tokenResponse.ok) {
-        return unavailable(
+        return unavailableDuringTransition(
           new Error(`WebSocket auth endpoint failed: HTTP ${tokenResponse.status}`),
           resolvedIdentity,
           identityChangedDuringSynchronization,
@@ -376,7 +420,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       if (tokenPayload.authenticated !== true || typeof tokenPayload.token !== 'string' || !tokenPayload.token) {
         // The session endpoint just confirmed an authenticated cookie. Treat a
         // missing bridge token as transient instead of signing the user out.
-        return unavailable(
+        return unavailableDuringTransition(
           new Error('Authenticated session returned no backend token'),
           resolvedIdentity,
           identityChangedDuringSynchronization,
@@ -388,7 +432,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
         typeof tokenPayload.authSessionId !== 'string' ||
         !tokenPayload.authSessionId
       ) {
-        return unavailable(
+        return unavailableDuringTransition(
           new Error('Authenticated backend token returned no login identity'),
           resolvedIdentity,
           identityChangedDuringSynchronization,
@@ -405,18 +449,51 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
         activeGeneration = confirmedTokenIdentity.generation;
         identityChangedDuringSynchronization = true;
         if (attempt < MAX_IDENTITY_PAIR_ATTEMPTS) continue;
-        return unavailable(
+        return unavailableDuringTransition(
           new Error('Authentication identity kept changing during synchronization'),
           tokenIdentity,
           true,
         );
       }
 
+      let consolidation: AccountConsolidationReceipt | null = null;
+      if (session.accountConsolidation !== undefined) {
+        const candidate = session.accountConsolidation;
+        const source =
+          typeof candidate === 'object' && candidate !== null && 'fromUserId' in candidate
+            ? candidate.fromUserId
+            : null;
+        consolidation =
+          typeof source === 'string'
+            ? parseAccountConsolidationReceipt(candidate, source, resolvedIdentity.userId)
+            : null;
+        if (!consolidation)
+          return unavailableDuringTransition(new Error('Invalid consolidation receipt'), resolvedIdentity, true);
+        const { reconcileBrowserAccountConsolidation } = await import('./account-consolidation-client.web');
+        const reconciled = await reconcileBrowserAccountConsolidation(consolidation, activeGeneration, {
+          isCurrent: isAuthCredentialGenerationCurrent,
+          advanceEpoch(expected) {
+            if (!isAuthCredentialGenerationCurrent(expected)) return null;
+            sessionGeneration += 1;
+            backendToken = null;
+            invalidateCredentialSnapshots();
+            if (synchronization?.generation === expected) synchronization.generation = sessionGeneration;
+            return sessionGeneration;
+          },
+        });
+        if (reconciled === null) return { status: 'superseded' };
+        activeGeneration = reconciled;
+      }
       backendToken = tokenPayload.token;
-      return { status: 'authenticated', token: tokenPayload.token, ...resolvedIdentity };
+      return {
+        ...(consolidation ? { accountConsolidation: consolidation } : {}),
+        status: 'authenticated',
+        token: tokenPayload.token,
+        ...resolvedIdentity,
+      };
     }
 
-    return unavailable(
+    return unavailableDuringTransition(
       new Error('Authentication identity could not be synchronized'),
       lastConfirmedIdentity,
       identityChangedDuringSynchronization,
@@ -425,7 +502,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
     // A newer logout/login generation owns the current state. Returning a
     // distinct result prevents this stale request from signing out that session.
     if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
-    return unavailable(error, lastConfirmedIdentity, identityChangedDuringSynchronization);
+    return unavailableDuringTransition(error, lastConfirmedIdentity, identityChangedDuringSynchronization);
   }
 }
 

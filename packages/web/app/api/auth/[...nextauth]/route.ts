@@ -1,3 +1,11 @@
+import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import {
+  consolidationSessionRequest,
+  revokeConsolidationCookie,
+  matchesConsolidatedSignOut,
+} from '@/app/lib/auth/account-consolidation.server';
+import { capturePresentedWebCredential } from '@/app/lib/auth/admitted-session.server';
 import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
@@ -211,9 +219,14 @@ async function postAuth(
     return guardedSignOutResponse(503, 'signout_identity_unavailable');
   }
 
-  if (token?.sub !== expectedIdentity.userId || token.authSessionId !== expectedIdentity.authSessionId) {
+  if (
+    (token?.sub !== expectedIdentity.userId || token.authSessionId !== expectedIdentity.authSessionId) &&
+    !matchesConsolidatedSignOut(token, expectedIdentity)
+  ) {
     return guardedSignOutResponse(409, 'signout_identity_changed');
   }
+  const presentedForRevocation = await capturePresentedWebCredential(request);
+  if (presentedForRevocation) await revokeConsolidationCookie(presentedForRevocation.credential);
   // NextAuth's sign-out clears only the Domain-scoped cookie under the one name
   // it picked. Clear both names in both scopes, so the read fallback above can't
   // resurrect a session the user just signed out of.
@@ -244,6 +257,15 @@ async function getAuth(
 }
 
 async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  const [action] = (await context.params).nextauth;
+  if (request.method === 'GET' && action === 'session') {
+    try {
+      request = await consolidationSessionRequest(request);
+    } catch (error) {
+      if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
+      throw error;
+    }
+  }
   return withAuthResponseAdmission(request, context, () =>
     withWebOAuthIdentity(request, context, authOptions, (current, options) =>
       current.method === 'POST' ? postAuth(current, context, options) : getAuth(current, context, options),

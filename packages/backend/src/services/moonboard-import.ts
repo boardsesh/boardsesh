@@ -3,7 +3,12 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { v5 as uuidv5 } from 'uuid';
 import { MOONBOARD_GRADES, MOONBOARD_LAYOUTS } from '@boardsesh/board-config';
 import { boardseshTicks } from '@boardsesh/db/schema';
-import { recomputeClimbStatsBulk, rowsOf, type ClimbStatsKey } from '@boardsesh/db/queries';
+import {
+  recomputeClimbStatsBulk,
+  rowsOf,
+  loadConsolidationImportHistory,
+  type ClimbStatsKey,
+} from '@boardsesh/db/queries';
 import {
   DEFAULT_MOONBOARD_IMPORT_ANGLE,
   MOONBOARD_CLIMB_MATCH_METHODS,
@@ -599,6 +604,7 @@ export async function importMoonBoardExportData(
     });
   }
 
+  const consolidationHistory = await loadConsolidationImportHistory(db, userId);
   const existingTickDateKeys = await findExistingTickKeys(db, userId, resolvedRows);
   const claimedImportTickKeys = new Set<string>();
   const recomputeKeys = new Map<string, ClimbStatsKey>();
@@ -614,7 +620,12 @@ export async function importMoonBoardExportData(
 
     const rowsToInsert: PendingInsertRow[] = [];
     for (const row of batch) {
-      if (existingTickDateKeys.has(existingTickDateKey(row))) {
+      const historicalTick = consolidationHistory.resolve(
+        'moonboard',
+        'tick',
+        [userId, ...consolidationHistory.formerUserIds].map((owner) => importTickUuid(owner, row)),
+      );
+      if (historicalTick !== undefined || existingTickDateKeys.has(existingTickDateKey(row))) {
         countSkippedResult(result, row);
         continue;
       }

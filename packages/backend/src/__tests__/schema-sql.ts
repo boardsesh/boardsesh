@@ -208,6 +208,11 @@ const sessionWorkoutsSchema = readFileSync(
   'utf8',
 );
 
+const consolidationSchema = readFileSync(
+  new URL('../../../db/drizzle/0305_account_consolidation.sql', import.meta.url),
+  'utf8',
+);
+
 export const schemaSQL = `
   DROP TABLE IF EXISTS "climb_mutation_receipts" CASCADE;
   DROP TABLE IF EXISTS "spray_wall_led_setups" CASCADE;
@@ -2361,4 +2366,6 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${logbookSnapshotsConnectionSchema};
   ${partnerPublisherNameSchema}
   ${stampNewCredentialsSchema}
+  DROP TABLE IF EXISTS account_consolidation_batches, account_consolidation_members, account_consolidation_session_proofs, account_consolidation_tick_aliases, account_consolidation_import_aliases, account_consolidation_session_aliases, account_consolidation_group_audits;
+  ${consolidationSchema}
 `;

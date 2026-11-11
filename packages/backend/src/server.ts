@@ -1,3 +1,4 @@
+import { handleConsolidationWeb } from './handlers/consolidation-web';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -723,6 +724,11 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // APNs metrics (debugging aid, gated on APNS_STATS_SECRET)
       if (pathname === '/api/internal/apns-stats' && (req.method === 'GET' || req.method === 'OPTIONS')) {
         await handleApnsStats(req, res);
+        return;
+      }
+
+      if (pathname === '/api/internal/auth/account-consolidation/web') {
+        await handleConsolidationWeb(req, res);
         return;
       }
 

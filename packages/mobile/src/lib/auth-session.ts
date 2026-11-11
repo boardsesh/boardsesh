@@ -1,3 +1,4 @@
+import { resumePendingAccountConsolidation } from './account-consolidation-client';
 import { deduplicatedRefresh } from './auth-interceptor';
 import { BackendUnavailableError } from './connectivity/backend-unavailable-error';
 import { getConnectivitySnapshot } from './connectivity/connectivity-store';
@@ -33,6 +34,7 @@ export type AuthSessionResult =
       generation: number;
       confirmedIdentity?: UserStorageOwner;
       identityInvalidated?: boolean;
+      pendingAccountConsolidation?: boolean;
     };
 
 function authenticatedSession(token: string, generation: number, degraded?: AuthSessionDegradation): AuthSessionResult {
@@ -47,6 +49,7 @@ function authenticatedSession(token: string, generation: number, degraded?: Auth
 
 /** Resolve the native mobile JWT session, refreshing it when necessary. */
 export async function resolveAuthSession(): Promise<AuthSessionResult> {
+  await resumePendingAccountConsolidation();
   const credentialGeneration = captureAuthCredentialGeneration();
   let currentToken: string | null;
 

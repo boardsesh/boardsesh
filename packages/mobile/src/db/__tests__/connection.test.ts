@@ -117,6 +117,42 @@ beforeEach(async () => {
 });
 
 describe('clearUserData', () => {
+  it('clears stale consolidation journals during a deliberate ordinary ownership wipe', async () => {
+    await db.runAsync('INSERT INTO sync_meta(key,value) VALUES(?,?)', [
+      'account_consolidation_journal',
+      '{"mergeId":"old"}',
+    ]);
+    await db.runAsync('INSERT INTO sync_meta(key,value) VALUES(?,?)', ['account_consolidation_completed', 'old']);
+    await clearUserData(db);
+    expect(await db.getAllAsync("SELECT key FROM sync_meta WHERE key LIKE 'account_consolidation_%'")).toEqual([]);
+  });
+
+  it('preserves queued mutations while moving the durable owner and resetting cached ticks', async () => {
+    await stampLocalUserId(db, 'source');
+    await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'offline-tick');
+    await db.runAsync(
+      "INSERT INTO boardsesh_ticks(uuid,board_type,climb_uuid,angle) VALUES('cached','kilter','climb-1',40)",
+    );
+    await clearUserData(db, { fromUserId: 'source', toUserId: 'target', isCurrent: () => true });
+    expect(await getPendingCount(db)).toBe(1);
+    expect(await db.getAllAsync('SELECT uuid FROM boardsesh_ticks')).toEqual([]);
+    expect(await db.getFirstAsync("SELECT value FROM sync_meta WHERE key = 'local_user_id'")).toEqual({
+      value: 'target',
+    });
+  });
+
+  it('rejects a third owner before touching that account or its queued work', async () => {
+    await stampLocalUserId(db, 'unrelated');
+    await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'offline-tick');
+    await expect(
+      clearUserData(db, { fromUserId: 'source', toUserId: 'target', isCurrent: () => true }),
+    ).rejects.toThrow('local owner mismatch');
+    expect(await getPendingCount(db)).toBe(1);
+    expect(await db.getFirstAsync("SELECT value FROM sync_meta WHERE key = 'local_user_id'")).toEqual({
+      value: 'unrelated',
+    });
+  });
+
   it('clears every user-data table, the mutation queue, and sync checkpoints', async () => {
     const now = '2024-06-01T00:00:00Z';
 

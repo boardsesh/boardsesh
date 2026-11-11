@@ -1,3 +1,4 @@
+import { encodeConsolidationCookie } from './consolidation-cookie-codec.server';
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
 import * as Sentry from '@sentry/nextjs';
@@ -329,6 +330,7 @@ export const authOptions: NextAuthOptions = {
       },
     },
   },
+  jwt: { encode: encodeConsolidationCookie },
   session: {
     strategy: 'jwt', // Required for credentials provider
   },
@@ -464,6 +466,11 @@ export const authOptions: NextAuthOptions = {
       ) {
         session.nativeOAuthCreationProof = token.nativeOAuthCreationProof;
       }
+      if (token.accountConsolidation) {
+        if (typeof token.accountConsolidationExpiresAt === 'number')
+          session.expires = new Date(token.accountConsolidationExpiresAt * 1000).toISOString();
+        Object.assign(session, { accountConsolidation: token.accountConsolidation });
+      }
       // Include user ID in session from JWT
       if (session?.user && token?.sub) {
         session.user.id = token.sub;
@@ -489,6 +496,12 @@ export const authOptions: NextAuthOptions = {
       }
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
+        delete token.accountConsolidation;
+        delete token.accountConsolidationFromSessionId;
+        delete token.accountConsolidationExpiresAt;
+        delete token.accountConsolidationIssuedAt;
+        if (process.env.ACCOUNT_CONSOLIDATION_BRIDGE_MODE === 'enabled') token.consolidationLineageTracked = true;
+        else delete token.consolidationLineageTracked;
         token.id = user.id;
         token.authSessionId = randomUUID();
         delete token.nativeOAuthCreationProof;

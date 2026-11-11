@@ -13,6 +13,8 @@ import {
   writeSecureValueToEitherNamespace,
 } from './secure-store-io';
 
+const CONSOLIDATION_STAGE_KEY = 'boardsesh_account_consolidation_stage';
+
 const JWT_KEY = 'boardsesh_jwt';
 const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
 const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
@@ -255,7 +257,13 @@ export async function storeTokens(jwt: string, refreshToken: string, expiresAt: 
   // A completed sign-in is a new credential owner, even when it follows a
   // signed-out generation whose SecureStore cleanup is still settling.
   const generation = advanceCredentialGeneration();
-  await storeTokensForGeneration(generation, jwt, refreshToken, expiresAt);
+  await serializeCredentialMutation(async () => {
+    if (!isAuthCredentialGenerationCurrent(generation)) return;
+    if (await readSecureValue(CONSOLIDATION_STAGE_KEY)) await clearStoredCredential(CONSOLIDATION_STAGE_KEY);
+    if (!(await writeCredentialForGeneration(generation, REFRESH_TOKEN_KEY, refreshToken))) return;
+    if (!(await writeCredentialForGeneration(generation, EXPIRES_AT_KEY, expiresAt))) return;
+    await writeCredentialForGeneration(generation, JWT_KEY, jwt);
+  });
 }
 
 export function clearTokensForGeneration(generation: number): Promise<boolean> {
@@ -268,6 +276,7 @@ export function clearTokensForGeneration(generation: number): Promise<boolean> {
       clearStoredCredential(JWT_KEY),
       clearStoredCredential(REFRESH_TOKEN_KEY),
       clearStoredCredential(EXPIRES_AT_KEY),
+      clearStoredCredential(CONSOLIDATION_STAGE_KEY),
     ]);
     const failures = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
     if (failures.length > 0) {
@@ -291,4 +300,25 @@ export async function isTokenExpiringSoon(): Promise<boolean> {
   if (!expiresAt) return true;
   const oneDayMs = 24 * 60 * 60 * 1000;
   return expiresAt.getTime() - Date.now() < oneDayMs;
+}
+
+/** A consolidation changes the credential owner, unlike ordinary same-owner refresh. */
+export function advanceAuthConsolidationEpoch(expectedGeneration: number): number | null {
+  return expectedGeneration === credentialGeneration ? advanceCredentialGeneration() : null;
+}
+
+export function readConsolidationStage(): Promise<string | null> {
+  return getStoredCredential(CONSOLIDATION_STAGE_KEY);
+}
+
+export function writeConsolidationStageForGeneration(generation: number, contents: string): Promise<boolean> {
+  return serializeCredentialMutation(() => writeCredentialForGeneration(generation, CONSOLIDATION_STAGE_KEY, contents));
+}
+
+export function clearConsolidationStageForGeneration(generation: number): Promise<boolean> {
+  return serializeCredentialMutation(async () => {
+    if (!isAuthCredentialGenerationCurrent(generation)) return false;
+    await clearStoredCredential(CONSOLIDATION_STAGE_KEY);
+    return isAuthCredentialGenerationCurrent(generation);
+  });
 }

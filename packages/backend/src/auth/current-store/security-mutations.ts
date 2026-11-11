@@ -1,6 +1,7 @@
 import { authSecurityMutationEvents, authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
 import { retireDeletedSubjectEmails } from './email-reservations';
+import { revokeAllConsolidationTargetBridges } from '../consolidation-session/web';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -103,6 +104,8 @@ export async function recordSecurityMutation(
     })
     .returning();
   if (!event) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  await revokeAllConsolidationTargetBridges(transaction, userId);
+
   // Keep only a keyed digest of the deleted address (decision 1, epic #6975). A
   // group the account shared stays blocked and never elects a surviving owner.
   if (kind === 'account-deletion') await retireDeletedSubjectEmails(transaction, userId);

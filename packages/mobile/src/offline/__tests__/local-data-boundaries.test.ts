@@ -28,6 +28,9 @@ const EXPECTED: Record<string, number> = {
   'packages/mobile/src/offline/remove-offline-board.ts': 3,
   // Sign-out: setSigningOut on/off around the explicit purge or the selective wipe.
   'packages/mobile/src/providers/auth-provider.tsx': 4,
+  // A server-proven account consolidation resets caches but preserves the outbox.
+  'packages/mobile/src/lib/account-consolidation-client.ts': 5,
+  'packages/mobile/src/lib/account-consolidation-client.web.ts': 5,
   // The epoch helpers' definitions.
   'packages/shared/offline-sync/src/mutation-queue/drainer.ts': 3,
   // A spray wall the server retired: its scopes are purged before the rows go.

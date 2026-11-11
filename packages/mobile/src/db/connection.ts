@@ -1019,8 +1019,28 @@ export function resetDatabaseInitializationForTests(): void {
  * boundaries between accounts on this phone. A token refresh, a reconnect or a
  * privacy change never removes downloaded data or resets a checkpoint (#6545).
  */
-export async function clearUserData(db: SQLiteDatabase): Promise<void> {
+export async function clearUserData(
+  db: SQLiteDatabase,
+  consolidation?: {
+    readonly fromUserId: string;
+    readonly toUserId: string;
+    readonly isCurrent: () => boolean;
+    readonly completedMergeId?: string;
+  },
+): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
+    if (consolidation) {
+      if (!consolidation.isCurrent()) throw new Error('Consolidation credential owner changed');
+      const owner = await txn.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+        'local_user_id',
+      ]);
+      if (owner && owner.value !== consolidation.fromUserId && owner.value !== consolidation.toUserId)
+        throw new Error('Consolidation local owner mismatch');
+      if (!owner) {
+        const queued = await txn.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM pending_mutations');
+        if (queued && queued.count > 0) throw new Error('Consolidation queued work has no owner stamp');
+      }
+    }
     // Sign-out teardown runs on its own connection concurrently with in-flight sync
     // reads/writes; wait for the lock instead of failing instantly (BOARDSESH-A9).
     await applyBusyTimeout(txn);
@@ -1037,6 +1057,7 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     );
 
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
+      if (consolidation && table === 'pending_mutations') continue;
       await txn.runAsync(`DELETE FROM ${table}`);
     }
     // The device-derived holds index carries the walls' climbs' holds, so it goes
@@ -1076,6 +1097,27 @@ export async function clearUserData(db: SQLiteDatabase): Promise<void> {
     // a stale attempt count would otherwise carry into the next download of the
     // same wall and could spend its retry budget before the first try.
     await txn.runAsync('DELETE FROM sync_meta WHERE key LIKE ?', [`${SPRAY_PHOTO_PENDING_PREFIX}%`]);
+    if (!consolidation) {
+      await txn.runAsync('DELETE FROM sync_meta WHERE key IN (?,?)', [
+        'account_consolidation_journal',
+        'account_consolidation_completed',
+      ]);
+    }
+    if (consolidation) {
+      if (!consolidation.isCurrent()) throw new Error('Consolidation credential owner changed');
+      await txn.runAsync('INSERT OR REPLACE INTO sync_meta(key,value) VALUES(?,?)', [
+        'local_user_id',
+        consolidation.toUserId,
+      ]);
+      if (consolidation.completedMergeId) {
+        await txn.runAsync('INSERT OR REPLACE INTO sync_meta(key,value) VALUES(?,?)', [
+          'account_consolidation_completed',
+          consolidation.completedMergeId,
+        ]);
+        await txn.runAsync('DELETE FROM sync_meta WHERE key = ?', ['account_consolidation_journal']);
+      }
+      if (!consolidation.isCurrent()) throw new Error('Consolidation credential owner changed');
+    }
   });
 }
 

@@ -1,5 +1,11 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { users, authSubjectCutoffs, userCredentials } from '@boardsesh/db/schema/auth';
+import { and, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import {
+  users,
+  authSubjectCutoffs,
+  userCredentials,
+  accountConsolidationMembers,
+  accountConsolidationSessionProofs,
+} from '@boardsesh/db/schema/auth';
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
@@ -97,9 +103,44 @@ export async function readHumanSubjectStates(
         .from(users)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
         .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
-      return new Map(
+      const states = new Map(
         subjects.map((subject) => [subject.id, cutoffState(subject.generation, subject.nativeGeneration)]),
       );
+      // Turning off new transfers cannot revive an already revoked lineage.
+      // Older deployments without the additive schema keep their ordinary path.
+      const [consolidationSchema] = await admissionDatabase.execute<{ available: boolean }>(
+        sql`SELECT pg_catalog.to_regclass('public.account_consolidation_session_proofs') IS NOT NULL AS available`,
+      );
+      if (consolidationSchema?.available) {
+        const revoked = await admissionDatabase
+          .select({
+            userId: accountConsolidationMembers.canonicalUserId,
+            sessionId: accountConsolidationSessionProofs.canonicalSessionId,
+          })
+          .from(accountConsolidationSessionProofs)
+          .innerJoin(
+            accountConsolidationMembers,
+            eq(accountConsolidationMembers.sourceUserId, accountConsolidationSessionProofs.sourceUserId),
+          )
+          .where(
+            and(
+              inArray(accountConsolidationMembers.canonicalUserId, requestedIds),
+              isNotNull(accountConsolidationSessionProofs.revokedAt),
+            ),
+          );
+        for (const revokedSession of revoked) {
+          const state = states.get(revokedSession.userId);
+          if (state)
+            states.set(revokedSession.userId, {
+              ...state,
+              revokedConsolidationSessionKeys: new Set([
+                ...(state.revokedConsolidationSessionKeys ?? []),
+                revokedSession.sessionId,
+              ]),
+            });
+        }
+      }
+      return states;
     }),
   );
 }

@@ -49,6 +49,27 @@ function sessionResponse(credential: string): Response {
 }
 
 describe('buffered auth response admission', () => {
+  it('allows a guarded tracked-cookie signout to revoke and clear its lineage after exchange is disabled', async () => {
+    vi.stubEnv('ACCOUNT_CONSOLIDATION_BRIDGE_MODE', 'off');
+    const tracked = await encode({
+      secret,
+      token: { sub: 'retired-source', authSessionId: 'original-sid', consolidationLineageTracked: true },
+    });
+    const revokeAndClear = vi.fn(async () => {
+      const response = new Response(null, { status: 200 });
+      response.headers.append('Set-Cookie', '__Secure-next-auth.session-token=; Path=/; Max-Age=0; Secure; HttpOnly');
+      return response;
+    });
+    const response = await withAuthResponseAdmission(
+      request('signout', `__Secure-next-auth.session-token=${tracked}`),
+      context('signout'),
+      revokeAndClear,
+    );
+    expect(response.status).toBe(200);
+    expect(revokeAndClear).toHaveBeenCalledOnce();
+    expect(response.headers.getSetCookie()).toHaveLength(1);
+  });
+
   it('admits the actual fresh JWE despite its following host-only migration clear', async () => {
     const response = await withAuthResponseAdmission(
       request('callback/credentials'),
