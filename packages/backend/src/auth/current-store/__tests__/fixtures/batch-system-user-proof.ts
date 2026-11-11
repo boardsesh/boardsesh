@@ -66,6 +66,7 @@ export class BatchSystemUserProof {
     CURRENT_STORE_AUTH_RPC_SECRET: randomBytes(32).toString('hex'),
     NEXTAUTH_SECRET: randomBytes(32).toString('hex'),
     CRON_SECRET: randomBytes(32).toString('hex'),
+    CURRENT_STORE_DELETED_EMAIL_KEY: randomBytes(32).toString('hex'),
     CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
     CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE: 'legacy',
     CURRENT_STORE_WEB_AUTH_MODE: 'legacy',

@@ -886,4 +886,90 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
       expect(await db.select().from(authEmailReservations)).toEqual([]);
     },
   );
+
+  /** A link the old web route sent: the exact stored address and the raw secret. */
+  async function legacyVerificationLink(email: string, remainingMs = 23 * 3600_000) {
+    const row = { identifier: email, token: randomUUID(), expires: new Date(Date.now() + remainingMs) };
+    await db.insert(verificationTokens).values(row);
+    return row;
+  }
+  const legacyOutcome = async (token: string, email: string) =>
+    (await consumeEmailVerification(writer, authority, verifyCommand(token, email))).outcome;
+
+  it('leaves a live pre-switch link to one account unbound until BA-02 makes addresses unique', async () => {
+    const { user } = await registered();
+    const link = await legacyVerificationLink(user.email);
+    const response = await rpc(verifyCommand(link.token, user.email));
+    expect(response.status).toBe(503);
+    expect(verifyEmailReplySchema.parse(await response.json()).outcome).toBe('legacy_unbound');
+    expect(await verified(user.id)).toBeNull();
+  });
+
+  describe('a pre-switch link once BA-02 makes addresses unique', () => {
+    beforeEach(async () => {
+      await admin(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON ${users} (lower(email))`);
+    });
+    afterEach(async () => {
+      await admin(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+    });
+
+    it('verifies the one account holding its exact address once, with only SELECT and INSERT on old links', async () => {
+      const { user } = await registered();
+      const link = await legacyVerificationLink(user.email);
+      await admin(sql`REVOKE UPDATE, DELETE ON TABLE ${verificationTokens} FROM ${sql.identifier(writerRole)}`);
+      try {
+        const response = await rpc(verifyCommand(link.token, user.email));
+        expect(response.status).toBe(200);
+        expect(verifyEmailReplySchema.parse(await response.json()).outcome).toBe('verified');
+        expect(await verified(user.id)).toBeInstanceOf(Date);
+        expect(await legacyOutcome(link.token, user.email)).toBe('invalid_token');
+      } finally {
+        await admin(sql`GRANT UPDATE, DELETE ON TABLE ${verificationTokens} TO ${sql.identifier(writerRole)}`);
+      }
+      expect(
+        await db.select().from(verificationTokens).where(eq(verificationTokens.identifier, link.identifier)),
+      ).toEqual([link]);
+    });
+
+    it('rejects the link with any other address, even its own in another case', async () => {
+      const { user: owner } = await registered();
+      const { user: other } = await registered();
+      const link = await legacyVerificationLink(owner.email);
+      for (const email of [other.email, owner.email.toLowerCase(), owner.email.toUpperCase()])
+        expect(await legacyOutcome(link.token, email)).toBe('invalid_token');
+      expect(await verified(owner.id)).toBeNull();
+      expect(await verified(other.id)).toBeNull();
+    });
+
+    it('refuses a deadline longer than the 24 hours the old route gave', async () => {
+      const { user } = await registered();
+      const link = await legacyVerificationLink(user.email, 7 * 24 * 3600_000);
+      expect(await legacyOutcome(link.token, user.email)).toBe('invalid_token');
+      expect(await verified(user.id)).toBeNull();
+    });
+
+    it('ends at its original deadline', async () => {
+      const { user } = await registered();
+      const link = await legacyVerificationLink(user.email, -1000);
+      expect(await legacyOutcome(link.token, user.email)).toBe('expired');
+      expect(await verified(user.id)).toBeNull();
+    });
+
+    it('dies once a later security change has moved the account on', async () => {
+      const { user } = await registered();
+      const link = await legacyVerificationLink(user.email);
+      await db.transaction((transaction) =>
+        recordSecurityMutation(transaction, {
+          ...authority,
+          operationId: randomUUID(),
+          userId: user.id,
+          expectedGeneration: 0,
+          kind: 'password-change',
+          domains: ['first-party', 'partner'],
+        }),
+      );
+      expect(await legacyOutcome(link.token, user.email)).toBe('invalid_token');
+      expect(await verified(user.id)).toBeNull();
+    });
+  });
 });

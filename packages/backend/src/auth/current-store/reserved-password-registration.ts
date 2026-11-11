@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { authEmailReservations, users } from '@boardsesh/db/schema/auth';
-import { eq, sql } from 'drizzle-orm';
+import { users } from '@boardsesh/db/schema/auth';
+import { sql } from 'drizzle-orm';
 import { normalizeAccountEmail } from '../normalize-email';
-import { reserveEnforcedEmail } from './email-reservations';
+import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -30,11 +30,8 @@ export async function insertReservedPasswordIdentity(
   const prepared = options.prepared ? { ...options.prepared } : null;
   const key = normalizeAccountEmail(email);
   const manifest = await lockEnforcedProjection(transaction, authority);
-  const [reservation] = await transaction
-    .select()
-    .from(authEmailReservations)
-    .where(eq(authEmailReservations.normalizedEmail, key))
-    .for('update');
+  // A deleted account's address answers like a taken one until its digest expires.
+  const reservation = await lockKeyReservation(transaction, key);
   if (reservation) {
     if (reservation.basisProjectionId !== manifest.projectionId)
       throw new CurrentStoreFoundationError('STALE_AUTHORITY');

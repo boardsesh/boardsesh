@@ -4,6 +4,7 @@ import {
   BATCH_SYSTEM_USER_COMMAND_ENV,
   currentStoreBatchSystemUsersMode as parseBatchSystemUsersMode,
 } from '@boardsesh/auth-protocol';
+import { logger } from '../../utils/logger';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -49,6 +50,34 @@ export function currentStoreRpcSecret(environment: Environment): string {
   return rpcSecret;
 }
 
+export const DELETED_EMAIL_KEY_ENV = 'CURRENT_STORE_DELETED_EMAIL_KEY';
+
+/**
+ * The HMAC key behind a deleted account's address digest. Rotating it frees
+ * every address deleted in the last 90 days early, so it stays put once set.
+ * Every staged mode needs it: an unknown address looks up its digest, so a
+ * missing key would fail only for unknown addresses and reveal which exist.
+ */
+export function currentStoreDeletedEmailKey(environment: Environment = process.env): string {
+  const key = environment[DELETED_EMAIL_KEY_ENV];
+  if (
+    !key ||
+    key !== key.trim() ||
+    Buffer.byteLength(key, 'utf8') < 32 ||
+    [
+      environment.NEXTAUTH_SECRET,
+      environment.CRON_SECRET,
+      environment.CURRENT_STORE_AUTH_RPC_SECRET,
+      environment[BATCH_SYSTEM_USER_COMMAND_ENV.secret],
+    ].some((otherSecret) => Boolean(otherSecret) && otherSecret === key)
+  ) {
+    // Names the variable, never its value.
+    logger.error(`Current-store auth unavailable: ${DELETED_EMAIL_KEY_ENV} is missing, too short or reused`);
+    throw new Error('Invalid current-store deleted-email configuration');
+  }
+  return key;
+}
+
 /** Invoked only after the caller explicitly selects its own staging mode. */
 export function currentStoreAuthorityConfiguration(environment: Environment): WebPasswordAuthority {
   if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');
@@ -64,6 +93,8 @@ export function currentStoreAuthorityConfiguration(environment: Environment): We
     Number(epochText) > 2_147_483_647
   )
     throw new Error('Invalid current-store authority configuration');
+  // Fails every staged mode alike at configuration, never per address.
+  currentStoreDeletedEmailKey(environment);
   return {
     expectedProjectionId: projectionId,
     expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
@@ -109,5 +140,6 @@ export function currentStoreAccountDeletionConfiguration(
   const mode = environment.CURRENT_STORE_ACCOUNT_DELETION_MODE;
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid account deletion mode');
+  // Includes the digest key, so a missing key fails before content runs.
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
 }

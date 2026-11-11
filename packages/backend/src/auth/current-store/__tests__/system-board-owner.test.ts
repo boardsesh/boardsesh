@@ -165,6 +165,7 @@ describe('fixed shared-board identity authority', () => {
         CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE: 'reserved-staging',
         CURRENT_STORE_AUTH_PROJECTION_ID: 'fixture',
         CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+        CURRENT_STORE_DELETED_EMAIL_KEY: 'owned-system-board-owner-digest-key-fixture',
       }),
     ).toMatchObject({
       mode: 'reserved-staging',

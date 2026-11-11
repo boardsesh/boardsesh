@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import postgres from 'postgres';
 import bcrypt from 'bcryptjs';
@@ -46,7 +46,8 @@ import {
 } from '../../partner/__tests__/revocation-fixtures';
 import { normalizeAccountEmail } from '../../normalize-email';
 import { preflight } from '../command-context';
-import { prepareProjectionUnderUsersTableLock } from '../email-reservations';
+import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../email-reservations';
+import { clearExpiredAuthRecords } from '../../../services/background-job-maintenance';
 import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from '../foundation-context';
 import {
   captureAccountDeletionCommand,
@@ -56,6 +57,7 @@ import {
   type ReservedDeletionSubject,
 } from '../account-deletion';
 import { recordSecurityMutation } from '../security-mutations';
+import { insertReservedPasswordIdentity } from '../reserved-password-registration';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
 import { consumeEmailVerification, issueEmailVerification, resendEmailVerification } from '../email-verification';
 import { resolveReservedCurrentStoreOAuthIdentity } from '../provider-oauth-identity';
@@ -92,6 +94,14 @@ const cascadeGateKey = randomInt(1, 2_147_483_647);
 const commandGateKey = randomInt(1, 2_147_483_647);
 const commandGateName = `${triggerName}_command`;
 const password = 'owned-deletion-current-password';
+/** The digest row a deleted address leaves, computed here from the contract, not the code. */
+function retiredKey(address: string): string {
+  const key = process.env.CURRENT_STORE_DELETED_EMAIL_KEY;
+  if (!key) throw new Error('Owned deletion fixture needs its digest key');
+  return `deleted-v1:${createHmac('sha256', key)
+    .update(`deleted-email-v1\0${normalizeAccountEmail(address)}`)
+    .digest('hex')}`;
+}
 let passwordHash: string;
 let authority: ExpectedCurrentStoreAuthority;
 let observer: ReturnType<typeof postgres>;
@@ -598,12 +608,32 @@ describe('mounted account deletion and current-store authority', () => {
       await expectUnavailableUnchanged();
     },
   );
-  it.each(['missing projection', 'bad epoch', 'SQL logging'])('fails closed on %s configuration', async (failure) => {
-    await seedPair();
-    if (failure === 'missing projection') vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
-    if (failure === 'bad epoch') vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '1.1');
-    if (failure === 'SQL logging') vi.stubEnv('DEBUG_SQL', 'true');
-    await expectUnavailableUnchanged();
+  it.each(['missing projection', 'bad epoch', 'SQL logging', 'missing digest key', 'digest key reused'])(
+    'fails closed on %s configuration',
+    async (failure) => {
+      await seedPair();
+      if (failure === 'missing projection') vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
+      if (failure === 'bad epoch') vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '1.1');
+      if (failure === 'SQL logging') vi.stubEnv('DEBUG_SQL', 'true');
+      if (failure === 'missing digest key') vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
+      if (failure === 'digest key reused') vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', process.env.NEXTAUTH_SECRET);
+      await expectUnavailableUnchanged();
+    },
+  );
+  it('rejects a missing digest key before any deletion transaction or content statement', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
+    const before = await snapshot();
+    const enterTransaction = vi.spyOn(db, 'transaction');
+    await expect(remove()).rejects.toMatchObject({
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+    expect(enterTransaction).not.toHaveBeenCalled();
+    expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: 'configuration' }]]);
+    expect(await snapshot()).toEqual(before);
+    expect(effects.publish).not.toHaveBeenCalled();
+    expect(effects.purge).not.toHaveBeenCalled();
   });
   it('rejects an invalid fixed-owner selector before entering the deletion transaction', async () => {
     await seedPair({ system: true });
@@ -707,8 +737,9 @@ describe('mounted account deletion and current-store authority', () => {
     expect(await db.select({ userId: logbookChanges.userId }).from(logbookChanges)).toEqual([{ userId: otherId }]);
     for (const field of ['credentials', 'accounts', 'sessions', 'profiles', 'refresh'] as const)
       expect(after[field]).toEqual(before[field].filter((row) => row.userId === otherId));
-    expect(after.members).toEqual(before.members);
-    expect(after.reservations.find((row) => row.normalizedEmail === normalizeAccountEmail(ownerEmail))).toMatchObject({
+    expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
+    expect(after.reservations.some((row) => row.normalizedEmail === normalizeAccountEmail(ownerEmail))).toBe(false);
+    expect(after.reservations.find((row) => row.normalizedEmail === retiredKey(ownerEmail))).toMatchObject({
       state: 'blocked_deleted',
       ownerUserId: null,
       basisProjectionId: authority.expectedProjectionId,
@@ -897,9 +928,23 @@ describe('mounted account deletion and current-store authority', () => {
     const after = await snapshot();
     expect(after.reservations).toEqual(before.reservations);
     expect(after.reservations[0]).toMatchObject({ state: 'blocked_ambiguous', ownerUserId: null });
-    expect(after.members).toEqual(before.members);
+    // The survivor keeps its membership; nothing links the deleted account to the address.
+    expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
     expect(after.users.map((user) => user.id)).toEqual([otherId]);
     expect(after.cutoffs[0]).toMatchObject({ userId: ownerId, generation: 1 });
+  });
+  it('deletes the last member of a collision and leaves only the digest of its address', async () => {
+    await seedPair({ collision: true });
+    const key = normalizeAccountEmail(ownerEmail);
+    expect(await remove()).toBe(true);
+    expect(await remove(otherId)).toBe(true);
+    const after = await snapshot();
+    expect(after.users).toEqual([]);
+    expect(after.members).toEqual([]);
+    expect(after.reservations.map((row) => [row.normalizedEmail, row.state, row.ownerUserId])).toEqual([
+      [retiredKey(key), 'blocked_deleted', null],
+    ]);
+    expect(after.cutoffs.map((cutoff) => cutoff.userId).sort()).toEqual([ownerId, otherId].sort());
   });
   it('retains the invalid empty-key history for its exact deleted member', async () => {
     await seedPair({ invalid: true });
@@ -946,11 +991,11 @@ describe('mounted account deletion and current-store authority', () => {
     const before = await snapshot();
     expect(await remove()).toBe(true);
     const after = await snapshot();
-    expect(after.members).toEqual(before.members);
+    expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
     expect(after.reservations).toEqual(before.reservations);
     expect(after.users.map((user) => user.id)).toEqual([otherId]);
   });
-  it('retains aliases, purpose generations, issued deadlines and OAuth flow evidence after deletion', async () => {
+  it('erases receipts and every held address down to a digest, keeping generations and OAuth evidence', async () => {
     await seedPair();
     const alias = 'historical-owner-alias@example.test';
     await db.insert(authEmailReservations).values({
@@ -999,22 +1044,100 @@ describe('mounted account deletion and current-store authority', () => {
     const before = await snapshot();
     expect(await remove()).toBe(true);
     const after = await snapshot();
+    // Purpose generations stay, so no old receipt snapshot can come back.
     for (const field of [
       'verificationState',
-      'verificationReceipts',
       'recoveryState',
-      'recoveryReceipts',
       'oauthIntents',
       'oauthCommands',
       'legacyReceipts',
-      'members',
     ] as const)
       expect(after[field]).toEqual(before[field]);
-    expect(after.reservations.find((row) => row.normalizedEmail === alias)).toMatchObject({
-      state: 'blocked_deleted',
-      ownerUserId: null,
-    });
+    expect(before.verificationReceipts).toHaveLength(1);
+    expect(before.recoveryReceipts).toHaveLength(1);
+    expect(after.verificationReceipts).toEqual([]);
+    expect(after.recoveryReceipts).toEqual([]);
+    expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
+    for (const address of [alias, ownerEmail]) {
+      expect(after.reservations.some((row) => row.normalizedEmail === normalizeAccountEmail(address))).toBe(false);
+      expect(after.reservations.find((row) => row.normalizedEmail === retiredKey(address))).toMatchObject({
+        state: 'blocked_deleted',
+        ownerUserId: null,
+      });
+    }
     expect(after.cutoffs[0].deletedAt).toBeInstanceOf(Date);
+  });
+  it('keeps no address or account ID of the deleted climber in the four email tables', async () => {
+    await seedPair();
+    const alias = `Second.${ownerId}@Alias.Example.TEST`;
+    await db.insert(authEmailReservations).values({
+      normalizedEmail: normalizeAccountEmail(alias),
+      basisProjectionId: authority.expectedProjectionId,
+      state: 'owned',
+      ownerUserId: ownerId,
+    });
+    await db
+      .insert(authEmailReservationMembers)
+      .values({ normalizedEmail: normalizeAccountEmail(alias), userId: ownerId });
+    await db.transaction((transaction) => issueEmailVerification(transaction, verificationAuthority(), ownerId));
+    await issueOwnerRecoveryToken();
+    expect(await db.select().from(authPasswordRecoveryTokens)).toHaveLength(1);
+    expect(await db.select().from(authEmailVerificationTokens)).toHaveLength(1);
+    expect(await remove()).toBe(true);
+    const tables = {
+      recoveryReceipts: await db.select().from(authPasswordRecoveryTokens),
+      verificationReceipts: await db.select().from(authEmailVerificationTokens),
+      reservations: await db.select().from(authEmailReservations),
+      members: await db.select().from(authEmailReservationMembers),
+    };
+    // Both addresses embed the account ID, so this also covers their local parts.
+    const stored = JSON.stringify(tables).toLowerCase();
+    for (const trace of [ownerId, normalizeAccountEmail(ownerEmail), normalizeAccountEmail(alias)])
+      expect(stored.includes(trace)).toBe(false);
+    expect(tables.recoveryReceipts).toEqual([]);
+    expect(tables.verificationReceipts).toEqual([]);
+    expect(tables.reservations.map((row) => row.normalizedEmail).sort()).toEqual(
+      [`${otherId}@other.example.test`, retiredKey(ownerEmail), retiredKey(alias)].sort(),
+    );
+    expect(tables.members).toEqual([
+      { normalizedEmail: `${otherId}@other.example.test`, userId: otherId, observedAt: expect.any(Date) },
+    ]);
+  });
+  it('blocks the deleted address from a new account until the maintenance job drops its digest at 90 days', async () => {
+    await seedPair();
+    expect(await remove()).toBe(true);
+    const digest = retiredKey(ownerEmail);
+    const reserve = (requestedUserId: string) =>
+      db.transaction((transaction) =>
+        reserveEnforcedEmail(transaction, { ...authority, rawEmail: ownerEmail.toUpperCase(), requestedUserId }),
+      );
+    const register = () =>
+      db.transaction((transaction) =>
+        insertReservedPasswordIdentity(transaction, authority, {
+          email: ownerEmail,
+          prepared: null,
+          emailVerificationEnabled: false,
+        }),
+      );
+    const ageDigest = (days: number) =>
+      db
+        .update(authEmailReservations)
+        .set({ createdAt: new Date(Date.now() - days * 86_400_000) })
+        .where(eq(authEmailReservations.normalizedEmail, digest));
+    await expect(reserve(randomUUID())).rejects.toMatchObject({ code: 'EMAIL_RETIRED' });
+    expect(await register()).toEqual({ outcome: 'exists' });
+
+    await ageDigest(89);
+    await clearExpiredAuthRecords(db);
+    await expect(reserve(randomUUID())).rejects.toMatchObject({ code: 'EMAIL_RETIRED' });
+
+    await ageDigest(91);
+    await clearExpiredAuthRecords(db);
+    expect(
+      await db.select().from(authEmailReservations).where(eq(authEmailReservations.normalizedEmail, digest)),
+    ).toEqual([]);
+    const newcomer = randomUUID();
+    await expect(reserve(newcomer)).resolves.toMatchObject({ ownerUserId: newcomer });
   });
   it('does not manufacture a tombstone when the authenticated UID is absent', async () => {
     await seedPair();
@@ -1719,7 +1842,8 @@ describe('mounted account deletion and current-store authority', () => {
       expect(result.outcome).toBe('invalid_or_expired');
       expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
       expect(await db.select().from(userCredentials).where(eq(userCredentials.userId, ownerId))).toEqual([]);
-      expect(await db.select().from(authPasswordRecoveryTokens)).toEqual(receipts);
+      expect(receipts).toHaveLength(1);
+      expect(await db.select().from(authPasswordRecoveryTokens)).toEqual([]);
       const events = await db
         .select()
         .from(authSecurityMutationEvents)

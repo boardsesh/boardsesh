@@ -41,7 +41,7 @@ import { prepareProjectionUnderUsersTableLock } from '../email-reservations';
 import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../foundation-context';
 import { recordSecurityMutation } from '../security-mutations';
 import { deleteExpiredCommandClaims } from '../command-context';
-import { clearExpiredWebAuthCommandClaims } from '../../../services/background-job-maintenance';
+import { clearExpiredAuthRecords } from '../../../services/background-job-maintenance';
 import { authenticateWebPassword, registerWebPassword, type WebPasswordAuthority } from '../web-password';
 
 const comparison = vi.hoisted(() => ({ afterRealCompare: undefined as (() => Promise<void>) | undefined }));
@@ -668,14 +668,17 @@ describe('default-off staged web password commands against the current PostgreSQ
       expect(await nonceCount()).toBe(1);
     });
 
-    it('runs only while staged web auth is on', async () => {
-      await db.insert(verificationTokens).values(claimRow(past()));
-      await clearExpiredWebAuthCommandClaims(db, {});
-      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'legacy' });
-      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'misconfigured' });
+    it('still clears records a staged mode left behind after the mode is switched off', async () => {
+      const live = claimRow(future());
+      await db.insert(verificationTokens).values([claimRow(past()), live]);
+      for (const mode of ['legacy', 'misconfigured']) {
+        vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', mode);
+        await clearExpiredAuthRecords(db);
+      }
       expect(await nonceCount()).toBe(1);
-      await clearExpiredWebAuthCommandClaims(db, { CURRENT_STORE_WEB_AUTH_MODE: 'backend-staging' });
-      expect(await nonceCount()).toBe(0);
+      expect(
+        await db.select().from(verificationTokens).where(eq(verificationTokens.identifier, live.identifier)),
+      ).toHaveLength(1);
     });
   });
 

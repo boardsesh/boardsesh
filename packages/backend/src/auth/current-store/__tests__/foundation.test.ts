@@ -580,7 +580,7 @@ describe('unmounted current-store reservation and security mutation foundation',
     },
   );
 
-  it('retains ambiguous membership after deleting one owner and never elects the survivor', async () => {
+  it('drops the deleted owner from an ambiguous group and never elects the survivor', async () => {
     const first = await fixture('Ambiguous@Example.test');
     const second = await fixture(' ambiguous@example.test ');
     const authority = await enforceOwnedFixture();
@@ -593,7 +593,7 @@ describe('unmounted current-store reservation and security mutation foundation',
         reserveEnforcedEmail(transaction, { ...authority, rawEmail: second.email, requestedUserId: second.userId }),
       ),
     ).rejects.toMatchObject({ code: 'EMAIL_AMBIGUOUS' });
-    expect(await db.select().from(authEmailReservationMembers)).toHaveLength(2);
+    expect(await db.select().from(authEmailReservationMembers)).toMatchObject([{ userId: second.userId }]);
     expect(await db.select().from(authEmailReservations)).toMatchObject([
       { state: 'blocked_ambiguous', ownerUserId: null },
     ]);
@@ -771,7 +771,7 @@ describe('unmounted current-store reservation and security mutation foundation',
     expect(next.cutoff.revokedThrough).toEqual(ahead);
   });
 
-  it('retains deleted subject cutoffs, events, keys and historical membership without allowing ABA reuse', async () => {
+  it('retains deleted subject cutoffs, events and only a key digest without allowing ABA reuse', async () => {
     const actor = await fixture();
     const authority = await enforceOwnedFixture();
     await writer(async (transaction) => {
@@ -787,9 +787,13 @@ describe('unmounted current-store reservation and security mutation foundation',
       { userId: actor.userId, kind: 'account-deletion' },
     ]);
     expect(await db.select().from(authEmailReservations)).toMatchObject([
-      { state: 'blocked_deleted', ownerUserId: null },
+      {
+        normalizedEmail: expect.stringMatching(/^deleted-v1:[0-9a-f]{64}$/),
+        state: 'blocked_deleted',
+        ownerUserId: null,
+      },
     ]);
-    expect(await db.select().from(authEmailReservationMembers)).toMatchObject([{ userId: actor.userId }]);
+    expect(await db.select().from(authEmailReservationMembers)).toEqual([]);
     await expect(
       writer((transaction) =>
         reserveEnforcedEmail(transaction, { ...authority, rawEmail: actor.email, requestedUserId: randomUUID() }),

@@ -78,6 +78,32 @@ export async function claimCommand(
 }
 
 /**
+ * Spends a pre-switch email link once. The old row stays where it is, because
+ * command roles may only append to this table; this replay record marks it used.
+ * It expires at the link's own deadline, so the cleanup below removes it only
+ * once the link is dead anyway. The hash domain cannot meet a command's.
+ */
+export async function claimLegacyLink(
+  transaction: CurrentStoreTransaction,
+  link: {
+    readonly purpose: 'password-reset' | 'email-verification';
+    readonly identifier: string;
+    readonly storedToken: string;
+    readonly expires: Date;
+  },
+): Promise<boolean> {
+  const linkHash = createHash('sha256')
+    .update(`legacy-link-v1\0${link.purpose}\0${link.identifier}\0${link.storedToken}`)
+    .digest('hex');
+  const claimed = await transaction
+    .insert(verificationTokens)
+    .values({ identifier: `${WEB_AUTH_COMMAND_IDENTIFIER_PREFIX}${linkHash}`, token: linkHash, expires: link.expires })
+    .onConflictDoNothing()
+    .returning({ token: verificationTokens.token });
+  return claimed.length === 1;
+}
+
+/**
  * Deletes at most one batch of expired replay records; a backlog drains over
  * later runs. Safe because freshness rejects a command before its row expires.
  * Runs apart from the commands themselves: their database role may only append

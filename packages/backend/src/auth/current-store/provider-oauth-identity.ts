@@ -10,7 +10,7 @@ import {
 import { and, eq, sql } from 'drizzle-orm';
 import { normalizeAccountEmail } from '../normalize-email';
 import { parseCurrentStoreRegistrationEmail } from './password-identity';
-import { reserveEnforcedEmail } from './email-reservations';
+import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -130,11 +130,8 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   if (!parsedEmail.ok) return { outcome: 'no_email' };
   const key = parsedEmail.email;
   const email = policy.emailStorage === 'provided' ? identity.email! : key;
-  const [reservation] = await transaction
-    .select()
-    .from(authEmailReservations)
-    .where(eq(authEmailReservations.normalizedEmail, key))
-    .for('update');
+  // A deleted account's address conflicts like a taken one until its digest expires.
+  const reservation = await lockKeyReservation(transaction, key);
   if (reservation) {
     if (reservation.basisProjectionId !== manifest.projectionId)
       throw new CurrentStoreFoundationError('STALE_AUTHORITY');

@@ -8,6 +8,7 @@ import {
   webPasswordMode,
   type PasswordCommandClient,
 } from './password-command-client.server';
+import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { checkRateLimit } from './rate-limiter';
 import { stagedPasswordClientKey } from './trusted-client-ip.server';
 
@@ -81,7 +82,9 @@ export function createPasswordCommandAuthRequest(
 
 /** NextAuth converts authorize exceptions into redirects/401; preserve a retryable public result. */
 export function unavailablePasswordAuthResponse(requestUrl: string, retryAfterSeconds?: number): Response {
-  const errorUrl = new URL('/auth/error', requestUrl);
+  // The configured site, never the request's own URL: the standalone server
+  // builds that from its bind address. The fallback is local development only.
+  const errorUrl = new URL('/auth/error', resolvePublicAuthOrigin() ?? requestUrl);
   errorUrl.searchParams.set('error', AUTH_BACKEND_UNAVAILABLE);
   // No Set-Cookie: an existing login must survive a failed attempt on this form.
   return Response.json(
