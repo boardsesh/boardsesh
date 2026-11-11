@@ -1,7 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { authSubjectCutoffs, userCredentials, userProfiles, users } from '@boardsesh/db/schema/auth';
+import {
+  authSessionDenials,
+  authSubjectCutoffs,
+  userCredentials,
+  userProfiles,
+  users,
+} from '@boardsesh/db/schema/auth';
 import { sql, type SQL } from 'drizzle-orm';
 import type { NextAuthOptions } from '../../../../../web/node_modules/next-auth';
 import type * as PublicJwt from '../../../../../web/node_modules/next-auth/jwt';
@@ -13,7 +19,7 @@ import { observeSessionPublication } from './fixtures/session-publication-observ
 type Observations = ReturnType<ReturnType<typeof observeSessionPublication>['snapshot']>;
 const role = `ba03_router_readonly_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
-const readTables = [users, userProfiles, userCredentials, authSubjectCutoffs];
+const readTables = [users, userProfiles, userCredentials, authSubjectCutoffs, authSessionDenials];
 const ownerId = randomUUID();
 const sessionId = randomUUID();
 const thirtyDays = 30 * 24 * 60 * 60;

@@ -10,6 +10,7 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
+  authSessionDenials,
   authWebOAuthCommands,
   authWebOAuthIntents,
   sessions,
@@ -33,7 +34,16 @@ const writerRole = `ba03_weboauth_router_${salt}`;
 const password = randomBytes(32).toString('hex');
 const trackedRoles: string[] = [];
 const resources: { close(): Promise<void> }[] = [];
-const readTables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens, authSubjectCutoffs];
+const readTables = [
+  users,
+  accounts,
+  userCredentials,
+  userProfiles,
+  sessions,
+  verificationTokens,
+  authSubjectCutoffs,
+  authSessionDenials,
+];
 const backendTables = [
   users,
   accounts,
