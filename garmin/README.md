@@ -154,6 +154,30 @@ pending ticks are not transferred to the new account. A definitive refresh
 rejection also clears credentials and the pending queue. Device loss and
 server-side session revocation follow the account's native-session controls.
 
+### Owner-aware outbox preparation
+
+`OwnedTickOutbox` is an unwired, copy-on-write kernel for the next queue adapter.
+It partitions ticks by exact account ID, acknowledges an exact owner/UUID pair,
+and refuses an append at capacity while preserving every existing tick. One
+versioned envelope is intended to be persisted atomically by that adapter.
+
+Legacy arrays remain unowned. The old pairing callback writes the new tokens
+before clearing the previous queue; an interrupted pairing can leave ticks from
+one account beside credentials for another. Current credentials therefore cannot
+prove a legacy tick's owner. The kernel retains that data in quarantine and
+never attaches it to a later account. Persistence, request-scope guards and the
+pairing/refresh UI are the next stacked change; the owner's existing test
+watch and legacy tick recovery remain rollout gates in owner runbook
+[#7430](https://github.com/boardsesh/boardsesh/issues/7430).
+
+SDK 9.2.0 validation uses the staging overlay and an ephemeral simulator key.
+The test runner reports 53 passing tests, including 12 ownership cases. Its
+launcher currently exits 1 on both unchanged main's 41 passing tests and the
+53 passing tests; record the complete SDK verdict separately from that exit
+status. Mutation checks require a successful compile and an explicit named SDK
+assertion failure. Never count a compiler error or an incomplete report as a
+killed mutation.
+
 ## 7. How the board actually gets repainted (delivery model)
 
 The watch only mutates the **shared backend session**. It does not speak
