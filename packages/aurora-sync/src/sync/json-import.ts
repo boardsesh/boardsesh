@@ -25,6 +25,7 @@ import {
   recomputeClimbStatsBulk,
   foreignPlaylistOwnerGuard,
   type ClimbStatsKey,
+  loadConsolidationImportHistory,
 } from '@boardsesh/db/queries';
 import {
   resolveUpstreamPlaylistWrite,
@@ -1174,6 +1175,9 @@ export async function importJsonExportData(
   // Capture a single "now" for all timestamps in this import
   const now = new Date().toISOString();
 
+  const consolidationHistory = await loadConsolidationImportHistory(db, userId);
+  const importOwners = [userId, ...consolidationHistory.formerUserIds];
+
   // Step 1: Import climbs FIRST so they're available for name resolution.
   // Draft climbs are always imported (upserted) against the user's account.
   // Published (non-draft) climbs are only inserted if they don't already exist
@@ -1245,6 +1249,16 @@ export async function importJsonExportData(
         continue;
       }
 
+      const historicalClimb = consolidationHistory.resolve(
+        'aurora',
+        'climb',
+        importOwners.map((owner) => generateClimbImportUuid(owner, boardType, layoutId, climb.name, climb.created_at)),
+      );
+      if (historicalClimb !== undefined) {
+        result.climbs.skipped++;
+        continue;
+      }
+
       const edges = computeEdgesFromHolds(climb.holds);
 
       draftRows.push(
@@ -1282,6 +1296,16 @@ export async function importJsonExportData(
       const frames = convertHoldsToFrames(climb.holds, coordMap, boardType);
       if (!frames) {
         result.climbs.failed++;
+        continue;
+      }
+
+      const historicalClimb = consolidationHistory.resolve(
+        'aurora',
+        'climb',
+        importOwners.map((owner) => generateClimbImportUuid(owner, boardType, layoutId, climb.name, climb.created_at)),
+      );
+      if (historicalClimb !== undefined) {
+        result.climbs.skipped++;
         continue;
       }
 
@@ -1487,6 +1511,15 @@ export async function importJsonExportData(
     }
 
     const climbedAt = normalizeTimestamp(ascent.climbed_at);
+    const historicalTick = consolidationHistory.resolve(
+      'aurora',
+      'tick',
+      importOwners.map((owner) => generateJsonImportAuroraId(owner, climbUuid, ascent.angle, climbedAt, 'ascents')),
+    );
+    if (historicalTick !== undefined) {
+      result.ascents.skipped++;
+      return rows;
+    }
     const tickKey = `${climbUuid}:${ascent.angle}:${climbedAt}`;
     if (existingKeys.has(tickKey)) {
       result.ascents.skipped++;
@@ -1508,6 +1541,15 @@ export async function importJsonExportData(
     }
 
     const climbedAt = normalizeTimestamp(attempt.climbed_at);
+    const historicalTick = consolidationHistory.resolve(
+      'aurora',
+      'tick',
+      importOwners.map((owner) => generateJsonImportAuroraId(owner, climbUuid, attempt.angle, climbedAt, 'bids')),
+    );
+    if (historicalTick !== undefined) {
+      result.attempts.skipped++;
+      return rows;
+    }
     const tickKey = `${climbUuid}:${attempt.angle}:${climbedAt}`;
     if (existingKeys.has(tickKey)) {
       result.attempts.skipped++;
@@ -1659,6 +1701,17 @@ export async function importJsonExportData(
     // (#3526) — cheap, and the only thing standing between a future
     // key-derivation change and a silent re-run of the 2026-03 incident.
     const circuitAuroraId = generateJsonImportCircuitAuroraId(userId, boardType, circuit.name, circuit.created_at);
+    const historicalCircuit = consolidationHistory.resolve(
+      'aurora',
+      'playlist',
+      importOwners.map((owner) =>
+        generateJsonImportCircuitAuroraId(owner, boardType, circuit.name, circuit.created_at),
+      ),
+    );
+    if (historicalCircuit !== undefined) {
+      result.circuits.skipped++;
+      continue;
+    }
     const formattedColor = normalizePlaylistColor(circuit.color);
     const circuitNow = new Date();
 
