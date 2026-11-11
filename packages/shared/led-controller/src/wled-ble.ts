@@ -1,27 +1,17 @@
-import {
-  LedControllerError,
-  resolveLedLightingOptions,
-  type LedControllerDriver,
-  type LedControllerInfo,
-} from './types';
+import { getAuroraV3LedPacket, type AuroraV3Led } from '@boardsesh/ble-protocol/aurora';
+import { effectiveChunkSizeForMtu, splitMessages } from '@boardsesh/ble-protocol/transport';
+import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
 import { snapshotLedPixels } from './led-pixels';
-import {
-  BLE_LED_PROTOCOL_VERSION,
-  BLE_LED_STATUS,
-  BleLedProtocolError,
-  bleLedRunsPerFrame,
-  chunkBleLedRuns,
-  decodeBleLedInfo,
-  decodeBleLedStatus,
-  encodeAutoOff,
-  encodeLightAll,
-  encodeOff,
-  encodePreviewBegin,
-  encodeSetPixels,
-  encodeWake,
-  toBleLedRuns,
-  type BleLedInfo,
-} from './wled-ble-protocol';
+
+/**
+ * A Spraywall's WLED controller over Bluetooth (docs/spray-wall-led-ble.md).
+ *
+ * The controller speaks the Aurora API v3 frames Kilter and Tension boards
+ * use, over Nordic UART, with LED indices as positions. Every packet replaces
+ * what is lit, as on an Aurora board, and the empty packet clears. Brightness
+ * and auto-off are the controller's own WLED settings: the protocol has no
+ * field for them, so this driver ignores the wall's lighting options.
+ */
 
 /**
  * One connection to a controller, provided by the platform (the mobile app
@@ -31,12 +21,10 @@ import {
 export interface BleLedLink {
   /** The ATT MTU negotiated for this connection (23 when nothing was negotiated). */
   readonly mtu: number;
-  /** Read the info characteristic. */
-  readInfo(): Promise<Uint8Array>;
-  /** Write one frame to the control characteristic, with response. */
-  writeControl(frame: Uint8Array): Promise<void>;
-  /** Listen to status notifications. Returns the unsubscribe. */
-  onStatus(listener: (frame: Uint8Array) => void): () => void;
+  /** The name the controller advertises. */
+  readonly name: string;
+  /** Write one chunk to the Nordic UART write characteristic, with response. */
+  write(chunk: Uint8Array): Promise<void>;
 }
 
 export interface BleLedTransport {
@@ -50,9 +38,17 @@ export interface WledBleDriverOptions {
    * import, or load the Bluetooth library only when a Bluetooth wall is lit.
    */
   transport: () => BleLedTransport | null | Promise<BleLedTransport | null>;
-  /** Per exchange (connect, read, or one frame and its status). */
+  /** Per write. Connecting gets at least 15 s: it includes service discovery. */
   timeoutMs?: number;
+  /**
+   * How many LEDs "Light all" sends. The protocol does not report the cable
+   * length, and the controller ignores positions past its strip, so this
+   * covers the GL-C-015WL-D's two 800-IC outputs.
+   */
+  lightAllLeds?: number;
 }
+
+export const DEFAULT_BLE_LIGHT_ALL_LEDS = 1600;
 
 const TARGET_PREFIX = 'ble:';
 const DEVICE_ID = /^[A-Za-z0-9:_-]{1,128}$/u;
@@ -109,7 +105,7 @@ async function withDeadline<Result>(
 export function createWledBleDriver(options: WledBleDriverOptions): LedControllerDriver {
   const timeoutMs = options.timeoutMs ?? 3000;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('Invalid BLE timeout');
-  let sequence = 0;
+  const lightAllLeds = options.lightAllLeds ?? DEFAULT_BLE_LIGHT_ALL_LEDS;
 
   async function connect(target: string, signal?: AbortSignal): Promise<BleLedLink> {
     const deviceId = deviceIdOf(target);
@@ -120,124 +116,57 @@ export function createWledBleDriver(options: WledBleDriverOptions): LedControlle
       transport = null;
     }
     if (!transport) throw new LedControllerError('unavailable');
-    // Connecting includes discovery and, the first time, the OS pairing prompt.
     return withDeadline(() => transport.connect(deviceId, signal), Math.max(timeoutMs, 15_000), signal, 'unavailable');
   }
 
-  async function readInfo(link: BleLedLink, signal?: AbortSignal): Promise<BleLedInfo> {
-    const bytes = await withDeadline(() => link.readInfo(), timeoutMs, signal, 'unavailable');
-    let info: BleLedInfo;
-    try {
-      info = decodeBleLedInfo(bytes);
-    } catch (error) {
-      if (error instanceof BleLedProtocolError) throw new LedControllerError('not-wled');
-      throw error;
-    }
-    if (info.protocolVersion !== BLE_LED_PROTOCOL_VERSION) throw new LedControllerError('unsupported-version');
-    if (info.ledCount <= 0 || !info.name.trim()) throw new LedControllerError('not-wled');
-    return info;
-  }
-
-  /** Write one frame and wait for the controller to say it applied it. */
-  async function exchange(link: BleLedLink, build: (sequence: number) => Uint8Array, signal?: AbortSignal) {
-    sequence = (sequence + 1) & 0xff;
-    const frame = build(sequence);
-    const expected = frame[2];
-    let unsubscribe: (() => void) | undefined;
-    try {
-      await withDeadline(
-        () =>
-          new Promise<void>((resolve, reject) => {
-            unsubscribe = link.onStatus((bytes) => {
-              let status;
-              try {
-                status = decodeBleLedStatus(bytes);
-              } catch {
-                return;
-              }
-              if (status.sequence !== expected) return;
-              if (status.result === BLE_LED_STATUS.ok) resolve();
-              else if (status.result === BLE_LED_STATUS.outOfRange) reject(new LedControllerError('invalid-indices'));
-              else if (status.result === BLE_LED_STATUS.unsupportedVersion) {
-                reject(new LedControllerError('unsupported-version'));
-              } else reject(new LedControllerError('command-failed'));
-            });
-            link.writeControl(frame).catch(() => reject(new LedControllerError('command-failed')));
-          }),
-        timeoutMs,
-        signal,
-        'command-failed',
-      );
-    } finally {
-      unsubscribe?.();
+  /** The same chunking the board adapters use: MTU-sized, framing unchanged. */
+  async function send(target: string, leds: readonly AuroraV3Led[], signal?: AbortSignal) {
+    const packet = getAuroraV3LedPacket(leds);
+    const link = await connect(target, signal);
+    for (const chunk of splitMessages(packet, effectiveChunkSizeForMtu(link.mtu))) {
+      await withDeadline(() => link.write(chunk), timeoutMs, signal, 'command-failed');
     }
   }
 
+  const white = [255, 255, 255] as const;
   const driver: LedControllerDriver = {
     normalizeTarget: normalizeBleControllerTarget,
     async probe(target, signal): Promise<LedControllerInfo> {
-      const info = await readInfo(await connect(target, signal), signal);
-      return { name: info.name, version: info.version, ledCount: info.ledCount };
-    },
-    async lightAll(target, signal, lighting) {
-      const { brightness, autoOffMinutes } = resolveLedLightingOptions(lighting);
       const link = await connect(target, signal);
-      await readInfo(link, signal);
-      await exchange(link, (next) => encodeLightAll(next, brightness, autoOffMinutes), signal);
+      // The protocol reports no LED count or firmware version.
+      return { name: link.name.trim() || 'Spraywall', version: 'Aurora API v3', ledCount: 0 };
+    },
+    async lightAll(target, signal) {
+      await send(
+        target,
+        Array.from({ length: lightAllLeds }, (_, position) => ({ position, color: white })),
+        signal,
+      );
     },
     async turnOff(target, signal) {
-      const link = await connect(target, signal);
-      await exchange(link, (next) => encodeOff(next), signal);
+      await send(target, [], signal);
     },
-    createPreview(target, lighting) {
-      const { brightness, autoOffMinutes } = resolveLedLightingOptions(lighting);
-      let count: number | null = null;
-      let previous: number[] = [];
+    createPreview(target) {
       let mayBeLit = false;
       return {
         async show(indices, pixels) {
           const pixelSnapshot = snapshotLedPixels(indices, pixels);
-          const next = [...new Set(indices)];
-          const link = await connect(target);
-          const info = await readInfo(link);
-          // Switched off since the last write (WLED's UI, its button, the
-          // auto-off): individual colours would stay dark, so wake it again.
-          if (count !== null && !info.lit) {
-            count = null;
-            previous = [];
-          }
-          if (next.some((index) => index >= info.ledCount)) throw new LedControllerError('invalid-indices');
-          if (count === null) {
-            mayBeLit = true;
-            await exchange(link, (sequence) => encodePreviewBegin(sequence, brightness));
-          } else if (autoOffMinutes > 0) {
-            // Stop the old timer so the countdown runs from this write.
-            await exchange(link, (sequence) => encodeWake(sequence, brightness));
-          }
-          const colors = new Map<number, readonly [number, number, number]>();
-          // A fresh preview starts black, so only a running one blanks the old LEDs.
-          if (count !== null) for (const index of previous) colors.set(index, [0, 0, 0]);
+          if (indices.some((index) => index > 0xffff)) throw new LedControllerError('invalid-indices');
           const byIndex = new Map((pixelSnapshot ?? []).map((pixel) => [pixel.index, pixel.color]));
-          for (const index of next) colors.set(index, byIndex.get(index) ?? [255, 255, 255]);
-          const runsPerFrame = bleLedRunsPerFrame(link.mtu, info.maxFrameBytes);
-          if (runsPerFrame < 1) throw new LedControllerError('command-failed');
-          for (const runs of chunkBleLedRuns(toBleLedRuns(colors), runsPerFrame)) {
-            await exchange(link, (sequence) => encodeSetPixels(sequence, runs));
-          }
-          if (autoOffMinutes > 0) await exchange(link, (sequence) => encodeAutoOff(sequence, autoOffMinutes));
-          count = info.ledCount;
-          previous = next;
+          // Each packet replaces what is lit, so no blanking of the previous LEDs.
+          const leds = [...new Set(indices)].map((position) => ({
+            position,
+            color: byIndex.get(position) ?? white,
+          }));
+          mayBeLit = true;
+          await send(target, leds);
         },
         async lightAll() {
-          count = null;
-          previous = [];
           mayBeLit = true;
-          await driver.lightAll(target, undefined, lighting);
+          await driver.lightAll(target);
         },
         async turnOff() {
           if (!mayBeLit) return;
-          count = null;
-          previous = [];
           await driver.turnOff(target);
           mayBeLit = false;
         },

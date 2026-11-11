@@ -10,6 +10,7 @@ export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
 export {
   bleControllerTarget,
   createWledBleDriver,
+  DEFAULT_BLE_LIGHT_ALL_LEDS,
   normalizeBleControllerTarget,
   registerWledBleTransport,
   wledBleDriver,
@@ -17,7 +18,6 @@ export {
   type BleLedTransport,
   type WledBleDriverOptions,
 } from './wled-ble';
-export * from './wled-ble-protocol';
 
 const drivers = { wled: wledDriver, 'wled-ble': wledBleDriver } satisfies Record<string, LedControllerDriver>;
 export type LedControllerType = keyof typeof drivers;

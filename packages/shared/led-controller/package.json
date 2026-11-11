@@ -16,5 +16,8 @@
   },
   "devDependencies": {
     "typescript": "~7.0.2"
+  },
+  "dependencies": {
+    "@boardsesh/ble-protocol": "workspace:*"
   }
 }

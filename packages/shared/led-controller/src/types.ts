@@ -6,8 +6,6 @@ export type LedControllerErrorCode =
   | 'timeout'
   | 'command-failed'
   | 'invalid-indices'
-  /** A Bluetooth controller that speaks a protocol version this app does not. */
-  | 'unsupported-version'
   | 'cancelled';
 
 export class LedControllerError extends Error {
@@ -20,6 +18,7 @@ export class LedControllerError extends Error {
 export interface LedControllerInfo {
   name: string;
   version: string;
+  /** LEDs on the cable; 0 when the protocol does not report it (Bluetooth). */
   ledCount: number;
 }
 
