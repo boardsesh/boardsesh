@@ -9,15 +9,19 @@ Nothing in this proof mounts a production route or changes existing links.
 
 | Purpose | Current stored identifier | Current stored secret | Validity |
 | --- | --- | --- | --- |
-| Password reset | `password-reset:<exact email>` | SHA-256 of the UUID sent in the link | One hour |
-| Email verification | Exact email | Raw UUID sent in the link | 24 hours |
+| Password reset | `password-reset:<email as stored>` | SHA-256 of the UUID sent in the link | One hour |
+| Email verification | Email as stored | Raw UUID sent in the link | 24 hours |
 
 These formats come from the current web forgot/reset-password, registration,
 verify-email and resend-verification routes. Their `verificationTokens` table
 contains no original user ID or issuance timestamp. The existing reset flow
 checks the token before its write transaction and resolves the account again by
-email. The verification flow updates by email. The prototype must not copy
-those ownership and concurrency assumptions.
+email. Since BA-02 PR 1 both flows look the address up with the shared rule
+(exact first, then one row in other capitals, never a pick among several) and
+write by that one user ID; forgot and resend now key the link on the address as
+stored rather than as typed. Links issued before that keyed on the typed text,
+which always equalled a stored address. The prototype must not copy those
+ownership and concurrency assumptions.
 
 ## Decisions and security boundary
 

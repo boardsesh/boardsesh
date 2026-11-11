@@ -22,7 +22,11 @@ vi.mock('@sentry/nextjs', () => ({
 
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockValues = vi.fn().mockResolvedValue(undefined);
-const mockUserSelect = vi.fn();
+const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
+vi.mock('@boardsesh/db/queries/account-email', async () => {
+  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
+  return fakeAccountEmailLookup(() => lookup.stored);
+});
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({
     delete: () => ({ where: mockDeleteWhere }),
@@ -32,16 +36,16 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: mockUserSelect }) }) }),
     transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  users: { email: 'users.email' },
   verificationTokens: { identifier: 'verification_tokens.identifier' },
 }));
 
+import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { POST } from '../route';
 
 function createRequest(
@@ -67,7 +71,7 @@ describe('POST /api/auth/resend-verification', () => {
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     // User exists and is unverified
-    mockUserSelect.mockResolvedValue([{ id: 'user-1', emailVerified: null }]);
+    lookup.stored = [{ id: 'user-1', email: 'test@example.com', emailVerified: null }];
     mockSendVerificationEmail.mockResolvedValue(undefined);
     // Make consistentDelay a no-op: first Date.now() call returns startTime=0,
     // subsequent calls return 2000ms so elapsed >= MIN_RESPONSE_TIME_MS and no
@@ -124,6 +128,41 @@ describe('POST /api/auth/resend-verification', () => {
     } finally {
       if (savedBaseUrl !== undefined) process.env.BASE_URL = savedBaseUrl;
     }
+  });
+
+  describe('any capitalisation (BA-02)', () => {
+    const mixedCase: StoredAccount = { id: 'mixed', email: 'Mixed.Case@Example.test', emailVerified: null };
+
+    it.each([
+      ['exactly as stored', 'Mixed.Case@Example.test'],
+      ['in lowercase', 'mixed.case@example.test'],
+    ])('sends the link to the stored address when it is typed %s', async (_case, typed) => {
+      lookup.stored = [mixedCase];
+
+      const response = await POST(createRequest({ email: typed }));
+
+      expect(response.status).toBe(200);
+      expect(mockSendVerificationEmail.mock.calls[0][0]).toBe('Mixed.Case@Example.test');
+      expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'Mixed.Case@Example.test' }));
+    });
+
+    it('sends nothing for an address several accounts share in other capitals', async () => {
+      lookup.stored = [mixedCase, { id: 'sibling', email: 'mixed.case@example.test', emailVerified: null }];
+
+      const response = await POST(createRequest({ email: 'MIXED.CASE@EXAMPLE.TEST' }));
+
+      expect(response.status).toBe(200);
+      expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing to an account that is already verified', async () => {
+      lookup.stored = [{ ...mixedCase, emailVerified: new Date('2026-01-01T00:00:00Z') }];
+
+      await POST(createRequest({ email: 'mixed.case@example.test' }));
+
+      expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+    });
   });
 
   it('reports a verification-email failure to Sentry', async () => {
@@ -184,7 +223,7 @@ describe('UID resend public adapter', () => {
     expect(mockSendVerificationEmail).toHaveBeenCalledWith(recipient, token, 'https://www.boardsesh.test');
     expect(withMail).toHaveBeenCalledOnce();
     expect(response.headers.getSetCookie()).toEqual([]);
-    expect(mockUserSelect).not.toHaveBeenCalled();
+    expect(findAccountsByEmail).not.toHaveBeenCalled();
     expect(mockTransaction).not.toHaveBeenCalled();
   });
   it('keeps SMTP failure indistinguishable in public status/body and strips private exception context', async () => {
@@ -252,7 +291,7 @@ describe('UID resend public adapter', () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: 'AuthBackendUnavailable' });
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(mockUserSelect).not.toHaveBeenCalled();
+    expect(findAccountsByEmail).not.toHaveBeenCalled();
     expect(mockTransaction).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });

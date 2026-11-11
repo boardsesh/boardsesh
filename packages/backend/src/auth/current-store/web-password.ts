@@ -7,6 +7,8 @@ import {
   type RegisterCommand,
   type RegisterReply,
 } from '@boardsesh/auth-protocol';
+import { ACCOUNT_EMAIL_CANDIDATE_LIMIT, resolveAccountEmail } from '@boardsesh/auth-protocol/account-email';
+import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -141,7 +143,11 @@ interface ExactCandidate {
   readonly deleted: boolean;
 }
 
-async function exactSnapshot(database: DbInstance, email: string): Promise<ExactCandidate[]> {
+/**
+ * The accounts a typed address names: rows storing it exactly, else the one
+ * row storing it in other capitals. Several such rows name nobody.
+ */
+async function addressSnapshot(database: DbInstance, email: string): Promise<ExactCandidate[]> {
   const rows = await database
     .select({
       userId: users.id,
@@ -156,10 +162,10 @@ async function exactSnapshot(database: DbInstance, email: string): Promise<Exact
     .from(users)
     .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
     .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
-    .where(eq(users.email, email))
+    .where(accountEmailCandidates(email))
     .orderBy(users.id)
-    .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  return rows.map((candidate) => ({
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
+  return resolveAccountEmail(email, rows).rows.map((candidate) => ({
     ...candidate,
     createdAt: new Date(candidate.createdAt.getTime()),
     generation: candidate.generation ?? 0,
@@ -192,7 +198,7 @@ export async function authenticateWebPassword(
   const { requestId, issuedAt } = input;
   const { email, password } = input.payload;
   await preflight(database, authority);
-  const snapshot = await exactSnapshot(database, email);
+  const snapshot = await addressSnapshot(database, email);
   const credentialCandidates = snapshot.flatMap((candidate) =>
     candidate.passwordHash === null
       ? []
@@ -232,17 +238,19 @@ export async function authenticateWebPassword(
     // shares a lock with this one. Old writers are explicitly NOT assumed to
     // take the gate or the user lock. A held row is given up on after 250 ms
     // and answered unavailable, never as a wrong password.
+    // BA-02: the lock covers every row the address rule could name (the typed
+    // text and its other capitals), still in users.id order.
     await boundSignInLockWaits(transaction);
-    const currentUsers = await transaction
+    const lockedUsers = await transaction
       .select({ id: users.id })
       .from(users)
-      .where(eq(users.email, email))
+      .where(accountEmailCandidates(email))
       .orderBy(users.id)
-      .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1)
+      .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1)
       .for('key share');
     // A statement of its own, after the lock: the locking statement's snapshot
     // predates its wait, so only a later one sees a reset that committed during it.
-    const current = currentUsers.length
+    const reread = lockedUsers.length
       ? (
           await transaction
             .select({
@@ -262,7 +270,7 @@ export async function authenticateWebPassword(
             .where(
               inArray(
                 users.id,
-                currentUsers.map((user) => user.id),
+                lockedUsers.map((user) => user.id),
               ),
             )
             .orderBy(users.id)
@@ -272,6 +280,9 @@ export async function authenticateWebPassword(
           deleted: candidate.deletedAt !== null,
         }))
       : [];
+    // The same address rule as the snapshot, applied to the rows read after the
+    // lock, so a change in which accounts the address names refuses below.
+    const current = resolveAccountEmail(email, reread).rows;
     const selected = matched ? current.find((candidate) => candidate.userId === matched.userId) : undefined;
     assertFresh(issuedAt);
     if (!selected || !sameCredentialMembers(snapshot, current) || selected.deleted)

@@ -4,6 +4,8 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
+import { soleAccount } from '@boardsesh/auth-protocol/account-email';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { sendPasswordResetEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
@@ -65,31 +67,21 @@ async function handleForgotPassword(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
     const db = getDb();
 
-    const user = await db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.email, email))
-      .limit(1);
+    // Any capitalisation reaches the account, but only one account: an address
+    // several accounts share is answered like an unknown one.
+    const account = soleAccount(await findAccountsByEmail(db, validationResult.data.email));
 
-    if (user.length === 0) {
+    // OAuth-only accounts have no password to reset.
+    if (!account || account.passwordHash === null) {
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ message: genericMessage }, { status: 200 });
     }
 
-    const hasCredentials = await db
-      .select({ userId: schema.userCredentials.userId })
-      .from(schema.userCredentials)
-      .where(eq(schema.userCredentials.userId, user[0].id))
-      .limit(1);
-
-    if (hasCredentials.length === 0) {
-      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
-      return NextResponse.json({ message: genericMessage }, { status: 200 });
-    }
-
+    // The link and its token carry the address as stored, so reset-password
+    // finds this same row by exact match.
+    const { email } = account;
     const token = crypto.randomUUID();
     const tokenHash = hashResetToken(token);
     const expires = new Date(Date.now() + 60 * 60 * 1000);

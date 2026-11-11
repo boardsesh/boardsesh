@@ -32,17 +32,16 @@ vi.mock('@/app/lib/db/db', () => {
     return rows ?? [];
   }
   function query(table: unknown, joinedTables: unknown[]) {
+    const limit = async () =>
+      readRows(table).map((row) =>
+        joinedTables.reduce<object>(
+          (merged, joined) => ({ ...(readRows(joined)[0] as object | undefined), ...merged }),
+          row as object,
+        ),
+      );
     return {
       leftJoin: (joined: unknown) => query(table, [...joinedTables, joined]),
-      where: () => ({
-        limit: async () =>
-          readRows(table).map((row) =>
-            joinedTables.reduce<object>(
-              (merged, joined) => ({ ...(readRows(joined)[0] as object | undefined), ...merged }),
-              row as object,
-            ),
-          ),
-      }),
+      where: () => ({ orderBy: () => ({ limit }), limit }),
     };
   }
   return { getDb: () => ({ select: () => ({ from: (table: unknown) => query(table, []) }) }) };

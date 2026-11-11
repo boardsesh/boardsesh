@@ -23,8 +23,21 @@ vi.mock('bcryptjs', () => ({
   },
 }));
 
+// Structural stand-ins so a test can see which row a write targets.
+vi.mock('drizzle-orm', () => ({
+  and: (...conditions: unknown[]) => ({ and: conditions }),
+  eq: (column: unknown, value: unknown) => ({ eq: [column, value] }),
+  gt: (column: unknown, value: unknown) => ({ gt: [column, value] }),
+  isNull: (column: unknown) => ({ isNull: column }),
+}));
+
+const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
+vi.mock('@boardsesh/db/queries/account-email', async () => {
+  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
+  return fakeAccountEmailLookup(() => lookup.stored);
+});
+
 const mockTokenLimit = vi.fn();
-const mockUserLimit = vi.fn();
 const mockTxCredentialsLimit = vi.fn();
 const mockTxUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxUserUpdateWhere = vi.fn().mockResolvedValue(undefined);
@@ -46,16 +59,13 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn(tx);
 });
 
-const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
-  const limitMock = selection?.id ? mockUserLimit : mockTokenLimit;
-  return {
-    from: () => ({
-      where: () => ({
-        limit: limitMock,
-      }),
+const mockSelect = vi.fn((_selection?: Record<string, unknown>) => ({
+  from: () => ({
+    where: () => ({
+      limit: mockTokenLimit,
     }),
-  };
-});
+  }),
+}));
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
@@ -75,6 +85,7 @@ vi.mock('@/app/lib/db/schema', () => ({
   userCredentials: 'userCredentials',
 }));
 
+import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
 import { POST } from '../route';
 
 function createRequest(body: Record<string, unknown>, headers: Record<string, string> = {}): NextRequest {
@@ -103,6 +114,10 @@ describe('POST /api/auth/reset-password', () => {
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
     mockHash.mockResolvedValue('hashed-password');
     mockTxCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    lookup.stored = [
+      { id: 'user-1', email: 'test@example.com', passwordHash: '$2b$12$a' },
+      { id: 'oauth-user', email: 'oauth@example.com' },
+    ];
   });
 
   it('returns 429 when rate limited', async () => {
@@ -186,7 +201,6 @@ describe('POST /api/auth/reset-password', () => {
 
   it('resets password successfully', async () => {
     mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
 
     const response = await POST(
       createRequest({
@@ -223,7 +237,6 @@ describe('POST /api/auth/reset-password', () => {
 
   it('inserts credentials when user does not already have password credentials', async () => {
     mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'oauth-user' }]);
     mockTxCredentialsLimit.mockResolvedValue([]);
 
     const response = await POST(
@@ -239,9 +252,60 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockTxInsertValues).toHaveBeenCalled();
   });
 
+  describe('any capitalisation (BA-02)', () => {
+    const submission = (email: string) => ({
+      email,
+      token: crypto.randomUUID(),
+      password: 'validpassword',
+      confirmPassword: 'validpassword',
+    });
+    const credentialWriteTargets = () => mockTxUpdateWhere.mock.calls.map(([condition]) => condition);
+
+    beforeEach(() => {
+      mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
+    });
+
+    it.each([
+      ['exactly as stored', 'Mixed.Case@Example.test'],
+      ['in lowercase', 'mixed.case@example.test'],
+    ])('resets the mixed-case account when the link carries its address %s', async (_case, linkEmail) => {
+      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' }];
+
+      const response = await POST(createRequest(submission(linkEmail)));
+
+      expect(response.status).toBe(200);
+      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'mixed'] }]);
+    });
+
+    it('resets the group member the link names exactly, not its sibling', async () => {
+      lookup.stored = [
+        { id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' },
+        { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' },
+      ];
+
+      const response = await POST(createRequest(submission('mixed.case@example.test')));
+
+      expect(response.status).toBe(200);
+      expect(credentialWriteTargets()).toEqual([{ eq: [undefined, 'sibling'] }]);
+    });
+
+    it('refuses a link whose address several accounts share in other capitals', async () => {
+      lookup.stored = [
+        { id: 'mixed', email: 'Mixed.Case@Example.test', passwordHash: '$2b$12$a' },
+        { id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2b$12$b' },
+      ];
+
+      const response = await POST(createRequest(submission('MIXED.CASE@EXAMPLE.TEST')));
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: 'Invalid or expired reset link' });
+      expect(mockHash).not.toHaveBeenCalled();
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+  });
+
   it('returns 500 when transaction fails unexpectedly', async () => {
     mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockTransaction.mockRejectedValueOnce(new Error('db transaction failed'));
 
     const response = await POST(

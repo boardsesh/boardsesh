@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import type { Session } from 'next-auth';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
+import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
 import { authOptions } from '../auth-options';
+
+const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
+vi.mock('@boardsesh/db/queries/account-email', async () => {
+  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
+  return fakeAccountEmailLookup(() => lookup.stored);
+});
 
 const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
   mockAdapterCreateUser: vi.fn(),
@@ -374,6 +382,18 @@ describe('authOptions.callbacks.signIn', () => {
 
       expect(result).toBe(true);
     });
+
+    it('reads the verification stamp by the signed-in ID, never by an address another account can share', async () => {
+      vi.stubEnv('EMAIL_VERIFICATION_ENABLED', 'true');
+      mockDbLimit.mockResolvedValue([{ id: 'user-1', email: 'Shared@example.com', emailVerified: new Date() }]);
+
+      await callSignIn({
+        user: { id: 'user-1', email: 'Shared@example.com' },
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: 'cred-123' },
+      });
+
+      expect(mockDbWhere).toHaveBeenCalledWith({ _type: 'eq', col: 'users.id', val: 'user-1' });
+    });
   });
 });
 
@@ -690,17 +710,11 @@ function getNativeOAuthProvider(): CredentialProviderLike {
 }
 
 describe('CredentialsProvider.authorize — email/password', () => {
-  const mockDbLeftJoin = vi.fn();
   const storedUser = { id: 'user-1', email: 'user@example.com', name: 'Test', image: null };
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    mockDbSelect.mockReturnValue({ from: mockDbFrom });
-    mockDbFrom.mockReturnValue({ leftJoin: mockDbLeftJoin, where: mockDbWhere });
-    mockDbLeftJoin.mockReturnValue({ where: mockDbWhere });
-    mockDbWhere.mockReturnValue({ limit: mockDbLimit });
-    mockDbLimit.mockResolvedValue([]);
+    lookup.stored = [];
   });
 
   it('returns null when credentials are missing', async () => {
@@ -721,39 +735,118 @@ describe('CredentialsProvider.authorize — email/password', () => {
     expect(result).toBeNull();
   });
 
-  // An unknown address, an OAuth-only account and a wrong password must cost the
-  // same: one query, then one bcrypt comparison at the stored cost. Answering
-  // any of them sooner tells a caller which addresses have accounts.
+  // An unknown address, an OAuth-only account, an address several accounts share
+  // in other capitals and a wrong password must cost the same: one query, then
+  // one bcrypt comparison at the stored cost. Answering any of them sooner tells
+  // a caller which addresses have accounts.
   it.each([
     ['an unknown address', [], ABSENT_PASSWORD_HASH],
     ['an account with no password (OAuth only)', [{ ...storedUser, passwordHash: null }], ABSENT_PASSWORD_HASH],
     ['a wrong password', [{ ...storedUser, passwordHash: '$2a$12$hashed' }], '$2a$12$hashed'],
-  ])('rejects %s after one query and one bcrypt comparison', async (_case, rows, comparedHash) => {
-    mockDbLimit.mockResolvedValue(rows);
+    [
+      'an address two accounts share in other capitals',
+      [
+        { ...storedUser, id: 'upper', email: 'USER@example.com', passwordHash: '$2a$12$upper' },
+        { ...storedUser, id: 'title', email: 'User@example.com', passwordHash: '$2a$12$title' },
+      ],
+      ABSENT_PASSWORD_HASH,
+    ],
+  ])('rejects %s after one query and one bcrypt comparison', async (_case, rows: StoredAccount[], comparedHash) => {
+    lookup.stored = rows;
     mockBcryptCompare.mockResolvedValue(false);
 
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'user@example.com', password: 'submitted' });
 
     expect(result).toBeNull();
-    expect(mockDbSelect).toHaveBeenCalledTimes(1);
-    expect(mockDbLeftJoin).toHaveBeenCalledTimes(1);
-    expect(mockDbLimit).toHaveBeenCalledTimes(1);
+    expect(findAccountsByEmail).toHaveBeenCalledTimes(1);
+    expect(mockDbSelect).not.toHaveBeenCalled();
     expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
     expect(mockBcryptCompare).toHaveBeenCalledWith('submitted', comparedHash);
   });
 
   it('never signs in an account with no password, even if the stand-in comparison passed', async () => {
-    mockDbLimit.mockResolvedValue([{ ...storedUser, passwordHash: null }]);
+    lookup.stored = [{ ...storedUser, passwordHash: null }];
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
     expect(await provider.authorize?.({ email: 'user@example.com', password: 'submitted' })).toBeNull();
   });
 
+  it('never signs in either account of an ambiguous address, even if the stand-in comparison passed', async () => {
+    lookup.stored = [
+      { ...storedUser, id: 'upper', email: 'USER@example.com', passwordHash: '$2a$12$upper' },
+      { ...storedUser, id: 'title', email: 'User@example.com', passwordHash: '$2a$12$title' },
+    ];
+    mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    expect(await provider.authorize?.({ email: 'user@example.com', password: 'submitted' })).toBeNull();
+  });
+
+  describe('a mixed-case stored address (BA-02)', () => {
+    const mixedCase = { id: 'mixed', email: 'Mixed.Case@Example.test', name: 'Mixed', image: null };
+
+    it.each([
+      ['exactly as stored', 'Mixed.Case@Example.test'],
+      ['in lowercase', 'mixed.case@example.test'],
+      ['in capitals', 'MIXED.CASE@EXAMPLE.TEST'],
+    ])('signs in when the climber types it %s', async (_case, typed) => {
+      lookup.stored = [{ ...mixedCase, passwordHash: '$2a$12$mixed' }];
+      mockBcryptCompare.mockImplementation(async (password: string, hash: string) => {
+        return password === 'correctpass' && hash === '$2a$12$mixed';
+      });
+
+      const provider = getEmailCredentialsProvider();
+      const result = await provider.authorize?.({ email: typed, password: 'correctpass' });
+
+      expect(result).toEqual(mixedCase);
+      expect(mockBcryptCompare).toHaveBeenCalledTimes(1);
+    });
+
+    it('signs in the group member typed exactly as stored and compares only its password', async () => {
+      lookup.stored = [
+        { ...mixedCase, passwordHash: '$2a$12$mixed' },
+        { ...mixedCase, id: 'sibling', email: 'mixed.case@example.test', passwordHash: '$2a$12$sibling' },
+      ];
+      mockBcryptCompare.mockResolvedValue(true);
+
+      const provider = getEmailCredentialsProvider();
+      const result = await provider.authorize?.({ email: 'mixed.case@example.test', password: 'pw' });
+
+      expect(result).toEqual({ ...mixedCase, id: 'sibling', email: 'mixed.case@example.test' });
+      expect(mockBcryptCompare.mock.calls).toEqual([['pw', '$2a$12$sibling']]);
+    });
+  });
+
+  describe('rows storing the very same text', () => {
+    const twins: StoredAccount[] = [
+      { ...storedUser, id: 'twin-a', passwordHash: '$2a$12$a' },
+      { ...storedUser, id: 'twin-b', passwordHash: '$2a$12$b' },
+    ];
+
+    it('signs in the one whose password matches', async () => {
+      lookup.stored = twins;
+      mockBcryptCompare.mockImplementation(async (_password: string, hash: string) => hash === '$2a$12$b');
+
+      const provider = getEmailCredentialsProvider();
+      const result = await provider.authorize?.({ email: 'user@example.com', password: 'pw' });
+
+      expect(result).toEqual({ ...storedUser, id: 'twin-b' });
+    });
+
+    it('refuses when the password matches both, rather than picking one', async () => {
+      lookup.stored = twins;
+      mockBcryptCompare.mockResolvedValue(true);
+
+      const provider = getEmailCredentialsProvider();
+      expect(await provider.authorize?.({ email: 'user@example.com', password: 'pw' })).toBeNull();
+    });
+  });
+
   it('returns user object when credentials are valid', async () => {
     const user = { id: 'user-1', email: 'user@example.com', name: 'Test User', image: null };
-    mockDbLimit.mockResolvedValue([{ ...user, passwordHash: '$2a$12$hashed' }]);
+    lookup.stored = [{ ...user, passwordHash: '$2a$12$hashed' }];
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
