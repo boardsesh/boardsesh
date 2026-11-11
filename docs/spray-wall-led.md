@@ -135,6 +135,14 @@ by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
 drops LED ids that no longer exist and repeated holds, and rejects malformed
 links. Links to holds the wall no longer has are ignored.
 
+An app from before these links saves a layout with no `holdLeds` at all, which
+would erase a newer phone's links. `saveSprayWallLedSetup` therefore keeps the
+stored links when the incoming layout has no `holdLeds` field
+(`keepHoldLedLinksFromOlderApp`), minus LEDs it no longer has; a link whose LEDs
+are all gone returns that hold to the automatic mapping. A current app always
+sends the list, and an explicit `[]` (after the last link is cleared or the LEDs
+are rebuilt) clears them.
+
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator

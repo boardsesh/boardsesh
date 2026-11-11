@@ -104,6 +104,7 @@ export {
   MAX_HOLD_LED_LINKS,
   MAX_LEDS_PER_HOLD_LINK,
   clearHoldLedLink,
+  keepHoldLedLinksFromOlderApp,
   readHoldLedLinks,
   setHoldLedLink,
   type SprayHoldLedLink,
