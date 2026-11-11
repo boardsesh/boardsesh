@@ -8,10 +8,11 @@
 -- run. Every native sign-in and refresh writes mobile_refresh_tokens, and every
 -- authenticated HTTP request and WebSocket sweep reads auth_subject_cutoffs
 -- under a 1 s admission deadline. Both locks are taken up front in one
--- retry-protected step, the guard 0220 and 0302 use, with a 1 s attempt to
--- match that deadline: a blocked attempt stalls those requests for at most
--- 1 s before it backs off. auth_subject_cutoffs is listed first, the order the
--- issuer reaches the two tables in. Deploy this migration alone, so the locks
+-- retry-protected step, the guard 0220 and 0302 use, with a 1 s limit on each
+-- lock wait to match that deadline. The limit is per table, and the first lock
+-- is held while the second is awaited, so a blocked attempt can stall those
+-- requests for about 2 s before it backs off. auth_subject_cutoffs is listed
+-- first, the order the issuer reaches the two tables in. Deploy this migration alone, so the locks
 -- are held for these statements and the commit only. Every refresh-token
 -- column is nullable with no default, and native_generation's constant default
 -- is stored in the catalog: no table rewrite. The CHECK reads
