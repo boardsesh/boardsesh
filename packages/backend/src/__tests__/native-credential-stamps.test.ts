@@ -36,7 +36,7 @@ const { userIdFromJwt } = (await import(
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 type TokenPair = { jwt: string; refreshToken: string; userId: string; expiresAt: string };
-type StampedClaims = JWTPayload & { gen?: unknown; ngen?: unknown; auth_time?: unknown };
+type StampedClaims = JWTPayload & { gen?: unknown; ngen?: unknown; sid?: unknown; auth_time?: unknown };
 
 const secret = 'native-credential-stamps-secret-with-at-least-thirty-two-bytes';
 const signingKey = new TextEncoder().encode(secret);
@@ -108,10 +108,16 @@ async function issued(path: string, body: unknown = {}, bearer?: string): Promis
   return pair;
 }
 
-function transferToken(userId = ownerId) {
+function transferToken(userId = ownerId, generation?: number) {
   const now = Math.floor(Date.now() / 1000);
   const payload = Buffer.from(
-    JSON.stringify({ userId, nextPath: `/${randomUUID()}`, iat: now, exp: now + 120 }),
+    JSON.stringify({
+      userId,
+      nextPath: `/${randomUUID()}`,
+      iat: now,
+      exp: now + 120,
+      ...(generation === undefined ? {} : { gen: generation }),
+    }),
   ).toString('base64url');
   const signature = createHmac('sha256', secret).update(payload).digest('base64url');
   redisKeys.add(`boardsesh:native-auth:consumed:${signature}`);
@@ -393,6 +399,8 @@ describe('native credential stamps against the owned primary database', () => {
     for (const [, pair, userId] of pairs) {
       const payload = (await assertLegacyNativeTokenPair(pair, signingKey, userId)) as StampedClaims;
       expect(userIdFromJwt(pair.jwt)).toBe(userId);
+      expect(payload.sid).toBe((await rowFor(pair.refreshToken)).sessionId);
+      expect(typeof payload.sid === 'string' && /^[0-9a-f-]{36}$/.test(payload.sid)).toBe(true);
       expect((await validateMobileJwt(pair.jwt))?.userId).toBe(userId);
       expect(Number.isSafeInteger(payload.gen)).toBe(true);
       expect(Number.isSafeInteger(payload.ngen)).toBe(true);
@@ -406,6 +414,7 @@ describe('native credential stamps against the owned primary database', () => {
           'iat',
           'iss',
           'ngen',
+          'sid',
           'sub',
           ...(payload.auth_time === undefined ? [] : ['auth_time']),
         ].sort(),
@@ -413,16 +422,23 @@ describe('native credential stamps against the owned primary database', () => {
     }
   });
 
-  it('adds at most 60 characters to a native JWT', async () => {
+  it('bounds stamp and additive SID overhead independently on a native JWT', async () => {
     const pair = await issued('/credentials', { email: ownerEmail, password });
-    const { sub, iat, exp, iss, aud, gen, ngen, auth_time: authTime } = await claims(pair);
+    const { sub, iat, exp, iss, aud, gen, ngen, sid, auth_time: authTime } = await claims(pair);
     expect([gen, ngen, typeof authTime]).toEqual([0, 0, 'number']);
     // The same token as builds before the stamps signed it: these five claims only.
     const before = await new SignJWT({ sub, iat, exp, iss, aud })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .sign(signingKey);
-    expect(pair.jwt.length - before.length).toBeGreaterThan(0);
-    expect(pair.jwt.length - before.length).toBeLessThanOrEqual(60);
+    // PR 9b adds the refresh lineage SID independently of the PR 1 stamps.
+    const withSid = await new SignJWT({ sub, iat, exp, iss, aud, sid })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .sign(signingKey);
+    expect(withSid.length - before.length).toBeGreaterThan(0);
+    expect(withSid.length - before.length).toBeLessThanOrEqual(60);
+    expect(pair.jwt.length - withSid.length).toBeGreaterThan(0);
+    expect(pair.jwt.length - withSid.length).toBeLessThanOrEqual(60);
+    expect(pair.jwt.length - before.length).toBeLessThanOrEqual(120);
   });
 
   it('stamps a password sign-in with the generations read under the user lock and the sign-in second', async () => {
@@ -447,7 +463,7 @@ describe('native credential stamps against the owned primary database', () => {
       await setCutoff(1, 3);
       const pair =
         path === '/exchange'
-          ? await issued(path, { transferToken: transferToken() })
+          ? await issued(path, { transferToken: transferToken(ownerId, 1) })
           : await watchPair(ownerId, { gen: 1, ngen: 3 });
       const row = await rowFor(pair.refreshToken);
 
@@ -458,7 +474,14 @@ describe('native credential stamps against the owned primary database', () => {
     },
   );
 
-  it('reads the generations a mutation committed while the issuer waited for the user lock', async () => {
+  it('refuses an unstamped legacy transfer after a committed reset', async () => {
+    await setCutoff(1, 3);
+    const response = await native('/exchange', { transferToken: transferToken() });
+    expect(response.status).toBe(401);
+    expect((await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId))).length).toBe(0);
+  });
+
+  it('refuses an old transfer after a mutation commits while issuance waits for the user lock', async () => {
     const locked = barrier(),
       release = barrier();
     let blockingPid = 0;
@@ -484,11 +507,10 @@ describe('native credential stamps against the owned primary database', () => {
       await bounded(mutation);
     }
     const response = await bounded(exchange!);
-    expect(response.status).toBe(200);
-    const pair = (await response.json()) as TokenPair;
-
-    expect(await claims(pair)).toMatchObject({ gen: 6, ngen: 3 });
-    expect(await rowFor(pair.refreshToken)).toMatchObject({ subjectGeneration: 6, nativeGeneration: 3 });
+    // The reset won the real row lock. Re-reading generation 6 must not promote
+    // the generation-0 transfer into a credential the reset failed to revoke.
+    expect(response.status).toBe(401);
+    expect((await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId))).length).toBe(0);
   });
 
   it('keeps auth_time, both generations and the session through three rotations', async () => {
