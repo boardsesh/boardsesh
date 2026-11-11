@@ -69,11 +69,13 @@ export function offersNoKickboardRule(boardName: string): boolean {
 /**
  * Whether the editor offers its Bluetooth lightbulb on this board.
  *
- * The editor's bulb only ever starts a Bluetooth connect. A spray wall has no
- * LED kit and no controller, so the bulb there is a dead control (#5960).
+ * On a Bluetooth board the bulb starts a connect. A spray wall only has lights
+ * when its owner set up LEDs for it; there the bulb takes the wall, so the
+ * editor previews the holds while you paint them. Without LEDs it would be a
+ * dead control (#5960).
  */
-export function offersBoardLightbulb(boardName: string): boolean {
-  return !isSprayBoard(boardName);
+export function offersBoardLightbulb(boardName: string, sprayLedsEnabled = false): boolean {
+  return !isSprayBoard(boardName) || sprayLedsEnabled;
 }
 
 /** Does the working frame mark any foot holds? */

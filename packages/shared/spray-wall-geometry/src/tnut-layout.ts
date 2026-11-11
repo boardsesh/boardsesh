@@ -1,5 +1,6 @@
 import type { Quad } from './homography';
 import { readLedPositions, readTnutWiring, type LedPosition, type TnutWiring } from './led-layout';
+import { readHoldLedLinks, type SprayHoldLedLink } from './hold-led-links';
 
 /** Rectified wall-only frame coordinates in [0, 1], with the origin at the top left. */
 export type TnutPoint = { x: number; y: number };
@@ -56,6 +57,8 @@ export type TnutLayout = {
   columnConvention?: 'all';
   ledPositions?: LedPosition[];
   wiring?: TnutWiring;
+  /** Holds whose LEDs the climber linked by hand; they override the automatic mapping. */
+  holdLeds?: SprayHoldLedLink[];
 };
 
 function isRecord(candidate: unknown): candidate is Record<string, unknown> {
@@ -303,6 +306,9 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   if (ledPositions === null) return null;
   const wiring = candidate.wiring === undefined ? undefined : readTnutWiring(candidate.wiring, ledPositions ?? []);
   if (wiring === null) return null;
+  const holdLeds =
+    candidate.holdLeds === undefined ? undefined : readHoldLedLinks(candidate.holdLeds, ledPositions ?? []);
+  if (holdLeds === null) return null;
   return {
     version: 1,
     pattern: candidate.pattern,
@@ -321,6 +327,7 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     ...(candidate.columnConvention === 'all' ? { columnConvention: 'all' as const } : {}),
     ...(ledPositions !== undefined ? { ledPositions } : {}),
     ...(wiring !== undefined ? { wiring } : {}),
+    ...(holdLeds?.length ? { holdLeds } : {}),
   };
 }
 

@@ -212,9 +212,27 @@ export function buildSprayLedMapping(
     matched.ledIds.push(...entry.ledIds);
     matched.indices.push(...entry.indices);
   }
+  // Hand-made links win: a linked hold gets exactly its chosen LEDs, and an LED
+  // linked by hand leaves the hold the geometry gave it.
+  const links = new Map((layout.holdLeds ?? []).map((link) => [link.holdId, link.ledIds]));
+  const known = new Set((layout.ledPositions ?? []).map((led) => led.id));
+  const linkedLeds = new Set<string>();
+  for (const [holdId, ledIds] of links) {
+    if (!holdMappings.has(holdId)) continue;
+    for (const id of ledIds) if (known.has(id)) linkedLeds.add(id);
+  }
   for (const hold of mappedHolds) {
-    hold.ledIds = [...new Set(hold.ledIds)];
-    hold.indices = [...new Set(hold.indices)].sort((left, right) => left - right);
+    const link = links.get(hold.holdId);
+    const ledIds = link ? link.filter((id) => known.has(id)) : hold.ledIds.filter((id) => !linkedLeds.has(id));
+    hold.ledIds = [...new Set(ledIds)];
+    hold.indices = [
+      ...new Set(
+        hold.ledIds.flatMap((id) => {
+          const index = indices.get(id);
+          return index === undefined ? [] : [index];
+        }),
+      ),
+    ].sort((left, right) => left - right);
   }
   return { holes, holds: mappedHolds };
 }

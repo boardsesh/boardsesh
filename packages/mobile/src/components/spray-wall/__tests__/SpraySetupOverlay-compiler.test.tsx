@@ -10,6 +10,7 @@ import * as jsxDevRuntime from 'react/jsx-dev-runtime';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
+import * as cableEndpointsModule from '../spray-cable-endpoints';
 
 const require = createRequire(import.meta.url);
 const expoRequire = createRequire(require.resolve('expo/package.json'));
@@ -46,7 +47,7 @@ type OverlayProps = {
   selectedHoldIds?: number[];
   selectedHoles?: TnutPoint[];
 };
-const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', onPrimary: '#fff' };
+const palette = { primary: '#7b2fce', warning: '#ef950a', error: '#d22', success: '#0a7', onPrimary: '#fff' };
 
 /** Rebuild serialized worklets in a separate VM, never call their JS closures.
  * A normal function captured by React Compiler is a remote JS function on the
@@ -116,6 +117,7 @@ function compileOverlay(source: string, isDev: boolean) {
       useAnimatedProps: (updater: Worklet) => ({ updater }),
     },
     '../../providers/theme-provider': { useTheme: () => ({ brandColors: palette }) },
+    './spray-cable-endpoints': cableEndpointsModule,
   };
   const module = { exports: {} as Record<string, unknown> };
   compileFunction(compiled.code, ['require', 'module', 'exports', '__DEV__'])(
@@ -192,21 +194,29 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
     const initial = props();
     render(React.createElement(Component, initial));
-    expect(shapes).toHaveLength(7);
+    expect(shapes).toHaveLength(10);
     const atOne = evaluated(shapes);
     expect(atOne[0]).toMatchObject({ d: 'M60 150L180 150', stroke: '#0891B2', strokeWidth: 2 });
-    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: palette.error });
-    expectPathCoordinates(atOne[2].d, [127, 153, 132, 150, 127, 147]);
+    // Skipped LEDs stay in the cable colour; red is only for loose ends.
+    expect(atOne[1]).toMatchObject({ d: 'M180 150L180 400', stroke: '#0891B2' });
+    // The only drawn edge starts the cable, so its arrow moves to the larger start arrow.
+    expect(atOne[2].d).toBe('');
+    expect(atOne[6]).toMatchObject({ d: 'M52 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: palette.success });
+    expect(atOne[7].stroke).toBe(palette.success);
+    expectPathCoordinates(atOne[7].d, [124, 155, 132, 150, 124, 145]);
     expect(atOne[3].d?.match(/M/g)).toHaveLength(2);
     expect(atOne[3].d).toContain(`M177 ${150 + 250 / 3}a3 3`);
-    expect(atOne[3].fill).toBe(palette.error);
+    expect(atOne[3].fill).toBe('#0891B2');
     expect(atOne[4]).toMatchObject({
       d: 'M27 100a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
       fill: 'none',
       stroke: palette.warning,
     });
     expect(atOne[5].d).toContain('M56 150a4 4');
-    expect(atOne[6].d).toBe('M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0');
+    // The cable's end, where laying continues, gets a ring in the cable colour.
+    // Purple rings are only for the selection (atOne[9]).
+    expect(atOne[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: '#0891B2' });
+    expect(atOne[9]).toMatchObject({ d: 'M170 150a10 10 0 1 0 20 0a10 10 0 1 0 -20 0', stroke: palette.primary });
     initial.zoom.value = 3;
     initial.panY.value = 100;
     const atThree = evaluated(shapes);
@@ -214,8 +224,8 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(atThree[0].strokeWidth).toBe(2);
     expect(atThree[4].d).toBe(''); // offscreen holes do not build invisible SVG geometry
     expect(atThree[5].d).toContain('a4 4');
-    expect(atThree[6].d).toContain('a10 10');
-    expectPathCoordinates(atThree[2].d, [91, 53, 96, 50, 91, 47]);
+    expect(atThree[9].d).toContain('a10 10');
+    expectPathCoordinates(atThree[7].d, [88, 55, 96, 50, 88, 45]);
     expect(atThree[3].d?.match(/M/g)).toHaveLength(1);
     expect(atThree[3].d).toContain('a3 3');
   });
@@ -239,7 +249,24 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     expect(updated[1].d).toBe('');
     expect(updated[3].d).toBe('');
     expect(updated[4].d).toContain('M117 200a3 3');
-    expect(updated[6].d).toContain('M200 400a10 10');
+    expect(updated[9].d).toContain('M200 400a10 10');
+  });
+
+  it('rings the ends a cut left unconnected in red, and only the real start in green', () => {
+    const { Component, shapes } = compileOverlay(readFileSync(componentFile, 'utf8'), isDev);
+    const initial = props();
+    render(
+      React.createElement(Component, {
+        ...initial,
+        wiring: { ...initial.wiring, paths: [['a', 'b'], ['c']], skips: [] },
+      }),
+    );
+    const paths = evaluated(shapes);
+    expect(paths).toHaveLength(11);
+    expect(paths[6].d).toBe('M52 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0');
+    expect(paths[8]).toMatchObject({ d: 'M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0', stroke: '#0891B2' });
+    expect(paths[9].stroke).toBe(palette.error);
+    expect(paths[9].d).toBe('M172 150a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M172 400a8 8 0 1 0 16 0a8 8 0 1 0 -16 0');
   });
 
   it('serializes selectable hold contours and highlighted holes in the rectified viewport', () => {
@@ -261,14 +288,15 @@ describe.each([true, false])('Expo + React Compiler + native Worklets overlay (d
     };
     render(React.createElement(Component, initial));
     const paths = evaluated(shapes);
-    expect(paths).toHaveLength(10);
-    expect(paths[7].d).toBe('M60 150L180 150L180 400Z');
-    expect(paths[8].d).toBe(paths[7].d);
-    expect(paths[9].d).toContain('M19 100a11 11');
+    expect(paths).toHaveLength(14);
+    expect(paths[10].d).toBe('M60 150L180 150L180 400Z');
+    expect(paths[11].d).toBe(''); // no hold is marked as missing an LED
+    expect(paths[12].d).toBe(paths[10].d);
+    expect(paths[13].d).toContain('M19 100a11 11');
     initial.zoom.value = 3;
     initial.panY.value = 100;
     const zoomed = evaluated(shapes);
-    expectPathCoordinates(zoomed[7].d, [-120, 50, 240, 50, 240, 800]);
-    expect(zoomed[8].strokeWidth).toBe(3);
+    expectPathCoordinates(zoomed[10].d, [-120, 50, 240, 50, 240, 800]);
+    expect(zoomed[12].strokeWidth).toBe(3);
   });
 });

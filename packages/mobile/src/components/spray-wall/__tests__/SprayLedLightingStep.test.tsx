@@ -10,6 +10,8 @@ const preview = vi.hoisted(() => ({
   available: true,
   state: 'idle',
   error: null as string | null,
+  allLit: false,
+  chaseIndex: null as number | null,
   lightAll: vi.fn(),
   chase: vi.fn(),
   stop: vi.fn(),
@@ -117,7 +119,20 @@ beforeEach(() => {
   preview.available = true;
   preview.state = 'idle';
   preview.error = null;
+  preview.allLit = false;
+  preview.chaseIndex = null;
 });
+function litOnPhoto() {
+  const overlay = canvas.current?.renderOverlay?.(
+    500,
+    700,
+    { value: 1 } as never,
+    { value: 0 } as never,
+    { value: 0 } as never,
+    { value: null } as never,
+  ) as ReactElement<{ selected: string[] }>;
+  return overlay.props.selected;
+}
 afterEach(cleanup);
 
 describe('final lighting test', () => {
@@ -129,6 +144,40 @@ describe('final lighting test', () => {
     expect(preview.lightAll).toHaveBeenCalledTimes(1);
     expect(preview.chase).toHaveBeenCalledWith([7, 2, 9]);
     expect(preview.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the selection for Light all without switching the new lights off', () => {
+    render(<SprayLedLightingStep {...props} />);
+    tap(hole.x, hole.y);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:1')).toBeTruthy();
+    preview.stop.mockClear();
+    fireEvent.click(screen.getByText('sprayLed.lightAll'));
+    expect(preview.lightAll).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('sprayLedSetup.selectionSummary:0')).toBeTruthy();
+    expect(preview.stop).not.toHaveBeenCalled();
+  });
+
+  it('while every LED is lit, says so, draws them all and offers to switch them off', () => {
+    preview.allLit = true;
+    render(<SprayLedLightingStep {...props} />);
+    expect(screen.getByText('sprayLedSetup.allLitSummary:3')).toBeTruthy();
+    expect(litOnPhoto()).toEqual(['a', 'b', 'c']);
+    expect(screen.queryByText('sprayLed.lightAll')).toBeNull();
+    fireEvent.click(screen.getByText('sprayLed.turnOff'));
+    expect(preview.stop).toHaveBeenCalledTimes(1);
+    expect(preview.lightAll).not.toHaveBeenCalled();
+  });
+
+  it('draws the LED the row-by-row test has reached', () => {
+    // Physical LED 5 is "b": two skipped before "a" (2), two more between them.
+    preview.chaseIndex = 5;
+    render(<SprayLedLightingStep {...props} />);
+    expect(litOnPhoto()).toEqual(['b']);
+    // An LED that is not on the photo draws nothing.
+    preview.chaseIndex = 3;
+    cleanup();
+    render(<SprayLedLightingStep {...props} />);
+    expect(litOnPhoto()).toEqual([]);
   });
 
   it('shows unavailable controllers and physical range errors without hiding controls', () => {
@@ -146,12 +195,36 @@ describe('final lighting test', () => {
     render(<SprayLedLightingStep {...props} />);
     const light = screen.getByText('sprayLedSetup.lightSelection');
     expect(light.hasAttribute('disabled')).toBe(true);
-    tap(hole.x, hole.y);
     expect(preview.show).not.toHaveBeenCalled();
+    tap(hole.x, hole.y);
+    // Selecting lights the selection straight away; the button re-sends it.
+    expect(preview.show).toHaveBeenCalledExactlyOnceWith([2, 5]);
     fireEvent.click(light);
     expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
     tap(hole.x, hole.y);
     expect(light.hasAttribute('disabled')).toBe(true);
+    expect(preview.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks holes and holds without a wired LED and fades the LED dots', () => {
+    render(<SprayLedLightingStep {...props} />);
+    const overlayProps = () => {
+      const renderOverlay = canvas.current?.renderOverlay;
+      if (!renderOverlay) throw new Error('No overlay');
+      const overlay = renderOverlay(
+        500,
+        700,
+        { value: 1 } as never,
+        { value: 0 } as never,
+        { value: 0 } as never,
+        { value: null } as never,
+      ) as ReactElement<{ unmappedHoles: unknown[]; unmappedHoldIds: number[]; subtleLeds: boolean }>;
+      return overlay.props;
+    };
+    expect(overlayProps().subtleLeds).toBe(true);
+    expect(overlayProps().unmappedHoles).toEqual([{ x: 0.8, y: 0.3 }]);
+    fireEvent.click(screen.getByText('sprayLedSetup.selectHolds'));
+    expect(overlayProps().unmappedHoldIds).toEqual([20]);
   });
 
   it('selects canonical hold contours, clears the selection on switching, and reports unwired positions', () => {
@@ -165,6 +238,7 @@ describe('final lighting test', () => {
       { value: 1 } as never,
       { value: 0 } as never,
       { value: 0 } as never,
+      { value: null } as never,
     ) as ReactElement<{ selectedHoldIds: number[] }>;
     expect(overlay.props.selectedHoldIds).toEqual([10]);
     fireEvent.click(screen.getByText('sprayLedSetup.lightSelection'));

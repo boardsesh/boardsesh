@@ -103,6 +103,27 @@ beforeEach(() => {
   controls.canvas = null;
 });
 describe('LED position edits with cable work', () => {
+  it('does not transfer a removed manual LED link when Add reuses its id, and Undo restores it', () => {
+    const linked: TnutLayout = {
+      ...original,
+      wiring: undefined,
+      ledPositions: [{ id: 'manual-0', x: 0.2, y: 0.2 }],
+      holdLeds: [{ holdId: 10, ledIds: ['manual-0'] }],
+    };
+    render(<Editor initial={linked} />);
+    fireEvent.click(screen.getByText('remove'));
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.2 }, 400, 400));
+    expect(controls.changed.mock.lastCall?.[0].holdLeds).toEqual([{ holdId: 10, ledIds: [] }]);
+    fireEvent.click(screen.getByText('add'));
+    act(() => controls.canvas?.onTap?.({ x: 0.8, y: 0.8 }, 400, 400));
+    expect(controls.changed.mock.lastCall?.[0].ledPositions).toEqual([{ id: 'manual-0', x: 0.8, y: 0.8 }]);
+    expect(controls.changed.mock.lastCall?.[0].holdLeds).toEqual([{ holdId: 10, ledIds: [] }]);
+    fireEvent.click(screen.getByText('undo'));
+    expect(controls.changed.mock.lastCall?.[0].ledPositions).toEqual([]);
+    fireEvent.click(screen.getByText('undo'));
+    expect(controls.changed.mock.lastCall?.[0]).toEqual(linked);
+  });
+
   it.each(['add', 'remove'] as const)(
     'requires confirmation before %s discards a cable and undo restores it',
     (mode) => {
