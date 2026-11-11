@@ -14,8 +14,10 @@ import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
+  lockEmailKeyForCreation,
   lockEnforcedProjection,
-  lockUserRowUnderManifest,
+  lockProviderSubject,
+  lockSubjectRow,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -79,6 +81,10 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   const policy = { ...policyInput };
   const forwardedName = forwardedNameInput ? { ...forwardedNameInput } : undefined;
   const manifest = await lockEnforcedProjection(transaction, authority);
+  // One sign-in per provider subject at a time, before its link is read: the
+  // gate no longer serializes commands (section 4). Linked: the subject, then the
+  // owner's users row, then their reservation. New: the subject, then the key.
+  await lockProviderSubject(transaction, provider, identity.sub);
   const predicate = and(eq(accounts.provider, provider), eq(accounts.providerAccountId, identity.sub));
   // Read accounts directly: a dangling or disappearing link is not a new login.
   const [initialLink] = await transaction.select({ userId: accounts.userId }).from(accounts).where(predicate);
@@ -86,7 +92,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
     const userId = initialLink.userId;
     if (policy.actorUserId !== null && policy.actorUserId !== userId) return { outcome: 'actor_conflict' };
     const [initialUser] = await transaction.select({ email: users.email }).from(users).where(eq(users.id, userId));
-    const user = await lockUserRowUnderManifest(transaction, userId);
+    const user = await lockSubjectRow(transaction, userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)
@@ -130,6 +136,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   if (!parsedEmail.ok) return { outcome: 'no_email' };
   const key = parsedEmail.email;
   const email = policy.emailStorage === 'provided' ? identity.email! : key;
+  await lockEmailKeyForCreation(transaction, key);
   // A deleted account's address conflicts like a taken one until its digest expires.
   const reservation = await lockKeyReservation(transaction, key);
   if (reservation) {

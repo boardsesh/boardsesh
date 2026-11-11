@@ -20,7 +20,8 @@ import { assertFresh, transactionSettings } from './command-context';
 import {
   captureExpectedAuthority,
   lockEnforcedProjection,
-  lockUserRowUnderManifest,
+  lockProviderSubject,
+  lockSubjectRow,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -82,7 +83,7 @@ async function captureActor(cookie: string | null, secret: string) {
 }
 async function actorGeneration(transaction: CurrentStoreTransaction, actor: NegativeWebOAuthActor | null) {
   if (!actor) return { valid: true, generation: null };
-  const user = await lockUserRowUnderManifest(transaction, actor.userId);
+  const user = await lockSubjectRow(transaction, actor.userId);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)
@@ -184,6 +185,11 @@ export async function resolveWebOAuthIdentity(
       if (!(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
         return denied('resolve', requestId, 'replayed');
       assertFresh(Date.parse(issuedAt));
+      // The provider subject's lock before the actor's users row (section 4's
+      // order: gate, subject, users). A native sign-in for the same subject takes
+      // the subject first and then its owner's row, so taking the actor's row
+      // first here could wait on it in a cycle. Re-entrant when resolved below.
+      await lockProviderSubject(transaction, provider, subject);
       const [intent] = await transaction
         .select()
         .from(authWebOAuthIntents)

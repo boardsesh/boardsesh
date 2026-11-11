@@ -41,7 +41,11 @@ import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-a
 import { __resetNativeAuthStateForTests, handleNativeAuthRefresh } from '../../../handlers/native-auth';
 import { logger } from '../../../utils/logger';
 import { normalizeAccountEmail } from '../../normalize-email';
-import { CURRENT_EMAIL_NORMALIZER_VERSION, lockEnforcedProjection } from '../foundation-context';
+import {
+  CURRENT_EMAIL_NORMALIZER_VERSION,
+  lockAuthorityGateExclusively,
+  lockEnforcedProjection,
+} from '../foundation-context';
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../email-reservations';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
 import { issueEmailVerification, consumeEmailVerification } from '../email-verification';
@@ -746,7 +750,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
     const locked = barrier();
     const release = barrier();
     const holder = db.transaction(async (transaction) => {
-      await transaction.select().from(authEmailProjection).for('update');
+      await lockAuthorityGateExclusively(transaction);
       locked.resolve();
       await release.promise;
     });
@@ -806,7 +810,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
       const locked = barrier();
       const release = barrier();
       const holder = db.transaction(async (transaction) => {
-        await transaction.select().from(authEmailProjection).for('update');
+        await lockAuthorityGateExclusively(transaction);
         locked.resolve();
         await release.promise;
       });

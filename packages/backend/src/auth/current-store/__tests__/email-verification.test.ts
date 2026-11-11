@@ -36,7 +36,7 @@ import { db } from '../../../db/client';
 import { handleCurrentStoreWebAuth } from '../../../handlers/current-store-web-auth';
 import { normalizeAccountEmail } from '../../normalize-email';
 import { prepareProjectionUnderUsersTableLock } from '../email-reservations';
-import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../foundation-context';
+import { CURRENT_EMAIL_NORMALIZER_VERSION, lockAuthorityGateExclusively } from '../foundation-context';
 import { consumeEmailVerification, resendEmailVerification } from '../email-verification';
 import { recordSecurityMutation } from '../security-mutations';
 import { registerWebPassword, type WebPasswordAuthority } from '../web-password';
@@ -606,11 +606,7 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
     const acquired = barrier();
     const release = barrier();
     const holding = db.transaction(async (transaction) => {
-      await transaction
-        .select()
-        .from(authEmailProjection)
-        .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId))
-        .for('update');
+      await lockAuthorityGateExclusively(transaction);
       acquired.resolve();
       await release.promise;
     });
@@ -644,11 +640,7 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
     const release = barrier();
     const holding = db.transaction(async (transaction) => {
       await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
-      await transaction
-        .select()
-        .from(authEmailProjection)
-        .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId))
-        .for('update');
+      await lockAuthorityGateExclusively(transaction);
       acquired.resolve();
       await release.promise;
     });
@@ -686,11 +678,7 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
     const release = barrier();
     const holding = db.transaction(async (transaction) => {
       await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
-      await transaction
-        .select()
-        .from(authEmailProjection)
-        .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId))
-        .for('update');
+      await lockAuthorityGateExclusively(transaction);
       acquired.resolve();
       await release.promise;
     });

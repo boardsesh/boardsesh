@@ -15,6 +15,7 @@ import {
   captureExpectedAuthority,
   CURRENT_EMAIL_NORMALIZER_VERSION,
   CurrentStoreFoundationError,
+  lockEmailKeyForCreation,
   lockEnforcedProjection,
   requireReadCommitted,
   type CurrentStoreTransaction,
@@ -232,6 +233,9 @@ export async function reserveEnforcedEmail(
   if (!normalizedEmail || !requestedUserId || requestedUserId !== requestedUserId.trim())
     throw new CurrentStoreFoundationError('INVALID_COMMAND');
   const manifest = await lockEnforcedProjection(transaction, expected);
+  // Every caller takes this before reading the reservation; taking it again here
+  // is free and keeps a new reservation row from ever being written without it.
+  await lockEmailKeyForCreation(transaction, normalizedEmail);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)

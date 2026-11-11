@@ -16,7 +16,9 @@ import {
   AuthSubjectDeniedError,
   isAuthAdmissionUnavailable,
   isHumanSubjectActive,
+  PasswordProofStaleError,
   requireHumanSubjectForIssuance,
+  type PasswordProof,
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
 import { logger } from '../utils/logger';
@@ -25,7 +27,12 @@ import {
   currentStoreNativeRegistrationConfiguration,
   currentStoreNativeOAuthConfiguration,
 } from '../auth/current-store/authority-configuration';
-import { preflight, transactionSettings, type WebPasswordAuthority } from '../auth/current-store/command-context';
+import {
+  preflight,
+  signInTransactionSettings,
+  transactionSettings,
+  type WebPasswordAuthority,
+} from '../auth/current-store/command-context';
 import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
 import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
 import {
@@ -390,8 +397,9 @@ type NativeCredentialOrigin =
    * A proof this request checked: password, provider token, transfer token or
    * watch code. `authenticatedAt` is when a password or provider proof passed;
    * null for a transfer token or watch code, which carry a sign-in made elsewhere.
+   * `passwordProof` is what bcrypt checked, compared again under the user lock.
    */
-  | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null }
+  | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null; readonly passwordProof?: PasswordProof }
   /** The refresh row this request consumed, under the same user lock. */
   | { readonly kind: 'refresh'; readonly parent: RefreshStamps };
 
@@ -431,18 +439,30 @@ function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCu
   };
 }
 
+/**
+ * `lockedState` is the state a caller already read under this transaction's user
+ * lock (the refresh path), so the lock and its read are not taken twice.
+ */
 async function generateTokenPair(
   userId: string,
   transaction: Parameters<Parameters<DbInstance['transaction']>[0]>[0],
   origin: NativeCredentialOrigin,
+  lockedState?: SubjectCutoffState,
 ): Promise<{
   jwt: string;
   refreshToken: string;
   expiresAt: string;
   userId: string;
 }> {
-  await transactionSettings(transaction);
-  const generations = await requireHumanSubjectForIssuance(transaction, userId);
+  let generations = lockedState;
+  if (!generations) {
+    const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
+    // A password sign-in gives up on a held user row after 250 ms and answers
+    // 503, which the app retries; issuance that must win keeps 4 s.
+    if (passwordProof) await signInTransactionSettings(transaction);
+    else await transactionSettings(transaction);
+    generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
+  }
   if (origin.kind === 'refresh') {
     // A child copies its parent's stamps, so a parent from before a reset or an
     // app sign-out would mint a pair every reader refuses, and the app would
@@ -689,11 +709,25 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     }
 
     const authenticatedUserId = authenticatedUser.userId;
-    const tokenPair = await issueTokenPair(authenticatedUserId, signedInNow());
+    // Issue only if the hash and generation bcrypt checked are still the
+    // account's under the user lock: a check that passed just before a reset
+    // must not mint a credential after it (BA-04 section 4).
+    const tokenPair = await issueTokenPair(authenticatedUserId, {
+      kind: 'sign-in',
+      authenticatedAt: new Date(),
+      passwordProof: {
+        passwordHash: authenticatedUser.passwordHash,
+        generation: authenticatedUser.generation,
+      },
+    });
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
     const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
     sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
   } catch (error) {
+    if (error instanceof PasswordProofStaleError) {
+      sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
+      return;
+    }
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Credentials sign-in failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
@@ -1414,7 +1448,11 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
     }
     const result = await db.transaction(async (tx) => {
       await transactionSettings(tx);
-      await requireHumanSubjectForIssuance(tx, hint.userId);
+      // The user lock first, then the generations in a statement of its own. A
+      // reset or deletion that committed while this waited is seen here, and none
+      // can commit before this does: each takes users FOR UPDATE, which this
+      // KEY SHARE excludes. The parent is decided against these generations.
+      const lockedState = await requireHumanSubjectForIssuance(tx, hint.userId);
       // Atomically revoke the token and return it in a single query.
       // This prevents TOCTOU races: if two concurrent requests present the same
       // refresh token, only one will get the row back — the other gets an empty
@@ -1440,7 +1478,12 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
         return { status: 401 as const, error: 'Refresh token expired' };
       }
 
-      const tokenPair = await generateTokenPair(revokedToken.userId, tx, { kind: 'refresh', parent: revokedToken });
+      const tokenPair = await generateTokenPair(
+        revokedToken.userId,
+        tx,
+        { kind: 'refresh', parent: revokedToken },
+        lockedState,
+      );
       return { status: 200 as const, tokenPair, userId: revokedToken.userId };
     });
 

@@ -109,7 +109,12 @@ describe('native password service over the current authoritative Postgres store'
     expect(stored.emailVerified).toBeInstanceOf(Date);
     expect(stored.createdAt).toEqual(identity.createdAt);
     expect(profile.isPrivate).toBe(false);
-    expect(await authenticateCurrentStorePassword(db, ` ${email.toUpperCase()} `, password)).toEqual(identity);
+    // Also what bcrypt checked, for the issuer to compare again under its user lock.
+    expect(await authenticateCurrentStorePassword(db, ` ${email.toUpperCase()} `, password)).toEqual({
+      ...identity,
+      passwordHash: prepared.passwordHash,
+      generation: 0,
+    });
     expect((await identityRows(identity.userId)).refresh).toEqual([]);
   });
 
@@ -120,7 +125,11 @@ describe('native password service over the current authoritative Postgres store'
     );
     const [stored] = await db.select().from(users).where(eq(users.id, identity.userId));
     expect(stored.emailVerified).toBeNull();
-    expect(await authenticateCurrentStorePassword(db, prepared.email, 'unverified-native-password')).toEqual(identity);
+    expect(await authenticateCurrentStorePassword(db, prepared.email, 'unverified-native-password')).toEqual({
+      ...identity,
+      passwordHash: prepared.passwordHash,
+      generation: 0,
+    });
   });
 
   it('authenticates an existing short password and treats SQL pattern characters literally', async () => {

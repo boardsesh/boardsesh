@@ -13,6 +13,7 @@ import {
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import {
   authEmailReservationMembers,
+  authEmailReservations,
   authPasswordRecoveryState,
   authPasswordRecoveryTokens,
   authSubjectCutoffs,
@@ -27,6 +28,7 @@ import { z } from 'zod';
 import { normalizeAccountEmail } from '../normalize-email';
 import {
   assertFresh,
+  boundSignInLockWaits,
   captureAuthority,
   claimCommand,
   claimLegacyLink,
@@ -38,7 +40,7 @@ import { lockKeyReservation } from './email-reservations';
 import {
   CurrentStoreFoundationError,
   lockEnforcedProjection,
-  lockUserRowUnderManifest,
+  lockSubjectRow,
   type CurrentStoreTransaction,
 } from './foundation-context';
 import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
@@ -75,7 +77,24 @@ async function clock(transaction: CurrentStoreTransaction) {
   return milliseconds;
 }
 
-/** No owner selection for blocked groups; stale or inconsistent evidence is unavailable. */
+/**
+ * Who owns the key, read without a lock. Only a hint for which climber to lock
+ * first: the caller locks that climber's row, then re-reads the owner locked.
+ */
+async function ownerHint(transaction: CurrentStoreTransaction, key: string) {
+  const [reservation] = await transaction
+    .select({ ownerUserId: authEmailReservations.ownerUserId })
+    .from(authEmailReservations)
+    .where(and(eq(authEmailReservations.normalizedEmail, key), eq(authEmailReservations.state, 'owned')));
+  return reservation?.ownerUserId ?? null;
+}
+
+/**
+ * No owner selection for blocked groups; stale or inconsistent evidence is
+ * unavailable. Call with the claimed owner's users row already locked: section
+ * 4's lock order puts a climber's row before their reservation, as account
+ * deletion takes them, so the two can never wait on each other in a cycle.
+ */
 async function owner(
   transaction: CurrentStoreTransaction,
   authority: WebPasswordAuthority,
@@ -127,10 +146,16 @@ export async function requestPasswordRecovery(
         message: message as Extract<ForgotPasswordReply, { code: 'validation_error' }>['message'],
       };
     const key = normalizeAccountEmail(email);
+    const hinted = await ownerHint(transaction, key);
+    // Unauthenticated, so it must not hold a pool connection for 4 s behind a
+    // held row: 250 ms, then unavailable (SIGN_IN_LOCK_TIMEOUT).
+    await boundSignInLockWaits(transaction);
+    const user = hinted ? await lockSubjectRow(transaction, hinted) : undefined;
     const userId = await owner(transaction, authority, key);
     assertFresh(issuedAt);
-    if (!userId) return { ...base, outcome: 'accepted' };
-    const user = await lockUserRowUnderManifest(transaction, userId);
+    // A key that gained an owner after the hint belongs to an account created
+    // this instant; its row would be locked after the reservation, so send nothing.
+    if (!userId || userId !== hinted) return { ...base, outcome: 'accepted' };
     if (!user || normalizeAccountEmail(user.email) !== key)
       throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     const [credential] = await transaction
@@ -245,8 +270,8 @@ async function previewLegacyResetOwner(
  * A pre-switch reset link, once BA-02 makes addresses unique: it binds to the
  * one account holding its exact address, ends at its original deadline, works
  * once, and dies on any later recorded security mutation. Then it resets exactly as a
- * UID-bound receipt does. Same lock order: manifest (held), reservation, user,
- * credential, cutoff.
+ * UID-bound receipt does. Same lock order: gate (held), the previewed user,
+ * reservation, credential, cutoff (BA-04 section 4, the order deletion uses).
  */
 async function consumeBoundLegacyReset(
   transaction: CurrentStoreTransaction,
@@ -266,13 +291,13 @@ async function consumeBoundLegacyReset(
   // The old issuer gave every link one hour. A longer deadline is not one it made.
   if (link.deadline.getTime() > link.now + lifetimeMs + AUTH_COMMAND_FUTURE_SKEW_MS) return 'invalid_or_expired';
   const key = normalizeAccountEmail(link.email);
+  const user = await lockSubjectRow(transaction, link.preview.userId);
   const userId = await owner(transaction, authority, key);
   if (!userId)
     return (await lockKeyReservation(transaction, key))?.state === 'blocked_deleted'
       ? 'invalid_or_expired'
       : 'legacy_unbound';
   if (userId !== link.preview.userId) return 'legacy_unbound';
-  const user = await lockUserRowUnderManifest(transaction, userId);
   const holders = await accountsHoldingAddress(transaction, key);
   if (!user || normalizeAccountEmail(user.email) !== key || holders.length !== 1 || holders[0].id !== userId)
     return 'invalid_or_expired';
@@ -427,8 +452,8 @@ export async function consumePasswordRecovery(
     }
     if (!initial || initial.purpose !== purpose || !initialCredential || !passwordHash)
       return { ...base, outcome: 'invalid_or_expired' };
+    const user = await lockSubjectRow(transaction, initial.userId);
     const userId = await owner(transaction, authority, initial.normalizedEmail, true);
-    const user = await lockUserRowUnderManifest(transaction, initial.userId);
     const [credential] = await transaction
       .select()
       .from(userCredentials)

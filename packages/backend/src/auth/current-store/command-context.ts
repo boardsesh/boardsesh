@@ -47,7 +47,38 @@ export async function transactionSettings(transaction: CurrentStoreTransaction) 
   await transaction.execute(sql`SET LOCAL statement_timeout = '5000ms'`);
   await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
 }
-/** Short preflight only. Never hold the global manifest lock during bcrypt or other long work. */
+
+/**
+ * How long a sign-in, forgot-password or resend-verification waits for a held
+ * climber's row (and, after it, their reservation) before giving up. Giving up
+ * throws 55P03, which every caller answers as unavailable, a reply clients
+ * retry; it is never answered as a wrong password. Writers that must win (reset,
+ * set-password, deletion) keep the 4 s limit above. Each waiting request holds
+ * one of a backend process's five pool connections (`DEFAULT_POOL_MAX`), so at
+ * 4 s a burst naming one held account, such as one being deleted, kept the pool
+ * busy and an unrelated sign-in in the same process waited 16 s.
+ */
+export const SIGN_IN_LOCK_TIMEOUT = '250ms';
+
+/** Call right before the first climber-row lock: the gate wait before it keeps 4 s. */
+export async function boundSignInLockWaits(transaction: CurrentStoreTransaction) {
+  await transaction.execute(sql.raw(`SET LOCAL lock_timeout = '${SIGN_IN_LOCK_TIMEOUT}'`));
+}
+
+/**
+ * `transactionSettings` for native password sign-in, which takes no gate: the
+ * user row is the first lock it waits for, so the short limit applies from the
+ * start, in the same two statements.
+ */
+export async function signInTransactionSettings(transaction: CurrentStoreTransaction) {
+  await transaction.execute(sql`SET LOCAL statement_timeout = '5000ms'`);
+  await boundSignInLockWaits(transaction);
+}
+/**
+ * Short preflight only: fail on a stale authority before bcrypt or other long
+ * work, which then runs with no transaction open. The command re-validates under
+ * the gate in its own transaction.
+ */
 export async function preflight(database: DbInstance, authority: ExpectedCurrentStoreAuthority) {
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);

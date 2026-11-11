@@ -7,7 +7,6 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
-  authEmailProjection,
   mobileRefreshTokens,
   sessions,
   users,
@@ -20,6 +19,7 @@ import { claimBackgroundJobRun } from '@boardsesh/db/queries';
 import { BATCH_SYSTEM_USER_COMMAND_PATH } from '@boardsesh/auth-protocol';
 import { createBatchSystemUserClient } from '../batch-system-user-client';
 import { consumeEmailVerification } from '../email-verification';
+import { lockAuthorityGateExclusively } from '../foundation-context';
 import { logger } from '../../../utils/logger';
 import { BatchSystemUserProof } from './fixtures/batch-system-user-proof';
 
@@ -361,7 +361,7 @@ describe('actual private batch identity command and PostgreSQL attempt fencing',
     const locked = deferred();
     const release = deferred();
     const blocker = proof.db.transaction(async (transaction) => {
-      await transaction.select().from(authEmailProjection).for('update');
+      await lockAuthorityGateExclusively(transaction);
       locked.release();
       await release.pending;
     });

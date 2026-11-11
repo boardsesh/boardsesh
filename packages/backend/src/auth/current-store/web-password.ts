@@ -10,7 +10,7 @@ import {
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
-import { boundLockWaitsUnderManifest, lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
+import { lockEnforcedProjection, CurrentStoreFoundationError } from './foundation-context';
 import {
   matchCurrentStorePasswordCandidate,
   MAX_CURRENT_STORE_PASSWORD_CANDIDATES,
@@ -32,6 +32,7 @@ export { WebPasswordCommandError, isWebPasswordCommandFresh, type WebPasswordAut
 import {
   captureAuthority,
   assertFresh,
+  boundSignInLockWaits,
   preflight,
   transactionSettings,
   claimCommand,
@@ -211,48 +212,69 @@ export async function authenticateWebPassword(
         outcome: 'error',
         code: 'replayed',
       };
-    // Manifest → users → credentials → cutoffs. Other participating commands
-    // must take the same gate first; old writers are explicitly NOT assumed so.
-    await boundLockWaitsUnderManifest(transaction);
+    // A password that matched no one is wrong whatever the rows say now, so it
+    // takes no user lock: a burst of wrong guesses naming a held account never
+    // waits or holds a pool connection behind it.
+    if (!matched) {
+      assertFresh(issuedAt);
+      return {
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'password',
+        requestId,
+        outcome: 'invalid_credentials',
+      };
+    }
+    // Gate, then users FOR KEY SHARE: a sign-in writes no identity row, so it
+    // only has to keep every credential writer out until it answers. Every such
+    // writer takes users FOR UPDATE first, which KEY SHARE excludes, while the
+    // foreign-key KEY SHARE an ordinary write (a logbook sync page) holds does not
+    // conflict, so a sign-in never waits for one. No other climber's command
+    // shares a lock with this one. Old writers are explicitly NOT assumed to
+    // take the gate or the user lock. A held row is given up on after 250 ms
+    // and answered unavailable, never as a wrong password.
+    await boundSignInLockWaits(transaction);
     const currentUsers = await transaction
-      .select()
+      .select({ id: users.id })
       .from(users)
       .where(eq(users.email, email))
       .orderBy(users.id)
       .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1)
-      .for('update');
-    const userIds = currentUsers.map((user) => user.id);
-    const currentCredentials = userIds.length
-      ? await transaction
-          .select()
-          .from(userCredentials)
-          .where(inArray(userCredentials.userId, userIds))
-          .orderBy(userCredentials.userId)
-          .for('update')
+      .for('key share');
+    // A statement of its own, after the lock: the locking statement's snapshot
+    // predates its wait, so only a later one sees a reset that committed during it.
+    const current = currentUsers.length
+      ? (
+          await transaction
+            .select({
+              userId: users.id,
+              email: users.email,
+              name: users.name,
+              image: users.image,
+              createdAt: users.createdAt,
+              emailVerified: users.emailVerified,
+              passwordHash: userCredentials.passwordHash,
+              generation: authSubjectCutoffs.generation,
+              deletedAt: authSubjectCutoffs.deletedAt,
+            })
+            .from(users)
+            .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+            .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+            .where(
+              inArray(
+                users.id,
+                currentUsers.map((user) => user.id),
+              ),
+            )
+            .orderBy(users.id)
+        ).map((candidate) => ({
+          ...candidate,
+          generation: candidate.generation ?? 0,
+          deleted: candidate.deletedAt !== null,
+        }))
       : [];
-    const currentCutoffs = userIds.length
-      ? await transaction
-          .select()
-          .from(authSubjectCutoffs)
-          .where(inArray(authSubjectCutoffs.userId, userIds))
-          .orderBy(authSubjectCutoffs.userId)
-          .for('update')
-      : [];
-    const hashes = new Map(currentCredentials.map((credential) => [credential.userId, credential.passwordHash]));
-    const cutoffs = new Map(currentCutoffs.map((cutoff) => [cutoff.userId, cutoff]));
-    const current: ExactCandidate[] = currentUsers.map((user) => ({
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      image: user.image,
-      createdAt: user.createdAt,
-      passwordHash: hashes.get(user.id) ?? null,
-      generation: cutoffs.get(user.id)?.generation ?? 0,
-      deleted: cutoffs.get(user.id)?.deletedAt != null,
-    }));
-    const selected = matched ? currentUsers.find((user) => user.id === matched.userId) : undefined;
+    const selected = matched ? current.find((candidate) => candidate.userId === matched.userId) : undefined;
     assertFresh(issuedAt);
-    if (!selected || !sameCredentialMembers(snapshot, current) || cutoffs.get(selected.id)?.deletedAt)
+    if (!selected || !sameCredentialMembers(snapshot, current) || selected.deleted)
       return {
         protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'password',
@@ -264,9 +286,9 @@ export async function authenticateWebPassword(
       operation: 'password',
       requestId,
       outcome: 'authenticated',
-      user: { id: selected.id, email: selected.email, name: selected.name, image: selected.image },
+      user: { id: selected.userId, email: selected.email, name: selected.name, image: selected.image },
       verification: {
-        userId: selected.id,
+        userId: selected.userId,
         required: authority.emailVerificationEnabled,
         verified: selected.emailVerified !== null,
       },
