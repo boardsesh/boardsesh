@@ -26,7 +26,11 @@ export function operatorClient(
   return postgres(operatorConnectionOptions(environment, confirmHost, write));
 }
 
-export function parseOperatorArguments(arguments_: readonly string[], commands: readonly string[]) {
+export function parseOperatorArguments(
+  arguments_: readonly string[],
+  commands: readonly string[],
+  additionalFlags: readonly string[] = [],
+) {
   const command = arguments_[0]?.startsWith('--') || !arguments_[0] ? commands[0] : arguments_[0];
   if (!commands.includes(command)) throw new Error('INVALID_ARGUMENTS');
   const options = new Map<string, string>();
@@ -35,7 +39,7 @@ export function parseOperatorArguments(arguments_: readonly string[], commands: 
     const flag = arguments_[index];
     const argument = arguments_[index + 1];
     if (
-      !['--confirm-host', '--projection-id', '--plan-sha256'].includes(flag) ||
+      !['--confirm-host', '--projection-id', '--plan-sha256', ...additionalFlags].includes(flag) ||
       !argument ||
       argument.startsWith('--') ||
       options.has(flag)
@@ -47,6 +51,7 @@ export function parseOperatorArguments(arguments_: readonly string[], commands: 
   if (!confirmHost) throw new Error('HOST_CONFIRMATION_REQUIRED');
   return {
     command,
+    options,
     confirmHost,
     projectionId: options.get('--projection-id'),
     planSha256: options.get('--plan-sha256'),

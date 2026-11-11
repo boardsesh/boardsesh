@@ -223,6 +223,18 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'auth:import-identities': {
+        command: 'tsx packages/backend/src/scripts/auth-import-identities.ts',
+        cache: false,
+      },
+      'auth:reconcile-identities': {
+        command: 'tsx packages/backend/src/scripts/auth-reconcile-identities.ts',
+        cache: false,
+      },
+      'test:auth-identities': {
+        command: 'vp test run --config packages/backend/vite.auth-identities.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
       'qa:boards': {
         command: 'tsx scripts/board-qa.ts',
         cache: false,
