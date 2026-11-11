@@ -29,6 +29,12 @@ const { userIdFromJwt } = (await import(
   fileURLToPath(new URL('../../../mobile/src/lib/jwt-user-id.ts', import.meta.url))
 )) as { userIdFromJwt: (token: string | null | undefined) => string | undefined };
 
+const { issueNativeOAuthTransferToken } = (await import(
+  fileURLToPath(new URL('../../../web/app/lib/auth/native-oauth-transfer.ts', import.meta.url))
+)) as {
+  issueNativeOAuthTransferToken: (input: { userId: string; nextPath: string; generation: number }) => string;
+};
+
 // BA-04 PR 1: every newly issued native credential carries the generations
 // read under the issuer's user lock and, for a password or provider proof, the
 // sign-in second. A refresh copies its parent's stamps. Nothing reads them yet.
@@ -382,6 +388,19 @@ describe('native credential stamps against the owned primary database', () => {
       expect((await native('/refresh', { refreshToken })).status).toBe(401);
     } finally {
       transaction.mockRestore();
+    }
+  });
+
+  it('exchanges the actual web producer after a reset and refuses its stale generation', async () => {
+    await setCutoff(5, 2);
+    const validTransfer = issueNativeOAuthTransferToken({ userId: ownerId, nextPath: '/', generation: 5 });
+    const staleTransfer = issueNativeOAuthTransferToken({ userId: ownerId, nextPath: '/old', generation: 4 });
+    const current = await issued('/exchange', { transferToken: validTransfer });
+    expect(await claims(current)).toMatchObject({ sub: ownerId, gen: 5, ngen: 2 });
+    expect(decodeJwt(current.jwt)).not.toHaveProperty('auth_time');
+    expect((await native('/exchange', { transferToken: staleTransfer })).status).toBe(401);
+    for (const transfer of [validTransfer, staleTransfer]) {
+      redisKeys.add(`boardsesh:native-auth:consumed:${transfer.split('.')[1]}`);
     }
   });
 

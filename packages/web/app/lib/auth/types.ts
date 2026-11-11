@@ -11,6 +11,8 @@ export type NativeOAuthCreationProof = {
 declare module 'next-auth' {
   // eslint-disable-next-line typescript/consistent-type-definitions
   interface Session {
+    /** Signed login generation; renewal never substitutes the primary generation. */
+    authGeneration?: number;
     authSessionId?: string;
     nativeOAuthCreationProof?: NativeOAuthCreationProof;
     user: {

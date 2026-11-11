@@ -9,6 +9,7 @@ type NativeOAuthTransferPayload = {
   nextPath: string;
   iat: number;
   exp: number;
+  gen: number;
   accountCreation?: AccountCreationReceipt;
   authSessionId?: string;
   attemptId?: string;
@@ -32,6 +33,7 @@ const sanitizeNextPath = (nextPath: string): string => (nextPath.startsWith('/')
 export const issueNativeOAuthTransferToken = ({
   userId,
   nextPath,
+  generation = 0,
   accountCreation,
   authSessionId,
   attemptId,
@@ -39,17 +41,22 @@ export const issueNativeOAuthTransferToken = ({
 }: {
   userId: string;
   nextPath: string;
+  generation?: number;
   accountCreation?: AccountCreationReceipt;
   authSessionId?: string;
   attemptId?: string;
   provider?: 'apple' | 'google';
 }): string => {
+  if (!Number.isSafeInteger(generation) || generation < 0) {
+    throw new Error('Invalid native OAuth transfer generation');
+  }
   const now = Math.floor(Date.now() / 1000);
   const payload: NativeOAuthTransferPayload = {
     userId,
     nextPath: sanitizeNextPath(nextPath),
     iat: now,
     exp: now + NATIVE_OAUTH_TRANSFER_TTL_SECONDS,
+    gen: generation,
     ...(accountCreation && authSessionId && attemptId && provider
       ? { accountCreation, authSessionId, attemptId, provider }
       : {}),
