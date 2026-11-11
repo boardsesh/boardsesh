@@ -8,13 +8,13 @@ import { encode, decode, type JWT } from 'next-auth/jwt';
 import type { NextAuthOptions } from 'next-auth';
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { users, accounts, userCredentials, authEmailProjection } from '@boardsesh/db/schema';
-import { createEnvironment } from '../../../../../backend/src/auth/authority/__tests__/environment';
-import { prepareProjectionUnderUsersTableLock } from '../../../../../backend/src/auth/current-store/email-reservations';
-import { handleCurrentStoreWebSignOut } from '../../../../../backend/src/handlers/current-store-web-signout';
-import { handleCurrentStoreWebAuth } from '../../../../../backend/src/handlers/current-store-web-auth';
-import { recordSecurityMutation } from '../../../../../backend/src/auth/current-store/security-mutations';
-import { lockEnforcedProjection } from '../../../../../backend/src/auth/current-store/foundation-context';
-import { readFirstPartySession } from '../../../../../backend/src/auth/authority/session-reader';
+import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
+import { prepareProjectionUnderUsersTableLock } from '../../backend/src/auth/current-store/email-reservations';
+import { handleCurrentStoreWebSignOut } from '../../backend/src/handlers/current-store-web-signout';
+import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
+import { recordSecurityMutation } from '../../backend/src/auth/current-store/security-mutations';
+import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
+import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
 
 const holder = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = 'synthetic-web-backend-proof-secret';
@@ -34,13 +34,13 @@ vi.mock('next-auth/jwt', async (original) => {
 vi.mock('server-only', () => ({}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: () => ({}) }));
 vi.mock('@/app/lib/db/db', () => ({ getDb: () => holder.database }));
-vi.mock('../../../../../backend/src/db/client', () => ({
+vi.mock('../../backend/src/db/client', () => ({
   get db() {
     return holder.database;
   },
 }));
 let environment: Awaited<ReturnType<typeof createEnvironment>>;
-vi.mock('../../../../../backend/src/auth/admission-pool', () => ({
+vi.mock('../../backend/src/auth/admission-pool', () => ({
   readOnAdmissionConnection: async (
     mark: () => void,
     read: (database: typeof environment.database) => PromiseLike<unknown>,
@@ -49,13 +49,16 @@ vi.mock('../../../../../backend/src/auth/admission-pool', () => ({
     return read(environment.database);
   },
 }));
-import { authOptions } from '../auth-options';
-import { createPasswordCommandClient, AuthBackendUnavailableError } from '../password-command-client.server';
-import { createPasswordCommandAuthRequest } from '../password-command-auth.server';
-import { forwardWebSignOut } from '../web-signout-command.server';
-import { delegateSetPassword } from '../set-password-command.server';
-vi.mock('../credential-admission.server', async (original) => ({
-  ...(await original<typeof import('../credential-admission.server')>()),
+import { authOptions } from '../app/lib/auth/auth-options';
+import {
+  createPasswordCommandClient,
+  AuthBackendUnavailableError,
+} from '../app/lib/auth/password-command-client.server';
+import { createPasswordCommandAuthRequest } from '../app/lib/auth/password-command-auth.server';
+import { forwardWebSignOut } from '../app/lib/auth/web-signout-command.server';
+import { delegateSetPassword } from '../app/lib/auth/set-password-command.server';
+vi.mock('../app/lib/auth/credential-admission.server', async (original) => ({
+  ...(await original<typeof import('../app/lib/auth/credential-admission.server')>()),
   admitPresentedWebCredential: async (credential: string) => {
     const result = await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret });
     if (result.status === 'unavailable') throw new Error('Owned authority unavailable');
@@ -153,7 +156,7 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     vi.unstubAllGlobals();
   });
   afterAll(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     await environment?.close();
   });
 

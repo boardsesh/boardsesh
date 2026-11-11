@@ -883,6 +883,8 @@ export default defineConfig({
       },
       'typecheck:auth-prototype-browser': {
         command: 'tsc -p packages/web/auth-prototype/tsconfig.json --noEmit',
+        // The proof imports both packages; always verify its explicit TS project.
+        cache: false,
       },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
@@ -1191,6 +1193,12 @@ export default defineConfig({
       },
       'test:auth-prototype': {
         command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
+        cache: false,
+      },
+      'test:auth-web-credential-proof': {
+        command:
+          'vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },
       'test:auth-prototype:browser': {

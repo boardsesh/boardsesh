@@ -4,6 +4,12 @@
     "incremental": false,
     "types": ["node"]
   },
-  "include": ["browser.spec.ts", "../playwright.auth-prototype.config.ts"],
+  "include": [
+    "browser.spec.ts",
+    "../playwright.auth-prototype.config.ts",
+    "web-credential-proof.integration.proof.ts",
+    "credential-proof.vite.config.ts",
+    "../app/lib/auth/types.ts"
+  ],
   "exclude": []
 }
