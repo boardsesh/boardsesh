@@ -301,6 +301,34 @@ function inspectOutcome(value: unknown): string {
   return 'fulfilled';
 }
 
+/**
+ * Holds the owner's users row FOR UPDATE, as a deletion does, runs `run` until it
+ * queues on that row, and checks the owner's reservation is free meanwhile: the
+ * row a deletion's bookkeeping locks next, so a lock held on it would close a
+ * cycle. Returns the command's settled outcome once the row is released.
+ */
+async function expectReservationFreeWhileWaiting(run: (database: DbInstance) => Promise<unknown>) {
+  const holder = await hold(blocker, (transaction) =>
+    transaction.select({ id: users.id }).from(users).where(eq(users.id, ownerId)).for('update'),
+  );
+  let command: ReturnType<typeof settled<unknown>> | undefined;
+  try {
+    command = track(settled(run(drizzle(bystander) as unknown as DbInstance)));
+    await waitBlockedBy(holder.pid, command);
+    const probe = await settled(
+      observer.begin(
+        (transaction) =>
+          transaction`SELECT 1 FROM auth_email_reservations WHERE normalized_email = ${ownerEmail} FOR UPDATE NOWAIT`,
+      ),
+    );
+    expect(probe.status === 'rejected' ? getPostgresErrorCode(probe.reason) : 'free').toBe('free');
+  } finally {
+    holder.release();
+    await holder.held;
+  }
+  return command;
+}
+
 async function liveRefreshRows(userId: string) {
   return db
     .select()
@@ -688,31 +716,73 @@ describe('per-user sign-in locks against the owned primary database', () => {
     it.each(commandsNamingTheAccount.filter(([name]) => RESERVATION_COMMANDS.has(name)))(
       '%s holds no lock on the reservation while it waits for the climber',
       async (_name, prepare) => {
-        const run = await prepare();
-        // The deletion's place: the climber's row held FOR UPDATE.
-        const holder = await hold(blocker, (transaction) =>
-          transaction.select({ id: users.id }).from(users).where(eq(users.id, ownerId)).for('update'),
-        );
-        let command: Promise<unknown> | undefined;
-        try {
-          command = track(settled(run(drizzle(bystander) as unknown as DbInstance)));
-          await waitBlockedBy(holder.pid, command);
-          // What the deletion's bookkeeping asks for next. Free, so no cycle can form.
-          const probe = await settled(
-            observer.begin(
-              (transaction) =>
-                transaction`SELECT 1 FROM auth_email_reservations WHERE normalized_email = ${ownerEmail} FOR UPDATE NOWAIT`,
-            ),
-          );
-          expect(probe.status === 'rejected' ? getPostgresErrorCode(probe.reason) : 'free').toBe('free');
-        } finally {
-          holder.release();
-          await holder.held;
-        }
-        await bounded(command!);
+        await bounded(expectReservationFreeWhileWaiting(await prepare()));
       },
       20_000,
     );
+
+    describe('a pre-switch link, once addresses are unique', () => {
+      beforeEach(async () => {
+        // The bind runs only behind BA-02's index, created as #7418's tests do.
+        // Other files' leftover case-duplicates would block it; rename them.
+        await db.execute(sql`UPDATE ${users} SET email = id || '@duplicate.invalid'
+          WHERE lower(email) IN (SELECT lower(email) FROM ${users} GROUP BY 1 HAVING count(*) > 1)`);
+        await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON ${users} (lower(email))`);
+      });
+      afterEach(async () => {
+        await db.execute(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+      });
+
+      it.each([
+        [
+          'reset link',
+          async () => {
+            const secret = randomUUID();
+            await db.insert(verificationTokens).values({
+              identifier: `password-reset:${ownerEmail}`,
+              token: createHash('sha256').update(secret).digest('hex'),
+              expires: new Date(Date.now() + 30 * 60_000),
+            });
+            return (database: DbInstance) =>
+              consumePasswordRecovery(
+                database,
+                authority,
+                webCommand('reset-password', {
+                  email: ownerEmail,
+                  token: secret,
+                  password: newPassword,
+                  confirmPassword: newPassword,
+                }),
+              );
+          },
+          'reset',
+        ],
+        [
+          'verify link',
+          async () => {
+            const token = randomUUID();
+            await db
+              .insert(verificationTokens)
+              .values({ identifier: ownerEmail, token, expires: new Date(Date.now() + 3600_000) });
+            return (database: DbInstance) =>
+              consumeEmailVerification(
+                database,
+                { ...authority, emailVerificationEnabled: true },
+                webCommand('verify-email', { token, email: ownerEmail }),
+              );
+          },
+          'verified',
+        ],
+      ] as const)(
+        'a pre-switch %s binds through the climber row before the reservation, then completes',
+        async (_name, prepare, expected) => {
+          const outcome = await bounded(expectReservationFreeWhileWaiting(await prepare()));
+          // Bound to the account, not left unbound: the locked path really ran.
+          expect(outcome).toMatchObject({ status: 'fulfilled', value: { outcome: expected } });
+        },
+        20_000,
+      );
+    });
   });
 
   describe('a password checked before a reset cannot issue after it', () => {
