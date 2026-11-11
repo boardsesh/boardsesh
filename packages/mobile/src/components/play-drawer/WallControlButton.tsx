@@ -68,6 +68,8 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { glassSize } from '../../theme/layout';
 import { WALL_CONTROL_TONAL_ALPHA, type WallControlModel } from './wall-control';
 import { formatWindowClock, useWallControlText, windowTimeValue } from './wall-control-text';
+import { useWallFrostMotionEnabled } from '../../providers/feature-flags-provider';
+import { frostedBokehMotionAvailable } from '../FrostedBokeh';
 import { WallGlow } from './WallGlow';
 import { wallControlUsesFrost } from './wall-control-frost';
 import { WallSwipeWipe } from './WallSwipeWipe';
@@ -238,7 +240,19 @@ function WallControlButtonComponent({
   const glowShown = frosted ? glow : null;
   // The filled bulb tracks this phone's ownership separately from driving frost.
   const holdsBoard = model.holder === 'self';
-  const fullGlow = useWallGlowLayer(glowShown, size.w, size.h, colorScheme === 'dark' ? 'dark' : 'light');
+  // The moving frost (Metal): lights breathe while driving and glide to the
+  // next climb. Never on the preview card's picture or under Reduce Motion,
+  // and only on a binary with the native view; otherwise today's still frost.
+  const frostMovingOffered = useWallFrostMotionEnabled();
+  const frostMoving = frostMovingOffered && frostedBokehMotionAvailable && !sample && !reduceMotion;
+  const fullGlow = useWallGlowLayer(
+    glowShown,
+    size.w,
+    size.h,
+    colorScheme === 'dark' ? 'dark' : 'light',
+    'center',
+    frostMoving,
+  );
   const text = useWallControlText(model);
   const hold = model.longPress === 'sheet';
   const busy = model.pending || model.writing;
@@ -430,7 +444,7 @@ function WallControlButtonComponent({
           wrapped, so a timed drive turning open-ended never remounts the glow. */}
       {fullGlow ? (
         <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed={timed}>
-          <WallGlow layer={fullGlow} width={size.w} />
+          <WallGlow layer={fullGlow} width={size.w} moving={frostMoving} />
         </WallWindowFrost>
       ) : lit && timed ? (
         <WallWindowFrost width={size.w} reduceMotion={reduceMotion} timed>

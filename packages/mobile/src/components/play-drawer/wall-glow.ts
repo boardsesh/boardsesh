@@ -87,6 +87,8 @@ export function wallGlowLabelContrast(
     opacityScale?: number;
     fade?: number;
     readableZone?: WallGlowReadableZone;
+    /** The moving frost: check its worst frame, not its resting one. */
+    motion?: boolean;
   },
 ): number {
   const readableZone = options.readableZone ?? 'center';
@@ -118,6 +120,7 @@ export function wallGlowLabelFade(
     blend: WallGlowBlend;
     opacityScale?: number;
     readableZone?: WallGlowReadableZone;
+    motion?: boolean;
   },
 ): number {
   for (const fade of LABEL_FADE_STEPS) {

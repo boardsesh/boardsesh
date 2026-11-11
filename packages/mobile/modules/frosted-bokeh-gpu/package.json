@@ -1,0 +1,8 @@
+{
+  "name": "@boardsesh/frosted-bokeh-gpu-module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The driving wall button's frosted bokeh drawn by one Metal fragment shader, so its lights can breathe and glide to the next climb.",
+  "license": "MIT",
+  "main": "src/index.ts"
+}

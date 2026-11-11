@@ -203,6 +203,15 @@ diagnostic) applies on native. The whole surface lives in three files:
   nothing drives the wall: Always drive the wall's running drive ends keeping the
   link (`always_off`), and every pick is a preview until the flag is back. Check its rollout in PostHog before reading any
   driving metric.
+  `wall-frost-motion` is a POSITIVE flag (read through `wallFrostMotionOffered`:
+  unresolved or off means off in a store build; dev builds read it as on unless
+  it is set to off; screenshot mode never moves). On, the driving wall button's
+  frost is drawn by the iOS Metal view in `modules/frosted-bokeh-gpu`: its lights
+  breathe while the climber drives and glide to the next climb on Next. It needs
+  a binary with that module, so Android, the web and older iOS binaries keep the
+  still frost whatever the flag says, and so does Reduce Motion. The view stops
+  drawing in the background, off screen and, for the breathing, in Low Power
+  Mode. Off, the button draws exactly what it drew before.
   `shared-session-browse` is a POSITIVE flag (read `=== true`, unresolved =
   off) that decides whether a crew's swipes and list taps preview instead of
   writing the shared queue and lighting the wall; off, every gesture lights the

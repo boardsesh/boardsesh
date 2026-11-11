@@ -13,6 +13,16 @@ export const MAX_BOKEH_BLOBS = 15;
 export const BOKEH_STRENGTH = 1.6;
 export const FROST_ALPHA = 0.08;
 export const GRAIN_ALPHA = 0.06;
+/**
+ * The moving frost (drawn on the GPU where the platform can): each light drifts
+ * up to `BOKEH_DRIFT` points from its hold on its own slow orbit, swells by up
+ * to `BOKEH_SWELL` of its peak, and slides to the next climb's hold over
+ * `BOKEH_GLIDE_MS`. The native view takes these as props, so this is the one
+ * place they are set; contrast checks read them through `motion`.
+ */
+export const BOKEH_DRIFT = 3.5;
+export const BOKEH_SWELL = 0.14;
+export const BOKEH_GLIDE_MS = 700;
 const MIN_DISC_RADIUS = 6;
 const MAX_DISC_RADIUS = 14;
 const BLUR = 16;
@@ -146,14 +156,15 @@ export function blobGradient(blob: Pick<BokehBlob, 'color' | 'peak'>, scale = 1)
   return `radial-gradient(circle closest-side, ${stops.join(', ')})`;
 }
 
-/** A blob's alpha at a distance, matching `blobGradient`. */
+/** A blob's alpha at a distance, matching `blobGradient` (and the shader, which clamps the same way). */
 function blobAlphaAt(blob: BokehBlob, distance: number, scale: number): number {
   const t = distance / blob.r;
   if (t >= 1) return 0;
   for (let index = 1; index < BOKEH_FALLOFF.length; index += 1) {
     const [at, share] = BOKEH_FALLOFF[index] ?? [1, 0];
     const [prevAt, prevShare] = BOKEH_FALLOFF[index - 1] ?? [0, 1];
-    if (t <= at) return blob.peak * scale * (prevShare + ((t - prevAt) / (at - prevAt)) * (share - prevShare));
+    if (t <= at)
+      return Math.min(1, blob.peak * scale * (prevShare + ((t - prevAt) / (at - prevAt)) * (share - prevShare)));
   }
   return 0;
 }
@@ -167,12 +178,26 @@ export function bokehPixel(
     blend,
     opacityScale = 1,
     fade = 0,
-  }: { surface: BokehSurface; blend: BokehBlend; opacityScale?: number; fade?: number },
+    motion = false,
+  }: {
+    surface: BokehSurface;
+    blend: BokehBlend;
+    opacityScale?: number;
+    fade?: number;
+    /**
+     * The moving frost's worst case: every light as close to the point as its
+     * drift allows and fully swelled. Screen and multiply both move a pixel
+     * further from the base as alpha grows, so this bounds every frame.
+     */
+    motion?: boolean;
+  },
 ): string {
   const base = toRgb(surface.base);
   const value: Rgb = [...base];
+  const reach = motion ? BOKEH_DRIFT : 0;
+  const scale = motion ? opacityScale * (1 + BOKEH_SWELL) : opacityScale;
   for (const blob of blobs) {
-    const alpha = blobAlphaAt(blob, Math.hypot(point.x - blob.x, point.y - blob.y), opacityScale);
+    const alpha = blobAlphaAt(blob, Math.max(0, Math.hypot(point.x - blob.x, point.y - blob.y) - reach), scale);
     if (alpha <= 0) continue;
     const colour = toRgb(blob.color);
     for (let channel = 0; channel < 3; channel += 1) {

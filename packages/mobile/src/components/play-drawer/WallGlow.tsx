@@ -1,5 +1,6 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { BOKEH_GLIDE_MS } from '@boardsesh/frosted-bokeh';
 import { FrostedBokeh } from '../FrostedBokeh';
 import type { WallGlowLayer } from './use-wall-glow';
 
@@ -10,10 +11,51 @@ const FADE_WIDTH = 0.76;
 type WallGlowProps = {
   layer: WallGlowLayer;
   width: number;
+  /** Breathing and gliding on the GPU; the layer's fade must cover the motion. */
+  moving?: boolean;
 };
 
-function WallGlowComponent({ layer, width }: WallGlowProps) {
-  const { surface, fade } = layer;
+/**
+ * The label fade while the lights glide to the next climb: the higher of the
+ * two climbs' fades until the glide ends, so the in-between frames keep the
+ * stronger fade instead of dropping to the new climb's the moment Next lands.
+ * It is not a proof for every in-between frame (two lights can pass closer
+ * under the label than either climb puts them); the glide lasts 0.7 s and the
+ * label also carries its text shadow. Without a glide it is the layer's fade.
+ */
+export function useGlideHeldFade(key: string, fade: number, gliding: boolean): number {
+  const [state, setState] = useState({ key, fade, held: 0 });
+  let current = state;
+  if (state.key !== key) {
+    // React's "adjust state while rendering": the new climb's first frame
+    // already carries the held fade.
+    current = { key, fade, held: gliding ? Math.max(state.fade, state.held) : 0 };
+    setState(current);
+  } else if (state.fade !== fade) {
+    current = { ...state, fade };
+    setState(current);
+  }
+  const holding = current.held > fade;
+  const stale = !holding && current.held > 0;
+  useEffect(() => {
+    // A fade that rose past the held one ends the hold for good; otherwise a
+    // later drop on the same climb would bring an old hold back.
+    if (stale) setState((latest) => (latest.key === key ? { ...latest, held: 0 } : latest));
+  }, [key, stale]);
+  useEffect(() => {
+    if (!holding) return undefined;
+    const timer = setTimeout(
+      () => setState((latest) => (latest.key === key ? { ...latest, held: 0 } : latest)),
+      BOKEH_GLIDE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [key, holding]);
+  return holding ? current.held : fade;
+}
+
+function WallGlowComponent({ layer, width, moving = false }: WallGlowProps) {
+  const { surface } = layer;
+  const fade = useGlideHeldFade(layer.key, layer.fade, moving);
   const fullSurfaceFade = layer.readableZone === 'full';
   const fadeGradient =
     fade > 0
@@ -23,6 +65,7 @@ function WallGlowComponent({ layer, width }: WallGlowProps) {
   return (
     <FrostedBokeh
       layer={layer}
+      moving={moving}
       testID="wall-glow"
       beforeFrost={
         fade > 0 && fullSurfaceFade ? (

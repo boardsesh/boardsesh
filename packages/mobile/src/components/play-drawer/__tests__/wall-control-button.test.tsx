@@ -122,12 +122,30 @@ vi.mock('../../../theme/colors', () => ({
 }));
 // The glow has its own test; here only whether the button draws one, and on what.
 vi.mock('../WallGlow', () => ({
-  WallGlow: ({ layer }: { layer: { blobs: unknown[]; blend: string; fade: number } }) =>
+  WallGlow: ({
+    layer,
+    moving,
+  }: {
+    layer: { blobs: unknown[]; blend: string; fade: number; motion?: boolean };
+    moving?: boolean;
+  }) =>
     createElement('div', {
       'data-testid': 'wall-glow',
       'data-blobs': String(layer.blobs.length),
       'data-blend': layer.blend,
+      'data-moving': String(Boolean(moving)),
+      'data-motion-fade': String(Boolean(layer.motion)),
     }),
+}));
+// The moving frost: the flag and whether this binary has the Metal view.
+const frostCtrl = vi.hoisted(() => ({ flag: true, available: true }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useWallFrostMotionEnabled: () => frostCtrl.flag,
+}));
+vi.mock('../../FrostedBokeh', () => ({
+  get frostedBokehMotionAvailable() {
+    return frostCtrl.available;
+  },
 }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 3: 12, 4: 16 }, androidRipple: () => undefined }));
 vi.mock('../../../theme/typography', () => ({ CHROME_LABEL_MAX_FONT_SCALE: 1.4 }));
@@ -618,6 +636,25 @@ describe('WallControlButton', () => {
         expect(view.getAllByText('playView.wallControl.youAreDriving').length).toBeGreaterThan(0);
       },
     );
+
+    it('moves the frost on the GPU when the flag is on and the binary has the Metal view', () => {
+      const view = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW });
+      measure();
+      // The fade is computed for the motion's worst frame whenever it moves.
+      expect(view.getByTestId('wall-glow').dataset).toMatchObject({ moving: 'true', motionFade: 'true' });
+    });
+
+    it.each([
+      ['the flag is off', { flag: false, available: true }, {}],
+      ['the binary has no Metal view', { flag: true, available: false }, {}],
+      ["it is the preview card's picture", { flag: true, available: true }, { sample: true }],
+    ] as const)('keeps the still frost when %s', (_case, ctrl, extra) => {
+      Object.assign(frostCtrl, ctrl);
+      const view = renderButton(modelFor('lit', { holder: 'self' }), { glow: GLOW, ...extra });
+      measure();
+      expect(view.getByTestId('wall-glow').dataset).toMatchObject({ moving: 'false', motionFade: 'false' });
+      Object.assign(frostCtrl, { flag: true, available: true });
+    });
 
     // #7017: the coloured look only while this climber drives the board.
     it("stays plain on a crewmate's lit board: tonal, the outline bulb, their face", () => {

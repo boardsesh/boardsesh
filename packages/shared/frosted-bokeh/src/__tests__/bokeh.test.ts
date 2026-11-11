@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   BOKEH_DARK_SURFACE,
+  BOKEH_DRIFT,
   BOKEH_LIGHT_SURFACE,
+  BOKEH_SWELL,
   MAX_BOKEH_BLOBS,
   blobGradient,
   bokehPixel,
@@ -113,5 +115,50 @@ describe('shared falloff and pixel sampling', () => {
         expect(bokehPixel(center, blobs, { surface, blend, fade: 1 })).toBe(bokehPixel(center, [], { surface, blend }));
       }
     }
+  });
+});
+
+describe('the moving frost’s worst frame', () => {
+  const luminance = (hex: string) => {
+    const value = Number.parseInt(hex.slice(1), 16);
+    return ((value >> 16) & 255) + ((value >> 8) & 255) + (value & 255);
+  };
+  const blob = { x: 50, y: 20, r: 40, peak: 0.6, color: '#4DF5FD' };
+
+  it('is never dimmer on dark, or paler on light, than the resting frame', () => {
+    for (const x of [0, 20, 40, 50, 70, 89, 95]) {
+      const point = { x, y: 20 };
+      const dark = { surface: BOKEH_DARK_SURFACE, blend: 'screen' } as const;
+      const light = { surface: BOKEH_LIGHT_SURFACE, blend: 'multiply' } as const;
+      expect(luminance(bokehPixel(point, [blob], { ...dark, motion: true }))).toBeGreaterThanOrEqual(
+        luminance(bokehPixel(point, [blob], dark)),
+      );
+      expect(luminance(bokehPixel(point, [blob], { ...light, motion: true }))).toBeLessThanOrEqual(
+        luminance(bokehPixel(point, [blob], light)),
+      );
+    }
+  });
+
+  it('bounds every frame the shader can draw: the light drifted closer and fully swelled', () => {
+    const dark = { surface: BOKEH_DARK_SURFACE, blend: 'screen' } as const;
+    const point = { x: 70, y: 20 };
+    const worst = luminance(bokehPixel(point, [blob], { ...dark, motion: true }));
+    // Every orbit offset the shader allows (|offset| <= drift), at full swell.
+    for (let step = 0; step < 16; step += 1) {
+      const angle = (step / 16) * Math.PI * 2;
+      const moved = {
+        ...blob,
+        x: blob.x + Math.cos(angle) * BOKEH_DRIFT,
+        y: blob.y + Math.sin(angle) * BOKEH_DRIFT,
+        peak: blob.peak * (1 + BOKEH_SWELL),
+      };
+      expect(luminance(bokehPixel(point, [moved], dark))).toBeLessThanOrEqual(worst);
+    }
+  });
+
+  it('reaches the light’s own centre from just outside its drift, and stops there', () => {
+    const dark = { surface: BOKEH_DARK_SURFACE, blend: 'screen' } as const;
+    const atCentre = bokehPixel({ x: 50, y: 20 }, [blob], { ...dark, motion: true });
+    expect(bokehPixel({ x: 50 + BOKEH_DRIFT, y: 20 }, [blob], { ...dark, motion: true })).toBe(atCentre);
   });
 });
