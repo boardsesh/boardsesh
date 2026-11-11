@@ -1,19 +1,23 @@
 /**
- * The bcrypt cost every stored password hash is written at. Web and backend
- * hash and compare through this one number so the sign-in comparison below
- * cannot fall out of step with the hashes it stands in for.
+ * The bcrypt cost every new password hash is written at. Web and backend hash
+ * through this one number.
+ *
+ * Keep it equal to the cost of ABSENT_PASSWORD_HASH below until every stored
+ * hash has been rehashed. Stored hashes are never rehashed today, so raising
+ * this alone leaves old accounts at the old cost while the comparison for an
+ * unknown address stays at the new one, and the timing gap reopens.
  */
 export const PASSWORD_HASH_COST = 12;
 
 /**
  * What a sign-in compares the submitted password against when no stored
- * password belongs to the address. It must cost what a stored hash costs: a
+ * password belongs to the address. It must cost what the stored hashes cost: a
  * cheaper comparison answers sooner, and the gap tells a caller which addresses
  * have accounts (native sign-in answered in 50 ms here against 198 ms for a
  * wrong password while this was a cost-10 hash).
  *
- * bcrypt reads the cost from the string itself, so the cost field comes from
- * PASSWORD_HASH_COST. The salt and digest are those of a discarded random
- * string hashed at cost 12; no submitted password matches them at any cost.
+ * Its cost follows the hashes already stored, not PASSWORD_HASH_COST, which
+ * only governs new writes. It is the cost-12 hash of a discarded random string,
+ * so no submitted password matches it.
  */
-export const ABSENT_PASSWORD_HASH = `$2b$${String(PASSWORD_HASH_COST).padStart(2, '0')}$3qFGDie2IfjRh92IVzRFQeHL0ovw3iRwVMfkudP3XYTfMmfFrmUt6`;
+export const ABSENT_PASSWORD_HASH = '$2b$12$3qFGDie2IfjRh92IVzRFQeHL0ovw3iRwVMfkudP3XYTfMmfFrmUt6';

@@ -10,7 +10,7 @@ import {
 } from './password-command-client.server';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { checkRateLimit } from './rate-limiter';
-import { stagedPasswordClientKey } from './trusted-client-ip.server';
+import { trustedClientRateLimitKey } from './trusted-client-ip.server';
 
 type AuthenticatedReply = Extract<PasswordReply, { outcome: 'authenticated' }>;
 
@@ -101,16 +101,16 @@ export function unavailablePasswordAuthResponse(requestUrl: string, retryAfterSe
 }
 
 /**
- * Keeps one client from spending the backend's process-wide login budget, which
- * would lock out everyone else. Staged mode only: legacy sign-in has no such
- * budget and keeps its existing route. Counts before NextAuth, so a rejected
- * attempt costs neither an RPC nor a bcrypt comparison.
+ * Keeps one client from spending a shared login budget and locking out everyone
+ * else. In staged mode that is the backend's process-wide budget. In legacy mode
+ * it is this web process's event loop: every attempt, unknown address included,
+ * costs about 200 ms of bcrypt here, so 5 a second from one client would fill it.
+ * Counts before NextAuth reads the body, so a rejected attempt costs neither an
+ * RPC nor a bcrypt comparison, and the answer is the same for every address.
  */
 export function limitPasswordLoginPerClient(request: Request): Response | null {
-  const clientKey = stagedPasswordClientKey(request);
-  if (clientKey === null) return null;
   const { limited, retryAfterSeconds } = checkRateLimit(
-    `password-login:${clientKey}`,
+    `password-login:${trustedClientRateLimitKey(request)}`,
     LOGIN_ATTEMPTS_PER_CLIENT,
     60_000,
   );

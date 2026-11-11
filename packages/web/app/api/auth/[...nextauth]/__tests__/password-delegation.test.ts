@@ -62,11 +62,11 @@ async function invoke(
   const context = { params: Promise.resolve({ nextauth: parameters }) };
   return requestStorage.run(request, () => (form ? POST(request, context) : GET(request, context)));
 }
-async function password(forwardedFor = clientAddress) {
+async function password(forwardedFor = clientAddress, email = selected.email) {
   return invoke(
     'callback/credentials',
     {
-      email: selected.email,
+      email,
       password: 'submitted-password',
       csrfToken,
       json: 'true',
@@ -230,13 +230,29 @@ describe('public NextAuth App Router password delegation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(11);
     expect(legacyAuthorize).not.toHaveBeenCalled();
   });
-  it('puts no per-client limit on legacy sign-in', async () => {
+  // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
+  // included, so one client must not be able to fill its event loop.
+  it('limits legacy sign-in per client, with the same answer for every address', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
-    legacyAuthorize.mockResolvedValue({ id: 'legacy-user', email: 'legacy@example.com' });
-    legacySignIn.mockResolvedValue(true);
+    legacyAuthorize.mockResolvedValue(null);
     vi.stubGlobal('fetch', vi.fn());
-    for (let attempt = 0; attempt < 12; attempt += 1) expect((await password()).status).toBe(200);
-    expect(legacyAuthorize).toHaveBeenCalledTimes(12);
+    for (let attempt = 0; attempt < 10; attempt += 1) expect((await password()).status).toBe(401);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+
+    // A forged first hop cannot buy a fresh bucket: the ingress appends the real one last.
+    const existingAddress = await password(`203.0.113.77, ${clientAddress}`);
+    const unknownAddress = await password(clientAddress, 'nobody-here@example.com');
+    for (const limited of [existingAddress, unknownAddress]) {
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
+      expect(limited.headers.get('Cache-Control')).toBe('private, no-store');
+      expect(limited.headers.getSetCookie()).toEqual([]);
+      expect(await limited.json()).toEqual({ url: `${baseUrl}/auth/error?error=AuthBackendUnavailable` });
+    }
+    expect(legacyAuthorize).toHaveBeenCalledTimes(10);
+
+    expect((await password('198.51.100.251')).status).toBe(401);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(11);
   });
   it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');

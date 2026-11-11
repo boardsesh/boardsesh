@@ -26,8 +26,11 @@ vi.mock('@sentry/nextjs', () => ({
   captureException: (...args: unknown[]) => mockCaptureException(...args),
 }));
 
+const { mockHash } = vi.hoisted(() => ({
+  mockHash: vi.fn<(password: string, cost: number) => Promise<string>>(async () => 'hashed-password'),
+}));
 vi.mock('bcryptjs', () => ({
-  hash: async () => 'hashed-password',
+  hash: (password: string, cost: number) => mockHash(password, cost),
 }));
 
 const mockSelectLimit = vi.fn();
@@ -101,6 +104,16 @@ describe('POST /api/auth/register', () => {
     expect(response.status).toBe(429);
     expect(mockCheckRateLimit).toHaveBeenCalledWith('register:127.0.0.1', 10, 60_000);
     expect(mockGetClientIp).toHaveBeenCalledOnce();
+  });
+
+  // Sign-in compares an unknown address against a cost-12 stand-in. A new
+  // account hashed at any other cost would make its wrong-password answer take a
+  // different time from an unknown address, and reveal that it exists.
+  it('hashes the new password at bcrypt cost 12, the cost sign-in compares unknown addresses at', async () => {
+    const response = await POST(createRequest({ email: 'cost@example.com', password: 'password123' }));
+    expect(response.status).toBe(201);
+    expect(mockHash).toHaveBeenCalledOnce();
+    expect(mockHash).toHaveBeenCalledWith('password123', 12);
   });
 
   it.each(['0', '1'])('creates a public account with privacy controls enabled=%s', async (flag) => {

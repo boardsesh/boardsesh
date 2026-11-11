@@ -161,44 +161,35 @@ providers.push(
 
       const db = getDb();
 
-      // Look up user by email
-      const users = await db.select().from(schema.users).where(eq(schema.users.email, credentials.email)).limit(1);
-
-      // Every rejection below runs one bcrypt comparison at the stored cost, so
-      // an address with no account or no password takes as long to reject as a
-      // wrong password. Answering sooner would tell a caller which addresses exist.
-      if (users.length === 0) {
-        await compare(credentials.password, ABSENT_PASSWORD_HASH);
-        return null;
-      }
-
-      const user = users[0];
-
-      // Get user credentials (password hash)
-      const userCredentials = await db
-        .select()
-        .from(schema.userCredentials)
-        .where(eq(schema.userCredentials.userId, user.id))
+      // An unknown address, an account with no password (OAuth only) and a
+      // wrong password must take the same time to reject, or the answer tells a
+      // caller which addresses have accounts. So every path makes this one
+      // query and then one bcrypt comparison at the stored cost.
+      const [account] = await db
+        .select({
+          id: schema.users.id,
+          email: schema.users.email,
+          name: schema.users.name,
+          image: schema.users.image,
+          passwordHash: schema.userCredentials.passwordHash,
+        })
+        .from(schema.users)
+        .leftJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
+        .where(eq(schema.users.email, credentials.email))
         .limit(1);
 
-      if (userCredentials.length === 0) {
-        // User exists but has no password (e.g., OAuth only)
-        await compare(credentials.password, ABSENT_PASSWORD_HASH);
-        return null;
-      }
+      const storedHash = account?.passwordHash ?? null;
+      const isValidPassword = await compare(credentials.password, storedHash ?? ABSENT_PASSWORD_HASH);
 
-      // Verify password
-      const isValidPassword = await compare(credentials.password, userCredentials[0].passwordHash);
-
-      if (!isValidPassword) {
+      if (!account || storedHash === null || !isValidPassword) {
         return null;
       }
 
       return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        image: user.image,
+        id: account.id,
+        email: account.email,
+        name: account.name,
+        image: account.image,
       };
     },
   }),
