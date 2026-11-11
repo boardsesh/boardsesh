@@ -2525,10 +2525,14 @@ no `ALTER ROLE` to run for `boardsesh_runtime`.
    ALTER ROLE <rolname> RESET idle_in_transaction_session_timeout;
    ```
 
-   A role setting made for one database only shows up in `pg_db_role_setting`,
+   A setting made for one database only shows up in `pg_db_role_setting`,
    not `pg_roles.rolconfig`. Check it too:
-   `SELECT setrole::regrole, setconfig FROM pg_db_role_setting WHERE setconfig::text LIKE '%idle_in_transaction%';`.
-   Clear any row it returns with `ALTER ROLE <role> IN DATABASE railway RESET idle_in_transaction_session_timeout;`.
+   `SELECT setrole::regrole, setdatabase, setconfig FROM pg_db_role_setting WHERE setconfig::text LIKE '%idle_in_transaction%';`.
+   Clear each row it returns:
+
+   - a row naming a role: `ALTER ROLE <role> IN DATABASE railway RESET idle_in_transaction_session_timeout;`
+   - a database-wide row (`setrole` shows `-`, that is `setrole = 0`), which every
+     login inherits: `ALTER DATABASE railway RESET idle_in_transaction_session_timeout;`
 3. Alert when the oldest running write transaction is over 5 minutes old
    ([Observability](#observability)).
 
