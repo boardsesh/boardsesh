@@ -683,10 +683,22 @@ type SessionPresenceNativeModule = {
    * compatibility with binaries that predate it; callers fall back to setTimeout.
    */
   delay?(ms: number): Promise<void>;
+  /** True on binaries that report a card they could not post as drawn. */
+  supportsNotificationPostFailed?: boolean;
   addListener(event: 'queueMirror', listener: (payload: WidgetMirrorEvent) => void): EventSubscription;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
   // Android-only: lightbulb taps on the ongoing notification (reconnect/reassert).
   addListener(event: 'boardControl', listener: (payload: BoardControlEvent) => void): EventSubscription;
+  addListener(
+    event: 'notificationPostFailed',
+    listener: (payload: NotificationPostFailedEvent) => void,
+  ): EventSubscription;
+};
+
+/** Fixed stage names and an exception class only: never a message or payload value. */
+export type NotificationPostFailedEvent = {
+  stage: string;
+  errorName?: string | null;
 };
 
 export const sessionPresenceNative = requireOptionalNativeModule<SessionPresenceNativeModule>('SessionPresence');

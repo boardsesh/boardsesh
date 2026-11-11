@@ -154,6 +154,10 @@ class BoardSessionService : Service() {
     // a Robolectric test can drive the async image path on the calling thread.
     internal var imageExecutor: Executor = sharedImageExecutor
     internal var postToMain: (Runnable) -> Unit = { mainHandler.post(it) }
+    internal var notificationPoster: (Notification) -> Unit = { notification ->
+        getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, notification)
+    }
+    private val reportedPostFailures = HashSet<String>()
     internal var imageComposer: (String, List<String>) -> Bitmap? = { overlay, backgrounds ->
         composeThumbnail(overlay, backgrounds)
     }
@@ -370,16 +374,23 @@ class BoardSessionService : Service() {
         } else {
             0
         }
+        if (promote(notification, type)) return true
+        // A failed promotion stops the service and drops the BLE keepalive, so a
+        // card that only failed because of its own content (a bad bitmap, say) must
+        // not cost that. Only a recovery is reported: a permission or background-
+        // start refusal fails the plain card too and says nothing about the card.
+        val recovered = promote(buildFallbackNotification(), type)
+        if (recovered) reportPostFailure("promotion", null)
+        return recovered
+    }
+
+    private fun promote(notification: Notification, type: Int): Boolean {
         if (tryStartForeground(notification, type)) return true
         // On API < 34 a typeless FGS is a valid promotion, so retry to satisfy the
         // contract. On API 34+ type 0 throws MissingForegroundServiceTypeException
         // for a typed service, so the caller gates the start on BLUETOOTH_CONNECT.
-        if (type != 0 && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+        return type != 0 && Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
             tryStartForeground(notification, 0)
-        ) {
-            return true
-        }
-        return false
     }
 
     private fun tryStartForeground(notification: Notification, type: Int): Boolean {
@@ -428,12 +439,13 @@ class BoardSessionService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(withArt: Boolean = true): Notification {
+        val showArt = withArt && artFitsBinderBudget()
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_boardsesh_notification)
             .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(buildContentView(R.layout.notification_session_collapsed))
-            .setCustomBigContentView(buildContentView(R.layout.notification_session_expanded))
+            .setCustomContentView(buildContentView(R.layout.notification_session_collapsed, showArt))
+            .setCustomBigContentView(buildContentView(R.layout.notification_session_expanded, showArt))
             .setColor(ContextCompat.getColor(this, R.color.session_accent))
             .setOngoing(true)
             .setSilent(true)
@@ -479,7 +491,7 @@ class BoardSessionService : Service() {
     // internal so a test can inflate the result and assert the rendered holder line
     // without going through the DecoratedCustomViewStyle framework wrapper.
     @VisibleForTesting
-    internal fun buildContentView(layoutId: Int): RemoteViews {
+    internal fun buildContentView(layoutId: Int, withArt: Boolean = true): RemoteViews {
         val views = RemoteViews(packageName, layoutId)
         views.setTextViewText(R.id.session_title, climbName ?: contentTitleFallback)
 
@@ -516,23 +528,37 @@ class BoardSessionService : Service() {
         views.setContentDescription(R.id.session_mirror, if (mirrored) unmirrorLabel else mirrorLabel)
         views.setInt(R.id.session_mirror, "setImageAlpha", if (mirrored) 255 else 140)
         if (showMirror) views.setOnClickPendingIntent(R.id.session_mirror, mirrorPendingIntent())
-        bindThumbnail(views)
+        bindThumbnail(views, withArt)
         bindRestTimer(views)
         return views
     }
 
-    // Every branch sets both the image and the visibility. SystemUI may reapply a
-    // later RemoteViews onto the view tree it already shows, so a branch that set
-    // nothing would leave the previous climb's board (or a hidden slot) in place.
-    private fun bindThumbnail(views: RemoteViews) {
-        val overlay = overlayPath?.takeIf { it.isNotBlank() }
-        val key = overlay?.let { imageKey(it, backgroundPaths, mirrored) }
-        val bitmap = key?.let { bitmapCache.get(it) }
+    private fun currentThumbnail(): Bitmap? {
+        val overlay = overlayPath?.takeIf { it.isNotBlank() } ?: return null
+        return bitmapCache.get(imageKey(overlay, backgroundPaths, mirrored))
             // Same climb, new variant (mirror toggled, backgrounds resolved late):
             // keep its last board up while that variant composes, rather than flash
             // the placeholder, and keep it if the variant's compose fails, since the
             // climb's own board beats a hidden slot.
             ?: lastShownThumbnail?.takeIf { it.first == overlay }?.second
+    }
+
+    // The check runs before posting because a Binder failure on the promotion path
+    // may never reach our catch. Art is parcelled once per layout.
+    private fun artFitsBinderBudget(): Boolean {
+        val artBytes = (currentThumbnail()?.byteCount ?: 0) * LAYOUTS_CARRYING_ART
+        if (artBytes <= MAX_PARCELLED_ART_BYTES) return true
+        reportPostFailure("art-over-budget", null)
+        return false
+    }
+
+    // Every branch sets both the image and the visibility. SystemUI may reapply a
+    // later RemoteViews onto the view tree it already shows, so a branch that set
+    // nothing would leave the previous climb's board (or a hidden slot) in place.
+    private fun bindThumbnail(views: RemoteViews, withArt: Boolean) {
+        val overlay = overlayPath?.takeIf { it.isNotBlank() }
+        val key = overlay?.let { imageKey(it, backgroundPaths, mirrored) }
+        val bitmap = if (withArt) currentThumbnail() else null
         if (overlay != null && bitmap != null) {
             lastShownThumbnail = overlay to bitmap
             views.setViewVisibility(R.id.session_image, View.VISIBLE)
@@ -544,8 +570,34 @@ class BoardSessionService : Service() {
         // Nothing of this climb to show. The placeholder holds the slot while its
         // compose runs. With no overlay, or once the compose failed, hide it: an
         // empty black box reads as a broken picture.
-        val composing = key != null && key != failedImageKey
+        val composing = withArt && key != null && key != failedImageKey
         views.setViewVisibility(R.id.session_image, if (composing) View.VISIBLE else View.GONE)
+    }
+
+    // Every re-post goes through here. A failed post leaves the last card up, which
+    // keeps showing a climb the wall has moved on from, so retry once without art:
+    // art is the only part of the card large enough to fail on its own.
+    private fun postNotification(stage: String) {
+        try {
+            notificationPoster(buildNotification())
+        } catch (error: Exception) {
+            reportPostFailure(stage, error)
+            try {
+                notificationPoster(buildNotification(withArt = false))
+            } catch (retryError: Exception) {
+                Log.w(TAG, "$stage re-post without art failed: ${retryError.message}")
+            }
+        }
+    }
+
+    // Once per stage per service, so a card that fails on every climb can't crowd
+    // real taps out of the bounded event buffer. Only the error's class crosses to
+    // JS: a message could carry payload values.
+    private fun reportPostFailure(stage: String, error: Exception?) {
+        Log.w(TAG, "notification post failed at $stage: ${error?.javaClass?.simpleName}: ${error?.message}")
+        if (reportedPostFailures.add(stage)) {
+            SessionPresenceModule.dispatchNotificationPostFailed(stage, error?.javaClass?.simpleName)
+        }
     }
 
     // --- Rest countdown ---
@@ -646,11 +698,7 @@ class BoardSessionService : Service() {
 
     private fun onRestTransition() {
         if (!foregrounded) return
-        try {
-            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
-        } catch (error: Exception) {
-            Log.w(TAG, "rest transition re-post failed: ${error.message}")
-        }
+        postNotification("rest-transition")
         scheduleRestTransition()
     }
 
@@ -689,11 +737,7 @@ class BoardSessionService : Service() {
 
     private fun onLightTransition() {
         if (!foregrounded) return
-        try {
-            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
-        } catch (error: Exception) {
-            Log.w(TAG, "lighting transition re-post failed: ${error.message}")
-        }
+        postNotification("lighting-transition")
         scheduleLightTransition()
     }
 
@@ -702,11 +746,7 @@ class BoardSessionService : Service() {
     private fun onScreenOn() {
         if (restTimer == null && lightState == LIGHT_STATE_OFF) return
         if (!foregrounded) return
-        try {
-            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
-        } catch (error: Exception) {
-            Log.w(TAG, "screen-on re-post failed: ${error.message}")
-        }
+        postNotification("screen-on")
         scheduleRestTransition()
         scheduleLightTransition()
     }
@@ -848,11 +888,7 @@ class BoardSessionService : Service() {
                 // Stale guard: the climb may have moved on (or the session ended)
                 // while the compose was in flight.
                 if (currentImageKey != key || !foregrounded) return@postToMain
-                try {
-                    getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, buildNotification())
-                } catch (error: Exception) {
-                    Log.w(TAG, "thumbnail re-post failed: ${error.message}")
-                }
+                postNotification("thumbnail")
             }
         }
     }
@@ -945,6 +981,11 @@ class BoardSessionService : Service() {
         // count, so it can't balloon if a board ever renders larger than the 256px
         // downscale ceiling. ~256 KB per thumbnail → ~8 entries at 2 MB.
         private const val BITMAP_CACHE_BYTES = 2 * 1024 * 1024
+
+        // Ceiling for bitmap bytes in one posted notification, under the ~1 MB Binder
+        // transaction limit with room left for the views, extras and intents.
+        private const val MAX_PARCELLED_ART_BYTES = 700 * 1024
+        private const val LAYOUTS_CARRYING_ART = 2
 
         /**
          * The filesystem path for an overlay or background JS handed over. A

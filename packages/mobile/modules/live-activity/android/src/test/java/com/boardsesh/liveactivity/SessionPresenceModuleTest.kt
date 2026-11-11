@@ -38,6 +38,15 @@ class SessionPresenceModuleTest {
     }
 
     @Test
+    fun `buffers a post failure with only its stage and error class`() {
+        SessionPresenceModule.dispatchNotificationPostFailed("thumbnail", "RuntimeException")
+
+        val (eventName, event) = SessionPresenceModule.pendingEventsSnapshotForTest().single()
+        assertEquals("notificationPostFailed", eventName)
+        assertEquals(mapOf("stage" to "thumbnail", "errorName" to "RuntimeException"), event)
+    }
+
+    @Test
     fun `evicts the oldest buffered events beyond the 32 cap`() {
         repeat(40) { SessionPresenceModule.dispatchQueueNavigate("next", it, "corr-$it") }
 

@@ -14,6 +14,7 @@ import {
   type WidgetMirrorEvent,
   type BoardControlEvent,
   type InterruptedLiveActivityIntentDiagnostic,
+  type NotificationPostFailedEvent,
 } from '../../../modules/live-activity/src/index';
 
 // Platform-agnostic wrapper around the "session presence" native surface:
@@ -228,6 +229,13 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
     return () => {};
   }
   const subscription = sessionPresenceNative.addListener('boardControl', callback);
+  return () => subscription.remove();
+}
+
+/** Android, new binaries only; older OTA hosts do not declare this event. */
+export function addNotificationPostFailedListener(callback: (event: NotificationPostFailedEvent) => void): () => void {
+  if (!sessionPresenceNative?.supportsNotificationPostFailed) return () => {};
+  const subscription = sessionPresenceNative.addListener('notificationPostFailed', callback);
   return () => subscription.remove();
 }
 

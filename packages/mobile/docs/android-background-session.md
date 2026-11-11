@@ -42,6 +42,23 @@ foregrounded (and BLE alive) during real use. `POST_NOTIFICATIONS` (Android 13+)
 is requested at board-connect time in `use-ble-permissions.ts`, decoupled from
 the BLE gate: a denial only hides the notification; the service still runs.
 
+## When the card can't be posted
+
+The service keeps the Bluetooth link alive, so a card that fails to post must not
+take the service down or fail silently.
+
+- Bitmaps in one posted notification are capped at 700 KB, checked before posting.
+  A Binder failure on the promotion path may never reach our `catch`, so the check
+  can't wait for one. Over the cap, the card posts without art.
+- Every re-post goes through `postNotification()`, which retries once without art.
+- A promotion that throws with the card retries with the plain fallback before the
+  service stops. An oversized card doesn't reach this path, because
+  `startForeground` swallows Binder errors. The 700 KB cap is what guards that case.
+- Each failing stage emits `notificationPostFailed` once per service. JS reports it
+  to Sentry as `Android session notification post failed`, tagged with the stage:
+  `art-over-budget`, `promotion`, `thumbnail`, `rest-transition`,
+  `lighting-transition` or `screen-on`. Only the exception's class name is sent.
+
 ## Caveats / follow-ups
 
 - **Requires a fresh native build** (prebuild + Gradle / EAS) — the Kotlin and

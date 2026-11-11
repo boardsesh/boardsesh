@@ -134,8 +134,13 @@ class SessionPresenceModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("SessionPresence")
 
-        Events("queueNavigate", "boardControl", "queueMirror")
-        Constants("supportsMirrorControl" to true, "supportsRestTimer" to true, "supportsLightingWindow" to true)
+        Events("queueNavigate", "boardControl", "queueMirror", "notificationPostFailed")
+        Constants(
+            "supportsMirrorControl" to true,
+            "supportsRestTimer" to true,
+            "supportsLightingWindow" to true,
+            "supportsNotificationPostFailed" to true,
+        )
 
         OnCreate { instance = WeakReference(this@SessionPresenceModule) }
         OnDestroy {
@@ -251,6 +256,11 @@ class SessionPresenceModule : Module() {
             } else {
                 buffer(eventName, event)
             }
+        }
+
+        /** The service could not post its card as drawn, for JS to report to Sentry. */
+        fun dispatchNotificationPostFailed(stage: String, errorName: String?) {
+            dispatch("notificationPostFailed", mapOf("stage" to stage, "errorName" to errorName))
         }
 
         /**
