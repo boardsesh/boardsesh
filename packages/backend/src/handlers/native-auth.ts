@@ -16,6 +16,7 @@ import {
   isAuthAdmissionUnavailable,
   isHumanSubjectActive,
   requireHumanSubjectForIssuance,
+  type IssuanceGenerations,
 } from '../auth/human-admission';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
@@ -374,9 +375,65 @@ function accountCreationReceipt(
 // Token generation helpers
 // ---------------------------------------------------------------------------
 
+type RefreshStamps = Pick<
+  typeof mobileRefreshTokens.$inferSelect,
+  'subjectGeneration' | 'nativeGeneration' | 'authenticatedAt' | 'sessionId'
+>;
+
+/**
+ * What a new token pair descends from. No reader enforces the stamps yet
+ * (BA-04 PR 2); they are written so that one can.
+ */
+type NativeCredentialOrigin =
+  /**
+   * A proof this request checked: password, provider token, transfer token or
+   * watch code. `authenticatedAt` is when a password or provider proof passed;
+   * null for a transfer token or watch code, which carry a sign-in made elsewhere.
+   */
+  | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null }
+  /** The refresh row this request consumed, under the same user lock. */
+  | { readonly kind: 'refresh'; readonly parent: RefreshStamps };
+
+type CredentialStamps = {
+  subjectGeneration: number;
+  nativeGeneration: number;
+  authenticatedAt: Date | null;
+  sessionId: string;
+};
+
+/** A sign-in fresh at this request, for a proof made by this request. */
+function signedInNow(): NativeCredentialOrigin {
+  return { kind: 'sign-in', authenticatedAt: new Date() };
+}
+
+/** A sign-in that hands over a login made elsewhere: its age is unknown. */
+const SIGN_IN_OF_UNKNOWN_AGE: NativeCredentialOrigin = { kind: 'sign-in', authenticatedAt: null };
+
+function credentialStamps(origin: NativeCredentialOrigin, generations: IssuanceGenerations): CredentialStamps {
+  if (origin.kind === 'sign-in') {
+    return {
+      subjectGeneration: generations.generation,
+      nativeGeneration: generations.nativeGeneration,
+      authenticatedAt: origin.authenticatedAt,
+      sessionId: crypto.randomUUID(),
+    };
+  }
+  // Copy, never re-read: a child is never newer than its parent. A row from
+  // before the stamps stands for generation 0, so its child is stamped 0, and
+  // an unknown sign-in time stays unknown.
+  const { parent } = origin;
+  return {
+    subjectGeneration: parent.subjectGeneration ?? 0,
+    nativeGeneration: parent.nativeGeneration ?? 0,
+    authenticatedAt: parent.authenticatedAt ?? null,
+    sessionId: parent.sessionId ?? crypto.randomUUID(),
+  };
+}
+
 async function generateTokenPair(
   userId: string,
   transaction: Parameters<Parameters<DbInstance['transaction']>[0]>[0],
+  origin: NativeCredentialOrigin,
 ): Promise<{
   jwt: string;
   refreshToken: string;
@@ -384,13 +441,19 @@ async function generateTokenPair(
   userId: string;
 }> {
   await transactionSettings(transaction);
-  await requireHumanSubjectForIssuance(transaction, userId);
+  const generations = await requireHumanSubjectForIssuance(transaction, userId);
   const signingSecret = getSigningSecret();
   if (!signingSecret) throw new AuthAdmissionUnavailableError();
+  const stamps = credentialStamps(origin, generations);
 
-  // Generate JWT
+  // Generate JWT. Clients read only `sub`; the stamps are for the server.
   const jwtExpiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
-  const jwt = await new SignJWT({ sub: userId })
+  const jwt = await new SignJWT({
+    sub: userId,
+    gen: stamps.subjectGeneration,
+    ngen: stamps.nativeGeneration,
+    ...(stamps.authenticatedAt ? { auth_time: Math.floor(stamps.authenticatedAt.getTime() / 1000) } : {}),
+  })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuedAt()
     .setIssuer(JWT_ISSUER)
@@ -406,6 +469,7 @@ async function generateTokenPair(
     userId,
     tokenHash,
     expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
+    ...stamps,
   });
 
   return {
@@ -416,8 +480,8 @@ async function generateTokenPair(
   };
 }
 
-async function issueTokenPair(userId: string) {
-  return db.transaction((transaction) => generateTokenPair(userId, transaction));
+async function issueTokenPair(userId: string, origin: NativeCredentialOrigin) {
+  return db.transaction((transaction) => generateTokenPair(userId, transaction, origin));
 }
 
 function respondNativeAdmissionFailure(response: ServerResponse, error: unknown): boolean {
@@ -539,7 +603,7 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   }
 
   try {
-    const tokenPair = await issueTokenPair(verified.userId);
+    const tokenPair = await issueTokenPair(verified.userId, SIGN_IN_OF_UNKNOWN_AGE);
     logger.info(`[NativeAuth] Token exchange successful for user ${verified.userId}`);
     sendJson(res, 200, {
       ...tokenPair,
@@ -605,7 +669,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
     }
 
     const authenticatedUserId = authenticatedUser.userId;
-    const tokenPair = await issueTokenPair(authenticatedUserId);
+    const tokenPair = await issueTokenPair(authenticatedUserId, signedInNow());
     logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
     const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
     sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
@@ -706,9 +770,10 @@ export async function handleNativeAuthRegister(
     // Mirror web: unverified when the verification gate is on, verified otherwise.
     const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';
 
+    const origin = signedInNow();
     const result = await database.transaction(async (tx) => {
       const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
-      const tokenPair = await generateTokenPair(identity.userId, tx);
+      const tokenPair = await generateTokenPair(identity.userId, tx, origin);
       return {
         userId: identity.userId,
         tokenPair,
@@ -769,6 +834,7 @@ async function handleReservedNativeRegistration(
     // Bcrypt remains outside the global manifest's locked transaction.
     await preflight(database, authority);
     const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const origin = signedInNow();
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
       const inserted = await insertReservedPasswordIdentity(transaction, authority, {
@@ -779,7 +845,7 @@ async function handleReservedNativeRegistration(
       if (inserted.outcome === 'exists') return inserted;
       const { identity } = inserted;
       // This remains the installed native issuer, bound to the identity's tx.
-      const tokenPair = await generateTokenPair(identity.userId, transaction);
+      const tokenPair = await generateTokenPair(identity.userId, transaction, origin);
       return {
         outcome: 'created' as const,
         tokenPair,
@@ -1008,6 +1074,7 @@ async function findOrCreateOAuthUser(
   provider: OAuthProvider,
   identity: VerifiedOAuthIdentity,
   forwardedName: ForwardedName | undefined,
+  origin: NativeCredentialOrigin,
   database: DbInstance = db,
 ): Promise<FindOrCreateResult> {
   return database.transaction(async (tx) => {
@@ -1020,7 +1087,7 @@ async function findOrCreateOAuthUser(
       .limit(1);
     const linked = linkedRows[0];
     if (linked) {
-      const tokenPair = await generateTokenPair(linked.userId, tx);
+      const tokenPair = await generateTokenPair(linked.userId, tx, origin);
       return {
         status: 'ok',
         tokenPair,
@@ -1055,7 +1122,7 @@ async function findOrCreateOAuthUser(
         if (!matched.emailVerified) {
           await tx.update(users).set({ emailVerified: new Date() }).where(eq(users.id, matched.id));
         }
-        const tokenPair = await generateTokenPair(matched.id, tx);
+        const tokenPair = await generateTokenPair(matched.id, tx, origin);
         return {
           status: 'ok',
           tokenPair,
@@ -1086,7 +1153,7 @@ async function findOrCreateOAuthUser(
     // accounts start public (the column defaults); Private is opt-in.
     await tx.insert(userProfiles).values({ userId: newUserId }).onConflictDoNothing();
     await tx.insert(accounts).values({ userId: newUserId, type: 'oauth', provider, providerAccountId: identity.sub });
-    const tokenPair = await generateTokenPair(newUserId, tx);
+    const tokenPair = await generateTokenPair(newUserId, tx, origin);
     return {
       status: 'ok',
       tokenPair,
@@ -1177,6 +1244,7 @@ export async function handleNativeAuthOAuth(
     return;
   }
   const { identity } = verified;
+  const origin = signedInNow();
   if (configuration.mode === 'reserved-staging') {
     await handleReservedNativeOAuth(
       res,
@@ -1185,12 +1253,13 @@ export async function handleNativeAuthOAuth(
       provider,
       identity,
       parseForwardedName(name),
+      origin,
     );
     return;
   }
 
   try {
-    const result = await findOrCreateOAuthUser(provider, identity, parseForwardedName(name), database);
+    const result = await findOrCreateOAuthUser(provider, identity, parseForwardedName(name), origin, database);
     if (result.status === 'no_email') {
       logger.warn(`[NativeAuth] ${provider} sign-in for a new account without an email — rejecting`);
       sendJson(res, 401, { error: 'An email is required to create an account' });
@@ -1226,13 +1295,14 @@ async function handleReservedNativeOAuth(
   provider: OAuthProvider,
   identity: VerifiedOAuthIdentity,
   name: ForwardedName | undefined,
+  origin: NativeCredentialOrigin,
 ) {
   try {
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
       const resolved = await resolveReservedNativeOAuthIdentity(transaction, authority, provider, identity, name);
       if (resolved.outcome !== 'linked' && resolved.outcome !== 'created') return resolved;
-      const tokenPair = await generateTokenPair(resolved.userId, transaction);
+      const tokenPair = await generateTokenPair(resolved.userId, transaction, origin);
       return {
         outcome: 'ok' as const,
         tokenPair,
@@ -1350,7 +1420,7 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
         return { status: 401 as const, error: 'Refresh token expired' };
       }
 
-      const tokenPair = await generateTokenPair(revokedToken.userId, tx);
+      const tokenPair = await generateTokenPair(revokedToken.userId, tx, { kind: 'refresh', parent: revokedToken });
       return { status: 200 as const, tokenPair, userId: revokedToken.userId };
     });
 
@@ -1663,7 +1733,7 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
       return;
     }
 
-    const tokenPair = await issueTokenPair(userId);
+    const tokenPair = await issueTokenPair(userId, SIGN_IN_OF_UNKNOWN_AGE);
     logger.info(`[WatchPair] Pairing successful for user ${userId}`);
     sendJson(res, 200, tokenPair);
   } catch (error) {

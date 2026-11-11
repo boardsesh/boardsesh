@@ -299,6 +299,33 @@ describe('handleNativeAuthOAuth', () => {
     expect(insertsFor(mobileRefreshTokens)).toHaveLength(1);
   });
 
+  it('stamps a provider sign-in with the second its token verified and a new session', async () => {
+    jwtVerify.mockResolvedValueOnce({
+      payload: { sub: 'google-sub-stamped', email: 'stamped@example.com', email_verified: true },
+    });
+    queueSelect([{ userId: 'existing-user', createdAt: new Date('2025-01-01T00:00:00.000Z') }]);
+    const verifiedFrom = Date.now();
+
+    const res = makeResponse();
+    await callHandler(makeRequest({ method: 'POST', body: { provider: 'google', identityToken: 'tok' } }), res);
+    const verifiedBy = Date.now();
+
+    expect(res.statusCode).toBe(200);
+    const refreshValues = insertsFor(mobileRefreshTokens)[0].values as Record<string, unknown>;
+    const authenticatedAt = refreshValues.authenticatedAt as Date;
+    expect(authenticatedAt.getTime()).toBeGreaterThanOrEqual(verifiedFrom);
+    expect(authenticatedAt.getTime()).toBeLessThanOrEqual(verifiedBy);
+    expect(refreshValues).toMatchObject({ subjectGeneration: 0, nativeGeneration: 0 });
+    expect(refreshValues.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    const { decodeJwt } = await vi.importActual<typeof import('jose')>('jose');
+    expect(decodeJwt(parseBody(res).jwt as string)).toMatchObject({
+      sub: 'existing-user',
+      gen: 0,
+      ngen: 0,
+      auth_time: Math.floor(authenticatedAt.getTime() / 1000),
+    });
+  });
+
   it('links a native sign-in to an existing web user by email (no duplicate users row)', async () => {
     jwtVerify.mockResolvedValueOnce({
       payload: { sub: 'apple-sub-1', email: 'web-user@example.com', email_verified: true },

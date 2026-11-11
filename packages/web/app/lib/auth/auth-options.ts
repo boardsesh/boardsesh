@@ -31,6 +31,26 @@ applyCanonicalAuthUrl();
 // enough that out-of-band edits still surface within a few minutes.
 const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * The cutoff generation a new login is stamped with: 0 when the climber has no
+ * cutoff row. Rotations never call this; they keep the login's stamp. A failed
+ * read also stamps 0 and lets the sign-in through: generations only rise, so a
+ * low stamp can end the cookie sooner but never let it outlive a reset.
+ */
+async function signInGeneration(userId: string): Promise<number> {
+  try {
+    const [cutoff] = await getDb()
+      .select({ generation: schema.authSubjectCutoffs.generation })
+      .from(schema.authSubjectCutoffs)
+      .where(eq(schema.authSubjectCutoffs.userId, userId))
+      .limit(1);
+    return cutoff?.generation ?? 0;
+  } catch {
+    console.warn(JSON.stringify({ event: 'auth_generation_read_unavailable', phase: 'jwt' }));
+    return 0;
+  }
+}
+
 const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
 const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
 const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple', 'facebook']);
@@ -402,6 +422,7 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.authSessionId = randomUUID();
         delete token.nativeOAuthCreationProof;
+        token.gen = await signInGeneration(user.id);
         // Epoch seconds of the sign-in. Only this branch sees a completed sign-in, so
         // a cookie rotation neither sets nor moves it and a cookie from before this
         // claim stays without one, which readers must treat as "age unknown". A native
@@ -448,6 +469,9 @@ export const authOptions: NextAuthOptions = {
           }
         }
       }
+      // A cookie from before the claim was signed in while generation 0 was the
+      // only one, so stamping 0 at its next rotation keeps it valid exactly as long.
+      token.gen ??= 0;
 
       // Cache the userProfiles avatar/display name ON the token so the `session`
       // callback (which runs on every /api/auth/session read — each page load,

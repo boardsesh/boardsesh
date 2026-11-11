@@ -56,11 +56,25 @@ export async function activeHumanSubjectIds(userIds: readonly string[]): Promise
   );
 }
 
+/** The cutoff generations a new credential is stamped with. No cutoff row is 0 and 0. */
+export interface IssuanceGenerations {
+  readonly generation: number;
+  readonly nativeGeneration: number;
+}
+
 /**
  * Issuance must own this transaction. Lock the user before refresh/account
  * child rows; never put the bounded read response race around a write.
+ *
+ * Returns the generations to stamp, read by a second statement once the user
+ * lock is held. The locking statement's snapshot predates its wait, so a
+ * mutation that held `users FOR UPDATE` and committed while this issuer waited
+ * is visible only to a statement that starts after the lock.
  */
-export async function requireHumanSubjectForIssuance(transaction: AdmissionTransaction, userId: string): Promise<void> {
+export async function requireHumanSubjectForIssuance(
+  transaction: AdmissionTransaction,
+  userId: string,
+): Promise<IssuanceGenerations> {
   try {
     await requireReadCommitted(transaction);
     const [subject] = await transaction
@@ -71,6 +85,17 @@ export async function requireHumanSubjectForIssuance(transaction: AdmissionTrans
       .limit(1)
       .for('key share', { of: users });
     if (!subject || subject.deletedAt !== null) throw new AuthSubjectDeniedError();
+    const [cutoff] = await transaction
+      .select({
+        generation: authSubjectCutoffs.generation,
+        nativeGeneration: authSubjectCutoffs.nativeGeneration,
+        deletedAt: authSubjectCutoffs.deletedAt,
+      })
+      .from(authSubjectCutoffs)
+      .where(eq(authSubjectCutoffs.userId, userId))
+      .limit(1);
+    if (cutoff?.deletedAt) throw new AuthSubjectDeniedError();
+    return { generation: cutoff?.generation ?? 0, nativeGeneration: cutoff?.nativeGeneration ?? 0 };
   } catch (error) {
     if (error instanceof AuthSubjectDeniedError) throw error;
     throw new AuthAdmissionUnavailableError();

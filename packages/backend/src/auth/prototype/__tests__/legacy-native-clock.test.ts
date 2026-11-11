@@ -27,7 +27,7 @@ vi.mock('../../../db/client', () => {
 vi.mock('../../human-admission', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../human-admission')>()),
   isHumanSubjectActive: vi.fn(async () => true),
-  requireHumanSubjectForIssuance: vi.fn(async () => undefined),
+  requireHumanSubjectForIssuance: vi.fn(async () => ({ generation: 0, nativeGeneration: 0 })),
 }));
 vi.mock('../../../handlers/cors', () => ({ applyCorsHeaders: vi.fn(() => true) }));
 vi.mock('../../../redis/client', () => ({

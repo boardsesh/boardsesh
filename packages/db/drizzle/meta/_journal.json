@@ -2122,6 +2122,13 @@
       "when": 1794307774903,
       "tag": "0302_oauth_app_publisher_name",
       "breakpoints": true
+    },
+    {
+      "idx": 303,
+      "version": "7",
+      "when": 1794352988594,
+      "tag": "0303_stamp_new_credentials",
+      "breakpoints": true
     }
   ]
 }

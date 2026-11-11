@@ -74,17 +74,26 @@ export const authEmailReservationMembers = pgTable(
   ],
 );
 
-/** Durable revocation state intentionally survives deletion of users.id. */
+/**
+ * Durable revocation state intentionally survives deletion of users.id.
+ * No row means generation 0 and native generation 0.
+ */
 export const authSubjectCutoffs = pgTable(
   'auth_subject_cutoffs',
   {
     userId: text('user_id').primaryKey(),
     generation: integer('generation').notNull(),
+    // Moves alone when the climber signs out of the app, so it ends native
+    // credentials (app, watch) and leaves the website signed in.
+    nativeGeneration: integer('native_generation').notNull().default(0),
     revokedThrough: timestamp('revoked_through', { withTimezone: true }).notNull(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     lastOperationId: text('last_operation_id').notNull(),
   },
-  (table) => [check('auth_subject_cutoffs_generation', sql`${table.generation} >= 0`)],
+  (table) => [
+    check('auth_subject_cutoffs_generation', sql`${table.generation} >= 0`),
+    check('auth_subject_cutoffs_native_generation', sql`${table.nativeGeneration} >= 0`),
+  ],
 );
 
 /** Immutable mutation receipt and authority-neutral outbox; no credential material. */
