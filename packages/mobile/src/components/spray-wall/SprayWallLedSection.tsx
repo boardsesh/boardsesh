@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
 import {
+  createWledDriver,
   DEFAULT_LED_BRIGHTNESS,
+  discoverLedControllers,
   getLedControllerDriver,
   LedControllerError,
   normalizeLocalControllerUrl,
+  wledScanHosts,
+  type DiscoveredLedController,
 } from '@boardsesh/led-controller';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
@@ -20,6 +25,16 @@ import { SwitchRow } from '../SwitchRow';
 import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
 import { ValueSlider } from '../ValueSlider';
+
+// A short timeout per address: an empty address never answers, a WLED on the
+// same Wi-Fi answers in well under a second. 254 addresses, 32 at a time.
+const scanDriver = createWledDriver({ timeoutMs: 1500 });
+
+type ScanState =
+  | { kind: 'idle' }
+  | { kind: 'noWifi' }
+  | { kind: 'scanning'; checked: number; total: number; found: DiscoveredLedController[] }
+  | { kind: 'done'; found: DiscoveredLedController[] };
 
 const AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
 const MIN_BRIGHTNESS_PERCENT = 5;
@@ -74,10 +89,26 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setPending(null);
     void stop();
   }, [stop]);
-  useEffect(() => () => request.current?.abort(), [wallUuid]);
+  const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
+  const scanRequest = useRef<AbortController | null>(null);
+  const cancelScan = useCallback(() => {
+    scanRequest.current?.abort();
+    scanRequest.current = null;
+    setScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
+  }, []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      scanRequest.current?.abort();
+    },
+    [wallUuid],
+  );
   useEffect(() => {
-    if (disabled) cancelRequest();
-  }, [disabled, cancelRequest]);
+    if (disabled) {
+      cancelRequest();
+      cancelScan();
+    }
+  }, [disabled, cancelRequest, cancelScan]);
 
   const url = draftUrl ?? settings?.controller.url ?? '';
   const locked = disabled || loading || saving || savingRef.current || !settings;
@@ -116,11 +147,43 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     }
   }
 
-  async function confirmUrl() {
+  /** Probe every address on the phone's Wi-Fi (a private /24 only) and list the WLED controllers that answer. */
+  async function findOnWifi() {
+    if (locked || scanRequest.current) return;
+    const network = await NetInfo.fetch();
+    const details = network.type === 'wifi' ? network.details : null;
+    const hosts = details?.ipAddress ? wledScanHosts(details.ipAddress, details.subnet) : [];
+    if (!hosts.length) {
+      setScan({ kind: 'noWifi' });
+      return;
+    }
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    setScan({ kind: 'scanning', checked: 0, total: hosts.length, found: [] });
+    try {
+      const found = await discoverLedControllers(hosts, {
+        probe: (candidate, signal) => scanDriver.probe(candidate, signal),
+        signal: controller.signal,
+        onProgress: (checked, total) =>
+          setScan((current) => (current.kind === 'scanning' ? { ...current, checked, total } : current)),
+        onFound: (entry) =>
+          setScan((current) =>
+            current.kind === 'scanning' ? { ...current, found: [...current.found, entry] } : current,
+          ),
+      });
+      if (scanRequest.current === controller) setScan({ kind: 'done', found });
+    } catch {
+      // Cancelled: the climber typed, left or turned LEDs off.
+    } finally {
+      if (scanRequest.current === controller) scanRequest.current = null;
+    }
+  }
+
+  async function confirmUrl(candidate = url) {
     if (locked || !settings?.enabled || request.current) return;
     let normalized: string;
     try {
-      normalized = normalizeLocalControllerUrl(url);
+      normalized = normalizeLocalControllerUrl(candidate);
     } catch (urlError) {
       const notLocal = urlError instanceof LedControllerError && urlError.code === 'not-local';
       setResult({ kind: notLocal ? 'notLocal' : 'invalidUrl', url: null });
@@ -239,6 +302,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                     value={url}
                     onChangeText={(next) => {
                       cancelRequest();
+                      cancelScan();
                       setDraftUrl(next);
                       setResult(null);
                       setLighting(null);
@@ -261,6 +325,43 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                   onPress={() => void confirmUrl()}
                 />
               </View>
+              <Button
+                title={scan.kind === 'scanning' ? t('sprayLed.findStop') : t('sprayLed.find')}
+                variant="text"
+                disabled={locked || pending !== null}
+                onPress={() => (scan.kind === 'scanning' ? cancelScan() : void findOnWifi())}
+              />
+              {scan.kind === 'noWifi' ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.findNoWifi')}
+                </Text>
+              ) : null}
+              {scan.kind === 'scanning' ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.finding', { checked: scan.checked, total: scan.total })}
+                </Text>
+              ) : null}
+              {scan.kind === 'done' && !scan.found.length ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.findNone')}
+                </Text>
+              ) : null}
+              {scan.kind === 'scanning' || scan.kind === 'done'
+                ? scan.found.map((found) => (
+                    <Button
+                      key={found.url}
+                      title={t('sprayLed.findResult', { name: found.name, address: found.url.replace('http://', '') })}
+                      variant="outlined"
+                      disabled={locked || pending !== null}
+                      onPress={() => {
+                        cancelScan();
+                        setScan({ kind: 'idle' });
+                        setDraftUrl(found.url);
+                        void confirmUrl(found.url);
+                      }}
+                    />
+                  ))
+                : null}
               {message ? (
                 <Text variant="footnote" accessibilityLiveRegion="polite">
                   {message}

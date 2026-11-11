@@ -4,6 +4,7 @@ import { wledDriver } from './wled';
 export * from './types';
 export { isLocalControllerHost, normalizeControllerUrl, normalizeLocalControllerUrl } from './url';
 export { createLedPreviewSession, type LedPreviewSession } from './preview';
+export { discoverLedControllers, wledScanHosts, type DiscoverOptions, type DiscoveredLedController } from './discovery';
 export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
 
 const drivers = { wled: wledDriver } satisfies Record<string, LedControllerDriver>;

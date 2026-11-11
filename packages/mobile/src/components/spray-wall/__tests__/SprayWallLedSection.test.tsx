@@ -13,13 +13,16 @@ import type { SprayWallLedSettings } from '../../../lib/spray/use-spray-wall-led
 const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn(), show: vi.fn() }));
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const network = vi.hoisted(() => ({ fetch: vi.fn() }));
 
 vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/led-controller')>()),
   getLedControllerDriver: () => ({ ...controller, createPreview: () => controller }),
+  createWledDriver: () => ({ probe: (url: string, signal?: AbortSignal) => controller.probe(url, signal) }),
 }));
+vi.mock('@react-native-community/netinfo', () => ({ default: { fetch: network.fetch } }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: storage.read,
   setPreference: storage.write,
@@ -194,6 +197,34 @@ describe('SprayWallLedSection', () => {
     expect(controller.probe).not.toHaveBeenCalled();
     expect(controller.lightAll).not.toHaveBeenCalled();
     expect(controller.turnOff).not.toHaveBeenCalled();
+  });
+
+  it('finds a controller on the Wi-Fi and connects to it with one tap', async () => {
+    network.fetch.mockResolvedValue({ type: 'wifi', details: { ipAddress: '192.168.1.50', subnet: '255.255.255.0' } });
+    controller.probe.mockImplementation(async (url: string) => {
+      if (url === 'http://192.168.1.40') return controllerInfo;
+      throw new LedControllerError('unavailable');
+    });
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('find'));
+    const found = await screen.findByRole('button', { name: 'sprayLed.findResult' });
+    // The scan never probes the phone's own address.
+    expect(controller.probe).not.toHaveBeenCalledWith('http://192.168.1.50', expect.anything());
+    fireEvent.click(found);
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(savedSettings(true, 'http://192.168.1.40')));
+    expect(urlInput().value).toBe('http://192.168.1.40');
+  });
+
+  it('asks for Wi-Fi instead of scanning on mobile data', async () => {
+    network.fetch.mockResolvedValue({ type: 'cellular', details: { cellularGeneration: '5g' } });
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('find'));
+    expect(await screen.findByText('sprayLed.findNoWifi')).toBeTruthy();
+    expect(controller.probe).not.toHaveBeenCalled();
   });
 
   it('saves brightness and auto-off to the wall from the slider and the auto-off choice', async () => {
