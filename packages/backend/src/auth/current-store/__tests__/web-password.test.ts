@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -326,6 +327,7 @@ describe('default-off staged web password commands against the current PostgreSQ
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${users}, ${userCredentials}, ${userProfiles}, ${verificationTokens}, ${authEmailVerificationTokens}, ${authEmailVerificationState}, ${authEmailProjection}, ${authEmailReservations}, ${authEmailReservationMembers}, ${authSubjectCutoffs} TO ${sql.identifier(writerRole)}`,
       );
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -386,6 +388,7 @@ describe('default-off staged web password commands against the current PostgreSQ
         failures.push(new Error('Owned schema grants cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned role cleanup failed'));

@@ -22,12 +22,14 @@ import { startClimbPopularityRefresh } from './services/climb-popularity-refresh
 import { startPlaylistGradeSummaryRefresh } from './services/playlist-grade-summary-refresh';
 import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
+import { assertIdentityMirrorActivationConfiguration } from './auth/authority/mirror-configuration';
 import { assertCutoffEnforcementConfiguration } from './auth/current-store/authority-configuration';
 
 async function main() {
   // Before anything listens: a staged writer under AUTH_CUTOFF_ENFORCEMENT=observe
   // would bump generations no reader enforces (docs/better-auth-migration.md).
   assertCutoffEnforcementConfiguration();
+  assertIdentityMirrorActivationConfiguration();
 
   // The durable job queue (docs/partner-workouts-internal.md, "The job queue").
   //

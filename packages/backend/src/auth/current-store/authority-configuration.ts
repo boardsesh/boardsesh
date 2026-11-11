@@ -1,3 +1,4 @@
+import { assertMirroredNativeWriterMode } from '../authority/mirror-configuration';
 import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import type { WebPasswordAuthority } from './command-context';
 import {
@@ -136,6 +137,7 @@ export function currentStoreNativeRegistrationConfiguration(
   environment: Environment = process.env,
 ): { readonly mode: 'legacy' } | { readonly mode: 'reserved-staging'; readonly authority: WebPasswordAuthority } {
   const mode = environment.CURRENT_STORE_NATIVE_REGISTRATION_MODE;
+  assertMirroredNativeWriterMode(mode === 'reserved-staging' ? mode : 'legacy', environment);
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid native registration mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
@@ -145,6 +147,7 @@ export function currentStoreNativeOAuthConfiguration(
   environment: Environment = process.env,
 ): { readonly mode: 'legacy' } | { readonly mode: 'reserved-staging'; readonly authority: WebPasswordAuthority } {
   const mode = environment.CURRENT_STORE_NATIVE_OAUTH_MODE;
+  assertMirroredNativeWriterMode(mode === 'reserved-staging' ? mode : 'legacy', environment);
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid native OAuth mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };

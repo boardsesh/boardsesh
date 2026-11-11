@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -284,6 +285,7 @@ describe('shipping App Router identity delegation over actual provider and backe
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction.update(authEmailProjection).set({ phase: 'enforced' });
     });
@@ -303,6 +305,7 @@ describe('shipping App Router identity delegation over actual provider and backe
     for (const role of trackedRoles) {
       let roleMayExist = true;
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         roleMayExist = (await admin(sql`SELECT 1 FROM pg_roles WHERE rolname=${role}`)).length > 0;
       } catch {
         failures.push(new Error('Owned identity role lookup failed'));

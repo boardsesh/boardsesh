@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { schemaSQL } from '../../../__tests__/schema-sql';
@@ -39,13 +38,6 @@ export async function createEnvironment() {
   };
   try {
     await client.unsafe(schemaSQL);
-    const migration = readFileSync(
-      new URL('../../../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url),
-      'utf8',
-    );
-    for (const statement of migration.split('--> statement-breakpoint')) {
-      if (statement.trim()) await client.unsafe(statement);
-    }
     return {
       database,
       client,

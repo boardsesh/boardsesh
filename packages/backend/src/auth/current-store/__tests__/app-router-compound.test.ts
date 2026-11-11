@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import type { DbInstance } from '@boardsesh/db/client';
@@ -159,6 +160,7 @@ describe('synthetic App Router compound source/intent authority', () => {
       );
       trackedRoles.push(role);
       await transaction.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(role)}`);
+      await grantIdentityMirrorBackendTables(transaction, role);
       await transaction.execute(
         sql`GRANT SELECT,INSERT,UPDATE ON TABLE ${sql.join([users, accounts, authEmailProjection, authEmailReservations, authEmailReservationMembers, authSubjectCutoffs], sql`, `)} TO ${sql.identifier(role)}`,
       );
@@ -233,6 +235,7 @@ describe('synthetic App Router compound source/intent authority', () => {
         failures.push(new Error('Owned compound schema grant cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, owned);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(owned)}`);
       } catch {
         failures.push(new Error('Owned compound role cleanup failed'));
