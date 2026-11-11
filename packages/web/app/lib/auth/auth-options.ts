@@ -11,6 +11,7 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
@@ -169,31 +170,27 @@ providers.push(
         return null;
       }
 
-      const db = getDb();
-
-      // An unknown address, an account with no password (OAuth only) and a
-      // wrong password must take the same time to reject, or the answer tells a
+      // An unknown address, an account with no password (OAuth only), an
+      // address several accounts share in different capitals and a wrong
+      // password must take the same time to reject, or the answer tells a
       // caller which addresses have accounts. So every path makes this one
       // query and then one bcrypt comparison at the stored cost.
-      const [account] = await db
-        .select({
-          id: schema.users.id,
-          email: schema.users.email,
-          name: schema.users.name,
-          image: schema.users.image,
-          passwordHash: schema.userCredentials.passwordHash,
-        })
-        .from(schema.users)
-        .leftJoin(schema.userCredentials, eq(schema.userCredentials.userId, schema.users.id))
-        .where(eq(schema.users.email, credentials.email))
-        .limit(1);
-
-      const storedHash = account?.passwordHash ?? null;
-      const isValidPassword = await compare(credentials.password, storedHash ?? ABSENT_PASSWORD_HASH);
-
-      if (!account || storedHash === null || !isValidPassword) {
+      const found = await findAccountsByEmail(getDb(), credentials.email);
+      const candidates = found.rows.flatMap((account) =>
+        account.passwordHash === null ? [] : [{ ...account, passwordHash: account.passwordHash }],
+      );
+      if (candidates.length === 0) {
+        await compare(credentials.password, ABSENT_PASSWORD_HASH);
         return null;
       }
+      // Several rows can store the very same text. The password decides, as
+      // native sign-in's bounded match does: exactly one of them must accept it.
+      const accepted = await Promise.all(
+        candidates.map((candidate) => compare(credentials.password, candidate.passwordHash)),
+      );
+      const matched = candidates.filter((_candidate, index) => accepted[index]);
+      if (matched.length !== 1) return null;
+      const [account] = matched;
 
       return {
         id: account.id,
@@ -379,8 +376,10 @@ export const authOptions: NextAuthOptions = {
         return false;
       }
 
+      // By the ID authorize proved, never by address: another account can
+      // share this address in different capitals or even as the same text.
       const db = getDb();
-      const existingUser = await db.select().from(schema.users).where(eq(schema.users.email, user.email)).limit(1);
+      const existingUser = await db.select().from(schema.users).where(eq(schema.users.id, user.id)).limit(1);
 
       // Check if email verification is enabled (disabled by default until Fastmail auth is set up)
       const emailVerificationEnabled = process.env.EMAIL_VERIFICATION_ENABLED === 'true';

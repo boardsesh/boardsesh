@@ -4,6 +4,8 @@ import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import { soleAccount } from '@boardsesh/auth-protocol/account-email';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 import { AuthBackendUnavailableError, webPasswordMode } from '@/app/lib/auth/password-command-client.server';
@@ -67,18 +69,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
     const db = getDb();
 
-    // Check if user exists and is unverified
-    const user = await db.select().from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    // Check if user exists and is unverified. Any capitalisation reaches the
+    // account, but only one account: an address several accounts share is
+    // answered like an unknown one.
+    const account = soleAccount(await findAccountsByEmail(db, validationResult.data.email));
 
     // Don't reveal user status - return same message for all cases
     // Use consistent delay for all paths to prevent timing attacks
-    if (user.length === 0 || user[0].emailVerified) {
+    if (!account || account.emailVerified) {
       await consistentDelay(startTime);
       return NextResponse.json({ message: genericMessage }, { status: 200 });
     }
+
+    // The link and its token carry the address as stored, so verify-email
+    // finds this same row by exact match.
+    const { email } = account;
 
     // Generate new token
     const token = crypto.randomUUID();

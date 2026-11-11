@@ -109,6 +109,10 @@ lowercase the complete address. Do not strip plus suffixes, remove dots, or infe
 provider aliases. Use the same rule for registration, credentials login,
 forgot/reset password, verification/resend, email changes, and any allowed email
 linking. Provider subjects remain the primary key for an existing social link.
+That function is `normalizeAccountEmail` in `@boardsesh/auth-protocol/account-email`,
+shared by web and backend. Until the unique index exists, lookups use the same
+module's `resolveAccountEmail`: rows storing the typed text exactly win, then the
+one row storing it in other capitals; several such rows name nobody.
 
 The invariant is **one normalized email identity per account address**, enforced
 by PostgreSQL, not a pre-insert application check. The spike must choose either a

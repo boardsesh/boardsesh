@@ -71,6 +71,11 @@
       "import": "./src/queries/index.ts",
       "default": "./src/queries/index.ts"
     },
+    "./queries/account-email": {
+      "types": "./src/queries/account-email.ts",
+      "import": "./src/queries/account-email.ts",
+      "default": "./src/queries/account-email.ts"
+    },
     "./queries/constants": {
       "default": "./src/queries/constants.ts",
       "import": "./src/queries/constants.ts",
