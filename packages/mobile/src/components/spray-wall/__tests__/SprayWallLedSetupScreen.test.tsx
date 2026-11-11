@@ -1223,7 +1223,7 @@ describe('SprayWallLedSetupScreen', () => {
       next();
       expect(controls.alert).toHaveBeenCalledOnce();
       act(() => alertButton('destructive').onPress?.());
-      expect(lastSaved().holdLeds).toBeUndefined();
+      expect(lastSaved().holdLeds).toEqual([]);
     });
 
     it('asks before replacing a hand-moved LED, and Keep editing keeps it', async () => {

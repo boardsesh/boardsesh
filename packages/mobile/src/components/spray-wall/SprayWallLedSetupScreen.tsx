@@ -480,7 +480,7 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
       const rebuildLeds = () => {
         const ledPositions = generateLedPositions(layout);
         // Regenerated LEDs reuse ids, so hand-made hold links would point at the wrong ones.
-        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: undefined });
+        const draft = withUpdate(layout, { ledPositions, wiring: undefined, holdLeds: [] });
         untouchedLeds.current = ledPositions;
         generatedLeds.current = signature;
         generatedWiring.current = null;

@@ -177,6 +177,22 @@ describe('saving a wall’s LED setup', () => {
     expect(setup?.layout).toMatchObject({ photoKey: layout().photoKey, holes: layout().holes });
   });
 
+  it('keeps hand-made hold links when an app that predates them saves, and clears them on request', async () => {
+    const uuid = await createWall();
+    const leds = [
+      { id: 'led-a', x: 0.25, y: 0.5, hole: { x: 0.25, y: 0.5 } },
+      { id: 'led-b', x: 0.75, y: 0.5, hole: { x: 0.75, y: 0.5 } },
+    ];
+    const linked = layout({ ledPositions: leds, holdLeds: [{ holdId: 7, ledIds: ['led-a', 'led-b'] }] });
+    await save(uuid, OWNER, { layout: linked });
+    // An older app sends no holdLeds: the links stay, minus an LED its layout dropped.
+    await save(uuid, OWNER, { layout: layout({ ledPositions: [leds[0]] }) });
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [{ holdId: 7, ledIds: ['led-a'] }] });
+    // A current app sends an explicit empty list to clear them.
+    await save(uuid, OWNER, { layout: layout({ ledPositions: leds, holdLeds: [] }) });
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [] });
+  });
+
   it('stores only what the layout reader keeps, and the normalised address', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, {

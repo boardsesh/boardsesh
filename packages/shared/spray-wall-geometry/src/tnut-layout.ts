@@ -327,7 +327,9 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
     ...(candidate.columnConvention === 'all' ? { columnConvention: 'all' as const } : {}),
     ...(ledPositions !== undefined ? { ledPositions } : {}),
     ...(wiring !== undefined ? { wiring } : {}),
-    ...(holdLeds?.length ? { holdLeds } : {}),
+    // An empty list is kept: it says every link was cleared on purpose. A layout
+    // with no list at all comes from an app that does not know about links.
+    ...(holdLeds !== undefined ? { holdLeds } : {}),
   };
 }
 

@@ -48,9 +48,29 @@ export function setHoldLedLink(layout: TnutLayout, holdId: number, ledIds: reado
   return { ...layout, holdLeds: [...others, { holdId, ledIds: unique }] };
 }
 
-/** Give a hold back to the automatic assignment. */
+/**
+ * Give a hold back to the automatic assignment. The list stays, even empty, so a
+ * save says the links were cleared rather than looking like an app without them.
+ */
 export function clearHoldLedLink(layout: TnutLayout, holdId: number): TnutLayout {
-  const remaining = (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId);
-  const { holdLeds: _removed, ...rest } = layout;
-  return remaining.length ? { ...rest, holdLeds: remaining } : rest;
+  return { ...layout, holdLeds: (layout.holdLeds ?? []).filter((link) => link.holdId !== holdId) };
+}
+
+/**
+ * Keep a wall's hand-made links when an app that predates them saves the setup.
+ * Such an app sends no `holdLeds` at all; an explicit list, even empty, replaces
+ * them. LEDs the incoming layout no longer has are dropped from the links.
+ */
+export function keepHoldLedLinksFromOlderApp(
+  incoming: TnutLayout,
+  incomingHadLinks: boolean,
+  stored: TnutLayout | null,
+): TnutLayout {
+  if (incomingHadLinks || !stored?.holdLeds?.length) return incoming;
+  const known = new Set((incoming.ledPositions ?? []).map((led) => led.id));
+  // "No LED" links stay; a link whose LEDs all left goes back to the automatic mapping.
+  const kept = stored.holdLeds
+    .map((link) => ({ holdId: link.holdId, ledIds: link.ledIds.filter((id) => known.has(id)) }))
+    .filter((link, index) => link.ledIds.length > 0 || stored.holdLeds![index].ledIds.length === 0);
+  return kept.length ? { ...incoming, holdLeds: kept } : incoming;
 }
