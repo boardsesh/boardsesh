@@ -15,6 +15,7 @@ const nativeCalls = vi.hoisted(() => ({
 }));
 const nativeStates = vi.hoisted(() => ({ created: [] as { value: string; set: ReturnType<typeof vi.fn> }[] }));
 
+vi.mock('../grade', () => ({ GradeRangeRail: () => null }));
 vi.mock('react-native', () => ({
   StyleSheet: { create: <Styles,>(styles: Styles) => styles },
   Keyboard: { dismiss: vi.fn() },

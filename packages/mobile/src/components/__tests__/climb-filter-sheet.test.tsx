@@ -34,6 +34,34 @@ import { hapticSelection } from '../../lib/haptics';
 import { emitHoldsFilterSelection } from '../../lib/hold-filter-handoff';
 import { emitZoneFilterSelection } from '../../lib/zone-filter-handoff';
 
+const androidSurfaceMock = vi.hoisted(() => ({
+  latest: null as import('../ClimbFilterSurface.types').ClimbFilterSurfaceProps | null,
+  capture: vi.fn<() => Promise<import('../ClimbFilterSurface.types').ClimbFilterScrollPosition>>(),
+}));
+vi.mock('../ClimbFilterSurface', () => ({
+  ClimbFilterSurface: forwardRef<
+    import('../ClimbFilterSurface.types').ClimbFilterSurfaceHandle,
+    import('../ClimbFilterSurface.types').ClimbFilterSurfaceProps
+  >(function Surface(props, ref) {
+    androidSurfaceMock.latest = props;
+    useImperativeHandle(
+      ref,
+      () => ({
+        present: vi.fn(),
+        dismiss: bottomSheetModalProps.dismiss,
+        close: vi.fn(),
+        forceClose: vi.fn(),
+        snapToIndex: vi.fn(),
+        snapToPosition: vi.fn(),
+        expand: vi.fn(),
+        collapse: vi.fn(),
+        captureScrollPosition: androidSurfaceMock.capture,
+      }),
+      [],
+    );
+    return createElement('div', { 'data-testid': 'android-native-filters' });
+  }),
+}));
 type StyleProp = Record<string, unknown> | unknown[] | ((state: { pressed: boolean }) => unknown) | undefined;
 
 type PressableProps = {
@@ -635,7 +663,7 @@ beforeEach(() => {
   focusEffectHolder.cb = null;
   authMock.isAuthenticated = true;
   pinStore.pinnedKind = null;
-  platformMock.OS = 'android';
+  platformMock.OS = 'web';
   themeVariantMock.variant = 'material';
   filterFormMock.latest = null;
 });
@@ -643,7 +671,6 @@ beforeEach(() => {
 describe('ClimbFilterSheet scroll adapters', () => {
   it.each([
     ['ios', 'bottom-sheet'],
-    ['android', 'bottom-sheet'],
     ['web', 'bottom-sheet'],
   ] as const)('uses the %s scroll adapter and keeps the keyboard tap contract', (platform, adapter) => {
     platformMock.OS = platform;
@@ -659,7 +686,7 @@ describe('ClimbFilterSheet scroll adapters', () => {
 
 // These presses verify live selections and count previews with the actual
 // progress mapping and StarRating. Native gesture delivery still needs device QA.
-describe.each(['ios', 'android'] as const)('ClimbFilterSheet control interactions on %s (#6340)', (platform) => {
+describe.each(['ios', 'web'] as const)('ClimbFilterSheet control interactions on %s (#6340)', (platform) => {
   beforeEach(() => {
     platformMock.OS = platform;
     vi.useFakeTimers();
@@ -858,7 +885,7 @@ describe('ClimbFilterSheet live selections and dismissal', () => {
     expect(queryByText('mobile.filter.showCount12')).toBeNull();
   });
 
-  it('pads the column by the keyboard overlap so the name search stays above it', () => {
+  it('leaves browser keyboard handling to its scroll adapter', () => {
     const { container } = renderFilterSheet();
     const columnStyle = () =>
       JSON.parse(container.querySelector('[data-column="true"]')?.getAttribute('data-style') ?? 'null');
@@ -866,7 +893,7 @@ describe('ClimbFilterSheet live selections and dismissal', () => {
     act(() =>
       keyboardListeners.get('keyboardDidShow')?.({ endCoordinates: { height: 280, screenY: 564, width: 390 } }),
     );
-    expect(columnStyle()).toEqual([DETENT_COLUMN, { paddingBottom: 280 }]);
+    expect(columnStyle()).toEqual(DETENT_COLUMN);
     act(() => keyboardListeners.get('keyboardDidHide')?.({}));
     expect(columnStyle()).toEqual(DETENT_COLUMN);
   });
@@ -1429,7 +1456,7 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(bottomSheetModalProps.mountCount).toBe(2);
   });
 
-  it.each(['android', 'ios', 'web'] as const)(
+  it.each(['ios', 'web'] as const)(
     'restores the pre-suspend scroll offset on %s, ignoring mount-time scroll noise',
     (platform) => {
       platformMock.OS = platform;
@@ -2560,19 +2587,19 @@ describe('ClimbFilterSheet native iOS form (#6872)', () => {
     expect(bottomSheetModalProps.latest).toMatchObject({ snapPoints: ['50%', '90%'] });
   });
 
-  it.each([
-    ['ios', 'material'],
-    ['android', 'liquidGlass'],
-  ] as const)('keeps the RN body and one 90%% detent on %s with the %s variant', (platform, variant) => {
-    platformMock.OS = platform;
-    themeVariantMock.variant = variant;
-    const { getByTestId, queryByTestId } = renderFilterSheet();
+  it.each([['ios', 'material']] as const)(
+    'keeps the RN body and one 90%% detent on %s with the %s variant',
+    (platform, variant) => {
+      platformMock.OS = platform;
+      themeVariantMock.variant = variant;
+      const { getByTestId, queryByTestId } = renderFilterSheet();
 
-    expect(getByTestId('filter-scroll-view')).toBeTruthy();
-    expect(queryByTestId('native-filter-form')).toBeNull();
-    expect(filterFormMock.latest).toBeNull();
-    expect((bottomSheetModalProps.latest as { snapPoints?: unknown } | null)?.snapPoints).toEqual(['90%']);
-  });
+      expect(getByTestId('filter-scroll-view')).toBeTruthy();
+      expect(queryByTestId('native-filter-form')).toBeNull();
+      expect(filterFormMock.latest).toBeNull();
+      expect((bottomSheetModalProps.latest as { snapPoints?: unknown } | null)?.snapPoints).toEqual(['90%']);
+    },
+  );
 
   it('ends the form on a Quick filters row that suspends the sheet and pushes the Climbs route', () => {
     platformMock.OS = 'ios';
@@ -2655,5 +2682,67 @@ describe('ClimbFilterSheet native iOS form (#6872)', () => {
       },
       currentBoardFilters,
     );
+  });
+});
+
+describe('Android native filter integration (#7312)', () => {
+  beforeEach(() => {
+    platformMock.OS = 'android';
+    androidSurfaceMock.capture.mockResolvedValue({
+      sectionKey: 'quality',
+      offsetDp: 24,
+      rail: { index: 4, offsetDp: 2 },
+    });
+  });
+  it('uses the native surface and supplies a semantic grade rail', () => {
+    const view = renderFilterSheet();
+    expect(view.getByTestId('android-native-filters')).toBeTruthy();
+    expect(view.queryByTestId('filter-scroll-view')).toBeNull();
+    expect(
+      androidSurfaceMock.latest?.model.sections.flatMap((section) => section.rows).find((row) => row.key === 'grade')
+        ?.kind,
+    ).toBe('grade');
+  });
+  it('snapshots native scroll position before opening a picker and restores it on return', async () => {
+    renderFilterSheet();
+    const picker = androidSurfaceMock.latest?.model.sections
+      .flatMap((section) => section.rows)
+      .find((row) => row.key === 'quickFilters');
+    await act(async () => {
+      if (picker?.kind === 'nav') picker.onPress();
+    });
+    expect(androidSurfaceMock.capture).toHaveBeenCalledOnce();
+    expect(routerPush).toHaveBeenCalledWith('/(tabs)/climbs/quick-filters');
+    simulateScreenRefocus();
+    expect(androidSurfaceMock.latest?.initialScrollPosition).toMatchObject({ sectionKey: 'quality', offsetDp: 24 });
+  });
+  it.each(['return', 'close', 'board-change'] as const)('guards delayed picker capture: %s', async (outcome) => {
+    let resolveCapture:
+      | ((position: import('../ClimbFilterSurface.types').ClimbFilterScrollPosition) => void)
+      | undefined;
+    androidSurfaceMock.capture.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCapture = resolve;
+      }),
+    );
+    const view = renderFilterSheet();
+    const picker = androidSurfaceMock.latest?.model.sections
+      .flatMap((section) => section.rows)
+      .find((row) => row.key === 'quickFilters');
+    act(() => {
+      if (picker?.kind === 'nav') {
+        picker.onPress();
+        picker.onPress();
+      }
+    });
+    expect(androidSurfaceMock.capture).toHaveBeenCalledOnce();
+    expect(routerPush).not.toHaveBeenCalled();
+    if (outcome === 'close') act(() => androidSurfaceMock.latest?.onClosePress());
+    if (outcome === 'board-change')
+      view.rerender(<ClimbFilterSheet {...view.props} boardConfig={{ ...boardConfig, angle: 45 }} />);
+    await act(async () => {
+      resolveCapture?.({ sectionKey: 'quality', offsetDp: 24 });
+    });
+    expect(routerPush).toHaveBeenCalledTimes(outcome === 'return' ? 1 : 0);
   });
 });

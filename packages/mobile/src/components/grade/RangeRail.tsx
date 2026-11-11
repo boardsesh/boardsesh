@@ -2,12 +2,6 @@ import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react
 import { Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import {
-  RANGE_EXTEND_WINDOW_MS,
-  clearGradeBound,
-  computeGradeTap,
-  extendGradeRange,
-  findSelectedGradeStop,
-  isAnyGrade,
   isGradeStopEnd,
   isGradeStopInRange,
   isSameGradeBound,
@@ -16,7 +10,7 @@ import {
 } from '@boardsesh/climb-filters';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
-import { hapticSelection } from '../../lib/haptics';
+import { useGradeRangeInteraction } from './use-grade-range-interaction';
 import { spacing } from '../../theme/tokens';
 import { GRADE_CHIP_HEIGHT, GradeChip } from './GradeChip';
 
@@ -146,7 +140,6 @@ export function RangeRail<Stop extends RangeRailStop>({
   // a hold or the Any chip made it, or the bound has since changed from outside
   // the rail (see the effect on `bound` below). Then the next tap switches stop,
   // however soon it lands.
-  const lastSinglePickAtRef = useRef<number | undefined>(undefined);
   // The bound this rail last reported through onChange, until the parent hands
   // it back as `bound`. A `bound` that changes to anything else was set
   // somewhere else: Filters, a recent filter, a token, a restore.
@@ -232,7 +225,6 @@ export function RangeRail<Stop extends RangeRailStop>({
     const reportedBound = reportedBoundRef.current;
     reportedBoundRef.current = null;
     if (reportedBound && isSameGradeBound(reportedBound, bound)) return;
-    lastSinglePickAtRef.current = undefined;
     recenter();
   }, [bound, recenter]);
 
@@ -260,56 +252,15 @@ export function RangeRail<Stop extends RangeRailStop>({
     didCenterRef.current = true;
   }, []);
 
-  // Report a change the climber made. A hold on a stop that already ends the
-  // range changes nothing, so it reports nothing.
-  const commit = useCallback(
-    (next: GradeBound, change: RangeRailChange) => {
-      if (isSameGradeBound(next, bound)) return;
+  const { anySelected, selectedStop, handleTapStop, handleHoldStop, handleClear } = useGradeRangeInteraction({
+    bound,
+    stops,
+    markInteracted,
+    onChange: (next, change) => {
       reportedBoundRef.current = next;
       onChange(next, change);
     },
-    [bound, onChange],
-  );
-
-  const anySelected = isAnyGrade(bound);
-  const selectedStop = findSelectedGradeStop(bound, stops);
-
-  const handleTapStop = useCallback(
-    (stop: Stop) => {
-      hapticSelection();
-      markInteracted();
-      const tappedAt = Date.now();
-      const lastSinglePickAt = lastSinglePickAtRef.current;
-      const withinExtendWindow = lastSinglePickAt !== undefined && tappedAt - lastSinglePickAt < RANGE_EXTEND_WINDOW_MS;
-      const next = computeGradeTap(bound, stop, stops, withinExtendWindow);
-      // Any tap that leaves one stop selected is a fresh pick and opens the
-      // window; a tap that made a range or cleared closes it.
-      lastSinglePickAtRef.current = findSelectedGradeStop(next, stops) ? tappedAt : undefined;
-      // The window only decides a tap on a different stop than the one selected.
-      const decidedByWindow = selectedStop !== undefined && stop !== selectedStop;
-      commit(next, { gesture: 'tap', ...(decidedByWindow && { withinRangeWindow: withinExtendWindow }) });
-    },
-    [bound, stops, selectedStop, commit, markInteracted],
-  );
-
-  // Touch and hold makes or moves a range without the clock. It also closes the
-  // window, so the tap after a hold is a plain pick.
-  const handleHoldStop = useCallback(
-    (stop: Stop) => {
-      hapticSelection();
-      markInteracted();
-      lastSinglePickAtRef.current = undefined;
-      commit(extendGradeRange(bound, stop, stops), { gesture: 'hold' });
-    },
-    [bound, stops, commit, markInteracted],
-  );
-
-  const handleClear = useCallback(() => {
-    hapticSelection();
-    markInteracted();
-    lastSinglePickAtRef.current = undefined;
-    commit(clearGradeBound(), { gesture: 'clear' });
-  }, [commit, markInteracted]);
+  });
 
   return (
     <View style={style}>

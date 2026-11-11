@@ -20,6 +20,7 @@
 // their system fill: Liquid Glass is never drawn in the content layer.
 
 import { useCallback, useLayoutEffect, useRef } from 'react';
+import { GradeRangeRail } from './grade';
 import { Keyboard, PlatformColor, StyleSheet } from 'react-native';
 import { Host } from '@expo/ui';
 import { Button, Form, HStack, Image, Menu, Section, Spacer, Text, TextField, useNativeState } from '@expo/ui/swift-ui';
@@ -141,6 +142,17 @@ function MenuRow({ row }: { row: FilterMenuRow }) {
 
 function renderFilterRow(row: ClimbFilterFormRow, tints: SettingsRowTints) {
   switch (row.kind) {
+    case 'grade':
+      return renderSettingsRow(
+        {
+          kind: 'custom',
+          key: row.key,
+          content: <GradeRangeRail {...row.grade} />,
+          height: row.height,
+          fullBleed: true,
+        },
+        tints,
+      );
     case 'name':
       return <NameRow key={row.key} row={row} controlTint={tints.control} />;
     case 'menu':

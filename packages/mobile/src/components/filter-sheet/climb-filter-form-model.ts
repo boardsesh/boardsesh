@@ -81,7 +81,7 @@ export type ClimbFilterFormInput = {
   };
   /** Null hides Recent (a playlist). */
   recent: { items: readonly RecentFilter[]; currentId: string | undefined; onSelect: (id: string) => void } | null;
-  grade: { rail: ReactNode; height: number };
+  grade: { rail: ReactNode; height: number; native?: import('../ClimbFilterForm.types').FilterGradeRow['grade'] };
   accuracy: {
     options: { key: GradeAccuracyValue | 'off'; label: string }[];
     onSelect: (key: GradeAccuracyValue | 'off') => void;
@@ -182,7 +182,9 @@ function difficultySection(input: ClimbFilterFormInput): ClimbFilterFormSection 
     title: t('mobile.filter.section.difficulty'),
     footer: t('mobile.filter.accuracy.description'),
     rows: [
-      { kind: 'custom', key: 'grade', content: grade.rail, height: grade.height, fullBleed: true },
+      grade.native
+        ? { kind: 'grade', key: 'grade', height: grade.height, grade: grade.native }
+        : { kind: 'custom', key: 'grade', content: grade.rail, height: grade.height, fullBleed: true },
       {
         kind: 'select',
         key: 'accuracy',
