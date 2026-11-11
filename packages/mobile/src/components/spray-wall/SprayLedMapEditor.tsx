@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ import {
   traceLedPath,
   MAX_LED_POSITIONS,
   MAX_WIRING_SKIP,
+  MAX_WIRING_TOTAL_SKIPS,
   type LedPosition,
   type TnutLayout,
   type TnutPoint,
@@ -81,7 +82,16 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   const leds = layout.ledPositions ?? NO_LEDS;
 
   function changePositions(ledPositions: LedPosition[]) {
-    const apply = () => change({ ledPositions, wiring: undefined });
+    const apply = () => {
+      const retainedIds = new Set(ledPositions.map((led) => led.id));
+      // Prune immediately: a subsequent Add can reuse a removed manual LED id.
+      // Keep empty overrides so removal does not restore automatic assignments.
+      const holdLeds = layout.holdLeds?.map((link) => ({
+        ...link,
+        ledIds: link.ledIds.filter((id) => retainedIds.has(id)),
+      }));
+      change({ ledPositions, wiring: undefined, holdLeds });
+    };
     if (!layout.wiring?.paths.length) {
       apply();
       return;
@@ -204,8 +214,27 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   // plus any the climber said are not on the wall.
   const lastWired = useMemo(() => (wiring ? assignLedIndices(wiring).at(-1) : undefined), [wiring]);
   const litIndex = (lastWired ? lastWired.index + 1 : (wiring?.initialSkip ?? 0)) + pendingSkip;
+  const acknowledgedIndex = useRef<number | null>(null);
+  const skipBudget = Math.max(
+    0,
+    Math.min(
+      MAX_WIRING_SKIP - (lastWired ? 0 : (wiring?.initialSkip ?? 0)),
+      MAX_WIRING_TOTAL_SKIPS -
+        (wiring?.initialSkip ?? 0) -
+        (wiring?.skips.reduce((total, skip) => total + skip.count, 0) ?? 0),
+    ),
+  );
   useEffect(() => {
-    if (mode === 'light' && available) void show([litIndex]);
+    let active = true;
+    acknowledgedIndex.current = null;
+    if (mode === 'light' && available)
+      void show([litIndex]).then((completed) => {
+        if (active && completed) acknowledgedIndex.current = litIndex;
+      });
+    return () => {
+      active = false;
+      acknowledgedIndex.current = null;
+    };
   }, [mode, available, litIndex, show]);
   // The last tap of Light and tap completes the cable: switch its LED off.
   useEffect(() => {
@@ -221,7 +250,15 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   /** Assign the lit LED to the marker the climber tapped. One Undo step per LED. */
   function assignLit(id: string) {
-    if (!wiring || indices.has(id)) return;
+    if (
+      !wiring ||
+      indices.has(id) ||
+      !available ||
+      preview.state !== 'lit' ||
+      preview.error ||
+      acknowledgedIndex.current !== litIndex
+    )
+      return;
     let next = extendWiring(wiring, [id]);
     if (next === wiring) return;
     if (pendingSkip) {
@@ -229,6 +266,10 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
         ? setWiringSkip(next, lastWired.id, id, pendingSkip)
         : setWiringInitialSkip(next, (wiring.initialSkip ?? 0) + pendingSkip);
     }
+    // Setters reject out-of-budget skips as no-ops. Never save a different LED
+    // from the one the controller acknowledged, even after a rejected edit.
+    if (assignLedIndices(next).find((entry) => entry.id === id)?.index !== litIndex) return;
+    acknowledgedIndex.current = null;
     change({ wiring: next });
     setPendingSkip(0);
   }
@@ -326,7 +367,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             <Button
               title={t('sprayLedSetup.lightAndTapSkip')}
               variant="outlined"
-              disabled={!available || pendingSkip >= MAX_WIRING_SKIP}
+              disabled={!available || pendingSkip >= skipBudget}
               onPress={() => setPendingSkip((count) => count + 1)}
             />
             <Button

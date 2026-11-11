@@ -8,6 +8,7 @@ import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
 const preview = vi.hoisted(() => ({
   available: true,
+  error: null as string | null,
   stop: vi.fn(),
   show: vi.fn(),
 }));
@@ -137,10 +138,32 @@ beforeEach(() => {
   vi.clearAllMocks();
   changes.length = 0;
   preview.available = true;
+  preview.error = null;
 });
 afterEach(cleanup);
 
 describe('holds and LEDs step', () => {
+  it('shows a lighting error and retries only on an explicit selection or retry press', () => {
+    const rendered = render(<Harness />);
+    expect(preview.show).not.toHaveBeenCalled();
+    tap(left);
+    expect(preview.show).toHaveBeenCalledTimes(1);
+    preview.error = 'unavailable';
+    rendered.rerender(<Harness />);
+    expect(screen.getByText('sprayLed.lightFailed')).toBeTruthy();
+    expect(preview.show).toHaveBeenCalledTimes(1);
+    fireEvent.click(button('retry'));
+    expect(preview.show).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('sprayLedSetup.holdLedsPickHolds'));
+    tap(left);
+    expect(preview.show).toHaveBeenCalledTimes(3);
+    preview.available = false;
+    rendered.rerender(<Harness />);
+    preview.available = true;
+    rendered.rerender(<Harness />);
+    expect(preview.show).toHaveBeenCalledTimes(3);
+  });
+
   it('shows and lights a tapped hold, then links an LED to it by hand', () => {
     render(<Harness />);
     expect(screen.getByText('sprayLedSetup.holdLedsNoHold')).toBeTruthy();

@@ -53,10 +53,11 @@ export function SprayHoldLedStep({
   onInteractionChange: (active: boolean) => void;
 }) {
   const { t } = useTranslation('boards');
-  const { spacing } = useTheme();
+  const { spacing, brandColors } = useTheme();
   const preview = useSprayLedPreview(wallUuid);
   const [target, setTarget] = useState<TapTarget>('holds');
   const [holdId, setHoldId] = useState<number | null>(null);
+  const [selectionAttempt, setSelectionAttempt] = useState(0);
   // An LED with no hold, picked with "Next LED without a hold"; tapping a hold then adds it there.
   const [freeLedId, setFreeLedId] = useState<string | null>(null);
   const [history, setHistory] = useState<(SprayHoldLedLink[] | undefined)[]>([]);
@@ -88,17 +89,19 @@ export function SprayHoldLedStep({
   const lastLit = useRef('');
   const { available, show, stop } = preview;
   useEffect(() => {
-    if (!available || indicesKey === lastLit.current) return;
-    lastLit.current = indicesKey;
+    const attemptKey = `${selectionAttempt}:${indicesKey}`;
+    if (!available || selectionAttempt === 0 || attemptKey === lastLit.current) return;
+    lastLit.current = attemptKey;
     if (indicesKey) void show(indicesKey.split(',').map(Number));
     else void stop();
-  }, [available, indicesKey, show, stop]);
+  }, [available, indicesKey, selectionAttempt, show, stop]);
 
   function commit(next: TnutLayout) {
     setHistory((previous) => [...previous.slice(-49), layout.holdLeds]);
     onChange({ holdLeds: next.holdLeds });
   }
   function chooseHold(id: number) {
+    setSelectionAttempt((attempt) => attempt + 1);
     setHoldId(id);
     setFreeLedId(null);
     // Picking a hold is almost always followed by fixing its LEDs.
@@ -140,6 +143,7 @@ export function SprayHoldLedStep({
     if (!order.length) return;
     const after = focusLed === null ? -1 : order.indexOf(focusLed);
     setFreeLedId(order[(after + 1) % order.length]);
+    setSelectionAttempt((attempt) => attempt + 1);
     setHoldId(null);
     setTarget('holds');
   }
@@ -233,6 +237,19 @@ export function SprayHoldLedStep({
             : t('sprayLedSetup.holdLedsNoHold')}
       </Text>
       {target === 'leds' && entry ? <Text variant="footnote">{t('sprayLedSetup.holdLedsLedHint')}</Text> : null}
+      {preview.error ? (
+        <>
+          <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
+            {t('sprayLed.lightFailed')}
+          </Text>
+          <Button
+            title={t('sprayLedSetup.retry')}
+            variant="outlined"
+            disabled={!available}
+            onPress={() => setSelectionAttempt((attempt) => attempt + 1)}
+          />
+        </>
+      ) : null}
       {!wired ? (
         <Text variant="footnote">{t('sprayLedSetup.holdLedsNotWired')}</Text>
       ) : !preview.available ? (

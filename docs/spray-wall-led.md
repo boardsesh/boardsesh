@@ -59,7 +59,10 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    the cable exists the LEDs have no physical index, so the wall cannot light
    the chosen hold; coming back to this step after the cable does light it.
    Regenerating the LED positions clears all links, because the new LEDs reuse
-   the old ids.
+   the old ids. Removing a single LED prunes its manual links immediately, so
+   adding another LED cannot inherit a deleted position’s links. Undo restores
+   the previous positions and links. A failed preview shows an error; select
+   the hold again or tap **Try again** to retry.
 9. Choose horizontal, vertical or custom cable layout. Horizontal/vertical ask
    for one of four start corners and generate a single serpentine run. Custom
    starts with no cable. Both continue to **Skip the first LEDs** before wiring.
@@ -73,7 +76,10 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    adjacent positions. Set that count to zero to remove the gap. Lay cable and
    Light and tap only extend the cable's end, so they are hidden while every
    LED is already on the cable (a generated horizontal or vertical run, or a
-   finished custom one), and a note explains that rerouting is Cut and Connect
+   finished custom one). In Light and tap, a marker is assigned only after the
+   controller acknowledges that physical LED; pending or failed writes cannot
+   change the cable. Skip respects both the remaining gap and total skip limits.
+   A note explains that rerouting is Cut and Connect
    under Select two LEDs (a cut keeps every LED on a section). The legend
    follows the photo, one meaning per colour: purple dots are LEDs; the
    turquoise line is the cable, with arrows for its direction; a green ring and
