@@ -44,6 +44,8 @@ export interface CurrentStorePasswordCandidate {
 export async function matchCurrentStorePasswordCandidate(
   candidates: readonly CurrentStorePasswordCandidate[],
   password: string,
+  verify: (passwordHash: string, submittedPassword: string) => Promise<boolean> = (passwordHash, submittedPassword) =>
+    compare(submittedPassword, passwordHash),
 ): Promise<{ userId: string; createdAt: Date } | null> {
   const snapshot = candidates.map((candidate) => ({
     userId: candidate.userId,
@@ -51,18 +53,18 @@ export async function matchCurrentStorePasswordCandidate(
     createdAt: candidate.createdAt instanceof Date ? new Date(candidate.createdAt.getTime()) : candidate.createdAt,
   }));
   if (snapshot.length === 0) {
-    await compare(password, ABSENT_PASSWORD_HASH);
+    await verify(ABSENT_PASSWORD_HASH, password);
     return null;
   }
   if (snapshot.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) {
     await Promise.all(
       snapshot
         .slice(0, MAX_CURRENT_STORE_PASSWORD_CANDIDATES)
-        .map((candidate) => compare(password, candidate.passwordHash)),
+        .map((candidate) => verify(candidate.passwordHash, password)),
     );
     return null;
   }
-  const matches = await Promise.all(snapshot.map((candidate) => compare(password, candidate.passwordHash)));
+  const matches = await Promise.all(snapshot.map((candidate) => verify(candidate.passwordHash, password)));
   const matchingIndexes = matches.reduce<number[]>((indexes, matchesPassword, index) => {
     if (matchesPassword) indexes.push(index);
     return indexes;
@@ -91,6 +93,20 @@ export async function authenticateCurrentStorePassword(
   email: string,
   password: string,
 ): Promise<VerifiedPasswordSnapshot | null> {
+  const candidates = await readCurrentStorePasswordCandidates(database, email);
+  const matched = await matchCurrentStorePasswordCandidate(candidates, password);
+  const proved = matched ? candidates.find((candidate) => candidate.userId === matched.userId) : undefined;
+  if (!matched || !proved) return null;
+  return {
+    userId: matched.userId,
+    createdAt: matched.createdAt,
+    passwordHash: proved.passwordHash,
+    generation: proved.generation ?? 0,
+  };
+}
+
+/** Snapshot read only; callers must release their transaction before bcrypt. */
+export async function readCurrentStorePasswordCandidates(database: PasswordIdentityReader, email: string) {
   const normalizedEmail = normalizeAccountEmail(email);
   // Preserve exact case-insensitive matching, including literal '_' and '%'.
   // Historic duplicate-by-case rows remain independently owned accounts.
@@ -107,15 +123,7 @@ export async function authenticateCurrentStorePassword(
     .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
     .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  const matched = await matchCurrentStorePasswordCandidate(candidates, password);
-  const proved = matched ? candidates.find((candidate) => candidate.userId === matched.userId) : undefined;
-  if (!matched || !proved) return null;
-  return {
-    userId: matched.userId,
-    createdAt: matched.createdAt,
-    passwordHash: proved.passwordHash,
-    generation: proved.generation ?? 0,
-  };
+  return candidates;
 }
 
 /** Shared native creation email policy; subjects and login passwords are separate. */

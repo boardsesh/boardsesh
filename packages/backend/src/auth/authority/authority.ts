@@ -9,6 +9,16 @@ export interface AuthorityConfiguration {
   trustedOrigins: string[];
 }
 
+export function verifyAuthorityPassword({
+  hash: passwordHash,
+  password,
+}: {
+  hash: string;
+  password: string;
+}): Promise<boolean> {
+  return compare(password, passwordHash);
+}
+
 /** Unmounted first-party authority. No OAuth provider, import, mirror, or writer switch. */
 export function createAuthority(database: AuthorityTransaction, configuration: AuthorityConfiguration) {
   const options = {
@@ -19,8 +29,7 @@ export function createAuthority(database: AuthorityTransaction, configuration: A
       enabled: true,
       password: {
         hash: (password: string) => hash(password, PASSWORD_HASH_COST),
-        verify: ({ hash: passwordHash, password }: { hash: string; password: string }) =>
-          compare(password, passwordHash),
+        verify: verifyAuthorityPassword,
       },
     },
     session: {

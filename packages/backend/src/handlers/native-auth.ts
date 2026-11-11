@@ -1,3 +1,4 @@
+import { authenticateIdentityPassword } from '../auth/authority/password-verification';
 import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
 import { legacyBridgeMode } from '../auth/authority/bridge';
 import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
@@ -26,6 +27,7 @@ import {
   isHumanSubjectActive,
   PasswordProofStaleError,
   requireHumanSubjectForIssuance,
+  lockPasswordProofAuthority,
   type PasswordProof,
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
@@ -37,7 +39,7 @@ import {
 } from '../auth/current-store/authority-configuration';
 import {
   preflight,
-  signInTransactionSettings,
+  boundSignInLockWaits,
   transactionSettings,
   type WebPasswordAuthority,
 } from '../auth/current-store/command-context';
@@ -50,7 +52,6 @@ import {
   type VerifiedNativeOAuthIdentity as VerifiedOAuthIdentity,
 } from '../auth/current-store/native-oauth-identity';
 import {
-  authenticateCurrentStorePassword,
   parseCurrentStorePasswordRegistration,
   prepareCurrentStorePasswordRegistration,
   insertCurrentStorePasswordIdentity,
@@ -544,8 +545,11 @@ async function generateTokenPair(
     const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
     // A password sign-in gives up on a held user row after 250 ms and answers
     // 503, which the app retries; issuance that must win keeps 4 s.
-    if (passwordProof) await signInTransactionSettings(transaction);
-    else await transactionSettings(transaction);
+    await transactionSettings(transaction);
+    if (passwordProof) {
+      await lockPasswordProofAuthority(transaction, passwordProof);
+      await boundSignInLockWaits(transaction);
+    }
     generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
   }
   if (origin.kind === 'transfer') {
@@ -815,7 +819,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
   }
 
   try {
-    const authenticatedUser = await authenticateCurrentStorePassword(db, email, password);
+    const authenticatedUser = await authenticateIdentityPassword(db, email, password);
     if (!authenticatedUser) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
@@ -831,6 +835,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       passwordProof: {
         passwordHash: authenticatedUser.passwordHash,
         generation: authenticatedUser.generation,
+        ...(authenticatedUser.authorityReceipt ? { authorityReceipt: authenticatedUser.authorityReceipt } : {}),
       },
     });
     logger.info('[NativeAuth] Credentials sign-in successful');
