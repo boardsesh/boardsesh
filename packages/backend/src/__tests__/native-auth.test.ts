@@ -108,11 +108,15 @@ const {
   __resetNativeAuthStateForTests,
   __fillConsumedTokenMapForTests,
   __fillRateLimitMapForTests,
+  __fillRefreshRateLimitMapForTests,
 } = await import('../handlers/native-auth');
 
 const { validateMobileJwt, validateToken } = await import('../middleware/auth');
 const { db } = await import('../db/client');
+const { logger } = await import('../utils/logger');
 const mockedDatabase = db as unknown as {
+  select: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
   update: ReturnType<typeof vi.fn>;
   transaction: ReturnType<typeof vi.fn>;
 };
@@ -500,9 +504,109 @@ describe('handleNativeAuthRefresh', () => {
       process.env.NEXTAUTH_SECRET = savedSecret;
     }
   });
+
+  it.each(['hint', 'transaction', 'commit'])(
+    'returns 503 for an unavailable %s without logging private errors',
+    async (phase) => {
+      let transactionCompletedSuccessfully = false;
+      const failure = Object.assign(new Error('private fixture payload must not reach logs'), { code: 'ECONNRESET' });
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+      const error = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+      if (phase === 'hint') {
+        mockedDatabase.select.mockImplementationOnce(() => {
+          throw failure;
+        });
+      } else if (phase === 'commit') {
+        mockDbUpdateReturning.mockResolvedValueOnce([
+          { userId: 'unit-subject', expiresAt: new Date(Date.now() + 90_000) },
+        ]);
+        mockedDatabase.transaction.mockImplementationOnce(async (operation) => {
+          const committedResult = await operation({
+            execute: async () => [{ transaction_isolation: 'read committed' }],
+            select: mockedDatabase.select,
+            update: mockedDatabase.update,
+            insert: mockedDatabase.insert,
+          });
+          transactionCompletedSuccessfully = committedResult.status === 200;
+          throw failure;
+        });
+      } else {
+        mockedDatabase.transaction.mockRejectedValueOnce(failure);
+      }
+      try {
+        const res = makeResponse();
+        await handleNativeAuthRefresh(
+          makeRequest({ method: 'POST', body: { refreshToken: crypto.randomUUID() } }) as unknown as IncomingMessage,
+          res as unknown as ServerResponse,
+        );
+        expect(res.statusCode).toBe(503);
+        expect(parseBody(res)).toEqual({ error: 'Token refresh is temporarily unavailable' });
+        expect(warn.mock.calls).toEqual([['[NativeAuth] Token refresh unavailable']]);
+        expect(error).not.toHaveBeenCalled();
+        if (phase === 'commit') {
+          expect(transactionCompletedSuccessfully).toBe(true);
+          expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
+        }
+      } finally {
+        warn.mockRestore();
+        error.mockRestore();
+      }
+    },
+  );
+
+  it('does not turn failed success publication after commit into a retryable refusal', async () => {
+    mockDbUpdateReturning.mockResolvedValueOnce([
+      {
+        id: 'publication-row',
+        userId: 'unit-subject',
+        expiresAt: new Date(Date.now() + 90_000),
+      },
+    ]);
+    const res = makeResponse();
+    res.end = () => {
+      throw new Error('fixture socket closed');
+    };
+    const successLog = vi.spyOn(logger, 'info').mockImplementation(() => logger);
+    try {
+      await expect(
+        handleNativeAuthRefresh(
+          makeRequest({ method: 'POST', body: { refreshToken: crypto.randomUUID() } }) as unknown as IncomingMessage,
+          res as unknown as ServerResponse,
+        ),
+      ).rejects.toThrow('fixture socket closed');
+      expect(res.statusCode).toBe(200);
+      expect(successLog.mock.calls).toEqual([['[NativeAuth] Token refresh successful']]);
+    } finally {
+      successLog.mockRestore();
+    }
+  });
 });
 
 describe('Rate limiting', () => {
+  it('stores only a namespaced SHA-256 digest for the presented refresh secret', async () => {
+    const refreshToken = 'synthetic-secret-never-retained-in-quota-key';
+    const expectedKey = `refresh:${crypto.createHash('sha256').update(refreshToken).digest('hex')}`;
+    const observedKeys: string[] = [];
+    const actualSet = Object.getOwnPropertyDescriptor(Map.prototype, 'set')?.value as typeof Map.prototype.set;
+    if (typeof actualSet !== 'function') throw new Error('Map intrinsic unavailable');
+    const set = vi.spyOn(Map.prototype, 'set').mockImplementation(function (key, entry) {
+      if (typeof key === 'string' && key.startsWith('refresh:')) observedKeys.push(key);
+      return actualSet.call(this, key, entry);
+    });
+    try {
+      const res = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({ method: 'POST', body: { refreshToken } }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      expect(res.statusCode).toBe(401);
+    } finally {
+      set.mockRestore();
+    }
+    expect(observedKeys).toContain(expectedKey);
+    expect(observedKeys.some((key) => key.includes(refreshToken))).toBe(false);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     __resetNativeAuthStateForTests();
@@ -538,28 +642,100 @@ describe('Rate limiting', () => {
     expect(body.error).toContain('Rate limit exceeded');
   });
 
-  it('rate limits the refresh endpoint independently per IP', async () => {
-    // 10 requests from the same IP
-    for (let requestIndex = 0; requestIndex < 10; requestIndex++) {
+  it('admits distinct refresh secrets sharing one proxy address', async () => {
+    for (let requestIndex = 0; requestIndex < 30; requestIndex++) {
       const req = makeRequest({
         method: 'POST',
-        body: { refreshToken: `token-${requestIndex}` },
+        body: { refreshToken: `different-token-${requestIndex}` },
         remoteAddress: '10.0.0.50',
       });
       const res = makeResponse();
       await handleNativeAuthRefresh(req as unknown as IncomingMessage, res as unknown as ServerResponse);
-      expect(res.statusCode).not.toBe(429);
+      expect(res.statusCode).toBe(401);
     }
+  });
 
-    // 11th request from same IP
-    const req = makeRequest({
-      method: 'POST',
-      body: { refreshToken: 'token-overflow' },
-      remoteAddress: '10.0.0.50',
-    });
+  it('limits the same refresh secret across addresses and returns Retry-After', async () => {
+    for (let requestIndex = 0; requestIndex <= 10; requestIndex++) {
+      const req = makeRequest({
+        method: 'POST',
+        body: { refreshToken: 'one-repeated-refresh-secret' },
+        remoteAddress: `10.0.0.${requestIndex}`,
+      });
+      const res = makeResponse();
+      await handleNativeAuthRefresh(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+      expect(res.statusCode).toBe(requestIndex < 10 ? 401 : 429);
+      if (requestIndex === 10) {
+        expect(Number(res.headers['Retry-After'])).toBeGreaterThan(0);
+        expect(Number(res.headers['Retry-After'])).toBeLessThanOrEqual(60);
+      }
+    }
+  });
+
+  it('starts a fresh refresh window exactly at the previous deadline', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    try {
+      for (let requestIndex = 0; requestIndex < 11; requestIndex++) {
+        const req = makeRequest({ method: 'POST', body: { refreshToken: 'window-secret' } });
+        const res = makeResponse();
+        await handleNativeAuthRefresh(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+        expect(res.statusCode).toBe(requestIndex < 10 ? 401 : 429);
+      }
+      now.mockReturnValue(2_060_000);
+      const res = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({ method: 'POST', body: { refreshToken: 'window-secret' } }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      expect(res.statusCode).toBe(401);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('refuses refresh capacity with 503 before database work', async () => {
+    __fillRefreshRateLimitMapForTests(50_000);
     const res = makeResponse();
-    await handleNativeAuthRefresh(req as unknown as IncomingMessage, res as unknown as ServerResponse);
-    expect(res.statusCode).toBe(429);
+    await handleNativeAuthRefresh(
+      makeRequest({ method: 'POST', body: { refreshToken: 'capacity-secret' } }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+    );
+    expect(res.statusCode).toBe(503);
+    expect(parseBody(res)).toEqual({ error: 'Service temporarily overloaded' });
+    expect(mockedDatabase.select).not.toHaveBeenCalled();
+    expect(mockedDatabase.transaction).not.toHaveBeenCalled();
+  });
+
+  it('evicts expired refresh capacity and leaves sign-in capacity independent', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(3_000_000);
+    try {
+      __fillRefreshRateLimitMapForTests(50_000);
+      const exchangeResponse = makeResponse();
+      await handleNativeAuthExchange(
+        makeRequest({ method: 'POST', body: { transferToken: 'invalid.signature' } }) as unknown as IncomingMessage,
+        exchangeResponse as unknown as ServerResponse,
+      );
+      expect(exchangeResponse.statusCode).toBe(401);
+      now.mockReturnValue(3_060_000);
+      const refreshResponse = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({ method: 'POST', body: { refreshToken: 'new-after-expiry' } }) as unknown as IncomingMessage,
+        refreshResponse as unknown as ServerResponse,
+      );
+      expect(refreshResponse.statusCode).toBe(401);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('keeps refresh independent of exhausted sign-in buckets and capacity', async () => {
+    __fillRateLimitMapForTests(50_000);
+    const res = makeResponse();
+    await handleNativeAuthRefresh(
+      makeRequest({ method: 'POST', body: { refreshToken: 'independent-secret' } }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+    );
+    expect(res.statusCode).toBe(401);
   });
 
   it('does not rate limit requests from a different IP', async () => {
