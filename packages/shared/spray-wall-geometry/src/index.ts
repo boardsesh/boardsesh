@@ -110,6 +110,15 @@ export {
   type SprayHoldLedLink,
 } from './hold-led-links';
 export {
+  groupLedPair,
+  ledPairs,
+  ledPartner,
+  readLedPairs,
+  separateLedPair,
+  withLedPartners,
+  type SprayLedPair,
+} from './led-pairs';
+export {
   bindLedPositionsToHoles,
   buildSprayLedMapping,
   findSprayHoldAtPoint,

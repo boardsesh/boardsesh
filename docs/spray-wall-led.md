@@ -42,6 +42,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    hole layouts estimate spacing from the median nearest-neighbor distance
    (single-hole fallback: 10% of the normalized frame). Generated
    positions outside the image are omitted. Manual edits stay within the image.
+   With LEDs on both sides of the hold ("sides"), the two LEDs behind each
+   hole are a **pair**: they are drawn as interlocking rings, move together,
+   are removed together, and laying the cable through one adds the other
+   straight after it. **Pair LEDs** separates a pair with one tap (each LED can
+   then be moved or deleted on its own) or groups two single LEDs with two taps.
+   Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
+   placement pairs the LEDs it generated per hole, and an explicit empty list
+   keeps every pair separated. Rebuilding the LEDs returns to those defaults.
 8. Next opens **Holds and LEDs**, which checks and fixes which LEDs belong to
    each hold before the cable is laid: the links depend on where the LEDs are,
    not on how the strip runs. Tapping a hold selects it and rings its LEDs on
