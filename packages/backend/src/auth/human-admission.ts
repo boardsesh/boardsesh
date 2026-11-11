@@ -34,6 +34,19 @@ export class AuthSubjectDeniedError extends Error {
   }
 }
 
+/**
+ * A credential we signed that `decideCredential` refuses: its account is
+ * deleted or missing, a cutoff ended it, or a stamp is malformed. Thrown only
+ * when a validator is asked to (`throwOnRefusal`); an expired or foreign
+ * credential is never this.
+ */
+export class AuthCredentialRefusedError extends Error {
+  constructor() {
+    super('Authentication is required');
+    this.name = 'AuthCredentialRefusedError';
+  }
+}
+
 type AdmissionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /** Nothing writes a per-login denial yet (BA-04 PRs 6 and 9). */

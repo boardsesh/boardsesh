@@ -74,10 +74,28 @@ describe('presented web credential admission', () => {
     await expect(admitPresentedWebCredential(credential)).rejects.toBeInstanceOf(CredentialAuthorityUnavailable);
   });
 
-  it('does not mistake an HTTP failure for a known unauthenticated decision', async () => {
+  it('reads the backend 401 for a refused cookie (deleted account, reset) as a denial', async () => {
     fetchMock.mockResolvedValue(
-      Response.json({ errors: [{ extensions: { code: 'UNAUTHENTICATED' } }] }, { status: 503 }),
+      Response.json(
+        { errors: [{ message: 'Authentication is required', extensions: { code: 'UNAUTHENTICATED' } }] },
+        { status: 401 },
+      ),
     );
+    await expect(admitPresentedWebCredential(credential)).resolves.toBeNull();
+  });
+
+  it.each([
+    { data: { authenticatedUserId: 'fixture-owner' } },
+    { errors: [{ extensions: { code: 'SERVICE_UNAVAILABLE' } }] },
+    { errors: [{ extensions: { code: 'UNAUTHENTICATED' } }, { extensions: { code: 'UNAUTHENTICATED' } }] },
+    {},
+  ])('never admits, and never reads anything but UNAUTHENTICATED as a denial, from a 401: %j', async (result) => {
+    fetchMock.mockResolvedValue(Response.json(result, { status: 401 }));
+    await expect(admitPresentedWebCredential(credential)).rejects.toBeInstanceOf(CredentialAuthorityUnavailable);
+  });
+
+  it.each([403, 429, 503])('does not mistake an HTTP %i for a known unauthenticated decision', async (status) => {
+    fetchMock.mockResolvedValue(Response.json({ errors: [{ extensions: { code: 'UNAUTHENTICATED' } }] }, { status }));
     await expect(admitPresentedWebCredential(credential)).rejects.toBeInstanceOf(CredentialAuthorityUnavailable);
   });
 

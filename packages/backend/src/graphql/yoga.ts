@@ -1,7 +1,7 @@
 import { createYoga } from 'graphql-yoga';
 import { v4 as uuidv4 } from 'uuid';
 import { GraphQLError } from 'graphql';
-import { isAuthAdmissionUnavailable } from '../auth/human-admission';
+import { AuthCredentialRefusedError, isAuthAdmissionUnavailable } from '../auth/human-admission';
 import * as Sentry from '@sentry/node';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { schema } from './index';
@@ -38,9 +38,17 @@ async function authenticateHttpBearer(authHeader: string | null): Promise<AuthRe
   const token = bearerMatch[1]?.trim() ?? '';
   // Preserve the deployed transport contract: an invalid or expired optional
   // credential degrades to anonymous so public operations remain available.
+  // A refused one does not. Anonymous would leave the app showing a signed-in
+  // climber whose every action fails; a 401 makes every shipped app refresh,
+  // and the refresh's own 401 signs it out.
   try {
-    return token ? await validateToken(token) : null;
+    return token ? await validateToken(token, { throwOnRefusal: true }) : null;
   } catch (error) {
+    if (error instanceof AuthCredentialRefusedError) {
+      throw new GraphQLError('Authentication is required', {
+        extensions: { code: 'UNAUTHENTICATED', http: { status: 401 } },
+      });
+    }
     if (!isAuthAdmissionUnavailable(error)) throw error;
     throw new GraphQLError('Authentication is temporarily unavailable', {
       extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },

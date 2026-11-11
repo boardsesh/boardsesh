@@ -293,6 +293,26 @@ one-second sweep (`websocket/setup.ts`), and the native refresh issuer. The web
   them until BA-04 PR 6 and nothing writes one until web sign-out does (PR 9),
   so the read returns none today.
 
+**A refused credential is answered, never served as signed out.** GraphQL HTTP
+and the WebSocket handshake take an optional credential. One that is expired,
+not signed by us or unreadable still runs as anonymous, so public reads keep
+working. One we signed that `decideCredential` refuses (deleted or missing
+account, a cutoff, a malformed stamp) does not:
+
+| Transport | Answer |
+| --- | --- |
+| GraphQL HTTP | 401, body `{"errors":[{"message":"Authentication is required","extensions":{"code":"UNAUTHENTICATED"}}]}` |
+| WebSocket handshake | closed 4401 before any ACK |
+
+Served as anonymous, a phone that reconnects after a reset kept showing a
+signed-in climber whose every action failed with "Authentication required",
+until its proactive refresh up to about 6 days later. On a 401 or 4401 every
+shipped app (2.0 onwards) refreshes once; the refresh answers 401 for the same
+credential, and the app signs out. The Garmin watch does the same and returns to
+pairing. The web reader (`credential-admission.server.ts`) reads this 401 as a
+denial, and the 200 a backend from before this answered for the same cookie.
+Under `observe` only a deleted account is refused, so only it gets 401 or 4401.
+
 **Unavailable is never denied.** A read that fails or misses its deadline answers
 503 on HTTP, refuses a new socket with 1013, and never closes an open socket from
 the sweep, even when the generation has in fact moved; the socket closes 4401 on

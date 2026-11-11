@@ -55,7 +55,11 @@ export async function admitPresentedWebCredential(credential: string): Promise<s
       signal: controller.signal,
     });
     const result: unknown = await response.json();
-    if (controller.signal.aborted || performance.now() >= expiresAt || !response.ok || !isRecord(result)) {
+    // The backend answers a refused cookie (deleted account, reset) with 401;
+    // one from before that change answered 200 as anonymous. Either way only
+    // the explicit UNAUTHENTICATED below is a denial, and a 401 never admits.
+    const refused = response.status === 401;
+    if (controller.signal.aborted || performance.now() >= expiresAt || !(response.ok || refused) || !isRecord(result)) {
       throw new CredentialAuthorityUnavailable();
     }
     if ('errors' in result) {
@@ -74,7 +78,7 @@ export async function admitPresentedWebCredential(credential: string): Promise<s
       }
       throw new CredentialAuthorityUnavailable();
     }
-    if (!isRecord(result.data) || result.data.authenticatedUserId !== subject) {
+    if (refused || !isRecord(result.data) || result.data.authenticatedUserId !== subject) {
       throw new CredentialAuthorityUnavailable();
     }
     return subject;

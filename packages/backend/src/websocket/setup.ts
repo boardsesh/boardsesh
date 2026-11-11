@@ -14,6 +14,7 @@ import { validateToken, extractAuthToken, extractControllerApiKey, validateContr
 import {
   admitsCredential,
   AUTH_ADMISSION_BATCH_SIZE,
+  AuthCredentialRefusedError,
   isAuthAdmissionUnavailable,
   readHumanSubjectStates,
 } from '../auth/human-admission';
@@ -293,10 +294,15 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         if (token !== null) {
           let authResult;
           try {
-            authResult = await validateToken(token);
+            authResult = await validateToken(token, { throwOnRefusal: true });
           } catch (error) {
-            if (!isAuthAdmissionUnavailable(error)) throw error;
-            closeAdmission(ctx.extra.socket, true);
+            // A refused credential (deleted account, cutoff, malformed stamp)
+            // must not connect anonymously: the app would go on showing a
+            // signed-in climber. 4401 makes it refresh, and the refresh's 401
+            // signs it out. An outage is never a refusal: 1013, try again.
+            const refused = error instanceof AuthCredentialRefusedError;
+            if (!refused && !isAuthAdmissionUnavailable(error)) throw error;
+            closeAdmission(ctx.extra.socket, !refused);
             return false;
           }
           if (authResult) {

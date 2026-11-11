@@ -249,14 +249,24 @@ async function native(path: string, body: unknown = {}, token?: string): Promise
     signal: AbortSignal.timeout(7000),
   });
 }
-async function graphql(token: string, query = '{ authenticatedUserId }') {
+/** `token` null sends no Authorization header at all. */
+async function graphql(token: string | null, query = '{ authenticatedUserId }') {
   const response = await createYogaInstance().fetch('http://localhost/graphql', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', ...(token === null ? {} : { Authorization: `Bearer ${token}` }) },
     body: JSON.stringify({ query }),
   });
   return { status: response.status, body: (await response.json()) as GraphqlBody };
 }
+/**
+ * What the app's interceptor (`packages/mobile/src/lib/auth-interceptor.ts`)
+ * and the web reader (`credential-admission.server.ts`) read as a refusal: HTTP
+ * 401 carrying exactly one UNAUTHENTICATED error and no data.
+ */
+const REFUSED = {
+  status: 401,
+  body: { errors: [{ message: 'Authentication is required', extensions: { code: 'UNAUTHENTICATED' } }] },
+} as const;
 /** No stamps is a credential from before BA-04 PR 1. The web JWE carries `gen` only. */
 async function tokens(userId = ownerId, stamps: { gen?: number; ngen?: number } = {}) {
   const webStamp = stamps.gen === undefined ? {} : { gen: stamps.gen };
@@ -408,7 +418,8 @@ async function webSocketServer() {
   servers.push(server);
   return server;
 }
-async function connect(url: string, token: string) {
+/** `token` null sends a connection_init with no credential. */
+async function connect(url: string, token: string | null) {
   const socket = new WebSocket(url, 'graphql-transport-ws');
   sockets.add(socket);
   const frames: { type: string; id?: string; payload?: unknown }[] = [];
@@ -427,8 +438,13 @@ async function connect(url: string, token: string) {
       socket.once('error', reject);
     }),
   );
-  socket.send(JSON.stringify({ type: 'connection_init', payload: { authToken: token } }));
+  socket.send(JSON.stringify({ type: 'connection_init', payload: token === null ? {} : { authToken: token } }));
   return { socket, frames, closed };
+}
+/** A handshake the server refused: closed with `code`, never acknowledged. */
+async function closedWithoutAck(client: Awaited<ReturnType<typeof connect>>, code: number) {
+  expect(await bounded(client.closed, 4000)).toBe(code);
+  expect(client.frames.some((frame) => frame.type === 'connection_ack')).toBe(false);
 }
 
 describe('mounted deletion admission against the owned primary database', () => {
@@ -562,9 +578,15 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await validateMobileJwt(credentials.jws)).toBeNull();
     expect(await validateToken(credentials.jwe)).toBeNull();
     expect(await validateToken(credentials.jws)).toBeNull();
-    const denied = await graphql(credentials.jwe);
-    expect(denied.body.errors?.[0].extensions?.code).toBe('UNAUTHENTICATED');
+    // Refused, not served as anonymous: 401 signs the app out, and a new
+    // socket is closed 4401 before any ACK.
+    expect(await graphql(credentials.jwe)).toEqual(REFUSED);
+    expect(await graphql(credentials.jws)).toEqual(REFUSED);
+    const server = await webSocketServer();
+    await closedWithoutAck(await connect(server.url, credentials.jws), 4401);
+    await closedWithoutAck(await connect(server.url, credentials.jwe), 4401);
     await warm(other, otherId);
+    await acknowledged(await connect(server.url, other.jws));
     // The tombstone survives physical deletion and remains authoritative even
     // if a legacy writer incorrectly recreates the same UID.
     await db.insert(users).values({ id: ownerId, email: `${ownerId}@resurrected.example.test` });
@@ -597,6 +619,9 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await validateToken(unstamped.jwe)).toBeNull();
     expect(await validateMobileJwt(unstamped.jws)).toBeNull();
     expect(await validateToken(current.jwe)).toBeNull();
+    // A missing account is refused the same way as a tombstoned one.
+    expect(await graphql(current.jws)).toEqual(REFUSED);
+    await closedWithoutAck(await connect((await webSocketServer()).url, current.jws), 4401);
     await warm(other, otherId);
   });
 
@@ -623,14 +648,19 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await validateNextAuthToken(web.jwe)).toBeNull();
     expect(await validateToken(legacy.jwe)).toBeNull();
     expect(await validateToken(legacy.jws)).toBeNull();
-    // The web reader (credential-admission.server.ts) reads exactly this denial.
-    expect((await graphql(web.jwe)).body).toEqual({
-      data: null,
-      errors: [expect.objectContaining({ extensions: expect.objectContaining({ code: 'UNAUTHENTICATED' }) })],
-    });
+    // A refused bearer is answered 401, not served as anonymous: the app's
+    // interceptor refreshes, the refresh below is 401 too, and it signs out.
+    // The web reader (credential-admission.server.ts) reads the same denial.
+    expect(await graphql(pair.jwt)).toEqual(REFUSED);
+    expect(await graphql(web.jwe)).toEqual(REFUSED);
+    expect(await graphql(legacy.jwe)).toEqual(REFUSED);
+    expect(await graphql(legacy.jws)).toEqual(REFUSED);
     expect((await native('/refresh', { refreshToken: pair.refreshToken })).status).toBe(401);
     // Idle sockets: the sweep closes both with no frame from the client.
     expect(await bounded(Promise.all([appSocket.closed, webSocket.closed]), 4000)).toEqual([4401, 4401]);
+    // A backgrounded phone reconnecting with the same JWT is refused at the handshake.
+    await closedWithoutAck(await connect(server.url, pair.jwt), 4401);
+    await closedWithoutAck(await connect(server.url, web.jwe), 4401);
 
     const fresh = await signIn('owned-cutoff-password-after');
     expect(await claimsOf(fresh.jwt)).toMatchObject({ sub: ownerId, gen: 1, ngen: 0 });
@@ -640,6 +670,7 @@ describe('mounted deletion admission against the owned primary database', () => 
     const rotatedPair = (await rotated.json()) as TokenPair;
     expect(await claimsOf(rotatedPair.jwt)).toMatchObject({ gen: 1, ngen: 0 });
     expect((await validateMobileJwt(rotatedPair.jwt))?.userId).toBe(ownerId);
+    expect(await graphql(rotatedPair.jwt)).toEqual({ status: 200, body: { data: { authenticatedUserId: ownerId } } });
     await warm(await tokens(ownerId, { gen: 1, ngen: 0 }));
     const freshSocket = await connect(server.url, rotatedPair.jwt);
     await acknowledged(freshSocket);
@@ -742,6 +773,7 @@ describe('mounted deletion admission against the owned primary database', () => 
     vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'observe');
     await cutoff(null);
     await warm(credentials);
+    expect(await graphql(credentials.jws)).toEqual({ status: 200, body: { data: { authenticatedUserId: ownerId } } });
     const rotated = await native('/refresh', { refreshToken });
     expect(rotated.status).toBe(200);
     // Exactly the build before BA-04 PR 2: the child copies the parent's stale stamps.
@@ -769,12 +801,73 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await validateToken(credentials.jwe)).toBeNull();
     expect(await validateToken(credentials.jws)).toBeNull();
     expect(await bounded(client.closed, 4000)).toBe(4401);
+    // Under observe a deletion is still refused, on both transports.
+    expect(await graphql(credentials.jws)).toEqual(REFUSED);
+    await closedWithoutAck(await connect(server.url, credentials.jws), 4401);
 
     await db.update(authSubjectCutoffs).set({ deletedAt: null }).where(eq(authSubjectCutoffs.userId, ownerId));
     vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'enforce');
     expect(await validateToken(credentials.jwe)).toBeNull();
     expect(await validateToken(credentials.jws)).toBeNull();
+    expect(await graphql(credentials.jws)).toEqual(REFUSED);
   }, 15000);
+
+  it('answers an outage 503 and 1013, never 401 or 4401, even for a credential a cutoff has ended', async () => {
+    const stale = await tokens(ownerId, { gen: 0, ngen: 0 }),
+      server = await webSocketServer();
+    await cutoff(null);
+    await hideAuthority();
+    try {
+      for (const token of [stale.jws, stale.jwe]) {
+        const unavailable = await graphql(token);
+        expect(unavailable.status).toBe(503);
+        expect(unavailable.body.errors?.[0].extensions?.code).toBe('SERVICE_UNAVAILABLE');
+        await closedWithoutAck(await connect(server.url, token), 1013);
+      }
+      // No credential needs no read, so it stays anonymous through the outage.
+      expect(await graphql(null, '{ __typename }')).toEqual({ status: 200, body: { data: { __typename: 'Query' } } });
+      await acknowledged(await connect(server.url, null));
+    } finally {
+      await restoreAuthority();
+    }
+    // The first answer that can be read is the refusal.
+    expect(await graphql(stale.jws)).toEqual(REFUSED);
+    await closedWithoutAck(await connect(server.url, stale.jws), 4401);
+  });
+
+  it('keeps no credential, and an expired or foreign one, anonymous: only a refused credential gets 401', async () => {
+    const server = await webSocketServer();
+    // Deleted, so a credential that reached admission would be refused.
+    await cutoff();
+    const signingKey = new TextEncoder().encode(secret);
+    const nativeClaims = () =>
+      new SignJWT({ sub: ownerId, gen: 0, ngen: 0 })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuer('boardsesh')
+        .setAudience('boardsesh-mobile');
+    const expiredJws = await nativeClaims()
+      .setIssuedAt(Math.floor(Date.now() / 1000) - 7200)
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 3600)
+      .sign(signingKey);
+    const foreignJws = await nativeClaims()
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(new TextEncoder().encode(`${secret}-another-deployment`));
+    const expiredJwe = await publicJwt.encode({ token: { sub: ownerId, gen: 0 }, secret, maxAge: -3600 });
+    const anonymous = {
+      status: 200,
+      body: {
+        data: null,
+        errors: [expect.objectContaining({ extensions: expect.objectContaining({ code: 'UNAUTHENTICATED' }) })],
+      },
+    };
+    for (const token of [null, expiredJws, foreignJws, expiredJwe, 'not-a-token']) {
+      expect(await graphql(token), String(token)).toEqual(anonymous);
+      await acknowledged(await connect(server.url, token));
+    }
+    // The same account's live credential is the one that is refused.
+    expect(await graphql((await tokens(ownerId, { gen: 0, ngen: 0 })).jws)).toEqual(REFUSED);
+  });
 
   it('returns fixed unavailable on actual primary schema failure and admits the exact warm credentials after recovery', async () => {
     const credentials = await tokens();
