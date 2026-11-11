@@ -86,6 +86,10 @@ vi.mock('@/app/lib/db/schema', () => ({
     passwordHash: 'userCredentials.passwordHash',
   },
   userProfiles: {},
+  authSubjectCutoffs: {
+    userId: 'authSubjectCutoffs.userId',
+    generation: 'authSubjectCutoffs.generation',
+  },
 }));
 
 // Import after mocks are registered
@@ -499,7 +503,8 @@ describe('authOptions.callbacks.jwt', () => {
   it.each([true, false])('records exact OAuth account creation=%s from the adapter result', async (isNewUser) => {
     const userId = '602c83bf-e090-4c90-9f7e-08ca0b6b5dad';
     const createdAt = new Date('2026-10-10T00:00:00.000Z');
-    mockDbLimit.mockResolvedValueOnce([{ createdAt }]).mockResolvedValueOnce([]);
+    // The sign-in reads its cutoff generation first (no row), then the creation time.
+    mockDbLimit.mockResolvedValueOnce([]).mockResolvedValueOnce([{ createdAt }]).mockResolvedValueOnce([]);
     const result = await callJwt({
       token: { sub: userId },
       user: { id: userId },
@@ -570,7 +575,8 @@ describe('authOptions.callbacks.jwt', () => {
 
     const result = await callJwt({ token: { sub: 'new-user' }, user: { id: 'new-user', email: 'new@example.com' } });
 
-    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    // One read for the sign-in's cutoff generation, one for the profile.
+    expect(mockDbSelect).toHaveBeenCalledTimes(2);
     expect(result.profileAvatarUrl).toBeNull();
     expect(result.profileDisplayName).toBeNull();
     expect(result.profileClaimsRefreshedAt).toEqual(expect.any(Number));

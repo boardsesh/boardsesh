@@ -15,14 +15,23 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = fixtureSecret;
   return { baseUrl: fixtureUrl, sessionSecret: fixtureSecret };
 });
-const databaseRows = vi.hoisted(() => new Map<unknown, unknown[]>());
+// Rows each table's `select ... limit` resolves to; an Error makes that read fail.
+const databaseRows = vi.hoisted(() => new Map<unknown, unknown[] | Error>());
 
 vi.mock('server-only', () => ({}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: vi.fn(() => ({})) }));
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
     select: () => ({
-      from: (table: unknown) => ({ where: () => ({ limit: async () => databaseRows.get(table) ?? [] }) }),
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: async () => {
+            const rows = databaseRows.get(table);
+            if (rows instanceof Error) throw rows;
+            return rows ?? [];
+          },
+        }),
+      }),
     }),
   }),
 }));
@@ -235,13 +244,14 @@ describe('auth_time on the backend-staged sign-in paths', () => {
       });
     });
     vi.stubGlobal('fetch', backend);
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 2 }]);
 
     const response = await signInWithPassword();
     expect(response.status).toBe(200);
     remember(response);
 
     expect(backend).toHaveBeenCalledOnce();
-    expect((await currentSessionClaims())?.auth_time).toBe(SIGN_IN_AT_SECONDS);
+    expect(await currentSessionClaims()).toMatchObject({ auth_time: SIGN_IN_AT_SECONDS, gen: 2 });
   });
 
   // Runs the wrapper's own callbacks and encoder. Going through a provider redirect
@@ -267,11 +277,16 @@ describe('auth_time on the backend-staged sign-in paths', () => {
     const { callbacks, jwt } = options;
     if (!callbacks?.signIn || !callbacks.jwt || !jwt?.encode) throw new Error('wrapper is missing a callback');
 
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 2 }]);
+
     expect(await callbacks.signIn({ user, account })).toBe(true);
     const token = await callbacks.jwt({ token: { sub: climber.id }, user, account });
     const encoded = await jwt.encode({ token, secret: sessionSecret });
 
-    expect((await decode({ token: encoded, secret: sessionSecret }))?.auth_time).toBe(SIGN_IN_AT_SECONDS);
+    expect(await decode({ token: encoded, secret: sessionSecret })).toMatchObject({
+      auth_time: SIGN_IN_AT_SECONDS,
+      gen: 2,
+    });
   });
 });
 
@@ -374,5 +389,154 @@ describe('link_guarded beside auth_time', () => {
     });
 
     expect(claims).not.toHaveProperty('link_guarded');
+  });
+});
+
+// BA-04 PR 1: the cutoff generation a login signed in under. Nothing reads it
+// yet; PR 2 will end a cookie whose gen no longer matches.
+describe('gen beside auth_time', () => {
+  // next-auth's SessionStore splits a cookie value at 4096 - 163 bytes.
+  const CHUNK_SIZE = 4096 - 163;
+
+  function sessionCookieNames(response: Response) {
+    return response.headers
+      .getSetCookie()
+      .map((header) => header.slice(0, header.indexOf('=')))
+      .filter((name) => name.startsWith(SESSION_COOKIE));
+  }
+
+  it('stamps a password sign-in with the generation read at sign-in, and 0 with no cutoff row', async () => {
+    remember(await signInWithPassword());
+    expect((await currentSessionClaims())?.gen).toBe(0);
+
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 3 }]);
+    remember(await signInWithPassword());
+    expect((await currentSessionClaims())?.gen).toBe(3);
+  });
+
+  it('stamps a native transfer sign-in, which still claims no sign-in time', async () => {
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+    remember(
+      await invoke('callback/native-oauth', {
+        transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }),
+        csrfToken,
+        json: 'true',
+        callbackUrl: baseUrl,
+      }),
+    );
+
+    const claims = await currentSessionClaims();
+    expect(claims?.gen).toBe(4);
+    expect(claims).not.toHaveProperty('auth_time');
+  });
+
+  it('keeps the sign-in generation when the cookie rotates after the generation moved', async () => {
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 3 }]);
+    remember(await signInWithPassword());
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+    vi.setSystemTime(SIGN_IN_AT_MS + ONE_DAY_MS);
+
+    remember(await invoke('session'));
+
+    expect(await currentSessionClaims()).toMatchObject({ gen: 3, auth_time: SIGN_IN_AT_SECONDS });
+  });
+
+  it('stamps a cookie from before the claim with 0 at its next rotation, never the current generation', async () => {
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 5 }]);
+    cookies.set(
+      SESSION_COOKIE,
+      await encode({
+        token: { sub: climber.id, email: climber.email, authSessionId: 'old-login' },
+        secret: sessionSecret,
+      }),
+    );
+
+    const response = await invoke('session');
+    expect(await response.clone().json()).toMatchObject({ user: { id: climber.id }, authSessionId: 'old-login' });
+    remember(response);
+
+    const claims = await currentSessionClaims();
+    expect(claims).toMatchObject({ authSessionId: 'old-login', gen: 0 });
+    expect(claims).not.toHaveProperty('auth_time');
+  });
+
+  it.each([undefined, 'update'] as const)('never takes gen from the client on a %s token read', async (trigger) => {
+    const stamped = await runJwtCallback({
+      token: { sub: climber.id, authSessionId: 'login-1', gen: 2 },
+      session: { gen: 9 },
+      trigger,
+    });
+    const unstamped = await runJwtCallback({
+      token: { sub: climber.id, authSessionId: 'old-login' },
+      session: { gen: 9 },
+      trigger,
+    });
+
+    expect(stamped.gen).toBe(2);
+    expect(unstamped.gen).toBe(0);
+  });
+
+  it('stays out of the session JSON the browser reads', async () => {
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 7 }]);
+    remember(await signInWithPassword());
+
+    const session = (await (await invoke('session')).json()) as Record<string, unknown>;
+    expect(session).not.toHaveProperty('gen');
+    expect(JSON.stringify(session)).not.toContain('"gen"');
+  });
+
+  it('signs in with gen 0 when the read fails, a stamp that can only end the cookie sooner', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    databaseRows.set(schema.authSubjectCutoffs, new Error('primary unavailable'));
+
+    const response = await signInWithPassword();
+    expect(sessionCookieNames(response)).toEqual([SESSION_COOKIE]);
+    remember(response);
+
+    expect(await currentSessionClaims()).toMatchObject({ sub: climber.id, gen: 0, auth_time: SIGN_IN_AT_SECONDS });
+    expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'auth_generation_read_unavailable', phase: 'jwt' }));
+    warn.mockRestore();
+  });
+
+  it('adds under 60 bytes to the largest cookie a sign-in writes, and never another chunk', async () => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    databaseRows.set(schema.userProfiles, [
+      { avatarUrl: `https://cdn.example.com/avatars/${'a'.repeat(200)}.jpg`, displayName: 'd'.repeat(100) },
+    ]);
+    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 0 }]);
+    const response = await signInWithPassword();
+    expect(sessionCookieNames(response)).toEqual([SESSION_COOKIE]);
+    remember(response);
+    const signedInCookie = cookies.get(SESSION_COOKIE) ?? '';
+    const { gen, ...claimsWithoutGen } = (await currentSessionClaims()) as JWT;
+    expect(gen).toBe(0);
+    const typicalGrowth =
+      signedInCookie.length - (await encode({ token: claimsWithoutGen, secret: sessionSecret })).length;
+    expect(typicalGrowth).toBeGreaterThan(0);
+    expect(typicalGrowth).toBeLessThan(60);
+
+    // The largest token any sign-in writes: a 254-character address, a long
+    // name and Apple's account-creation proof, at the largest generation.
+    const largest: JWT = {
+      ...claimsWithoutGen,
+      email: `${'e'.repeat(242)}@example.com`,
+      name: 'n'.repeat(100),
+      nativeOAuthCreationProof: {
+        authSessionId: claimsWithoutGen.authSessionId ?? '',
+        provider: 'apple',
+        signedInAt: SIGN_IN_AT_MS,
+        accountCreation: {
+          userId: climber.id,
+          accountCreated: true,
+          provider: 'apple',
+          createdAt: new Date(SIGN_IN_AT_MS).toISOString(),
+        },
+      },
+    };
+    const before = await encode({ token: largest, secret: sessionSecret });
+    const after = await encode({ token: { ...largest, gen: 2 ** 31 - 1 }, secret: sessionSecret });
+    expect(after.length - before.length).toBeLessThan(60);
+    expect(Math.ceil(after.length / CHUNK_SIZE)).toBe(Math.ceil(before.length / CHUNK_SIZE));
+    expect(Math.ceil(after.length / CHUNK_SIZE)).toBe(1);
   });
 });

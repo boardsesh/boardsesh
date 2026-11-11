@@ -233,6 +233,30 @@ renewing credentials. New compatible JWTs may preserve their public claim shape
 while being issued and revoked by the new authority; prove the key transition
 against every backend instance and supported client.
 
+### Credential stamps (BA-04 PR 1: written, not yet read)
+
+Every credential issued from BA-04 PR 1 on records what a later reader needs to
+end it. No validator reads these yet; BA-04 PR 2 does.
+
+| Credential | Stamps | Renewal |
+| --- | --- | --- |
+| Native JWT | `gen`, `ngen` (the `auth_subject_cutoffs` generation and native generation, 0 with no row); `auth_time` for a password, registration or provider sign-in only | Via refresh |
+| Native refresh row | `subject_generation`, `native_generation`, `authenticated_at`, `session_id` | A child copies all four, so a rotation never makes a sign-in newer |
+| Pre-stamp refresh row (all NULL) | none | Its child is stamped generation 0 and 0, keeps an unknown `authenticated_at`, and gets a new `session_id` its descendants keep |
+| Web JWE | `gen` beside the existing `auth_time` | A rotation keeps `gen`; a cookie from before the claim is stamped 0 |
+
+A transfer token or watch code hands over a login made elsewhere, so what it
+mints has no `auth_time`. `native_generation` exists so an app sign-out can end
+the app's and watch's credentials and leave the website signed in, so the web
+JWE carries no `ngen`.
+Stamping 0 where a generation is unknown is safe because generations only rise:
+a low stamp can end a credential sooner, never let it outlive a reset.
+
+The native issuer reads the generations in a statement that starts after it holds
+`users FOR KEY SHARE`. The locking statement's own snapshot is taken before it
+waits, so it misses a reset that held `users FOR UPDATE` and committed during
+that wait.
+
 ## Native, watch, and browser compatibility
 
 The compatibility API is an accepted long-lived product contract. It preserves

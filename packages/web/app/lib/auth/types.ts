@@ -27,6 +27,10 @@ declare module 'next-auth/jwt' {
     // Epoch seconds of the sign-in that produced this cookie. Absent on cookies
     // from before the claim and on native transfer sign-ins: age unknown.
     auth_time?: number;
+    // auth_subject_cutoffs.generation read when this login signed in, 0 with no
+    // row. A rotation keeps it; a cookie from before the claim gets 0, the only
+    // generation it can have been signed in under. Not read yet (BA-04 PR 2).
+    gen?: number;
     // Set beside auth_time only by a sign-in made while OAuth account links were
     // guarded (PARTNER_OAUTH_MODE not off). Partner consent requires it.
     link_guarded?: true;

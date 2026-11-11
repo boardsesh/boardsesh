@@ -81,6 +81,11 @@ const partnerPublisherNameSchema = readFileSync(
   new URL('../../../db/drizzle/0302_oauth_app_publisher_name.sql', import.meta.url),
   'utf8',
 );
+// BA-04 PR 1: credential stamps on auth_subject_cutoffs and mobile_refresh_tokens.
+const stampNewCredentialsSchema = readFileSync(
+  new URL('../../../db/drizzle/0303_stamp_new_credentials.sql', import.meta.url),
+  'utf8',
+);
 const sharedSprayDraftsSchema = readFileSync(
   new URL('../../../db/drizzle/0285_shared_spray_drafts.sql', import.meta.url),
   'utf8',
@@ -2348,4 +2353,5 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${partnerRevocationTriggerSchema}
   ${logbookSnapshotsConnectionSchema};
   ${partnerPublisherNameSchema}
+  ${stampNewCredentialsSchema}
 `;
