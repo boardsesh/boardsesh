@@ -1,10 +1,11 @@
 /** Point-in-time observation only. There is deliberately no apply mode. */
-import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, fchmodSync, fstatSync, fsyncSync, openSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import postgres from 'postgres';
 import { auditAccountEmailSnapshot } from '../auth/email-audit/snapshot';
+import { explicitReadOnlyConnectionOptions, type ExplicitConnectionProfile } from '../auth/email-audit/connection';
+import { PrivateFileError, writePrivateFileExclusively } from '../auth/email-audit/private-file';
 import { EmailAuditError, EMAIL_AUDIT_LIMITS, type EmailAuditGroup } from '../auth/email-audit/report';
 
 export function parseEmailAuditArguments(arguments_: readonly string[]) {
@@ -14,117 +15,49 @@ export function parseEmailAuditArguments(arguments_: readonly string[]) {
   throw new EmailAuditError('CONFIGURATION');
 }
 
+const EMAIL_AUDIT_CONNECTION_PROFILE: ExplicitConnectionProfile = {
+  applicationName: 'boardsesh_account_email_audit',
+  targetSessionAttrs: 'primary',
+  statementTimeoutMs: 5000,
+  lockTimeoutMs: 1000,
+  idleInTransactionTimeoutMs: 10000,
+  maxLifetimeSeconds: 40,
+};
+
 /** Explicit fields avoid postgres.js URI/startup and ambient PG* precedence. */
 export function emailAuditConnectionOptions(databaseUrl: string | undefined, debugSql?: string) {
   try {
-    if (!databaseUrl || debugSql === 'true' || databaseUrl !== databaseUrl.trim() || /\p{Cc}/u.test(databaseUrl))
-      throw new EmailAuditError('CONFIGURATION');
-    const address = new URL(databaseUrl);
-    if (
-      !['postgres:', 'postgresql:'].includes(address.protocol) ||
-      address.hash ||
-      !/^[a-zA-Z0-9.-]+$/.test(address.hostname) ||
-      !address.username ||
-      !address.pathname.startsWith('/') ||
-      address.pathname.length < 2
-    )
-      throw new EmailAuditError('CONFIGURATION');
-    const entries = [...address.searchParams.entries()];
-    const isLoopback = address.hostname === 'localhost' || address.hostname === '127.0.0.1';
-    if (
-      entries.length > 1 ||
-      entries.some(
-        ([key, mode]) => key !== 'sslmode' || (mode !== 'verify-full' && !(isLoopback && mode === 'disable')),
-      )
-    )
-      throw new EmailAuditError('CONFIGURATION');
-    const username = decodeURIComponent(address.username);
-    const password = decodeURIComponent(address.password);
-    const database = decodeURIComponent(address.pathname.slice(1));
-    const port = address.port ? Number(address.port) : 5432;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new EmailAuditError('CONFIGURATION');
-    if ([username, database].some((part) => !part || /\p{Cc}/u.test(part)) || password.includes('\0'))
-      throw new EmailAuditError('CONFIGURATION');
-    return {
-      host: address.hostname,
-      port,
-      database,
-      username,
-      // An empty string would fall through to PGPASSWORD in postgres.js 3.4.9.
-      password: () => password,
-      ssl: isLoopback && entries[0]?.[1] !== 'verify-full' ? (false as const) : { rejectUnauthorized: true },
-      sslnegotiation: null,
-      max: 1,
-      max_pipeline: 1,
-      prepare: false,
-      debug: false,
-      fetch_types: false,
-      target_session_attrs: 'primary',
-      connect_timeout: 10,
-      idle_timeout: 5,
-      max_lifetime: 40,
-      keep_alive: 30,
-      backoff: () => 0.1,
-      publications: 'alltables',
-      onnotice: () => {},
-      connection: {
-        application_name: 'boardsesh_account_email_audit',
-        default_transaction_read_only: true,
-        statement_timeout: 5000,
-        lock_timeout: 1000,
-        idle_in_transaction_session_timeout: 10000,
-      },
-      // postgres.js 3.4.9 implements this default but omits its type declaration.
-    } satisfies postgres.Options<{}> & { readonly sslnegotiation: null; readonly max_pipeline: 1 };
+    return explicitReadOnlyConnectionOptions(databaseUrl, debugSql, EMAIL_AUDIT_CONNECTION_PROFILE);
   } catch {
     throw new EmailAuditError('CONFIGURATION');
   }
 }
 
+function* emailAuditDetailChunks(auditId: string, groups: readonly EmailAuditGroup[]) {
+  // Serialize one bounded member at a time; even a single huge collision
+  // group cannot allocate an unbounded JSON string before the output cap.
+  yield `{"formatVersion":1,"status":"detail-only","auditId":${JSON.stringify(auditId)},"groups":[`;
+  for (const [groupIndex, group] of groups.entries()) {
+    yield `${groupIndex ? ',' : ''}{"normalizedEmail":${JSON.stringify(group.normalizedEmail)},"members":[`;
+    for (const [memberIndex, member] of group.members.entries())
+      yield `${memberIndex ? ',' : ''}${JSON.stringify(member)}`;
+    yield ']}';
+  }
+  yield ']}\n';
+}
+
 export function writeEmailAuditDetails(filename: string, auditId: string, groups: readonly EmailAuditGroup[]) {
-  let descriptor: number | undefined;
   try {
     // This artifact alone does not assert completion. Only the final summary,
     // emitted after actual file/client closure, binds its completed bytes.
-    const ownedDescriptor = openSync(filename, 'wx', 0o600);
-    descriptor = ownedDescriptor;
-    fchmodSync(ownedDescriptor, 0o600);
-    const metadata = fstatSync(ownedDescriptor);
-    if (!metadata.isFile() || metadata.uid !== process.getuid?.() || (metadata.mode & 0o777) !== 0o600)
-      throw new EmailAuditError('OUTPUT_UNAVAILABLE');
-    const hash = createHash('sha256');
-    let totalBytes = 0;
-    const writeChunk = (chunk: string) => {
-      const bytes = Buffer.from(chunk);
-      if (totalBytes + bytes.length > EMAIL_AUDIT_LIMITS.maxDetailBytes) throw new EmailAuditError('INPUT_LIMIT');
-      writeFileSync(ownedDescriptor, bytes);
-      hash.update(bytes);
-      totalBytes += bytes.length;
-    };
-    // Serialize one bounded member at a time; even a single huge collision
-    // group cannot allocate an unbounded JSON string before the output cap.
-    writeChunk(`{"formatVersion":1,"status":"detail-only","auditId":${JSON.stringify(auditId)},"groups":[`);
-    groups.forEach((group, groupIndex) => {
-      writeChunk(`${groupIndex ? ',' : ''}{"normalizedEmail":${JSON.stringify(group.normalizedEmail)},"members":[`);
-      group.members.forEach((member, memberIndex) => writeChunk(`${memberIndex ? ',' : ''}${JSON.stringify(member)}`));
-      writeChunk(']}');
-    });
-    writeChunk(']}\n');
-    fsyncSync(descriptor);
-    closeSync(descriptor);
-    descriptor = undefined;
-    return { sha256: hash.digest('hex'), bytes: totalBytes };
+    return writePrivateFileExclusively(
+      filename,
+      emailAuditDetailChunks(auditId, groups),
+      EMAIL_AUDIT_LIMITS.maxDetailBytes,
+    );
   } catch (error) {
-    if (error instanceof EmailAuditError) throw error;
+    if (error instanceof PrivateFileError && error.code === 'LIMIT') throw new EmailAuditError('INPUT_LIMIT');
     throw new EmailAuditError('OUTPUT_UNAVAILABLE');
-  } finally {
-    if (descriptor !== undefined) {
-      try {
-        closeSync(descriptor);
-      } catch {
-        /* Completion is already rejected. */
-      }
-    }
   }
 }
 
