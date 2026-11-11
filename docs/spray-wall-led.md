@@ -74,8 +74,8 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
    drawing extends the last cable section. Choose **Select two LEDs** to cut a
-   connection, reconnect free endpoints or edit the skipped LED count between
-   adjacent positions. Set that count to zero to remove the gap. Lay cable and
+   connection or reconnect free endpoints; skipped LEDs have their own next
+   step. Lay cable and
    Light and tap only extend the cable's end, so they are hidden while every
    LED is already on the cable (a generated horizontal or vertical run, or a
    finished custom one). In Light and tap, a marker is assigned only after the
@@ -93,7 +93,15 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.
-11. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
+11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
+    connection (the line between two LEDs) to select it; its two end LEDs get the
+    selection ring and the page names their positions and its skipped count.
+    **Insert skipped LEDs** sets how many LEDs the strip has there that are not
+    on the wall (type it or use − and +); zero removes the gap. **Light the ends**
+    lights only the two LEDs at the ends of the selected connection, never the
+    skipped ones, so the count can be checked on the wall: with the right count,
+    both lit LEDs sit on the photo's two markers. Undo restores edits.
+12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
     photo to select positions. **Light selection** tests their assigned LEDs.
     Tap a selected position again to remove it. The page reports holds linked
     to wired LEDs and selected positions with no LED assignment. These controls
@@ -105,7 +113,7 @@ every signed-in climber who can open the wall lights it from their own phone. Se
     the LED the row test has reached. **Stop lighting** ends the test. These controls require
     enabled LEDs and a saved WLED address. Indices outside the controller's LED
     count produce an error rather than addressing a different LED.
-12. Done saves positions and wiring to the wall. Partial wiring can be saved.
+13. Done saves positions and wiring to the wall. Partial wiring can be saved.
     Its status reports connected LEDs and separate cable sections. The assigned
     zero-based indices include skipped LEDs. The normal wall controls use the
     saved setup to illuminate routes after you deliberately take the wall.
