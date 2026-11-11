@@ -869,6 +869,51 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await graphql((await tokens(ownerId, { gen: 0, ngen: 0 })).jws)).toEqual(REFUSED);
   });
 
+  it.each([
+    ['a string', 'one'],
+    ['a negative number', -1],
+    ['a fraction', 0.5],
+  ] as const)(
+    'refuses a credential whose gen stamp is %s with 401 and 4401, never as anonymous',
+    async (_label, malformedStamp) => {
+      // No cutoff row: generation 0, so only the stamp itself is wrong.
+      const server = await webSocketServer();
+      const jws = await new SignJWT({ sub: ownerId, gen: malformedStamp, ngen: 0 })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setIssuer('boardsesh')
+        .setAudience('boardsesh-mobile')
+        .setExpirationTime('1h')
+        .sign(new TextEncoder().encode(secret));
+      const jwe = await publicJwt.encode({ token: { sub: ownerId, gen: malformedStamp }, secret, maxAge: 3600 });
+      for (const token of [jws, jwe]) {
+        expect(await graphql(token)).toEqual(REFUSED);
+        await closedWithoutAck(await connect(server.url, token), 4401);
+      }
+    },
+  );
+
+  it('refuses an app JWT after an app sign-out moved the native generation, and keeps the website', async () => {
+    const server = await webSocketServer();
+    await db.insert(authSubjectCutoffs).values({
+      userId: ownerId,
+      generation: 0,
+      nativeGeneration: 1,
+      revokedThrough: new Date(),
+      lastOperationId: randomUUID(),
+    });
+    const credentials = await tokens(ownerId, { gen: 0, ngen: 0 });
+    expect(await graphql(credentials.jws)).toEqual(REFUSED);
+    await closedWithoutAck(await connect(server.url, credentials.jws), 4401);
+    // The website carries no native stamp, so an app sign-out never ends it (decision 10).
+    expect(await graphql(credentials.jwe)).toEqual({ status: 200, body: { data: { authenticatedUserId: ownerId } } });
+    await acknowledged(await connect(server.url, credentials.jwe));
+    // An app credential issued after the sign-out is used.
+    const current = await tokens(ownerId, { gen: 0, ngen: 1 });
+    expect(await graphql(current.jws)).toEqual({ status: 200, body: { data: { authenticatedUserId: ownerId } } });
+    await acknowledged(await connect(server.url, current.jws));
+  });
+
   it('returns fixed unavailable on actual primary schema failure and admits the exact warm credentials after recovery', async () => {
     const credentials = await tokens();
     await warm(credentials);
