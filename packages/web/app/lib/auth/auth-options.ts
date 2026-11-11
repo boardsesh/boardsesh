@@ -11,6 +11,7 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { ABSENT_PASSWORD_HASH } from '@boardsesh/auth-protocol/password-hash';
+import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
@@ -116,7 +117,9 @@ if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
     FacebookProvider({
       clientId: process.env.FACEBOOK_CLIENT_ID,
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true,
+      // Facebook has no trusted email_verified assertion. A free address may
+      // create an account, but must never automatically link an existing one.
+      allowDangerousEmailAccountLinking: false,
     }),
   );
 }
@@ -230,13 +233,43 @@ const useSecureCookies = isSecureCookieContext();
 // *.boardsesh.com hosts.
 const cookieDomain = sessionCookieDomain();
 
+type AccountAdapter = ReturnType<typeof DrizzleAdapter>;
+
+/**
+ * NextAuth links a Google or Apple sign-in to the account its email names, and
+ * creates an account when none does. Both follow the BA-02 address rule: the
+ * account storing the address exactly, else the one storing it in other
+ * capitals. An address several accounts share names nobody, and creating
+ * another account for it is refused, so a provider sign-in never adds to a
+ * shared address. New accounts store the normalized form.
+ */
+function withAccountEmailRule(adapter: AccountAdapter): AccountAdapter {
+  return {
+    ...adapter,
+    async getUserByEmail(email) {
+      const account = soleAccount(await findAccountsByEmail(getDb(), email));
+      if (!account) return null;
+      if (!adapter.getUser) throw new Error('The account adapter cannot read users');
+      return adapter.getUser(account.id);
+    },
+    async createUser(user) {
+      if ((await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        throw new Error('An account already holds this email address');
+      if (!adapter.createUser) throw new Error('The account adapter cannot create users');
+      return adapter.createUser({ ...user, email: normalizeAccountEmail(user.email) });
+    },
+  };
+}
+
 export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(getDb(), {
-    usersTable: schema.users,
-    accountsTable: schema.accounts,
-    sessionsTable: schema.sessions,
-    verificationTokensTable: schema.verificationTokens,
-  }),
+  adapter: withAccountEmailRule(
+    DrizzleAdapter(getDb(), {
+      usersTable: schema.users,
+      accountsTable: schema.accounts,
+      sessionsTable: schema.sessions,
+      verificationTokensTable: schema.verificationTokens,
+    }),
+  ),
   providers,
   cookies: {
     // The session token is the login itself. SameSite=Lax (NOT None) is correct
@@ -335,7 +368,7 @@ export const authOptions: NextAuthOptions = {
       }
       return baseUrl;
     },
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified
       if (account?.provider !== 'credentials' && account?.provider !== 'native-oauth') {
@@ -348,6 +381,37 @@ export const authOptions: NextAuthOptions = {
         if (!hasUsableEmail(user.email)) {
           reportMissingOAuthEmail(account?.provider ?? 'unknown');
           return OAUTH_EMAIL_REQUIRED_REDIRECT;
+        }
+
+        // Native rejects an unverified email claim for an existing account.
+        // Older iOS clients then try this browser flow, so it must require the
+        // same ownership proof before NextAuth's automatic email linking.
+        // A persisted provider subject remains authoritative even when its
+        // current profile omits or changes its verified-email assertion.
+        const emailVerifiedAssertion = profile && 'email_verified' in profile ? profile.email_verified : undefined;
+        const verifiedEmailClaim =
+          (account?.provider === 'google' || account?.provider === 'apple') &&
+          (emailVerifiedAssertion === true || emailVerifiedAssertion === 'true');
+        // Require stable proof even if the address is currently free: a
+        // registration can commit before NextAuth's later adapter lookup.
+        // Facebook cannot automatically link at that boundary (provider config
+        // above), so its existing free-address signup remains safe.
+        if (
+          !verifiedEmailClaim &&
+          (account?.provider !== 'facebook' || (await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
+        ) {
+          if (!account?.providerAccountId) return false;
+          const [linkedAccount] = await getDb()
+            .select({ userId: schema.accounts.userId })
+            .from(schema.accounts)
+            .where(
+              and(
+                eq(schema.accounts.provider, account.provider),
+                eq(schema.accounts.providerAccountId, account.providerAccountId),
+              ),
+            )
+            .limit(1);
+          if (!linkedAccount || linkedAccount.userId !== user.id) return false;
         }
 
         // Mark email as verified if not already (provider already verified it)

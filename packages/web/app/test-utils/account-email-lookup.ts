@@ -20,6 +20,7 @@ export function fakeAccountEmailLookup(stored: () => readonly StoredAccount[]) {
         name: null,
         image: null,
         emailVerified: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
         passwordHash: null,
         ...account,
       }))

@@ -96,9 +96,11 @@ const memoryAdapter: Adapter = {
 };
 
 /** Whose Google account the provider says signed in. */
-let providerProfile: { sub: string; email: string; name: string };
+// This fixture isolates authentication age after Google has verified the mailbox.
+// Unverified provider identities are covered by the sign-in callback regressions.
+let providerProfile: { sub: string; email: string; name: string; email_verified: boolean };
 
-const stubGoogle: OAuthConfig<{ sub: string; email: string; name: string }> = {
+const stubGoogle: OAuthConfig<typeof providerProfile> = {
   id: 'google',
   name: 'Google',
   type: 'oauth',
@@ -172,7 +174,12 @@ beforeEach(() => {
   linkAccount.mockClear();
   createdUsers = 0;
   users.set(climber.id, climber);
-  providerProfile = { sub: 'someone-elses-google-account', email: 'holder@example.com', name: 'Holder' };
+  providerProfile = {
+    sub: 'someone-elses-google-account',
+    email: 'holder@example.com',
+    name: 'Holder',
+    email_verified: true,
+  };
 });
 
 afterAll(() => {
@@ -321,7 +328,12 @@ describe.each([...MODES_OFF.slice(0, 1), ...MODES_ON.slice(0, 1)])(
     });
 
     it('links by verified provider email when no one is signed in', async () => {
-      providerProfile = { sub: 'climbers-own-google-account', email: climber.email, name: 'Climber' };
+      providerProfile = {
+        sub: 'climbers-own-google-account',
+        email: climber.email,
+        name: 'Climber',
+        email_verified: true,
+      };
       const response = await providerCallback();
 
       expect(linkAccount).toHaveBeenCalledWith(expect.objectContaining({ userId: climber.id }));

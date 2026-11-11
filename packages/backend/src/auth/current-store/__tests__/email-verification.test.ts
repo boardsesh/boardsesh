@@ -923,7 +923,10 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
       const { user: owner } = await registered();
       const { user: other } = await registered();
       const link = await legacyVerificationLink(owner.email);
-      for (const email of [other.email, owner.email.toLowerCase(), owner.email.toUpperCase()])
+      // Registration stores the normalized address (BA-02), so "another case"
+      // is the address as it was typed, or in capitals.
+      expect(owner.email).toBe(owner.email.toLowerCase());
+      for (const email of [other.email, owner.email.replace(/^mixed\./, 'Mixed.'), owner.email.toUpperCase()])
         expect(await legacyOutcome(link.token, email)).toBe('invalid_token');
       expect(await verified(owner.id)).toBeNull();
       expect(await verified(other.id)).toBeNull();

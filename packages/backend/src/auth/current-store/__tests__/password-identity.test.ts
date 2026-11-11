@@ -176,15 +176,16 @@ describe('native password service over the current authoritative Postgres store'
     expect(await authenticateCurrentStorePassword(db, email, 'first-owner-password')).toBeNull();
   });
 
-  it('preserves exact registration prechecks and does not silently trim existing stored addresses', async () => {
+  it('treats an address held in any capitalisation as taken and does not silently trim existing stored addresses', async () => {
     const localPart = randomUUID();
     const existingEmail = `Existing.${localPart}@Example.test`;
     await db.insert(users).values({ id: randomUUID(), email: existingEmail });
-    // Characterize the current gap honestly: reservation/final uniqueness is
-    // later BA-03 work, not an incidental semantic change in this extraction.
-    expect(
-      await prepareCurrentStorePasswordRegistration(db, registration(existingEmail, 'registration-password')),
-    ).not.toBeNull();
+    // BA-02: the parser lowercases the submitted address; a mixed-case stored
+    // row must still count as taken, or registration adds a second account.
+    for (const typed of [existingEmail, existingEmail.toLowerCase(), existingEmail.toUpperCase()])
+      expect(
+        await prepareCurrentStorePasswordRegistration(db, registration(typed, 'registration-password')),
+      ).toBeNull();
     const exactEmail = `${randomUUID()}@example.test`;
     await db.insert(users).values({ id: randomUUID(), email: exactEmail });
     expect(

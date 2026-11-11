@@ -7,7 +7,11 @@ import {
   type RegisterCommand,
   type RegisterReply,
 } from '@boardsesh/auth-protocol';
-import { ACCOUNT_EMAIL_CANDIDATE_LIMIT, resolveAccountEmail } from '@boardsesh/auth-protocol/account-email';
+import {
+  ACCOUNT_EMAIL_CANDIDATE_LIMIT,
+  normalizeAccountEmail,
+  resolveAccountEmail,
+} from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { eq, inArray } from 'drizzle-orm';
@@ -59,10 +63,13 @@ export async function registerWebPassword(
   const authority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const validation = registrationSchema.safeParse(input.payload);
-  const registration = validation.success ? { ...validation.data } : undefined;
+  // Stored in the one normalized form (BA-02), as native registration stores it.
+  const registration = validation.success
+    ? { ...validation.data, email: normalizeAccountEmail(validation.data.email) }
+    : undefined;
   const invalidMessage = validation.success ? undefined : validationMessage(validation.error.issues[0].message);
   await preflight(database, authority);
-  // Existing exact precheck and bcrypt12 are shared with native; the final
+  // The any-capitalisation precheck and bcrypt12 are shared with native; the final
   // transaction still checks ownership/reservation before every insert.
   const prepared = registration ? await prepareCurrentStorePasswordRegistration(database, registration) : null;
   return database.transaction(async (transaction): Promise<RegisterReply> => {

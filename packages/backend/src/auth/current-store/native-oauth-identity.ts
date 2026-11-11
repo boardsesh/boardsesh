@@ -34,7 +34,7 @@ export async function resolveReservedNativeOAuthIdentity(
     authority,
     provider,
     identity,
-    { emailStorage: 'normalized', emailVerification: 'provider', actorUserId: null },
+    { storeProviderImage: false, emailVerification: 'provider', actorUserId: null },
     forwardedName,
   );
   if (result.outcome === 'linked' || result.outcome === 'created')

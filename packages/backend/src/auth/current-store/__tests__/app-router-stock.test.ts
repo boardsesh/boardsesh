@@ -135,15 +135,15 @@ describe('actual App Router and configured providers: stock characterization', (
     },
   );
 
-  it('characterizes dangerous email linking: an unknown Facebook subject attaches to the existing exact-email owner', async () => {
+  it('refuses automatic Facebook email linking to an existing owner', async () => {
     const profile = identity();
     const owner = randomUUID();
     await db.insert(users).values({ id: owner, email: profile.email!, name: 'Existing Owner' });
     const current = browser();
     const result = await current.complete('facebook', profile);
     expect(result.response.status).toBe(302);
-    expect((await current.claims())?.sub === owner).toBe(true);
-    expect(await db.select({ owner: accounts.userId }).from(accounts)).toEqual([{ owner }]);
+    expect(await current.claims()).toBeNull();
+    expect(await db.select({ owner: accounts.userId }).from(accounts)).toEqual([]);
     expect((await db.select().from(users)).length).toBe(1);
   });
 

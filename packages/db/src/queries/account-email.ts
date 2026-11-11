@@ -30,14 +30,16 @@ export interface AccountEmailRow {
   readonly name: string | null;
   readonly image: string | null;
   readonly emailVerified: Date | null;
+  readonly createdAt: Date;
   /** Null for an account with no password (provider sign-in only). */
   readonly passwordHash: string | null;
 }
 
 /**
- * The legacy web auth lookup: one query, whatever the address, so an unknown
- * address costs the database what a known one does. Exact match first, then
- * another capitalisation only when exactly one row has it.
+ * The address lookup for legacy sign-in, recovery and account writers: one
+ * query, whatever the address, so an unknown address costs the database what a
+ * known one does. Exact match first, then another capitalisation only when
+ * exactly one row has it. A writer treats any answer but `none` as taken.
  */
 export async function findAccountsByEmail(
   database: AccountEmailReader,
@@ -50,10 +52,38 @@ export async function findAccountsByEmail(
       name: users.name,
       image: users.image,
       emailVerified: users.emailVerified,
+      createdAt: users.createdAt,
       passwordHash: userCredentials.passwordHash,
     })
     .from(users)
     .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+    .where(accountEmailCandidates(typedEmail))
+    .orderBy(users.id)
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);
+  return resolveAccountEmail(typedEmail, rows);
+}
+
+export type AccountEmailHolder = Omit<AccountEmailRow, 'passwordHash'>;
+
+/**
+ * The same lookup without the password join, for writers that only need to
+ * know who holds an address (provider sign-in links). A role with no read on
+ * `user_credentials` can run it.
+ */
+export async function findAccountHoldersByEmail(
+  database: AccountEmailReader,
+  typedEmail: string,
+): Promise<AccountEmailResolution<AccountEmailHolder>> {
+  const rows = await database
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      image: users.image,
+      emailVerified: users.emailVerified,
+      createdAt: users.createdAt,
+    })
+    .from(users)
     .where(accountEmailCandidates(typedEmail))
     .orderBy(users.id)
     .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1);

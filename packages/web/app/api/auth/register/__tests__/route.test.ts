@@ -33,14 +33,27 @@ vi.mock('bcryptjs', () => ({
   hash: (password: string, cost: number) => mockHash(password, cost),
 }));
 
-const mockSelectLimit = vi.fn();
+const lookup = vi.hoisted(() => ({ stored: [] as StoredAccount[] }));
+vi.mock('@boardsesh/db/queries/account-email', async () => {
+  const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
+  return fakeAccountEmailLookup(() => lookup.stored);
+});
+
 const mockProfileValues = vi.fn();
-const { mockUserProfilesTable } = vi.hoisted(() => ({ mockUserProfilesTable: { userId: 'user_profiles.userId' } }));
+const mockUserValues = vi.fn();
+const mockTokenValues = vi.fn();
+const { mockUserProfilesTable, mockUsersTable, mockVerificationTokensTable } = vi.hoisted(() => ({
+  mockUserProfilesTable: { userId: 'user_profiles.userId' },
+  mockUsersTable: { id: 'users.id', email: 'users.email' },
+  mockVerificationTokensTable: { identifier: 'verification_tokens.identifier' },
+}));
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   await fn({
     insert: (table: unknown) => ({
       values: (record: Record<string, unknown>) => {
         if (table === mockUserProfilesTable) mockProfileValues(record);
+        if (table === mockUsersTable) mockUserValues(record);
+        if (table === mockVerificationTokensTable) mockTokenValues(record);
         return Promise.resolve(undefined);
       },
     }),
@@ -49,18 +62,19 @@ const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: () => ({ from: () => ({ where: () => ({ limit: mockSelectLimit }) }) }),
     transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  users: { id: 'users.id', email: 'users.email' },
+  users: mockUsersTable,
   userCredentials: { userId: 'user_credentials.userId' },
   userProfiles: mockUserProfilesTable,
-  verificationTokens: { identifier: 'verification_tokens.identifier' },
+  verificationTokens: mockVerificationTokensTable,
 }));
 
+import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
+import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
 import { POST } from '../route';
 
 function createRequest(
@@ -85,7 +99,7 @@ describe('POST /api/auth/register', () => {
     vi.clearAllMocks();
     mockGetClientIp.mockReturnValue('127.0.0.1');
     mockCheckRateLimit.mockReturnValue({ limited: false, retryAfterSeconds: 0 });
-    mockSelectLimit.mockResolvedValue([]); // no existing user
+    lookup.stored = []; // no existing user
     mockSendVerificationEmail.mockResolvedValue(undefined);
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
   });
@@ -171,6 +185,45 @@ describe('POST /api/auth/register', () => {
     }
   });
 
+  describe('one account per address in any capitalisation (BA-02)', () => {
+    it.each([
+      ['exactly as stored', 'Mixed.Case@Example.test'],
+      ['in lowercase', 'mixed.case@example.test'],
+      ['in capitals', 'MIXED.CASE@EXAMPLE.TEST'],
+    ])('refuses an address a mixed-case account holds, typed %s', async (_case, typed) => {
+      lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
+
+      const response = await POST(createRequest({ email: typed, password: 'password123' }));
+
+      expect(response.status).toBe(409);
+      expect(mockTransaction).not.toHaveBeenCalled();
+      expect(mockHash).not.toHaveBeenCalled();
+    });
+
+    it('refuses an address several accounts already share instead of adding another', async () => {
+      lookup.stored = [
+        { id: 'title', email: 'Shared@Example.test' },
+        { id: 'upper', email: 'SHARED@EXAMPLE.TEST' },
+      ];
+
+      const response = await POST(createRequest({ email: 'shared@example.test', password: 'password123' }));
+
+      expect(response.status).toBe(409);
+      expect(mockTransaction).not.toHaveBeenCalled();
+    });
+
+    it('stores, verifies and mails the normalized address, keeping the typed name', async () => {
+      const response = await POST(createRequest({ email: 'New.Climber@Example.TEST', password: 'password123' }));
+
+      expect(response.status).toBe(201);
+      expect(mockUserValues).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new.climber@example.test', name: 'New.Climber' }),
+      );
+      expect(mockTokenValues).toHaveBeenCalledWith(expect.objectContaining({ identifier: 'new.climber@example.test' }));
+      expect(mockSendVerificationEmail.mock.calls[0][0]).toBe('new.climber@example.test');
+    });
+  });
+
   it('reports a verification-email failure to Sentry while returning the account response', async () => {
     const smtpError = new Error('smtp failed');
     mockSendVerificationEmail.mockRejectedValueOnce(smtpError);
@@ -254,7 +307,7 @@ describe('backend-staging registration public adapter', () => {
       emailSent: true,
     });
     expect(mockSendVerificationEmail).toHaveBeenCalledWith(committedEmail, token, 'https://www.boardsesh.test');
-    expect(mockSelectLimit).not.toHaveBeenCalled();
+    expect(findAccountsByEmail).not.toHaveBeenCalled();
     expect(mockTransaction).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledOnce();
   });

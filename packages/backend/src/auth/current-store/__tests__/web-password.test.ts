@@ -394,7 +394,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     if (failures.length) throw new AggregateError(failures, 'Owned staged web password cleanup failed');
   });
 
-  it('creates raw web identity/profile with native bcrypt12 and normalized reservation over real authenticated HTTP', async () => {
+  it('creates web identity/profile with native bcrypt12, the normalized address and its reservation over real authenticated HTTP', async () => {
     const email = `Web.Mixed.${randomUUID()}+Tag@Example.TEST`;
     const password = '  café 山🧗\u0000 password  ';
     const command = registerCommand(email, password, '  Raw Web Name  ');
@@ -409,7 +409,8 @@ describe('default-off staged web password commands against the current PostgreSQ
     const [credential] = await db.select().from(userCredentials);
     const [profile] = await db.select().from(userProfiles);
     const [reservation] = await db.select().from(authEmailReservations);
-    expect(user).toMatchObject({ id: reply.userId, email, name: '  Raw Web Name  ' });
+    // BA-02: the address is stored in its normalized form; the name stays raw.
+    expect(user).toMatchObject({ id: reply.userId, email: email.toLowerCase(), name: '  Raw Web Name  ' });
     expect(user.emailVerified).toBeInstanceOf(Date);
     expect(profile.userId).toBe(reply.userId);
     expect(reservation).toMatchObject({ normalizedEmail: email.toLowerCase(), ownerUserId: reply.userId });
@@ -434,7 +435,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     ).rejects.toMatchObject({ cause: { code: '42501' } });
   });
 
-  it('binds a private24h mail plan to exact committed mixed-case email and leaves verification-required verdict UID-bound', async () => {
+  it('binds a private24h mail plan to the committed normalized email and leaves verification-required verdict UID-bound', async () => {
     authority = { ...authority, emailVerificationEnabled: true };
     const email = `Mail.Mixed.${randomUUID()}@Example.TEST`;
     const command = registerCommand(email);
@@ -442,9 +443,9 @@ describe('default-off staged web password commands against the current PostgreSQ
     const reply = await registerWebPassword(writer, authority, command);
     expect(reply.outcome).toBe('created');
     if (reply.outcome !== 'created' || !reply.requiresVerification) throw new Error('Missing private mail fixture');
-    expect(reply.mailPlan).toMatchObject({ kind: 'uid-email-verification-v1', recipient: email });
+    expect(reply.mailPlan).toMatchObject({ kind: 'uid-email-verification-v1', recipient: email.toLowerCase() });
     const [receipt] = await db.select().from(authEmailVerificationTokens);
-    expect(receipt.deliveredEmail).toBe(email);
+    expect(receipt.deliveredEmail).toBe(email.toLowerCase());
     expect(receipt.expiresAt.toISOString()).toBe(reply.mailPlan.expiresAt);
     expect(receipt.expiresAt.getTime() - receipt.issuedAt.getTime()).toBe(86_400_000);
     expect(receipt.expiresAt.getTime() - before).toBeGreaterThan(86_395_000);
@@ -514,7 +515,7 @@ describe('default-off staged web password commands against the current PostgreSQ
     expect(reply).toMatchObject({ outcome: 'created', requiresVerification: false });
     const [user] = await db.select().from(users);
     const [credential] = await db.select().from(userCredentials);
-    expect(user).toMatchObject({ email: originalEmail, name: ' Original name ' });
+    expect(user).toMatchObject({ email: originalEmail.toLowerCase(), name: ' Original name ' });
     expect(await compare('original-registration-password', credential.passwordHash)).toBe(true);
     expect(await compare(payload.password, credential.passwordHash)).toBe(false);
   });

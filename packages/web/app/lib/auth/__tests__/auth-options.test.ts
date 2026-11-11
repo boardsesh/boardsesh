@@ -11,9 +11,10 @@ vi.mock('@boardsesh/db/queries/account-email', async () => {
   return fakeAccountEmailLookup(() => lookup.stored);
 });
 
-const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
+const { mockAdapterCreateUser, mockAdapterUpdateUser, mockAdapterGetUser } = vi.hoisted(() => ({
   mockAdapterCreateUser: vi.fn(),
   mockAdapterUpdateUser: vi.fn(),
+  mockAdapterGetUser: vi.fn(),
 }));
 
 // Mock server-only before any imports
@@ -32,6 +33,7 @@ vi.mock('@auth/drizzle-adapter', () => ({
   DrizzleAdapter: vi.fn(() => ({
     createUser: mockAdapterCreateUser,
     updateUser: mockAdapterUpdateUser,
+    getUser: mockAdapterGetUser,
   })),
 }));
 
@@ -106,7 +108,11 @@ vi.mock('@/app/lib/db/schema', () => ({
 // Helper to grab the signIn callback
 type SignInParams = Parameters<NonNullable<NonNullable<typeof authOptions.callbacks>['signIn']>>[0];
 
-async function callSignIn(params: Partial<SignInParams>) {
+type SignInTestParams = Omit<Partial<SignInParams>, 'profile'> & {
+  profile?: NonNullable<SignInParams['profile']> & { email_verified?: boolean | string };
+};
+
+async function callSignIn(params: SignInTestParams) {
   const cb = authOptions.callbacks?.signIn;
   if (!cb) throw new Error('signIn callback not defined');
   return cb(params as SignInParams);
@@ -204,6 +210,7 @@ describe('authOptions.callbacks.signIn', () => {
     it.each(['google', 'apple', 'facebook'] as const)(
       'keeps an existing linked %s account working when the raw provider profile omits email',
       async (provider) => {
+        mockDbLimit.mockResolvedValue([{ userId: 'linked-user' }]);
         const result = await callSignIn({
           // NextAuth resolves a linked account before signIn and supplies the
           // stored user here; the raw provider profile may omit email later.
@@ -219,11 +226,86 @@ describe('authOptions.callbacks.signIn', () => {
     );
   });
 
+  describe('unverified browser fallback cannot link an occupied email', () => {
+    beforeEach(() => {
+      lookup.stored = [{ id: 'existing-owner', email: 'Existing@Example.test' }];
+    });
+
+    afterEach(() => {
+      lookup.stored = [];
+    });
+
+    it.each([
+      ['google', false],
+      ['google', undefined],
+      ['apple', false],
+      ['apple', 'false'],
+      ['facebook', undefined],
+    ] as const)('refuses an unlinked %s claim with assertion %s', async (provider, assertion) => {
+      expect(
+        await callSignIn({
+          user: { id: 'unlinked-profile', email: 'existing@example.test' },
+          account: { provider, type: 'oauth', providerAccountId: 'unlinked-subject' },
+          profile: { email_verified: assertion },
+        }),
+      ).toBe(false);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+      expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['google', true],
+      ['apple', 'true'],
+    ] as const)('allows a verified %s claim to use the existing owner', async (provider, assertion) => {
+      expect(
+        await callSignIn({
+          user: { id: 'unlinked-profile', email: 'existing@example.test' },
+          account: { provider, type: 'oauth', providerAccountId: 'unlinked-subject' },
+          profile: { email_verified: assertion },
+        }),
+      ).toBe(true);
+    });
+
+    it('keeps a returning linked subject signed in without a new email assertion', async () => {
+      mockDbLimit.mockResolvedValue([{ userId: 'existing-owner' }]);
+      expect(
+        await callSignIn({
+          user: { id: 'existing-owner', email: 'Existing@Example.test' },
+          account: { provider: 'google', type: 'oauth', providerAccountId: 'linked-subject' },
+          profile: {},
+        }),
+      ).toBe(true);
+    });
+
+    it('refuses a subject linked to a different owner', async () => {
+      mockDbLimit.mockResolvedValue([{ userId: 'different-owner' }]);
+      expect(
+        await callSignIn({
+          user: { id: 'existing-owner', email: 'Existing@Example.test' },
+          account: { provider: 'google', type: 'oauth', providerAccountId: 'other-subject' },
+          profile: { email_verified: false },
+        }),
+      ).toBe(false);
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unverified unlinked subject even before an address becomes occupied', async () => {
+      expect(
+        await callSignIn({
+          user: { id: 'new-profile', email: 'free@example.test' },
+          account: { provider: 'google', type: 'oauth', providerAccountId: 'new-subject' },
+          profile: { email_verified: false },
+        }),
+      ).toBe(false);
+    });
+  });
+
   describe('OAuth provider (google)', () => {
     it('marks email as verified for new user and returns true', async () => {
       const result = await callSignIn({
         user: { id: 'user-1', email: 'user@example.com', name: 'Test' },
         account: { provider: 'google', type: 'oauth', providerAccountId: 'g-123' },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(true);
@@ -235,6 +317,7 @@ describe('authOptions.callbacks.signIn', () => {
       const result = await callSignIn({
         user: { id: '', email: 'user@example.com', name: 'Test', emailVerified: null },
         account: { provider: 'google', type: 'oauth', providerAccountId: 'g-456' },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(true);
@@ -248,6 +331,7 @@ describe('authOptions.callbacks.signIn', () => {
       const result = await callSignIn({
         user: { id: 'user-1', email: 'user@example.com' },
         account: { provider: 'google', type: 'oauth', providerAccountId: 'g-789' },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(true);
@@ -261,6 +345,7 @@ describe('authOptions.callbacks.signIn', () => {
       await callSignIn({
         user: { id: 'user-1', email: 'user@example.com' },
         account: { provider: 'google', type: 'oauth', providerAccountId: 'g-101' },
+        profile: { email_verified: true },
       });
 
       expect(isNull).toHaveBeenCalledWith('users.emailVerified');
@@ -272,6 +357,7 @@ describe('authOptions.callbacks.signIn', () => {
       const result = await callSignIn({
         user: { id: 'user-2', email: 'apple@example.com' },
         account: { provider: 'apple', type: 'oauth', providerAccountId: 'a-123' },
+        profile: { email_verified: true },
       });
 
       expect(result).toBe(true);
@@ -1126,6 +1212,83 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
     await import('../auth-options');
 
     expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
+  });
+});
+
+// =============================================================================
+// Adapter — NextAuth's provider sign-in links and creates by email (BA-02)
+// =============================================================================
+
+describe('authOptions.adapter — one account per address in any capitalisation', () => {
+  type AdapterUserInput = Extract<
+    Parameters<NonNullable<NonNullable<typeof authOptions.adapter>['createUser']>>[0],
+    { id: string }
+  >;
+  const adapter = () => {
+    const configured = authOptions.adapter;
+    if (!configured?.getUserByEmail || !configured.createUser) throw new Error('adapter not wrapped');
+    return { getUserByEmail: configured.getUserByEmail, createUser: configured.createUser };
+  };
+  const providerProfile = (email: string): AdapterUserInput => ({
+    id: 'provider-profile',
+    email,
+    name: 'Provider Climber',
+    emailVerified: null,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lookup.stored = [];
+    mockAdapterGetUser.mockImplementation(async (id: string) => ({ id, email: 'stored', emailVerified: null }));
+    mockAdapterCreateUser.mockImplementation(async (user: AdapterUserInput) => ({ ...user, id: 'created' }));
+  });
+
+  // NextAuth lowercases the provider email before it asks.
+  it('links a Google or Apple sign-in to the account that stores its email in capitals', async () => {
+    lookup.stored = [{ id: 'mixed', email: 'Mixed.Case@Example.test' }];
+
+    await adapter().getUserByEmail('mixed.case@example.test');
+
+    expect(mockAdapterGetUser).toHaveBeenCalledWith('mixed');
+  });
+
+  it('links to the account storing the address exactly when a sibling has other capitals', async () => {
+    lookup.stored = [
+      { id: 'mixed', email: 'Mixed.Case@Example.test' },
+      { id: 'lower', email: 'mixed.case@example.test' },
+    ];
+
+    await adapter().getUserByEmail('mixed.case@example.test');
+
+    expect(mockAdapterGetUser).toHaveBeenCalledWith('lower');
+  });
+
+  it('names nobody for an address several accounts share in other capitals', async () => {
+    lookup.stored = [
+      { id: 'title', email: 'Shared@Example.test' },
+      { id: 'upper', email: 'SHARED@EXAMPLE.TEST' },
+    ];
+
+    expect(await adapter().getUserByEmail('shared@example.test')).toBeNull();
+    expect(mockAdapterGetUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses to create another account for an address any account already holds', async () => {
+    lookup.stored = [
+      { id: 'title', email: 'Shared@Example.test' },
+      { id: 'upper', email: 'SHARED@EXAMPLE.TEST' },
+    ];
+
+    await expect(adapter().createUser(providerProfile('shared@example.test'))).rejects.toThrow();
+    expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+  });
+
+  it('creates a new account with the normalized address', async () => {
+    await adapter().createUser(providerProfile('New.Climber@Example.test'));
+
+    expect(mockAdapterCreateUser).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'new.climber@example.test', name: 'Provider Climber' }),
+    );
   });
 });
 

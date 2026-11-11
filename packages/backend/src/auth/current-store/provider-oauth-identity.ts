@@ -44,7 +44,8 @@ export type ReservedCurrentStoreOAuthIdentity =
   | { outcome: 'sensitive_link_unavailable' };
 
 export interface CurrentStoreOAuthCreationPolicy {
-  readonly emailStorage: 'normalized' | 'provided';
+  /** Web keeps the provider's avatar on a new account; native never had one. */
+  readonly storeProviderImage: boolean;
   readonly emailVerification: 'provider' | 'unverified';
   /** Verified negative browser binding only; never a fresh-login assertion. */
   readonly actorUserId: string | null;
@@ -134,8 +135,10 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   if (policy.actorUserId !== null) return { outcome: 'sensitive_link_unavailable' };
   const parsedEmail = parseCurrentStoreRegistrationEmail(identity.email);
   if (!parsedEmail.ok) return { outcome: 'no_email' };
+  // Every new account stores the normalized form (BA-02), so the planned
+  // unique index on lower(email) and Better Auth's exact lookup both find it.
   const key = parsedEmail.email;
-  const email = policy.emailStorage === 'provided' ? identity.email! : key;
+  const email = key;
   await lockEmailKeyForCreation(transaction, key);
   // A deleted account's address conflicts like a taken one until its digest expires.
   const reservation = await lockKeyReservation(transaction, key);
@@ -162,7 +165,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
       email,
       name: resolveCurrentStoreOAuthDisplayName(identity, forwardedName),
       emailVerified: policy.emailVerification === 'provider' && identity.emailVerified ? new Date() : null,
-      ...(policy.emailStorage === 'provided' ? { image: identity.image ?? null } : {}),
+      ...(policy.storeProviderImage ? { image: identity.image ?? null } : {}),
     })
     .returning();
   if (!created) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
