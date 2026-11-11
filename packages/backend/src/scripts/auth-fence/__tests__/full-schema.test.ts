@@ -60,7 +60,7 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     >`SELECT to_regclass('public.auth_session_denials') IS NOT NULL AS present`;
     if (!authorityTables.present) {
       await owner.unsafe(
-        readFileSync(new URL('../../../../../db/drizzle/0305_yielding_scrambler.sql', import.meta.url), 'utf8'),
+        readFileSync(new URL('../../../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url), 'utf8'),
       );
     }
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
