@@ -2136,6 +2136,13 @@
       "when": 1794392099632,
       "tag": "0304_spray_wall_led_setups",
       "breakpoints": true
+    },
+    {
+      "idx": 305,
+      "version": "7",
+      "when": 1794394633644,
+      "tag": "0305_auth_email_resolution_log",
+      "breakpoints": true
     }
   ]
 }
