@@ -222,28 +222,39 @@ describe('partner authority against real Postgres (ported from the BA-01 prototy
   });
 
   it('issues a 60 second code while the consent link stays signed for 600', async () => {
-    const consentClient = await environment.createClient({ skipConsent: false });
-    const atConsent = await environment.authorize(consentClient);
-    const consentUrl = new URL(atConsent.location!);
-    expect(consentUrl.href).toContain(TEST_OAUTH_OPTIONS.consentPage);
-    const signedExpiry = Number(consentUrl.searchParams.get('exp'));
-    const signedSecondsLeft = signedExpiry - Math.floor(Date.now() / 1000);
-    expect(signedSecondsLeft).toBeGreaterThan(590);
-    expect(signedSecondsLeft).toBeLessThanOrEqual(600);
+    // Date only: real HTTP, PostgreSQL, Redis and timeout scheduling still run.
+    // The code's issuance clock is not its later database INSERT timestamp.
+    const issuedAt = Math.floor(Date.now() / 1000) * 1000;
+    vi.useFakeTimers({ toFake: ['Date'], now: issuedAt });
+    try {
+      const consentClient = await environment.createClient({ skipConsent: false });
+      const atConsent = await environment.authorize(consentClient);
+      const consentUrl = new URL(atConsent.location!);
+      expect(consentUrl.href).toContain(TEST_OAUTH_OPTIONS.consentPage);
+      expect(Number(consentUrl.searchParams.get('exp')) - issuedAt / 1000).toBe(600);
 
-    const client = await environment.createClient({ publicClient: true });
-    const authorization = await environment.authorize(client);
-    const codeRows = await db.select().from(oauthVerification);
-    const code = codeRows.find((record) => {
-      const payload = JSON.parse(record.value) as { query?: { client_id?: string } };
-      return payload.query?.client_id === client.clientId;
-    });
-    expect(code).toBeDefined();
-    const expirySeconds = (code!.expiresAt.getTime() - code!.createdAt.getTime()) / 1000;
-    expect(Math.abs(expirySeconds - 60)).toBeLessThanOrEqual(1);
-    expect((await environment.exchange(client, authorization, environment.secondaryInstance)).response.status).toBe(
-      200,
-    );
+      const client = await environment.createClient({ publicClient: true });
+      const authorization = await environment.authorize(client);
+      const codeRows = await db.select().from(oauthVerification);
+      const code = codeRows.find((record) => {
+        const payload = JSON.parse(record.value) as { query?: { client_id?: string } };
+        return payload.query?.client_id === client.clientId;
+      });
+      expect(code).toBeDefined();
+      expect(code!.expiresAt.getTime()).toBe(issuedAt + 60_000);
+      const expiresUnused = await environment.authorize(client);
+
+      vi.setSystemTime(issuedAt + 59_000);
+      expect((await environment.exchange(client, authorization, environment.secondaryInstance)).response.status).toBe(
+        200,
+      );
+      vi.setSystemTime(issuedAt + 61_000);
+      const rejected = await environment.exchange(client, expiresUnused, environment.secondaryInstance);
+      expect(rejected.response.status).toBe(400);
+      expect(rejected.body.error).toBe('invalid_grant');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('public clients redeem PKCE codes and rotate without a client secret', async () => {

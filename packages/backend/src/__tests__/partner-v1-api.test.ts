@@ -91,8 +91,17 @@ async function inOneLimitWindow(body: () => Promise<void>): Promise<void> {
   throw new Error('The rate-limit window rolled over during both runs.');
 }
 
+// Keep every generated address distinct for this suite. Reusing a synthetic
+// address also reuses its still-live Redis rate bucket, even in a different test.
+const allocatedClientAddresses = new Set<string>();
 function randomClientIp(): string {
-  return `198.51.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 254) + 1}`;
+  for (let attempt = 0; attempt < 64; attempt += 1) {
+    const address = `198.51.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 254) + 1}`;
+    if (allocatedClientAddresses.has(address)) continue;
+    allocatedClientAddresses.add(address);
+    return address;
+  }
+  throw new Error('Owned client address allocation exhausted its collision budget');
 }
 
 interface SentResponse {
@@ -1194,6 +1203,30 @@ describe('the public /v1 API', () => {
         } finally {
           authenticate.mockRestore();
         }
+      });
+    });
+
+    it('keeps a forced address collision out of a previous Redis failure bucket', async () => {
+      await inOneLimitWindow(async () => {
+        const previousAddress = randomClientIp();
+        await seedLimiter(previousAddress, 'api-invalid-token-ip', 600);
+        const octets = previousAddress.split('.').map(Number);
+        const random = vi
+          .spyOn(Math, 'random')
+          .mockReturnValueOnce((octets[2] + 0.5) / 256)
+          .mockReturnValueOnce((octets[3] - 0.5) / 254)
+          .mockReturnValueOnce((((octets[2] + 1) % 256) + 0.5) / 256)
+          .mockReturnValueOnce((octets[3] - 0.5) / 254);
+        let freshAddress: string;
+        try {
+          freshAddress = randomClientIp();
+        } finally {
+          random.mockRestore();
+        }
+        expect(freshAddress).not.toBe(previousAddress);
+        expectInvalidToken(await getMe(`forged${randomUUID().replaceAll('-', '')}`, { clientIp: freshAddress }));
+        expect(await limiterCount(freshAddress, 'api-invalid-token-ip')).toBe(1);
+        expect(await limiterCount(previousAddress, 'api-invalid-token-ip')).toBe(600);
       });
     });
 
