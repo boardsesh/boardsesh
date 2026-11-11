@@ -1,0 +1,4 @@
+ALTER TABLE "auth_security_mutation_events" DROP CONSTRAINT "auth_security_mutation_events_kind";--> statement-breakpoint
+ALTER TABLE "auth_security_mutation_events" DROP CONSTRAINT "auth_security_mutation_events_domains";--> statement-breakpoint
+ALTER TABLE "auth_security_mutation_events" ADD CONSTRAINT "auth_security_mutation_events_kind" CHECK ("auth_security_mutation_events"."kind" IN ('password-set', 'password-change', 'password-reset', 'account-deletion', 'legacy-signout'));--> statement-breakpoint
+ALTER TABLE "auth_security_mutation_events" ADD CONSTRAINT "auth_security_mutation_events_domains" CHECK (("auth_security_mutation_events"."kind" = 'legacy-signout' AND "auth_security_mutation_events"."domains" = ARRAY['first-party']::text[]) OR ("auth_security_mutation_events"."kind" <> 'legacy-signout' AND "auth_security_mutation_events"."domains" = ARRAY['first-party', 'partner']::text[]));

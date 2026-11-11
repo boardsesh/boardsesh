@@ -104,7 +104,9 @@ export const authSecurityMutationEvents = pgTable(
     userId: text('user_id').notNull(),
     generation: integer('generation').notNull(),
     previousGeneration: integer('previous_generation').notNull(),
-    kind: text('kind').$type<'password-set' | 'password-change' | 'password-reset' | 'account-deletion'>().notNull(),
+    kind: text('kind')
+      .$type<'password-set' | 'password-change' | 'password-reset' | 'account-deletion' | 'legacy-signout'>()
+      .notNull(),
     domains: text('domains').array().$type<('first-party' | 'partner')[]>().notNull(),
     revokedThrough: timestamp('revoked_through', { withTimezone: true }).notNull(),
     writerEpoch: integer('writer_epoch').notNull(),
@@ -120,9 +122,12 @@ export const authSecurityMutationEvents = pgTable(
     ),
     check(
       'auth_security_mutation_events_kind',
-      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'account-deletion')`,
+      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'account-deletion', 'legacy-signout')`,
     ),
-    check('auth_security_mutation_events_domains', sql`${table.domains} = ARRAY['first-party', 'partner']::text[]`),
+    check(
+      'auth_security_mutation_events_domains',
+      sql`(${table.kind} = 'legacy-signout' AND ${table.domains} = ARRAY['first-party']::text[]) OR (${table.kind} <> 'legacy-signout' AND ${table.domains} = ARRAY['first-party', 'partner']::text[])`,
+    ),
     check('auth_security_mutation_events_epoch', sql`${table.writerEpoch} > 0 AND ${table.payloadVersion} = 1`),
   ],
 );

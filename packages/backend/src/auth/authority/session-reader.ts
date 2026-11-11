@@ -9,6 +9,7 @@ export interface FirstPartySession {
   readonly userId: string;
   readonly authSessionId: string;
   readonly generation: number;
+  readonly requiresAccountCutoff: boolean;
   readonly authenticatedAt: Date | null;
   readonly expiresAt: Date;
 }
@@ -39,6 +40,7 @@ export async function readFirstPartySession(
         userId: proof.userId,
         authSessionId: proof.authSessionId ?? proof.lineageId,
         generation: proof.generation,
+        requiresAccountCutoff: proof.requiresAccountCutoff,
         authenticatedAt: proof.linkGuarded ? proof.originalAuthenticatedAt : null,
         expiresAt: proof.expiresAt,
       };
@@ -58,6 +60,7 @@ export async function readFirstPartySession(
         userId: canonical.userId,
         authSessionId: canonical.id,
         generation: canonical.revocationGeneration ?? 0,
+        requiresAccountCutoff: canonical.legacyLineageId?.startsWith('credential:') ?? false,
         // createdAt may be an epoch sentinel; it never proves authentication.
         authenticatedAt: canonical.originalAuthenticatedAt,
         expiresAt: canonical.expiresAt,

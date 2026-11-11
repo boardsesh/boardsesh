@@ -146,6 +146,7 @@ describe('production legacy bridge (dark)', () => {
         userId: fixtureSession.userId,
         authSessionId: fixtureSession.authSessionId,
         generation: 0,
+        requiresAccountCutoff: false,
         authenticatedAt: null,
         expiresAt: new Date(now.getTime() + 3600000),
       },

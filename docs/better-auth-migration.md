@@ -215,6 +215,16 @@ reauthentication; do not claim device-specific revocation that the old token
 format cannot enforce. Credential `iat` on a renewed token is not proof of
 recent password/provider authentication.
 
+The unmounted BA-04 fallback preserves ordinary no-SID cookie reads and bridges.
+An explicit logout of that unidentifiable login advances the account generation,
+ending all existing first-party sessions, including native credentials; it does
+not revoke partner grants. It requires an enforced projection and the caller’s
+matching positive writer epoch, and records a `legacy-signout` event. Repeating
+a logout from an old generation cannot end a later login. No cutoff is written
+by an ordinary read or bridge, and bridge mode defaults remain off. This is not
+per-device logout for historic cookies. Full activation and frozen-client
+offline-data gates still apply; this fallback does not authorize activation.
+
 | Event | Required behavior during coexistence |
 | --- | --- |
 | Ordinary session migration | Preserve access and normal renewal without granting fresh-login privileges |
