@@ -355,9 +355,18 @@ describe('handleNativeAuthRegister', () => {
     expect(insertsFor(users)).toHaveLength(0);
   });
 
-  it('maps a 23505 unique-violation race to 409 (no token pair)', async () => {
+  it.each([
+    ['legacy driver violation', { code: '23505' }],
+    ['legacy named constraint', { code: '23505', constraint: 'users_pkey' }],
+    [
+      'wrapped email-index violation',
+      new Error('Synthetic insert conflict', {
+        cause: { code: '23505', constraint: 'users_email_lower_key' },
+      }),
+    ],
+  ])('maps a %s race to 409 without a token pair', async (_kind, insertError) => {
     queueSelect([]); // pre-check passes…
-    nextInsertError = { code: '23505' }; // …but the users insert loses the race
+    nextInsertError = insertError; // …but the users insert loses the race
     const req = makeRequest({
       method: 'POST',
       body: { email: 'racer@example.com', password: 'longenough' },
@@ -367,6 +376,23 @@ describe('handleNativeAuthRegister', () => {
 
     expect(res.statusCode).toBe(409);
     expect(parseBody(res).error).toBe('An account with this email already exists');
+    expect(parseBody(res).jwt).toBeUndefined();
+  });
+
+  it('keeps an unrelated wrapped unique violation unavailable without issuing tokens', async () => {
+    queueSelect([]);
+    nextInsertError = new Error('Synthetic unrelated constraint', {
+      cause: { code: '23505', constraint: 'user_credentials_pkey' },
+    });
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'constraint@fixture.example.test', password: 'longenough' },
+    });
+    const res = makeResponse();
+    await callHandler(req, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(parseBody(res).error).toBe('Authentication is temporarily unavailable');
     expect(parseBody(res).jwt).toBeUndefined();
   });
 

@@ -167,7 +167,7 @@ async function seedSocialData() {
       fakeUserRecords.push({
         id: faker.string.uuid(),
         name: faker.person.fullName(),
-        email: faker.internet.email({ provider: FAKE_EMAIL_DOMAIN }),
+        email: faker.internet.email({ provider: FAKE_EMAIL_DOMAIN }).toLowerCase(),
         image: faker.datatype.boolean(0.8) ? faker.image.avatar() : null,
         createdAt: faker.date.past({ years: 1 }),
         updatedAt: new Date(),
