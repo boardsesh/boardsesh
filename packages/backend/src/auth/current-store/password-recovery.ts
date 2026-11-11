@@ -18,7 +18,6 @@ import {
   authPasswordRecoveryTokens,
   authSubjectCutoffs,
   mobileRefreshTokens,
-  userCredentials,
   users,
   verificationTokens,
 } from '@boardsesh/db/schema/auth';
@@ -32,19 +31,19 @@ import {
   captureAuthority,
   claimCommand,
   claimLegacyLink,
-  preflight,
   transactionSettings,
   type WebPasswordAuthority,
 } from './command-context';
 import { lockKeyReservation } from './email-reservations';
-import {
-  CurrentStoreFoundationError,
-  lockEnforcedProjection,
-  lockSubjectRow,
-  type CurrentStoreTransaction,
-} from './foundation-context';
+import { CurrentStoreFoundationError, lockSubjectRow, type CurrentStoreTransaction } from './foundation-context';
 import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
-import { recordSecurityMutation } from './security-mutations';
+import { recordIdentityPasswordMutation } from '../authority/password-mutation';
+import { bindIdentityAuthority, type IdentityPasswordSnapshot } from '../authority/identity-authority';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+} from '../authority/router';
 
 const purpose = 'password-reset' as const;
 const lifetimeMs = 60 * 60 * 1000;
@@ -126,7 +125,7 @@ export async function requestPasswordRecovery(
   authorityInput: WebPasswordAuthority,
   input: ForgotPasswordCommand,
 ): Promise<ForgotPasswordReply> {
-  const authority = captureAuthority(authorityInput);
+  const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const parsed = forgotSchema.safeParse(input.payload);
   const email = parsed.success ? parsed.data.email : undefined;
@@ -134,7 +133,8 @@ export async function requestPasswordRecovery(
   const base = { protocolVersion: AUTH_PROTOCOL_VERSION, operation: 'forgot-password', requestId } as const;
   return database.transaction(async (transaction): Promise<ForgotPasswordReply> => {
     await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
+    const receipt = await captureIdentityAuthority(transaction, configuredAuthority);
+    const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
     const claimed = await claimCommand(transaction, { operation: 'forgot-password', requestId, issuedAt });
     assertFresh(issuedAt);
     if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
@@ -158,11 +158,7 @@ export async function requestPasswordRecovery(
     if (!userId || userId !== hinted) return { ...base, outcome: 'accepted' };
     if (!user || normalizeAccountEmail(user.email) !== key)
       throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-    const [credential] = await transaction
-      .select()
-      .from(userCredentials)
-      .where(eq(userCredentials.userId, userId))
-      .for('update');
+    const credential = await bindIdentityAuthority(transaction, receipt).readPassword(userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)
@@ -170,6 +166,7 @@ export async function requestPasswordRecovery(
       .for('update');
     assertFresh(issuedAt);
     if (!credential || cutoff?.deletedAt) return { ...base, outcome: 'accepted' };
+    if (credential.generation !== (cutoff?.generation ?? 0)) throw new CurrentStoreFoundationError('STALE_GENERATION');
     const recipient = user.email.trim();
     if (!z.email().safeParse(recipient).success) return { ...base, outcome: 'accepted' };
     await transaction
@@ -237,7 +234,7 @@ function sameBinding(first: Receipt, locked: Receipt) {
   );
 }
 
-type LegacyResetPreview = { readonly userId: string; readonly passwordHash: string };
+type LegacyResetPreview = IdentityPasswordSnapshot;
 
 /**
  * Unlocked read before bcrypt, as the UID-bound path reads its receipt: the
@@ -248,6 +245,7 @@ async function previewLegacyResetOwner(
   database: DbInstance,
   email: string,
   token: string,
+  authorityReceipt: IdentityAuthorityReceipt,
 ): Promise<LegacyResetPreview | undefined> {
   if (!(await isEmailUniquenessEnforced(database))) return undefined;
   const [link] = await database
@@ -262,8 +260,11 @@ async function previewLegacyResetOwner(
   if (!link || link.expires.getTime() <= Date.now()) return undefined;
   const holders = await accountsHoldingAddress(database, normalizeAccountEmail(email));
   if (holders.length !== 1) return undefined;
-  const [credential] = await database.select().from(userCredentials).where(eq(userCredentials.userId, holders[0].id));
-  return credential ? { userId: credential.userId, passwordHash: credential.passwordHash } : undefined;
+  return database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    await revalidateIdentityAuthority(transaction, authorityReceipt);
+    return (await bindIdentityAuthority(transaction, authorityReceipt).readPassword(holders[0].id)) ?? undefined;
+  });
 }
 
 /**
@@ -276,6 +277,7 @@ async function previewLegacyResetOwner(
 async function consumeBoundLegacyReset(
   transaction: CurrentStoreTransaction,
   authority: WebPasswordAuthority,
+  authorityReceipt: IdentityAuthorityReceipt,
   link: {
     readonly requestId: string;
     readonly email: string;
@@ -301,11 +303,8 @@ async function consumeBoundLegacyReset(
   const holders = await accountsHoldingAddress(transaction, key);
   if (!user || normalizeAccountEmail(user.email) !== key || holders.length !== 1 || holders[0].id !== userId)
     return 'invalid_or_expired';
-  const [credential] = await transaction
-    .select()
-    .from(userCredentials)
-    .where(eq(userCredentials.userId, userId))
-    .for('update');
+  const identity = bindIdentityAuthority(transaction, authorityReceipt);
+  const credential = await identity.readPassword(userId);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)
@@ -316,6 +315,8 @@ async function consumeBoundLegacyReset(
   if (
     !credential ||
     credential.passwordHash !== link.preview.passwordHash ||
+    credential.generation !== link.preview.generation ||
+    credential.generation !== (cutoff?.generation ?? 0) ||
     cutoff?.deletedAt ||
     issuedBeforeRevocation(link.deadline, lifetimeMs, cutoff) ||
     link.deadline.getTime() <= resetAt.getTime()
@@ -328,29 +329,30 @@ async function consumeBoundLegacyReset(
     expires: link.deadline,
   });
   if (!claimed) return 'invalid_or_expired';
-  const [changed] = await transaction
-    .update(userCredentials)
-    .set({ passwordHash: link.passwordHash, updatedAt: resetAt })
-    .where(and(eq(userCredentials.userId, userId), eq(userCredentials.passwordHash, link.preview.passwordHash)))
-    .returning({ userId: userCredentials.userId });
+  const changed = await identity.replacePassword(link.preview, link.passwordHash);
   if (!changed) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   if (!user.emailVerified)
     await transaction
       .update(users)
       .set({ emailVerified: resetAt, updatedAt: resetAt })
       .where(and(eq(users.id, userId), isNull(users.emailVerified)));
-  await recordSecurityMutation(transaction, {
-    ...authority,
-    operationId: link.requestId,
-    userId,
-    expectedGeneration: cutoff?.generation ?? 0,
-    kind: 'password-reset',
-    domains: ['first-party', 'partner'],
-  });
+  await recordIdentityPasswordMutation(
+    transaction,
+    {
+      ...authority,
+      operationId: link.requestId,
+      userId,
+      expectedGeneration: cutoff?.generation ?? 0,
+      kind: 'password-reset',
+      domains: ['first-party', 'partner'],
+    },
+    authorityReceipt,
+  );
   await transaction
     .update(mobileRefreshTokens)
     .set({ revokedAt: resetAt })
     .where(and(eq(mobileRefreshTokens.userId, userId), isNull(mobileRefreshTokens.revokedAt)));
+  await revalidateIdentityAuthority(transaction, authorityReceipt);
   return 'reset';
 }
 
@@ -360,7 +362,7 @@ export async function consumePasswordRecovery(
   authorityInput: WebPasswordAuthority,
   input: ResetPasswordCommand,
 ): Promise<ResetPasswordReply> {
-  const authority = captureAuthority(authorityInput);
+  const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const rawToken =
     input.payload && typeof input.payload === 'object' && 'token' in input.payload ? input.payload.token : undefined;
@@ -377,7 +379,11 @@ export async function consumePasswordRecovery(
   const base = { protocolVersion: AUTH_PROTOCOL_VERSION, operation: 'reset-password', requestId } as const;
   // Enforced authority is checked before expensive hashing, without retaining
   // the manifest lock through bcrypt. No preliminary read grants redemption.
-  await preflight(database, authority);
+  const authorityReceipt = await database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    return captureIdentityAuthority(transaction, configuredAuthority);
+  });
+  const authority = { ...configuredAuthority, expectedWriterEpoch: authorityReceipt.epoch };
   const [found] = supported
     ? await database
         .select()
@@ -387,16 +393,17 @@ export async function consumePasswordRecovery(
   const initial = found
     ? { ...found, issuedAt: new Date(found.issuedAt.getTime()), expiresAt: new Date(found.expiresAt.getTime()) }
     : undefined;
-  const [beforeCredential] = initial
-    ? await database.select().from(userCredentials).where(eq(userCredentials.userId, initial.userId))
-    : [];
-  const initialCredential = beforeCredential
-    ? { userId: beforeCredential.userId, passwordHash: beforeCredential.passwordHash }
+  const initialCredential = initial
+    ? await database.transaction(async (transaction) => {
+        await transactionSettings(transaction);
+        await revalidateIdentityAuthority(transaction, authorityReceipt);
+        return bindIdentityAuthority(transaction, authorityReceipt).readPassword(initial.userId);
+      })
     : undefined;
   const legacyAddress = legacyEmail?.success ? legacyEmail.data.email : undefined;
   const legacyPreview =
     !supported && !versioned && body && legacyAddress
-      ? await previewLegacyResetOwner(database, legacyAddress, body.token)
+      ? await previewLegacyResetOwner(database, legacyAddress, body.token, authorityReceipt)
       : undefined;
   const passwordHash =
     body && ((initial && initialCredential && !initial.consumedAt && !initial.supersededAt) || legacyPreview)
@@ -404,7 +411,7 @@ export async function consumePasswordRecovery(
       : undefined;
   return database.transaction(async (transaction): Promise<ResetPasswordReply> => {
     await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
+    await revalidateIdentityAuthority(transaction, authorityReceipt);
     const claimed = await claimCommand(transaction, { operation: 'reset-password', requestId, issuedAt });
     assertFresh(issuedAt);
     if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
@@ -437,7 +444,7 @@ export async function consumePasswordRecovery(
       assertFresh(issuedAt);
       if (!legacy || legacy.expires.getTime() <= now) return { ...base, outcome: 'invalid_or_expired' };
       if (!legacyPreview || !passwordHash) return { ...base, outcome: 'legacy_unbound' };
-      const outcome = await consumeBoundLegacyReset(transaction, authority, {
+      const outcome = await consumeBoundLegacyReset(transaction, authority, authorityReceipt, {
         requestId,
         email,
         identifier,
@@ -454,11 +461,8 @@ export async function consumePasswordRecovery(
       return { ...base, outcome: 'invalid_or_expired' };
     const user = await lockSubjectRow(transaction, initial.userId);
     const userId = await owner(transaction, authority, initial.normalizedEmail, true);
-    const [credential] = await transaction
-      .select()
-      .from(userCredentials)
-      .where(eq(userCredentials.userId, initial.userId))
-      .for('update');
+    const identity = bindIdentityAuthority(transaction, authorityReceipt);
+    const credential = await identity.readPassword(initial.userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)
@@ -487,6 +491,8 @@ export async function consumePasswordRecovery(
       !credential ||
       credential.userId !== initialCredential.userId ||
       credential.passwordHash !== initialCredential.passwordHash ||
+      credential.generation !== initialCredential.generation ||
+      credential.generation !== receipt.subjectGeneration ||
       !state ||
       state.generation !== receipt.issuanceGeneration ||
       cutoff?.deletedAt ||
@@ -512,35 +518,31 @@ export async function consumePasswordRecovery(
       .update(authPasswordRecoveryState)
       .set({ generation: sql`${authPasswordRecoveryState.generation} + 1`, updatedAt: consumed.consumedAt })
       .where(and(eq(authPasswordRecoveryState.userId, receipt.userId), eq(authPasswordRecoveryState.purpose, purpose)));
-    const [changed] = await transaction
-      .update(userCredentials)
-      .set({ passwordHash, updatedAt: consumed.consumedAt })
-      .where(
-        and(
-          eq(userCredentials.userId, receipt.userId),
-          eq(userCredentials.passwordHash, initialCredential.passwordHash),
-        ),
-      )
-      .returning({ userId: userCredentials.userId });
+    const changed = await identity.replacePassword(initialCredential, passwordHash);
     if (!changed) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     if (!user.emailVerified)
       await transaction
         .update(users)
         .set({ emailVerified: consumed.consumedAt, updatedAt: consumed.consumedAt })
         .where(and(eq(users.id, receipt.userId), isNull(users.emailVerified)));
-    await recordSecurityMutation(transaction, {
-      ...authority,
-      operationId: requestId,
-      userId: receipt.userId,
-      expectedGeneration: receipt.subjectGeneration,
-      kind: 'password-reset',
-      domains: ['first-party', 'partner'],
-    });
+    await recordIdentityPasswordMutation(
+      transaction,
+      {
+        ...authority,
+        operationId: requestId,
+        userId: receipt.userId,
+        expectedGeneration: receipt.subjectGeneration,
+        kind: 'password-reset',
+        domains: ['first-party', 'partner'],
+      },
+      authorityReceipt,
+    );
     await transaction
       .update(mobileRefreshTokens)
       .set({ revokedAt: consumed.consumedAt })
       .where(and(eq(mobileRefreshTokens.userId, receipt.userId), isNull(mobileRefreshTokens.revokedAt)));
     assertFresh(issuedAt);
+    await revalidateIdentityAuthority(transaction, authorityReceipt);
     return { ...base, outcome: 'reset' };
   });
 }
