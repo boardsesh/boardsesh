@@ -142,7 +142,12 @@ per address and per climber, in one order (BA-04 plan, section 4):
 `recordSecurityMutation` itself takes `users FOR UPDATE` before the cutoff row,
 so every generation writer excludes native issuance and refresh, which hold
 `users FOR KEY SHARE` and read the generation after that lock.
-A command waits for a climber's row up to its own 4 s lock limit. The fixed
+A writer that must win (reset, verify, set-password, deletion) waits for a
+climber's row up to its 4 s lock limit. A sign-in, forgot-password or
+resend-verification gives up after 250 ms (`SIGN_IN_LOCK_TIMEOUT`) and answers
+the retryable unavailable reply, never a wrong password, so a burst naming one
+held account cannot keep a backend process's five pool connections busy. A web
+sign-in whose password matched no one takes no user lock at all. The fixed
 system identities keep a 250 ms limit there, because they hold the exclusive
 fixed-owner key while they wait. The helpers perform no provider network or
 bcrypt work themselves; callers keep such work outside the transaction.

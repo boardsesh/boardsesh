@@ -349,9 +349,21 @@ command waiting on a deleting account holds nothing the deletion needs. Only the
 gate wait and the bookkeeping run under the 5 s statement and 4 s lock limits;
 content and the cascade keep the connection's own (45 s on the backend).
 
+A sign-in, forgot-password or resend-verification gives up on a held climber
+row after 250 ms and answers the retryable unavailable reply (503), never a wrong
+password; reset, verify, set-password and deletion keep 4 s. A web sign-in whose
+password matched no one takes no user lock. Through one backend's own pool of
+five connections, with a deletion holding one account and 16 wrong-password
+sign-ins plus 4 forgot-passwords naming it, an unrelated web sign-in took 287 to
+326 ms and a native one 17 to 28 ms. At the earlier 4 s limit, 16 wrong-password
+sign-ins through the same pool made an unrelated web sign-in wait 16 s.
+
 **What changes for a live sign-in.** No `CURRENT_STORE_*` mode is on in
 production, so the only live code touched is native issuance:
 
+- Password sign-in gives up on a held user row after 250 ms instead of 4 s and
+  answers 503 "Authentication is temporarily unavailable", which the app retries.
+  The only long holder in production is a deletion of that same account.
 - Password sign-in reads the hash and generation with the bcrypt candidates (one
   more join in the same statement), and the issuer's post-lock statement re-reads
   them (a join on `user_credentials` in the statement that already read the
