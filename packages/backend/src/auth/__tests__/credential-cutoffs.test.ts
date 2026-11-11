@@ -72,6 +72,8 @@ describe('decideCredential: BA-04 section 4', () => {
       expect(denialOf(nativeAccess(2, 5), subject(2, 5))).toBeNull();
       expect(denialOf(nativeAccess(2, 5), subject(3, 5))).toBe('generation');
       expect(denialOf(nativeAccess(2, 5), subject(2, 6))).toBe('native-generation');
+      // Higher than the current native generation is refused too.
+      expect(denialOf(nativeAccess(2, 6), subject(2, 5))).toBe('native-generation');
     });
   });
 
@@ -85,6 +87,7 @@ describe('decideCredential: BA-04 section 4', () => {
       expect(denialOf(refreshRow(4, 1, null), subject(4, 1))).toBeNull();
       expect(denialOf(refreshRow(4, 1, null), subject(5, 1))).toBe('generation');
       expect(denialOf(refreshRow(4, 1, null), subject(4, 2))).toBe('native-generation');
+      expect(denialOf(refreshRow(4, 2, null), subject(4, 1))).toBe('native-generation');
     });
   });
 
