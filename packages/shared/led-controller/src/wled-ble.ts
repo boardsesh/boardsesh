@@ -45,8 +45,11 @@ export interface BleLedTransport {
 }
 
 export interface WledBleDriverOptions {
-  /** Resolved on every operation, so the app can register its transport after import. */
-  transport: () => BleLedTransport | null;
+  /**
+   * Resolved on every operation, so the app can register its transport after
+   * import, or load the Bluetooth library only when a Bluetooth wall is lit.
+   */
+  transport: () => BleLedTransport | null | Promise<BleLedTransport | null>;
   /** Per exchange (connect, read, or one frame and its status). */
   timeoutMs?: number;
 }
@@ -110,7 +113,12 @@ export function createWledBleDriver(options: WledBleDriverOptions): LedControlle
 
   async function connect(target: string, signal?: AbortSignal): Promise<BleLedLink> {
     const deviceId = deviceIdOf(target);
-    const transport = options.transport();
+    let transport: BleLedTransport | null;
+    try {
+      transport = await options.transport();
+    } catch {
+      transport = null;
+    }
     if (!transport) throw new LedControllerError('unavailable');
     // Connecting includes discovery and, the first time, the OS pairing prompt.
     return withDeadline(() => transport.connect(deviceId, signal), Math.max(timeoutMs, 15_000), signal, 'unavailable');
@@ -239,11 +247,17 @@ export function createWledBleDriver(options: WledBleDriverOptions): LedControlle
   return driver;
 }
 
-let registeredTransport: BleLedTransport | null = null;
+type TransportSource = BleLedTransport | (() => Promise<BleLedTransport>) | null;
+let registeredTransport: TransportSource = null;
 
-/** The app registers its Bluetooth transport once; until then every operation is `unavailable`. */
-export function registerWledBleTransport(transport: BleLedTransport | null): void {
+/**
+ * The app registers its Bluetooth transport, or a loader for it, once; until
+ * then every operation is `unavailable`.
+ */
+export function registerWledBleTransport(transport: TransportSource): void {
   registeredTransport = transport;
 }
 
-export const wledBleDriver = createWledBleDriver({ transport: () => registeredTransport });
+export const wledBleDriver = createWledBleDriver({
+  transport: () => (typeof registeredTransport === 'function' ? registeredTransport() : registeredTransport),
+});

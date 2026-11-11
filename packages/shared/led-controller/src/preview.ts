@@ -24,7 +24,9 @@ export function createLedPreviewSession(
   controllerUrl: string,
   lighting: LedLightingOptions = {},
 ) {
-  const url = driver.normalizeTarget ? driver.normalizeTarget(controllerUrl) : normalizeLocalControllerUrl(controllerUrl);
+  const url = driver.normalizeTarget
+    ? driver.normalizeTarget(controllerUrl)
+    : normalizeLocalControllerUrl(controllerUrl);
   const resolvedLighting = resolveLedLightingOptions(lighting);
   const lightingKey = JSON.stringify(resolvedLighting);
   const lane = lanes.get(url) ?? {

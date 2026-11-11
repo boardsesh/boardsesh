@@ -90,21 +90,25 @@ function utf8Encode(value: string): number[] {
     else if (code < 0x800) bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
     else if (code < 0x10000) bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
     else
-      bytes.push(
-        0xf0 | (code >> 18),
-        0x80 | ((code >> 12) & 0x3f),
-        0x80 | ((code >> 6) & 0x3f),
-        0x80 | (code & 0x3f),
-      );
+      bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
   }
   return bytes;
 }
 
 function utf8Decode(bytes: Uint8Array): string {
   let text = '';
-  for (let offset = 0; offset < bytes.length; ) {
+  for (let offset = 0; offset < bytes.length;) {
     const lead = bytes[offset];
-    const length = lead < 0x80 ? 1 : lead >= 0xc2 && lead < 0xe0 ? 2 : lead >= 0xe0 && lead < 0xf0 ? 3 : lead >= 0xf0 && lead < 0xf5 ? 4 : 0;
+    const length =
+      lead < 0x80
+        ? 1
+        : lead >= 0xc2 && lead < 0xe0
+          ? 2
+          : lead >= 0xe0 && lead < 0xf0
+            ? 3
+            : lead >= 0xf0 && lead < 0xf5
+              ? 4
+              : 0;
     if (!length || offset + length > bytes.length) throw new BleLedProtocolError('info is not UTF-8');
     let code = length === 1 ? lead : lead & (0xff >> (length + 1));
     for (let next = 1; next < length; next++) {
@@ -112,7 +116,10 @@ function utf8Decode(bytes: Uint8Array): string {
       if ((continuation & 0xc0) !== 0x80) throw new BleLedProtocolError('info is not UTF-8');
       code = (code << 6) | (continuation & 0x3f);
     }
-    if ((length === 3 && (code < 0x800 || (code >= 0xd800 && code <= 0xdfff))) || (length === 4 && (code < 0x10000 || code > 0x10ffff))) {
+    if (
+      (length === 3 && (code < 0x800 || (code >= 0xd800 && code <= 0xdfff))) ||
+      (length === 4 && (code < 0x10000 || code > 0x10ffff))
+    ) {
       throw new BleLedProtocolError('info is not UTF-8');
     }
     text += String.fromCodePoint(code);

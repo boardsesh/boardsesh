@@ -35,7 +35,11 @@ describe('protocol test vectors', () => {
       ]),
       '01 13 04 0a 00 02 ff 00 00 14 00 01 00 ff 00',
     ],
-    ['SET_PIXELS, LED 300 blue', encodeSetPixels(5, [{ start: 300, count: 1, color: [0, 0, 255] }]), '01 13 05 2c 01 01 00 00 ff'],
+    [
+      'SET_PIXELS, LED 300 blue',
+      encodeSetPixels(5, [{ start: 300, count: 1, color: [0, 0, 255] }]),
+      '01 13 05 2c 01 01 00 00 ff',
+    ],
     ['AUTO_OFF, 15 minutes', encodeAutoOff(6, 15), '01 14 06 0f'],
     ['WAKE, brightness 64', encodeWake(7, 64), '01 15 07 40'],
     ['status OK for sequence 4', encodeBleLedStatus({ sequence: 4, result: 0 }), '01 04 00 00'],
@@ -82,7 +86,12 @@ describe('protocol test vectors', () => {
     expect(bleLedRunsPerFrame(247, 512)).toBe(40);
     expect(bleLedRunsPerFrame(517, 512)).toBe(84);
     expect(bleLedRunsPerFrame(517, 128)).toBe(20);
-    expect(chunkBleLedRuns([1, 2, 3, 4, 5].map((start) => ({ start, count: 1, color: [0, 0, 0] as const })), 2)).toHaveLength(3);
+    expect(
+      chunkBleLedRuns(
+        [1, 2, 3, 4, 5].map((start) => ({ start, count: 1, color: [0, 0, 0] as const })),
+        2,
+      ),
+    ).toHaveLength(3);
   });
 });
 
@@ -125,7 +134,11 @@ function fakeController(options: FakeOptions = {}) {
 }
 
 /** Drop the sequence byte: it depends on how many frames the driver sent before. */
-const withoutSequence = (frame: string) => frame.split(' ').filter((_byte, index) => index !== 2).join(' ');
+const withoutSequence = (frame: string) =>
+  frame
+    .split(' ')
+    .filter((_byte, index) => index !== 2)
+    .join(' ');
 
 afterEach(() => vi.useRealTimers());
 
@@ -148,9 +161,14 @@ describe('Bluetooth WLED driver', () => {
     expect(fake.writes).toEqual([]);
   });
 
-  it('is unavailable until the app registers a transport', async () => {
+  it('is unavailable until the app registers a transport, and waits for one that loads lazily', async () => {
     const driver = createWledBleDriver({ transport: () => null });
     await expect(driver.probe(target)).rejects.toMatchObject({ code: 'unavailable' });
+    const failing = createWledBleDriver({ transport: () => Promise.reject(new Error('no native module')) });
+    await expect(failing.probe(target)).rejects.toMatchObject({ code: 'unavailable' });
+    const fake = fakeController();
+    const lazy = createWledBleDriver({ transport: async () => fake.transport });
+    await expect(lazy.probe(target)).resolves.toMatchObject({ ledCount: 150 });
   });
 
   it('refuses a controller on another protocol version before writing anything', async () => {
@@ -189,8 +207,8 @@ describe('Bluetooth WLED driver', () => {
 
   it('reports a failed write', async () => {
     const fake = fakeController();
-    vi.mocked(fake.link.writeControl).mockRejectedValueOnce(new Error('GATT error'));
-    const driver = createWledBleDriver({ transport: () => fake.transport });
+    const failing: BleLedLink = { ...fake.link, writeControl: () => Promise.reject(new Error('GATT error')) };
+    const driver = createWledBleDriver({ transport: () => ({ connect: async () => failing }) });
     await expect(driver.turnOff(target)).rejects.toMatchObject({ code: 'command-failed' });
   });
 
