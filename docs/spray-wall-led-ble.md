@@ -242,6 +242,9 @@ keep at least ~40 KB free with the LED count of the Spraywall.
   transport interface; `registerWledBleTransport`.
 - `packages/mobile/src/lib/spray/spray-led-ble-transport.ts`: the ble-plx
   transport, scan and idle disconnect.
+- `packages/mobile/src/lib/spray/spray-led-ble-transport-loader.ts`: registers
+  the transport as a lazy import, so ble-plx loads only for a Bluetooth
+  Spraywall.
 - `packages/mobile/src/lib/spray/spray-wall-led-ble-device.ts`: the phone's
   chosen controller per Spraywall.
 - `firmware/wled-usermod-boardsesh-ble/`: the usermod, build override, README.
