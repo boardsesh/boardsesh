@@ -9,6 +9,7 @@
  * every parameter is a number from the code.
  */
 import { createHash } from 'node:crypto';
+import { sqlNormalizedAccountEmail } from '../account-email-sql';
 import { and, count, eq, gt, isNull, notExists, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
@@ -63,14 +64,6 @@ const NAMED_TABLES = [
 const NAMED_TABLE_ARRAY = sql`ARRAY[${sql.join(NAMED_TABLES.map(constantLiteral), sql`, `)}]::text[]`;
 const FIXED_SYSTEM_ID_LIST = sql`(${sql.join(FIXED_SYSTEM_ACCOUNT_IDS.map(constantLiteral), sql`, `)})`;
 
-/** JS `String.prototype.trim`'s whitespace set as a regex class, so SQL groups like `trim().toLowerCase()`. */
-const JS_TRIM_CLASS = String.raw`[\t\n\v\f\r    -     　﻿]`;
-const JS_TRIM_PATTERN = sql.raw(`'^${JS_TRIM_CLASS}+|${JS_TRIM_CLASS}+$'`);
-
-function sqlAccountKey(email: SQL): SQL {
-  return sql`pg_catalog.lower(pg_catalog.regexp_replace(${email}, ${JS_TRIM_PATTERN}, '', 'g'))`;
-}
-
 /**
  * Every user whose address another user shares, derived inside the statement
  * that uses it. It carries no data, so the statement text and parameters say
@@ -78,8 +71,8 @@ function sqlAccountKey(email: SQL): SQL {
  * snapshot fails with GROUPING_MISMATCH if the two sets differ.
  */
 const MEMBER_IDS = sql`(SELECT grouped_user.id FROM "public"."users" AS grouped_user
-  WHERE ${sqlAccountKey(sql`grouped_user.email`)} IN (
-    SELECT ${sqlAccountKey(sql`shared_user.email`)} FROM "public"."users" AS shared_user
+  WHERE ${sqlNormalizedAccountEmail(sql`grouped_user.email`)} IN (
+    SELECT ${sqlNormalizedAccountEmail(sql`shared_user.email`)} FROM "public"."users" AS shared_user
     GROUP BY 1 HAVING pg_catalog.count(*) > 1))`;
 
 export interface AccountEmailEvidenceSnapshotOptions {

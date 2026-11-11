@@ -11,6 +11,7 @@ import {
 } from '@boardsesh/db/schema/auth';
 import type { EvidenceWorksheet } from '../email-audit/evidence';
 import { normalizeAccountEmail } from '../normalize-email';
+import { sqlNormalizedAccountEmail } from '../account-email-sql';
 
 /** Fixed messages only. Neither database messages nor private inputs may escape the CLI. */
 export class EmailResolutionError extends Error {
@@ -217,7 +218,7 @@ export async function buildResolutionPlan(
       const normalizedOwners = await transaction
         .select({ userId: users.id })
         .from(users)
-        .where(sql`lower(btrim(${users.email})) = ${evidence.address}`);
+        .where(sql`${sqlNormalizedAccountEmail(users.email)} = ${evidence.address}`);
       const unexpectedOwner = normalizedOwners.some((row) => !memberIds.includes(row.userId));
       const matchesEvidence =
         current.length === memberIds.length &&
@@ -253,7 +254,7 @@ export async function buildResolutionPlan(
       const candidates = await transaction
         .select({ userId: users.id, email: users.email })
         .from(users)
-        .where(sql`${users.email} <> lower(btrim(${users.email}))`)
+        .where(sql`${users.email} <> ${sqlNormalizedAccountEmail(users.email)}`)
         .limit(100001);
       if (candidates.length > 100000) throw new EmailResolutionError('LIMIT');
       const grouped = new Set(worksheet.groups.flatMap((group) => group.members.map((member) => member.userId)));
@@ -263,7 +264,7 @@ export async function buildResolutionPlan(
         const owners = await transaction
           .select({ userId: users.id })
           .from(users)
-          .where(sql`lower(btrim(${users.email})) = ${address}`)
+          .where(sql`${sqlNormalizedAccountEmail(users.email)} = ${address}`)
           .limit(2);
         const reference = digest(`${options.evidenceSha256}:standalone:${candidate.userId}`);
         const status =
@@ -399,7 +400,7 @@ export async function applyResolutionPlan(database: ResolutionDatabase, plan: Re
       const owners = await transaction
         .select({ userId: users.id })
         .from(users)
-        .where(sql`lower(btrim(${users.email})) = ${group.address}`);
+        .where(sql`${sqlNormalizedAccountEmail(users.email)} = ${group.address}`);
       if (
         current.length !== group.members.length ||
         group.members.some(

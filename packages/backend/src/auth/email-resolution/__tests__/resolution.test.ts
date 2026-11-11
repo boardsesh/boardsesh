@@ -7,6 +7,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
+import { normalizeAccountEmail } from '../../normalize-email';
 import {
   applyResolutionPlan,
   buildResolutionPlan,
@@ -64,6 +65,11 @@ const options = {
   decisionsSha256: digest(JSON.stringify(decisions)),
   targetFingerprint: digest('test-target'),
 };
+// Every ECMAScript trim code point, including line terminators and Unicode spaces.
+const trimWhitespaceCases = [
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
+  0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+].map((codePoint) => ({ label: codePoint.toString(16).padStart(4, '0'), whitespace: String.fromCodePoint(codePoint) }));
 const folder = mkdtempSync(join(tmpdir(), 'ba02-resolution-test-'));
 let admin: ReturnType<typeof postgres>;
 let client: ReturnType<typeof postgres>;
@@ -148,6 +154,69 @@ describe('private resolution workflow', () => {
     const proposed = await plan();
     await client`INSERT INTO users(id,email) VALUES (${randomUUID()}, ${address})`;
     expect(await applyResolutionPlan(drizzle(client), proposed)).toEqual({ applied: 0, skipped: 1, deferred: 0 });
+  });
+
+  it.each(trimWhitespaceCases)('skips a pre-plan collision padded with U+$label', async ({ whitespace }) => {
+    await client`INSERT INTO users(id,email) VALUES (${randomUUID()}, ${whitespace + address + whitespace})`;
+    expect((await plan()).groups[0].status).toBe('skipped');
+    expect((await client`SELECT count(*)::int AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
+  });
+
+  it.each(trimWhitespaceCases)('skips apply-time collision drift padded with U+$label', async ({ whitespace }) => {
+    const proposed = await plan();
+    const newcomerId = randomUUID();
+    const newcomerAddress = whitespace + address + whitespace;
+    await client`INSERT INTO users(id,email) VALUES (${newcomerId}, ${newcomerAddress})`;
+    const before = await client`SELECT id, email FROM users ORDER BY id`;
+    expect(await applyResolutionPlan(drizzle(client), proposed)).toEqual({ applied: 0, skipped: 1, deferred: 0 });
+    expect(
+      (await client`SELECT id, email FROM users ORDER BY id`).every(
+        (row, index) => row.id === before[index].id && row.email === before[index].email,
+      ),
+    ).toBe(true);
+    expect((await client`SELECT count(*)::int AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
+  });
+
+  it('finds and normalizes lowercase standalone rows with every JS trim code point', async () => {
+    const standaloneRows = trimWhitespaceCases.map(({ label, whitespace }) => ({
+      userId: randomUUID(),
+      before: whitespace + `solo-${label}-${address}` + whitespace,
+    }));
+    for (const row of standaloneRows) await client`INSERT INTO users(id,email) VALUES (${row.userId}, ${row.before})`;
+    const proposed = await plan({ ...decisions, groups: [], normalizeStandalone: true });
+    expect(proposed.groups.length).toBe(trimWhitespaceCases.length);
+    expect(
+      proposed.groups.every(
+        (group) =>
+          group.status === 'ready' &&
+          group.members.length === 1 &&
+          group.address === normalizeAccountEmail(group.members[0].before),
+      ),
+    ).toBe(true);
+    expect(await applyResolutionPlan(drizzle(client), proposed)).toEqual({
+      applied: trimWhitespaceCases.length,
+      skipped: 0,
+      deferred: 0,
+    });
+    for (const row of standaloneRows) {
+      const [stored] = await client`SELECT email FROM users WHERE id = ${row.userId}`;
+      expect(stored.email === normalizeAccountEmail(row.before)).toBe(true);
+    }
+  });
+
+  it('skips standalone normalization when a whitespace-padded owner shares its key', async () => {
+    for (const { label, whitespace } of trimWhitespaceCases) {
+      const canonical = `blocked-${label}-${address}`;
+      await client`INSERT INTO users(id,email) VALUES (${randomUUID()}, ${canonical}), (${randomUUID()}, ${whitespace + canonical + whitespace})`;
+    }
+    const proposed = await plan({ ...decisions, groups: [], normalizeStandalone: true });
+    expect(proposed.groups.length).toBe(trimWhitespaceCases.length);
+    expect(proposed.groups.every((group) => group.status === 'skipped')).toBe(true);
+    expect(await applyResolutionPlan(drizzle(client), proposed)).toEqual({
+      applied: 0,
+      skipped: trimWhitespaceCases.length,
+      deferred: 0,
+    });
   });
 
   it('defers live links at plan time and rechecks links at apply time', async () => {
