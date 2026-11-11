@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { useCallback, useMemo, type ComponentProps } from 'react';
 import { Platform, StyleSheet, View, useWindowDimensions, type ColorValue } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Tabs, useSegments } from 'expo-router';
@@ -8,6 +8,11 @@ import { useBluetoothConnectedStatus } from '../../src/lib/ble/bluetooth-status-
 import { useQueueSessionId } from '../../src/providers/queue-provider';
 import { useStickyAccessoryPresence } from '../../src/hooks/use-sticky-accessory-presence';
 import { QueueBottomAccessory } from '../../src/components/queue-control/QueueBottomAccessory';
+import {
+  AccessoryPresentationContext,
+  createAccessoryPresentationStore,
+  type AccessoryPresentationEvent,
+} from '../../src/components/queue-control/accessory-presentation';
 import { MaterialTabBar } from '../../src/components/navigation/MaterialTabBar';
 import { TAB_BADGE_CONNECTED, TAB_BADGE_LIVE } from '../../src/components/navigation/tab-badge';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -78,10 +83,6 @@ const renderHiddenTabBar = () => null;
 // (react-native-screens Screen.js:63,123).
 const JS_TABS_SCREEN_OPTIONS = { headerShown: false, freezeOnBlur: true } as const;
 
-// Hoisted so NativeTabs sees a stable prop object; only the route flips between them.
-const ACCESSORY_SHOWN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: false } } as const;
-const ACCESSORY_HIDDEN_NATIVE_PROPS = { ios: { bottomAccessoryHidden: true } } as const;
-
 /**
  * Bottom tabs. Every iPhone and iPad on the Liquid Glass variant gets the system
  * UIKit tab bar (`expo-router/unstable-native-tabs`), iOS 18 included (HIG, Tab
@@ -137,6 +138,14 @@ export default function TabLayout() {
   // `isAccessoryHostRoute`. Bottom-chrome arbitration mirrors this surface, so the real
   // mount matches the reserved metrics.
   const onAccessoryHostRoute = useAccessoryHostRoute();
+  const accessoryHostMounted = onAccessoryHostRoute && nativeAccessoryActive && hasCurrentClimb;
+  // A native host's late callbacks keep their old store; they cannot resurrect a
+  // root menu belonging to its replacement. Regular and inline trees share one owner.
+  const accessoryPresentation = useMemo(createAccessoryPresentationStore, [accessoryHostMounted]);
+  const handleAccessoryPresentation = useCallback(
+    (event: { nativeEvent: AccessoryPresentationEvent }) => accessoryPresentation.publish(event.nativeEvent),
+    [accessoryPresentation],
+  );
   const hasLiveSession = sessionId !== null;
   const showRecordBadge = isBluetoothConnected || hasLiveSession;
   const eagerMountRecord = Platform.OS === 'android';
@@ -183,10 +192,16 @@ export default function TabLayout() {
   // own inset instead (HoldFilterPicker; the zone footer already does). The iPad
   // "On the Wall" kiosk hides it too: its hero already shows the lit climb. The
   // bottom-chrome metrics mirror this expression so nothing is reserved for it.
-  const accessoryNativeProps =
-    nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar
-      ? ACCESSORY_HIDDEN_NATIVE_PROPS
-      : ACCESSORY_SHOWN_NATIVE_PROPS;
+  const accessoryHidden = nativeAccessoryActive && isAccessoryHiddenRoute(segments) && !verticalTabBar;
+  const accessoryNativeProps = useMemo(
+    () => ({
+      ios: {
+        bottomAccessoryHidden: accessoryHidden,
+        onBottomAccessoryPresentationChange: handleAccessoryPresentation,
+      },
+    }),
+    [accessoryHidden, handleAccessoryPresentation],
+  );
   // The live wall gets a dedicated column in landscape (room for sidebar + browse
   // list + detail pane + wall) and falls back to a strip atop the pane in portrait
   // (see resolveWallSurface). Gated on a bound board so an empty column never sits
@@ -386,9 +401,11 @@ export default function TabLayout() {
       // per-trigger styling instead of letting the new badge inherit it.
       badgeBackgroundColor={hasLiveSession ? brandColors.live : brandColors.success}
     >
-      {onAccessoryHostRoute && nativeAccessoryActive && hasCurrentClimb ? (
+      {accessoryHostMounted ? (
         <NativeTabs.BottomAccessory key="queue-bottom-accessory">
-          <QueueBottomAccessory />
+          <AccessoryPresentationContext.Provider value={accessoryPresentation}>
+            <QueueBottomAccessory />
+          </AccessoryPresentationContext.Provider>
         </NativeTabs.BottomAccessory>
       ) : null}
 
