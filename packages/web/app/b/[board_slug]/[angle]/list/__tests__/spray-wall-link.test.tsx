@@ -263,7 +263,7 @@ describe('the wall share preview', () => {
     const metadata = await generateMetadata(propsWith(WALL_UUID));
 
     expect(imageUrlOf(metadata)).toMatch(
-      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=garage-wall&v=[0-9a-z]+$/,
+      /^https:\/\/ws\.boardsesh\.com\/og\/place\?kind=board&slug=garage-wall&v=[0-9a-f]{12}-[0-9a-z]+$/,
     );
     expect(metadata.openGraph?.title).toBe('spray.wall.metadata.ogTitle');
     expect(metadata.openGraph?.description).toBe('spray.wall.metadata.ogDescription');

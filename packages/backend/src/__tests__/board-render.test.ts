@@ -90,6 +90,7 @@ describe('handleBoardRender', () => {
       cache: 'miss',
       timings: { wasmMs: 4, baseMs: 0, sharpMs: 3, composeMs: 2, encodeMs: 1, bgMs: 0 },
       queueMs: 0,
+      iconMissing: false,
     });
   });
 

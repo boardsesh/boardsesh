@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
 import sharp from 'sharp';
 import {
   OG_FAMILY_GROUND,
+  OG_FAMILY_ICON_GAP,
+  OG_FAMILY_ICON_PATH,
+  OG_FAMILY_ICON_SIZE,
   OG_FAMILY_MUTED,
   OG_FAMILY_WHITE,
   OG_FAMILY_WORDMARK_RIGHT,
@@ -10,7 +17,27 @@ import {
   liftGradeColorForCard,
   ogFamilyGradeColor,
   renderOgFamilyTextLayers,
+  resetOgFamilyIcon,
 } from '../og-family';
+import { renderOgCardText } from '../og-card';
+
+const APP_ICON_PATH = join(dirname(fileURLToPath(import.meta.url)), '../../../../web/app/icon.png');
+
+/** First inked column and the inked rows of a raw RGBA raster. */
+function inkBounds({ data, info }: { data: Buffer; info: { width: number; height: number; channels: number } }) {
+  let left = info.width;
+  let top = info.height;
+  let bottom = -1;
+  for (let row = 0; row < info.height; row++) {
+    for (let column = 0; column < info.width; column++) {
+      if (data[(row * info.width + column) * info.channels + info.channels - 1] <= 8) continue;
+      left = Math.min(left, column);
+      top = Math.min(top, row);
+      bottom = row;
+    }
+  }
+  return { left, top, bottom };
+}
 
 const hero = (text: string) => ({ runs: [{ text, color: OG_FAMILY_WHITE }], maxPt: 60, wrap: true });
 const row = (text: string) => ({ runs: [{ text, color: OG_FAMILY_MUTED }], sizePt: 24, weight: 700 });
@@ -38,22 +65,123 @@ describe('place card text', () => {
     expect(eyebrowLayer.top).toBeLessThan(withEyebrow.hero.top);
   });
 
-  it('leaves the wordmark off only when asked', async () => {
-    const shown = await renderOgFamilyTextLayers({
+  it('draws the app icon left of the wordmark, centred on its letters, on every slot', async () => {
+    for (const slot of ['full', 'narrow', 'none'] as const) {
+      const { layers, brand } = await renderOgFamilyTextLayers({
+        slot,
+        fontFamily: 'Noto Sans',
+        hero: hero('Kaserne'),
+        rows: [],
+      });
+      const [icon, wordmark] = layers.slice(-2);
+      const iconRaster = await sharp(icon.input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const wordmarkRaster = await sharp(wordmark.input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const wordmarkInk = inkBounds(wordmarkRaster);
+
+      expect(iconRaster.info).toMatchObject({ width: OG_FAMILY_ICON_SIZE, height: OG_FAMILY_ICON_SIZE });
+      expect(wordmark.left + wordmarkInk.left - (icon.left + OG_FAMILY_ICON_SIZE)).toBe(OG_FAMILY_ICON_GAP);
+      const iconCentre = icon.top + OG_FAMILY_ICON_SIZE / 2;
+      const lettersCentre = wordmark.top + (wordmarkInk.top + wordmarkInk.bottom + 1) / 2;
+      expect(Math.abs(iconCentre - lettersCentre)).toBeLessThanOrEqual(0.5);
+      expect(brand).toMatchObject({ left: icon.left, width: OG_FAMILY_WORDMARK_RIGHT - icon.left });
+    }
+  });
+
+  it('rounds the icon corners and keeps its middle opaque', async () => {
+    const { layers } = await renderOgFamilyTextLayers({
       slot: 'full',
       fontFamily: 'Noto Sans',
-      hero: hero('Boardsesh'),
+      hero: hero('A'),
       rows: [],
     });
-    const hidden = await renderOgFamilyTextLayers({
-      slot: 'full',
-      fontFamily: 'Noto Sans',
-      hideWordmark: true,
-      hero: hero('Boardsesh'),
-      rows: [],
+    const { data, info } = await sharp(layers.at(-2)!.input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (column: number, row: number) => data[(row * info.width + column) * info.channels + 3];
+
+    for (const [column, row] of [
+      [0, 0],
+      [info.width - 1, 0],
+      [0, info.height - 1],
+      [info.width - 1, info.height - 1],
+    ]) {
+      expect(alphaAt(column, row), `${column},${row}`).toBe(0);
+    }
+    expect(alphaAt(info.width / 2, info.height / 2)).toBe(255);
+    expect(alphaAt(info.width / 2, 0)).toBe(255);
+  });
+
+  describe('when the icon cannot be read', () => {
+    afterEach(() => resetOgFamilyIcon());
+
+    it('keeps every word, draws the wordmark alone and says why the icon is missing', async () => {
+      const content = {
+        slot: 'full' as const,
+        fontFamily: 'Noto Sans',
+        hero: hero('Kaserne'),
+        rows: [row('Kilter 40°')],
+      };
+      const withIcon = await renderOgFamilyTextLayers(content);
+      resetOgFamilyIcon(join(dirname(OG_FAMILY_ICON_PATH), 'no-such-icon.png'));
+
+      const withoutIcon = await renderOgFamilyTextLayers(content);
+
+      expect(withIcon.iconError).toBeNull();
+      expect(withoutIcon.iconError).toEqual(expect.any(String));
+      // Every layer but the icon, in the same place: the words never pay for it.
+      expect(withoutIcon.layers.map(({ left, top }) => ({ left, top }))).toEqual(
+        withIcon.layers
+          .filter((_layer, index) => index !== withIcon.layers.length - 2)
+          .map(({ left, top }) => ({ left, top })),
+      );
+      const wordmark = withoutIcon.layers.at(-1)!;
+      expect(wordmark.left + ((await sharp(wordmark.input).metadata()).width ?? 0)).toBe(OG_FAMILY_WORDMARK_RIGHT);
     });
 
-    expect(hidden.layers).toHaveLength(shown.layers.length - 1);
+    it('keeps the words on a climb card and reports the missing icon to the caller', async () => {
+      resetOgFamilyIcon(join(dirname(OG_FAMILY_ICON_PATH), 'no-such-icon.png'));
+
+      const { layers, iconError } = await renderOgCardText({
+        grade: '7a/V6',
+        name: 'Kiel training 1:4',
+        setter: 'KilterStudio',
+        angle: 40,
+      });
+
+      expect(iconError).toEqual(expect.any(String));
+      // Grade, name, setter, angle line and the wordmark.
+      expect(layers).toHaveLength(5);
+    });
+
+    it('does not remember a failed read: the next card draws the icon once the file is back', async () => {
+      const scratch = await mkdtemp(join(tmpdir(), 'og-icon-'));
+      const laterIconPath = join(scratch, 'og-app-icon.png');
+      resetOgFamilyIcon(laterIconPath);
+      const content = { slot: 'none' as const, fontFamily: 'Noto Sans', hero: hero('Pinnacle'), rows: [] };
+      expect((await renderOgFamilyTextLayers(content)).iconError).not.toBeNull();
+
+      await copyFile(OG_FAMILY_ICON_PATH, laterIconPath);
+      const recovered = await renderOgFamilyTextLayers(content);
+      await rm(scratch, { recursive: true });
+
+      expect(recovered.iconError).toBeNull();
+      expect((await sharp(recovered.layers.at(-2)!.input).metadata()).width).toBe(OG_FAMILY_ICON_SIZE);
+    });
+  });
+
+  it('draws the committed icon, which is the app icon at card size', async () => {
+    const committed = await sharp(OG_FAMILY_ICON_PATH).raw().toBuffer({ resolveWithObject: true });
+    const appIcon = await sharp(APP_ICON_PATH)
+      .resize(OG_FAMILY_ICON_SIZE, OG_FAMILY_ICON_SIZE)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    expect(committed.info).toMatchObject({ width: OG_FAMILY_ICON_SIZE, height: OG_FAMILY_ICON_SIZE });
+    expect(committed.info.channels).toBe(appIcon.info.channels);
+    let largestDifference = 0;
+    for (let index = 0; index < committed.data.length; index++) {
+      largestDifference = Math.max(largestDifference, Math.abs(committed.data[index] - appIcon.data[index]));
+    }
+    // A redrawn app icon fails here: regenerate the committed one from it.
+    expect(largestDifference).toBeLessThanOrEqual(2);
   });
 
   it('does not hang a one-line wrapping hero left of the column on the bar of a T', async () => {
@@ -182,7 +310,8 @@ describe('family text survives real-world names', () => {
     });
 
     expect(Math.abs(heroRect.left + heroRect.width / 2 - 600)).toBeLessThanOrEqual(1);
-    const rowLayer = layers[layers.length - 2];
+    // The row sits under the icon and the wordmark.
+    const rowLayer = layers[layers.length - 3];
     const { width } = await sharp(rowLayer.input).metadata();
     expect(Math.abs(rowLayer.left + (width ?? 0) / 2 - 600)).toBeLessThanOrEqual(1);
   });

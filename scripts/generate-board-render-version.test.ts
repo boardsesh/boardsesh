@@ -102,6 +102,11 @@ describe('OPAQUE_RENDER_INPUTS', () => {
     expect(OPAQUE_RENDER_INPUTS).toContain('packages/shared/board-render/src/background.ts');
   });
 
+  it('hashes the app icon the climb card draws beside the wordmark', () => {
+    expect(OPAQUE_RENDER_INPUTS).toContain('packages/shared/board-render/src/og-family.ts');
+    expect(OPAQUE_RENDER_INPUTS).toContain('packages/shared/board-render/assets/og-app-icon.png');
+  });
+
   it('does not hash inputs the catalogue projection already covers', () => {
     // Adding any of these back would churn the version on comment-and-adjacent-code
     // edits that change no pixels — the whole reason the projection exists.

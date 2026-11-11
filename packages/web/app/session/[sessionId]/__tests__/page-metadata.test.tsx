@@ -99,7 +99,9 @@ describe('session page metadata', () => {
     expect(metadata.openGraph?.description).toBe('17 sends in 49 minutes on Kilter.');
     expect(metadata.twitter?.title).toBe('Zara flashed 17 climbs, hardest 6a/V3');
     const imageUrl = getOpenGraphImageUrl(image);
-    expect(imageUrl).toMatch(/^https:\/\/ws\.boardsesh\.com\/og\/session\?sessionId=session-1&v=[0-9a-z]+$/);
+    expect(imageUrl).toMatch(
+      /^https:\/\/ws\.boardsesh\.com\/og\/session\?sessionId=session-1&v=[0-9a-f]{12}-[0-9a-z]+$/,
+    );
     expect(metadata.twitter?.images).toEqual([imageUrl]);
   });
 

@@ -396,7 +396,18 @@ is measured through Pango, never estimated from character counts. A grade shrink
 fit and is never cut or wrapped; a name wraps and, only below its size floor,
 truncates. A left-aligned stack marks each line left-to-right, so a Hebrew or Arabic
 name stays on the column's edge. The wordmark's right edge is fixed at x 1160 on every
-slot. Family cards are JPEG only: a PNG option cost 397 KB per entry in the byte cache
+slot, with the app icon 10px left of its first letter: a 30px rounded square (corner
+radius 22%), centred on the letters' own height. The icon is
+`packages/shared/board-render/assets/og-app-icon.png`, `packages/web/app/icon.png`
+pre-sized to 30px and committed inside `@boardsesh/board-render`, so the backend image
+gets it with the package source and no card resamples the 512px original. It is
+decoded and rounded once per process. Both it and `og-family.ts` are in
+`OPAQUE_RENDER_INPUTS`, so moving or redrawing it moves every climb card URL. A test
+fails when the app icon changes and the committed copy does not; regenerate it with
+sharp's default `resize(30, 30)`. If the icon cannot be read, every card still draws
+its words and the wordmark alone, warns once, and retries the read on the next card.
+Such a card is never the final drawing: it stays out of the byte caches, and
+`/og/climb` answers it `no-store`. Family cards are JPEG only: a PNG option cost 397 KB per entry in the byte cache
 shared with climb renders. The climb and spray cards are the exception, because
 `/og/climb` has always honoured `format`. Grade colour comes from `FONT_GRADE_COLORS` with one shared lift
 (`liftGradeColorForCard`) so V8 and up clear contrast on dark without changing hue.
@@ -536,14 +547,10 @@ unlisted and community-hidden climbs are out, and is held for 60 s. It deliberat
 skips the GraphQL resolver, whose anonymous catalogue pages stay in Redis for a day
 with no invalidation. No catalogue climb count is ever printed about a place.
 
-**Site default.** `packages/web/app/default-share-card.jpg` is served by
-`opengraph-image.tsx` and `twitter-image.tsx`: a real Kilter board with holds lit in
-the shape of the X. It is decoration, with no climb, name or grade behind it. To
-regenerate it, from the repo root on a machine with Noto Sans:
-
-```
-vp exec tsx packages/backend/src/scripts/render-default-share-card.ts
-```
+**Site default.** `packages/web/app/opengraph-image.tsx` (and `twitter-image.tsx`,
+which re-exports it) draws the logo card with `next/og`: the app icon, the
+`boardsesh` wordmark and "ONE APP FOR YOUR BOARDS" on the dark ground. It is not a
+family card and never goes through the backend.
 
 ### Where www points, and what it says
 
@@ -572,11 +579,13 @@ URL carries a public id or slug and its `v` token only, so `?invite=` and `?wall
 never reach an image URL, and an unlisted wall keeps the default card. A climb
 on a spray wall keeps its own climb card.
 
-The `v` token follows the data the card draws: a hash of the numbers and names on
-it where there is no single timestamp (`buildOgContentVersion`), including the
-playlist's grade band and the setter's send total and top climb. The backend ignores
-it; it is there so a chat app that caches previews by URL asks again once the card
-has changed.
+The `v` token is `BOARD_RENDER_VERSION`, a dash, then a token for the data the card
+draws: a hash of the numbers and names on it where there is no single timestamp
+(`buildOgContentVersion`), including the playlist's grade band and the setter's send
+total and top climb. `buildOgFamilyImageUrl` adds the render half, so a change to the
+drawing moves every family card URL the way it moves every climb card URL. The
+backend ignores it; it is there so a chat app that caches previews by URL asks again
+once the card has changed.
 
 `og:title` and `og:description` are the share copy from the design doc, translated
 in all five locales, and set separately from `<title>` and the meta description so

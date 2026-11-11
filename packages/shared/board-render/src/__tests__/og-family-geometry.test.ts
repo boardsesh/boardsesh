@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 import { getBoardDetailsForBoard } from '../board-details';
 import {
   OG_FAMILY_CROP_LEFT,
@@ -345,5 +346,95 @@ describe('a place card eyebrow', () => {
     expect(rect.left + rect.width).toBeLessThanOrEqual(1176);
     const art = ogFamilyArtBounds(slot);
     if (art) expect(rect.left).toBeGreaterThanOrEqual(art.right);
+  });
+});
+
+describe('the icon and wordmark corner stays clear', () => {
+  type Rect = { left: number; top: number; width: number; height: number };
+  const overlaps = (first: Rect, second: Rect) =>
+    first.left < second.left + second.width &&
+    second.left < first.left + first.width &&
+    first.top < second.top + second.height &&
+    second.top < first.top + first.height;
+  const muted = (text: string) => [{ text, color: OG_FAMILY_MUTED }];
+  const longLine = 'Touchstone · Dungeon Trainer · Full Size Commercial · and then some more words';
+
+  it.each<[string, Parameters<typeof renderOgFamilyTextLayers>[0]]>([
+    [
+      'grade bars under a profile',
+      {
+        slot: 'full',
+        fontFamily: 'Noto Sans',
+        identity: { name: 'A very long display name somebody typed', avatar: null, sizePt: 34 },
+        hero: { runs: heroRuns('7c/V9'), maxPt: 96, wrap: false, tight: true },
+        rows: [
+          { runs: muted('Hardest of 4,612 climbs sent on Kilter, Tension and MoonBoard'), sizePt: 18, weight: 500 },
+        ],
+        bars: Array.from({ length: 24 }, (_unused, index) => ({ color: '#FFD400', value: index })),
+      },
+    ],
+    [
+      'recap dots and a tall aside',
+      {
+        slot: 'narrow',
+        fontFamily: 'Noto Sans',
+        identity: { name: 'Sam', avatar: { kind: 'monogram', letter: 'S', color: '#FFD400' }, sizePt: 30 },
+        hero: { runs: heroRuns('6a/V3'), maxPt: 170, wrap: false, tight: true },
+        rows: [{ runs: heroRuns('212 sends, 117 flashed'), sizePt: 34, weight: 800 }],
+        dots: { dots: Array.from({ length: 60 }, () => ({ color: '#FFD400', filled: true })), total: 212 },
+        aside: {
+          eyebrow: 'HARDEST SEND',
+          title: 'A really very long climb name somebody typed on their phone at the crag',
+          lines: [longLine, longLine, longLine, longLine],
+        },
+      },
+    ],
+    [
+      'rows that fill the column to its floor',
+      {
+        slot: 'full',
+        fontFamily: 'Noto Sans',
+        hero: { runs: heroRuns('1.1M'), maxPt: 96, wrap: false, tight: true },
+        rows: Array.from({ length: 30 }, () => ({ runs: muted(longLine), sizePt: 24, weight: 500, maxLines: 3 })),
+      },
+    ],
+    [
+      'a centred card with no art',
+      {
+        slot: 'none',
+        fontFamily: 'Noto Sans',
+        eyebrow: { runs: muted('No boards yet'), sizePt: 26, weight: 700 },
+        hero: {
+          runs: heroRuns('Bergfreunde Kletterzentrum Hamburg Süd und die lange Halle'),
+          maxPt: 66,
+          minPt: 28,
+          wrap: true,
+        },
+        rows: Array.from({ length: 6 }, () => ({ runs: muted(longLine), sizePt: 24, weight: 500, maxLines: 2 })),
+      },
+    ],
+    [
+      'a right-to-left stack',
+      {
+        slot: 'full',
+        fontFamily: 'Noto Sans',
+        eyebrow: { runs: muted('Kilter 40°'), sizePt: 26, weight: 700 },
+        hero: { runs: heroRuns('מרכז טיפוס הר הכרמל והעמק הגדול'), maxPt: 66, minPt: 28, wrap: true },
+        rows: [{ runs: muted('صالة تسلق الجبل الكبيرة جداً'), sizePt: 24, weight: 500, maxLines: 3 }],
+      },
+    ],
+  ])('with %s', async (_label, content) => {
+    const { layers, blocks, hero, brand } = await renderOgFamilyTextLayers(content);
+
+    const others: Rect[] = [hero, ...Object.values(blocks)];
+    for (const layer of layers.slice(0, -2)) {
+      const { width, height } = await sharp(layer.input).metadata();
+      others.push({ left: layer.left, top: layer.top, width, height });
+    }
+    for (const rect of others) expect(overlaps(rect, brand), JSON.stringify(rect)).toBe(false);
+    const art = ogFamilyArtBounds(content.slot);
+    if (art) expect(brand.left).toBeGreaterThanOrEqual(art.right);
+    expect(brand.left + brand.width).toBeLessThanOrEqual(1200);
+    expect(brand.top + brand.height).toBeLessThanOrEqual(OG_IMAGE_HEIGHT);
   });
 });

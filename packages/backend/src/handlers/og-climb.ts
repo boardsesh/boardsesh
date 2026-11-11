@@ -171,7 +171,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
 
   try {
     const totalT0 = performance.now();
-    const { buffer, contentType, cache, timings } = await renderOgClimb({
+    const { buffer, contentType, cache, timings, iconMissing } = await renderOgClimb({
       boardName: query.board_name,
       layoutId: query.layout_id,
       sizeId: query.size_id,
@@ -223,6 +223,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     });
     res.writeHead(200, {
       ...ogImageHeaders,
+      ...(iconMissing ? UNCACHEABLE_CARD_HEADERS : {}),
       'Content-Length': buffer.length,
       'X-Content-Type-Options': 'nosniff',
     });
@@ -258,6 +259,13 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     sendJson(res, 500, { error: 'Render failed' });
   }
 }
+
+/**
+ * A card drawn without its app icon (the icon file could not be read) still has
+ * its words, but it is not the final drawing, so neither the edge nor a chat app
+ * may keep it. The next request retries the read.
+ */
+const UNCACHEABLE_CARD_HEADERS = { 'Cache-Control': 'no-store', 'CDN-Cache-Control': 'no-store' } as const;
 
 // Resolved once. The deps close over the drizzle client and the media bucket,
 // neither of which changes for the life of the process.
@@ -332,6 +340,7 @@ async function serveSprayOgCard(res: ServerResponse, params: Parameters<typeof r
   });
   res.writeHead(200, {
     ...ogImageHeaders,
+    ...(result.iconMissing ? UNCACHEABLE_CARD_HEADERS : {}),
     'Content-Length': result.buffer.length,
     'X-Content-Type-Options': 'nosniff',
   });

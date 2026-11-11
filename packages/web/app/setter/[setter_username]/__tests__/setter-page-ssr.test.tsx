@@ -467,7 +467,9 @@ describe('the setter front door, as a crawler reads its head', () => {
 
     const first = await metadataFor();
     const [firstImage] = (first.openGraph?.images ?? []) as Array<{ url: string }>;
-    expect(firstImage.url).toMatch(/^https:\/\/ws\.boardsesh\.com\/og\/setter\?username=marco&v=[0-9a-z]+$/);
+    expect(firstImage.url).toMatch(
+      /^https:\/\/ws\.boardsesh\.com\/og\/setter\?username=marco&v=[0-9a-f]{12}-[0-9a-z]+$/,
+    );
 
     // A new most-sent climb is a new card, so it must be a new URL: the old
     // token was a constant and a setter card could stay stale forever.

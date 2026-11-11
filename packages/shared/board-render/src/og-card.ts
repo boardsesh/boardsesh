@@ -147,8 +147,19 @@ export function buildOgClimbCardContent(content: OgCardContent): OgFamilyCardCon
  * the caller decides whether a card may go out without words.
  */
 export async function renderOgCardLayers(content: OgCardContent): Promise<TextLayer[]> {
+  return (await renderOgCardText(content)).layers;
+}
+
+/**
+ * `renderOgCardLayers`, plus why the app icon is missing when it is. A card drawn
+ * without its icon is not the final drawing, so the caller must not cache it
+ * under the real key.
+ */
+export async function renderOgCardText(
+  content: OgCardContent,
+): Promise<{ layers: TextLayer[]; iconError: string | null }> {
   const familyContent = buildOgClimbCardContent(content);
-  if (!familyContent) return [];
-  const { layers } = await renderOgFamilyTextLayers(familyContent);
-  return layers;
+  if (!familyContent) return { layers: [], iconError: null };
+  const { layers, iconError } = await renderOgFamilyTextLayers(familyContent);
+  return { layers, iconError };
 }

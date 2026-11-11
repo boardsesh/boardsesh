@@ -10,13 +10,13 @@ import {
 } from '@boardsesh/board-render';
 import { renderFrostedBokehBuffer } from '@boardsesh/board-render/frosted-bokeh';
 import { OG_CARD_BOARD_LINE_SEPARATOR } from '@boardsesh/board-render/og-board-line';
-import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
+import { renderOgCardText, type OgCardContent } from '@boardsesh/board-render/og-card';
 import { composeOgFamilyCard, renderOgFamilyPhotoLayers } from '@boardsesh/board-render/og-family';
 import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants';
 import { IDENTITY_HOMOGRAPHY, invert, mapPoint, mapRadius, type Homography } from '@boardsesh/spray-wall-geometry';
 import { sprayWallVersions, sprayWalls, userBoards } from '@boardsesh/db/schema';
 import { aliveHolds } from '@boardsesh/db/queries';
-import { runOnRenderSemaphore } from './board-render';
+import { noteOgIconState, runOnRenderSemaphore } from './board-render';
 import { db } from '../db/client';
 import { getPublicUrl, isS3Configured } from '../storage/s3';
 import { logger } from '../utils/logger';
@@ -119,7 +119,14 @@ export class SprayPhotoUnavailableError extends Error {
 }
 
 export type SprayOgCardResult =
-  | { kind: 'card'; buffer: Buffer; contentType: string; timings: { photoMs: number; composeMs: number } }
+  | {
+      kind: 'card';
+      buffer: Buffer;
+      contentType: string;
+      timings: { photoMs: number; composeMs: number };
+      /** Drawn without the app icon: not cached here, and the response must not be cacheable. */
+      iconMissing: boolean;
+    }
   | { kind: 'not-found' };
 
 /**
@@ -306,15 +313,20 @@ function formatPolygonPoints(points: readonly number[]): string {
  * The card's words, or none. A Pango failure costs the words, not the card, the
  * same trade `/og/climb`'s catalogue path makes.
  */
-async function renderSprayCardText(layoutId: number, text: SprayCardText): Promise<sharp.OverlayOptions[]> {
+async function renderSprayCardText(
+  layoutId: number,
+  text: SprayCardText,
+): Promise<{ layers: sharp.OverlayOptions[]; iconMissing: boolean }> {
   try {
-    return await renderOgCardLayers(text);
+    const { layers, iconError } = await renderOgCardText(text);
+    noteOgIconState(iconError, 'spray');
+    return { layers, iconMissing: iconError !== null };
   } catch (error) {
     logger.warn('[spray-og] card text failed to render; serving the wall alone', {
       layoutId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return [];
+    return { layers: [], iconMissing: false };
   }
 }
 
@@ -383,6 +395,7 @@ export async function renderSprayOgCard(
       buffer: cached.buffer,
       contentType: cached.contentType,
       timings: { photoMs: 0, composeMs: 0 },
+      iconMissing: false,
     };
   }
 
@@ -482,17 +495,19 @@ export async function renderSprayOgCard(
       points: marks.map((mark) => ({ x: mark.centerX, y: mark.centerY, color: mark.color })),
       source: { w: placedWidth, h: placedHeight },
     });
+    const cardText = await renderSprayCardText(layoutId, text);
     const { buffer, contentType } = await composeOgFamilyCard({
       background,
       slot: 'full',
       art,
-      textLayers: await renderSprayCardText(layoutId, text),
+      textLayers: cardText.layers,
       format,
     });
     const composeMs = performance.now() - composeT0;
 
-    cardCache.set(cacheKey, { buffer, contentType });
-    return { kind: 'card', buffer, contentType, timings: { photoMs, composeMs } };
+    // Without its icon the card answers this request only; the next one retries.
+    if (!cardText.iconMissing) cardCache.set(cacheKey, { buffer, contentType });
+    return { kind: 'card', buffer, contentType, timings: { photoMs, composeMs }, iconMissing: cardText.iconMissing };
   });
 }
 

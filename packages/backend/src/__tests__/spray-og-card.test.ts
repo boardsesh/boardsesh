@@ -19,6 +19,7 @@ const { renderGuard, FakeRenderQueueSaturatedError } = vi.hoisted(() => {
 
 vi.mock('../services/board-render', () => ({
   RenderQueueSaturatedError: FakeRenderQueueSaturatedError,
+  noteOgIconState: vi.fn(),
   runOnRenderSemaphore: <T>(fn: () => Promise<T>): Promise<T> => {
     renderGuard.calls += 1;
     // Synchronous throw, exactly like the real one: the saturation check and
@@ -28,6 +29,7 @@ vi.mock('../services/board-render', () => ({
   },
 }));
 
+import { OG_FAMILY_ICON_PATH, resetOgFamilyIcon } from '@boardsesh/board-render/og-family';
 import {
   buildSprayOverlayMarks,
   buildSprayOverlaySvg,
@@ -249,6 +251,36 @@ describe('renderSprayOgCard — the visibility gate', () => {
     expect(first.kind).toBe('card');
     expect(second.kind).toBe('card');
     expect(deps.fetchPhotoBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it('never caches a wall card drawn without its app icon', async () => {
+    const photo = await makePhotoJpeg();
+    const deps = makeDeps({}, photo);
+    const frames = uniqueFrames('p501r1');
+    const params = {
+      layoutId: publicWall.layoutId,
+      frames,
+      format: 'jpeg' as const,
+      card: { name: 'Crimp city', grade: '6c/V5', setter: 'Marco', angle: 40, fontFamily: 'Noto Sans' },
+    };
+    resetOgFamilyIcon(`${OG_FAMILY_ICON_PATH}.missing`);
+    try {
+      const first = await renderSprayOgCard(params, deps);
+      const second = await renderSprayOgCard(params, deps);
+
+      expect(first).toMatchObject({ kind: 'card', iconMissing: true });
+      expect(second).toMatchObject({ kind: 'card', iconMissing: true });
+      // Each request drew its own card: nothing iconless was kept.
+      expect(deps.fetchPhotoBytes).toHaveBeenCalledTimes(2);
+    } finally {
+      resetOgFamilyIcon();
+    }
+
+    const recovered = await renderSprayOgCard(params, deps);
+    const cached = await renderSprayOgCard(params, deps);
+    expect(recovered).toMatchObject({ kind: 'card', iconMissing: false });
+    expect(cached).toMatchObject({ kind: 'card', iconMissing: false });
+    expect(deps.fetchPhotoBytes).toHaveBeenCalledTimes(3);
   });
 
   it('does not serve one version’s bytes under another’s key', async () => {

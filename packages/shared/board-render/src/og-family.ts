@@ -1,3 +1,5 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { FONT_GRADE_COLORS } from '@boardsesh/board-constants/grade-colors';
 import { createOgFrameBuffer } from './background';
@@ -89,10 +91,77 @@ const COLUMN_RIGHT = OG_IMAGE_WIDTH - 24;
 /**
  * Where the wordmark sits on every family card, whichever slot it uses: its right
  * edge is fixed at the bottom right, the one spot that clears the text on the
- * left-aligned column, the wide narrow-slot hero and the centred no-art card.
+ * left-aligned column, the wide narrow-slot hero and the centred no-art card. The
+ * app icon sits left of it, so the pair grows leftward from that fixed edge.
  */
 export const OG_FAMILY_WORDMARK_RIGHT = 1160;
 export const OG_FAMILY_WORDMARK_TOP = 574;
+
+/**
+ * The app icon beside the wordmark: a rounded square this many pixels wide, this
+ * far left of the wordmark's first letter, centred on the letters' own height.
+ */
+export const OG_FAMILY_ICON_SIZE = 30;
+export const OG_FAMILY_ICON_GAP = 10;
+const ICON_CORNER_RADIUS = OG_FAMILY_ICON_SIZE * 0.22;
+
+/**
+ * `packages/web/app/icon.png` resized to `OG_FAMILY_ICON_SIZE` and committed beside
+ * this package, so the backend image carries it with the package source and no
+ * card resamples a 512px icon. It is in `OPAQUE_RENDER_INPUTS`: the climb card
+ * draws it. Resolved from this file rather than the working directory so tests,
+ * scripts and the container all find the same file.
+ */
+export const OG_FAMILY_ICON_PATH = join(dirname(fileURLToPath(import.meta.url)), '../assets/og-app-icon.png');
+
+let iconSourcePath = OG_FAMILY_ICON_PATH;
+let roundedIcon: Promise<Buffer> | undefined;
+
+/**
+ * Test seam: drop the decoded icon and read it from `iconPath` next time, so a
+ * test can make the read fail and then put the real file back.
+ */
+export function resetOgFamilyIcon(iconPath: string = OG_FAMILY_ICON_PATH): void {
+  iconSourcePath = iconPath;
+  roundedIcon = undefined;
+}
+
+/** The icon with its corners cut, decoded once per process. A failed read is not remembered. */
+function getRoundedIcon(): Promise<Buffer> {
+  const size = OG_FAMILY_ICON_SIZE;
+  const mask = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${ICON_CORNER_RADIUS}" fill="#fff"/></svg>`,
+  );
+  roundedIcon ??= sharp(iconSourcePath)
+    .resize(size, size)
+    .ensureAlpha()
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer()
+    .catch((error: unknown) => {
+      roundedIcon = undefined;
+      throw error;
+    });
+  return roundedIcon;
+}
+
+/** Rows of a raster that carry ink, and its first inked column. */
+async function measureInk(raster: Buffer): Promise<{ left: number; top: number; bottom: number }> {
+  const { data, info } = await sharp(raster).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  let left = width;
+  let top = height;
+  let bottom = -1;
+  for (let row = 0; row < height; row++) {
+    for (let column = 0; column < width; column++) {
+      if (data[(row * width + column) * channels + (channels - 1)] <= 8) continue;
+      left = Math.min(left, column);
+      top = Math.min(top, row);
+      bottom = row;
+    }
+  }
+  return bottom < 0 ? { left: 0, top: 0, bottom: height - 1 } : { left, top, bottom };
+}
 
 const BOARD_TOP_INSET = OG_CARD_BOARD_BOX.top;
 const ART_HEIGHT = OG_CARD_BOARD_BOX.height;
@@ -372,8 +441,6 @@ export type OgFamilyCardContent = {
   dots?: OgFamilyDots;
   bars?: readonly OgFamilyBar[];
   aside?: OgFamilyAside;
-  /** Leave the corner mark off. Only for a card whose hero already says the name. */
-  hideWordmark?: boolean;
   /** Colour for the frosted ground of a card with no art and so no lit holds to take it from. */
   fieldGlow?: { points: { x: number; y: number; color: string }[]; source: { w: number; h: number } };
 };
@@ -666,6 +733,9 @@ export type OgFamilyBlockRects = {
   aside?: { left: number; top: number; width: number; height: number };
 };
 
+/** The icon and wordmark together, for the geometry tests: nothing else may touch it. */
+export type OgFamilyBrandRect = { left: number; top: number; width: number; height: number };
+
 /**
  * Lay out the family's text stack for one card and return its composite layers.
  *
@@ -673,10 +743,15 @@ export type OgFamilyBlockRects = {
  * supporting rows use the rest of the column. A row that would run past the
  * floor is dropped rather than overlapped.
  */
-export async function renderOgFamilyTextLayers(
-  content: OgFamilyCardContent,
-): Promise<{ layers: TextLayer[]; hero: OgFamilyHeroRect; blocks: OgFamilyBlockRects }> {
-  const { slot, fontFamily, identity, pill, eyebrow, hero, rows, dots, bars, aside, hideWordmark } = content;
+export async function renderOgFamilyTextLayers(content: OgFamilyCardContent): Promise<{
+  layers: TextLayer[];
+  hero: OgFamilyHeroRect;
+  blocks: OgFamilyBlockRects;
+  brand: OgFamilyBrandRect;
+  /** Why the app icon is missing from `layers`, or null when it was drawn. */
+  iconError: string | null;
+}> {
+  const { slot, fontFamily, identity, pill, eyebrow, hero, rows, dots, bars, aside } = content;
   const bounds = ogFamilyHeroBounds(slot);
   const heroWidth = bounds.right - bounds.left;
   const columnWidth = COLUMN_RIGHT - bounds.left;
@@ -878,17 +953,29 @@ export async function renderOgFamilyTextLayers(
     };
   }
 
-  if (!hideWordmark) {
-    const wordmark = await renderRaster(
-      `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
-      { fontFamily },
-    );
-    layers.push({
-      input: wordmark.buffer,
-      left: OG_FAMILY_WORDMARK_RIGHT - wordmark.width,
-      top: OG_FAMILY_WORDMARK_TOP,
-    });
-  }
+  // The icon goes in before the wordmark, so the wordmark stays the last layer.
+  const wordmark = await renderRaster(
+    `<span size="16pt" weight="700" letter_spacing="1800" foreground="${WORDMARK_COLOR}">BOARDSESH</span>`,
+    { fontFamily },
+  );
+  const wordmarkLeft = OG_FAMILY_WORDMARK_RIGHT - wordmark.width;
+  // A missing or unreadable icon never costs the words: the wordmark is drawn on
+  // its own and `iconError` tells the caller the card is not the final drawing,
+  // so it must not be cached under the real key. The next card retries the read.
+  const [{ icon, iconError }, wordmarkInk] = await Promise.all([
+    getRoundedIcon().then(
+      (buffer) => ({ icon: buffer, iconError: null }),
+      (error: unknown) => ({ icon: null, iconError: error instanceof Error ? error.message : String(error) }),
+    ),
+    measureInk(wordmark.buffer),
+  ]);
+  const iconLeft = wordmarkLeft + wordmarkInk.left - OG_FAMILY_ICON_GAP - OG_FAMILY_ICON_SIZE;
+  const iconTop =
+    OG_FAMILY_WORDMARK_TOP + Math.round((wordmarkInk.top + wordmarkInk.bottom + 1 - OG_FAMILY_ICON_SIZE) / 2);
+  if (icon) layers.push({ input: icon, left: iconLeft, top: iconTop });
+  layers.push({ input: wordmark.buffer, left: wordmarkLeft, top: OG_FAMILY_WORDMARK_TOP });
+  const brandTop = Math.min(iconTop, OG_FAMILY_WORDMARK_TOP);
+  const brandBottom = Math.max(iconTop + OG_FAMILY_ICON_SIZE, OG_FAMILY_WORDMARK_TOP + wordmark.height);
 
   return {
     layers: layers.filter((layer) => layer.top >= 0 && layer.top < OG_IMAGE_HEIGHT),
@@ -900,6 +987,13 @@ export async function renderOgFamilyTextLayers(
       pt: heroRaster.pt,
     },
     blocks,
+    iconError,
+    brand: {
+      left: iconLeft,
+      top: brandTop,
+      width: OG_FAMILY_WORDMARK_RIGHT - iconLeft,
+      height: brandBottom - brandTop,
+    },
   };
 }
 

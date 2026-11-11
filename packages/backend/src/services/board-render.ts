@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { getWallLightness, loadBoardArtGeometry } from '@boardsesh/board-art-geometry';
 import { BOARD_FIELD_COLORS } from '@boardsesh/board-look';
-import { renderOgCardLayers, type OgCardContent } from '@boardsesh/board-render/og-card';
+import { renderOgCardText, type OgCardContent } from '@boardsesh/board-render/og-card';
 import {
   composeOgFamilyCard,
   ogFamilyBoardBox,
@@ -243,6 +243,12 @@ export type BoardImageRenderResult = {
   cache: 'hit' | 'base-hit' | 'miss' | 'none';
   timings: RenderTimings & { wasmMs: number; baseMs: number };
   queueMs: number;
+  /**
+   * The card was drawn without its app icon because the icon could not be read.
+   * Not the final drawing: it is not in the byte cache, and the response must not
+   * be cacheable either.
+   */
+  iconMissing: boolean;
 };
 
 export type OgClimbRenderParams = Pick<
@@ -267,6 +273,8 @@ export type OgClimbRenderResult = {
   contentType: string;
   cache: 'hit' | 'base-hit' | 'miss';
   timings: { wasmMs: number; baseMs: number; encodeMs: number; composeMs?: number };
+  /** See `BoardImageRenderResult.iconMissing`. */
+  iconMissing: boolean;
 };
 
 function isOgClimbRenderResult(
@@ -439,6 +447,7 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
       cache: 'hit',
       timings: { wasmMs: 0, baseMs: 0, sharpMs: 0, composeMs: 0, encodeMs: 0, bgMs: 0 },
       queueMs: 0,
+      iconMissing: false,
     };
   }
 
@@ -468,10 +477,10 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
       // identity column existed this endpoint had no text path at all, so a
       // Pango failure — a font missing on a non-Alpine host, a pathological
       // string — must cost the words, not the card.
-      const cardLayers = params.isOgVariant && params.card ? await renderOgCardLayersOrNone(params.card) : undefined;
+      const cardText = params.isOgVariant && params.card ? await renderOgCardLayersOrNone(params.card) : undefined;
       const rendered = await renderBoardImageBuffer({
         overlayBuffer,
-        cardLayers,
+        cardLayers: cardText?.layers,
         ogBokeh: params.isOgVariant ? getOgBokehInput(prepared.config) : undefined,
         width: overlay.width,
         height: overlay.height,
@@ -492,8 +501,11 @@ export async function renderBoardImage(params: BoardImageRenderParams): Promise<
         cache,
         timings: { ...rendered.timings, wasmMs, baseMs: rendered.timings.bgMs },
         queueMs,
+        iconMissing: cardText?.iconMissing ?? false,
       };
-      byteCache.set(cacheKey, { buffer: result.buffer, contentType: result.contentType });
+      // A card drawn without its icon answers this request only; the next one
+      // retries the read and caches the real drawing.
+      if (!result.iconMissing) byteCache.set(cacheKey, { buffer: result.buffer, contentType: result.contentType });
       return result;
     })
     .finally(() => {
@@ -567,6 +579,8 @@ export type OgFamilyRenderResult = {
   contentType: string;
   cache: 'hit' | 'plane-hit' | 'miss' | 'none';
   timings: { wasmMs: number; planeMs: number; composeMs: number };
+  /** The card was drawn without its app icon, and so was not cached. */
+  iconMissing: boolean;
 };
 
 /**
@@ -676,7 +690,7 @@ async function renderOgFamilyArtLayers(
 export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<OgFamilyRenderResult> {
   const cached = byteCache.get(params.cacheKey);
   if (cached) {
-    return { ...cached, cache: 'hit', timings: { wasmMs: 0, planeMs: 0, composeMs: 0 } };
+    return { ...cached, cache: 'hit', timings: { wasmMs: 0, planeMs: 0, composeMs: 0 }, iconMissing: false };
   }
   const alreadyRendering = ogFamilyInFlight.get(params.cacheKey);
   if (alreadyRendering) return alreadyRendering;
@@ -704,13 +718,16 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
     const composeT0 = performance.now();
     // A family card is mostly its words, so a Pango failure rejects here rather
     // than serving and caching a wordless card under this card's real key.
-    const { layers: textLayers } = await renderOgFamilyTextLayers(content);
+    const { layers: textLayers, iconError } = await renderOgFamilyTextLayers(content);
+    noteOgIconState(iconError, 'family');
     const background = await renderFrostedBokehBuffer(bokeh);
     const encoded = await composeOgFamilyCard({ background, slot: content.slot, art: artLayers, textLayers });
     const composeMs = performance.now() - composeT0;
 
-    byteCache.set(params.cacheKey, encoded);
-    return { ...encoded, cache, timings: { wasmMs, planeMs, composeMs } };
+    // Without its icon the card answers this request only and is never cached.
+    const iconMissing = iconError !== null;
+    if (!iconMissing) byteCache.set(params.cacheKey, encoded);
+    return { ...encoded, cache, timings: { wasmMs, planeMs, composeMs }, iconMissing };
   }).finally(() => {
     ogFamilyInFlight.delete(params.cacheKey);
   });
@@ -718,9 +735,32 @@ export async function renderOgFamilyArt(params: OgFamilyRenderParams): Promise<O
   return renderPromise;
 }
 
-async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.OverlayOptions[] | undefined> {
+let iconWarningLogged = false;
+
+/**
+ * Warn the first time a card goes out without its app icon, then stay quiet
+ * until one is drawn with it again. Every card retries the read meanwhile.
+ */
+export function noteOgIconState(iconError: string | null, surface: string): void {
+  if (iconError === null) {
+    iconWarningLogged = false;
+    return;
+  }
+  if (iconWarningLogged) return;
+  iconWarningLogged = true;
+  logger.warn('[BoardRender] App icon unreadable; drawing cards without it and caching none of them', {
+    surface,
+    error: iconError,
+  });
+}
+
+async function renderOgCardLayersOrNone(
+  card: OgCardContent,
+): Promise<{ layers: sharp.OverlayOptions[] | undefined; iconMissing: boolean }> {
   try {
-    return await renderOgCardLayers(card);
+    const { layers, iconError } = await renderOgCardText(card);
+    noteOgIconState(iconError, 'climb');
+    return { layers, iconMissing: iconError !== null };
   } catch (error) {
     logger.warn('[BoardRender] Card text failed to render; serving the board alone', {
       error: error instanceof Error ? error.message : String(error),
@@ -732,7 +772,7 @@ async function renderOgCardLayersOrNone(card: OgCardContent): Promise<sharp.Over
       angle: card.angle,
       fontFamily: card.fontFamily,
     });
-    return undefined;
+    return { layers: undefined, iconMissing: false };
   }
 }
 
@@ -836,6 +876,7 @@ export function resetBoardRenderCaches(): void {
   ogBaseInFlight.clear();
   ogFamilyInFlight.clear();
   inFlightRenders.clear();
+  iconWarningLogged = false;
 }
 
 /** Resolve after the current boot warm-up, if one exists. */

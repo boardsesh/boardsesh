@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 
 const profilePageTestState = vi.hoisted(() => ({
   notFoundMock: vi.fn(),
@@ -154,7 +155,7 @@ describe('profile page route', () => {
     expect(metadata.openGraph?.description).toBe(
       'Swooped is the hardest of 212 climbs sent on Kilter and Tension. See the logbook.',
     );
-    expect(image.url).toBe('https://ws.boardsesh.com/og/profile?user_id=user-1&v=v1');
+    expect(image.url).toBe(`https://ws.boardsesh.com/og/profile?user_id=user-1&v=${BOARD_RENDER_VERSION}-v1`);
   });
 
   it('calls an unnamed climber by the page fallback, never Crusher', async () => {
