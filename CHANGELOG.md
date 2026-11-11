@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-11
 
+### App update
+
+A new version shipped to the App Store and Play Store.
+
 ### New
 
 - Holes and LEDs follow your finger while you set up your Spraywall's lights. ([#7377](https://github.com/boardsesh/boardsesh/pull/7377))
