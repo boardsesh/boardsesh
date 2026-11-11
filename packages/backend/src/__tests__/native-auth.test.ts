@@ -1152,7 +1152,7 @@ describe('handleNativeAuthRevoke', () => {
           Promise.resolve([{ userId: 'user-rollback', expiresAt: new Date(Date.now() + 86400000) }]).then(resolve),
       };
       const transaction = {
-        execute: async () => [],
+        execute: async () => [{ transaction_isolation: 'read committed' }],
         delete: () => ({ where: async () => [] }),
         select: () => selection,
         insert: () => ({

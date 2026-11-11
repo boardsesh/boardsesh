@@ -1,3 +1,5 @@
+import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from '@boardsesh/db/schema';
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -176,6 +178,37 @@ describe('native-only revocation evidence and lock order', () => {
     expect(cutoff.generation).toBe(1);
     expect(cutoff.nativeGeneration).toBe(1);
     expect(cutoff.revokedThrough.getTime()).toBe(accountCutoff.getTime());
+  });
+  it('refuses a repeatable-read connection before any native cutoff or event write', async () => {
+    const subject = await fixture();
+    const address = new URL(
+      process.env.AUTH_PROTOTYPE_DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:5433/postgres',
+    );
+    address.pathname = `/${environment.client.options.database}`;
+    const isolatedClient = postgres(address.toString(), {
+      max: 1,
+      connection: { default_transaction_isolation: 'repeatable read' },
+    });
+    try {
+      const isolatedDatabase = drizzle(isolatedClient, { schema });
+      await expect(revokeNativeCredentials(isolatedDatabase, subject.tokenHash)).rejects.toMatchObject({
+        code: 'UNSUPPORTED_ISOLATION',
+      });
+      expect(
+        await environment.database
+          .select()
+          .from(authSubjectCutoffs)
+          .where(eq(authSubjectCutoffs.userId, subject.userId)),
+      ).toHaveLength(0);
+      expect(
+        await environment.database
+          .select()
+          .from(authSecurityMutationEvents)
+          .where(eq(authSecurityMutationEvents.userId, subject.userId)),
+      ).toHaveLength(0);
+    } finally {
+      await isolatedClient.end({ timeout: 5 });
+    }
   });
   it('waits for a reset user lock before taking any refresh-row lock', async () => {
     const subject = await fixture();

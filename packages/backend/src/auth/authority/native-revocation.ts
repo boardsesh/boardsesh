@@ -13,6 +13,7 @@ import { notificationDevices } from '@boardsesh/db/schema/app';
 import type { AuthorityDatabase } from './adapter';
 import { AuthSubjectDeniedError } from '../human-admission';
 import { decideCredential } from '../credential-cutoffs';
+import { requireReadCommitted } from '../current-store/foundation-context';
 import { transactionSettings } from '../current-store/command-context';
 
 /** One native-only revocation: gate → user → cutoff → refresh → devices. */
@@ -26,6 +27,7 @@ export async function revokeNativeCredentials(database: AuthorityDatabase, token
   if (!candidate) return false;
   const matchedToken = await database.transaction(async (transaction) => {
     await transactionSettings(transaction);
+    await requireReadCommitted(transaction);
     await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
     const [subject] = await transaction
       .select({ id: users.id })
