@@ -64,6 +64,8 @@ const NAMED_TABLES = [
 const NAMED_TABLE_ARRAY = sql`ARRAY[${sql.join(NAMED_TABLES.map(constantLiteral), sql`, `)}]::text[]`;
 const FIXED_SYSTEM_ID_LIST = sql`(${sql.join(FIXED_SYSTEM_ACCOUNT_IDS.map(constantLiteral), sql`, `)})`;
 
+export { sqlNormalizedAccountEmail as sqlAccountKey } from '../account-email-sql';
+
 /**
  * Every user whose address another user shares, derived inside the statement
  * that uses it. It carries no data, so the statement text and parameters say
@@ -93,11 +95,27 @@ function requireSafeCount(total: unknown): number {
   return parsed;
 }
 
-/** Collects every fact the worksheet needs from one read-only snapshot. */
+export type EvidenceTransaction = Parameters<Parameters<ReturnType<typeof drizzle>['transaction']>[0]>[0];
+
+/** Existing callers keep the evidence-only contract. */
 export async function collectAccountEmailEvidence(
   client: postgres.Sql,
   options: AccountEmailEvidenceSnapshotOptions,
 ): Promise<CollectedEvidence> {
+  const { evidence } = await collectAccountEmailEvidenceWith(client, options, async () => undefined);
+  return evidence;
+}
+
+/** Companion reads share the evidence snapshot and its guards, before COMMIT. */
+export async function collectAccountEmailEvidenceWith<Extra>(
+  client: postgres.Sql,
+  options: AccountEmailEvidenceSnapshotOptions,
+  collectExtra: (
+    transaction: EvidenceTransaction,
+    evidence: CollectedEvidence,
+    checkTime: () => void,
+  ) => Promise<Extra>,
+): Promise<{ evidence: CollectedEvidence; extra: Extra }> {
   const limits = ACCOUNT_EMAIL_EVIDENCE_LIMITS;
   const maximumMs = options.maximumMs ?? limits.maximumMs;
   if (!Number.isSafeInteger(maximumMs) || maximumMs < 1 || maximumMs > limits.maximumMs)
@@ -464,7 +482,7 @@ export async function collectAccountEmailEvidence(
         const [final] = await transaction.select({ total: count() }).from(sql`"public".${users}`);
         if (requireSafeCount(final?.total) !== totalUsers) throw new AccountEmailEvidenceError('COUNT_MISMATCH');
         checkTime();
-        return {
+        const evidence: CollectedEvidence = {
           snapshot: {
             startedAt: observed.startedAt,
             target: observed.inRecovery ? 'standby' : 'primary',
@@ -489,6 +507,9 @@ export async function collectAccountEmailEvidence(
           usersWithoutLoginMethod: requireSafeCount(loginless?.total),
           fixedSystemAccountsWithoutLogin: requireSafeCount(loginless?.fixed),
         } satisfies CollectedEvidence;
+        const extra = await collectExtra(transaction, evidence, checkTime);
+        checkTime();
+        return { evidence, extra };
       },
       { isolationLevel: 'repeatable read', accessMode: 'read only' },
     );
