@@ -32,7 +32,8 @@ const mockDbDeleteReturning = vi.fn(async () => []);
 // These handler tests assume an active account. Admission has its own suites
 // (deletion-credential-admission and admission-read-coalescer).
 vi.mock('../auth/admission-read-coalescer', () => ({
-  createAdmissionCoalescer: () => async () => true,
+  // An active account with no cutoff row: generation 0, native generation 0.
+  createAdmissionCoalescer: () => async () => ({ generation: 0, nativeGeneration: 0, deniedSessionKeys: new Set() }),
 }));
 
 vi.mock('../db/client', () => {

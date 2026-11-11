@@ -117,9 +117,12 @@ function transferToken(userId = ownerId) {
   return `${payload}.${signature}`;
 }
 
-/** A phone's existing bearer credential, minted the way builds before the stamps were. */
-async function phoneBearer(userId = ownerId) {
-  return new SignJWT({ sub: userId })
+/**
+ * A phone's existing bearer credential: minted the way builds before the stamps
+ * were, or stamped with the climber's current generations once a cutoff exists.
+ */
+async function phoneBearer(userId = ownerId, stamps: { gen: number; ngen: number } | null = null) {
+  return new SignJWT({ sub: userId, ...stamps })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
     .setIssuedAt()
     .setIssuer('boardsesh')
@@ -128,8 +131,8 @@ async function phoneBearer(userId = ownerId) {
     .sign(signingKey);
 }
 
-async function watchPair(userId = ownerId): Promise<TokenPair> {
-  const codeResponse = await native('/watch-code', {}, await phoneBearer(userId));
+async function watchPair(userId = ownerId, stamps: { gen: number; ngen: number } | null = null): Promise<TokenPair> {
+  const codeResponse = await native('/watch-code', {}, await phoneBearer(userId, stamps));
   expect(codeResponse.status).toBe(200);
   const { code } = (await codeResponse.json()) as { code: string };
   redisKeys.add(`boardsesh:watch:pair:${code}`);
@@ -322,7 +325,10 @@ describe('native credential stamps against the owned primary database', () => {
     'stamps %s with the current generations but never a sign-in time it did not see',
     async (path) => {
       await setCutoff(1, 3);
-      const pair = path === '/exchange' ? await issued(path, { transferToken: transferToken() }) : await watchPair();
+      const pair =
+        path === '/exchange'
+          ? await issued(path, { transferToken: transferToken() })
+          : await watchPair(ownerId, { gen: 1, ngen: 3 });
       const row = await rowFor(pair.refreshToken);
 
       expect(await claims(pair)).toMatchObject({ gen: 1, ngen: 3 });
@@ -379,8 +385,6 @@ describe('native credential stamps against the owned primary database', () => {
 
     let current = signIn;
     for (let rotation = 1; rotation <= 3; rotation += 1) {
-      // A later mutation never reaches a child through its parent.
-      await setCutoff(4 + rotation, 1 + rotation);
       current = await issued('/refresh', { refreshToken: current.refreshToken });
       const row = await rowFor(current.refreshToken);
       expect(row).toMatchObject({ subjectGeneration: 4, nativeGeneration: 1, sessionId });
@@ -389,9 +393,35 @@ describe('native credential stamps against the owned primary database', () => {
     }
   });
 
+  it('copies stamps, never re-reads them: a later mutation reaches no child through its parent', async () => {
+    await setCutoff(4, 1);
+    const signIn = await issued('/credentials', { email: ownerEmail, password });
+    const { sessionId } = await rowFor(signIn.refreshToken);
+    // Enforcing readers refuse such a parent (BA-04 PR 2). Under observe the
+    // issuer still mints, which is where copy versus re-read shows.
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'observe');
+    let current = signIn;
+    for (let rotation = 1; rotation <= 3; rotation += 1) {
+      await setCutoff(4 + rotation, 1 + rotation);
+      current = await issued('/refresh', { refreshToken: current.refreshToken });
+      expect(await rowFor(current.refreshToken)).toMatchObject({
+        subjectGeneration: 4,
+        nativeGeneration: 1,
+        sessionId,
+      });
+      expect(await claims(current)).toMatchObject({ gen: 4, ngen: 1 });
+    }
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'enforce');
+    expect((await native('/refresh', { refreshToken: current.refreshToken })).status).toBe(401);
+  });
+
   it('never gives a child of an unstamped refresh row a sign-in time or a newer generation', async () => {
     await setCutoff(3, 2);
-    const first = await issued('/refresh', { refreshToken: await seedUnstampedRefresh() });
+    const unstamped = await seedUnstampedRefresh();
+    // An unstamped row stands for generation 0, so enforcing readers refuse it here.
+    expect((await native('/refresh', { refreshToken: unstamped })).status).toBe(401);
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'observe');
+    const first = await issued('/refresh', { refreshToken: unstamped });
     const firstRow = await rowFor(first.refreshToken);
     expect(firstRow).toMatchObject({ subjectGeneration: 0, nativeGeneration: 0, authenticatedAt: null });
     expect(firstRow.sessionId).toMatch(/^[0-9a-f-]{36}$/);
