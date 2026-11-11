@@ -4,10 +4,36 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-11
+
+### New
+
+- Holes and LEDs follow your finger while you set up your Spraywall's lights. ([#7377](https://github.com/boardsesh/boardsesh/pull/7377))
+  Fix which LEDs light a hold when the photo gets it wrong.
+  Map the cable by lighting each LED and tapping it on the photo.
+  See your Spraywall light up while you create a route.
+- Sign in on the website with your email in any capitals. ([#7426](https://github.com/boardsesh/boardsesh/pull/7426))
+- Share previews now carry the Boardsesh icon, and links to the site show the logo again ([#7417](https://github.com/boardsesh/boardsesh/pull/7417))
+
+### Improved
+
+- Connect your Spraywall to WLED and mark holes on a zoomable wall photo. ([#7341](https://github.com/boardsesh/boardsesh/pull/7341))
+  Lay out LEDs and cable, including skipped lights.
+  Test holes or holds, then illuminate routes with their hold colors.
+  Set it up once and every climber at the wall can light it.
+
+### Fixed
+
+- Android Filters opens halfway, uses native controls, and keeps your grade rail. ([#7318](https://github.com/boardsesh/boardsesh/pull/7318))
+- Deleted or reset accounts now sign out cleanly on your other devices instead of looking signed in. ([#7422](https://github.com/boardsesh/boardsesh/pull/7422))
+
 ## 2026-11-10
 
 ### New
 
+- Shared climbs now show the full grade in search results and small previews ([#7410](https://github.com/boardsesh/boardsesh/pull/7410))
+- Shared playlists, profiles, setters, sessions, gyms and boards now show a real lit climb in chat previews ([#7389](https://github.com/boardsesh/boardsesh/pull/7389))
+  Invite links show who you'd be climbing with and on which board
 - Verified climbs get their own quick filter, right after Grade ([#7388](https://github.com/boardsesh/boardsesh/pull/7388))
   Combine Verified with Liked or My drafts; other boards call it Benchmarks
 - Links to Boardsesh pages now show a lit board in chat and social previews ([#7383](https://github.com/boardsesh/boardsesh/pull/7383))
@@ -16,6 +42,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Error, warning and success messages on boardsesh.com are readable again. A failed sign-in now tells you what went wrong. ([#7391](https://github.com/boardsesh/boardsesh/pull/7391))
 - Fewer failed loads in the app when Boardsesh is busy. ([#7381](https://github.com/boardsesh/boardsesh/pull/7381))
 
 ## 2026-11-09

@@ -1,6 +1,72 @@
 {
-  "generatedAt": "2026-11-10T08:14:25.949Z",
+  "generatedAt": "2026-11-11T21:29:35.741Z",
   "entries": [
+    {
+      "prNumber": 7318,
+      "category": "fixed",
+      "title": "Android Filters opens halfway, uses native controls, and keeps your grade rail.",
+      "mergedAt": "2026-11-11T21:15:09Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7318"
+    },
+    {
+      "prNumber": 7377,
+      "category": "new",
+      "title": "Holes and LEDs follow your finger while you set up your Spraywall's lights.",
+      "mergedAt": "2026-11-11T11:51:20Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7377",
+      "body": "Fix which LEDs light a hold when the photo gets it wrong.\nMap the cable by lighting each LED and tapping it on the photo.\nSee your Spraywall light up while you create a route."
+    },
+    {
+      "prNumber": 7341,
+      "category": "improved",
+      "title": "Connect your Spraywall to WLED and mark holes on a zoomable wall photo.",
+      "mergedAt": "2026-11-11T10:46:55Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7341",
+      "body": "Lay out LEDs and cable, including skipped lights.\nTest holes or holds, then illuminate routes with their hold colors.\nSet it up once and every climber at the wall can light it."
+    },
+    {
+      "prNumber": 7426,
+      "category": "new",
+      "title": "Sign in on the website with your email in any capitals.",
+      "mergedAt": "2026-11-11T10:06:59Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7426"
+    },
+    {
+      "prNumber": 7422,
+      "category": "fixed",
+      "title": "Deleted or reset accounts now sign out cleanly on your other devices instead of looking signed in.",
+      "mergedAt": "2026-11-11T05:05:31Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7422"
+    },
+    {
+      "prNumber": 7417,
+      "category": "new",
+      "title": "Share previews now carry the Boardsesh icon, and links to the site show the logo again",
+      "mergedAt": "2026-11-11T02:51:13Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7417"
+    },
+    {
+      "prNumber": 7410,
+      "category": "new",
+      "title": "Shared climbs now show the full grade in search results and small previews",
+      "mergedAt": "2026-11-10T20:14:24Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7410"
+    },
+    {
+      "prNumber": 7389,
+      "category": "new",
+      "title": "Shared playlists, profiles, setters, sessions, gyms and boards now show a real lit climb in chat previews",
+      "mergedAt": "2026-11-10T16:35:51Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7389",
+      "body": "Invite links show who you'd be climbing with and on which board"
+    },
+    {
+      "prNumber": 7391,
+      "category": "fixed",
+      "title": "Error, warning and success messages on boardsesh.com are readable again. A failed sign-in now tells you what went wrong.",
+      "mergedAt": "2026-11-10T10:02:54Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7391"
+    },
     {
       "prNumber": 7388,
       "category": "new",
