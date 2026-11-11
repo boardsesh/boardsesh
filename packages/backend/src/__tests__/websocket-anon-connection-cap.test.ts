@@ -36,7 +36,18 @@ vi.mock('../middleware/auth', async (importOriginal) => {
   return {
     ...actual,
     validateToken: vi.fn(async (token: string) =>
-      token === VALID_USER_TOKEN ? { userId: 'user-1', isAuthenticated: true as const } : null,
+      token === VALID_USER_TOKEN
+        ? {
+            userId: 'user-1',
+            isAuthenticated: true as const,
+            credential: {
+              kind: 'native-access' as const,
+              generationClaim: 0,
+              nativeGenerationClaim: 0,
+              authTimeClaim: undefined,
+            },
+          }
+        : null,
     ),
     validateControllerApiKey: vi.fn(async (apiKey: string) =>
       apiKey === VALID_CONTROLLER_API_KEY

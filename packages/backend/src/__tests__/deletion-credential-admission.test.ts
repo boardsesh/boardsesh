@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { createRequire } from 'node:module';
 import { fork, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -11,20 +12,27 @@ import {
   authEmailProjection,
   authEmailReservationMembers,
   authEmailReservations,
+  authPasswordRecoveryState,
+  authPasswordRecoveryTokens,
   authSecurityMutationEvents,
   authSubjectCutoffs,
   mobileRefreshTokens,
+  userCredentials,
   users,
 } from '@boardsesh/db/schema/auth';
+import { AUTH_PROTOCOL_VERSION } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
 import { notifications } from '@boardsesh/db/schema/app';
 import { getWorkerDatabaseName, getWorkerDatabaseUrl } from './worker-db';
 import { validateMobileJwt, validateNextAuthToken, validateToken } from '../middleware/auth';
 import { getAdmissionPool } from '../auth/admission-pool';
 import { AuthAdmissionUnavailableError, requireHumanSubjectForIssuance } from '../auth/human-admission';
-import { prepareProjectionUnderUsersTableLock } from '../auth/current-store/email-reservations';
+import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../auth/current-store/email-reservations';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../auth/current-store/foundation-context';
+import { consumePasswordRecovery, requestPasswordRecovery } from '../auth/current-store/password-recovery';
 import { createYogaInstance } from '../graphql/yoga';
 import {
+  handleNativeAuthCredentials,
   handleNativeAuthExchange,
   handleNativeAuthRefresh,
   handleWatchPair,
@@ -75,6 +83,7 @@ type GraphqlBody = {
 };
 type TokenPair = { jwt: string; refreshToken: string; userId: string; expiresAt: string };
 const routes: Record<string, Handler> = {
+  '/credentials': handleNativeAuthCredentials,
   '/exchange': handleNativeAuthExchange,
   '/refresh': handleNativeAuthRefresh,
   '/watch-code': handleWatchPairCode,
@@ -248,10 +257,12 @@ async function graphql(token: string, query = '{ authenticatedUserId }') {
   });
   return { status: response.status, body: (await response.json()) as GraphqlBody };
 }
-async function tokens(userId = ownerId) {
+/** No stamps is a credential from before BA-04 PR 1. The web JWE carries `gen` only. */
+async function tokens(userId = ownerId, stamps: { gen?: number; ngen?: number } = {}) {
+  const webStamp = stamps.gen === undefined ? {} : { gen: stamps.gen };
   return {
-    jwe: await publicJwt.encode({ token: { sub: userId }, secret, maxAge: 3600 }),
-    jws: await new SignJWT({ sub: userId })
+    jwe: await publicJwt.encode({ token: { sub: userId, ...webStamp }, secret, maxAge: 3600 }),
+    jws: await new SignJWT({ sub: userId, ...stamps })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
       .setIssuer('boardsesh')
@@ -289,14 +300,72 @@ async function restoreAuthority() {
   await db.execute(sql`ALTER TABLE ${sql.identifier(hiddenCutoffTable)} RENAME TO auth_subject_cutoffs`);
   schemaHidden = false;
 }
-async function seedRefresh() {
+async function seedRefresh(stamps: { subjectGeneration: number; nativeGeneration: number } | null = null) {
   const refreshToken = randomUUID();
   await db.insert(mobileRefreshTokens).values({
     userId: ownerId,
     tokenHash: createHash('sha256').update(refreshToken).digest('hex'),
     expiresAt: new Date(Date.now() + 60000),
+    ...(stamps ? { ...stamps, authenticatedAt: new Date(), sessionId: randomUUID() } : {}),
   });
   return refreshToken;
+}
+const ownerEmail = () => `${ownerId}@admission.example.test`;
+async function seedPassword(password: string) {
+  // 4 rounds: these tests are about what a sign-in is stamped with, not bcrypt cost.
+  await db.insert(userCredentials).values({ userId: ownerId, passwordHash: await bcrypt.hash(password, 4) });
+}
+async function signIn(password: string): Promise<TokenPair> {
+  const response = await native('/credentials', { email: ownerEmail(), password });
+  expect(response.status).toBe(200);
+  return (await response.json()) as TokenPair;
+}
+async function claimsOf(jwt: string) {
+  return (await jwtVerify(jwt, new TextEncoder().encode(secret), { issuer: 'boardsesh', audience: 'boardsesh-mobile' }))
+    .payload;
+}
+/**
+ * A real staged password reset: enforced projection, reserved email, forgot,
+ * then consume. It bumps the generation through `recordSecurityMutation`.
+ */
+async function stagedReset(newPassword: string) {
+  const authority = {
+    expectedProjectionId: randomUUID(),
+    expectedNormalizerVersion: CURRENT_EMAIL_NORMALIZER_VERSION,
+    expectedWriterEpoch: 1,
+    emailVerificationEnabled: false,
+  };
+  await db.transaction(async (transaction) => {
+    await prepareProjectionUnderUsersTableLock(transaction, { projectionId: authority.expectedProjectionId });
+    await transaction
+      .update(authEmailProjection)
+      .set({ phase: 'enforced' })
+      .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId));
+  });
+  await db.transaction((transaction) =>
+    reserveEnforcedEmail(transaction, { ...authority, rawEmail: ownerEmail(), requestedUserId: ownerId }),
+  );
+  const forgot = await requestPasswordRecovery(db, authority, {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation: 'forgot-password',
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload: { email: ownerEmail() },
+  });
+  if (forgot.outcome !== 'accepted' || !forgot.mailPlan) throw new Error('Owned reset fixture issued no link');
+  const reset = await consumePasswordRecovery(db, authority, {
+    protocolVersion: AUTH_PROTOCOL_VERSION,
+    operation: 'reset-password',
+    requestId: randomUUID(),
+    issuedAt: Date.now(),
+    payload: { token: forgot.mailPlan.token, email: ownerEmail(), password: newPassword, confirmPassword: newPassword },
+  });
+  expect(reset.outcome).toBe('reset');
+  const [row] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
+  expect(row).toMatchObject({ generation: 1, nativeGeneration: 0, deletedAt: null });
+}
+async function acknowledged(client: Awaited<ReturnType<typeof connect>>) {
+  await until(() => client.frames.some((frame) => frame.type === 'connection_ack'));
 }
 async function refreshRows() {
   return db
@@ -400,6 +469,7 @@ describe('mounted deletion admission against the owned primary database', () => 
     if (cleanupFailed || pending.size || schemaHidden) throw new Error('Previous admission fixture did not settle');
     vi.stubEnv('NEXTAUTH_SECRET', secret);
     vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', '');
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', '');
     __resetNativeAuthStateForTests();
     connectionBaseline = getConnectionCount();
     notificationBaseline = pubsub.getRuntimeStats().notification.subscribers;
@@ -409,6 +479,8 @@ describe('mounted deletion admission against the owned primary database', () => 
     await db.delete(authSecurityMutationEvents);
     await db.delete(authSubjectCutoffs);
     await db.delete(authEmailProjection);
+    await db.delete(authPasswordRecoveryTokens).where(inArray(authPasswordRecoveryTokens.userId, [ownerId, otherId]));
+    await db.delete(authPasswordRecoveryState).where(inArray(authPasswordRecoveryState.userId, [ownerId, otherId]));
     await db.delete(users).where(inArray(users.id, [ownerId, otherId]));
     await db.insert(users).values([
       { id: ownerId, email: `${ownerId}@admission.example.test`, name: 'Deleted credential owner' },
@@ -500,19 +572,209 @@ describe('mounted deletion admission against the owned primary database', () => 
     expect(await validateToken(credentials.jwe)).toBeNull();
   });
 
-  it('denies legacy physical deletion without a tombstone and preserves unrelated cutoff generations', async () => {
-    const credentials = await tokens();
-    await warm(credentials);
+  it('denies an unstamped credential once its generation moves, and legacy physical deletion without a tombstone', async () => {
+    const unstamped = await tokens(),
+      other = await tokens(otherId);
+    await warm(unstamped);
+    await warm(other, otherId);
     await cutoff(null);
-    await warm(credentials);
+    // Issued before BA-04 PR 1, so under generation 0, the only one there was.
+    expect(await validateNextAuthToken(unstamped.jwe)).toBeNull();
+    expect(await validateMobileJwt(unstamped.jws)).toBeNull();
+    expect(await validateToken(unstamped.jwe)).toBeNull();
+    expect(await validateToken(unstamped.jws)).toBeNull();
+    expect((await graphql(unstamped.jwe)).body.errors?.[0].extensions?.code).toBe('UNAUTHENTICATED');
+    // The other account's generation did not move.
+    await warm(other, otherId);
+    const current = await tokens(ownerId, { gen: 1, ngen: 0 });
+    await warm(current);
     expect(
-      (await graphql(credentials.jwe, 'mutation { deleteAccount(input: { removeSetterName: false }) }')).body.data
+      (await graphql(current.jwe, 'mutation { deleteAccount(input: { removeSetterName: false }) }')).body.data
         ?.deleteAccount,
     ).toBe(true);
     await db.delete(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
-    expect(await validateToken(credentials.jwe)).toBeNull();
-    expect(await validateMobileJwt(credentials.jws)).toBeNull();
+    // No tombstone and generation 0 again: the unstamped stamp matches, the missing user does not.
+    expect(await validateToken(unstamped.jwe)).toBeNull();
+    expect(await validateMobileJwt(unstamped.jws)).toBeNull();
+    expect(await validateToken(current.jwe)).toBeNull();
+    await warm(other, otherId);
   });
+
+  it('ends the web cookie, native JWT, refresh token and sockets at a real reset; a fresh sign-in works straight after', async () => {
+    await seedPassword('owned-cutoff-password-before');
+    const pair = await signIn('owned-cutoff-password-before');
+    expect(await claimsOf(pair.jwt)).toMatchObject({ sub: ownerId, gen: 0, ngen: 0 });
+    // What the web stamps at sign-in today, and a cookie from before the claim.
+    const web = await tokens(ownerId, { gen: 0 }),
+      legacy = await tokens();
+    const server = await webSocketServer();
+    const appSocket = await connect(server.url, pair.jwt),
+      webSocket = await connect(server.url, web.jwe);
+    await acknowledged(appSocket);
+    await acknowledged(webSocket);
+    expect((await validateMobileJwt(pair.jwt))?.userId).toBe(ownerId);
+    await warm(web);
+    await warm(legacy);
+
+    await stagedReset('owned-cutoff-password-after');
+
+    expect(await validateMobileJwt(pair.jwt)).toBeNull();
+    expect(await validateToken(pair.jwt)).toBeNull();
+    expect(await validateNextAuthToken(web.jwe)).toBeNull();
+    expect(await validateToken(legacy.jwe)).toBeNull();
+    expect(await validateToken(legacy.jws)).toBeNull();
+    // The web reader (credential-admission.server.ts) reads exactly this denial.
+    expect((await graphql(web.jwe)).body).toEqual({
+      data: null,
+      errors: [expect.objectContaining({ extensions: expect.objectContaining({ code: 'UNAUTHENTICATED' }) })],
+    });
+    expect((await native('/refresh', { refreshToken: pair.refreshToken })).status).toBe(401);
+    // Idle sockets: the sweep closes both with no frame from the client.
+    expect(await bounded(Promise.all([appSocket.closed, webSocket.closed]), 4000)).toEqual([4401, 4401]);
+
+    const fresh = await signIn('owned-cutoff-password-after');
+    expect(await claimsOf(fresh.jwt)).toMatchObject({ sub: ownerId, gen: 1, ngen: 0 });
+    expect((await validateMobileJwt(fresh.jwt))?.userId).toBe(ownerId);
+    const rotated = await native('/refresh', { refreshToken: fresh.refreshToken });
+    expect(rotated.status).toBe(200);
+    const rotatedPair = (await rotated.json()) as TokenPair;
+    expect(await claimsOf(rotatedPair.jwt)).toMatchObject({ gen: 1, ngen: 0 });
+    expect((await validateMobileJwt(rotatedPair.jwt))?.userId).toBe(ownerId);
+    await warm(await tokens(ownerId, { gen: 1, ngen: 0 }));
+    const freshSocket = await connect(server.url, rotatedPair.jwt);
+    await acknowledged(freshSocket);
+    // Longer than one sweep.
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    expect(freshSocket.socket.readyState).toBe(WebSocket.OPEN);
+  }, 20000);
+
+  it.each([
+    [
+      'a stamped row after a reset',
+      { subjectGeneration: 0, nativeGeneration: 0 },
+      { generation: 1, nativeGeneration: 0 },
+    ],
+    [
+      'a stamped row after an app sign-out',
+      { subjectGeneration: 0, nativeGeneration: 0 },
+      { generation: 0, nativeGeneration: 1 },
+    ],
+    ['a row from before the stamps', null, { generation: 1, nativeGeneration: 0 }],
+  ] as const)(
+    'refuses to rotate %s, so the app signs out instead of looping refresh -> 401',
+    async (_label, stamps, generations) => {
+      const refreshToken = await seedRefresh(stamps);
+      const before = await refreshRows();
+      await db.insert(authSubjectCutoffs).values({
+        userId: ownerId,
+        ...generations,
+        revokedThrough: new Date(),
+        lastOperationId: randomUUID(),
+      });
+      const response = await native('/refresh', { refreshToken });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({ error: 'Account is not available' });
+      // Nothing was minted, and the refused parent was left exactly as it was.
+      expect(await refreshRows()).toEqual(before);
+      // The app's JWT from before is ended too; the website only by a reset,
+      // never by an app sign-out (decision 10).
+      const earlier = await tokens(ownerId, { gen: 0, ngen: 0 });
+      expect(await validateMobileJwt(earlier.jws)).toBeNull();
+      expect((await validateNextAuthToken(earlier.jwe))?.userId).toBe(
+        generations.generation === 0 ? ownerId : undefined,
+      );
+      // Credentials stamped with the current generations are used.
+      await warm(await tokens(ownerId, { gen: generations.generation, ngen: generations.nativeGeneration }));
+    },
+  );
+
+  it('keeps a socket open while the read fails, even past a moved generation, and closes it once the read answers', async () => {
+    const credentials = await tokens(ownerId, { gen: 0, ngen: 0 }),
+      server = await webSocketServer();
+    const client = await connect(server.url, credentials.jws);
+    await acknowledged(client);
+    const locked = barrier(),
+      release = barrier();
+    const lockHolder = track(
+      blocker.begin(async (transaction) => {
+        await transaction`LOCK TABLE users IN ACCESS EXCLUSIVE MODE`;
+        locked.release();
+        await release.promise;
+      }),
+    );
+    try {
+      await bounded(locked.promise);
+      // The generation moves while no admission read can answer.
+      await cutoff(null);
+      // Two and a half sweeps, every one of them unavailable.
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      expect(client.socket.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      release.release();
+      await bounded(lockHolder);
+    }
+    expect(await bounded(client.closed, 4000)).toBe(4401);
+  }, 15000);
+
+  it('closes idle sockets in two backend processes when a real reset moves the generation', async () => {
+    await seedPassword('owned-cutoff-two-process-before');
+    const pair = await signIn('owned-cutoff-two-process-before');
+    const web = await tokens(ownerId, { gen: 0 });
+    const [first, second] = await Promise.all([startOwnedChild(), startOwnedChild()]);
+    expect(first.process.pid).not.toBe(second.process.pid);
+    const clients = await Promise.all([
+      connect(first.url, pair.jwt),
+      connect(second.url, web.jwe),
+      connect(first.url, web.jwe),
+      connect(second.url, pair.jwt),
+    ]);
+    for (const client of clients) await acknowledged(client);
+    await stagedReset('owned-cutoff-two-process-after');
+    expect(await bounded(Promise.all(clients.map((client) => client.closed)), 4000)).toEqual([4401, 4401, 4401, 4401]);
+  }, 45000);
+
+  it('under observe admits what only a cutoff refuses, never a deleted account, and staged writers will not run', async () => {
+    const credentials = await tokens(ownerId, { gen: 0, ngen: 0 }),
+      refreshToken = await seedRefresh({ subjectGeneration: 0, nativeGeneration: 0 }),
+      server = await webSocketServer();
+    const client = await connect(server.url, credentials.jws);
+    await acknowledged(client);
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'observe');
+    await cutoff(null);
+    await warm(credentials);
+    const rotated = await native('/refresh', { refreshToken });
+    expect(rotated.status).toBe(200);
+    // Exactly the build before BA-04 PR 2: the child copies the parent's stale stamps.
+    expect(await claimsOf(((await rotated.json()) as TokenPair).jwt)).toMatchObject({ gen: 0, ngen: 0 });
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+
+    const projectionId = randomUUID();
+    await db.transaction(async (transaction) => {
+      await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
+      await transaction
+        .update(authEmailProjection)
+        .set({ phase: 'enforced' })
+        .where(eq(authEmailProjection.projectionId, projectionId));
+    });
+    vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'reserved-staging');
+    vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', projectionId);
+    vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '1');
+    const refused = await graphql(credentials.jwe, 'mutation { deleteAccount(input: { removeSetterName: false }) }');
+    expect(refused.body.errors?.[0].extensions?.code).toBe('SERVICE_UNAVAILABLE');
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, ownerId))).toHaveLength(1);
+    vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', '');
+
+    await db.update(authSubjectCutoffs).set({ deletedAt: new Date() }).where(eq(authSubjectCutoffs.userId, ownerId));
+    expect(await validateToken(credentials.jwe)).toBeNull();
+    expect(await validateToken(credentials.jws)).toBeNull();
+    expect(await bounded(client.closed, 4000)).toBe(4401);
+
+    await db.update(authSubjectCutoffs).set({ deletedAt: null }).where(eq(authSubjectCutoffs.userId, ownerId));
+    vi.stubEnv('AUTH_CUTOFF_ENFORCEMENT', 'enforce');
+    expect(await validateToken(credentials.jwe)).toBeNull();
+    expect(await validateToken(credentials.jws)).toBeNull();
+  }, 15000);
 
   it('returns fixed unavailable on actual primary schema failure and admits the exact warm credentials after recovery', async () => {
     const credentials = await tokens();
@@ -971,6 +1233,56 @@ describe('mounted deletion admission against the owned primary database', () => 
       expect(mainPoolSelect).not.toHaveBeenCalled();
     } finally {
       vi.restoreAllMocks();
+      await db.delete(users).where(inArray(users.id, burstUserIds));
+    }
+  });
+
+  it('decides generations from that same one read: no added statement per request or per burst', async () => {
+    const burstUserIds = Array.from({ length: 40 }, () => randomUUID());
+    await db
+      .insert(users)
+      .values(burstUserIds.map((id) => ({ id, email: `${id}@example.test`, name: 'Admission burst' })));
+    // Every other account has been reset once.
+    const resetUserIds = burstUserIds.filter((_userId, index) => index % 2 === 1);
+    await db.insert(authSubjectCutoffs).values(
+      resetUserIds.map((userId) => ({
+        userId,
+        generation: 1,
+        revokedThrough: new Date(),
+        lastOperationId: randomUUID(),
+      })),
+    );
+    try {
+      const unstamped = await Promise.all(burstUserIds.map((id) => tokens(id)));
+      const current = await Promise.all(
+        burstUserIds.map((id) => tokens(id, { gen: resetUserIds.includes(id) ? 1 : 0, ngen: 0 })),
+      );
+      // Warm the crypto cache, so only admission is left to measure.
+      for (const credential of unstamped) await validateNextAuthToken(credential.jwe);
+      for (const credential of current) {
+        await validateMobileJwt(credential.jws);
+        await validateNextAuthToken(credential.jwe);
+      }
+      const mainPoolSelect = vi.spyOn(db, 'select');
+      const admissionStatement = vi.spyOn(getAdmissionPool(), 'unsafe');
+
+      expect((await validateToken(current[0].jwe))?.userId).toBe(burstUserIds[0]);
+      expect(admissionStatement).toHaveBeenCalledTimes(1);
+
+      const [currentResults, unstampedResults] = await Promise.all([
+        Promise.all(current.map((credential) => validateMobileJwt(credential.jws))),
+        Promise.all(unstamped.map((credential) => validateNextAuthToken(credential.jwe))),
+      ]);
+      expect(currentResults.map((result) => result?.userId)).toEqual(burstUserIds);
+      expect(unstampedResults.map((result) => result?.userId)).toEqual(
+        burstUserIds.map((id) => (resetUserIds.includes(id) ? undefined : id)),
+      );
+      // 80 validations of 40 accounts, all in one tick: one more read.
+      expect(admissionStatement).toHaveBeenCalledTimes(2);
+      expect(mainPoolSelect).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+      await db.delete(authSubjectCutoffs).where(inArray(authSubjectCutoffs.userId, resetUserIds));
       await db.delete(users).where(inArray(users.id, burstUserIds));
     }
   });

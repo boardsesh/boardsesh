@@ -1,8 +1,16 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { users, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
 import type { Database } from '../db/client';
+import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
 import { requireReadCommitted } from './current-store/foundation-context';
+import {
+  cutoffEnforcement,
+  isCredentialAdmitted,
+  type CredentialDecision,
+  type CredentialDenialReason,
+  type SubjectCutoffState,
+} from './credential-cutoffs';
 
 import {
   AuthAdmissionUnavailableError,
@@ -28,53 +36,119 @@ export class AuthSubjectDeniedError extends Error {
 
 type AdmissionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-const admitHumanSubject = createAdmissionCoalescer(activeHumanSubjectIds);
+/** Nothing writes a per-login denial yet (BA-04 PRs 6 and 9). */
+const NO_DENIED_SESSIONS: ReadonlySet<string> = new Set();
 
-/**
- * Fresh primary admission only. A generation or JWT issue time is not deletion.
- * Concurrent callers share reads and briefly wait for a free one when all are busy.
- */
-export async function isHumanSubjectActive(userId: string): Promise<boolean> {
-  if (!userId) return false;
-  return admitHumanSubject(userId);
+function cutoffState(generation: number | null, nativeGeneration: number | null): SubjectCutoffState {
+  return {
+    generation: generation ?? 0,
+    nativeGeneration: nativeGeneration ?? 0,
+    deniedSessionKeys: NO_DENIED_SESSIONS,
+  };
 }
 
-/** One bounded primary read for an active-connection sweep, never a result cache. */
-export async function activeHumanSubjectIds(userIds: readonly string[]): Promise<ReadonlySet<string>> {
+const readCoalescedSubjectState = createAdmissionCoalescer(readHumanSubjectStates);
+
+/**
+ * Fresh primary admission only: undefined is a deleted or missing account.
+ * Concurrent callers share reads and briefly wait for a free one when all are busy.
+ */
+export async function readHumanSubjectState(userId: string): Promise<SubjectCutoffState | undefined> {
+  if (!userId) return undefined;
+  return readCoalescedSubjectState(userId);
+}
+
+/** For one-shot capabilities (transfer token, watch code) that carry no stamps of their own. */
+export async function isHumanSubjectActive(userId: string): Promise<boolean> {
+  return (await readHumanSubjectState(userId)) !== undefined;
+}
+
+/**
+ * One bounded primary read, never a result cache. The cutoff row is already
+ * joined for `deleted_at`, so its two generations cost no extra statement.
+ */
+export async function readHumanSubjectStates(
+  userIds: readonly string[],
+): Promise<ReadonlyMap<string, SubjectCutoffState>> {
   const requestedIds = [...new Set(userIds)];
-  if (!requestedIds.length) return new Set();
+  if (!requestedIds.length) return new Map();
   if (requestedIds.length > AUTH_ADMISSION_BATCH_SIZE) throw new AuthAdmissionUnavailableError();
   return runAuthAdmissionRead((markExecuting) =>
     readOnAdmissionConnection(markExecuting, async (admissionDatabase) => {
       const subjects = await admissionDatabase
-        .select({ id: users.id })
+        .select({
+          id: users.id,
+          generation: authSubjectCutoffs.generation,
+          nativeGeneration: authSubjectCutoffs.nativeGeneration,
+        })
         .from(users)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
         .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
-      return new Set(subjects.map((subject) => subject.id));
+      return new Map(
+        subjects.map((subject) => [subject.id, cutoffState(subject.generation, subject.nativeGeneration)]),
+      );
     }),
   );
 }
 
-/** The cutoff generations a new credential is stamped with. No cutoff row is 0 and 0. */
-export interface IssuanceGenerations {
-  readonly generation: number;
-  readonly nativeGeneration: number;
+/** Where a credential was presented: one label per reader, for the log only. */
+export type CredentialReader = 'request' | 'socket-sweep' | 'refresh';
+
+const CUTOFF_LOG_WINDOW_MS = 10_000;
+const openCutoffLogWindows = new Map<string, number>();
+
+/**
+ * One line per reader, outcome and reason straight away, then a count when its
+ * 10 s window closes. Fixed labels only: never a user ID, token or claim.
+ * A deletion is not logged here; it was refused before cutoffs existed.
+ */
+function recordCutoffDenial(reader: CredentialReader, reason: CredentialDenialReason, outcome: 'denied' | 'observed') {
+  const windowKey = `${reader}:${outcome}:${reason}`;
+  const suppressed = openCutoffLogWindows.get(windowKey);
+  if (suppressed !== undefined) {
+    openCutoffLogWindows.set(windowKey, suppressed + 1);
+    return;
+  }
+  openCutoffLogWindows.set(windowKey, 0);
+  const fields = { reader, outcome, reason };
+  logger.warn('[auth-cutoff] credential refused by a cutoff', fields);
+  setTimeout(() => {
+    const suppressedDenials = openCutoffLogWindows.get(windowKey) ?? 0;
+    openCutoffLogWindows.delete(windowKey);
+    if (suppressedDenials > 0)
+      logger.warn('[auth-cutoff] more credentials refused like the last one', {
+        ...fields,
+        suppressedDenials,
+        windowMs: CUTOFF_LOG_WINDOW_MS,
+      });
+  }, CUTOFF_LOG_WINDOW_MS).unref();
+}
+
+/**
+ * Applies `AUTH_CUTOFF_ENFORCEMENT` to a decision. Under `observe` a cutoff
+ * denial is logged as `observed` and the credential is used anyway.
+ */
+export function admitsCredential(decision: CredentialDecision, reader: CredentialReader): boolean {
+  const admitted = isCredentialAdmitted(decision, cutoffEnforcement(process.env));
+  if (decision.denial !== null && decision.denial !== 'subject-inactive') {
+    recordCutoffDenial(reader, decision.denial, admitted ? 'observed' : 'denied');
+  }
+  return admitted;
 }
 
 /**
  * Issuance must own this transaction. Lock the user before refresh/account
  * child rows; never put the bounded read response race around a write.
  *
- * Returns the generations to stamp, read by a second statement once the user
- * lock is held. The locking statement's snapshot predates its wait, so a
- * mutation that held `users FOR UPDATE` and committed while this issuer waited
- * is visible only to a statement that starts after the lock.
+ * Returns the same state the admission read does, read by a second statement
+ * once the user lock is held. The locking statement's snapshot predates its
+ * wait, so a mutation that held `users FOR UPDATE` and committed while this
+ * issuer waited is visible only to a statement that starts after the lock.
  */
 export async function requireHumanSubjectForIssuance(
   transaction: AdmissionTransaction,
   userId: string,
-): Promise<IssuanceGenerations> {
+): Promise<SubjectCutoffState> {
   try {
     await requireReadCommitted(transaction);
     const [subject] = await transaction
@@ -95,7 +169,7 @@ export async function requireHumanSubjectForIssuance(
       .where(eq(authSubjectCutoffs.userId, userId))
       .limit(1);
     if (cutoff?.deletedAt) throw new AuthSubjectDeniedError();
-    return { generation: cutoff?.generation ?? 0, nativeGeneration: cutoff?.nativeGeneration ?? 0 };
+    return cutoffState(cutoff?.generation ?? null, cutoff?.nativeGeneration ?? null);
   } catch (error) {
     if (error instanceof AuthSubjectDeniedError) throw error;
     throw new AuthAdmissionUnavailableError();

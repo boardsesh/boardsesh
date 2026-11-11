@@ -1,10 +1,12 @@
 import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import type { WebPasswordAuthority } from './command-context';
 import {
+  AUTH_COMMAND_ENV,
   BATCH_SYSTEM_USER_COMMAND_ENV,
   currentStoreBatchSystemUsersMode as parseBatchSystemUsersMode,
 } from '@boardsesh/auth-protocol';
 import { logger } from '../../utils/logger';
+import { AUTH_CUTOFF_ENFORCEMENT_ENV, parseCutoffEnforcement } from '../credential-cutoffs';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -78,9 +80,36 @@ export function currentStoreDeletedEmailKey(environment: Environment = process.e
   return key;
 }
 
+/** Every switch that turns on a staged writer of credentials or cutoffs. Unset, empty or `legacy` is off. */
+export const STAGED_WRITER_MODE_ENV = [
+  AUTH_COMMAND_ENV.mode,
+  'CURRENT_STORE_WEB_OAUTH_MODE',
+  'CURRENT_STORE_NATIVE_REGISTRATION_MODE',
+  'CURRENT_STORE_NATIVE_OAUTH_MODE',
+  'CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE',
+  'CURRENT_STORE_ACCOUNT_DELETION_MODE',
+  BATCH_SYSTEM_USER_COMMAND_ENV.mode,
+] as const;
+
+/**
+ * Checked once at startup. A staged writer bumps generations, and under
+ * `observe` no reader would enforce them, so a reset would end nothing. The
+ * backend refuses to start with both, and with an unknown enforcement value.
+ */
+export function assertCutoffEnforcementConfiguration(environment: Environment = process.env): void {
+  const enforcement = parseCutoffEnforcement(environment[AUTH_CUTOFF_ENFORCEMENT_ENV]);
+  if (enforcement === 'enforce') return;
+  const selected = STAGED_WRITER_MODE_ENV.filter((name) => ![undefined, '', 'legacy'].includes(environment[name]));
+  if (selected.length > 0)
+    throw new Error(`${AUTH_CUTOFF_ENFORCEMENT_ENV}=observe cannot run with ${selected.join(', ')} on`);
+}
+
 /** Invoked only after the caller explicitly selects its own staging mode. */
 export function currentStoreAuthorityConfiguration(environment: Environment): WebPasswordAuthority {
   if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');
+  // The startup check stops this too; repeated per command for an environment changed since.
+  if (parseCutoffEnforcement(environment[AUTH_CUTOFF_ENFORCEMENT_ENV]) !== 'enforce')
+    throw new Error('Staged auth writers need cutoff enforcement');
   const projectionId = environment.CURRENT_STORE_AUTH_PROJECTION_ID;
   const epochText = environment.CURRENT_STORE_AUTH_WRITER_EPOCH;
   if (

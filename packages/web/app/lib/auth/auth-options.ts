@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
+import * as Sentry from '@sentry/nextjs';
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
@@ -36,7 +37,11 @@ const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
  * The cutoff generation a new login is stamped with: 0 when the climber has no
  * cutoff row. Rotations never call this; they keep the login's stamp. A failed
  * read also stamps 0 and lets the sign-in through: generations only rise, so a
- * low stamp can end the cookie sooner but never let it outlive a reset.
+ * low stamp can end the cookie sooner but never let it outlive a reset. For a
+ * climber whose generation has moved, the backend refuses that cookie, so the
+ * emission check answers 401 before any cookie is sent and the sign-in fails.
+ * Each failure is reported to Sentry so a run of them (or a web role that
+ * lost SELECT on the table) raises an issue instead of quietly failing sign-ins.
  */
 async function signInGeneration(userId: string): Promise<number> {
   try {
@@ -48,6 +53,11 @@ async function signInGeneration(userId: string): Promise<number> {
     return cutoff?.generation ?? 0;
   } catch {
     console.warn(JSON.stringify({ event: 'auth_generation_read_unavailable', phase: 'jwt' }));
+    Sentry.captureMessage('auth_generation_read_unavailable', {
+      level: 'warning',
+      tags: { area: 'auth', phase: 'jwt' },
+      fingerprint: ['auth_generation_read_unavailable'],
+    });
     return 0;
   }
 }

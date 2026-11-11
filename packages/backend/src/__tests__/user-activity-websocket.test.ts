@@ -11,7 +11,18 @@ vi.mock('../middleware/auth', async (importOriginal) => {
   return {
     ...actual,
     validateToken: async (token: string) =>
-      token.startsWith('valid:') ? { userId: token.slice('valid:'.length), isAuthenticated: true } : null,
+      token.startsWith('valid:')
+        ? {
+            userId: token.slice('valid:'.length),
+            isAuthenticated: true,
+            credential: {
+              kind: 'native-access',
+              generationClaim: 0,
+              nativeGenerationClaim: 0,
+              authTimeClaim: undefined,
+            },
+          }
+        : null,
   };
 });
 

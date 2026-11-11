@@ -691,6 +691,28 @@ backend back to `549969d683` or any other build containing #6339's code
 which `0275` dropped, so every deletion sync would fail. Any build from #6431 on
 is a safe target. See [sync-deletions-cutoff.md](sync-deletions-cutoff.md).
 
+### Credential cutoff rollback floor
+
+BA-04 PR 2 (#7420) makes every backend reader refuse a credential stamped
+before the climber's last password reset, change, set or deletion
+([better-auth-migration.md](better-auth-migration.md), "Credential cutoffs").
+An older backend ignores `auth_subject_cutoffs.generation`, so rolling back below
+it brings every session that a reset ended back to life, and no code can stop it.
+
+- **The floor is the merge commit of #7420.** Record its SHA here when it merges:
+  `floor: (not merged yet)`.
+- **It binds once any cutoff row exists.** Check on the standby:
+  `SELECT count(*) FROM auth_subject_cutoffs;` Zero means no staged writer has run
+  and any build is still a safe rollback target. One or more means never deploy a
+  backend build older than the floor.
+- **Below the floor is never the rollback.** To undo PR 2's behaviour, set
+  `AUTH_CUTOFF_ENFORCEMENT=observe` on the backend service: readers then admit
+  what only a cutoff refuses, as the build before did. The backend refuses to
+  start with `observe` while any `CURRENT_STORE_*` writer mode is on, so turn
+  those modes back to `legacy` first.
+- Never delete cutoff rows to make a rollback safe. They are the record of who
+  was signed out.
+
 ## Required GitHub configuration
 
 Web-specific config lives in the **Production** GitHub environment alongside

@@ -11,7 +11,13 @@ import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
-import { activeHumanSubjectIds, AUTH_ADMISSION_BATCH_SIZE, isAuthAdmissionUnavailable } from '../auth/human-admission';
+import {
+  admitsCredential,
+  AUTH_ADMISSION_BATCH_SIZE,
+  isAuthAdmissionUnavailable,
+  readHumanSubjectStates,
+} from '../auth/human-admission';
+import { decideCredential, type PresentedCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
 import { selectSweepBatches } from './admission-sweep-batches';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
 import { isApiHost } from '../handlers/api-host';
@@ -169,7 +175,11 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
   // Raw credentials stay private to this server instance, never in the public
   // GraphQL context or logs. Admission is rechecked even when crypto is cached.
-  const humanBindings = new Map<WebSocket, { context: ConnectionContext; token: string; userId: string }>();
+  // The stamps let the sweep decide each socket's credential without decrypting it.
+  const humanBindings = new Map<
+    WebSocket,
+    { context: ConnectionContext; token: string; userId: string; credential: PresentedCredential }
+  >();
   const closeAdmission = (socket: WebSocket, unavailable: boolean) => {
     if (socket.readyState === socket.OPEN) {
       socket.close(
@@ -226,15 +236,17 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     void Promise.all(
       roundBatches.map(async (requestedIds) => {
         const requested = new Set(requestedIds);
-        let admitted: ReadonlySet<string>;
+        let subjects: ReadonlyMap<string, SubjectCutoffState>;
         try {
-          admitted = await activeHumanSubjectIds(requestedIds);
+          subjects = await readHumanSubjectStates(requestedIds);
         } catch {
           // A failed read proves nothing about these accounts, and a primary that
-          // cannot answer cannot commit a deletion either. Leave them connected.
+          // cannot answer cannot commit a deletion or a reset either. Leave them
+          // connected: only a confirmed denial closes a socket.
           roundFailed = true;
           return;
         }
+        const decidedAt = Date.now();
         for (const [socket, binding] of captured) {
           if (
             !requested.has(binding.userId) ||
@@ -243,7 +255,8 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             binding.context.userId !== binding.userId
           )
             continue;
-          if (!admitted.has(binding.userId)) closeAdmission(socket, false);
+          const decision = decideCredential(binding.credential, subjects.get(binding.userId), decidedAt);
+          if (!admitsCredential(decision, 'socket-sweep')) closeAdmission(socket, false);
         }
       }),
     ).finally(() => {
@@ -275,6 +288,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let isAuthenticated = false;
         let authenticatedUserId: string | undefined;
         let credentialExpiresAt: number | undefined;
+        let presentedCredential: PresentedCredential | undefined;
 
         if (token !== null) {
           let authResult;
@@ -289,6 +303,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
             isAuthenticated = true;
             authenticatedUserId = authResult.userId;
             credentialExpiresAt = authResult.credentialExpiresAt;
+            presentedCredential = authResult.credential;
             logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
           } else {
             // Existing clients expect an expired optional credential to keep
@@ -460,8 +475,13 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
         // Store context in ctx.extra for access in other hooks
         ctx.extra.context = context;
-        if (isAuthenticated && authenticatedUserId && token) {
-          humanBindings.set(ctx.extra.socket, { context, token, userId: authenticatedUserId });
+        if (isAuthenticated && authenticatedUserId && token && presentedCredential) {
+          humanBindings.set(ctx.extra.socket, {
+            context,
+            token,
+            userId: authenticatedUserId,
+            credential: presentedCredential,
+          });
         }
 
         // First-party active-user count (#2644). Browsers can't set headers on a

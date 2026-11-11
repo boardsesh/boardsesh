@@ -20,6 +20,10 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
 const databaseRows = vi.hoisted(() => new Map<unknown, unknown[] | Error>());
 
 vi.mock('server-only', () => ({}));
+vi.mock('@sentry/nextjs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@sentry/nextjs')>()),
+  captureMessage: vi.fn(),
+}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: vi.fn(() => ({})) }));
 vi.mock('@/app/lib/db/db', () => {
   function readRows(table: unknown): unknown[] {
@@ -48,6 +52,7 @@ vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
   withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
 }));
 
+import * as Sentry from '@sentry/nextjs';
 import * as schema from '@/app/lib/db/schema';
 import { GET, POST } from '@/app/api/auth/[...nextauth]/route';
 import { authOptions } from '../auth-options';
@@ -495,6 +500,7 @@ describe('gen beside auth_time', () => {
 
   it('signs in with gen 0 when the read fails, a stamp that can only end the cookie sooner', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(Sentry.captureMessage).mockClear();
     databaseRows.set(schema.authSubjectCutoffs, new Error('primary unavailable'));
 
     const response = await signInWithPassword();
@@ -503,6 +509,12 @@ describe('gen beside auth_time', () => {
 
     expect(await currentSessionClaims()).toMatchObject({ sub: climber.id, gen: 0, auth_time: SIGN_IN_AT_SECONDS });
     expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'auth_generation_read_unavailable', phase: 'jwt' }));
+    // Counted in Sentry, so a web role without SELECT on the table raises an issue.
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      'auth_generation_read_unavailable',
+      expect.objectContaining({ level: 'warning', fingerprint: ['auth_generation_read_unavailable'] }),
+    );
     warn.mockRestore();
   });
 
