@@ -20,6 +20,7 @@ import { assertFresh, transactionSettings } from './command-context';
 import {
   captureExpectedAuthority,
   lockEnforcedProjection,
+  lockProviderSubject,
   lockSubjectRow,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
@@ -184,6 +185,11 @@ export async function resolveWebOAuthIdentity(
       if (!(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
         return denied('resolve', requestId, 'replayed');
       assertFresh(Date.parse(issuedAt));
+      // The provider subject's lock before the actor's users row (section 4's
+      // order: gate, subject, users). A native sign-in for the same subject takes
+      // the subject first and then its owner's row, so taking the actor's row
+      // first here could wait on it in a cycle. Re-entrant when resolved below.
+      await lockProviderSubject(transaction, provider, subject);
       const [intent] = await transaction
         .select()
         .from(authWebOAuthIntents)

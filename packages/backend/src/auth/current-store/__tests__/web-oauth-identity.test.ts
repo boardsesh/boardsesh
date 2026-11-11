@@ -567,6 +567,72 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     expect(outcomes.map((reply) => reply.status).sort((first, second) => first - second)).toEqual([200, 409]);
     expect(await counts()).toMatchObject({ users: 1, accounts: 1, reservations: 1 });
   });
+  it('does not deadlock a web sign-in carrying the owner actor cookie against a native sign-in for the same subject', async () => {
+    // BA-04 PR 3 order: gate, provider subject, users. The web resolve once took
+    // the actor's users row before the subject; a native sign-in takes the
+    // subject, then the owner's row. Park the web resolve holding what it holds
+    // just before it resolves the subject, start the native one, then release.
+    const linked = await seedLinked('google');
+    const binding = await intent('google', await actorCookie(linked.userId));
+    const parkKey = 700_000_000 + Math.floor(Math.random() * 100_000_000);
+    const parkName = `ba04_pr3_park_${randomUUID().replaceAll('-', '')}`;
+    await admin(
+      sql.raw(`CREATE FUNCTION ${parkName}() RETURNS trigger LANGUAGE plpgsql AS $park$
+        BEGIN PERFORM pg_advisory_xact_lock(${parkKey}); RETURN NEW; END; $park$`),
+    );
+    await admin(
+      sql.raw(
+        `CREATE TRIGGER ${parkName} BEFORE UPDATE ON auth_web_oauth_intents FOR EACH ROW EXECUTE FUNCTION ${parkName}()`,
+      ),
+    );
+    const parkPool = postgres(process.env.DATABASE_URL ?? '', { max: 1, onnotice: () => {} });
+    const park = await parkPool.reserve();
+    const pidWaitingOn = async (blocker: number | null) => {
+      const deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        const row = await executeFirstRow<{ pid: number | null }>(
+          db,
+          blocker === null
+            ? sql`SELECT pid FROM pg_locks WHERE locktype='advisory' AND objid=${parkKey}::oid AND objsubid=1 AND NOT granted LIMIT 1`
+            : sql`SELECT pid FROM pg_stat_activity WHERE ${blocker}=ANY(pg_blocking_pids(pid)) AND wait_event_type='Lock' LIMIT 1`,
+        );
+        if (row?.pid) return Number(row.pid);
+        await new Promise((accept) => setTimeout(accept, 10));
+      }
+      throw new Error('Owned web/native race never queued');
+    };
+    let web: ReturnType<typeof post> | undefined;
+    let native: Promise<Awaited<ReturnType<typeof resolveReservedNativeOAuthIdentity>>> | undefined;
+    try {
+      await park`BEGIN`;
+      await park`SELECT pg_advisory_xact_lock(${parkKey})`;
+      web = post('resolve', resolveCommand(binding, { subject: linked.subject }));
+      const webPid = await pidWaitingOn(null);
+      native = secondWriter.transaction((transaction) =>
+        resolveReservedNativeOAuthIdentity(transaction, authority, 'google', {
+          sub: linked.subject,
+          email: linked.email,
+          emailVerified: true,
+          name: 'Native owner',
+        }),
+      );
+      void native.catch(() => undefined);
+      await pidWaitingOn(webPid);
+      await park`COMMIT`;
+      const [webReply, nativeResult] = await Promise.allSettled([web, native]);
+      for (const outcome of [webReply, nativeResult])
+        if (outcome.status === 'rejected') expect(String(outcome.reason)).not.toContain('deadlock');
+      expect(webReply.status === 'fulfilled' && resolved(webReply.value).user.id).toBe(linked.userId);
+      expect(nativeResult).toMatchObject({ status: 'fulfilled', value: { outcome: 'linked' } });
+    } finally {
+      await park`ROLLBACK`.catch(() => undefined);
+      park.release();
+      await Promise.allSettled([web, native].filter((pending) => pending !== undefined));
+      await parkPool.end({ timeout: 3 });
+      await admin(sql.raw(`DROP TRIGGER IF EXISTS ${parkName} ON auth_web_oauth_intents`));
+      await admin(sql.raw(`DROP FUNCTION IF EXISTS ${parkName}()`));
+    }
+  });
   it('serializes web/native OAuth case-key races with one owner and preserved native verification policy', async () => {
     const binding = await intent();
     const email = `Case+${randomUUID()}@EXAMPLE.test`;
