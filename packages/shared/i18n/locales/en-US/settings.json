@@ -122,7 +122,10 @@
       "mismatch": "Passwords do not match",
       "saveError": "Failed to set password",
       "retryError": "Failed to set password. Please try again."
-    }
+    },
+    "reauthenticationRequired": "Sign in again to set a password.",
+    "reauthenticate": "Sign in again",
+    "accountChanged": "Your account changed. Check the account shown and try again."
   },
   "controllers": {
     "title": "ESP32 Controllers",

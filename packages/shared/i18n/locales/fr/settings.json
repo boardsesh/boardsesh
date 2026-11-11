@@ -122,7 +122,10 @@
       "mismatch": "Les mots de passe ne correspondent pas",
       "saveError": "Enregistrement du mot de passe impossible",
       "retryError": "Enregistrement du mot de passe impossible. Réessayez."
-    }
+    },
+    "reauthenticationRequired": "Reconnecte-toi pour définir un mot de passe.",
+    "reauthenticate": "Se reconnecter",
+    "accountChanged": "Ton compte a changé. Vérifie le compte affiché et réessaie."
   },
   "controllers": {
     "title": "Contrôleurs ESP32",

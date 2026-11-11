@@ -5,10 +5,10 @@ Unknown values fail closed. `off` adds no mirror queries and leaves the existing
 identity, credentials, sessions, and authentication age unchanged.
 
 **Production activation remains blocked in code, with no environment bypass.**
-The backend refuses startup with `on`. The existing web set-password endpoint
-still writes credentials directly and has no backend-owned fresh-auth command.
-BA-04 PR 9 must implement that command and web delegation, then prove every
-staged writer mode and the database writer fence before removing this gate.
+The backend refuses startup with `on`. BA-04 PR 9 provides a backend-owned
+fresh-auth set-password command and web delegation behind a default-legacy
+selector. Mirror activation requires that delegated mode, but complete staged
+writer, database fence, and remaining activation proofs still block startup.
 Turning the fence on and breaking the live web flow is not mirror coverage.
 No activation, route mount, import, bridge, or writer switch occurs here.
 
@@ -49,7 +49,7 @@ claim, epoch, lineage, or denial is created or changed.
 | Account deletion | Shared `users` row deletion cascades canonical account/session children; evidence has no FK |
 | Legacy native registration/OAuth | Rejected by configuration when mirroring is selected; the direct legacy OAuth helper also refuses |
 | Legacy web registration/reset/provider writers | Must be delegated and fenced before activation; startup gate remains closed |
-| Web set-password | PR 9 activation blocker: backend fresh-auth command and delegation required |
+| Web set-password | Backend-owned fresh-auth command and same-transaction mirror in staged mode; legacy default remains activation-blocked |
 
 The password insertion helper acquires the gate before any creation write when
 mirroring is selected. Other integrated staged writers already hold the gate

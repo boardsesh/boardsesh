@@ -24,6 +24,7 @@ import { startPartnerOAuthSweep } from './services/partner-oauth-sweep';
 import { startPosthogPersonDeletion } from './services/analytics/posthog-person-deletion';
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { assertIdentityMirrorActivationConfiguration } from './auth/authority/mirror-configuration';
+import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { assertCutoffEnforcementConfiguration } from './auth/current-store/authority-configuration';
 
 async function main() {
@@ -32,6 +33,7 @@ async function main() {
   assertCutoffEnforcementConfiguration();
   assertIdentityMirrorActivationConfiguration();
   assertNativeRevocationActivationConfiguration();
+  assertWebSessionWriterActivationConfiguration();
 
   // The durable job queue (docs/partner-workouts-internal.md, "The job queue").
   //

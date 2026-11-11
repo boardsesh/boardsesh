@@ -52,15 +52,22 @@ describe('same-transaction identity mirror', () => {
   const canonical = (userId: string) =>
     environment.database.select().from(authAccount).where(eq(authAccount.userId, userId));
 
-  it('defaults off, rejects unknown selectors, and blocks every production activation until set-password is delegated', () => {
+  it('defaults off, rejects unknown selectors, and blocks production activation after requiring delegated set-password', () => {
     expect(identityMirrorMode({})).toBe('off');
     expect(identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'off' })).toBe('off');
     expect(identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'on' })).toBe('on');
     expect(() => identityMirrorMode({ AUTH_IDENTITY_MIRROR: 'true' })).toThrow();
     expect(() => assertIdentityMirrorActivationConfiguration({})).not.toThrow();
     expect(() => assertIdentityMirrorActivationConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow(
-      'backend-owned fresh-auth set-password',
+      'delegated set-password',
     );
+    expect(() =>
+      assertIdentityMirrorActivationConfiguration({
+        AUTH_IDENTITY_MIRROR: 'on',
+        CURRENT_STORE_SET_PASSWORD_MODE: 'backend-staging',
+        CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+      }),
+    ).toThrow('complete writer/fence proof');
     expect(() => currentStoreNativeOAuthConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow('staged native');
     expect(() => currentStoreNativeRegistrationConfiguration({ AUTH_IDENTITY_MIRROR: 'on' })).toThrow('staged native');
   });

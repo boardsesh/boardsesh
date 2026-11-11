@@ -122,7 +122,10 @@
       "mismatch": "Le password non coincidono",
       "saveError": "Impossibile impostare la password",
       "retryError": "Impossibile impostare la password. Riprova."
-    }
+    },
+    "reauthenticationRequired": "Accedi di nuovo per impostare una password.",
+    "reauthenticate": "Accedi di nuovo",
+    "accountChanged": "Il tuo account è cambiato. Controlla l’account mostrato e riprova."
   },
   "controllers": {
     "title": "Controller ESP32",

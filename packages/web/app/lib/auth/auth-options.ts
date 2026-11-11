@@ -1,3 +1,4 @@
+import { webCredentialProofMode, webCredentialProofSchema } from '@boardsesh/auth-protocol';
 import type { NextAuthOptions } from 'next-auth';
 import { randomUUID } from 'node:crypto';
 import * as Sentry from '@sentry/nextjs';
@@ -155,6 +156,7 @@ providers.push(
         email: user.email,
         name: user.name,
         image: user.image,
+        ...(decoded.credentialProof ? { webCredentialProof: decoded.credentialProof } : {}),
       };
     },
   }),
@@ -491,14 +493,27 @@ export const authOptions: NextAuthOptions = {
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
         token.id = user.id;
-        token.authSessionId = randomUUID();
+        if (webCredentialProofMode(process.env) === 'compatible')
+          throw new Error('Web proof compatibility mode is backend-only');
+        const proved = user.webCredentialProof ? webCredentialProofSchema.parse(user.webCredentialProof) : undefined;
+        if (proved && proved.userId !== user.id) throw new Error('Web proof identity mismatch');
+        if (
+          !proved &&
+          webCredentialProofMode(process.env) === 'required' &&
+          ['credentials', 'google', 'apple', 'facebook', 'native-oauth'].includes(account?.provider ?? '')
+        )
+          throw new Error('Backend web credential proof required');
+        token.authSessionId = proved?.authSessionId ?? randomUUID();
         delete token.nativeOAuthCreationProof;
-        token.gen = await signInGeneration(user.id);
+        token.gen = proved ? proved.generation : await signInGeneration(user.id);
         // Epoch seconds of the sign-in. Only this branch sees a completed sign-in, so
         // a cookie rotation neither sets nor moves it and a cookie from before this
         // claim stays without one, which readers must treat as "age unknown". A native
         // transfer hands over a login made elsewhere, so it never claims a fresh one.
-        if (account && account.provider !== 'native-oauth') {
+        if (proved) {
+          if (proved.authenticatedAt !== null) token.auth_time = Math.floor(Date.parse(proved.authenticatedAt) / 1000);
+          else delete token.auth_time;
+        } else if (account && account.provider !== 'native-oauth') {
           token.auth_time = Math.floor(Date.now() / 1000);
         } else {
           delete token.auth_time;
@@ -507,7 +522,7 @@ export const authOptions: NextAuthOptions = {
         // auth_time cannot have been bought by linking a provider into an old
         // session. Partner consent accepts no sign-in without it. Like auth_time,
         // only a completed sign-in writes or clears it; a rotation keeps it.
-        if (token.auth_time !== undefined && partnerLinkGuardActive()) {
+        if (proved ? proved.linkGuarded : token.auth_time !== undefined && partnerLinkGuardActive()) {
           token.link_guarded = true;
         } else {
           delete token.link_guarded;

@@ -38,13 +38,14 @@ import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
 const APP_SETTINGS_URL = buildAppHandoffUrl('/settings');
 
 type UserProfile = {
+  id: string;
   email: string;
   hasPassword: boolean;
   linkedProviders: string[];
 };
 
 export default function SettingsPageContent() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const router = useLocaleRouter();
   const { t, i18n } = useTranslation('settings');
   const activeLocale: Locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
@@ -75,6 +76,11 @@ export default function SettingsPageContent() {
       setLoading(false);
     }
   }, [showMessage, t]);
+
+  const refreshAccount = useCallback(async () => {
+    await update();
+    await fetchProfile();
+  }, [update, fetchProfile]);
 
   // Fetch profile on mount
   useEffect(() => {
@@ -157,6 +163,11 @@ export default function SettingsPageContent() {
           hasPassword={profile?.hasPassword ?? false}
           userEmail={profile?.email || session?.user?.email || ''}
           linkedProviders={profile?.linkedProviders ?? []}
+          expectedSession={{
+            userId: profile?.id ?? session?.user?.id ?? '',
+            authSessionId: session?.authSessionId ?? '',
+          }}
+          onAccountChanged={refreshAccount}
           onPasswordSet={fetchProfile}
         />
 

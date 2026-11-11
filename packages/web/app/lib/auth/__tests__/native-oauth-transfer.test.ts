@@ -226,4 +226,34 @@ describe('native OAuth transfer token', () => {
 
     expect(verifyNativeOAuthTransferToken(token)).toBeNull();
   });
+  it('preserves source SID, generation and old authentication time without treating transfer iat as a login', () => {
+    const authenticatedAt = '2026-04-03T11:00:00.000Z';
+    const proof = {
+      version: 1 as const,
+      userId: 'synthetic-source',
+      authSessionId: 'source-login',
+      generation: 4,
+      authenticatedAt,
+      linkGuarded: true,
+    };
+    const token = issueNativeOAuthTransferToken({
+      userId: proof.userId,
+      nextPath: '/settings',
+      credentialProof: proof,
+    });
+    const payload = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')) as {
+      authSessionId: string;
+      gen: number;
+      auth_time: number;
+      iat: number;
+    };
+    expect(payload.authSessionId).toBe(proof.authSessionId);
+    expect(payload.gen).toBe(4);
+    expect(payload.auth_time).toBe(Date.parse(authenticatedAt) / 1000);
+    expect(payload.auth_time).toBeLessThan(payload.iat);
+    expect(verifyNativeOAuthTransferToken(token)?.credentialProof).toEqual(proof);
+    expect(() =>
+      issueNativeOAuthTransferToken({ userId: 'other-owner', nextPath: '/', credentialProof: proof }),
+    ).toThrow();
+  });
 });

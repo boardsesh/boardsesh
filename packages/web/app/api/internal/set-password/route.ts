@@ -1,3 +1,6 @@
+import { setPasswordMode } from '@boardsesh/auth-protocol';
+import { delegateSetPassword } from '@/app/lib/auth/set-password-command.server';
+import { AuthBackendUnavailableError } from '@/app/lib/auth/password-command-client.server';
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
@@ -17,6 +20,8 @@ const setPasswordSchema = z
       .min(8, 'Password must be at least 8 characters')
       .max(128, 'Password must be less than 128 characters'),
     confirmPassword: z.string(),
+    expectedUserId: z.string().min(1).optional(),
+    expectedAuthSessionId: z.string().min(1).max(1024).optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: 'Passwords do not match',
@@ -25,6 +30,12 @@ const setPasswordSchema = z
 
 export async function POST(request: NextRequest) {
   try {
+    // Validate mode before any legacy credential write; mirror-on cannot fall back.
+    try {
+      setPasswordMode(process.env);
+    } catch {
+      throw new AuthBackendUnavailableError();
+    }
     const session = await getAdmittedServerSession();
 
     if (!session?.user?.id) {
@@ -69,7 +80,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { password } = validationResult.data;
+    const { password, confirmPassword, expectedUserId, expectedAuthSessionId } = validationResult.data;
+    const delegated = await delegateSetPassword(
+      request,
+      password,
+      confirmPassword,
+      expectedUserId && expectedAuthSessionId
+        ? { userId: expectedUserId, authSessionId: expectedAuthSessionId }
+        : undefined,
+    );
+    if (delegated) return delegated;
     const db = getDb();
 
     // Check if credentials already exist
@@ -113,6 +133,11 @@ export async function POST(request: NextRequest) {
       message: 'Password set successfully. You can now log in with your email and password.',
     });
   } catch (error) {
+    if (error instanceof AuthBackendUnavailableError)
+      return NextResponse.json(
+        { error: 'Service temporarily unavailable' },
+        { status: 503, headers: { 'Retry-After': '1' } },
+      );
     if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();
     console.error('Set password error:', error);
     return NextResponse.json({ error: 'An error occurred while setting the password' }, { status: 500 });

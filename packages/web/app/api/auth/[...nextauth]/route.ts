@@ -1,3 +1,6 @@
+import { requiresWebSignOutForwarding } from '@boardsesh/auth-protocol';
+import { forwardWebSignOut, responseClearsNextAuthSession } from '@/app/lib/auth/web-signout-command.server';
+import { capturePresentedWebCredential } from '@/app/lib/auth/admitted-session.server';
 import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
 import NextAuth from 'next-auth';
 import type { NextAuthOptions } from 'next-auth';
@@ -218,6 +221,20 @@ async function postAuth(
   // it picked. Clear both names in both scopes, so the read fallback above can't
   // resurrect a session the user just signed out of.
   const response = await handler(request, context);
+  // Only a successful public NextAuth CSRF flow emits its session clear. Buffer
+  // those headers until the independent backend SID denial is acknowledged.
+  const clearedSession = responseClearsNextAuthSession(response);
+  try {
+    if (requiresWebSignOutForwarding(process.env)) {
+      // A CSRF refusal must not be transformed into cookie clearing or a denial.
+      if (!clearedSession) return response;
+      const presented = await capturePresentedWebCredential(request);
+      if (!presented) return guardedSignOutResponse(503, 'signout_identity_unavailable');
+      await forwardWebSignOut(presented.credential);
+    }
+  } catch {
+    return guardedSignOutResponse(503, 'signout_authority_unavailable');
+  }
   appendSignOutSessionCookieClears(
     response,
     request.cookies.getAll().map((requestCookie) => requestCookie.name),

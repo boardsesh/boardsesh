@@ -1,3 +1,4 @@
+import type { WebCredentialProof } from '@boardsesh/auth-protocol';
 import type { DefaultSession } from 'next-auth';
 import type { AccountCreationReceipt } from '@boardsesh/analytics';
 
@@ -9,6 +10,9 @@ export type NativeOAuthCreationProof = {
 };
 
 declare module 'next-auth' {
+  interface User {
+    webCredentialProof?: WebCredentialProof;
+  }
   // eslint-disable-next-line typescript/consistent-type-definitions
   interface Session {
     /** Signed login generation; renewal never substitutes the primary generation. */

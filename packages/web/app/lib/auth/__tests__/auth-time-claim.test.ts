@@ -559,3 +559,61 @@ describe('gen beside auth_time', () => {
     expect(Math.ceil(after.length / CHUNK_SIZE)).toBe(1);
   });
 });
+
+describe('buffered SID sign-out writer through the real public NextAuth handler', () => {
+  function enableWriter() {
+    vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:47991');
+    vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'synthetic-independent-web-signout-rpc-secret');
+  }
+  async function signedOutRequest(csrf = csrfToken) {
+    const claims = await currentSessionClaims();
+    return invoke('signout', {
+      csrfToken: csrf,
+      json: 'true',
+      callbackUrl: baseUrl,
+      expectedUserId: climber.id,
+      expectedAuthSessionId: String(claims?.authSessionId),
+    });
+  }
+  it('forwards the exact signed credential and clears cookies only after a correlated SID acknowledgement', async () => {
+    remember(await signInWithPassword());
+    const credential = cookies.get(SESSION_COOKIE);
+    enableWriter();
+    const calls: unknown[] = [];
+    vi.stubGlobal('fetch', async (_destination: unknown, init: RequestInit) => {
+      if (typeof init.body !== 'string') throw new Error('Expected private JSON command');
+      const command = JSON.parse(init.body) as { requestId: string; payload: { credential: string } };
+      calls.push(command.payload.credential);
+      return Response.json({
+        protocolVersion: 2,
+        operation: 'signout',
+        requestId: command.requestId,
+        outcome: 'signed_out',
+      });
+    });
+    const response = await signedOutRequest();
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([credential]);
+    expect(response.headers.get('set-cookie')).toContain(`${SESSION_COOKIE}=;`);
+  });
+  it('keeps every cookie when the required denial authority is unavailable', async () => {
+    remember(await signInWithPassword());
+    enableWriter();
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('synthetic authority outage');
+    });
+    const response = await signedOutRequest();
+    expect(response.status).toBe(503);
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+  it('retains real CSRF rejection without denial RPC or appended session clears', async () => {
+    remember(await signInWithPassword());
+    enableWriter();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const response = await signedOutRequest('invalid-csrf');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(response.headers.get('set-cookie') ?? '').not.toContain(`${SESSION_COOKIE}=;`);
+  });
+});

@@ -429,3 +429,23 @@ describe('NextAuth cookie fetch lock', () => {
     expect(originalFetchMock).toHaveBeenCalledTimes(3);
   });
 });
+
+it('serializes set-password replacement cookies behind the existing session-cookie operation', async () => {
+  let release!: () => void;
+  originalFetchMock.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        release = () => resolve(new Response('{}'));
+      }),
+  );
+  installNextAuthCookieFetchLock();
+  const session = globalThis.fetch('/api/auth/session');
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  const setting = globalThis.fetch('/api/internal/set-password', { method: 'POST' });
+  await Promise.resolve();
+  expect(originalFetchMock).toHaveBeenCalledTimes(1);
+  release();
+  await Promise.all([session, setting]);
+  expect(originalFetchMock).toHaveBeenCalledTimes(2);
+  expect(originalFetchMock.mock.calls[1][0]).toBe('/api/internal/set-password');
+});

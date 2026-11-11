@@ -148,6 +148,7 @@ describe('production legacy bridge (dark)', () => {
         generation: 0,
         requiresAccountCutoff: false,
         authenticatedAt: null,
+        linkGuarded: false,
         expiresAt: new Date(now.getTime() + 3600000),
       },
       now,
