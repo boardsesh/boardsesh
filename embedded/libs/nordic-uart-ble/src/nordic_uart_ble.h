@@ -20,6 +20,8 @@ typedef void (*BLEConnectCallback)(bool connected);
 typedef void (*BLEDataCallback)(const uint8_t* data, size_t len);
 typedef void (*BLELedDataCallback)(const LedCommand* commands, int count, int angle);
 typedef void (*BLERawForwardCallback)(const uint8_t* data, size_t len);
+// A complete Aurora frame (empty: clear). Runs on the NimBLE host task.
+typedef void (*BLEFrameCallback)(const LedCommand* commands, size_t count);
 
 class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicCallbacks {
   public:
@@ -51,6 +53,12 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     // Raw data forwarding callback (called before Aurora protocol processing)
     // Used by BLE proxy to forward data to the actual board
     void setRawForwardCallback(BLERawForwardCallback callback);
+
+    // With a frame callback, a complete frame goes to it and this library does
+    // not touch the LEDs: the owner applies it on its own task, so one task
+    // writes the strip (the Spraywall build). Without one (default), the frame
+    // is shown here, on the NimBLE host task, as before.
+    void setFrameCallback(BLEFrameCallback callback);
 
     // Enable protocol decoder debug logging for packet/frame inspection.
     void setProtocolDebug(bool enabled);
@@ -94,6 +102,7 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     BLEDataCallback dataCallback;
     BLELedDataCallback ledDataCallback;
     BLERawForwardCallback rawForwardCallback;
+    BLEFrameCallback frameCallback;
 };
 
 extern NordicUartBLE BLE;

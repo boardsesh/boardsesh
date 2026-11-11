@@ -493,6 +493,43 @@ void test_empty_frame_clears_all_leds(void) {
     TEST_ASSERT_EQUAL(1, ledDataCallbackCount);
 }
 
+// With a frame callback (the Spraywall build), the frame goes to its owner,
+// who applies it on its own task; the library leaves the strip alone.
+static std::vector<LedCommand> lastFrame;
+static int frameCallbackCount = 0;
+static void testFrameCallback(const LedCommand* commands, size_t count) {
+    lastFrame.assign(commands, commands + count);
+    frameCallbackCount++;
+}
+
+void test_frame_callback_owns_the_strip(void) {
+    LEDs.begin(50);
+    lastFrame.clear();
+    frameCallbackCount = 0;
+    ble->setLedDataCallback(testLedDataCallback);
+    ble->setFrameCallback(testFrameCallback);
+    ble->begin("Boardsesh Spraywall 1A2B", true, false);
+
+    NimBLECharacteristic* rxChar = connectAndGetRxCharacteristic();
+    TEST_ASSERT_NOT_NULL(rxChar);
+    CRGB* strip = CFastLED::getLeds();
+
+    std::vector<uint8_t> climb = buildV3Frame({{4, 0xE0}});
+    rxChar->mockWrite(climb.data(), climb.size());
+    TEST_ASSERT_EQUAL(1, frameCallbackCount);
+    TEST_ASSERT_EQUAL(1, lastFrame.size());
+    TEST_ASSERT_EQUAL(4, lastFrame[0].position);
+    TEST_ASSERT_TRUE(strip[4] == CRGB(0, 0, 0));
+    // The backend forwarding is unchanged.
+    TEST_ASSERT_EQUAL(1, ledDataCallbackCount);
+
+    // A clear reaches the owner as an empty frame.
+    std::vector<uint8_t> clearFrame = buildV3Frame({});
+    rxChar->mockWrite(clearFrame.data(), clearFrame.size());
+    TEST_ASSERT_EQUAL(2, frameCallbackCount);
+    TEST_ASSERT_EQUAL(0, lastFrame.size());
+}
+
 // =============================================================================
 // Disconnect Client Tests
 // =============================================================================
@@ -707,6 +744,7 @@ int main(int argc, char** argv) {
 
     RUN_TEST(test_new_climb_frame_clears_previous_climb_leds);
     RUN_TEST(test_empty_frame_clears_all_leds);
+    RUN_TEST(test_frame_callback_owns_the_strip);
 
     // Disconnect client tests
     RUN_TEST(test_disconnect_client_when_connected);

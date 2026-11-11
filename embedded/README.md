@@ -245,7 +245,7 @@ firmware, built for the Boardsesh app's Bluetooth Spraywall lighting
 (`docs/spray-wall-led-ble.md`). It extends `gledopto-c015` with
 `-D SPRAYWALL_LED_CONTROLLER=1`, which:
 
-- advertises `Boardsesh Spraywall XXXX` (last two MAC bytes) with no Aurora
+- advertises `Boardsesh Spraywall XXXX` (last two bytes of the Bluetooth MAC) with no Aurora
   service UUID, so the Kilter app and Boardsesh's board pickers never list it;
   the Nordic UART service and Aurora v3 decoder are unchanged, and the app sends
   LED indices as Aurora positions;
@@ -253,6 +253,10 @@ firmware, built for the Boardsesh app's Bluetooth Spraywall lighting
   `Boardsesh-Setup` opens beside it when no Wi-Fi is saved);
 - turns the string off 30 minutes after the last climb
   (`-D SPRAYWALL_AUTO_OFF_MINUTES=<n>`, 0 never);
+- disconnects a phone that has not written for 90 s
+  (`-D SPRAYWALL_IDLE_DISCONNECT_SECONDS=<n>`), so one idle phone cannot hold it;
+- applies every frame in `loop()` (one task writes the strip; nordic-uart-ble's
+  `setFrameCallback`), where the Kilter builds still show it on the NimBLE task;
 - sets `NUM_LEDS=500` (the library's `MAX_LEDS`).
 
 No pairing: any phone in range can light it, like a Kilter board. Brightness is

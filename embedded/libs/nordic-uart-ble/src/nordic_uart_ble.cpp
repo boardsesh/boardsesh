@@ -8,7 +8,7 @@ NordicUartBLE::NordicUartBLE()
     : pServer(nullptr), pTxCharacteristic(nullptr), pRxCharacteristic(nullptr), deviceConnected(false),
       advertising(false), advertisingEnabled(false), lastAdvertisingEnsureAt(0),
       connectedDeviceHandle(BLE_HS_CONN_HANDLE_NONE), connectCallback(nullptr), dataCallback(nullptr),
-      ledDataCallback(nullptr), rawForwardCallback(nullptr) {}
+      ledDataCallback(nullptr), rawForwardCallback(nullptr), frameCallback(nullptr) {}
 
 void NordicUartBLE::begin(const char* deviceName, bool startAdv, bool advertiseAuroraService) {
     NimBLEDevice::init(deviceName);
@@ -107,6 +107,10 @@ void NordicUartBLE::setLedDataCallback(BLELedDataCallback callback) {
 
 void NordicUartBLE::setRawForwardCallback(BLERawForwardCallback callback) {
     rawForwardCallback = callback;
+}
+
+void NordicUartBLE::setFrameCallback(BLEFrameCallback callback) {
+    frameCallback = callback;
 }
 
 void NordicUartBLE::setProtocolDebug(bool enabled) {
@@ -218,14 +222,18 @@ void NordicUartBLE::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo
         // behaviour for a "clear board" command.)
         const std::vector<LedCommand>& commands = protocol.getLedCommands();
 
-        LEDs.clear();
-        if (commands.size() > 0) {
-            LEDs.setLeds(commands.data(), commands.size());
-            Logger.logln("BLE: Updated %zu LEDs from Bluetooth", commands.size());
+        if (frameCallback) {
+            frameCallback(commands.data(), commands.size());
         } else {
-            Logger.logln("BLE: Cleared board from Bluetooth");
+            LEDs.clear();
+            if (commands.size() > 0) {
+                LEDs.setLeds(commands.data(), commands.size());
+                Logger.logln("BLE: Updated %zu LEDs from Bluetooth", commands.size());
+            } else {
+                Logger.logln("BLE: Cleared board from Bluetooth");
+            }
+            LEDs.show();
         }
-        LEDs.show();
 
         // Forward to the backend only for non-empty climbs: the callback's job
         // is climb matching, and an empty clear-board frame has nothing to
