@@ -995,4 +995,13 @@ describe('the daemon pool honours DB_POOL_MAX', () => {
   it('keeps five when DB_POOL_MAX is not a number', async () => {
     expect(await poolMaxWith('three')).toBe(5);
   });
+
+  it('caps DB_POOL_MAX at 100, so a typo cannot exhaust the heap', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await poolMaxWith('100000')).toBe(100);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

@@ -50,27 +50,39 @@ export const MIN_POOL_MAX = 2;
  * of most requests.
  */
 export const MIN_POOL_IDLE_TIMEOUT_S = 0;
+/**
+ * postgres.js builds one connection object per slot up front, so `max` is
+ * memory before it is connections: 100000 took 736 MB of heap and 1000000 ran
+ * out of memory. 100 is already past the whole database's `max_connections`.
+ */
+export const MAX_POOL_MAX = 100;
 
 /**
  * Mirrors `readEnvInt` in connect-retry.ts: a missing or unparseable value falls
- * back, a parseable one is clamped to `minimum`.
+ * back, a parseable one is clamped to `minimum`, and to `maximum` with a warning
+ * when one is given.
  */
-function readPoolInt(name: string, fallback: number, minimum: number): number {
+function readPoolInt(name: string, fallback: number, minimum: number, maximum?: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed)) return fallback;
+  if (maximum !== undefined && parsed > maximum) {
+    console.warn(`[db] ${name}=${raw} is above ${maximum}; using ${maximum}`);
+    return maximum;
+  }
   return Math.max(minimum, parsed);
 }
 
 /**
  * `DB_POOL_MAX` as every pool in a process should read it: unset or unparseable
- * gives `fallback`, anything else is clamped to `MIN_POOL_MAX`. Exported for the
- * sync daemons, which build their own postgres.js pools and keep their own
- * default, so that one variable caps them the same way it caps `createDb()`.
+ * gives `fallback`, anything else is clamped to `MIN_POOL_MAX` and, with a
+ * warning, to `MAX_POOL_MAX`. Exported for the sync daemons, which build their
+ * own postgres.js pools and keep their own default, so that one variable caps
+ * them the same way it caps `createDb()`.
  */
 export function resolvePoolMax(fallback: number = DEFAULT_POOL_MAX): number {
-  return readPoolInt('DB_POOL_MAX', fallback, MIN_POOL_MAX);
+  return readPoolInt('DB_POOL_MAX', fallback, MIN_POOL_MAX, MAX_POOL_MAX);
 }
 
 /**

@@ -326,7 +326,7 @@ rest of the hour-long entry.
 | knob                      | default        | meaning                                                                                  |
 | ------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
 | `DB_READ_DEADLINE_MS`     | 6000           | web front door: wall clock for one _request's_ reads (queue wait + connect + execute)    |
-| `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2                                               |
+| `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2 and, with a warning, a ceiling of 100        |
 | `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
 
@@ -592,7 +592,7 @@ sets `DB_POOL_MAX=10` explicitly, so the new default does not affect it until
 the separate operator cap is applied. The Aurora and Kilter sync runners build
 their own postgres.js pools rather than calling `createDb()`, and size them with
 the same `resolvePoolMax()` (`packages/db/src/client/postgres.ts`): 5 when
-`DB_POOL_MAX` is unset, the variable when it is set, never below 2. Capping the
+`DB_POOL_MAX` is unset, the variable when it is set, never below 2 or above 100. Capping the
 daemons at 3 is therefore a variable change, with no code change. The hold
 detector's `createDb()` pool uses the shared default of 5 (or honors an
 explicit `DB_POOL_MAX`), and its separate pg-boss pool is fixed at 3. No
