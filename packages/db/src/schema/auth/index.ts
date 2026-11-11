@@ -9,3 +9,5 @@ export * from './password-recovery';
 export * from './web-oauth-intents';
 export * from './partner-oauth';
 export * from './email-resolution';
+
+export * from './consolidation';

@@ -542,3 +542,23 @@ Kratos/Hydra remains a viable service-based alternative with more operational
 components; keeping current auth plus a maintained OAuth server avoids an
 immediate identity migration but leaves ownership split. Neither alternative
 removes the email cleanup, session compatibility, or rollback obligations above.
+
+
+## Historical consolidation import identities
+
+A separately approved one-off repair can move existing accounts' climbing data
+to one retained account. Retired source accounts require fresh sign-in; this
+metadata adds no account-linking API, session exchange or mobile handoff.
+
+Import identifiers are frozen and include the original Boardsesh user ID.
+After a repair, importers consult exact applied membership and resource aliases
+before creating resources. Ambiguous aliases fail instead of choosing a climb
+or playlist by name. Keep this provenance after the repair CLI is archived so
+old exports cannot recreate moved resources. The percentile refresh excludes
+retired members and preserves their historical derived snapshots.
+
+The generated metadata migration is additive and moves no account data. Apply
+it before importer code; existing importer readers need SELECT on membership,
+import aliases and tick aliases. Batches, session aliases and group audits are
+operator provenance, not a running consolidation service. Metadata is written
+only by the separately reviewed maintenance-window repair.
