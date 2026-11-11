@@ -68,6 +68,8 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    starts with no cable. Both continue to **Skip the first LEDs** before wiring.
    Enter the unused physical LED count before the first marked position. Zero
    starts at physical index 0. The count is separate from gaps between positions.
+   Returning from the cable editor refreshes this field from the current cable,
+   including Undo, so Back and Next preserve its physical indices.
 10. In the cable editor, choose **Lay cable**, then tap LEDs or drag across them.
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,

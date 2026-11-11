@@ -417,8 +417,12 @@ function SetupWizard({ wallUuid, loaded }: { wallUuid: string; loaded: LoadedSet
     else if (step === 'cablePattern') setStep('holdLeds');
     else if (step === 'cableStart') setStep('cablePattern');
     else if (step === 'initialSkip') setStep(direction === 'custom' ? 'cablePattern' : 'cableStart');
-    else if (step === 'wiring') setStep('initialSkip');
-    else if (step === 'lighting') setStep('wiring');
+    else if (step === 'wiring') {
+      // Light and tap (and Undo) can change the cable's starting index. Read
+      // the current wiring before showing its field again, so Next preserves it.
+      setInitialSkipText(String(layout.wiring?.initialSkip ?? 0));
+      setStep('initialSkip');
+    } else if (step === 'lighting') setStep('wiring');
     else router.back();
   }
 

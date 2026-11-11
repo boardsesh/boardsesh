@@ -11,6 +11,7 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  assignLedIndices,
   createWiring,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
@@ -639,6 +640,85 @@ describe('SprayWallLedSetupScreen', () => {
     await waitFor(() => expect(preview.show).toHaveBeenLastCalledWith([1]));
     fireEvent.click(button('lightAndTap'));
     expect(preview.stop).toHaveBeenCalled();
+  });
+
+  it.each([false, true])('preserves Light and tap initial skips after Back and Next (undo=%s)', async (undo) => {
+    const holes = [
+      { x: 0.2, y: 0.3 },
+      { x: 0.5, y: 0.3 },
+      { x: 0.8, y: 0.3 },
+    ];
+    storage.load.mockResolvedValue({ ...savedLayout(), rows: 2, columns: 3, holes });
+    await openOnLedStep();
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    fireEvent.change(field('initialSkipLabel'), { target: { value: '2' } });
+    next();
+    fireEvent.click(button('lightAndTap'));
+    fireEvent.click(button('lightAndTapSkip'));
+    await act(async () => {});
+    expect(preview.show).toHaveBeenLastCalledWith([3]);
+    tap(holes[0]);
+    await act(async () => {});
+    tap(holes[1]);
+    await act(async () => {});
+    if (undo) fireEvent.click(button('undo'));
+    back();
+    expect(field('initialSkipLabel').value).toBe('3');
+    const beforeNext = assignLedIndices(lastSaved().wiring!);
+    expect(beforeNext.map(({ index }) => index)).toEqual(undo ? [3] : [3, 4]);
+    next();
+    expect(assignLedIndices(lastSaved().wiring!)).toEqual(beforeNext);
+  });
+
+  it.each(['7', '', '-1', '10001'])(
+    'retains the initial skip draft %s when returning from cable pattern',
+    async (draft) => {
+      storage.load.mockResolvedValue(savedLayout());
+      await openOnLedStep();
+      fireEvent.click(radio('ledCenter'));
+      next();
+      next();
+      next();
+      fireEvent.click(radio('customCable'));
+      next();
+      fireEvent.change(field('initialSkipLabel'), { target: { value: draft } });
+      back();
+      next();
+      expect(field('initialSkipLabel').value).toBe(draft);
+      expect(controls.header?.trailing.disabled).toBe(draft !== '7');
+      fireEvent.change(field('initialSkipLabel'), { target: { value: '3' } });
+      expect(controls.header?.trailing.disabled).toBe(false);
+      next();
+      expect(lastSaved().wiring?.initialSkip).toBe(3);
+    },
+  );
+
+  it('restores the initial skip field after undoing the first Light and tap assignment', async () => {
+    storage.load.mockResolvedValue(savedLayout());
+    await openOnLedStep();
+    fireEvent.click(radio('ledCenter'));
+    next();
+    next();
+    next();
+    fireEvent.click(radio('customCable'));
+    next();
+    fireEvent.change(field('initialSkipLabel'), { target: { value: '2' } });
+    next();
+    fireEvent.click(button('lightAndTap'));
+    fireEvent.click(button('lightAndTapSkip'));
+    await act(async () => {});
+    tap({ x: 0.3, y: 0.4 });
+    fireEvent.click(button('undo'));
+    back();
+    expect(field('initialSkipLabel').value).toBe('2');
+    next();
+    expect(lastSaved().wiring?.initialSkip).toBe(2);
+    expect(lastSaved().wiring?.paths).toEqual([]);
   });
 
   it('offers Lay cable and Light and tap only while some LEDs are not on the cable', async () => {
