@@ -329,7 +329,7 @@ rest of the hour-long entry.
 | `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2 and, with a warning, a ceiling of 100        |
 | `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
-| `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | unset (60000 in the backend server and the web server) | emits an `idle_in_transaction_session_timeout` startup parameter; `0` turns it off. See "Idle transactions end after 60 s on request pools" below |
+| `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | unset (60000 in the backend server and the web server) | emits an `idle_in_transaction_session_timeout` startup parameter: 1000 to 2147483647 ms, or `0` for off; any other value stops the process at boot. See "Idle transactions end after 60 s on request pools" below |
 
 6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
 brownout the front door should shed load rather than spend a second and third
@@ -492,12 +492,24 @@ not reports `0`.
 ### Changing it
 
 Set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` on the Railway service (`boardsesh-backend`
-or `boardsesh-web`): another positive number of milliseconds replaces 60000, and
-`0` turns it off. A variable change redeploys the service; connections opened
-before it keep their old value until they close, which a deploy does. Write the
-value in plain digits: a value with a unit, such as `60s`, counts as unset (so
-`applyRequestPoolDefaults()` leaves it off) rather than being read as 60 ms. Do
-not put `idle_in_transaction_session_timeout` in `DATABASE_URL` or
+or `boardsesh-web`). It takes whole milliseconds from 1000 to 2147483647, which
+replace 60000, or `0`. Unset or empty gets the 60 s default. Anything else stops
+the process at boot with a message naming the variable: `60` would be 60 ms and
+end nearly every transaction, `99999999999` is past PostgreSQL's ceiling and
+would fail every connection, and `60s` has no reading worth guessing. A variable
+change redeploys the service; connections opened before it keep their old value
+until they close, which a deploy does.
+
+`0` turns off the process-wide 60 s, and only that. It sends no parameter, so:
+
+- the partner and logbook snapshot pools still send 10 s (`partnerPoolOverrides()`
+  does not read the variable), and their transactions still set 10 s with
+  `set_config(..., true)`;
+- a role-level `ALTER ROLE ... SET idle_in_transaction_session_timeout` from
+  earlier would apply again. None should exist (see the check in
+  [integration-platform.md](./integration-platform.md), "Idle transactions").
+
+Do not put `idle_in_transaction_session_timeout` in `DATABASE_URL` or
 `READ_REPLICA_URL`: postgres.js lets a URL parameter beat the option on the
 shared pools. The startup parameter has the PgBouncer hazard described for
 `statement_timeout` above, on the replica URL as much as the primary: behind a

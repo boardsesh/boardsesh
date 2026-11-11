@@ -2507,14 +2507,36 @@ no `ALTER ROLE` to run for `boardsesh_runtime`.
 
    A backend or web session never stays past a minute. Anything longer comes
    from a worker, a sync daemon or a script, which are not covered.
-2. Leave the worker logins alone unless their long transactions have been
-   checked first: the board-snapshot export holds one REPEATABLE READ
-   transaction for a whole export, and a role-level value would apply to it.
+2. Make sure no login carries a role-level value. The worker logins must never
+   inherit one: the board-snapshot export holds one REPEATABLE READ transaction
+   for a whole export, and a role-level value would cut it. And `0` on the
+   backend or web sends no parameter, so it would not override one either:
+
+   ```sql
+   SELECT rolname, rolconfig
+   FROM pg_roles
+   WHERE rolconfig::text LIKE '%idle_in_transaction%';
+   ```
+
+   No rows is the expected answer. For each row, as the database admin (the
+   migration role cannot alter application roles):
+
+   ```sql
+   ALTER ROLE <rolname> RESET idle_in_transaction_session_timeout;
+   ```
+
+   A role setting made for one database only shows up in `pg_db_role_setting`,
+   not `pg_roles.rolconfig`. Check it too:
+   `SELECT setrole::regrole, setconfig FROM pg_db_role_setting WHERE setconfig::text LIKE '%idle_in_transaction%';`.
+   Clear any row it returns with `ALTER ROLE <role> IN DATABASE railway RESET idle_in_transaction_session_timeout;`.
 3. Alert when the oldest running write transaction is over 5 minutes old
    ([Observability](#observability)).
 
-To change the value, set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` (milliseconds,
-digits only) on `boardsesh-backend` or `boardsesh-web`; `0` turns it off.
+To change the value, set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` on `boardsesh-backend`
+or `boardsesh-web`: whole milliseconds from 1000 to 2147483647. Any other value
+stops the service at boot. `0` turns off the 60 s default only. The partner
+and snapshot pools keep their 10 s, and a role-level value from step 2 would
+apply again.
 
 ### Admin commands
 

@@ -153,20 +153,49 @@ function basePoolOptions() {
 const IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE = 'DB_IDLE_IN_TRANSACTION_TIMEOUT_MS';
 
 /**
- * A positive whole number of milliseconds from the environment, or nothing.
- * Digits only: `parseInt('60s')` would read 60 ms and end nearly every
- * transaction, so a value with a unit counts as unset instead.
+ * `DB_STATEMENT_TIMEOUT_MS` as it has always been read: `parseInt`, so `8000ms`
+ * is 8000; nothing when unset, unparseable or not positive.
  */
-function readPositiveMilliseconds(name: string): number | undefined {
-  const raw = process.env[name]?.trim();
-  if (!raw || !/^\d+$/.test(raw)) return undefined;
+function readStatementTimeoutMs(): number | undefined {
+  const raw = process.env.DB_STATEMENT_TIMEOUT_MS;
+  if (!raw) return undefined;
   const parsed = Number.parseInt(raw, 10);
-  return parsed > 0 ? parsed : undefined;
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return parsed;
+}
+
+/** Below a second is almost certainly seconds typed as milliseconds. */
+export const MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS = 1_000;
+/** PostgreSQL's own ceiling for the setting; above it every connection fails. */
+export const MAX_IDLE_IN_TRANSACTION_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`, strictly. Unset or empty means nothing to
+ * send, and `0` means off. Anything else must be whole milliseconds from
+ * `MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS` to `MAX_IDLE_IN_TRANSACTION_TIMEOUT_MS`,
+ * or the process fails at boot: `60` (seconds by mistake) would end nearly every
+ * transaction, `99999999999` would fail every connection, and `60s` has no
+ * reading we could trust.
+ */
+function readIdleInTransactionTimeoutMs(): number | undefined {
+  const raw = process.env[IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE]?.trim();
+  if (!raw || raw === '0') return undefined;
+  const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS ||
+    parsed > MAX_IDLE_IN_TRANSACTION_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `${IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE} must be 0 (off) or whole milliseconds from ${MIN_IDLE_IN_TRANSACTION_TIMEOUT_MS} to ${MAX_IDLE_IN_TRANSACTION_TIMEOUT_MS}; got ${JSON.stringify(raw)}.`,
+    );
+  }
+  return parsed;
 }
 
 /**
  * Session timeouts sent as startup parameters. Unitless values are milliseconds
- * to PostgreSQL. Each is sent only when its variable holds a positive number.
+ * to PostgreSQL.
  *
  * - `DB_STATEMENT_TIMEOUT_MS` → `statement_timeout`. Deliberately OFF by
  *   default: PgBouncer in transaction-pooling mode rejects startup parameters
@@ -184,8 +213,8 @@ function readPositiveMilliseconds(name: string): number | undefined {
 function startupParameterOptions(): {
   connection?: { statement_timeout?: number; idle_in_transaction_session_timeout?: number };
 } {
-  const statementTimeout = readPositiveMilliseconds('DB_STATEMENT_TIMEOUT_MS');
-  const idleInTransactionTimeout = readPositiveMilliseconds(IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE);
+  const statementTimeout = readStatementTimeoutMs();
+  const idleInTransactionTimeout = readIdleInTransactionTimeoutMs();
   if (statementTimeout === undefined && idleInTransactionTimeout === undefined) return {};
   return {
     connection: {
@@ -208,7 +237,8 @@ export const REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
  * Marks this process as one that serves requests (the backend's HTTP/GraphQL
  * server, the web server), so every pool it builds from here on sends
  * `idle_in_transaction_session_timeout`. An explicit
- * `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` wins; `0` turns it off.
+ * `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` wins; unset or empty gets the 60 s
+ * default; `0` turns it off. A value out of range throws here, at boot.
  *
  * Call it before the first `createDb()`. The shared pools are built once per
  * process, so one built earlier would keep running without the timeout; this
@@ -216,8 +246,10 @@ export const REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS = 60_000;
  * setting (Next.js re-evaluating a module in dev) is fine.
  */
 export function applyRequestPoolDefaults(): void {
-  process.env[IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE] ??= String(REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS);
-  const expected = readPositiveMilliseconds(IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE);
+  if (!process.env[IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE]?.trim()) {
+    process.env[IDLE_IN_TRANSACTION_TIMEOUT_VARIABLE] = String(REQUEST_POOL_IDLE_IN_TRANSACTION_TIMEOUT_MS);
+  }
+  const expected = readIdleInTransactionTimeoutMs();
   for (const pool of [cache.client, cache.readClient]) {
     if (pool && pool.options.connection.idle_in_transaction_session_timeout !== expected) {
       throw new Error(
