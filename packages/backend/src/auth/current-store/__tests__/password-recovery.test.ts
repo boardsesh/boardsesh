@@ -15,8 +15,6 @@ import {
   AUTH_COMMAND_MAX_AGE_MS,
 } from '@boardsesh/auth-protocol';
 import {
-  accountConsolidationMembers,
-  accountConsolidationSessionProofs,
   authEmailProjection,
   authEmailReservations,
   authEmailReservationMembers,
@@ -80,8 +78,6 @@ const originalPassword = 'original-owned-password';
 const nextPassword = 'new-owned-password';
 const digest = (token: string) => createHash('sha256').update(`password-recovery-v1\0${token}`).digest('hex');
 const mutableTables = [
-  accountConsolidationMembers,
-  accountConsolidationSessionProofs,
   users,
   userCredentials,
   authEmailProjection,

@@ -12,7 +12,6 @@ import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity
 import { clientIdentityHeaders, getClientIdentityHeaderValue } from './client-identity';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
-import { acceptNativeAccountConsolidation } from './account-consolidation-client';
 import type { AuthRejectionResult } from './auth-rejection-result';
 
 type AuthRefreshResult =
@@ -97,22 +96,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
         : { status: 'unavailable', generation: credentialGeneration, error: refreshError };
     }
 
-    const data = (await response.json()) as {
-      jwt: string;
-      refreshToken: string;
-      expiresAt: string;
-      accountConsolidation?: unknown;
-    };
-    if (data.accountConsolidation !== undefined) {
-      const previousToken = await getAuthToken();
-      if (!previousToken || !isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-      const nextGeneration = await acceptNativeAccountConsolidation(
-        { ...data, accountConsolidation: data.accountConsolidation },
-        previousToken,
-        credentialGeneration,
-      );
-      return nextGeneration === null ? { status: 'superseded' } : { status: 'refreshed', generation: nextGeneration };
-    }
+    const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
     const stored = await storeTokensForGeneration(credentialGeneration, data.jwt, data.refreshToken, data.expiresAt);
     return stored ? { status: 'refreshed', generation: credentialGeneration } : { status: 'superseded' };
   } catch (error) {

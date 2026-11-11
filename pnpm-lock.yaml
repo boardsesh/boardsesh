@@ -626,9 +626,6 @@ importers:
       '@boardsesh/analytics':
         specifier: workspace:*
         version: link:../shared/analytics
-      '@boardsesh/auth-protocol':
-        specifier: workspace:*
-        version: link:../shared/auth-protocol
       '@boardsesh/ble-protocol':
         specifier: workspace:*
         version: link:../shared/ble-protocol

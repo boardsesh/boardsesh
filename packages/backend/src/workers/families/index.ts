@@ -10,7 +10,6 @@ import { refreshClimbNeighborsFamily } from './refresh-climb-neighbors';
 import { refreshHoldFeaturesFamily } from './refresh-hold-features';
 import { refreshMoonboardAngleEstimatesFamily } from './refresh-moonboard-angle-estimates';
 import { refreshMoonboardWideAngleEstimatesFamily } from './refresh-moonboard-wide-angle-estimates';
-import { refreshUserPercentilesFamily } from './refresh-user-percentiles';
 import { refreshRecommendationsFamily } from './refresh-recommendations';
 import { workerProbeFamily } from './worker-probe';
 import { auroraUserSyncFamily } from './aurora-user-sync';
@@ -34,7 +33,6 @@ export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFami
 const FAMILY_MODULES = {
   'worker-probe': workerProbeFamily,
   'refresh-recommendations': refreshRecommendationsFamily,
-  'refresh-user-percentiles': refreshUserPercentilesFamily,
   'refresh-hold-features': refreshHoldFeaturesFamily,
   'refresh-climb-grades': refreshClimbGradesFamily,
   'refresh-climb-neighbors': refreshClimbNeighborsFamily,

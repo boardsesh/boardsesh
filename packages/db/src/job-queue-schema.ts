@@ -554,9 +554,6 @@ export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly Work
   // refresh-climb-neighbors, export-board-snapshots, spray-wall-health,
   // community-monthly-stats.
   batch: [
-    // Consolidation recomputes the active climber ranking without reading credentials.
-    { table: 'account_consolidation_members', privileges: ['SELECT'], columns: ['source_user_id', 'status'] },
-    { table: 'user_climb_percentiles', privileges: ['SELECT', 'INSERT', 'UPDATE'] },
     // Public recommendation cohorts must apply current account/item privacy.
     // No private profile text or follower identities are read by this job.
     { table: 'user_profiles', privileges: ['SELECT'], columns: ['user_id', 'is_private', 'privacy_revision'] },

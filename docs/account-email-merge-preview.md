@@ -106,66 +106,45 @@ Do not run a proposed merge against production to discover what it changes.
 
 Production merge approval is intentionally the final step. The original preview command remains read-only; the separate consolidation command described below provides an explicit apply path.
 
-## Approved consolidation implementation
+## Approved one-off repair
 
-The owner subsequently requested full account consolidation. The repair keeps
-an existing unique lowercase-email account; the seven-member exact-duplicate
-exception keeps its Google-linked, sole data-holding account. This rule applies
-only to the explicitly reviewed historical batch. It is not a rule permitting
-future account linking by email alone.
+The owner approved full consolidation for this historical batch, with fresh
+sign-in for retired source accounts. The repair keeps the unique existing
+lowercase-email account. The seven-member exception keeps its explicitly
+approved Google-linked, sole data-holding account; approval binds exact prior
+evidence, membership and survivor. This is not future linking by email.
 
-Keep the canonical account's password, if any, and existing Google/Apple subject
-links. Do not import passwords from retired accounts. Keep canonical display
-fields, intersect privacy, and preserve original settings in audit evidence.
-Source user rows remain disabled tombstones. Source security history does not
-become canonical security history.
+Keep the retained account's password, display profile and existing sessions.
+Move approved Google/Apple subjects without importing source passwords. Retire
+source credentials, refresh tokens, sessions, recovery tokens and notification
+devices, and mark source subjects deleted in the existing cutoff authority.
+Keep source user rows as disabled tombstones. Source devices use ordinary
+fresh sign-in and account-boundary behavior; this repair does not transfer
+sessions or promise preservation of unsynced device queues. The owner declined
+a mandatory device-drain campaign. Review that limitation before cutover.
 
-Eligible existing sessions should transfer automatically. Native refresh keeps
-its existing response contract with optional consolidation metadata. The bridge
-must recheck original expiry, source and target revocation state, generations
-and retirement reason under locks. Preserve authentication age, including
-unknown age. Source access JWTs do not become generic canonical authorization.
-Web cookies require established revocation lineage and a response capable of
-committing the canonical cookie; otherwise normal sign-in remains necessary.
-Canonical reset/sign-out must also invalidate pending or transferred bridges.
+Keep one exact duplicate tick with provider identities/provenance preserved.
+Unexpected payload or upstream identity conflicts block the group. Preserve
+inferred session names, goals, notes and social history with deterministic
+precedence; explicit sessions stay distinct. Intersect effective privacy,
+using owner-only visibility where the original audiences cannot be represented.
+Preserve distinct playlists/climbs and never infer physical-board identity from
+serial alone. Unsupported references or conflicting assignments abort.
 
-A phone identity transfer advances the credential epoch and journals the
-transition, fencing old HTTP, WebSocket, query and outbox completions. Preserve
-pending writes while resetting server-derived caches and changing the ownership
-stamp. The owner declined a mandatory device-sync campaign or separate queued
-work recovery feature; this does not establish compatibility for older clients.
-
-Exact duplicate ticks keep the canonical account's existing row where present,
-otherwise the lowest numeric tick ID. Preserve upstream identity and provenance
-and retain owner-scoped retired-ID aliases. Unexpected payload or upstream
-identity conflicts block a group. Importers must account for user-scoped tick,
-circuit and climb identities without changing their frozen hash functions.
-
-Combine inferred sessions automatically, preserving distinct names, goals,
-notes and social history with deterministic precedence and stricter privacy.
-Do not use the current reconciler's destructive merge path unchanged. Keep
-explicit sessions distinct; incompatible assignments block a group. Preserve
-distinct playlist/climb identities, collapse duplicate relationship edges, and
-never merge physical boards based only on a reused serial number.
-
-Implementation is staged: deterministic read-only plan, durable mapping/audit
-schema, explicit data handlers, session bridge and client transition, then a
-protected full-database rehearsal. An unavailable handler or unknown reference
-must be reported as a blocked capability, never as executable readiness.
-Production application still requires the exact private plan hash and a
-separate owner approval after rehearsal. Pause and drain writers for cutover;
-the five-minute window is a rehearsal target. No production application is
-authorized merely by building or merging this tooling.
-
+The repair is an operator CLI. No GraphQL mutation or REST endpoint starts a
+merge, and there is no automatic session handoff or client ownership migration.
+The small importer compatibility patch must recognize former user-scoped keys:
+re-importing an old export must not recreate moved climbs/playlists. Frozen
+hash functions stay unchanged, exact aliases select existing identities, and
+ambiguous matches fail instead of choosing by name.
 
 ## Operator command and deployment order
 
-`packages/backend/src/scripts/consolidate-account-emails.ts` has separate plan
-and apply invocations. It never uses the ambient `DATABASE_URL`; supply the
-explicit `ACCOUNT_CONSOLIDATION_DATABASE_URL` through the operator's protected
-environment. Keep credentials, exceptions, plans and receipts outside checkout.
-The output directory must be private (0700); plans and evidence must be owned
-regular files (0600), with no symlink traversal.
+`packages/backend/src/scripts/consolidate-account-emails.ts` separates plan
+and apply. Supply `ACCOUNT_CONSOLIDATION_DATABASE_URL` through a protected
+operator environment; the tool never uses ambient `DATABASE_URL`. Store plans,
+approvals, archives and JSONL receipts outside checkout in an owned private
+0700 directory; input files must be owned regular 0600 files, not symlinks.
 
 ```sh
 vp exec tsx packages/backend/src/scripts/consolidate-account-emails.ts \
@@ -177,66 +156,40 @@ vp exec tsx packages/backend/src/scripts/consolidate-account-emails.ts \
   --out /private/operator/consolidation-receipt.jsonl
 ```
 
-The plan defaults to a replica; `--allow-primary` permits a read-only primary
-snapshot. The exceptional survivor requires both `--exceptions` and
-`--prior-plan`; the exception binds the exact evidence hash, former plan hash,
-full membership and survivor. A group label or email spelling alone cannot
-select the exceptional survivor.
+Planning defaults to a replica; `--allow-primary` permits a read-only primary
+snapshot. Exceptional survivor selection requires `--exceptions` and
+`--prior-plan`; a group label alone grants no authority. The fresh-sign-in
+policy is version 2; earlier automatic-transfer plans cannot be applied.
 
-1. Deploy generated migration 0305 before code that consults durable aliases.
-   Deploy backend, web and the supported mobile clients; enable
-   `ACCOUNT_CONSOLIDATION_BRIDGE_MODE=enabled` for proof enrollment/exchange.
-2. Rehearse the exact approved mappings on a protected restored copy without
-   external delivery. Review archives, counts, conflicts, failure rollback,
-   resume and offline client behavior. A synthetic fixture pass is not this gate.
-3. For the approved cutover, establish a separate
-   `boardsesh_consolidation_operator` login. All other capable database login
-   roles must be NOLOGIN, and other sessions must be drained. The command only
-   verifies this fence; it never changes roles or terminates connections.
-4. Apply the exact private plan checksum. Each group commits atomically with
-   its aliases, queued jobs and audit. Drift, unsupported references or domain
-   conflicts roll back that group. Reuse the batch ID and original plan to
-   resume, with a new receipt path. Completed groups are not applied twice.
-5. Verify the private final receipt, group audits and queued provider/statistics
-   work before restoring ordinary writer access. The five-minute limit is a
-   stop boundary; partial completion requires inspection and deliberate resume.
+1. Install the reviewed metadata schema and importer compatibility patch before
+   the repair. The one-off CLI can run from its reviewed checkout; it is not a
+   running service and does not require a new worker family.
+2. Rehearse exact approved mappings on a protected restored copy without live
+   provider/push/email delivery. Compare archives, ownership, privacy, counts,
+   failure rollback, multi-group execution and resume. A synthetic fixture is
+   not the exact protected-copy gate. Confirm retained login and source denial.
+3. Pause and drain writers. The dedicated login must be
+   `boardsesh_consolidation_operator`; every other capable login must be
+   NOLOGIN and other primary sessions must be drained. The command verifies
+   this fence and never changes roles or terminates connections.
+4. Apply the exact approved plan checksum. Six explicit handlers, aliases,
+   existing-family provider jobs and group audit commit atomically. Drift or
+   unsupported conflicts roll back the affected group. Reuse plan/batch IDs
+   with a new receipt path to resume; completed groups are not applied twice.
+5. Verify the private final receipt and queued provider work before restoring
+   writers. The five-minute limit stops further groups and requires inspection.
+   The final global percentile refresh is derived work after all groups;
+   individual group fingerprints describe their earlier commit boundary.
 
-Before deploying admission and security writers, provision their existing
-PostgreSQL roles explicitly: admission readers need SELECT on
-`account_consolidation_members` and `account_consolidation_session_proofs`;
-credential/security writers need SELECT and UPDATE on both, plus their existing
-`mobile_refresh_tokens` permissions. The guarded web enrollment service also
-needs INSERT on session proofs. Tick writers need SELECT, INSERT and UPDATE on
-tick/import aliases and SELECT on members; session reconciliation needs the
-corresponding session-alias permissions. These grants remain necessary when
-new exchanges are disabled. Use the reviewed role-provisioning procedure;
-do not grant roles ownership, DDL rights or unrestricted schema access.
+Importer readers need SELECT on membership/import/tick-alias metadata. The
+operator needs the explicit repair privileges. No proof enrollment, session
+exchange endpoint, new mobile release or auth-service grant expansion is part
+of this fresh-sign-in repair. Retain applied import identities after the CLI
+is archived; disabling importer provenance can recreate duplicates.
 
-Once applied, data aliases and session revocations remain authoritative even
-when automatic session exchange is disabled. Disabling the bridge does not
-undo account consolidation. Source user rows remain disabled; restoring a
-pre-cutover backup requires a coordinated full rollback, not deleting mappings.
-Archive originals before any production run. The preimage files intentionally
-exclude credential secrets; they are not a replacement for a protected database
-backup.
-
-Native refresh preserves single-use rotation: a lost response can require
-normal sign-in. Web sessions without previously enrolled revocation lineage
-require sign-in. Transferred cookies retain original issuance, expiry and
-known authentication time. Older clients may still invoke their ordinary
-account-switch behavior; the supported updated clients journal the transition,
-preserve pending mutations, reset derived caches and resume under the canonical
-owner. The owner accepted this older-client residual risk without a mandatory
-device-sync campaign.
-
-Retired tick UUIDs remain save aliases after session exchange is disabled. A
-stale create returns the canonical event; it cannot recreate a deleted event.
-An edit or delete addressed to a retired UUID returns `CONFLICT` when the
-canonical event changed after the merge, preserving the newer edit. The app's
-existing outbox failure handling retains that rejected operation for review.
-Editing the canonical UUID directly continues through the normal ownership
-checks. Source authentication credentials never gain access through a data alias.
-
-Retired inferred session addresses route only for their canonical owner. Old full-session edits return a conflict to protect combined notes. Later inferred merges retarget aliases transactionally; emptied sessions leave tombstones. If an aliased inferred session would merge into an explicit session, reconciliation refuses the operation and its surrounding tick mutation rolls back. This preserves history until that unsupported merge has an explicit metadata and social-reference policy.
-
-Ordinary reconciliation also refuses to discard any aliased session with a title, goal, notes, edits, social history, privacy rules, or attached session resources. Empty aliased inferred sessions can still retarget or become tombstones. Rejected reconciliation rolls back the surrounding tick write.
+Private preimages exclude credential secrets and do not replace a protected
+full database backup. Source devices must sign in again with the retained
+account's password, provider login or normal recovery. Canonical sessions are
+unchanged. No production application is authorized by creating or merging this
+code: exact protected-copy rehearsal and separate cutover approval remain
+required.

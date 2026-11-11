@@ -4,6 +4,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 /** Global ranking must be recomputed after identity consolidation changes the active population. */
 export async function refreshUserClimbPercentiles(
   database: Pick<PgDatabase<PgQueryResultHKT, Record<string, unknown>>, 'execute'>,
+  targetUserId?: string,
 ): Promise<void> {
   await database.execute(sql`
       WITH distinct_counts AS (
@@ -53,6 +54,7 @@ export async function refreshUserClimbPercentiles(
       LEFT JOIN ranked_active_users
         ON ranked_active_users.user_id = u.id
       WHERE NOT EXISTS (SELECT 1 FROM account_consolidation_members acm WHERE acm.source_user_id = u.id AND acm.status = 'applied')
+        AND (${targetUserId ?? null}::text IS NULL OR u.id=${targetUserId ?? null}::text)
       ON CONFLICT (user_id) DO UPDATE
         SET total_distinct_climbs = EXCLUDED.total_distinct_climbs,
             percentile = EXCLUDED.percentile,

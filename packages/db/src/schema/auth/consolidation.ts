@@ -37,45 +37,13 @@ export const accountConsolidationMembers = pgTable(
     canonicalUserId: text('canonical_user_id').notNull(),
     mergeId: text('merge_id').notNull(),
     status: text('status').$type<'planned' | 'applied'>().notNull(),
-    sourceGenerationBefore: integer('source_generation_before').notNull(),
-    sourceNativeGenerationBefore: integer('source_native_generation_before').notNull(),
-    sourceGenerationAfter: integer('source_generation_after').notNull(),
-    sourceNativeGenerationAfter: integer('source_native_generation_after').notNull(),
-    targetGeneration: integer('target_generation').notNull(),
-    targetNativeGeneration: integer('target_native_generation').notNull(),
-    nativeBridgeRevokedAt: timestamp('native_bridge_revoked_at', { withTimezone: true }),
-    webBridgeRevokedAt: timestamp('web_bridge_revoked_at', { withTimezone: true }),
     appliedAt: timestamp('applied_at', { withTimezone: true }),
   },
   (table) => [
     index('account_consolidation_members_target_idx').on(table.canonicalUserId),
     check('account_consolidation_members_distinct', sql`${table.sourceUserId} <> ${table.canonicalUserId}`),
     check('account_consolidation_members_status', sql`${table.status} IN ('planned','applied')`),
-    check(
-      'account_consolidation_members_stamps',
-      sql`${table.sourceGenerationBefore} >= 0 AND ${table.sourceNativeGenerationBefore} >= 0 AND ${table.sourceGenerationAfter} = ${table.sourceGenerationBefore} + 1 AND ${table.sourceNativeGenerationAfter} >= ${table.sourceNativeGenerationBefore} AND ${table.targetGeneration} >= 0 AND ${table.targetNativeGeneration} >= 0`,
-    ),
     check('account_consolidation_members_applied', sql`${table.status} <> 'applied' OR ${table.appliedAt} IS NOT NULL`),
-  ],
-);
-
-/** Explicit proof enrollment. Never stores a raw cookie, refresh secret or password. */
-export const accountConsolidationSessionProofs = pgTable(
-  'account_consolidation_session_proofs',
-  {
-    credentialId: text('credential_id').primaryKey(),
-    sourceUserId: text('source_user_id').notNull(),
-    mergeId: text('merge_id').notNull(),
-    kind: text('kind').$type<'native-refresh' | 'web-session'>().notNull(),
-    canonicalSessionId: text('canonical_session_id').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    consumedAt: timestamp('consumed_at', { withTimezone: true }),
-    revokedAt: timestamp('revoked_at', { withTimezone: true }),
-  },
-  (table) => [
-    index('account_consolidation_proofs_source_idx').on(table.sourceUserId),
-    uniqueIndex('account_consolidation_proofs_session_idx').on(table.canonicalSessionId),
-    check('account_consolidation_proofs_kind', sql`${table.kind} IN ('native-refresh','web-session')`),
   ],
 );
 

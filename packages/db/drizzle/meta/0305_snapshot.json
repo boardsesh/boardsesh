@@ -1,5 +1,5 @@
 {
-  "id": "021949e4-ebbb-492f-b5b2-f0bf5984a89d",
+  "id": "12d6922b-b779-4fdd-91a5-8d0a404bae79",
   "prevId": "b4234905-3cd5-4835-a07e-c1b768c6977c",
   "version": "7",
   "dialect": "postgresql",
@@ -7643,54 +7643,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_generation_before": {
-          "name": "source_generation_before",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_native_generation_before": {
-          "name": "source_native_generation_before",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_generation_after": {
-          "name": "source_generation_after",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_native_generation_after": {
-          "name": "source_native_generation_after",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_generation": {
-          "name": "target_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target_native_generation": {
-          "name": "target_native_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "native_bridge_revoked_at": {
-          "name": "native_bridge_revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "web_bridge_revoked_at": {
-          "name": "web_bridge_revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "applied_at": {
           "name": "applied_at",
           "type": "timestamp with time zone",
@@ -7727,10 +7679,6 @@
         "account_consolidation_members_status": {
           "name": "account_consolidation_members_status",
           "value": "\"account_consolidation_members\".\"status\" IN ('planned','applied')"
-        },
-        "account_consolidation_members_stamps": {
-          "name": "account_consolidation_members_stamps",
-          "value": "\"account_consolidation_members\".\"source_generation_before\" >= 0 AND \"account_consolidation_members\".\"source_native_generation_before\" >= 0 AND \"account_consolidation_members\".\"source_generation_after\" = \"account_consolidation_members\".\"source_generation_before\" + 1 AND \"account_consolidation_members\".\"source_native_generation_after\" >= \"account_consolidation_members\".\"source_native_generation_before\" AND \"account_consolidation_members\".\"target_generation\" >= 0 AND \"account_consolidation_members\".\"target_native_generation\" >= 0"
         },
         "account_consolidation_members_applied": {
           "name": "account_consolidation_members_applied",
@@ -7788,103 +7736,6 @@
         "account_consolidation_session_alias_tombstone": {
           "name": "account_consolidation_session_alias_tombstone",
           "value": "\"account_consolidation_session_aliases\".\"tombstoned\" OR \"account_consolidation_session_aliases\".\"canonical_session_id\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_session_proofs": {
-      "name": "account_consolidation_session_proofs",
-      "schema": "",
-      "columns": {
-        "credential_id": {
-          "name": "credential_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "source_user_id": {
-          "name": "source_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "canonical_session_id": {
-          "name": "canonical_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "consumed_at": {
-          "name": "consumed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "account_consolidation_proofs_source_idx": {
-          "name": "account_consolidation_proofs_source_idx",
-          "columns": [
-            {
-              "expression": "source_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "account_consolidation_proofs_session_idx": {
-          "name": "account_consolidation_proofs_session_idx",
-          "columns": [
-            {
-              "expression": "canonical_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_consolidation_proofs_kind": {
-          "name": "account_consolidation_proofs_kind",
-          "value": "\"account_consolidation_session_proofs\".\"kind\" IN ('native-refresh','web-session')"
         }
       },
       "isRLSEnabled": false

@@ -53,7 +53,6 @@ const NON_FK: readonly TableSelection[] = [
     columns: ['source_user_id', 'canonical_user_id'],
     jsonColumns: [],
   },
-  { schema: 'public', table: 'account_consolidation_session_proofs', columns: ['source_user_id'], jsonColumns: [] },
   ...[
     'account_consolidation_tick_aliases',
     'account_consolidation_import_aliases',

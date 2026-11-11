@@ -49,7 +49,6 @@ import { refreshMoonboardWideAngleEstimatesFamily } from '../../workers/families
 import { sprayWallHealthFamily } from '../../workers/families/spray-wall-health';
 import { communityMonthlyStatsFamily } from '../../workers/families/community-monthly-stats';
 import { computeCommunityMonthlyStats } from '../community-monthly-stats';
-import { refreshUserPercentilesFamily } from '../../workers/families/refresh-user-percentiles';
 import { refreshRecommendationsFamily } from '../../workers/families/refresh-recommendations';
 import {
   FIXTURE_PREFIX,
@@ -330,8 +329,6 @@ describe('batch worker grants', () => {
 
       // Twice: the second night takes the replace path, whose playlist_climbs
       // delete fires the sync_deletions trigger.
-      await refreshUserPercentilesFamily.execute(context('refresh-user-percentiles'), {});
-      expect((await owner`SELECT count(*)::int AS count FROM user_climb_percentiles`)[0].count).toBeGreaterThan(0);
       await refreshRecommendationsFamily.execute(context('refresh-recommendations'), {});
       await refreshRecommendationsFamily.execute(context('refresh-recommendations'), {});
       // Each rewritten cohort playlist's grade band is recomputed with its

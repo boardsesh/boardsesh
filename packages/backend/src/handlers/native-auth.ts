@@ -2,18 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
-import { eq, and, isNull, lt, or, isNotNull, sql, DrizzleQueryError } from 'drizzle-orm';
+import { eq, and, isNull, lt, or, isNotNull, DrizzleQueryError } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountHoldersByEmail } from '@boardsesh/db/queries/account-email';
-import {
-  accountConsolidationMembers,
-  accountConsolidationSessionProofs,
-  mobileRefreshTokens,
-  users,
-  accounts,
-  userProfiles,
-} from '@boardsesh/db/schema/auth';
+import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
@@ -30,13 +23,6 @@ import {
   type PasswordProof,
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
-import { exchangeConsolidationSession, ConsolidationExchangeError } from '../auth/consolidation-session/exchange';
-import {
-  nativeConsolidationExchangeTransaction,
-  revokeConsolidationSourceNativeSessions,
-  revokeConsolidationTargetNativeBridges,
-} from '../auth/consolidation-session/database';
-import type { AccountConsolidationReceipt } from '@boardsesh/auth-protocol/account-consolidation';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
@@ -417,8 +403,7 @@ type NativeCredentialOrigin =
    */
   | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null; readonly passwordProof?: PasswordProof }
   /** The refresh row this request consumed, under the same user lock. */
-  | { readonly kind: 'refresh'; readonly parent: RefreshStamps }
-  | { readonly kind: 'consolidation'; readonly authenticatedAt: Date | null; readonly canonicalSessionId: string };
+  | { readonly kind: 'refresh'; readonly parent: RefreshStamps };
 
 type CredentialStamps = {
   subjectGeneration: number;
@@ -436,12 +421,12 @@ function signedInNow(): NativeCredentialOrigin {
 const SIGN_IN_OF_UNKNOWN_AGE: NativeCredentialOrigin = { kind: 'sign-in', authenticatedAt: null };
 
 function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCutoffState): CredentialStamps {
-  if (origin.kind === 'sign-in' || origin.kind === 'consolidation') {
+  if (origin.kind === 'sign-in') {
     return {
       subjectGeneration: generations.generation,
       nativeGeneration: generations.nativeGeneration,
       authenticatedAt: origin.authenticatedAt,
-      sessionId: origin.kind === 'consolidation' ? origin.canonicalSessionId : crypto.randomUUID(),
+      sessionId: crypto.randomUUID(),
     };
   }
   // Copy, never re-read: a child is never newer than its parent. A row from
@@ -470,7 +455,6 @@ async function generateTokenPair(
   refreshToken: string;
   expiresAt: string;
   userId: string;
-  accountConsolidation?: AccountConsolidationReceipt;
 }> {
   let generations = lockedState;
   if (!generations) {
@@ -488,36 +472,6 @@ async function generateTokenPair(
     // Every cutoff writer locks `users` FOR UPDATE first, and this issuer holds
     // KEY SHARE, so no cutoff commits between this read and the child's insert.
     const { parent } = origin;
-    if (parent.sessionId) {
-      const [consolidationSchema] = await transaction.execute<{ available: boolean }>(
-        sql`SELECT pg_catalog.to_regclass('public.account_consolidation_session_proofs') IS NOT NULL AS available`,
-      );
-      if (consolidationSchema?.available) {
-        const [proof] = await transaction
-          .select()
-          .from(accountConsolidationSessionProofs)
-          .where(eq(accountConsolidationSessionProofs.canonicalSessionId, parent.sessionId))
-          .for('update');
-        if (proof) {
-          const [member] = await transaction
-            .select()
-            .from(accountConsolidationMembers)
-            .where(eq(accountConsolidationMembers.sourceUserId, proof.sourceUserId));
-          if (
-            proof.kind !== 'native-refresh' ||
-            proof.revokedAt ||
-            !member ||
-            member.status !== 'applied' ||
-            member.mergeId !== proof.mergeId ||
-            member.canonicalUserId !== userId ||
-            member.nativeBridgeRevokedAt ||
-            member.targetGeneration !== generations.generation ||
-            member.targetNativeGeneration !== generations.nativeGeneration
-          )
-            throw new AuthSubjectDeniedError();
-        }
-      }
-    }
     const decision = decideCredential(
       {
         kind: 'native-refresh',
@@ -540,7 +494,6 @@ async function generateTokenPair(
     sub: userId,
     gen: stamps.subjectGeneration,
     ngen: stamps.nativeGeneration,
-    sid: stamps.sessionId,
     ...(stamps.authenticatedAt ? { auth_time: Math.floor(stamps.authenticatedAt.getTime() / 1000) } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
@@ -1520,65 +1473,6 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
       // reset or deletion that committed while this waited is seen here, and none
       // can commit before this does: each takes users FOR UPDATE, which this
       // KEY SHARE excludes. The parent is decided against these generations.
-      if (process.env.ACCOUNT_CONSOLIDATION_BRIDGE_MODE === 'enabled') {
-        const [bridgeHint] = await tx
-          .select({
-            credentialId: accountConsolidationSessionProofs.credentialId,
-            targetUserId: accountConsolidationMembers.canonicalUserId,
-          })
-          .from(accountConsolidationSessionProofs)
-          .innerJoin(
-            accountConsolidationMembers,
-            eq(accountConsolidationMembers.sourceUserId, accountConsolidationSessionProofs.sourceUserId),
-          )
-          .innerJoin(mobileRefreshTokens, eq(mobileRefreshTokens.id, accountConsolidationSessionProofs.credentialId))
-          .where(
-            and(
-              eq(mobileRefreshTokens.tokenHash, tokenHash),
-              eq(accountConsolidationMembers.status, 'applied'),
-              eq(accountConsolidationSessionProofs.kind, 'native-refresh'),
-            ),
-          )
-          .limit(1);
-        if (bridgeHint) {
-          const adapter = nativeConsolidationExchangeTransaction(
-            tx,
-            tokenHash,
-            async (decision, canonicalSessionId) => {
-              const targetState = await requireHumanSubjectForIssuance(tx, decision.toUserId);
-              const tokenPair = await generateTokenPair(
-                decision.toUserId,
-                tx,
-                {
-                  kind: 'consolidation',
-                  canonicalSessionId,
-                  authenticatedAt: decision.authenticatedAtMs === null ? null : new Date(decision.authenticatedAtMs),
-                },
-                targetState,
-              );
-              return {
-                ...tokenPair,
-                accountConsolidation: {
-                  mergeId: decision.mergeId,
-                  fromUserId: decision.fromUserId,
-                  toUserId: decision.toUserId,
-                },
-              };
-            },
-          );
-          const tokenPair = await exchangeConsolidationSession(adapter, {
-            credentialId: bridgeHint.credentialId,
-            sourceUserId: hint.userId,
-            targetUserId: bridgeHint.targetUserId,
-          });
-          return { status: 200 as const, tokenPair, userId: tokenPair.userId };
-        }
-      } else if (
-        process.env.ACCOUNT_CONSOLIDATION_BRIDGE_MODE &&
-        process.env.ACCOUNT_CONSOLIDATION_BRIDGE_MODE !== 'off'
-      ) {
-        throw new AuthAdmissionUnavailableError();
-      }
       const lockedState = await requireHumanSubjectForIssuance(tx, hint.userId);
       // Atomically revoke the token and return it in a single query.
       // This prevents TOCTOU races: if two concurrent requests present the same
@@ -1622,10 +1516,6 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
     logger.info(`[NativeAuth] Token refresh successful for user ${result.userId}`);
     sendJson(res, 200, result.tokenPair);
   } catch (error) {
-    if (error instanceof ConsolidationExchangeError) {
-      sendJson(res, 401, { error: 'Invalid refresh token' });
-      return;
-    }
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] Token refresh failed:', error);
     sendJson(res, 500, { error: 'Internal server error' });
@@ -1674,94 +1564,14 @@ export async function handleNativeAuthRevoke(req: IncomingMessage, res: ServerRe
     // Look up the token to find the user. Only non-revoked tokens are valid
     // for initiating a full sign-out.
     const matchedToken = await db.transaction(async (transaction) => {
-      const [consolidationSchema] = await transaction.execute<{ available: boolean }>(
-        sql`SELECT pg_catalog.to_regclass('public.account_consolidation_session_proofs') IS NOT NULL AS available`,
-      );
-      if (consolidationSchema?.available) {
-        const [hint] = await transaction
-          .select({ userId: mobileRefreshTokens.userId })
-          .from(mobileRefreshTokens)
-          .where(eq(mobileRefreshTokens.tokenHash, tokenHash))
-          .limit(1);
-        if (hint) {
-          const memberships = await transaction
-            .select()
-            .from(accountConsolidationMembers)
-            .where(
-              or(
-                eq(accountConsolidationMembers.sourceUserId, hint.userId),
-                eq(accountConsolidationMembers.canonicalUserId, hint.userId),
-              ),
-            );
-          const subjects = new Set([
-            hint.userId,
-            ...memberships.flatMap((member) => [member.sourceUserId, member.canonicalUserId]),
-          ]);
-          for (const subjectId of [...subjects].sort())
-            await transaction.select({ id: users.id }).from(users).where(eq(users.id, subjectId)).for('update');
-        }
-      }
       const matchingRows = await transaction
         .update(mobileRefreshTokens)
         .set({ revokedAt: new Date() })
         .where(and(eq(mobileRefreshTokens.tokenHash, tokenHash), isNull(mobileRefreshTokens.revokedAt)))
-        .returning({
-          userId: mobileRefreshTokens.userId,
-          id: mobileRefreshTokens.id,
-          sessionId: mobileRefreshTokens.sessionId,
-        });
+        .returning({ userId: mobileRefreshTokens.userId });
 
-      let matchingToken = matchingRows[0];
-      if (!matchingToken && consolidationSchema?.available) {
-        const [retiredProof] = await transaction
-          .select({
-            userId: mobileRefreshTokens.userId,
-            id: mobileRefreshTokens.id,
-            sessionId: mobileRefreshTokens.sessionId,
-          })
-          .from(mobileRefreshTokens)
-          .innerJoin(
-            accountConsolidationSessionProofs,
-            eq(accountConsolidationSessionProofs.credentialId, mobileRefreshTokens.id),
-          )
-          .where(
-            and(
-              eq(mobileRefreshTokens.tokenHash, tokenHash),
-              eq(accountConsolidationSessionProofs.kind, 'native-refresh'),
-            ),
-          )
-          .limit(1);
-        matchingToken = retiredProof;
-      }
+      const matchingToken = matchingRows[0];
       if (!matchingToken) return null;
-
-      if (consolidationSchema?.available) {
-        const [transferred] = await transaction
-          .select({ sourceUserId: accountConsolidationSessionProofs.sourceUserId })
-          .from(accountConsolidationSessionProofs)
-          .where(
-            and(
-              eq(accountConsolidationSessionProofs.kind, 'native-refresh'),
-              or(
-                eq(accountConsolidationSessionProofs.credentialId, matchingToken.id),
-                ...(matchingToken.sessionId
-                  ? [eq(accountConsolidationSessionProofs.canonicalSessionId, matchingToken.sessionId)]
-                  : []),
-              ),
-            ),
-          )
-          .limit(1);
-        if (transferred) {
-          await revokeConsolidationSourceNativeSessions(transaction, transferred.sourceUserId);
-          await transaction
-            .update(notificationDevices)
-            .set({ active: false, updatedAt: new Date() })
-            .where(eq(notificationDevices.userId, transferred.sourceUserId));
-          return matchingToken;
-        }
-        await revokeConsolidationSourceNativeSessions(transaction, matchingToken.userId);
-        await revokeConsolidationTargetNativeBridges(transaction, matchingToken.userId);
-      }
 
       // This endpoint signs out the whole account. The refresh secret remains
       // usable when the JWT has expired, so retire push devices in the same

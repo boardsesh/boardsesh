@@ -41,7 +41,6 @@ export type BackgroundJobStatus = 'queued' | 'running' | 'retrying' | 'succeeded
 export const BACKGROUND_JOB_FAMILIES = [
   'worker-probe',
   'refresh-recommendations',
-  'refresh-user-percentiles',
   'refresh-hold-features',
   'refresh-climb-grades',
   'refresh-climb-neighbors',

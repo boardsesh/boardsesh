@@ -46,16 +46,6 @@
       "types": "./src/account-email.ts",
       "import": "./src/account-email.ts",
       "default": "./src/account-email.ts"
-    },
-    "./account-consolidation": {
-      "types": "./src/account-consolidation.ts",
-      "import": "./src/account-consolidation.ts",
-      "default": "./src/account-consolidation.ts"
-    },
-    "./account-consolidation-transition": {
-      "types": "./src/account-consolidation-transition.ts",
-      "import": "./src/account-consolidation-transition.ts",
-      "default": "./src/account-consolidation-transition.ts"
     }
   },
   "scripts": {

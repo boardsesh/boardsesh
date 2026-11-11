@@ -82,7 +82,8 @@ export interface AccountConsolidationPlan {
   readonly document: 'boardsesh-account-consolidation-plan';
   readonly sourceEvidenceSha256: string;
   readonly snapshot: EvidenceWorksheet['snapshot'];
-  readonly policyVersion: 'lowercase-consolidation-v1';
+  readonly policyVersion: 'lowercase-consolidation-fresh-signin-v2';
+  readonly sourceAuthentication: 'fresh-signin-required';
   readonly groups: readonly ConsolidationGroupPlan[];
   readonly execution: {
     readonly codeAvailable: true;
@@ -385,14 +386,15 @@ export function buildAccountConsolidationPlan(
     document: 'boardsesh-account-consolidation-plan',
     sourceEvidenceSha256: options.evidenceSha256,
     snapshot: worksheet.snapshot,
-    policyVersion: 'lowercase-consolidation-v1',
+    policyVersion: 'lowercase-consolidation-fresh-signin-v2',
+    sourceAuthentication: 'fresh-signin-required',
     groups,
     execution: {
       codeAvailable: true,
       available: false,
       requiredCapabilities: [
         'TRANSACTIONAL_REFERENCE_HANDLERS',
-        'AUTHENTICATED_SESSION_BRIDGE',
+        'SOURCE_CREDENTIAL_RETIREMENT_AND_FRESH_SIGNIN',
         'IMPORT_AND_TICK_ALIAS_HANDLERS',
         'SESSION_AND_PRIVACY_RECONCILIATION',
         'VERIFIED_WRITER_DRAIN',

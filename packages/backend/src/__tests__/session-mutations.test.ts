@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { sessionEditMutations } from '../graphql/resolvers/social/session-mutations';
 import { db } from '../db/client';
-import { accountConsolidationSessionAliases } from '@boardsesh/db/schema/auth';
 
 vi.mock('../db/client', () => {
   const mockDb = {
@@ -31,11 +30,7 @@ function setupSelectResults(results: unknown[][]) {
   let index = 0;
   const limit = vi.fn().mockImplementation(() => Promise.resolve(results[index++] ?? []));
   const where = vi.fn().mockReturnValue({ limit });
-  const from = vi
-    .fn()
-    .mockImplementation((table: unknown) =>
-      table === accountConsolidationSessionAliases ? { where: () => ({ limit: async () => [] }) } : { where },
-    );
+  const from = vi.fn().mockReturnValue({ where });
   (db.select as ReturnType<typeof vi.fn>).mockReturnValue({ from });
 }
 

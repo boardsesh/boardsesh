@@ -15,7 +15,6 @@ describe('family registry', () => {
     expect(allFamilies().map((family) => family.name)).toEqual([
       'worker-probe',
       'refresh-recommendations',
-      'refresh-user-percentiles',
       'refresh-hold-features',
       'refresh-climb-grades',
       'refresh-climb-neighbors',

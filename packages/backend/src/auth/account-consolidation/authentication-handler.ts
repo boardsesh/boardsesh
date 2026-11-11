@@ -1,9 +1,8 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNull, gt, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   accounts,
   accountConsolidationMembers,
-  accountConsolidationSessionProofs,
   authEmailProjection,
   authEmailReservationMembers,
   authEmailReservations,
@@ -17,7 +16,7 @@ import {
   verificationTokens,
 } from '@boardsesh/db/schema/auth';
 import { notificationDevices } from '@boardsesh/db/schema/app';
-import type { ConsolidationDomainHandler } from '../account-consolidation/executor';
+import type { ConsolidationDomainHandler } from './executor';
 
 /** Authentication is finalized last, in the same group transaction as all ownership moves. */
 export function authenticationConsolidationHandler(): ConsolidationDomainHandler {
@@ -41,7 +40,13 @@ export function authenticationConsolidationHandler(): ConsolidationDomainHandler
         .for('update');
       if (!survivor || survivor.email !== group.normalizedEmail || targetCutoff?.deletedAt)
         throw new Error('Consolidation authentication state changed.');
-      const counters = { retiredSubjects: 0, providerLinks: 0, enrolledNativeProofs: 0, sourcePasswordsRemoved: 0 };
+      const counters = {
+        retiredSubjects: 0,
+        providerLinks: 0,
+        sourcePasswordsRemoved: 0,
+        nativeSessionsRevoked: 0,
+        webSessionsRemoved: 0,
+      };
       const placeholders: { userId: string; email: string }[] = [];
       for (const sourceUserId of [...sourceUserIds].sort()) {
         const [source] = await transaction.select().from(users).where(eq(users.id, sourceUserId));
@@ -58,51 +63,14 @@ export function authenticationConsolidationHandler(): ConsolidationDomainHandler
           canonicalUserId: survivorUserId,
           mergeId,
           status: 'applied',
-          sourceGenerationBefore,
-          sourceNativeGenerationBefore,
-          sourceGenerationAfter: sourceGenerationBefore + 1,
-          sourceNativeGenerationAfter: sourceNativeGenerationBefore,
-          targetGeneration: targetCutoff?.generation ?? 0,
-          targetNativeGeneration: targetCutoff?.nativeGeneration ?? 0,
           appliedAt,
         });
-        await transaction
-          .update(accountConsolidationSessionProofs)
-          .set({ mergeId })
-          .where(
-            and(
-              eq(accountConsolidationSessionProofs.sourceUserId, sourceUserId),
-              eq(accountConsolidationSessionProofs.kind, 'web-session'),
-              eq(accountConsolidationSessionProofs.mergeId, 'pending-web-login'),
-            ),
-          );
-        const parents = await transaction
-          .select()
-          .from(mobileRefreshTokens)
-          .where(
-            and(
-              eq(mobileRefreshTokens.userId, sourceUserId),
-              isNull(mobileRefreshTokens.revokedAt),
-              gt(mobileRefreshTokens.expiresAt, appliedAt),
-            ),
-          )
-          .for('update');
-        for (const parent of parents) {
-          if (
-            (parent.subjectGeneration ?? 0) !== sourceGenerationBefore ||
-            (parent.nativeGeneration ?? 0) !== sourceNativeGenerationBefore
-          )
-            continue;
-          await transaction.insert(accountConsolidationSessionProofs).values({
-            credentialId: parent.id,
-            sourceUserId,
-            mergeId,
-            kind: 'native-refresh',
-            canonicalSessionId: randomUUID(),
-            expiresAt: parent.expiresAt,
-          });
-          counters.enrolledNativeProofs++;
-        }
+        const revokedSessions = await transaction
+          .update(mobileRefreshTokens)
+          .set({ revokedAt: appliedAt })
+          .where(and(eq(mobileRefreshTokens.userId, sourceUserId), isNull(mobileRefreshTokens.revokedAt)))
+          .returning({ id: mobileRefreshTokens.id });
+        counters.nativeSessionsRevoked += revokedSessions.length;
         const moved = await transaction
           .update(accounts)
           .set({ userId: survivorUserId })
@@ -114,8 +82,12 @@ export function authenticationConsolidationHandler(): ConsolidationDomainHandler
           .where(eq(userCredentials.userId, sourceUserId))
           .returning({ userId: userCredentials.userId });
         counters.sourcePasswordsRemoved += passwords.length;
-        // Stateless web cookies use the separate verified-cookie bridge. Do not reassign auth session rows.
-        await transaction.delete(sessions).where(eq(sessions.userId, sourceUserId));
+        // Source sessions end here. Canonical sessions and credentials remain unchanged.
+        const removedSessions = await transaction
+          .delete(sessions)
+          .where(eq(sessions.userId, sourceUserId))
+          .returning({ sessionToken: sessions.sessionToken });
+        counters.webSessionsRemoved += removedSessions.length;
         await transaction
           .update(notificationDevices)
           .set({ active: false, updatedAt: appliedAt })
@@ -160,6 +132,9 @@ export function authenticationConsolidationHandler(): ConsolidationDomainHandler
           .where(inArray(verificationTokens.identifier, [source.email, `password-reset:${source.email}`]));
         counters.retiredSubjects++;
       }
+      // Legacy links identify only an email, so a pre-merge link for this ambiguous
+      // normalized address cannot prove its original UID. Request a fresh link.
+      // UID-scoped canonical recovery rows and existing sessions remain untouched.
       await transaction
         .delete(verificationTokens)
         .where(inArray(verificationTokens.identifier, [survivor.email, `password-reset:${survivor.email}`]));

@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { loadConsolidationImportHistory, refreshUserClimbPercentiles } from '@boardsesh/db/queries';
-import { getWorkerDatabaseName } from '../../../__tests__/worker-db';
+import { getWorkerDatabaseName } from '../../__tests__/worker-db';
 
 const adminUrl = (
   process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5433/boardsesh_backend_test'
@@ -36,13 +36,11 @@ describe('consolidated frozen import identities', () => {
       INSERT INTO user_climb_percentiles VALUES ('source',77,88,99,now());`);
   });
   afterAll(async () => {
-    vi.unstubAllEnvs();
     await client?.end({ timeout: 1 });
     if (created) await admin.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
     await admin?.end({ timeout: 1 });
   });
   it('reuses former account IDs and deletion tombstones only for the approved survivor', async () => {
-    vi.stubEnv('ACCOUNT_CONSOLIDATION_BRIDGE_MODE', 'enabled');
     const history = await loadConsolidationImportHistory(drizzle(client), 'survivor');
     expect(history.formerUserIds).toEqual(['source']);
     expect(history.resolve('aurora', 'tick', ['new-hash', 'old-hash'])).toBe('tick-1');

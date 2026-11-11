@@ -21,7 +21,6 @@ export interface SubjectCutoffState {
    * until web sign-out does (BA-04 PR 9, table from PR 6), so it is empty today.
    */
   readonly deniedSessionKeys: ReadonlySet<string>;
-  readonly revokedConsolidationSessionKeys?: ReadonlySet<string>;
 }
 
 export type PresentedCredential =
@@ -35,7 +34,6 @@ export type PresentedCredential =
   /** The app's or watch's JWT, its claims as verified. */
   | {
       readonly kind: 'native-access';
-      readonly sessionKeyClaim?: unknown;
       readonly generationClaim: unknown;
       readonly nativeGenerationClaim: unknown;
       readonly authTimeClaim: unknown;
@@ -57,7 +55,6 @@ export type CredentialDenialReason =
   | 'native-generation'
   /** This web login was ended on its own. */
   | 'session-denied'
-  | 'consolidation-lineage'
   /** A stamp that is present but not a whole number of at least 0. Only our signer writes stamps. */
   | 'malformed-stamp';
 
@@ -92,22 +89,10 @@ function denialFor(
   subject: SubjectCutoffState | undefined,
 ): CredentialDenialReason | null {
   if (!subject) return 'subject-inactive';
-  if (
-    credential.kind !== 'native-refresh' &&
-    typeof credential.sessionKeyClaim === 'string' &&
-    subject.revokedConsolidationSessionKeys?.has(credential.sessionKeyClaim)
-  )
-    return 'consolidation-lineage';
   const isRefreshRow = credential.kind === 'native-refresh';
   const generation = stampedGeneration(isRefreshRow ? credential.subjectGeneration : credential.generationClaim);
   if (generation === undefined) return 'malformed-stamp';
   if (generation !== subject.generation) return 'generation';
-  if (
-    credential.kind !== 'native-refresh' &&
-    typeof credential.sessionKeyClaim === 'string' &&
-    subject.deniedSessionKeys.has(credential.sessionKeyClaim)
-  )
-    return 'session-denied';
   if (credential.kind === 'web-session') {
     // A phone sign-out ends native credentials only (decision 10), so the web
     // carries no native stamp and is never compared with the native generation.
@@ -159,7 +144,5 @@ export function cutoffEnforcement(environment: Readonly<Record<string, string | 
 
 export function isCredentialAdmitted(decision: CredentialDecision, enforcement: CutoffEnforcement): boolean {
   if (decision.denial === null) return true;
-  return (
-    enforcement === 'observe' && decision.denial !== 'subject-inactive' && decision.denial !== 'consolidation-lineage'
-  );
+  return enforcement === 'observe' && decision.denial !== 'subject-inactive';
 }

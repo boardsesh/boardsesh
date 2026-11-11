@@ -1,7 +1,3 @@
-import {
-  retargetConsolidatedSessionAliases,
-  tombstoneConsolidatedSessionAliases,
-} from '../../auth/account-consolidation/session-alias-store';
 import { intersectInferredPrivacy, loadInferredPrivacy, writeInferredPrivacy, type InferredPrivacy } from './privacy';
 import { and, eq, inArray, notExists, or, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
@@ -46,9 +42,7 @@ async function applyMerge(
   tx: ReconciliationTransaction,
   merge: SessionMerge,
   sourcePrivacy: InferredPrivacy | undefined,
-  userId: string,
 ): Promise<void> {
-  await retargetConsolidatedSessionAliases(tx, merge.loserId, merge.survivorId, userId);
   if (!sourcePrivacy || sourcePrivacy.audience !== 'public') {
     // A private parent can be absorbed into an explicit public session. Preserve
     // each comment author's protection even when the new parent has a wider audience.
@@ -210,7 +204,7 @@ export async function reconcileInferredSessions(
   };
 
   for (const merge of result.merges) {
-    await applyMerge(tx, merge, sourcePrivacy.get(merge.loserId), userId);
+    await applyMerge(tx, merge, sourcePrivacy.get(merge.loserId));
   }
 
   for (const runResult of result.runs) {
@@ -299,7 +293,6 @@ export async function reconcileInferredSessions(
   // sensible to go — the ticks are spread across a session that already has its own —
   // so they are dropped with the row rather than left dangling.
   if (emptiedSessionIds.length > 0) {
-    await tombstoneConsolidatedSessionAliases(tx, emptiedSessionIds, userId);
     for (const table of [dbSchema.votes, dbSchema.comments] as const) {
       await tx.delete(table).where(and(eq(table.entityType, 'session'), inArray(table.entityId, emptiedSessionIds)));
     }

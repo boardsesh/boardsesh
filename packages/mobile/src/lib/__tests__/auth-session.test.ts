@@ -1,8 +1,3 @@
-vi.mock('../account-consolidation-client', () => ({
-  resumePendingAccountConsolidation: vi.fn().mockResolvedValue(undefined),
-  acceptNativeAccountConsolidation: vi.fn(),
-  setOnAccountConsolidated: vi.fn(),
-}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = { generation: 1, current: true };

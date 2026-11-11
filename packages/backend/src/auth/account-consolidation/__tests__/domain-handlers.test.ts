@@ -252,7 +252,6 @@ describe('real transaction consolidation domains', () => {
       drizzle(client).transaction((transaction) =>
         createConsolidationOwnershipHandler({
           archivePreimages: archive,
-          enqueueDerivedStats: async () => {},
           enqueueProviderSync: async () => {},
         }).apply(transaction, context),
       ),
@@ -270,7 +269,6 @@ describe('real transaction consolidation domains', () => {
       drizzle(client).transaction((transaction) =>
         createConsolidationOwnershipHandler({
           archivePreimages: archive,
-          enqueueDerivedStats: async () => {},
           enqueueProviderSync: async () => {},
         }).apply(transaction, context),
       ),
@@ -312,22 +310,17 @@ describe('real transaction consolidation domains', () => {
     expect(await client`SELECT user_id,value FROM votes`).toEqual([{ user_id: 'target', value: 1 }]);
   });
 
-  it('invalidates canonical derived percentiles and queues recomputation while retaining source history', async () => {
+  it('invalidates canonical derived percentiles while retaining source history for final transactional refresh', async () => {
     await client`INSERT INTO user_climb_percentiles(user_id,total_distinct_climbs,percentile,total_active_users) VALUES('target',10,50,100),('source',20,75,100)`;
-    let recomputes = 0;
     await drizzle(client).transaction((transaction) =>
       createConsolidationOwnershipHandler({
         archivePreimages: archive,
-        enqueueDerivedStats: async () => {
-          recomputes++;
-        },
         enqueueProviderSync: async () => {},
       }).apply(transaction, context),
     );
     expect(await client`SELECT user_id,total_distinct_climbs FROM user_climb_percentiles`).toEqual([
       { user_id: 'source', total_distinct_climbs: 20 },
     ]);
-    expect(recomputes).toBe(1);
   });
 
   it('moves playlist ownership without duplicating an equal-role existing owner', async () => {
@@ -349,7 +342,6 @@ describe('real transaction consolidation domains', () => {
     await drizzle(client).transaction((transaction) =>
       createConsolidationOwnershipHandler({
         archivePreimages: archive,
-        enqueueDerivedStats: async () => {},
         enqueueProviderSync: async (_transaction, _context, link) => {
           queued.push(link.linkGeneration);
         },

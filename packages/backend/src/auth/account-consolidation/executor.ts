@@ -37,6 +37,7 @@ export interface ConsolidationExecutionHooks {
   /** Must compare every touched row/session/alias/credential preimage before any mutation. */
   revalidateGroup(transaction: ConsolidationTransaction, context: ConsolidationContext): Promise<void>;
   captureAfterGroupFingerprint(transaction: ConsolidationTransaction, context: ConsolidationContext): Promise<string>;
+  finalizeDerivedState(transaction: ConsolidationTransaction, context: ConsolidationContext): Promise<void>;
   readonly domains: readonly ConsolidationDomainHandler[];
 }
 const ORDER: readonly ConsolidationDomain[] = [
@@ -109,7 +110,7 @@ export async function applyAccountConsolidationGroup(
       if (
         !batch ||
         batch.planSha256 !== options.expectedPlanSha256 ||
-        batch.policyVersion !== 1 ||
+        batch.policyVersion !== 2 ||
         batch.status !== 'applying'
       )
         throw new ConsolidationError('UNSAFE_PLAN');
@@ -169,6 +170,8 @@ export async function applyAccountConsolidationGroup(
           counts[`${name}.${key}`] = count;
         }
       }
+      await hooks.finalizeDerivedState(transaction, context);
+      // Group commit evidence precedes the batch final global derived-ranking refresh.
       const afterFingerprint = await hooks.captureAfterGroupFingerprint(transaction, context);
       if (!/^[a-f0-9]{64}$/.test(afterFingerprint)) throw new ConsolidationError('UNSAFE_PLAN');
       await transaction.insert(accountConsolidationGroupAudits).values({

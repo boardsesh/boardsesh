@@ -1,4 +1,3 @@
-import { enrollConsolidationSignIn, isTrackedConsolidationCookie } from './account-consolidation.server';
 import 'server-only';
 import { NextRequest, NextResponse } from 'next/server';
 import { getToken } from 'next-auth/jwt';
@@ -74,9 +73,7 @@ export async function withAuthResponseAdmission(
   };
   try {
     const captured = await capturePresentedWebCredential(request);
-    const consolidationSignOut =
-      action === 'signout' && captured !== null && (await isTrackedConsolidationCookie(captured.credential));
-    if (captured && (action === 'session' || (action === 'signout' && !consolidationSignOut))) {
+    if (captured && (action === 'session' || action === 'signout')) {
       if (await isDenied(captured.credential)) return deniedAuthResponse(action);
     }
 
@@ -89,15 +86,8 @@ export async function withAuthResponseAdmission(
         if (!userId) return deniedAuthResponse(action);
         if (admittedUserId !== undefined && admittedUserId !== userId) throw new CredentialAuthorityUnavailable();
         admittedUserId = userId;
-        if (action === 'callback') await enrollConsolidationSignIn(credential);
       }
-    } else if (
-      captured &&
-      !consolidationSignOut &&
-      action !== 'signin' &&
-      action !== 'csrf' &&
-      action !== 'providers'
-    ) {
+    } else if (captured && action !== 'signin' && action !== 'csrf' && action !== 'providers') {
       // Sign-out and negative renewal must recheck at the publication boundary,
       // including deletion committed while the real handler was running.
       if (await isDenied(captured.credential)) return deniedAuthResponse(action);

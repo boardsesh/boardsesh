@@ -794,7 +794,6 @@ describe('handleNativeAuthRevoke', () => {
     mockedDatabase.transaction.mockImplementationOnce(async (operation) => {
       let stagedTokenRevocation = false;
       const transaction = {
-        execute: async () => [{ available: false }],
         update: (table: unknown) => {
           updatedTables.push(table);
           return {

@@ -11,12 +11,11 @@ export async function enqueueConsolidationJob(
   transaction: ConsolidationTransaction,
   boss: PgBoss,
   input: {
-    readonly family: 'aurora-user-sync' | 'kilter-user-sync' | 'refresh-user-percentiles';
+    readonly family: 'aurora-user-sync' | 'kilter-user-sync';
     readonly role: 'interactive-import' | 'batch';
     readonly payload: Readonly<Record<string, unknown>>;
   },
 ) {
-  const isStats = input.family === 'refresh-user-percentiles';
   const providerPayload = z
     .object({
       userId: z.string().min(1).max(128),
@@ -28,10 +27,7 @@ export async function enqueueConsolidationJob(
       requestedBy: z.literal('link'),
     })
     .strict();
-  if (
-    (isStats && (input.role !== 'batch' || !z.object({}).strict().safeParse(input.payload).success)) ||
-    (!isStats && (input.role !== 'interactive-import' || !providerPayload.safeParse(input.payload).success))
-  )
+  if (input.role !== 'interactive-import' || !providerPayload.safeParse(input.payload).success)
     throw new ConsolidationError('UNSAFE_PLAN');
   const runId = randomUUID();
   const queue = BACKGROUND_JOB_QUEUES[input.role];

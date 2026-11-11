@@ -1,7 +1,3 @@
-vi.mock('../../lib/account-consolidation-client', () => ({
-  setOnAccountConsolidated: vi.fn(),
-  resumePendingAccountConsolidation: vi.fn().mockResolvedValue(undefined),
-}));
 // @vitest-environment jsdom
 //
 // The WEB half of the anonymous gate. Vitest resolves `anonymous-auth-gate` to

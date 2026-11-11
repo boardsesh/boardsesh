@@ -279,7 +279,6 @@ export async function runAccountConsolidationApply(
   arguments_: ConsolidationApplyArguments,
   environment: Readonly<Record<string, string | undefined>>,
 ) {
-  if (environment.ACCOUNT_CONSOLIDATION_BRIDGE_MODE !== 'enabled') throw new ConsolidationError('UNSAFE_PLAN');
   const plan = readApprovedPlan(arguments_);
   resolveWorksheetPath(arguments_.out);
   const profile = explicitReadOnlyConnectionOptions(

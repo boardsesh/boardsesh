@@ -1,5 +1,6 @@
 /** Bounded operator batch execution; every group commits independently and can be resumed. */
 import { eq } from 'drizzle-orm';
+import { refreshUserClimbPercentiles } from '@boardsesh/db/queries';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { PgBoss } from 'pg-boss';
 import { randomUUID, createHash } from 'node:crypto';
@@ -35,7 +36,8 @@ export async function applyConsolidationBatch(
     !/^[a-zA-Z0-9_-]{1,100}$/.test(batchId) ||
     plan.document !== 'boardsesh-account-consolidation-plan' ||
     plan.formatVersion !== 1 ||
-    plan.policyVersion !== 'lowercase-consolidation-v1' ||
+    plan.policyVersion !== 'lowercase-consolidation-fresh-signin-v2' ||
+    plan.sourceAuthentication !== 'fresh-signin-required' ||
     !plan.groups.length ||
     plan.groups.length > 1000 ||
     plan.groups.some((group) => !group.referenceState || group.blockers.length || !group.survivorUserId)
@@ -66,6 +68,7 @@ export async function applyConsolidationBatch(
   const applied: { mergeId: string; status: string; counts: Readonly<Record<string, number>> }[] = [];
   const startedAt = Date.now();
   let failure: unknown;
+  let globalStatsStatus: 'not-refreshed' | 'refreshed' | 'already-refreshed' = 'not-refreshed';
   try {
     await database.transaction(async (transaction) => {
       await verifyPostgresMaintenanceFence(transaction);
@@ -74,12 +77,12 @@ export async function applyConsolidationBatch(
         .from(accountConsolidationBatches)
         .where(eq(accountConsolidationBatches.batchId, batchId))
         .for('update');
-      if (existing && (existing.planSha256 !== options.expectedPlanSha256 || existing.policyVersion !== 1))
+      if (existing && (existing.planSha256 !== options.expectedPlanSha256 || existing.policyVersion !== 2))
         throw new ConsolidationError('UNSAFE_PLAN');
       if (!existing)
         await transaction
           .insert(accountConsolidationBatches)
-          .values({ batchId, planSha256: options.expectedPlanSha256, policyVersion: 1, status: 'applying' });
+          .values({ batchId, planSha256: options.expectedPlanSha256, policyVersion: 2, status: 'applying' });
       else if (existing.status !== 'applied')
         await transaction
           .update(accountConsolidationBatches)
@@ -96,12 +99,20 @@ export async function applyConsolidationBatch(
       );
       applied.push({ mergeId, ...result });
     }
-    await database.transaction(async (transaction) => {
+    globalStatsStatus = await database.transaction(async (transaction) => {
       await verifyPostgresMaintenanceFence(transaction);
+      const [batch] = await transaction
+        .select()
+        .from(accountConsolidationBatches)
+        .where(eq(accountConsolidationBatches.batchId, batchId))
+        .for('update');
+      if (batch?.status === 'applied') return 'already-refreshed' as const;
+      await refreshUserClimbPercentiles(transaction);
       await transaction
         .update(accountConsolidationBatches)
         .set({ status: 'applied', completedAt: new Date() })
         .where(eq(accountConsolidationBatches.batchId, batchId));
+      return 'refreshed' as const;
     });
   } catch (error) {
     failure = error;
@@ -113,6 +124,7 @@ export async function applyConsolidationBatch(
     status: failure ? 'incomplete' : 'applied',
     applied,
     archives,
+    derivedStats: { status: globalStatsStatus, groupAuditFingerprints: 'before-final-global-derived-refresh' },
   };
   const receiptBytes = `${JSON.stringify(receipt, null, 2)}\n`;
   try {

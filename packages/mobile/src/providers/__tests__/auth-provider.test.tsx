@@ -1,8 +1,3 @@
-vi.mock('../../lib/account-consolidation-client', () => ({
-  resumePendingAccountConsolidation: vi.fn().mockResolvedValue(undefined),
-  acceptNativeAccountConsolidation: vi.fn(),
-  setOnAccountConsolidated: vi.fn(),
-}));
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, render, screen, waitFor, act } from '@testing-library/react';

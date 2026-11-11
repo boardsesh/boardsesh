@@ -38,18 +38,9 @@ CREATE TABLE "account_consolidation_members" (
 	"canonical_user_id" text NOT NULL,
 	"merge_id" text NOT NULL,
 	"status" text NOT NULL,
-	"source_generation_before" integer NOT NULL,
-	"source_native_generation_before" integer NOT NULL,
-	"source_generation_after" integer NOT NULL,
-	"source_native_generation_after" integer NOT NULL,
-	"target_generation" integer NOT NULL,
-	"target_native_generation" integer NOT NULL,
-	"native_bridge_revoked_at" timestamp with time zone,
-	"web_bridge_revoked_at" timestamp with time zone,
 	"applied_at" timestamp with time zone,
 	CONSTRAINT "account_consolidation_members_distinct" CHECK ("account_consolidation_members"."source_user_id" <> "account_consolidation_members"."canonical_user_id"),
 	CONSTRAINT "account_consolidation_members_status" CHECK ("account_consolidation_members"."status" IN ('planned','applied')),
-	CONSTRAINT "account_consolidation_members_stamps" CHECK ("account_consolidation_members"."source_generation_before" >= 0 AND "account_consolidation_members"."source_native_generation_before" >= 0 AND "account_consolidation_members"."source_generation_after" = "account_consolidation_members"."source_generation_before" + 1 AND "account_consolidation_members"."source_native_generation_after" >= "account_consolidation_members"."source_native_generation_before" AND "account_consolidation_members"."target_generation" >= 0 AND "account_consolidation_members"."target_native_generation" >= 0),
 	CONSTRAINT "account_consolidation_members_applied" CHECK ("account_consolidation_members"."status" <> 'applied' OR "account_consolidation_members"."applied_at" IS NOT NULL)
 );
 --> statement-breakpoint
@@ -63,18 +54,6 @@ CREATE TABLE "account_consolidation_session_aliases" (
 	CONSTRAINT "account_consolidation_session_alias_tombstone" CHECK ("account_consolidation_session_aliases"."tombstoned" OR "account_consolidation_session_aliases"."canonical_session_id" IS NOT NULL)
 );
 --> statement-breakpoint
-CREATE TABLE "account_consolidation_session_proofs" (
-	"credential_id" text PRIMARY KEY NOT NULL,
-	"source_user_id" text NOT NULL,
-	"merge_id" text NOT NULL,
-	"kind" text NOT NULL,
-	"canonical_session_id" text NOT NULL,
-	"expires_at" timestamp with time zone NOT NULL,
-	"consumed_at" timestamp with time zone,
-	"revoked_at" timestamp with time zone,
-	CONSTRAINT "account_consolidation_proofs_kind" CHECK ("account_consolidation_session_proofs"."kind" IN ('native-refresh','web-session'))
-);
---> statement-breakpoint
 CREATE TABLE "account_consolidation_tick_aliases" (
 	"retired_uuid" text PRIMARY KEY NOT NULL,
 	"canonical_uuid" text,
@@ -86,6 +65,4 @@ CREATE TABLE "account_consolidation_tick_aliases" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "account_consolidation_batches_plan_idx" ON "account_consolidation_batches" USING btree ("plan_sha256");--> statement-breakpoint
-CREATE INDEX "account_consolidation_members_target_idx" ON "account_consolidation_members" USING btree ("canonical_user_id");--> statement-breakpoint
-CREATE INDEX "account_consolidation_proofs_source_idx" ON "account_consolidation_session_proofs" USING btree ("source_user_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "account_consolidation_proofs_session_idx" ON "account_consolidation_session_proofs" USING btree ("canonical_session_id");
+CREATE INDEX "account_consolidation_members_target_idx" ON "account_consolidation_members" USING btree ("canonical_user_id");

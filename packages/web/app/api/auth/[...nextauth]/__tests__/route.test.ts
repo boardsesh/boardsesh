@@ -64,40 +64,6 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.unstubAllEnvs();
   });
 
-  it('allows a stale source tab to sign out its exact consolidated cookie lineage', async () => {
-    getTokenMock.mockResolvedValue({
-      sub: 'target',
-      authSessionId: 'mapped-sid',
-      accountConsolidationFromSessionId: 'source-sid',
-      accountConsolidation: { mergeId: 'merge', fromUserId: 'source', toUserId: 'target' },
-    });
-    const signOutRequest = request('/api/auth/signout', {
-      csrfToken: 'csrf-token',
-      expectedUserId: 'source',
-      expectedAuthSessionId: 'source-sid',
-    });
-    const response = await POST(signOutRequest, routeContext(signOutRequest));
-    expect(response.status).toBe(200);
-    expect(nextAuthHandlerMock).toHaveBeenCalledOnce();
-  });
-
-  it('keeps the 409 guard for a wrong source SID despite a valid consolidation receipt', async () => {
-    getTokenMock.mockResolvedValue({
-      sub: 'target',
-      authSessionId: 'mapped-sid',
-      accountConsolidationFromSessionId: 'source-sid',
-      accountConsolidation: { mergeId: 'merge', fromUserId: 'source', toUserId: 'target' },
-    });
-    const signOutRequest = request('/api/auth/signout', {
-      csrfToken: 'csrf-token',
-      expectedUserId: 'source',
-      expectedAuthSessionId: 'wrong-sid',
-    });
-    const response = await POST(signOutRequest, routeContext(signOutRequest));
-    expect(response.status).toBe(409);
-    expect(nextAuthHandlerMock).not.toHaveBeenCalled();
-  });
-
   it('rejects an unscoped legacy NextAuth sign-out', async () => {
     const signOutRequest = request('/api/auth/signout', { csrfToken: 'csrf-token' });
 

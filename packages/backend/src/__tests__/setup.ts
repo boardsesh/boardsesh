@@ -30,7 +30,6 @@ let dbAvailable = false;
 const TABLES_TO_RESET = [
   'account_consolidation_batches',
   'account_consolidation_members',
-  'account_consolidation_session_proofs',
   'account_consolidation_tick_aliases',
   'account_consolidation_import_aliases',
   'account_consolidation_session_aliases',

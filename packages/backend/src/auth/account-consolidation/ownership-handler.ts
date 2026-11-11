@@ -24,7 +24,6 @@ function latest(instants: readonly (Date | null)[]): Date | null {
 /** Explicit domain policies only. Unknown nonzero references remain the coordinator's blockers. */
 export function createConsolidationOwnershipHandler(options: {
   readonly archivePreimages: ConsolidationPreimageArchive;
-  readonly enqueueDerivedStats: (transaction: ConsolidationTransaction, context: ConsolidationContext) => Promise<void>;
   readonly enqueueProviderSync: (
     transaction: ConsolidationTransaction,
     context: ConsolidationContext,
@@ -303,7 +302,6 @@ export function createConsolidationOwnershipHandler(options: {
       await transaction
         .delete(schema.userClimbPercentiles)
         .where(eq(schema.userClimbPercentiles.userId, context.survivorUserId));
-      await options.enqueueDerivedStats(transaction, context);
       counts.historicalSourcePercentilesRetained = percentiles.filter(
         (row) => row.userId !== context.survivorUserId,
       ).length;

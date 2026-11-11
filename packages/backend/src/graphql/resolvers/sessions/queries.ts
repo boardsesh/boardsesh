@@ -1,4 +1,3 @@
-import { resolveConsolidatedSessionAddress } from './consolidation-alias';
 import { redactQueueEvents } from '../../../services/privacy-queue-events';
 import { canAccessResource } from '../../../services/privacy';
 import type {
@@ -15,7 +14,7 @@ import { SessionIdSchema, LatitudeSchema, LongitudeSchema, RadiusMetersSchema } 
 import { generateSessionHealthExport, generateSessionSummary } from './session-summary';
 import { getDistributedState } from '../../../services/distributed-state';
 import { buildSessionPayload } from './helpers';
-import { db, dbRead } from '../../../db/client';
+import { dbRead } from '../../../db/client';
 import { sessions } from '../../../db/schema';
 
 export const sessionQueries = {
@@ -165,9 +164,8 @@ export const sessionQueries = {
   sessionSummary: async (_: unknown, { sessionId }: { sessionId: string }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
-    const resolvedSessionId = await resolveConsolidatedSessionAddress(db, sessionId, ctx.userId);
-    if (!resolvedSessionId || !(await canAccessResource('session', resolvedSessionId, ctx.userId))) return null;
-    return generateSessionSummary(resolvedSessionId, ctx.userId ?? null);
+    if (!(await canAccessResource('session', sessionId, ctx.userId))) return null;
+    return generateSessionSummary(sessionId, ctx.userId ?? null);
   },
 
   /**
@@ -195,20 +193,12 @@ export const sessionQueries = {
    * be restored yet at cold start. Returns the bare SessionStatus enum; null
    * means no such session.
    */
-  sessionStatus: async (
-    _: unknown,
-    { sessionId }: { sessionId: string },
-    ctx?: ConnectionContext,
-  ): Promise<SessionStatus | null> => {
+  sessionStatus: async (_: unknown, { sessionId }: { sessionId: string }): Promise<SessionStatus | null> => {
     validateInput(SessionIdSchema, sessionId, 'sessionId');
-    const resolvedSessionId = ctx?.userId
-      ? await resolveConsolidatedSessionAddress(db, sessionId, ctx.userId)
-      : sessionId;
-    if (resolvedSessionId === null) return null;
     const rows = await dbRead
       .select({ status: sessions.status, endedAt: sessions.endedAt })
       .from(sessions)
-      .where(eq(sessions.id, resolvedSessionId))
+      .where(eq(sessions.id, sessionId))
       .limit(1);
     const row = rows[0];
     if (!row) return null;
