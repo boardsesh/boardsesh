@@ -7,7 +7,12 @@ import {
   connectWiring,
   cutWiring,
   extendWiring,
+  groupLedPair,
+  ledPairs,
+  ledPartner,
+  separateLedPair,
   setWiringInitialSkip,
+  withLedPartners,
   setWiringSkip,
   traceLedPath,
   MAX_LED_POSITIONS,
@@ -77,10 +82,19 @@ function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange
 
 function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
-  const { brandColors } = useTheme();
+  const { brandColors, spacing } = useTheme();
   const [mode, setMode] = useState<SprayPointMode | null>(null);
+  // Pair LEDs (#7355 item 8): tap a pair to separate it, or two single LEDs to group them.
+  const [pairing, setPairing] = useState(false);
+  const [pendingPair, setPendingPair] = useState<string | null>(null);
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const leds = layout.ledPositions ?? NO_LEDS;
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
+  function chooseMode(next: SprayPointMode | null) {
+    setPairing(false);
+    setPendingPair(null);
+    setMode(next);
+  }
 
   function changePositions(ledPositions: LedPosition[]) {
     const apply = () => {
@@ -104,9 +118,24 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   }
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
+    if (pairing) {
+      const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
+      if (index < 0) return;
+      const id = leds[index].id;
+      if (ledPartner(pairs, id)) {
+        change({ ledGroups: separateLedPair(layout, id).ledGroups });
+        setPendingPair(null);
+      } else if (pendingPair && pendingPair !== id) {
+        change({ ledGroups: groupLedPair(layout, pendingPair, id).ledGroups });
+        setPendingPair(null);
+      } else setPendingPair(pendingPair === id ? null : id);
+      return;
+    }
     if (mode === 'remove') {
       const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
-      if (index >= 0) changePositions(leds.filter((_, entry) => entry !== index));
+      // A pair goes as one unit.
+      const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
+      if (index >= 0) changePositions(leds.filter((led, entry) => entry !== index && led.id !== partner));
     } else if (
       mode === 'add' &&
       leds.length < MAX_LED_POSITIONS &&
@@ -123,12 +152,40 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
     if (mode !== 'move') return;
     const index = nearestPhotoPointIndex(leds, start, renderWidth, renderHeight, 22);
     const occupied = nearestPhotoPointIndex(leds, end, renderWidth, renderHeight, 6);
-    if (index < 0 || (occupied >= 0 && occupied !== index)) return;
-    change({ ledPositions: leds.map((led, entry) => (entry === index ? { ...led, ...end } : led)) });
+    const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
+    if (index < 0 || (occupied >= 0 && occupied !== index && leds[occupied].id !== partner)) return;
+    // A pair moves as one unit: its partner keeps the same offset.
+    const dx = end.x - leds[index].x,
+      dy = end.y - leds[index].y;
+    change({
+      ledPositions: leds.map((led, entry) =>
+        entry === index
+          ? { ...led, ...end }
+          : led.id === partner
+            ? { ...led, x: Math.max(0, Math.min(1, led.x + dx)), y: Math.max(0, Math.min(1, led.y + dy)) }
+            : led,
+      ),
+    });
   }
 
-  const toolbar = { mode, onModeChange: setMode, onUndo: undo, canUndo };
-  const tools = <SprayPointToolbar {...toolbar} />;
+  const toolbar = { mode: pairing ? null : mode, onModeChange: chooseMode, onUndo: undo, canUndo };
+  const pairButton = (
+    <Button
+      title={t('sprayLedSetup.pairLeds')}
+      variant={pairing ? 'filled' : 'outlined'}
+      onPress={() => {
+        setMode(null);
+        setPendingPair(null);
+        setPairing(!pairing);
+      }}
+    />
+  );
+  const tools = (
+    <View style={{ gap: spacing[2] }}>
+      <SprayPointToolbar {...toolbar} />
+      {pairButton}
+    </View>
+  );
   return (
     <>
       <Text>
@@ -145,7 +202,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           source,
           photoUri,
           onInteractionChange,
-          mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
+          mode: pairing ? 'tap' : mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
           onTap: tap,
           onMove: move,
           dragPoints: leds,
@@ -154,6 +211,8 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
+              ledPairs={pairs}
+              selected={pendingPair ? [pendingPair] : []}
               compactHoles
               liveDrag={liveDrag}
               liveDragTarget="leds"
@@ -166,8 +225,14 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           ),
         }}
       />
-      <Text variant="footnote">{t('sprayLedSetup.legend')}</Text>
+      {pairing ? (
+        <Text variant="footnote" accessibilityLiveRegion="polite">
+          {t(pendingPair ? 'sprayLedSetup.pairLedsSecond' : 'sprayLedSetup.pairLedsHint')}
+        </Text>
+      ) : null}
+      <Text variant="footnote">{t(pairs.length ? 'sprayLedSetup.legendPairs' : 'sprayLedSetup.legend')}</Text>
       <Text>{t('sprayLedSetup.ledCount', { count: leds.length })}</Text>
+      {pairs.length ? <Text>{t('sprayLedSetup.ledPairCount', { count: pairs.length })}</Text> : null}
     </>
   );
 }
@@ -181,6 +246,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const [selected, setSelected] = useState<string[]>([]);
   const [highlight, setHighlight] = useState(false);
   const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
   const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
@@ -285,7 +351,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     // One history step per LED, so Undo removes only the last connection.
     const steps: Partial<TnutLayout>[] = [];
     let current = wiring;
-    for (const id of ids) {
+    for (const id of withLedPartners(ids, pairs, new Set(indices.keys()))) {
       const next = extendWiring(current, [id]);
       if (next === current) continue;
       steps.push({ wiring: next });
@@ -296,7 +362,10 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   function previewTrace(points: TnutPoint[], tolerance: number) {
     if (mode !== 'draw' || !wiring) return;
-    const next = extendWiring(wiring, traceLedPath(leds, points, tolerance));
+    const next = extendWiring(
+      wiring,
+      withLedPartners(traceLedPath(leds, points, tolerance), pairs, new Set(indices.keys())),
+    );
     setPreviewWiring(next === wiring ? null : next);
   }
 
@@ -466,6 +535,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               holes={layout.holes}
               leds={leds}
               wiring={previewWiring ?? wiring}
+              ledPairs={pairs}
               selected={mode === 'select' ? selected : undefined}
               width={renderWidth}
               height={renderHeight}
