@@ -18,6 +18,9 @@ const ENCODER_CLOCK_READ_ALLOWANCE_SECONDS = 60;
 // Match the backend's installed validateNextAuthToken transport. NextAuth's
 // browser decoder uses 15 seconds instead; this is deliberately explicit.
 export const LEGACY_WEB_CLOCK_TOLERANCE_SECONDS = 60;
+/** Longest accepted concurrent rolling copy after a sign-out read. */
+export const LEGACY_WEB_MAX_REMAINING_VALIDITY_MS =
+  (MAX_SESSION_LIFETIME_SECONDS + ENCODER_CLOCK_READ_ALLOWANCE_SECONDS + 2 * LEGACY_WEB_CLOCK_TOLERANCE_SECONDS) * 1000;
 
 export interface VerifiedLegacyWebCredential {
   readonly kind: 'nextauth-v4-jwe';

@@ -77,12 +77,16 @@ export const authCredentialLineage = pgTable('auth_credential_lineage', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
 });
 
-export const authSessionDenials = pgTable('auth_session_denials', {
-  sessionId: text('session_id').primaryKey(),
-  userId: text('user_id').notNull(),
-  deniedAt: timestamp('denied_at', { withTimezone: true }).defaultNow().notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-});
+export const authSessionDenials = pgTable(
+  'auth_session_denials',
+  {
+    sessionId: text('session_id').primaryKey(),
+    userId: text('user_id').notNull(),
+    deniedAt: timestamp('denied_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('auth_session_denials_user_id_idx').on(table.userId)],
+);
 
 export const authMigrationEpochs = pgTable('auth_migration_epochs', {
   name: text('name').primaryKey(),

@@ -223,6 +223,10 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'auth:revoke-sessions': {
+        command: 'tsx packages/backend/src/scripts/auth-revoke-sessions.ts',
+        cache: false,
+      },
       'auth:import-identities': {
         command: 'tsx packages/backend/src/scripts/auth-import-identities.ts',
         cache: false,
