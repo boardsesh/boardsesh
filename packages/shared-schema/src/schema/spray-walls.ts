@@ -507,6 +507,10 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     "A local-network base address, or empty until the owner confirms one."
     controllerUrl: String!
     enabled: Boolean!
+    "WLED master brightness, 1–255, the same on every phone that lights the wall."
+    brightness: Int!
+    "Minutes after the wall was last lit before the controller turns it off; 0 never does."
+    autoOffMinutes: Int!
     "A saved T-nut layout. Null until the setup screen has saved one."
     layout: JSON
     "When this setup last changed, ISO 8601."
@@ -535,6 +539,10 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
     "Local-network addresses only: the server refuses anything else."
     controllerUrl: String
     enabled: Boolean
+    "1–255."
+    brightness: Int
+    "0–255 minutes; 0 turns auto-off off."
+    autoOffMinutes: Int
     layout: JSON
   }
 

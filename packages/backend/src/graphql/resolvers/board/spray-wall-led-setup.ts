@@ -49,6 +49,8 @@ function toGraphQLSetup(row: LedSetupRow, boardUuid: string) {
     controllerType: row.controllerType,
     controllerUrl: row.controllerUrl,
     enabled: row.enabled,
+    brightness: row.brightness,
+    autoOffMinutes: row.autoOffMinutes,
     layout: row.layout,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -82,7 +84,7 @@ export const sprayWallLedSetupMutations = {
   saveSprayWallLedSetup: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, SAVE_RATE_LIMIT, 'saveSprayWallLedSetup');
-    const { boardUuid, controllerType, controllerUrl, enabled, layout } = validateInput(
+    const { boardUuid, controllerType, controllerUrl, enabled, brightness, autoOffMinutes, layout } = validateInput(
       SaveSprayWallLedSetupInputSchema,
       input,
       'input',
@@ -124,6 +126,8 @@ export const sprayWallLedSetupMutations = {
       ...(controllerType != null ? { controllerType } : {}),
       ...(controllerUrl != null ? { controllerUrl } : {}),
       ...(enabled != null ? { enabled } : {}),
+      ...(brightness != null ? { brightness } : {}),
+      ...(autoOffMinutes != null ? { autoOffMinutes } : {}),
       ...(savedLayout != null ? { layout: savedLayout as unknown as Record<string, unknown> } : {}),
     };
     const [row] = await db

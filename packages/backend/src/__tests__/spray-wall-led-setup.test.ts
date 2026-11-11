@@ -177,6 +177,19 @@ describe('saving a wall’s LED setup', () => {
     expect(setup?.layout).toMatchObject({ photoKey: layout().photoKey, holes: layout().holes });
   });
 
+  it('shares brightness and auto-off with every phone, and keeps them through other saves', async () => {
+    const uuid = await createWall();
+    expect((await save(uuid, OWNER, { layout: layout() })).brightness).toBe(64);
+    await save(uuid, OWNER, { brightness: 51, autoOffMinutes: 30 });
+    await save(uuid, OWNER, { enabled: true });
+    const setup = (await read(uuid, OWNER))?.setup;
+    expect(setup).toMatchObject({ brightness: 51, autoOffMinutes: 30, enabled: true });
+    await expect(save(uuid, OWNER, { brightness: 0 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { brightness: 256 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { autoOffMinutes: 256 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { autoOffMinutes: 1.5 })).rejects.toThrow();
+  });
+
   it('keeps hand-made hold links when an app that predates them saves, and clears them on request', async () => {
     const uuid = await createWall();
     const leds = [

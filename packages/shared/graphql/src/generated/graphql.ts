@@ -9438,7 +9438,11 @@ export type SaveMoonBoardClimbInput = {
  * overwriting each other.
  */
 export type SaveSprayWallLedSetupInput = {
+  /** 0–255 minutes; 0 turns auto-off off. */
+  autoOffMinutes?: InputMaybe<Scalars['Int']['input']>;
   boardUuid: Scalars['ID']['input'];
+  /** 1–255. */
+  brightness?: InputMaybe<Scalars['Int']['input']>;
   controllerType?: InputMaybe<Scalars['String']['input']>;
   /** Local-network addresses only: the server refuses anything else. */
   controllerUrl?: InputMaybe<Scalars['String']['input']>;
@@ -11382,7 +11386,11 @@ export type SprayWallKeptDecisionInput = {
  */
 export type SprayWallLedSetup = {
   __typename?: 'SprayWallLedSetup';
+  /** Minutes after the wall was last lit before the controller turns it off; 0 never does. */
+  autoOffMinutes: Scalars['Int']['output'];
   boardUuid: Scalars['ID']['output'];
+  /** WLED master brightness, 1–255, the same on every phone that lights the wall. */
+  brightness: Scalars['Int']['output'];
   /** The driver for this controller. `wled` is the only one today. */
   controllerType: Scalars['String']['output'];
   /** A local-network base address, or empty until the owner confirms one. */
