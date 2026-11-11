@@ -57,6 +57,7 @@ export async function signOutLegacyWebSession(
           userId: proof.userId,
           authSessionId,
           generation: proof.generation,
+          requiresAccountCutoff: proof.requiresAccountCutoff,
           authenticatedAt: proof.linkGuarded ? proof.originalAuthenticatedAt : null,
           expiresAt: proof.expiresAt,
         },

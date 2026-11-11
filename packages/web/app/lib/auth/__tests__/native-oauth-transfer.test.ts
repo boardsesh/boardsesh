@@ -51,6 +51,23 @@ describe('native OAuth transfer token', () => {
     expect(legacyClaims.gen).toBe(0);
   });
 
+  it('carries the source SID without an account-creation receipt or fresh authentication age', () => {
+    const transfer = issueNativeOAuthTransferToken({
+      userId: 'transfer-source-fixture',
+      authSessionId: 'source-session-fixture',
+      generation: 5,
+      nextPath: '/',
+    });
+    const claims = JSON.parse(Buffer.from(transfer.split('.')[0], 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(claims.authSessionId).toBe('source-session-fixture');
+    expect(claims.gen).toBe(5);
+    expect(claims).not.toHaveProperty('auth_time');
+    expect(claims).not.toHaveProperty('accountCreation');
+  });
+
   it.each([-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])('refuses invalid generation %s', (generation) => {
     expect(() =>
       issueNativeOAuthTransferToken({ userId: 'transfer-generation-fixture', nextPath: '/', generation }),

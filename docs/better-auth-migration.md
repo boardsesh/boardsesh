@@ -577,6 +577,9 @@ Startup refuses canonical issuance while that writer is unavailable. It inherits
 expiry. Consumed parents with NULL family metadata are retained while any
 unrevoked, unexpired refresh row for that subject can live. This deliberately
 keeps more evidence than a known-family cleanup would.
+Cleanup takes the shared authority gate and the subject lock before refresh-row
+locks, then rechecks live descendants in a new READ COMMITTED statement. A child
+committed while cleanup waits therefore retains its consumed ancestor.
 
 The admin command uses only explicit `AUTH_OPERATOR_DATABASE_URL`, strict remote
 TLS, an exact `--confirm-host`, and private files outside Git (0700 directory,

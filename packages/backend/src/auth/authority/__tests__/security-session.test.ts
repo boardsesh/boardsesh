@@ -51,7 +51,7 @@ describe('post-mutation canonical replacement and event constraints', () => {
         .values({ userId, generation: 1, revokedThrough: new Date(), lastOperationId: randomUUID() });
       return replaceCanonicalAfterSecurityMutation(
         transaction,
-        { userId, authSessionId, generation: 0, authenticatedAt: age, expiresAt },
+        { userId, authSessionId, generation: 0, requiresAccountCutoff: false, authenticatedAt: age, expiresAt },
         1,
       );
     });
@@ -81,6 +81,47 @@ describe('post-mutation canonical replacement and event constraints', () => {
       ).status,
     ).toBe('admitted');
   });
+  it.each(['legacy-signout', 'native-signout', 'admin-revocation', 'password-reset'] as const)(
+    'retains migrated domain and epoch constraints for %s',
+    async (kind) => {
+      const isNative = kind === 'native-signout';
+      const firstPartyOnly = isNative || kind === 'legacy-signout';
+      const event = {
+        operationId: randomUUID(),
+        userId: randomUUID(),
+        generation: isNative ? 0 : 1,
+        previousGeneration: 0,
+        kind,
+        domains: firstPartyOnly
+          ? (['first-party'] as ['first-party'])
+          : (['first-party', 'partner'] as ['first-party', 'partner']),
+        revokedThrough: new Date(),
+        writerEpoch: isNative ? 0 : 2,
+        projectionId: isNative ? 'legacy-native' : 'enforced-fixture',
+        nativeGeneration: isNative ? 1 : null,
+        previousNativeGeneration: isNative ? 0 : null,
+      };
+      await environment.database.insert(authSecurityMutationEvents).values(event);
+      const invalidDomain = firstPartyOnly
+        ? (['first-party', 'partner'] as ['first-party', 'partner'])
+        : (['first-party'] as ['first-party']);
+      for (const mutation of [
+        { domains: invalidDomain },
+        isNative ? { projectionId: 'unqualified-legacy' } : { writerEpoch: 0, projectionId: 'legacy-native' },
+        ...(isNative ? [] : [{ nativeGeneration: 1, previousNativeGeneration: 0 }]),
+      ]) {
+        await expect(
+          environment.database.insert(authSecurityMutationEvents).values({
+            ...event,
+            operationId: randomUUID(),
+            userId: randomUUID(),
+            ...mutation,
+          }),
+        ).rejects.toThrow();
+      }
+    },
+  );
+
   it('rejects native events with missing stamps, changed web generation, or partner domains', async () => {
     const valid = {
       operationId: randomUUID(),

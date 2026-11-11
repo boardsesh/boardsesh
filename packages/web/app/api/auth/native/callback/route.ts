@@ -75,6 +75,7 @@ async function nativeCallback(request: NextRequest) {
       userId: session.user.id,
       generation: session.authGeneration ?? 0,
       nextPath,
+      ...(session.authSessionId ? { authSessionId: session.authSessionId } : {}),
       ...verifiedProof,
     });
   } catch {

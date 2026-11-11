@@ -119,9 +119,7 @@ async function denyCapturedFirstPartySession(
         revokedThrough: sql`greatest(${authSubjectCutoffs.revokedThrough}, clock_timestamp())`,
         lastOperationId: operationId,
       })
-      .where(
-        and(eq(authSubjectCutoffs.userId, session.userId), eq(authSubjectCutoffs.generation, session.generation)),
-      )
+      .where(and(eq(authSubjectCutoffs.userId, session.userId), eq(authSubjectCutoffs.generation, session.generation)))
       .returning();
     if (!cutoff) throw new CurrentStoreFoundationError('STALE_GENERATION');
     await transaction.insert(authSecurityMutationEvents).values({
@@ -175,10 +173,7 @@ async function denyCapturedFirstPartySession(
     .update(authCredentialLineage)
     .set({ revokedAt: now })
     .where(
-      and(
-        eq(authCredentialLineage.userId, session.userId),
-        eq(authCredentialLineage.sessionId, session.authSessionId),
-      ),
+      and(eq(authCredentialLineage.userId, session.userId), eq(authCredentialLineage.sessionId, session.authSessionId)),
     );
   await transaction
     .insert(authSessionDenials)

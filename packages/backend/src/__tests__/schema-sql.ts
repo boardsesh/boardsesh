@@ -31,11 +31,11 @@ const legacyWebSessionSchema = readFileSync(
   )
   .join('\n');
 const authDenialIndexSchema = readFileSync(
-  new URL('../../../db/drizzle/0307_brown_swordsman.sql', import.meta.url),
+  new URL('../../../db/drizzle/0309_native_denial_index.sql', import.meta.url),
   'utf8',
 );
 const authNativeRevocationSchema = readFileSync(
-  new URL('../../../db/drizzle/0306_harsh_young_avengers.sql', import.meta.url),
+  new URL('../../../db/drizzle/0308_native_revocation_events.sql', import.meta.url),
   'utf8',
 );
 const authAuthoritySchema = readFileSync(

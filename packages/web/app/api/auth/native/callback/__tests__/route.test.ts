@@ -119,7 +119,7 @@ describe('GET /api/auth/native/callback', () => {
           headers: { Cookie: `${NATIVE_OAUTH_ATTEMPT_COOKIE}=${marker}` },
         }),
       );
-      expect(mockedIssueToken).toHaveBeenCalledWith({ generation: 0, userId, nextPath: '/' });
+      expect(mockedIssueToken).toHaveBeenCalledWith({ generation: 0, userId, nextPath: '/', authSessionId: 'login-1' });
     },
   );
 

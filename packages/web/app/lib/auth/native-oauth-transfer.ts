@@ -57,6 +57,7 @@ export const issueNativeOAuthTransferToken = ({
     iat: now,
     exp: now + NATIVE_OAUTH_TRANSFER_TTL_SECONDS,
     gen: generation,
+    ...(authSessionId ? { authSessionId } : {}),
     ...(accountCreation && authSessionId && attemptId && provider
       ? { accountCreation, authSessionId, attemptId, provider }
       : {}),
