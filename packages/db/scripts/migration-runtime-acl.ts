@@ -1,6 +1,7 @@
 /// <reference types="node" />
 import type postgres from 'postgres';
 import { readFileSync } from 'node:fs';
+import { reconcileWebRuntimeAcl } from '../src/auth-web-acl';
 
 const SIMPLE_POSTGRES_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -349,4 +350,14 @@ export async function reconcileMigrationRuntimeAcl(
       throw new Error('runtime/PUBLIC relation column ACLs remain after reconciliation');
     }
   });
+  // Separate web role: never grant membership of the broad backend runtime role.
+  // Reconcile every migration so new nonauth tables work while auth_* remains fenced.
+  const [webRole] = await client<
+    { present: boolean }[]
+  >`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'boardsesh_web') AS present`;
+  if (webRole?.present) {
+    await client.begin(async (transaction) => {
+      await reconcileWebRuntimeAcl(transaction, contract.ownerRole);
+    });
+  }
 }

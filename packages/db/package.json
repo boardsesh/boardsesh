@@ -6,6 +6,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./auth-web-acl": {
+      "types": "./src/auth-web-acl.ts",
+      "import": "./src/auth-web-acl.ts",
+      "default": "./src/auth-web-acl.ts"
+    },
     "./background-jobs": {
       "types": "./src/background-jobs.ts",
       "import": "./src/background-jobs.ts",

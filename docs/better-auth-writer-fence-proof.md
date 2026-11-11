@@ -159,3 +159,84 @@ issuers, mixed deployments, job credentials, revocation mutations, ownership
 resolution, deployed grants, backup/restore and a safe production rollback remain
 separate gates. No test count here establishes one production credential writer
 or authorizes first-party cutover or partner launch.
+
+
+## BA-04 operator tools (PR 5; inactive)
+
+`auth-authority` defaults to read-only `status`. `prepare` takes the exclusive
+(6975, 2) authority gate with the shared 2-second lock deadline, then the real
+`users` table lock. Its reservation inserts use batches of 500 rather than two
+network round trips per address. The manifest stays `prepared`; preparation is
+not a capability fence.
+
+`activate` independently reads effective live catalog permissions on the same
+transaction connection, locks `users`, rebuilds reservations from current users,
+and only then can advance the phase and writer epoch. Deleted-address digest
+reservations survive reconciliation. A prepared snapshot or a previous SQL
+plan digest is never accepted as current fence evidence. The initial prepare
+manifest reserves epoch 1, which the first enforced transition retains. Later
+authority switches raise the epoch; clients must use the reported epoch.
+
+Activation currently **always refuses** while any of these fixed code gates
+remain: Garmin must preserve queued offline ticks across refresh rejection;
+web cookies must carry the generation from the authentication proof; and native
+revoke/reset must share a safe lock order. No CLI switch or environment variable
+can assert those fixes exist. Later reviewed code must close each gate.
+`CURRENT_STORE_DELETED_EMAIL_KEY` must separately be provisioned before any
+staged writer and must never rotate. Neither command enables a writer mode,
+partner mode, mirror or Better Auth module. The owner-only production sequence
+and exact commands belong exclusively to issue #7430.
+
+`auth-fence plan` prints ordinary reviewable SQL and its SHA-256, with rollback
+SQL commented out. `apply` requires that hash, regenerates the plan from the live
+catalog, applies it transactionally, and verifies the result before commit.
+Both tools use only `AUTH_OPERATOR_DATABASE_URL`, require `--confirm-host`,
+reject SQL debugging, and do not consult `DATABASE_URL` or ambient `PG*` fields.
+Connections require verified TLS except explicit loopback test connections.
+Only catalog names, counts, opaque projection identifiers and digests leave the
+commands; database errors and URLs are never printed.
+
+The new `boardsesh_web` role must be a plain restricted LOGIN with no ownership,
+role memberships, schema/database creation, superuser, replication or bypass-RLS
+capability. It must never inherit `boardsesh_runtime`: migration reconciliation
+continues granting that role broad backend access. The separate web contract
+is reconciled after each migration whenever the new role exists. New objects
+start without web grants; reconciliation grants nonauth base-table CRUD and
+keeps `auth_*`, `oauth_*` and the enumerated legacy identity tables read-only.
+The first operator apply needs administrative rights to create the role and
+reconcile every enumerated object owner's defaults, including separate NOLOGIN
+helper owners. Routine migrations change only the configured DDL owner's
+objects and defaults; external and extension objects retain the reviewed admin
+ACLs. Full effective verification still covers those excluded objects and
+requires every owner's global routine-default deny row. New privileged owners
+or drift require a new administrative plan; migration SQL does not impersonate
+another owner.
+
+New identity tables must use that prefix or extend the explicit identity list
+before landing. `auth_session` has no web read grant; `auth_subject_cutoffs`
+keeps SELECT because web credential stamping needs it.
+
+Effective checks cover table and column ACLs, PUBLIC, ownership, memberships
+including SET ROLE paths, defaults, writable views/rules, foreign-key cascades,
+and executable SECURITY DEFINER routines. Unknown indirect paths fail closed.
+The reviewed 0298 logbook trigger bodies are pinned by SHA-256, attachment,
+language and search path, with an exact logbook sink column/default/index/primary-key contract, no RLS,
+inheritance, extra trigger or rule, and pinned plain enum I/O on source tables.
+The operator guard covers the comparison vocabulary in the pinned bodies;
+unrelated pg_trgm distance operators remain usable. A changed body, operator,
+cast, index function or sink shape needs review. This
+policy is a capability boundary at inspection time; a privileged administrator
+can change grants afterward. Moving the deployed web connection string also
+requires retiring every old web pool using the runtime credential; creating a
+new role cannot revoke an already running process's different database identity.
+Emergency re-grants are allowed only before S3. They never remove cutoff rows,
+restore passwords or close the later session/rollout gates.
+
+Full-schema QA restores a schema-only dump of the local migrated development
+image into a disposable database, never a production dump or an account-row
+copy. The isolated test config accepts `AUTH_FENCE_TEST_SCHEMA_FILE` plus a
+loopback-only `AUTH_FENCE_TEST_DATABASE_URL`; it never falls back to the product
+connection string. The fixture refuses an existing `boardsesh_web` role and
+removes only its own temporary database and role. The ordinary unit suite
+checks argument validation, read-only defaults, future identity classification,
+cutoff reads, rollback output and non-bypassable activation gates.
