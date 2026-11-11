@@ -18,6 +18,16 @@ describe('sendPasswordResetEmail', () => {
     process.env.EMAIL_FROM = 'noreply@boardsesh.com';
   });
 
+  it('refuses retired .invalid recipients before reaching SMTP', async () => {
+    await expect(
+      sendPasswordResetEmail('synthetic@retired.boardsesh.invalid', 'token', 'https://boardsesh.test'),
+    ).rejects.toThrow();
+    await expect(
+      sendVerificationEmail('synthetic@RETIRED.BOARDSESH.INVALID', 'token', 'https://boardsesh.test'),
+    ).rejects.toThrow();
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
   function lastMail(): SentMail {
     expect(sendMail).toHaveBeenCalledTimes(1);
     return sendMail.mock.calls[0][0] as SentMail;

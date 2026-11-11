@@ -2140,8 +2140,15 @@
     {
       "idx": 305,
       "version": "7",
-      "when": 1794400615322,
-      "tag": "0305_account_consolidation",
+      "when": 1794394633644,
+      "tag": "0305_auth_email_resolution_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1794402345554,
+      "tag": "0306_account_consolidation",
       "breakpoints": true
     }
   ]

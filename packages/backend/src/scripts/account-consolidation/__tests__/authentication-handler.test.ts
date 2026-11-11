@@ -16,7 +16,7 @@ let admin: postgres.Sql;
 let client: postgres.Sql;
 let created = false;
 const migration = readFileSync(
-  new URL('../../../../../db/drizzle/0305_account_consolidation.sql', import.meta.url),
+  new URL('../../../../../db/drizzle/0306_account_consolidation.sql', import.meta.url),
   'utf8',
 ).replaceAll('--> statement-breakpoint', '');
 const context: ConsolidationContext = {

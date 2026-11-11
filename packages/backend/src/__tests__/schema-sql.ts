@@ -209,7 +209,7 @@ const sessionWorkoutsSchema = readFileSync(
 );
 
 const consolidationSchema = readFileSync(
-  new URL('../../../db/drizzle/0305_account_consolidation.sql', import.meta.url),
+  new URL('../../../db/drizzle/0306_account_consolidation.sql', import.meta.url),
   'utf8',
 );
 

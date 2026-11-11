@@ -1,5 +1,5 @@
 {
-  "id": "12d6922b-b779-4fdd-91a5-8d0a404bae79",
+  "id": "98a72e3a-0483-4f32-a6ba-6c52fc44e6f5",
   "prevId": "b4234905-3cd5-4835-a07e-c1b768c6977c",
   "version": "7",
   "dialect": "postgresql",
@@ -7403,91 +7403,10 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.account_consolidation_batches": {
-      "name": "account_consolidation_batches",
+    "public.auth_email_resolution_log": {
+      "name": "auth_email_resolution_log",
       "schema": "",
       "columns": {
-        "batch_id": {
-          "name": "batch_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "plan_sha256": {
-          "name": "plan_sha256",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "policy_version": {
-          "name": "policy_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "account_consolidation_batches_plan_idx": {
-          "name": "account_consolidation_batches_plan_idx",
-          "columns": [
-            {
-              "expression": "plan_sha256",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_consolidation_batches_status": {
-          "name": "account_consolidation_batches_status",
-          "value": "\"account_consolidation_batches\".\"status\" IN ('planned','applying','applied','failed')"
-        },
-        "account_consolidation_batches_policy": {
-          "name": "account_consolidation_batches_policy",
-          "value": "\"account_consolidation_batches\".\"policy_version\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_group_audits": {
-      "name": "account_consolidation_group_audits",
-      "schema": "",
-      "columns": {
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
         "batch_id": {
           "name": "batch_id",
           "type": "text",
@@ -7500,162 +7419,44 @@
           "primaryKey": false,
           "notNull": true
         },
-        "before_fingerprint": {
-          "name": "before_fingerprint",
+        "user_id": {
+          "name": "user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "after_fingerprint": {
-          "name": "after_fingerprint",
+        "action": {
+          "name": "action",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "counts": {
-          "name": "counts",
-          "type": "jsonb",
+        "evidence_kind": {
+          "name": "evidence_kind",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "completed_at": {
-          "name": "completed_at",
+        "recorded_at": {
+          "name": "recorded_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
         }
       },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_import_aliases": {
-      "name": "account_consolidation_import_aliases",
-      "schema": "",
-      "columns": {
-        "former_user_id": {
-          "name": "former_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "canonical_resource_id": {
-          "name": "canonical_resource_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_user_id": {
-          "name": "target_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tombstoned": {
-          "name": "tombstoned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "account_consolidation_import_aliases_former_user_id_provider_kind_external_id_pk": {
-          "name": "account_consolidation_import_aliases_former_user_id_provider_kind_external_id_pk",
-          "columns": [
-            "former_user_id",
-            "provider",
-            "kind",
-            "external_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_consolidation_import_kind": {
-          "name": "account_consolidation_import_kind",
-          "value": "\"account_consolidation_import_aliases\".\"kind\" IN ('tick','playlist','climb')"
-        },
-        "account_consolidation_import_tombstone": {
-          "name": "account_consolidation_import_tombstone",
-          "value": "\"account_consolidation_import_aliases\".\"tombstoned\" OR \"account_consolidation_import_aliases\".\"canonical_resource_id\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_members": {
-      "name": "account_consolidation_members",
-      "schema": "",
-      "columns": {
-        "source_user_id": {
-          "name": "source_user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "canonical_user_id": {
-          "name": "canonical_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "applied_at": {
-          "name": "applied_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
       "indexes": {
-        "account_consolidation_members_target_idx": {
-          "name": "account_consolidation_members_target_idx",
+        "auth_email_resolution_group_idx": {
+          "name": "auth_email_resolution_group_idx",
           "columns": [
             {
-              "expression": "canonical_user_id",
+              "expression": "group_reference",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "recorded_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7668,129 +7469,19 @@
         }
       },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "auth_email_resolution_log_batch_id_group_reference_user_id_pk": {
+          "name": "auth_email_resolution_log_batch_id_group_reference_user_id_pk",
+          "columns": [
+            "batch_id",
+            "group_reference",
+            "user_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "account_consolidation_members_distinct": {
-          "name": "account_consolidation_members_distinct",
-          "value": "\"account_consolidation_members\".\"source_user_id\" <> \"account_consolidation_members\".\"canonical_user_id\""
-        },
-        "account_consolidation_members_status": {
-          "name": "account_consolidation_members_status",
-          "value": "\"account_consolidation_members\".\"status\" IN ('planned','applied')"
-        },
-        "account_consolidation_members_applied": {
-          "name": "account_consolidation_members_applied",
-          "value": "\"account_consolidation_members\".\"status\" <> 'applied' OR \"account_consolidation_members\".\"applied_at\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_session_aliases": {
-      "name": "account_consolidation_session_aliases",
-      "schema": "",
-      "columns": {
-        "retired_session_id": {
-          "name": "retired_session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "canonical_session_id": {
-          "name": "canonical_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_user_id": {
-          "name": "target_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tombstoned": {
-          "name": "tombstoned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_consolidation_session_alias_distinct": {
-          "name": "account_consolidation_session_alias_distinct",
-          "value": "\"account_consolidation_session_aliases\".\"canonical_session_id\" IS NULL OR \"account_consolidation_session_aliases\".\"retired_session_id\" <> \"account_consolidation_session_aliases\".\"canonical_session_id\""
-        },
-        "account_consolidation_session_alias_tombstone": {
-          "name": "account_consolidation_session_alias_tombstone",
-          "value": "\"account_consolidation_session_aliases\".\"tombstoned\" OR \"account_consolidation_session_aliases\".\"canonical_session_id\" IS NOT NULL"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.account_consolidation_tick_aliases": {
-      "name": "account_consolidation_tick_aliases",
-      "schema": "",
-      "columns": {
-        "retired_uuid": {
-          "name": "retired_uuid",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "canonical_uuid": {
-          "name": "canonical_uuid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_user_id": {
-          "name": "target_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "merge_id": {
-          "name": "merge_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "tombstoned": {
-          "name": "tombstoned",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "account_consolidation_tick_alias_distinct": {
-          "name": "account_consolidation_tick_alias_distinct",
-          "value": "\"account_consolidation_tick_aliases\".\"canonical_uuid\" IS NULL OR \"account_consolidation_tick_aliases\".\"retired_uuid\" <> \"account_consolidation_tick_aliases\".\"canonical_uuid\""
-        },
-        "account_consolidation_tick_alias_tombstone": {
-          "name": "account_consolidation_tick_alias_tombstone",
-          "value": "\"account_consolidation_tick_aliases\".\"tombstoned\" OR \"account_consolidation_tick_aliases\".\"canonical_uuid\" IS NOT NULL"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.gym_claim_ownership_decisions": {

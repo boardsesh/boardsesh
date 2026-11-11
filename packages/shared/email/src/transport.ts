@@ -2,7 +2,13 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { z } from 'zod';
 
 /** Validates address format before it's used in URLs or as a recipient. */
-export const emailSchema = z.string().email();
+export const emailSchema = z
+  .string()
+  .email()
+  .refine(
+    (address) => !address.toLowerCase().split('@')[1]?.replace(/\.$/, '').endsWith('.invalid'),
+    'Recipient is unavailable.',
+  );
 
 /**
  * Inline style values for HTML emails. These were lifted verbatim from the web

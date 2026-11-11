@@ -101,6 +101,14 @@ export {
 } from './tnut-layout';
 export { migrateTnutLayoutColumns } from './tnut-layout';
 export {
+  MAX_HOLD_LED_LINKS,
+  MAX_LEDS_PER_HOLD_LINK,
+  clearHoldLedLink,
+  readHoldLedLinks,
+  setHoldLedLink,
+  type SprayHoldLedLink,
+} from './hold-led-links';
+export {
   bindLedPositionsToHoles,
   buildSprayLedMapping,
   findSprayHoldAtPoint,

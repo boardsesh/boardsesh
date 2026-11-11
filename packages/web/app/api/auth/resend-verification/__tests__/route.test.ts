@@ -27,8 +27,8 @@ vi.mock('@boardsesh/db/queries/account-email', async () => {
   const { fakeAccountEmailLookup } = await import('@/app/test-utils/account-email-lookup');
   return fakeAccountEmailLookup(() => lookup.stored);
 });
-const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
-  await fn({
+const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+  return await fn({
     delete: () => ({ where: mockDeleteWhere }),
     insert: () => ({ values: mockValues }),
   });
@@ -45,7 +45,7 @@ vi.mock('@/app/lib/db/schema', () => ({
 }));
 
 import type { StoredAccount } from '@/app/test-utils/account-email-lookup';
-import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
+import { findAccountsByEmail, lockAccountEmailSnapshot } from '@boardsesh/db/queries/account-email';
 import { POST } from '../route';
 
 function createRequest(
@@ -83,6 +83,14 @@ describe('POST /api/auth/resend-verification', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+  });
+
+  it('does not issue or mail a link after the account address changed', async () => {
+    vi.mocked(lockAccountEmailSnapshot).mockResolvedValueOnce(false);
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+    expect(response.status).toBe(200);
+    expect(mockValues).not.toHaveBeenCalled();
+    expect(mockSendVerificationEmail).not.toHaveBeenCalled();
   });
 
   it('keys the staged limiter on the trusted client, not the first forwarded hop', async () => {

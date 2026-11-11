@@ -224,6 +224,10 @@ describe('the no-kickboard rule', () => {
 });
 
 describe('the creator lightbulb', () => {
+  it('is offered on a spray wall only when its LEDs are set up', () => {
+    expect(offersBoardLightbulb('spray', true)).toBe(true);
+  });
+
   it('is not offered on a spray wall, which has no lights', () => {
     expect(offersBoardLightbulb('spray')).toBe(false);
   });

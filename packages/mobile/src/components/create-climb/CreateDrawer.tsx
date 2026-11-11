@@ -48,6 +48,7 @@ import { HeatmapDownloadLine } from '../board/HeatmapDownloadLine';
 import { Text } from '../Text';
 import type { CreateHeatmap } from './create-heatmap';
 import { offersBoardLightbulb } from './spray-climb-rules';
+import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
 
 type Controller = ReturnType<typeof useCreateClimbScreen>;
 
@@ -290,7 +291,8 @@ export function CreateDrawer({
   // handleSave refuses the same cases, so this only makes the refusal visible.
   const climbReady = (controller.isDraft ? controller.canSave : controller.canPublish) && !ghostsPending;
   const { handleSave, bleConnected, bleConnecting, handleToggleBle } = controller;
-  const showLightbulb = offersBoardLightbulb(board.boardName);
+  const sprayLedsEnabled = useSprayWallLedsEnabled(board.boardName, board.layoutId);
+  const showLightbulb = offersBoardLightbulb(board.boardName, sprayLedsEnabled);
   const lightbulb = useMemo(
     () =>
       showLightbulb ? { connected: bleConnected, connecting: bleConnecting, onToggle: handleToggleBle } : undefined,

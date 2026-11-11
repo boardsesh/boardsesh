@@ -25,9 +25,9 @@ await bootstrap.unsafe(
   'DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS pgboss CASCADE; DROP ROLE IF EXISTS boardsesh_consolidation_operator',
 );
 await bootstrap.unsafe(schemaSQL);
-for (const tag of ['0241_background_job_runs', '0243_background_job_families', '0305_account_consolidation']) {
+for (const tag of ['0241_background_job_runs', '0243_background_job_families', '0306_account_consolidation']) {
   if (
-    tag === '0305_account_consolidation' &&
+    tag === '0306_account_consolidation' &&
     (await bootstrap`SELECT to_regclass('public.account_consolidation_batches') AS name`)[0].name
   )
     continue;
