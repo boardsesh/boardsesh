@@ -40,7 +40,7 @@ export async function createEnvironment() {
   try {
     await client.unsafe(schemaSQL);
     const migration = readFileSync(
-      new URL('../../../../../db/drizzle/0305_yielding_scrambler.sql', import.meta.url),
+      new URL('../../../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url),
       'utf8',
     );
     for (const statement of migration.split('--> statement-breakpoint')) {
