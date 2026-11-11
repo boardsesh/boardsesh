@@ -1,6 +1,8 @@
 // MUST be the first import: initializes Sentry + loads dotenv before any
 // instrumented module (HTTP, Postgres, Redis) is required.
 import './instrument';
+// Second, before anything that builds a Postgres pool.
+import './request-pool-defaults';
 import * as Sentry from '@sentry/node';
 import { startServer } from './server';
 import { redisClientManager } from './redis/client';

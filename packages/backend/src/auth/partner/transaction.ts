@@ -2,15 +2,28 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { sql } from 'drizzle-orm';
 import { logger } from '../../utils/logger';
 import { getPostgresErrorCode } from '../../utils/postgres-errors';
+import type { DedicatedPoolOverrides } from '@boardsesh/db/client';
 import type { PartnerDatabase } from './tables';
 
 /** Partner OAuth runs on a pool of its own so it cannot starve GraphQL (the shared pool defaults to 5). */
 export const PARTNER_POOL_MAX = 3;
 
+/**
+ * Each partner transaction sets this for itself. The pool sends it at connect
+ * too, so a transaction opened on the pool any other way gets the same limit
+ * instead of the process-wide 60 s.
+ */
+export const PARTNER_IDLE_IN_TRANSACTION_TIMEOUT_MS = 10_000;
+
 const LOCK_TIMEOUT = '2s';
 const STATEMENT_TIMEOUT = '5s';
-const IDLE_IN_TRANSACTION_TIMEOUT = '10s';
+const IDLE_IN_TRANSACTION_TIMEOUT = `${PARTNER_IDLE_IN_TRANSACTION_TIMEOUT_MS}ms`;
 const BUSY_RETRY_AFTER_SECONDS = '2';
+
+/** Startup parameters for the partner and logbook snapshot pools, passed to `createDedicatedPool`. */
+export function partnerPoolOverrides(): DedicatedPoolOverrides {
+  return { connection: { idle_in_transaction_session_timeout: PARTNER_IDLE_IN_TRANSACTION_TIMEOUT_MS } };
+}
 
 /** lock_not_available, query_canceled (statement_timeout), deadlock_detected: all retryable. */
 const DATABASE_BUSY_CODES = new Set(['55P03', '57014', '40P01']);

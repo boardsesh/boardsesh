@@ -37,6 +37,7 @@ import {
   createPartnerDatabaseHandle,
   handlePartnerRequest,
   PARTNER_POOL_MAX,
+  partnerPoolOverrides,
   type PartnerRequestOptions,
 } from './transaction';
 
@@ -296,11 +297,11 @@ export async function createPartnerAuthorityRuntime(
 
 async function buildPartnerAuthorityRuntime(): Promise<PartnerAuthorityRuntime> {
   const configuration = readPartnerAuthorityConfiguration();
-  const pool = createDedicatedPool(PARTNER_POOL_MAX);
+  const pool = createDedicatedPool(PARTNER_POOL_MAX, partnerPoolOverrides());
   const database = drizzle(withConnectRetry(pool), { schema: partnerAdapterSchema });
   // postgres.js connects on first use, so the snapshot pool costs nothing until
   // an app first starts a logbook download.
-  const snapshotPool = createDedicatedPool(LOGBOOK_SNAPSHOT_POOL_MAX);
+  const snapshotPool = createDedicatedPool(LOGBOOK_SNAPSHOT_POOL_MAX, partnerPoolOverrides());
   return createPartnerAuthorityRuntime(database, configuration, {
     logbook: { feed: createDbOnPool(pool), snapshots: createDbOnPool(snapshotPool) },
     close: async () => {

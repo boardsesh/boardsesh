@@ -2100,9 +2100,14 @@ Written into the public docs in these words:
   Test a client holding a cursor from before the rewind and assert `410`,
   including once transaction IDs overlap again.
 - The horizon is cluster-wide. A session left idle inside a write transaction
-  holds every feed back. Set `idle_in_transaction_session_timeout` on the
-  application roles, and alert when the oldest running write transaction is
-  more than 5 minutes old ([Observability](#observability)).
+  holds every feed back. The backend server and the web server end such a
+  session after 60 s: their pools send `idle_in_transaction_session_timeout` as
+  a startup parameter, so no `ALTER ROLE` is needed (see
+  [db-connectivity.md](./db-connectivity.md), "Idle transactions end after 60 s
+  on request pools", for which pools are covered and why 60 s). Workers, the
+  sync daemons and scripts are not covered, so still alert when the oldest
+  running write transaction is more than 5 minutes old
+  ([Observability](#observability)).
 - Reads run on the primary in milestone 1. Moving them to a hot standby means
   first proving the same horizon argument holds against a standby snapshot.
 
@@ -2362,7 +2367,7 @@ stays `off` until step 1 of stage A.
 | 2 | `api.boardsesh.com` answers through Cloudflare | `curl -sS -o /dev/null -w '%{http_code}' https://api.boardsesh.com/health` prints `200` |
 | 3 | AASA has excluded `/oauth` and `/developers` for at least 7 days, so installed iPhones have refreshed it | `curl -sS https://www.boardsesh.com/.well-known/apple-app-site-association` lists `NOT /oauth/*` and `NOT /developers/*` |
 | 4 | The connection budget is decided and deployed ([below](#the-connection-budget)) | |
-| 5 | `idle_in_transaction_session_timeout` is set on the application roles ([below](#idle-transactions)) | |
+| 5 | The backend and web deploys send `idle_in_transaction_session_timeout` (code since #7415, nothing to set), and the oldest-write-transaction alert exists ([below](#idle-transactions)) | The query in [Idle transactions](#idle-transactions) |
 | 6 | Backend variables: `PARTNER_OAUTH_SECRETS` (`1:` and at least 32 random characters; to rotate, put the new key first, `2:…,1:…`: the first encrypts and the others only decrypt) and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` (comma-separated user ids) | Railway backend service variables |
 | 7 | The PostHog flag `developer-console` exists, targeted at the allowlisted developers | |
 | 8 | An independent agent security review of the assembled stack, findings fixed and re-reviewed | |
@@ -2483,12 +2488,15 @@ variable. The recommendation is the first option, or raising `max_connections`.
 
 The logbook feed serves only changes below the oldest write transaction still
 open, so one session left idle inside a transaction holds every app's feed back
-until it ends. Partner transactions set their own 10-second limit; the rest of
-the application does not. Before the first switch-on, set
-`idle_in_transaction_session_timeout` on every login that writes ticks:
-`boardsesh_runtime` (backend and web) and the worker logins.
+until it ends. The backend server and the web server end such a session in code:
+their pools send `idle_in_transaction_session_timeout` as a startup parameter,
+60 s on the shared pools and 10 s on the partner and snapshot pools
+([db-connectivity.md](./db-connectivity.md), "Idle transactions end after 60 s on
+request pools", has which pools, why 60 s, and what a cut request sees). There is
+no `ALTER ROLE` to run for `boardsesh_runtime`.
 
-1. See what sits idle in a transaction today, a few times over a day:
+1. After the first deploy that carries it, see what sits idle in a transaction,
+   a few times over a day:
 
    ```sql
    SELECT usename, application_name, count(*), max(now() - state_change) AS longest
@@ -2497,21 +2505,42 @@ the application does not. Before the first switch-on, set
    GROUP BY usename, application_name;
    ```
 
-2. Pick a value above the longest legitimate one. It cuts only sessions that sit
-   idle inside a transaction, not long statements, so kilter-sync's 80 to 135
-   second upserts (the reason `statement_timeout` is never set on
-   `boardsesh_runtime`) are not affected.
-3. As the database admin (the migration role cannot alter application roles),
-   with the value you picked:
+   A backend or web session never stays past a minute. Anything longer comes
+   from a worker, a sync daemon or a script, which are not covered.
+2. Make sure no login carries a role-level value. The worker logins must never
+   inherit one: the board-snapshot export holds one REPEATABLE READ transaction
+   for a whole export, and a role-level value would cut it. And `0` on the
+   backend or web sends no parameter, so it would not override one either:
 
    ```sql
-   ALTER ROLE boardsesh_runtime SET idle_in_transaction_session_timeout = '60s';
+   SELECT rolname, rolconfig
+   FROM pg_roles
+   WHERE rolconfig::text LIKE '%idle_in_transaction%';
    ```
 
-   Repeat for each worker login. New sessions pick it up; pooled connections keep
-   the old value until they reconnect, which the next deploy does.
-4. Alert when the oldest running write transaction is over 5 minutes old
+   No rows is the expected answer. For each row, as the database admin (the
+   migration role cannot alter application roles):
+
+   ```sql
+   ALTER ROLE <rolname> RESET idle_in_transaction_session_timeout;
+   ```
+
+   A setting made for one database only shows up in `pg_db_role_setting`,
+   not `pg_roles.rolconfig`. Check it too:
+   `SELECT setrole::regrole, setdatabase, setconfig FROM pg_db_role_setting WHERE setconfig::text LIKE '%idle_in_transaction%';`.
+   Clear each row it returns:
+
+   - a row naming a role: `ALTER ROLE <role> IN DATABASE railway RESET idle_in_transaction_session_timeout;`
+   - a database-wide row (`setrole` shows `-`, that is `setrole = 0`), which every
+     login inherits: `ALTER DATABASE railway RESET idle_in_transaction_session_timeout;`
+3. Alert when the oldest running write transaction is over 5 minutes old
    ([Observability](#observability)).
+
+To change the value, set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` on `boardsesh-backend`
+or `boardsesh-web`: whole milliseconds from 1000 to 2147483647. Any other value
+stops the service at boot. `0` turns off the 60 s default only. The partner
+and snapshot pools keep their 10 s, and a role-level value from step 2 would
+apply again.
 
 ### Admin commands
 
@@ -2668,7 +2697,7 @@ authorization server gets a Fable review.
 | Constrain `callbackUrl` on `/auth/login` with `safe-callback-url.ts` | A test proves `?callbackUrl=https://evil.example` lands on `/` |
 | `api.boardsesh.com` CNAME in `infra/cloudflare`, custom domain on the backend service | `curl https://api.boardsesh.com/health` answers |
 | Default-deny exemptions: `/v1/`, backend `/api/auth/oauth2/` and issuer metadata; `www` `/oauth/`, `/developers/`, `/auth/login` | Unit test in `crawler-policy`; a `HeadlessChrome` GET of consent and discovery is not refused |
-| `idle_in_transaction_session_timeout` on the application roles | Set and documented in `docs/db-connectivity.md` |
+| `idle_in_transaction_session_timeout` on the request pools | Sent as a startup parameter by the backend and web servers' pools (60 s; partner pool 10 s) and documented in `docs/db-connectivity.md` |
 
 ### Milestone 1: connect and sync (the MVP)
 

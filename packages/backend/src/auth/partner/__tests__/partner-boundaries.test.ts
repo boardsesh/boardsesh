@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createTelemetry, type BetterAuthOptions, type TelemetryEvent } from 'better-auth';
 import { drizzle } from 'drizzle-orm/postgres-js';
 
-const callCounts = vi.hoisted(() => ({ betterAuth: 0, createDedicatedPool: 0, poolSizes: [] as number[] }));
+const callCounts = vi.hoisted(() => ({
+  betterAuth: 0,
+  createDedicatedPool: 0,
+  poolSizes: [] as number[],
+  poolIdleTimeouts: [] as unknown[],
+}));
 
 vi.mock('better-auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('better-auth')>();
@@ -23,6 +28,7 @@ vi.mock('@boardsesh/db/client', async (importOriginal) => {
     createDedicatedPool: (...args: Parameters<typeof actual.createDedicatedPool>) => {
       callCounts.createDedicatedPool += 1;
       callCounts.poolSizes.push(args[0]);
+      callCounts.poolIdleTimeouts.push(args[1]?.connection?.idle_in_transaction_session_timeout);
       return actual.createDedicatedPool(...args);
     },
   };
@@ -113,10 +119,13 @@ describe('the deployed authority', () => {
   it('opens two dedicated pools: three connections for OAuth and /v1, two for logbook snapshots', async () => {
     vi.stubEnv('PARTNER_OAUTH_SECRETS', `1:${VALID_SECRET}`);
     callCounts.poolSizes = [];
+    callCounts.poolIdleTimeouts = [];
     const { getPartnerAuthorityRuntime } = await import('../authority');
     const runtime = await getPartnerAuthorityRuntime();
     try {
       expect(callCounts.poolSizes).toEqual([3, 2]);
+      // Both end a session idle in a transaction after the 10 s partner transactions set.
+      expect(callCounts.poolIdleTimeouts).toEqual([10_000, 10_000]);
       // The feed reads the primary through the partner pool, never the replica or the shared pool.
       const { db, dbRead } = await import('../../../db/client');
       expect(runtime.logbook.feed).not.toBe(db);

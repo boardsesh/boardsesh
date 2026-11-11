@@ -329,6 +329,7 @@ rest of the hour-long entry.
 | `DB_POOL_MAX`             | 5 (Vercel: 3)  | postgres.js `max`, clamped to a floor of 2 and, with a warning, a ceiling of 100        |
 | `DB_POOL_IDLE_TIMEOUT_S`  | 30 (Vercel: 5) | seconds an idle connection is held open; `0` means "never close one" and is not clamped  |
 | `DB_STATEMENT_TIMEOUT_MS` | unset          | emits a `statement_timeout` startup parameter — **off by default**, see the hazard below |
+| `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` | unset (60000 in the backend server and the web server) | emits an `idle_in_transaction_session_timeout` startup parameter: 1000 to 2147483647 ms, or `0` for off; any other value stops the process at boot. See "Idle transactions end after 60 s on request pools" below |
 
 6000 sits deliberately below `DB_CONNECT_RETRY_BUDGET_MS` (10000): during a
 brownout the front door should shed load rather than spend a second and third
@@ -373,6 +374,146 @@ forwards it to PostgreSQL there. Check the host and port in the URL instead.
 `/health` and `/health/db` below are **backend** endpoints. `packages/web` has
 none, so during a web-pool incident `/health/db` stays green and says nothing
 about the surface that is actually failing. That gap is not filled here.
+
+## Idle transactions end after 60 s on request pools
+
+The partner logbook feed serves only changes below the oldest write
+transaction still open, cluster-wide ([integration-platform.md](./integration-platform.md),
+"Incremental sync"). One session left idle inside a transaction holds every
+app's feed back until it ends. Before this, ending such sessions was an owner
+step (`ALTER ROLE ... SET idle_in_transaction_session_timeout`), which the
+migration role cannot run ("Why the migration cannot apply in production" below).
+It is now a startup parameter on the pools that serve requests.
+
+### Which pools send it
+
+`applyRequestPoolDefaults()` (`packages/db/src/client/postgres.ts`) sets
+`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` to 60000 unless it is already set, so every
+postgres.js pool the process builds afterwards sends
+`idle_in_transaction_session_timeout`. Two processes call it, before their first pool:
+
+| process | where | pools covered |
+| --- | --- | --- |
+| backend HTTP/GraphQL server | `src/index.ts` imports `src/request-pool-defaults.ts` straight after `./instrument` | shared primary, read replica, admission pool (60 s); partner and logbook snapshot pools (10 s, see below); a `createDedicatedPool` added later inherits 60 s unless it passes its own value |
+| web server | `app/lib/db/db.ts`, the only module that builds the web's pools | shared primary and read replica |
+
+The partner and logbook snapshot pools pass 10 s (`partnerPoolOverrides()`), the
+same limit partner transactions and snapshot chunk transactions already set for
+themselves with `set_config(..., true)`, so a transaction opened on those pools any
+other way gets it too. A transaction-local `set_config` always beats the startup
+parameter.
+
+The backend server also runs pg-boss consumers in the same process (push
+delivery, spray detection and background-job maintenance, the popularity, grade
+summary and popular-config refreshes, PostHog person deletion). They use the same
+`db` pool, so they are covered too.
+
+If the import order is ever wrong, the process will not start:
+`applyRequestPoolDefaults()` throws when a shared pool was already built without
+the setting, instead of letting the server run uncovered. The one process that
+loads backend and web code together, the App Router test harness
+(`app-router-harness.ts`), sets `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=0` for that reason.
+
+### What is not covered, and why
+
+| pool | why it is left at the server default (off) |
+| --- | --- |
+| background workers (`workers/index.ts`) | `export-board-snapshots` holds one REPEATABLE READ transaction for the whole export while it writes SQLite between cursor batches |
+| Aurora and Kilter sync daemons, hold detector | own processes and own pools; the daemons are disabled in production since the routine cutover |
+| pg-boss pools | the `pg` driver, configured in `job-queue-client.ts`; worker pools already carry `statement_timeout` and `query_timeout` (#6683) |
+| migrations (`packages/db/scripts/migrate.ts`), `drizzle-kit`, every script | one-off processes that never call `applyRequestPoolDefaults()`; the MoonBoard catalog import holds a session advisory lock on one connection for its whole run |
+| `boardsesh_readonly` | people and dashboards, outside the app |
+
+Those can still hold the feed back, so the alert on the oldest running write
+transaction ([integration-platform.md](./integration-platform.md),
+"Observability") stays.
+
+### Why 60 s
+
+The timeout ends only a session that sits idle inside an open transaction: the
+transaction has sent a statement, got the answer, and the app has not sent the
+next one. A long statement is not idle (`statement_timeout` bounds those), and a
+connection idle between transactions is not affected. So what matters is the
+longest the app can await something else while a transaction is open.
+
+An audit of every transaction reachable from the backend server and the web
+server on 2026-11-10 found these, longest first:
+
+| path | what the transaction waits on | bound |
+| --- | --- | --- |
+| `getStoredKilterAccessToken` (`kilter-sync/src/api/stored-token.ts`), called by the backend's Kilter live sync | the Keycloak refresh, with the credential row `FOR UPDATE` | 30 s (`AbortSignal.timeout` in `keycloak.ts`) |
+| push delivery (`spray-detection-notifications.ts`) | a second transaction on another pool connection, then the Expo push call | 15 s for the push, plus the pool and wall-lock wait |
+| `updateSessionBoardPathIfChanged` (`session-discovery.ts`) | Redis reads, with the `sessions` row `FOR UPDATE` | milliseconds; none while Redis stalls |
+| Kilter live import (`kilter-live-import.ts`) | two Redis reads | 1 s each |
+| `boss.send` inside a transaction | pg-boss's queue cache on its own pool, only for a queue created after boot | 10 s connect timeout |
+
+Every web transaction is database-only. 30 s would race the Keycloak refresh: if
+Keycloak rotates the refresh token and the session ends before the new token is
+written, the stored token is dead and the climber has to relink Kilter. 60 s is
+twice that bound. Going higher only lengthens how long one stuck session holds
+every partner's feed and its row locks. The two waits with no bound of their own,
+a stalled Redis and an exhausted pool, are cases where ending the session is the
+better outcome: each holds a row or advisory lock that other requests queue behind.
+
+A new transaction that awaits a network call must stay well under 60 s, or move
+the call out of the transaction.
+
+### What an affected request sees
+
+Postgres logs `FATAL: terminating connection due to idle-in-transaction timeout`
+(SQLSTATE 25P03) and closes the socket. Nothing in that transaction commits. No
+statement is in flight, so the driver reports `CONNECTION_CLOSED`, and the
+patched driver ("Socket disconnects and transaction cleanup" above) rejects the
+transaction the moment the socket closes, not on its next statement. That is not
+retried ("What is NOT retried" above). GraphQL counts it as a database outage and
+answers HTTP 503 (`isDatabaseUnavailableCode` in `graphql/mask-error.ts`); the
+mobile app then probes `/health/db`, which stays green. The pool opens a fresh
+connection for the next caller, so only the request that idled fails.
+
+The transaction's callback is not stopped. It finishes whatever it was awaiting,
+and every statement it sends after that is rejected, but work outside the
+database still happens. The one place that matters today is push delivery: if
+its inner transaction waits past the timeout for a pool slot or the wall lock,
+the job fails and is retried, the Expo push it then sends still goes out, and the
+ticket write is rejected, so the retry sends that push a second time. That needs
+the inner wait and the push together to pass 60 s (the push is capped at 15 s).
+Both sends carry the delivery's `collapseId` and `tag`, so the phone replaces the
+first notification with the second rather than showing two.
+
+`packages/backend/src/__tests__/idle-in-transaction-timeout.test.ts` checks this
+against the test Postgres: a covered pool loses the session after a 1 s timeout
+and the next statement fails with `CONNECTION_CLOSED` while the pool keeps
+serving, the transaction settles before its callback's wait ends, and the
+callback's next statement is rejected; an uncovered pool's transaction survives
+the same idle time; a fresh
+process that imports `request-pool-defaults.ts` reports `1min`, and one that does
+not reports `0`.
+
+### Changing it
+
+Set `DB_IDLE_IN_TRANSACTION_TIMEOUT_MS` on the Railway service (`boardsesh-backend`
+or `boardsesh-web`). It takes whole milliseconds from 1000 to 2147483647, which
+replace 60000, or `0`. Unset or empty gets the 60 s default. Anything else stops
+the process at boot with a message naming the variable: `60` would be 60 ms and
+end nearly every transaction, `99999999999` is past PostgreSQL's ceiling and
+would fail every connection, and `60s` has no reading worth guessing. A variable
+change redeploys the service; connections opened before it keep their old value
+until they close, which a deploy does.
+
+`0` turns off the process-wide 60 s, and only that. It sends no parameter, so:
+
+- the partner and logbook snapshot pools still send 10 s (`partnerPoolOverrides()`
+  does not read the variable), and their transactions still set 10 s with
+  `set_config(..., true)`;
+- a role-level `ALTER ROLE ... SET idle_in_transaction_session_timeout` from
+  earlier would apply again. None should exist (see the check in
+  [integration-platform.md](./integration-platform.md), "Idle transactions").
+
+Do not put `idle_in_transaction_session_timeout` in `DATABASE_URL` or
+`READ_REPLICA_URL`: postgres.js lets a URL parameter beat the option on the
+shared pools. The startup parameter has the PgBouncer hazard described for
+`statement_timeout` above, on the replica URL as much as the primary: behind a
+transaction-mode pooler, move it onto the role instead.
 
 ## Admission reads have their own pool
 
