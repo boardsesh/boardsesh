@@ -22,7 +22,8 @@ const privateText = z.string().min(1).max(4096);
 const memberSchema = z
   .object({
     userId: privateText,
-    before: privateText,
+    // A disappeared account is represented only in a non-executable skipped group.
+    before: z.string().max(4096),
     after: privateText,
     action: z.enum(['keep', 'retire', 'normalize']),
   })
@@ -47,7 +48,10 @@ const planSchema = z
             members: z.array(memberSchema).min(1).max(2000),
             status: z.enum(['ready', 'skipped', 'deferred']),
           })
-          .strict(),
+          .strict()
+          .refine((group) => group.status === 'skipped' || group.members.every((member) => member.before.length > 0), {
+            message: 'Executable or deferred groups require every original address',
+          }),
       )
       .max(100000),
   })

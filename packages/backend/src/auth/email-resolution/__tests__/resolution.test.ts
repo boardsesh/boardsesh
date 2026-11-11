@@ -388,6 +388,140 @@ describe('private resolution workflow', () => {
     ).toBe('ready');
   });
 
+  it('round-trips a CLI plan with a missing member and applies an unaffected ready group', async () => {
+    const unaffectedIds = [randomUUID(), randomUUID()];
+    const unaffectedAddress = `unaffected-${address}`;
+    await client`INSERT INTO users(id,email) VALUES
+      (${unaffectedIds[0]}, ${unaffectedAddress.toUpperCase()}), (${unaffectedIds[1]}, ${unaffectedAddress})`;
+    await client`DELETE FROM accounts WHERE "userId"=${identities[1]}`;
+    await client`DELETE FROM users WHERE id=${identities[1]}`;
+    const originalEvidence = JSON.parse(evidenceText) as { groups: readonly unknown[] };
+    const mixedEvidenceText = JSON.stringify({
+      formatVersion: 1,
+      document: 'boardsesh-account-email-evidence',
+      groups: [
+        ...originalEvidence.groups,
+        {
+          group: 'G02',
+          address: unaffectedAddress,
+          kind: 'A',
+          mostRecentlyActive: 'B',
+          members: [
+            { member: 'A', userId: unaffectedIds[0], storedEmail: unaffectedAddress.toUpperCase() },
+            { member: 'B', userId: unaffectedIds[1], storedEmail: unaffectedAddress },
+          ],
+        },
+      ],
+    });
+    const mixedDecisions: Decisions = {
+      ...decisions,
+      evidenceSha256: digest(mixedEvidenceText),
+      groups: [...decisions.groups, { group: 'G02', keeper: 'A', evidenceKind: 'mailbox-reply' }],
+    };
+    const evidencePath = join(folder, 'mixed-missing-evidence.json');
+    const decisionsPath = join(folder, 'mixed-missing-decisions.json');
+    const planPath = join(folder, 'mixed-missing-plan.json');
+    writeFileSync(evidencePath, mixedEvidenceText, { mode: 0o600, flag: 'wx' });
+    writeFileSync(decisionsPath, JSON.stringify(mixedDecisions), { mode: 0o600, flag: 'wx' });
+    const environment = { ACCOUNT_EMAIL_RESOLVE_DATABASE_URL: databaseUrl };
+    let plannedOutput = '';
+    expect(
+      await runResolutionCli(
+        [
+          '--plan',
+          '--evidence',
+          evidencePath,
+          '--decisions',
+          decisionsPath,
+          '--plan-file',
+          planPath,
+          '--confirm-host',
+          new URL(databaseUrl).hostname,
+        ],
+        environment,
+        (text) => {
+          plannedOutput += text;
+        },
+      ),
+    ).toBe(0);
+    const planned = JSON.parse(plannedOutput) as { ready: number; skipped: number; planSha256: string };
+    expect({ ready: planned.ready, skipped: planned.skipped }).toEqual({ ready: 1, skipped: 1 });
+    const generated = JSON.parse(readFileSync(planPath, 'utf8')) as ResolutionPlan;
+    expect(generated.groups[0].status).toBe('skipped');
+    expect(generated.groups[0].members.some((member) => member.before === '')).toBe(true);
+    let appliedOutput = '';
+    expect(
+      await runResolutionCli(
+        [
+          '--apply',
+          '--plan-file',
+          planPath,
+          '--plan-sha256',
+          planned.planSha256,
+          '--confirm-host',
+          new URL(databaseUrl).hostname,
+        ],
+        environment,
+        (text) => {
+          appliedOutput += text;
+        },
+      ),
+    ).toBe(0);
+    const applied = JSON.parse(appliedOutput) as { applied: number; skipped: number; deferred: number };
+    expect({ applied: applied.applied, skipped: applied.skipped, deferred: applied.deferred }).toEqual({
+      applied: 1,
+      skipped: 1,
+      deferred: 0,
+    });
+    const untouched = await client`SELECT email FROM users WHERE id=${identities[0]}`;
+    expect(untouched[0].email === address.toUpperCase()).toBe(true);
+    const normalized = await client`SELECT email FROM users WHERE id=${unaffectedIds[0]}`;
+    expect(normalized[0].email === unaffectedAddress).toBe(true);
+    const retired = await client`SELECT email FROM users WHERE id=${unaffectedIds[1]}`;
+    expect(String(retired[0].email).endsWith('@retired.boardsesh.invalid')).toBe(true);
+    const output = plannedOutput + appliedOutput;
+    expect(
+      [address, unaffectedAddress, ...identities, ...unaffectedIds].some((privateText) => output.includes(privateText)),
+    ).toBe(false);
+  });
+
+  it.each(['ready', 'deferred'] as const)('rejects an empty before address in a %s group', async (status) => {
+    const proposed = await plan();
+    const connection = resolutionConnectionOptions(databaseUrl, undefined, new URL(databaseUrl).hostname, true);
+    const malformed = {
+      ...proposed,
+      targetFingerprint: digest(`${connection.host}:${connection.port}/${connection.database}`),
+      groups: proposed.groups.map((group) => ({
+        ...group,
+        status,
+        members: group.members.map((member, index) => ({ ...member, before: index === 0 ? '' : member.before })),
+      })),
+    };
+    const path = join(folder, `empty-before-${status}.json`);
+    const contents = JSON.stringify(malformed);
+    writeFileSync(path, contents, { mode: 0o600, flag: 'wx' });
+    let output = '';
+    expect(
+      await runResolutionCli(
+        [
+          '--apply',
+          '--plan-file',
+          path,
+          '--confirm-host',
+          new URL(databaseUrl).hostname,
+          '--plan-sha256',
+          digest(contents),
+        ],
+        { ACCOUNT_EMAIL_RESOLVE_DATABASE_URL: databaseUrl },
+        (text) => {
+          output += text;
+        },
+      ),
+    ).toBe(1);
+    expect(JSON.parse(output).code).toBe('DATABASE');
+    expect((await client`SELECT count(*)::integer AS count FROM auth_email_resolution_log`)[0].count).toBe(0);
+  });
+
   it('requires the private exact plan hash before opening a database', async () => {
     const path = join(folder, 'tampered-plan.json');
     writeFileSync(path, '{}', { mode: 0o600 });
