@@ -1021,6 +1021,7 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
       email: 'user@example.com',
       name: 'Test',
       image: '/img.png',
+      nativeOAuthSourceGeneration: 0,
     });
   });
 });

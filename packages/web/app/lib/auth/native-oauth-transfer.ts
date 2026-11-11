@@ -90,6 +90,7 @@ export const verifyNativeOAuthTransferToken = (
   userId: string;
   nextPath: string;
   accountCreation?: AccountCreationReceipt;
+  generation: number;
   credentialProof?: WebCredentialProof;
 } | null => {
   let secret: string;
@@ -182,6 +183,7 @@ export const verifyNativeOAuthTransferToken = (
   return {
     userId: payload.userId,
     nextPath: sanitizeNextPath(payload.nextPath),
+    generation: payload.gen ?? 0,
     ...(verifiedReceipt ? { accountCreation: verifiedReceipt } : {}),
     ...(credentialProof ? { credentialProof } : {}),
   };

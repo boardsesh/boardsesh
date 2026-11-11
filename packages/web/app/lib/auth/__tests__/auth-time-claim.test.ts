@@ -48,7 +48,11 @@ vi.mock('@/app/lib/db/db', () => {
 });
 // Admission is a backend round trip with its own coverage; it reads only `sub`.
 vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
-  withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
+  withAuthResponseAdmission: (
+    _request: unknown,
+    _context: unknown,
+    invoke: (completeSignOut: (response: Response, credential: string) => void) => Promise<Response>,
+  ) => invoke(() => {}),
 }));
 
 import * as Sentry from '@sentry/nextjs';
@@ -426,21 +430,24 @@ describe('gen beside auth_time', () => {
     expect((await currentSessionClaims())?.gen).toBe(3);
   });
 
-  it('stamps a native transfer sign-in, which still claims no sign-in time', async () => {
-    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
-    remember(
-      await invoke('callback/native-oauth', {
-        transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }),
-        csrfToken,
-        json: 'true',
-        callbackUrl: baseUrl,
-      }),
-    );
+  it.each([0, 3])(
+    'inherits native transfer generation %s despite a later primary generation, without claiming authentication age',
+    async (generation) => {
+      databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+      remember(
+        await invoke('callback/native-oauth', {
+          transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation }),
+          csrfToken,
+          json: 'true',
+          callbackUrl: baseUrl,
+        }),
+      );
 
-    const claims = await currentSessionClaims();
-    expect(claims?.gen).toBe(4);
-    expect(claims).not.toHaveProperty('auth_time');
-  });
+      const claims = await currentSessionClaims();
+      expect(claims?.gen).toBe(generation);
+      expect(claims).not.toHaveProperty('auth_time');
+    },
+  );
 
   it('keeps the sign-in generation when the cookie rotates after the generation moved', async () => {
     databaseRows.set(schema.authSubjectCutoffs, [{ generation: 3 }]);

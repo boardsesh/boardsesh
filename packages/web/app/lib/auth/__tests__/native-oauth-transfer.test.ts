@@ -24,10 +24,7 @@ describe('native OAuth transfer token', () => {
       nextPath: '/settings',
     });
 
-    expect(verifyNativeOAuthTransferToken(token)).toEqual({
-      userId: 'user_123',
-      nextPath: '/settings',
-    });
+    expect(verifyNativeOAuthTransferToken(token)).toEqual({ generation: 0, userId: 'user_123', nextPath: '/settings' });
   });
 
   it('signs the supplied login generation without introducing authentication age', () => {
@@ -42,7 +39,11 @@ describe('native OAuth transfer token', () => {
     >;
     expect(claims.gen).toBe(5);
     expect(claims).not.toHaveProperty('auth_time');
-    expect(verifyNativeOAuthTransferToken(transfer)).toEqual({ userId: 'transfer-generation-fixture', nextPath: '/' });
+    expect(verifyNativeOAuthTransferToken(transfer)).toEqual({
+      generation: 5,
+      userId: 'transfer-generation-fixture',
+      nextPath: '/',
+    });
     const legacy = issueNativeOAuthTransferToken({ userId: 'transfer-generation-fixture', nextPath: '/' });
     const legacyClaims = JSON.parse(Buffer.from(legacy.split('.')[0], 'base64url').toString('utf8')) as Record<
       string,
@@ -90,17 +91,34 @@ describe('native OAuth transfer token', () => {
       attemptId: 'a'.repeat(32),
       provider: 'google' as const,
     };
+    const credentialProof = {
+      version: 1,
+      userId,
+      authSessionId: 'login-1',
+      generation: 0,
+      authenticatedAt: null,
+      linkGuarded: false,
+    };
     expect(verifyNativeOAuthTransferToken(issueNativeOAuthTransferToken(options))).toEqual({
+      generation: 0,
       userId,
       nextPath: '/',
       accountCreation,
+      credentialProof,
     });
     expect(
       verifyNativeOAuthTransferToken(issueNativeOAuthTransferToken({ ...options, userId: 'another-user' })),
-    ).toEqual({ userId: 'another-user', nextPath: '/' });
+    ).toEqual({
+      generation: 0,
+      userId: 'another-user',
+      nextPath: '/',
+      credentialProof: { ...credentialProof, userId: 'another-user' },
+    });
     expect(verifyNativeOAuthTransferToken(issueNativeOAuthTransferToken({ ...options, provider: 'apple' }))).toEqual({
+      generation: 0,
       userId,
       nextPath: '/',
+      credentialProof,
     });
   });
 
@@ -120,10 +138,7 @@ describe('native OAuth transfer token', () => {
       nextPath: 'https://evil.example',
     });
 
-    expect(verifyNativeOAuthTransferToken(token)).toEqual({
-      userId: 'user_123',
-      nextPath: '/',
-    });
+    expect(verifyNativeOAuthTransferToken(token)).toEqual({ generation: 0, userId: 'user_123', nextPath: '/' });
   });
 
   it('rejects expired tokens', () => {
@@ -170,10 +185,7 @@ describe('native OAuth transfer token', () => {
     // Rewind time by 4 seconds — iat is 4s in the future, within tolerance
     vi.setSystemTime(new Date('2026-04-03T11:59:56Z'));
 
-    expect(verifyNativeOAuthTransferToken(token)).toEqual({
-      userId: 'user_123',
-      nextPath: '/feed',
-    });
+    expect(verifyNativeOAuthTransferToken(token)).toEqual({ generation: 0, userId: 'user_123', nextPath: '/feed' });
   });
 
   it('accepts tokens up to 5 seconds after exp (clock skew)', () => {
@@ -185,10 +197,7 @@ describe('native OAuth transfer token', () => {
     // Advance time to 4 seconds past expiry (120s TTL + 4s = 124s)
     vi.setSystemTime(new Date('2026-04-03T12:02:04Z'));
 
-    expect(verifyNativeOAuthTransferToken(token)).toEqual({
-      userId: 'user_123',
-      nextPath: '/feed',
-    });
+    expect(verifyNativeOAuthTransferToken(token)).toEqual({ generation: 0, userId: 'user_123', nextPath: '/feed' });
   });
 
   it('rejects tokens more than 5 seconds after exp', () => {

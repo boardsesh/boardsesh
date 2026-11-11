@@ -156,6 +156,7 @@ providers.push(
         email: user.email,
         name: user.name,
         image: user.image,
+        nativeOAuthSourceGeneration: decoded.generation ?? 0,
         ...(decoded.credentialProof ? { webCredentialProof: decoded.credentialProof } : {}),
       };
     },
@@ -505,7 +506,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();
         delete token.nativeOAuthCreationProof;
-        token.gen = proved ? proved.generation : await signInGeneration(user.id);
+        const nativeSourceGeneration =
+          account?.provider === 'native-oauth' ? (user.nativeOAuthSourceGeneration ?? 0) : undefined;
+        if (
+          nativeSourceGeneration !== undefined &&
+          (!Number.isSafeInteger(nativeSourceGeneration) || nativeSourceGeneration < 0)
+        )
+          throw new Error('Invalid native OAuth source generation');
+        token.gen = proved ? proved.generation : (nativeSourceGeneration ?? (await signInGeneration(user.id)));
         // Epoch seconds of the sign-in. Only this branch sees a completed sign-in, so
         // a cookie rotation neither sets nor moves it and a cookie from before this
         // claim stays without one, which readers must treat as "age unknown". A native

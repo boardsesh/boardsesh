@@ -12,6 +12,8 @@ export type NativeOAuthCreationProof = {
 declare module 'next-auth' {
   interface User {
     webCredentialProof?: WebCredentialProof;
+    /** Signed legacy transfer generation; unknown authentication age stays unknown. */
+    nativeOAuthSourceGeneration?: number;
   }
   // eslint-disable-next-line typescript/consistent-type-definitions
   interface Session {
