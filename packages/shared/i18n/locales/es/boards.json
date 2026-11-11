@@ -1583,6 +1583,7 @@
     "lightingChase": "Iniciar la prueba por filas",
     "lightingStop": "Detener la iluminación",
     "lightingUnavailable": "Activa los LED y guarda una dirección WLED.",
+    "lightingUnavailableBle": "Activa los LED y busca el controlador Bluetooth de este Spraywall en sus ajustes de LED.",
     "lightingRangeError": "El cable usa números de LED fuera del rango configurado en WLED. Revisa el recorrido del cable y los LED omitidos.",
     "lightingChasing": "Prueba por filas en curso…"
   }

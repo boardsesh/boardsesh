@@ -1583,6 +1583,7 @@
     "lightingChase": "Start row-by-row test",
     "lightingStop": "Stop lighting",
     "lightingUnavailable": "Enable LEDs and save a WLED address.",
+    "lightingUnavailableBle": "Enable LEDs and find this Spraywall’s Bluetooth controller in its LED settings.",
     "lightingRangeError": "The cable uses LED numbers outside the range configured in WLED. Check the cable path and skipped LEDs.",
     "lightingChasing": "Row-by-row test running…"
   }

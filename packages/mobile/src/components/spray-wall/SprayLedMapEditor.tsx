@@ -415,7 +415,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
           {available ? (
             <Text accessibilityLiveRegion="polite">{t('sprayLedSetup.lightAndTapHint', { index: litIndex })}</Text>
           ) : (
-            <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text>
+            <Text variant="footnote">{t(preview.unavailableMessage)}</Text>
           )}
           {pendingSkip ? (
             <Text variant="footnote" accessibilityLiveRegion="polite">
@@ -462,7 +462,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
             </View>
             <Text>{t('sprayLedSetup.lightSelected')}</Text>
           </PressableSurface>
-          {!available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+          {!available ? <Text variant="footnote">{t(preview.unavailableMessage)}</Text> : null}
           {preview.error ? (
             <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
               {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}
@@ -690,7 +690,7 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
       {selected ? (
         <Text>{gapCount ? t('sprayLedSetup.gapLabel', { count: gapCount }) : t('sprayLedSetup.skipsNone')}</Text>
       ) : null}
-      {!available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+      {!available ? <Text variant="footnote">{t(preview.unavailableMessage)}</Text> : null}
       {preview.error ? (
         <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
           {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}

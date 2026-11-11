@@ -1583,6 +1583,7 @@
     "lightingChase": "Lauflicht starten",
     "lightingStop": "Beleuchtung stoppen",
     "lightingUnavailable": "Aktiviere LEDs und speichere eine WLED-Adresse.",
+    "lightingUnavailableBle": "Aktiviere LEDs und suche den Bluetooth-Controller dieser Spraywall in ihren LED-Einstellungen.",
     "lightingRangeError": "Die Verkabelung verwendet LED-Nummern außerhalb des in WLED eingerichteten Bereichs. Prüfe den Kabelverlauf und die übersprungenen LEDs.",
     "lightingChasing": "Lauflicht läuft…"
   }

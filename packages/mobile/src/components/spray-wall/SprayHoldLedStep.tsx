@@ -254,7 +254,7 @@ export function SprayHoldLedStep({
       {!wired ? (
         <Text variant="footnote">{t('sprayLedSetup.holdLedsNotWired')}</Text>
       ) : !preview.available ? (
-        <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text>
+        <Text variant="footnote">{t(preview.unavailableMessage)}</Text>
       ) : null}
     </View>
   );

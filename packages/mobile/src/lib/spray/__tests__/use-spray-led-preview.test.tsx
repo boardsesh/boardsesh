@@ -3,7 +3,11 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  settings: { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } },
+  settings: { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } } as {
+    enabled: boolean;
+    controller: { type: string; url: string };
+  },
+  bleDevice: null as { id: string } | null,
   show: vi.fn(),
   lightAll: vi.fn(),
   stop: vi.fn(),
@@ -23,6 +27,10 @@ vi.mock('react-native', () => ({
 vi.mock('../use-spray-wall-led-settings', () => ({
   useSprayWallLedSettings: () => ({ settings: mocks.settings, loading: false }),
 }));
+vi.mock('../spray-wall-led-ble-device', () => ({
+  useSprayWallBleDevice: () => ({ device: mocks.bleDevice, loading: false }),
+}));
+vi.mock('../spray-led-ble-transport-loader', () => ({}));
 vi.mock('@boardsesh/led-controller', async (original) => ({
   ...(await original<object>()),
   getLedControllerDriver: () => ({}),
@@ -34,6 +42,7 @@ import { useSprayLedPreview } from '../use-spray-led-preview';
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } };
+  mocks.bleDevice = null;
   for (const mock of [mocks.show, mocks.lightAll, mocks.stop, mocks.close]) mock.mockResolvedValue(true);
   mocks.isOwner.mockReturnValue(true);
   mocks.create.mockReturnValue({
@@ -50,6 +59,16 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('asks a Bluetooth Spraywall to find its controller, not for a WLED address', () => {
+    expect(renderHook(() => useSprayLedPreview('wall')).result.current.unavailableMessage).toBe(
+      'sprayLedSetup.lightingUnavailable',
+    );
+    mocks.settings = { enabled: true, controller: { type: 'ble', url: '' } };
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    expect(result.current.available).toBe(false);
+    expect(result.current.unavailableMessage).toBe('sprayLedSetup.lightingUnavailableBle');
+  });
+
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
     const { result, rerender, unmount } = renderHook(() => useSprayLedPreview('wall'));
     expect(result.current.available).toBe(true);

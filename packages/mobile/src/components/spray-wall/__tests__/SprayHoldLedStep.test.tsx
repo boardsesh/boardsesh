@@ -8,6 +8,7 @@ import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
 const preview = vi.hoisted(() => ({
   available: true,
+  unavailableMessage: 'sprayLedSetup.lightingUnavailable',
   error: null as string | null,
   stop: vi.fn(),
   show: vi.fn(),

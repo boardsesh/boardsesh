@@ -168,5 +168,11 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  return { available, state, error, allLit, chaseIndex, show, lightAll, clear, stop, chase };
+  // Why lighting is off: a Bluetooth Spraywall needs this phone to have found its controller, not a WLED address.
+  const unavailableMessage =
+    controllerType === 'ble'
+      ? ('sprayLedSetup.lightingUnavailableBle' as const)
+      : ('sprayLedSetup.lightingUnavailable' as const);
+
+  return { available, state, error, allLit, chaseIndex, show, lightAll, clear, stop, chase, unavailableMessage };
 }
