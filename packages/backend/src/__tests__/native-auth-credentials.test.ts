@@ -26,12 +26,21 @@ process.env.NEXTAUTH_SECRET = TEST_SECRET;
 
 // db.select() returns rows queued via mockDbSelectQueue. Every chained call is
 // a no-op that returns the same chain object; .limit() resolves the queued row.
+// The issuer's post-lock re-read of the password (BA-04 PR 3) answers from
+// mockProofQueue, or else with the hash of the one candidate the lookup returned.
 const mockDbSelectQueue: unknown[][] = [];
+const mockProofQueue: { passwordHash: string }[] = [];
+const mockLastCandidates: { passwordHash?: unknown }[] = [];
 const mockDbInsertValues = vi.fn(async () => []);
 
 vi.mock('../db/client', () => {
   function makeSelectChain(projection?: Record<string, unknown>): unknown {
+    const proofProjection = Boolean(projection && 'deletedAt' in projection && 'passwordHash' in projection);
     const admissionProjection = Boolean(projection && 'deletedAt' in projection);
+    function proofRows() {
+      const proof = mockProofQueue.shift() ?? (mockLastCandidates.length === 1 ? mockLastCandidates[0] : undefined);
+      return [{ passwordHash: proof?.passwordHash ?? null, generation: null, nativeGeneration: null, deletedAt: null }];
+    }
     const chain = {
       leftJoin() {
         return chain;
@@ -46,9 +55,13 @@ vi.mock('../db/client', () => {
         return chain;
       },
       limit() {
-        const rows = admissionProjection
-          ? [{ id: 'unit-subject', deletedAt: null }]
-          : (mockDbSelectQueue.shift() ?? []);
+        let rows: unknown[];
+        if (proofProjection) rows = proofRows();
+        else if (admissionProjection) rows = [{ id: 'unit-subject', deletedAt: null }];
+        else {
+          rows = mockDbSelectQueue.shift() ?? [];
+          mockLastCandidates.splice(0, mockLastCandidates.length, ...(rows as { passwordHash?: unknown }[]));
+        }
         return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
       },
     };
@@ -163,6 +176,11 @@ function queueSelect(rows: unknown[]): void {
   mockDbSelectQueue.push(rows);
 }
 
+/** What the issuer re-reads under its user lock when more than one candidate came back. */
+function queueProof(passwordHash: string): void {
+  mockProofQueue.push({ passwordHash });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -172,6 +190,8 @@ describe('handleNativeAuthCredentials', () => {
     vi.clearAllMocks();
     __resetNativeAuthStateForTests();
     mockDbSelectQueue.length = 0;
+    mockProofQueue.length = 0;
+    mockLastCandidates.length = 0;
     mockDbInsertValues.mockResolvedValue([]);
   });
 
@@ -242,6 +262,7 @@ describe('handleNativeAuthCredentials', () => {
       { userId: 'first-user', passwordHash: firstPasswordHash },
       { userId: 'second-user', passwordHash: secondPasswordHash },
     ]);
+    queueProof(secondPasswordHash);
 
     const req = makeRequest({
       method: 'POST',
@@ -254,6 +275,24 @@ describe('handleNativeAuthCredentials', () => {
     expect(res.statusCode).toBe(200);
     expect(mockDbInsertValues).toHaveBeenCalledWith(expect.objectContaining({ userId: 'second-user' }));
     expect(parseJwtSubject(res)).toBe('second-user');
+  });
+
+  it('issues nothing when the hash bcrypt checked is no longer the account hash under the user lock', async () => {
+    const passwordHash = await hash('correct-horse', 10);
+    queueSelect([{ userId: 'user-1', passwordHash }]);
+    queueProof(await hash('reset-meanwhile', 4));
+
+    const req = makeRequest({
+      method: 'POST',
+      body: { email: 'test@example.com', password: 'correct-horse' },
+    });
+    const res = makeResponse();
+
+    await handleNativeAuthCredentials(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+
+    expect(res.statusCode).toBe(401);
+    expect(parseBody(res)).toEqual({ error: 'Invalid email or password' });
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
   });
 
   it('returns 401 for an unknown email', async () => {

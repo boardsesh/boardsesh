@@ -327,6 +327,49 @@ generation is 0 and every existing credential matches, so nobody is denied. Once
 any cutoff row exists, this build is the rollback floor
 (docs/production-deploy.md, "Credential cutoff rollback floor").
 
+### Per-user locks (BA-04 PR 3)
+
+Until this PR every staged command took `FOR UPDATE` on the one current
+`auth_email_projection` row, so one slow transaction, or a burst of sign-ins
+naming an account being deleted, stalled every staged command for everyone.
+That row lock is gone. Commands now meet only on the climber they touch:
+
+| Step | Lock | Who |
+| --- | --- | --- |
+| 1 | `pg_advisory_xact_lock_shared(6975, 2)`, then the manifest read without a row lock | every staged command; shared, so commands never wait for each other |
+| 2 | the address's creation lock, before its reservation row is read (and a provider subject's lock before its link) | registration, provider sign-in, system identities |
+| 3 | the climber's `users` row: `FOR UPDATE` to write, `FOR KEY SHARE` to sign in | everything; a reservation owner is read unlocked, its row locked, then the reservation locked and re-checked |
+| 4 | reservation, cutoff, credentials and accounts, purpose state and receipts, refresh rows | in that order |
+
+Only an authority switch or activation takes the gate exclusively, with a 2 s
+lock limit (`lockAuthorityGateExclusively`). Account deletion takes the gate at
+its first statement and keeps its wall-before-user order; its bookkeeping takes
+the reservation after the user row, the same order every command uses, so a
+command waiting on a deleting account holds nothing the deletion needs. Only the
+gate wait and the bookkeeping run under the 5 s statement and 4 s lock limits;
+content and the cascade keep the connection's own (45 s on the backend).
+
+**What changes for a live sign-in.** No `CURRENT_STORE_*` mode is on in
+production, so the only live code touched is native issuance:
+
+- Password sign-in reads the hash and generation with the bcrypt candidates (one
+  more join in the same statement), and the issuer's post-lock statement re-reads
+  them (a join on `user_credentials` in the statement that already read the
+  generation). If either moved, the answer is 401 "Invalid email or password"
+  and nothing is issued. Same statement count as before.
+- Refresh takes the user lock and reads the generations once, then decides the
+  parent on them. It used to take the lock and read them twice. Five statements
+  fewer per refresh.
+- `recordSecurityMutation` takes `users FOR UPDATE` itself, so every generation
+  writer excludes an issuer holding `users FOR KEY SHARE`.
+
+**Known gap, staged web only.** The web stamps a password sign-in's cookie with a
+generation it reads after the backend's `authenticated` reply
+(`auth-options.ts`, `signInGeneration`). A reset committing in that gap yields a
+cookie stamped with the new generation from a password checked before it. The
+reply should carry the generation the backend checked; that is a protocol change
+for a later PR and has no reach while `CURRENT_STORE_WEB_AUTH_MODE` is off.
+
 ## Native, watch, and browser compatibility
 
 The compatibility API is an accepted long-lived product contract. It preserves

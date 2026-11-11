@@ -14,15 +14,16 @@ import {
   userCredentials,
   users,
 } from '@boardsesh/db/schema/auth';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
 import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
+  lockEmailKeyForCreation,
   lockEnforcedProjection,
-  lockUserRowUnderManifest,
+  lockSubjectRow,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -75,7 +76,21 @@ export async function ensureReservedSystemIdentity(
   const { id: userId, email, name } = identities[kind];
   const key = normalizeAccountEmail(email);
   const manifest = await lockEnforcedProjection(transaction, authority);
+  // Concurrent callers for this identity, and a registration naming its
+  // address, queue here rather than one of them finding the fixed-owner key
+  // busy: the gate no longer serializes them, and that key is never waited for.
+  await lockEmailKeyForCreation(transaction, key);
   await lockFixedSystemOwnerTransaction(transaction);
+  // The identity's own row first, before its cutoff and reservation: section 4's
+  // lock order, which a forgot-password naming this address takes too.
+  // FOR UPDATE, not NO KEY UPDATE: conflicting with FK KEY SHARE is the point.
+  // It waits out an uncommitted credential, session or refresh-token insert for
+  // this UID, so the artifact check below cannot miss one that is in flight.
+  // The wait is short because this holds the exclusive fixed-owner key, which
+  // content writers try once and report busy; an unavailable reply is safe. It
+  // stays in force to commit, and nothing after this waits on another climber.
+  await transaction.execute(sql`SET LOCAL lock_timeout = '250ms'`);
+  const user = await lockSubjectRow(transaction, userId);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)
@@ -95,11 +110,6 @@ export async function ensureReservedSystemIdentity(
     .where(and(eq(authEmailReservationMembers.userId, userId), ne(authEmailReservationMembers.normalizedEmail, key)))
     .limit(1);
   if (otherReservation || otherMembership) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-  // FOR UPDATE, not NO KEY UPDATE: conflicting with FK KEY SHARE is the point.
-  // It waits out an uncommitted credential, session or refresh-token insert for
-  // this UID, so the artifact check below cannot miss one that is in flight.
-  // The wait is short: this holds the manifest, and an unavailable reply is safe.
-  const user = await lockUserRowUnderManifest(transaction, userId);
   await assertNoAuthenticationArtifacts(transaction, userId);
 
   if (user) {

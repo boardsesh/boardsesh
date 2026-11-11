@@ -47,7 +47,11 @@ export async function transactionSettings(transaction: CurrentStoreTransaction) 
   await transaction.execute(sql`SET LOCAL statement_timeout = '5000ms'`);
   await transaction.execute(sql`SET LOCAL lock_timeout = '4000ms'`);
 }
-/** Short preflight only. Never hold the global manifest lock during bcrypt or other long work. */
+/**
+ * Short preflight only: fail on a stale authority before bcrypt or other long
+ * work, which then runs with no transaction open. The command re-validates under
+ * the gate in its own transaction.
+ */
 export async function preflight(database: DbInstance, authority: ExpectedCurrentStoreAuthority) {
   await database.transaction(async (transaction) => {
     await transactionSettings(transaction);

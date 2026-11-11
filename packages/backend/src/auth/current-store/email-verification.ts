@@ -33,7 +33,7 @@ import {
   type WebPasswordAuthority,
 } from './command-context';
 import { lockKeyReservation } from './email-reservations';
-import { lockEnforcedProjection, lockUserRowUnderManifest, type CurrentStoreTransaction } from './foundation-context';
+import { lockEnforcedProjection, lockSubjectRow, type CurrentStoreTransaction } from './foundation-context';
 import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
 
 const purpose = 'email-verification' as const;
@@ -51,6 +51,19 @@ async function clock(transaction: CurrentStoreTransaction): Promise<number> {
   return milliseconds;
 }
 
+/**
+ * Who owns the key, read without a lock. Only a hint for which climber to lock
+ * first: the caller locks that climber's row, then re-reads the owner locked.
+ */
+async function reservationOwnerHint(transaction: CurrentStoreTransaction, key: string) {
+  const [reservation] = await transaction
+    .select({ ownerUserId: authEmailReservations.ownerUserId })
+    .from(authEmailReservations)
+    .where(and(eq(authEmailReservations.normalizedEmail, key), eq(authEmailReservations.state, 'owned')));
+  return reservation?.ownerUserId ?? null;
+}
+
+/** Call with the claimed owner's users row already locked (section 4's lock order). */
 async function reservationOwner(transaction: CurrentStoreTransaction, authority: WebPasswordAuthority, key: string) {
   const [reservation] = await transaction
     .select()
@@ -73,7 +86,7 @@ async function reservationOwner(transaction: CurrentStoreTransaction, authority:
   return members.length === 1 && members[0].userId === reservation.ownerUserId ? reservation.ownerUserId : null;
 }
 
-/** Caller already owns the manifest gate; IDs come only from registration or a proven reservation. */
+/** Caller already holds the gate; IDs come only from registration or a proven reservation. */
 export async function issueEmailVerification(
   transaction: CurrentStoreTransaction,
   authorityInput: WebPasswordAuthority,
@@ -82,12 +95,11 @@ export async function issueEmailVerification(
   const authority = captureAuthority(authorityInput);
   const userId = userIdInput;
   await lockEnforcedProjection(transaction, authority);
-  const [initial] = await transaction.select().from(users).where(eq(users.id, userId));
-  if (!initial) return null;
-  const key = normalizeAccountEmail(initial.email);
+  // The climber's row before their reservation, the order account deletion uses too.
+  const user = await lockSubjectRow(transaction, userId);
+  if (!user || user.emailVerified) return null;
+  const key = normalizeAccountEmail(user.email);
   if ((await reservationOwner(transaction, authority, key)) !== userId) return null;
-  const user = await lockUserRowUnderManifest(transaction, userId);
-  if (!user || user.emailVerified || normalizeAccountEmail(user.email) !== key) return null;
   const recipient = user.email.trim();
   if (!z.email().safeParse(recipient).success) return null;
   const [cutoff] = await transaction
@@ -165,7 +177,8 @@ export async function resendEmailVerification(
         message: message as Extract<ResendVerificationReply, { code: 'validation_error' }>['message'],
       };
     if (!authority.emailVerificationEnabled) return { ...base, outcome: 'accepted' };
-    const owner = await reservationOwner(transaction, authority, normalizeAccountEmail(email));
+    // issueEmailVerification locks this climber, then re-reads the owner locked.
+    const owner = await reservationOwnerHint(transaction, normalizeAccountEmail(email));
     const mailPlan = owner ? await issueEmailVerification(transaction, authority, owner) : null;
     assertFresh(issuedAt);
     return { ...base, outcome: 'accepted', ...(mailPlan ? { mailPlan } : {}) };
@@ -191,7 +204,9 @@ function sameBinding(first: Receipt, locked: Receipt) {
  * A pre-switch verification link, once BA-02 makes addresses unique: it binds
  * to the one account holding its exact address, ends at its original deadline,
  * works once, and dies on any later recorded security mutation, as a UID-bound receipt
- * does. Lock order: manifest (held), reservation, user, cutoff.
+ * does. Lock order: gate (held), the owner's user row, reservation, cutoff (BA-04
+ * section 4, the order deletion uses). The owner is read unlocked first only to
+ * know which row to lock; the locked re-read decides.
  */
 async function consumeBoundLegacyVerification(
   transaction: CurrentStoreTransaction,
@@ -202,12 +217,15 @@ async function consumeBoundLegacyVerification(
   // The old issuer gave every link 24 hours. A longer deadline is not one it made.
   if (link.deadline.getTime() > link.now + lifetimeMs + AUTH_COMMAND_FUTURE_SKEW_MS) return 'invalid_token';
   const key = normalizeAccountEmail(link.email);
+  const hinted = await reservationOwnerHint(transaction, key);
+  const user = hinted ? await lockSubjectRow(transaction, hinted) : undefined;
   const owner = await reservationOwner(transaction, authority, key);
   if (!owner)
     return (await lockKeyReservation(transaction, key))?.state === 'blocked_deleted'
       ? 'invalid_token'
       : 'legacy_unbound';
-  const user = await lockUserRowUnderManifest(transaction, owner);
+  // An owner that appeared after the unlocked read is an account newer than the link.
+  if (owner !== hinted) return 'invalid_token';
   const holders = await accountsHoldingAddress(transaction, key);
   if (!user || normalizeAccountEmail(user.email) !== key || holders.length !== 1 || holders[0].id !== owner)
     return 'invalid_token';
@@ -295,8 +313,8 @@ export async function consumeEmailVerification(
       return { ...base, outcome };
     }
     if (!initial || initial.purpose !== purpose) return { ...base, outcome: 'invalid_token' };
+    const user = await lockSubjectRow(transaction, initial.userId);
     const owner = await reservationOwner(transaction, authority, initial.normalizedEmail);
-    const user = await lockUserRowUnderManifest(transaction, initial.userId);
     const [cutoff] = await transaction
       .select()
       .from(authSubjectCutoffs)

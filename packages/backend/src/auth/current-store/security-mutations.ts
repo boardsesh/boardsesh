@@ -1,4 +1,4 @@
-import { authSecurityMutationEvents, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
+import { authSecurityMutationEvents, authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
 import { retireDeletedSubjectEmails } from './email-reservations';
 import {
@@ -50,6 +50,13 @@ export async function recordSecurityMutation(
   )
     throw new CurrentStoreFoundationError('INVALID_COMMAND');
   const manifest = await lockEnforcedProjection(transaction, expected);
+  // Every generation writer holds the climber's users row FOR UPDATE before the
+  // cutoff row (section 4). Native issuance and refresh hold KEY SHARE on it and
+  // read the generation after that lock, so this is what keeps a reset or
+  // deletion from committing between their read and their refresh-row insert.
+  // Re-entrant for callers that already hold it. A deletion has removed the row
+  // in this transaction by now, which held the same lock, so nothing waits.
+  await transaction.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
   const [previousOperation] = await transaction
     .select({ operationId: authSecurityMutationEvents.operationId })
     .from(authSecurityMutationEvents)

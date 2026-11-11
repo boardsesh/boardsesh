@@ -20,7 +20,7 @@ import { assertFresh, transactionSettings } from './command-context';
 import {
   captureExpectedAuthority,
   lockEnforcedProjection,
-  lockUserRowUnderManifest,
+  lockSubjectRow,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
@@ -82,7 +82,7 @@ async function captureActor(cookie: string | null, secret: string) {
 }
 async function actorGeneration(transaction: CurrentStoreTransaction, actor: NegativeWebOAuthActor | null) {
   if (!actor) return { valid: true, generation: null };
-  const user = await lockUserRowUnderManifest(transaction, actor.userId);
+  const user = await lockSubjectRow(transaction, actor.userId);
   const [cutoff] = await transaction
     .select()
     .from(authSubjectCutoffs)

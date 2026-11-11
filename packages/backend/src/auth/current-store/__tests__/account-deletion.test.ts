@@ -45,10 +45,16 @@ import {
   readPartnerState,
 } from '../../partner/__tests__/revocation-fixtures';
 import { normalizeAccountEmail } from '../../normalize-email';
-import { preflight } from '../command-context';
+import { preflight, transactionSettings } from '../command-context';
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../email-reservations';
 import { clearExpiredAuthRecords } from '../../../services/background-job-maintenance';
-import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from '../foundation-context';
+import {
+  AUTHORITY_GATE_KEY,
+  AUTHORITY_GATE_NAMESPACE,
+  CURRENT_EMAIL_NORMALIZER_VERSION,
+  lockAuthorityGateExclusively,
+  type ExpectedCurrentStoreAuthority,
+} from '../foundation-context';
 import {
   captureAccountDeletionCommand,
   beginReservedAccountDeletion,
@@ -285,7 +291,7 @@ async function clearFault() {
   await db.execute(sql`DROP TRIGGER IF EXISTS ${sql.identifier(commandGateName)} ON ${verificationTokens}`);
   await db.execute(sql`DROP FUNCTION IF EXISTS ${sql.identifier(commandGateName)}()`);
 }
-/** Parks a real command on its first write: manifest held, user row not yet requested. */
+/** Parks a real command on its first write: gate held, user row not yet requested. */
 async function installCommandGate() {
   await db.execute(
     sql.raw(`CREATE FUNCTION ${commandGateName}() RETURNS trigger LANGUAGE plpgsql AS $gate$
@@ -391,7 +397,7 @@ async function issueOwnerRecoveryToken(): Promise<string> {
   if (issued.outcome !== 'accepted' || !issued.mailPlan) throw new Error('Owned fixture expected a recovery token');
   return issued.mailPlan.token;
 }
-/** Every staged command that takes the manifest and then a named user's row. */
+/** Every staged command that takes the gate and then a named user's row. */
 const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => Promise<unknown>>])[] = [
   [
     'password sign-in',
@@ -448,16 +454,18 @@ const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => 
       await db
         .insert(accounts)
         .values({ userId: ownerId, provider: 'google', providerAccountId: subject, type: 'oauth' });
+      // With the transaction limits its real callers (native and web OAuth) apply.
       return () =>
-        db.transaction((transaction) =>
-          resolveReservedCurrentStoreOAuthIdentity(
+        db.transaction(async (transaction) => {
+          await transactionSettings(transaction);
+          return resolveReservedCurrentStoreOAuthIdentity(
             transaction,
             authority,
             'google',
             { sub: subject, email: ownerEmail, emailVerified: true, name: null },
             { emailStorage: 'normalized', emailVerification: 'provider', actorUserId: null },
-          ),
-        );
+          );
+        });
     },
   ],
   [
@@ -1184,7 +1192,7 @@ describe('mounted account deletion and current-store authority', () => {
     const command = captureAccountDeletionCommand(authority, ownerId, operationId);
     await expect(
       db.transaction(async (transaction) => {
-        await beginReservedAccountDeletion(transaction);
+        await beginReservedAccountDeletion(transaction, command);
         const subject = await requireLockedSubject(transaction, command);
         await transaction.update(users).set({ name: 'Must roll back' }).where(eq(users.id, ownerId));
         await recordReservedAccountDeletion(transaction, command, subject);
@@ -1210,7 +1218,7 @@ describe('mounted account deletion and current-store authority', () => {
       }),
     );
     await db.transaction(async (transaction) => {
-      await beginReservedAccountDeletion(transaction);
+      await beginReservedAccountDeletion(transaction, command);
       const subject = await requireLockedSubject(transaction, command);
       await transaction.delete(users).where(eq(users.id, ownerId));
       await recordReservedAccountDeletion(transaction, command, subject);
@@ -1249,7 +1257,7 @@ describe('mounted account deletion and current-store authority', () => {
     // The trigger injects real SQLSTATE40P01 after the tentative event INSERT;
     // this proves rollback/retry identity, not an actual multi-lock deadlock.
   });
-  it('times out on the held manifest before content work and keeps all rows unchanged', async () => {
+  it('times out behind an authority switch before content work and keeps all rows unchanged', async () => {
     await seedPair({ system: true });
     await seedBoard();
     const defaults = await executeFirstRow<{ lockTimeout: string; statementTimeout: string }>(
@@ -1270,13 +1278,10 @@ describe('mounted account deletion and current-store authority', () => {
     const held = track(
       drizzle(blocker).transaction(async (transaction) => {
         const row = await executeFirstRow<{ pid: number }>(transaction, sql`SELECT pg_backend_pid() AS pid`);
-        if (!row) throw new Error('Owned manifest blocker PID unavailable');
+        if (!row) throw new Error('Owned gate blocker PID unavailable');
         backendPid = row.pid;
-        await transaction
-          .select()
-          .from(authEmailProjection)
-          .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId))
-          .for('update');
+        // An authority switch: the gate held exclusively.
+        await lockAuthorityGateExclusively(transaction);
         arrived.release();
         await release.promise;
       }),
@@ -1287,7 +1292,7 @@ describe('mounted account deletion and current-store authority', () => {
         Promise.race([
           arrived.promise,
           held.then(() => {
-            throw new Error('Manifest blocker ended early');
+            throw new Error('Gate blocker ended early');
           }),
         ]),
       );
@@ -1313,7 +1318,7 @@ describe('mounted account deletion and current-store authority', () => {
       expect(elapsed).toBeLessThan(8000);
       const [stillHeld] = await observer<
         { held: boolean }[]
-      >`SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=${backendPid} AND relation='auth_email_projection'::regclass AND mode='RowShareLock' AND granted) AS held`;
+      >`SELECT EXISTS(SELECT 1 FROM pg_locks WHERE pid=${backendPid} AND locktype='advisory' AND classid=${AUTHORITY_GATE_NAMESPACE}::oid AND objid=${AUTHORITY_GATE_KEY}::oid AND objsubid=2 AND mode='ExclusiveLock' AND granted) AS held`;
       expect(stillHeld.held).toBe(true);
       expect(await snapshot()).toEqual(before);
       expect(effects.publish).not.toHaveBeenCalled();
@@ -1386,7 +1391,7 @@ describe('mounted account deletion and current-store authority', () => {
     // a spray-version publisher; those existing transports remain separate QA.
   }, 15000);
   it.each(['content', 'cascade'] as const)(
-    'leaves the manifest free for other auth commands while parked in its %s',
+    'leaves the gate free for other auth commands while parked in its %s',
     async (phase) => {
       await seedPair();
       if (phase === 'cascade') await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
@@ -1400,7 +1405,7 @@ describe('mounted account deletion and current-store authority', () => {
         deletion = remove();
         await waitForBlocker(hold.backendPid, deletion);
         expect(await db.select().from(authSubjectCutoffs)).toEqual([]);
-        // Takes the same manifest lock as a password sign-in, with its 4 s limit.
+        // Takes the gate a password sign-in takes, with its 4 s limit.
         await bounded(preflight(drizzle(observer), authority), 1500);
         hold.release();
         await hold.held;
@@ -1444,58 +1449,50 @@ describe('mounted account deletion and current-store authority', () => {
       await bounded(Promise.allSettled([hold.held, ...(deletion ? [deletion] : [])]));
     }
   }, 15000);
-  it('waits out a busy manifest at the final step instead of losing a finished deletion', async () => {
+  it('holds the gate from its first statement, so a switch gives up rather than land between content and bookkeeping', async () => {
     await seedPair({ system: true });
     await seedBoard();
     const accountHold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
-    const manifestArrived = barrier(),
-      manifestRelease = barrier();
-    let manifestHolderPid = 0;
-    let manifestHold: Promise<void> | undefined;
     let deletion: Promise<boolean> | undefined;
     try {
-      // Parked past preflight first, so the only manifest wait left is the final one.
+      // Parked in content, past the gate and the manifest check.
       deletion = remove();
       await waitForBlocker(accountHold.backendPid, deletion);
-      manifestHold = track(
-        db.transaction(async (transaction) => {
-          const row = await executeFirstRow<{ pid: number }>(transaction, sql`SELECT pg_backend_pid() AS pid`);
-          if (!row) throw new Error('Owned manifest holder PID unavailable');
-          manifestHolderPid = row.pid;
-          await transaction
-            .select()
-            .from(authEmailProjection)
-            .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId))
-            .for('update');
-          manifestArrived.release();
-          await manifestRelease.promise;
-        }),
+      const startedAt = performance.now();
+      const switching = await bounded(
+        db
+          .transaction(async (transaction) => {
+            await lockAuthorityGateExclusively(transaction);
+            await transaction
+              .update(authEmailProjection)
+              .set({ writerEpoch: 2 })
+              .where(eq(authEmailProjection.projectionId, authority.expectedProjectionId));
+          })
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+        5000,
       );
-      await bounded(manifestArrived.promise);
+      expect(postgresErrors.getPostgresErrorCode(switching)).toBe('55P03');
+      expect(performance.now() - startedAt).toBeLessThan(4000);
       accountHold.release();
       await accountHold.held;
-      await waitForBlocker(manifestHolderPid, deletion);
-      // Past both the 4 s lock limit and the 5 s statement limit.
-      await new Promise((resolve) => setTimeout(resolve, 5300));
-      manifestRelease.release();
-      await manifestHold;
       expect(await bounded(deletion)).toBe(true);
       expect(stagedFailureLogs()).toEqual([]);
       expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
-      const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
-      expect(cutoff.deletedAt).toBeInstanceOf(Date);
+      const [manifest] = await db.select().from(authEmailProjection);
+      expect(manifest.writerEpoch).toBe(1);
+      const [event] = await db
+        .select()
+        .from(authSecurityMutationEvents)
+        .where(eq(authSecurityMutationEvents.userId, ownerId));
+      expect(event).toMatchObject({ writerEpoch: 1, kind: 'account-deletion' });
     } finally {
       accountHold.release();
-      manifestRelease.release();
-      await bounded(
-        Promise.allSettled([
-          accountHold.held,
-          ...(manifestHold ? [manifestHold] : []),
-          ...(deletion ? [deletion] : []),
-        ]),
-      );
+      await bounded(Promise.allSettled([accountHold.held, ...(deletion ? [deletion] : [])]));
     }
-  }, 25000);
+  }, 20000);
   it('lets the cascade run past the 5 s authority statement limit', async () => {
     await seedPair();
     await installCascadeTrigger('PERFORM pg_sleep(5.2);');
@@ -1610,7 +1607,7 @@ describe('mounted account deletion and current-store authority', () => {
     expect(stagedFailureLogs()).toEqual([]);
   });
   it.each(commandsNamingTheAccount)(
-    '%s gives up on an account being deleted and frees the manifest',
+    '%s waits on the account being deleted, leaves the gate free and gives up on its own limit',
     async (_name, prepare) => {
       await seedPair();
       const run = await prepare();
@@ -1628,7 +1625,7 @@ describe('mounted account deletion and current-store authority', () => {
           () => undefined,
           () => undefined,
         );
-        // Queued on the deletion's user row, so this command holds the manifest now.
+        // Queued on the deletion's user row, holding only the shared gate.
         const sawCommandWaiting = await waitForBlocker(deletionPid, commandSettled).then(
           () => true,
           () => false,
@@ -1652,74 +1649,59 @@ describe('mounted account deletion and current-store authority', () => {
     },
     15000,
   );
-  // 0 ms: the command's 250 ms wait ends long before the deletion's 1 s deadlock timer.
-  // 850 ms: that wait straddles the timer, so PostgreSQL can abort the deletion's lock wait.
-  it.each([
-    ['well before', 0],
-    ['across', 850],
-  ] as const)(
-    'keeps one finished cascade when a real lock cycle lands %s the deadlock timer',
-    async (_timing, delay) => {
-      await seedPair();
-      await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
-      await installCommandGate();
-      const enqueue = vi.spyOn(posthogPersonDeletion, 'enqueuePosthogPersonDeletion');
-      const cascadeGate = await holdOnBlocker((transaction) =>
-        transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
+  it('finishes its bookkeeping while a command naming the account is in flight, because that command holds nothing it needs', async () => {
+    await seedPair();
+    await installCascadeTrigger(`PERFORM pg_advisory_xact_lock(${cascadeGateKey});`);
+    await installCommandGate();
+    const enqueue = vi.spyOn(posthogPersonDeletion, 'enqueuePosthogPersonDeletion');
+    const cascadeGate = await holdOnBlocker((transaction) =>
+      transaction.execute(sql`SELECT pg_advisory_xact_lock(${cascadeGateKey})`),
+    );
+    const commandGate = await holdOnBlocker(
+      (transaction) => transaction.execute(sql`SELECT pg_advisory_xact_lock(${commandGateKey})`),
+      db,
+    );
+    let deletion: Promise<boolean> | undefined;
+    let command: Promise<unknown> | undefined;
+    try {
+      // The deletion holds the user row and is parked inside its cascade.
+      deletion = remove();
+      await waitForBlocker(cascadeGate.backendPid, deletion);
+      // The command holds the shared gate and its claim, parked before it reads the owner.
+      command = track(
+        requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
       );
-      const commandGate = await holdOnBlocker(
-        (transaction) => transaction.execute(sql`SELECT pg_advisory_xact_lock(${commandGateKey})`),
-        db,
+      await sessionWaitingOnGate(commandGateKey);
+      // The old manifest lock made the deletion queue on that command here.
+      cascadeGate.release();
+      await cascadeGate.held;
+      expect(await bounded(deletion)).toBe(true);
+      commandGate.release();
+      await commandGate.held;
+      // It then finds the address retired: nothing to send, and no error.
+      const reply = await bounded(command);
+      expect(reply).toMatchObject({ outcome: 'accepted' });
+      expect(reply).not.toHaveProperty('mailPlan');
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      const events = await db
+        .select()
+        .from(authSecurityMutationEvents)
+        .where(eq(authSecurityMutationEvents.userId, ownerId));
+      expect(events).toHaveLength(1);
+      expect(stagedFailureLogs()).toEqual([]);
+    } finally {
+      cascadeGate.release();
+      commandGate.release();
+      await bounded(
+        Promise.allSettled([
+          cascadeGate.held,
+          commandGate.held,
+          ...(deletion ? [deletion] : []),
+          ...(command ? [command] : []),
+        ]),
       );
-      let deletion: Promise<boolean> | undefined;
-      let command: Promise<unknown> | undefined;
-      try {
-        // The deletion holds the user row and is parked inside its cascade.
-        deletion = remove();
-        await waitForBlocker(cascadeGate.backendPid, deletion);
-        // The command holds the manifest and is parked before its user-row lock.
-        command = track(
-          requestPasswordRecovery(db, recoveryAuthority(), webCommand('forgot-password', { email: ownerEmail })),
-        );
-        const commandPid = await sessionWaitingOnGate(commandGateKey);
-        // The deletion finishes its cascade and queues on the manifest the command holds.
-        cascadeGate.release();
-        await cascadeGate.held;
-        await waitForBlocker(commandPid, deletion);
-        if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
-        // The command now requests the row the deletion holds: a real two-lock cycle.
-        commandGate.release();
-        await commandGate.held;
-        const failure: unknown = await bounded(
-          command.then(
-            () => undefined,
-            (error: unknown) => error,
-          ),
-        );
-        expect(postgresErrors.getPostgresErrorCode(failure)).toBe('55P03');
-        expect(await bounded(deletion)).toBe(true);
-        expect(enqueue).toHaveBeenCalledTimes(1);
-        const events = await db
-          .select()
-          .from(authSecurityMutationEvents)
-          .where(eq(authSecurityMutationEvents.userId, ownerId));
-        expect(events).toHaveLength(1);
-        expect(stagedFailureLogs()).toEqual([]);
-      } finally {
-        cascadeGate.release();
-        commandGate.release();
-        await bounded(
-          Promise.allSettled([
-            cascadeGate.held,
-            commandGate.held,
-            ...(deletion ? [deletion] : []),
-            ...(command ? [command] : []),
-          ]),
-        );
-      }
-    },
-    15000,
-  );
+    }
+  }, 15000);
   it('records the generation a password change set between preflight and the final step', async () => {
     await seedPair();
     const hold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));

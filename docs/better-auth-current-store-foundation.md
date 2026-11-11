@@ -84,7 +84,8 @@ and [transaction visibility rules](https://www.postgresql.org/docs/15/transactio
 normalizer version and expected writer epoch. The function derives the key from
 raw email itself. `requestedUserId` must come from trusted server creation or a
 proven authenticated identity; it is not a public request-selected owner.
-The function locks the current manifest, checks the deletion cutoff, then reads
+The function takes the authority gate, validates the current manifest, takes the
+key's creation lock, checks the deletion cutoff, then reads
 the normalized key across **all** basis IDs. An old-basis occupied key rejects;
 filtering it away must never make that address appear free. A fresh key can be
 reserved by one generated owner, and an existing owned key can only be reused
@@ -117,15 +118,34 @@ with its other members. Deleting one member never elects a surviving owner. A de
 mutation. No deleted-key release, outbox dispatcher, consumer acknowledgment,
 retry worker or credential-mutation callback API is included.
 
-The current manifest row uses `FOR UPDATE`, serializing these bounded helpers
-across keys/users. This closes first-cutoff and missing-key races. The helpers
-perform no provider network or bcrypt work themselves; callers must keep such
-work outside the locked section where their verified-command policy permits.
-A command holding the manifest limits its user-row wait to 250 ms, so a long
-transaction on one account delays the commands queued behind it by at most that
-much per command naming the account.
-Production throughput, lock order and finer-grained serialization require
-measurement and a new concurrency proof before activation.
+Since BA-04 PR 3 nothing serializes every command. Each staged command takes
+the authority gate, `pg_advisory_xact_lock_shared(6975, 2)`, then reads and
+validates the manifest without a row lock; commands never wait for each other on
+it. Only an authority switch or activation takes the gate exclusively
+(`lockAuthorityGateExclusively`, 2 s lock limit), so the manifest cannot change
+while any command is between its check and its commit. Below the gate, locks are
+per address and per climber, in one order (BA-04 plan, section 4):
+
+1. Creation only: the address's creation lock (`lockEmailKeyForCreation`, an
+   advisory key over the normalized email) before its reservation row is read,
+   because a free key has no row to lock. A provider sign-in first takes its
+   provider subject's lock (`lockProviderSubject`), so one subject cannot
+   create two accounts.
+2. The climber's `users` row: `FOR UPDATE` for any write, `FOR KEY SHARE` for a
+   sign-in. Commands that resolve a climber by email read the reservation's
+   owner without a lock, lock that climber's row, then lock and re-check the
+   reservation. Account deletion holds this row through its content and cascade
+   and locks the reservation after it, so the two orders agree and cannot cycle.
+3. Then the reservation and members, the cutoff row, credentials and accounts,
+   purpose state and receipts, refresh rows.
+
+`recordSecurityMutation` itself takes `users FOR UPDATE` before the cutoff row,
+so every generation writer excludes native issuance and refresh, which hold
+`users FOR KEY SHARE` and read the generation after that lock.
+A command waits for a climber's row up to its own 4 s lock limit. The fixed
+system identities keep a 250 ms limit there, because they hold the exclusive
+fixed-owner key while they wait. The helpers perform no provider network or
+bcrypt work themselves; callers keep such work outside the transaction.
 
 ## Automated proof and remaining gates
 

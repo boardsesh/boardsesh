@@ -33,7 +33,11 @@ import { setupWorkerDatabase } from '../../../__tests__/worker-db';
 import { handleCurrentStoreWebOAuth } from '../../../handlers/current-store-web-oauth';
 import { logger } from '../../../utils/logger';
 import { prepareProjectionUnderUsersTableLock, reserveEnforcedEmail } from '../email-reservations';
-import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from '../foundation-context';
+import {
+  CURRENT_EMAIL_NORMALIZER_VERSION,
+  lockAuthorityGateExclusively,
+  type ExpectedCurrentStoreAuthority,
+} from '../foundation-context';
 import { resolveReservedNativeOAuthIdentity } from '../native-oauth-identity';
 import { resolveWebOAuthIdentity } from '../web-oauth-identity';
 import { readNegativeWebOAuthActor } from '../web-oauth-actor';
@@ -610,7 +614,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     const held = deferred(),
       release = deferred();
     const blocker = db.transaction(async (transaction) => {
-      await transaction.select().from(authEmailProjection).for('update');
+      await lockAuthorityGateExclusively(transaction);
       held.resolve();
       await release.promise;
     });
@@ -641,7 +645,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     const held = deferred(),
       release = deferred();
     const blocker = db.transaction(async (transaction) => {
-      await transaction.select().from(authEmailProjection).for('update');
+      await lockAuthorityGateExclusively(transaction);
       held.resolve();
       await release.promise;
     });
@@ -674,7 +678,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     const held = deferred(),
       release = deferred();
     const blocker = db.transaction(async (transaction) => {
-      await transaction.select().from(authEmailProjection).for('update');
+      await lockAuthorityGateExclusively(transaction);
       held.resolve();
       await release.promise;
     });

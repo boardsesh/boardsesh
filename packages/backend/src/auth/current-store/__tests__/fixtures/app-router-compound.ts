@@ -32,6 +32,8 @@ const jwt = webRequire('next-auth/jwt') as {
   encode(options: { secret: string; token: Record<string, unknown>; maxAge: number }): Promise<string>;
   decode(options: { secret: string; token: string }): Promise<Record<string, unknown> | null>;
 };
+/** Fixture-only: stands in for the manifest row lock this authority used to share with every command. */
+const COMPOUND_FIXTURE_LOCK_KEY = 0x43504d44; // 'CPMD'
 const sourceLifetime = 60 * 60 * 1000;
 const intentLifetime = 15 * 60 * 1000;
 const purpose = 'synthetic-app-router-source-v1' as const;
@@ -210,6 +212,11 @@ export async function startAppRouterCompound(options: {
       await transaction.execute(sql`SET LOCAL statement_timeout='5000ms'`);
       await transaction.execute(sql`SET LOCAL lock_timeout='4000ms'`);
       await lockEnforcedProjection(transaction, authority);
+      // This synthetic authority was written against the one-row manifest lock
+      // that serialized every staged command. The gate is shared now (BA-04 PR 3)
+      // and production commands lock per key and per climber; the fixture keeps
+      // its original whole-authority serialization with a lock of its own.
+      await transaction.execute(sql`SELECT pg_advisory_xact_lock(${COMPOUND_FIXTURE_LOCK_KEY})`);
       return operation(transaction);
     });
   async function record(transaction: CurrentStoreTransaction, identifier: string) {

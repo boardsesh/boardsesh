@@ -8,7 +8,6 @@ import {
 } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
 import { lockSharedFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
-import { getPostgresErrorCode } from '../../utils/postgres-errors';
 import { normalizeAccountEmail } from '../normalize-email';
 import { transactionSettings } from './command-context';
 import {
@@ -19,8 +18,6 @@ import {
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
 import { recordSecurityMutation } from './security-mutations';
-
-const FINAL_MANIFEST_ATTEMPTS = 3;
 
 export interface CapturedAccountDeletionCommand extends ExpectedCurrentStoreAuthority {
   readonly userId: string;
@@ -52,15 +49,26 @@ export function captureAccountDeletionCommand(
 }
 
 /**
- * Enter the fixed-owner key before content; keep human subject/user locks after walls.
- * The manifest is deliberately absent here: it is one row every staged auth
- * command queues on, so holding it through content would stall sign-in for
- * everyone. The caller runs `preflight` first and the manifest returns in
- * {@link recordReservedAccountDeletion}, where it is re-validated under the lock.
- * The key never queues, so holding it while later waiting on the manifest
- * cannot form a cycle with an identity authority: that side is rejected as busy.
+ * Call first in the deletion transaction. Takes the authority gate shared and
+ * validates the manifest, so a stale authority fails before any content is
+ * touched, then the fixed-owner key; human subject/user locks come after walls.
+ *
+ * The gate is shared, so holding it through content and the cascade costs no
+ * other command anything: commands never wait for each other on it. Only an
+ * authority switch, holding it exclusively, waits for this deletion and gives up
+ * after its own 2 s. Taking it here, before any row, means the deletion never
+ * waits for the gate while holding a climber's row, so it cannot close a cycle
+ * with a switch. The short limits cover these two statements only; content and
+ * the cascade then run under the connection's ordinary limits, as legacy does.
  */
-export async function beginReservedAccountDeletion(transaction: CurrentStoreTransaction): Promise<void> {
+export async function beginReservedAccountDeletion(
+  transaction: CurrentStoreTransaction,
+  command: CapturedAccountDeletionCommand,
+): Promise<void> {
+  await transactionSettings(transaction);
+  await lockEnforcedProjection(transaction, command);
+  await transaction.execute(sql`SET LOCAL statement_timeout TO DEFAULT`);
+  await transaction.execute(sql`SET LOCAL lock_timeout TO DEFAULT`);
   await lockSharedFixedSystemOwnerTransaction(transaction);
 }
 
@@ -134,27 +142,14 @@ async function requireRepresentedDeletionEmail(
 }
 
 /**
- * PostgreSQL runs this wait's deadlock check 1 s after it queues. A command that
- * holds the manifest and is inside its 250 ms user-row wait at that moment
- * completes a cycle, and this lock request is the one aborted with 40P01. Retrying
- * in a savepoint keeps the finished cascade and the user row, so that command
- * times out instead of winning the row. A full re-run stays the fallback.
- */
-async function lockFinalManifest(transaction: CurrentStoreTransaction, command: CapturedAccountDeletionCommand) {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await transaction.transaction((savepoint) => lockEnforcedProjection(savepoint, command));
-    } catch (error) {
-      if (getPostgresErrorCode(error) !== '40P01' || attempt >= FINAL_MANIFEST_ATTEMPTS) throw error;
-    }
-  }
-}
-
-/**
- * Call last, after the real users DELETE in the SAME outer transaction, so the
- * manifest is held for these few statements and not for content or the cascade.
- * A projection change during that earlier work fails this re-validation and
- * rolls everything back; once locked here it cannot change before commit.
+ * Call last, after the real users DELETE in the SAME outer transaction. Only
+ * bookkeeping is left, so the short limits apply from here to commit. The gate
+ * is already held, so re-validating the manifest never waits; a projection
+ * changed by a writer that skipped the gate fails it and rolls everything back.
+ * Then section 4's order for this climber: reservation, cutoff, event. Nothing
+ * here waits on another climber's row, and no command holds this climber's
+ * reservation while waiting for the users row this deletion holds, because every
+ * command takes that row first.
  * This adds no recent-auth or legacy-validator revocation proof.
  */
 export async function recordReservedAccountDeletion(
@@ -162,20 +157,12 @@ export async function recordReservedAccountDeletion(
   command: CapturedAccountDeletionCommand,
   subject: ReservedDeletionSubject,
 ): Promise<void> {
-  // A timeout on this one wait would throw away a finished deletion, and 55P03 is
-  // not retried. Waiting costs other commands nothing: this transaction holds only
-  // this account's rows, and a command wanting one gives up in 250 ms. The lock
-  // limit is the lower of the two so the failure stays a lock timeout.
-  await transaction.execute(sql`SET LOCAL statement_timeout = '35000ms'`);
-  await transaction.execute(sql`SET LOCAL lock_timeout = '30000ms'`);
-  const manifest = await lockFinalManifest(transaction, command);
-  // Short limits from here to commit: only bookkeeping is left, and it runs
-  // holding the row every staged auth command queues on.
   await transactionSettings(transaction);
+  const manifest = await lockEnforcedProjection(transaction, command);
   await requireRepresentedDeletionEmail(transaction, command.userId, subject.email, manifest.projectionId);
 
-  // The manifest serializes cooperating writers. Read each attempt's current
-  // generation here; a rolled-back deadlock retry must not reuse a stale one.
+  // Read each attempt's current generation here, under the deleted row's lock;
+  // a rolled-back deadlock retry must not reuse a stale one.
   const [previous] = await transaction
     .select({ generation: authSubjectCutoffs.generation })
     .from(authSubjectCutoffs)

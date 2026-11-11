@@ -6,6 +6,7 @@ import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
+  lockEmailKeyForCreation,
   lockEnforcedProjection,
   type CurrentStoreTransaction,
   type ExpectedCurrentStoreAuthority,
@@ -30,6 +31,8 @@ export async function insertReservedPasswordIdentity(
   const prepared = options.prepared ? { ...options.prepared } : null;
   const key = normalizeAccountEmail(email);
   const manifest = await lockEnforcedProjection(transaction, authority);
+  // The gate no longer serializes registrations: the key does (section 4).
+  await lockEmailKeyForCreation(transaction, key);
   // A deleted account's address answers like a taken one until its digest expires.
   const reservation = await lockKeyReservation(transaction, key);
   if (reservation) {

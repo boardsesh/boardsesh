@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { users, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
+import { users, authSubjectCutoffs, userCredentials } from '@boardsesh/db/schema/auth';
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
@@ -137,6 +137,28 @@ export function admitsCredential(decision: CredentialDecision, reader: Credentia
 }
 
 /**
+ * What a password sign-in proved before bcrypt, with no transaction open
+ * (`authenticateCurrentStorePassword`). The issuer re-reads the same row under
+ * its user lock and issues only if nothing moved (BA-04 section 4).
+ */
+export interface PasswordProof {
+  readonly passwordHash: string;
+  readonly generation: number;
+}
+
+/**
+ * The password or the generation changed between the bcrypt check and the user
+ * lock: a reset landed in between. The sign-in is answered as invalid
+ * credentials and nothing is issued.
+ */
+export class PasswordProofStaleError extends Error {
+  constructor() {
+    super('The verified password no longer matches the account');
+    this.name = 'PasswordProofStaleError';
+  }
+}
+
+/**
  * Issuance must own this transaction. Lock the user before refresh/account
  * child rows; never put the bounded read response race around a write.
  *
@@ -144,10 +166,20 @@ export function admitsCredential(decision: CredentialDecision, reader: Credentia
  * once the user lock is held. The locking statement's snapshot predates its
  * wait, so a mutation that held `users FOR UPDATE` and committed while this
  * issuer waited is visible only to a statement that starts after the lock.
+ *
+ * KEY SHARE keeps every generation writer out until this commits, because each
+ * takes `users FOR UPDATE` first (`recordSecurityMutation` makes sure), yet never
+ * waits for the foreign-key KEY SHARE of an ordinary write or a partner issuer's
+ * FOR SHARE. So the state read here still holds when the child row is inserted.
+ *
+ * With a password proof, that second statement also reads the hash and refuses
+ * with {@link PasswordProofStaleError} if it, or the generation, differs from
+ * what bcrypt checked. Same statement count as without.
  */
 export async function requireHumanSubjectForIssuance(
   transaction: AdmissionTransaction,
   userId: string,
+  passwordProof?: PasswordProof,
 ): Promise<SubjectCutoffState> {
   try {
     await requireReadCommitted(transaction);
@@ -159,6 +191,24 @@ export async function requireHumanSubjectForIssuance(
       .limit(1)
       .for('key share', { of: users });
     if (!subject || subject.deletedAt !== null) throw new AuthSubjectDeniedError();
+    if (passwordProof) {
+      const [current] = await transaction
+        .select({
+          passwordHash: userCredentials.passwordHash,
+          generation: authSubjectCutoffs.generation,
+          nativeGeneration: authSubjectCutoffs.nativeGeneration,
+          deletedAt: authSubjectCutoffs.deletedAt,
+        })
+        .from(users)
+        .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+        .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!current || current.deletedAt) throw new AuthSubjectDeniedError();
+      if (current.passwordHash !== passwordProof.passwordHash || (current.generation ?? 0) !== passwordProof.generation)
+        throw new PasswordProofStaleError();
+      return cutoffState(current.generation, current.nativeGeneration);
+    }
     const [cutoff] = await transaction
       .select({
         generation: authSubjectCutoffs.generation,
@@ -171,7 +221,7 @@ export async function requireHumanSubjectForIssuance(
     if (cutoff?.deletedAt) throw new AuthSubjectDeniedError();
     return cutoffState(cutoff?.generation ?? null, cutoff?.nativeGeneration ?? null);
   } catch (error) {
-    if (error instanceof AuthSubjectDeniedError) throw error;
+    if (error instanceof AuthSubjectDeniedError || error instanceof PasswordProofStaleError) throw error;
     throw new AuthAdmissionUnavailableError();
   }
 }

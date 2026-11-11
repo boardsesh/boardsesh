@@ -3,7 +3,7 @@ import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
 import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import type { DbInstance } from '@boardsesh/db/client';
-import { users, userCredentials, userProfiles } from '@boardsesh/db/schema/auth';
+import { authSubjectCutoffs, users, userCredentials, userProfiles } from '@boardsesh/db/schema/auth';
 import { normalizeAccountEmail } from '../normalize-email';
 
 type PasswordIdentityReader = Pick<DbInstance, 'select'>;
@@ -69,22 +69,50 @@ export async function matchCurrentStorePasswordCandidate(
   return { userId: authenticated.userId, createdAt: authenticated.createdAt };
 }
 
+/**
+ * What a password check proved, read before bcrypt. The issuer compares it with
+ * the same row under its user lock and refuses on any difference, so a check
+ * that passed before a reset cannot issue after it (BA-04 section 4).
+ */
+export interface VerifiedPasswordSnapshot {
+  readonly userId: string;
+  readonly createdAt: Date;
+  readonly passwordHash: string;
+  /** `auth_subject_cutoffs.generation`, 0 with no row. */
+  readonly generation: number;
+}
+
 /** Current-store password verification only; no credential issuance or mutation. */
 export async function authenticateCurrentStorePassword(
   database: PasswordIdentityReader,
   email: string,
   password: string,
-): Promise<{ userId: string; createdAt: Date } | null> {
+): Promise<VerifiedPasswordSnapshot | null> {
   const normalizedEmail = normalizeAccountEmail(email);
   // Preserve exact case-insensitive matching, including literal '_' and '%'.
   // Historic duplicate-by-case rows remain independently owned accounts.
+  // The cutoff join adds no statement: the generation rides the candidate read.
   const candidates = await database
-    .select({ userId: users.id, passwordHash: userCredentials.passwordHash, createdAt: users.createdAt })
+    .select({
+      userId: users.id,
+      passwordHash: userCredentials.passwordHash,
+      createdAt: users.createdAt,
+      generation: authSubjectCutoffs.generation,
+    })
     .from(users)
     .innerJoin(userCredentials, eq(userCredentials.userId, users.id))
+    .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
     .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  return matchCurrentStorePasswordCandidate(candidates, password);
+  const matched = await matchCurrentStorePasswordCandidate(candidates, password);
+  const proved = matched ? candidates.find((candidate) => candidate.userId === matched.userId) : undefined;
+  if (!matched || !proved) return null;
+  return {
+    userId: matched.userId,
+    createdAt: matched.createdAt,
+    passwordHash: proved.passwordHash,
+    generation: proved.generation ?? 0,
+  };
 }
 
 /** Shared native creation email policy; subjects and login passwords are separate. */
