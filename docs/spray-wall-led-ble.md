@@ -1,250 +1,169 @@
 # Spraywall LEDs over Bluetooth (BLE)
 
-Status: **design + unbuilt reference code**. The app side is implemented and unit
-tested against a fake transport; the WLED usermod in
-`firmware/wled-usermod-boardsesh-ble/` has **never been compiled or run on a
-device**. Bluetooth changes need a Fable review before merge.
+Status: **app side implemented and unit tested; firmware builds but has not run
+on a Spraywall yet.** Bluetooth changes need a Fable review before merge.
 
-This document covers the second way the app can light a Spraywall: over
-Bluetooth Low Energy, straight from the phone to the Spraywall's controller,
-without the phone and the controller sharing a Wi-Fi network. The Wi-Fi path
-(`docs/spray-wall-led.md`, driver `wled`) is unchanged.
+This is the second way the app lights a Spraywall: straight from the phone to
+the controller over Bluetooth Low Energy, with no Wi-Fi network shared between
+them. The Wi-Fi path (`docs/spray-wall-led.md`, controller type `wled`) is
+unchanged.
 
-## 1. Approach
+## 1. Approach: reuse what already exists
 
-- **Keep WLED on the controller.** The Gledopto GL-C-015WL-D ships with WLED,
-  and its web UI, presets, LED settings, OTA updates and Wi-Fi API all keep
-  working. Climbers who share the Spraywall's Wi-Fi keep using the `wled`
-  driver.
-- **Add one WLED usermod** that exposes a small GATT service with NimBLE. Every
-  BLE frame is translated in the usermod into the same WLED JSON state command
-  the Wi-Fi driver sends (`deserializeState`), so brightness, the nightlight
-  auto-off, segments and "do not sync" behave identically on both paths.
-- **A new controller type `wled-ble`** in `@boardsesh/led-controller`. It
-  implements `LedControllerDriver` over an injected transport, so the shared
-  package has no React Native or Bluetooth dependency. The mobile app registers
-  a transport built on `react-native-ble-plx`, the BLE library it already ships,
-  so there is no new native module and no app config plugin.
+Nothing new on the wire. The phone speaks to the Spraywall controller exactly as
+it speaks to a Kilter or Tension board:
+
+| Piece | Reused from |
+| --- | --- |
+| Frames | Aurora API v3 (`packages/shared/ble-protocol/src/aurora.ts`): `wrapBytes` framing with checksum, commands `T` (only) / `R` (first) / `Q` (middle) / `S` (last), 3 bytes per LED (16-bit position, one 3-3-2 colour byte) |
+| Transport | Nordic UART service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`, write characteristic `6e400002-…`, chunked with `effectiveChunkSizeForMtu` + `splitMessages` (`transport.ts`) |
+| Clear | The empty `T` message, `01 01 ab 02 54 03`: the same packet `getAuroraBluetoothPacket('')` sends a Kilter board |
+| Firmware | `embedded/projects/board-controller`, env `gledopto-c015-spraywall`: the existing GL-C-015WL-D firmware (NimBLE Nordic UART server, Aurora decoder, FastLED), verified on that hardware for Kilter strings |
+
+The only new encoder is `getAuroraV3LedPacket(leds)` in `aurora.ts`: the same
+packing as `getAuroraBluetoothPacket`, but taking LED positions and RGB
+directly, because a Spraywall has no Aurora placements. The app maps holds to
+LEDs with the Spraywall layout (`buildSprayLedMapping`), and the Aurora
+position **is** the LED index on the string.
+
+The controller type is `ble` (`@boardsesh/led-controller`, `src/ble.ts`). It
+implements `LedControllerDriver` over an injected transport, so the shared
+package has no React Native dependency; the app registers a transport built on
+`react-native-ble-plx`, the BLE library it already ships. No new native module
+or config plugin.
 
 ### Relation to issue #7306
 
-[#7306](https://github.com/boardsesh/boardsesh/issues/7306) ("Custom LED
-climbing boards — DIY board support through a generic BLE protocol") asks for a
-generic, documented BLE protocol for DIY controllers: discovery and connection,
-sending climbs (hold ids with colours), clearing, brightness, independent of the
-LED chip and microcontroller, with an ESP32 reference implementation. It does
-**not** define a GATT service, characteristics or frames (no comments at the time
-of writing), so there was nothing concrete to follow.
+[#7306](https://github.com/boardsesh/boardsesh/issues/7306) asks for a generic
+BLE protocol for DIY boards (discovery, sending climbs, clearing, brightness,
+an ESP32 reference firmware) but defines no frames. This answers it by
+reusing the Aurora v3 protocol any DIY controller can implement, with the
+board-controller firmware as the ESP32 reference.
 
-This protocol is a compatible minimal answer to that request:
+## 2. Operations
 
-| #7306 asks for | Here |
+| `LedControllerDriver` | Bluetooth |
 | --- | --- |
-| Discovery and connection | Advertised service UUID, info characteristic with name, firmware version, LED count and protocol version |
-| Sending climbs (hold ids and colours) | `SET_PIXELS`: LED index ranges + RGB. The app maps holds to LEDs with the Spraywall layout (`buildSprayLedMapping`), so a controller never needs hold ids |
-| Clearing the board | `OFF` |
-| Brightness | A byte in `LIGHT_ALL`, `PREVIEW_BEGIN`, `WAKE` |
-| Independent of LED technology | Nothing in the frames is WLED-specific; WLED is just the first implementation |
-| ESP32 reference implementation | The WLED usermod |
+| `probe` | Connect and find the Nordic UART write characteristic. Name = the advertised name. The protocol reports no LED count or version (`ledCount: 0`) |
+| preview `show(indices, colours)` | One Aurora v3 packet with every LED to light; it replaces what was lit, as on a Kilter board, so nothing is blanked first |
+| `lightAll` | White on positions 0–499 (the firmware's `MAX_LEDS`); positions past the string are ignored by the firmware |
+| `turnOff` / clear | The empty packet |
 
-Auto-off (WLED's nightlight) is an addition #7306 did not ask for. Any other DIY
-firmware can implement the same four characteristics without WLED.
+Writes are with response, chunk by chunk (MTU 247 asked for on Android, chunks
+clamp to 244 bytes; 20 bytes at the default MTU). A write that fails is
+`command-failed`, one that is not acknowledged in 3 s is `timeout`, a failed
+connect is `unavailable`.
 
-## 2. GATT service
+### Brightness and auto-off: no protocol extension
 
-All multi-byte integers are little-endian. UUIDs are random 128-bit values
-sharing one base (`7e10xxxx-69ea-4190-8731-75eec7496aed`).
+Aurora frames carry no brightness or timer, and none was added. The firmware
+keeps its own:
 
-| Role | UUID | Properties | Security |
-| --- | --- | --- | --- |
-| Service (advertised) | `7e100001-69ea-4190-8731-75eec7496aed` | | |
-| Info | `7e100002-69ea-4190-8731-75eec7496aed` | Read | None, so a phone can tell what it found before pairing |
-| Control | `7e100003-69ea-4190-8731-75eec7496aed` | Write (with response) | Encrypted + authenticated (MITM): bonded with the passkey |
-| Status | `7e100004-69ea-4190-8731-75eec7496aed` | Notify | Encrypted + authenticated |
+- **Brightness**: the existing "LED Brightness" on the controller's setup page
+  (`brightness` in NVS, applied at boot: save, then restart).
+- **Auto-off**: the `gledopto-c015-spraywall` build turns the string off 30
+  minutes after the last climb arrived (`-D SPRAYWALL_AUTO_OFF_MINUTES=30`, 0
+  disables). Small new code in `main.cpp`, flagged here as the one behaviour the
+  Kilter build does not have.
 
-The controller advertises the service UUID in the advertising packet (128-bit
-UUID + flags = 21 of 31 bytes) and its name in the scan response.
-
-### 2.1 Info (read)
-
-| Offset | Size | Field |
-| --- | --- | --- |
-| 0 | 1 | Protocol version, `1` |
-| 1 | 1 | Flags. Bit 0: the strip is on with brightness > 0 |
-| 2 | 2 | LED count (whole cable, `strip.getLengthTotal()`) |
-| 4 | 2 | Largest control frame the controller buffers, in bytes |
-| 6 | 1 + n | Name: length, then UTF-8 (WLED's "Server description") |
-| 7 + n | 1 + m | Firmware version: length, then UTF-8 (WLED's `versionString`) |
-
-Bytes after the version are reserved. A phone that reads a protocol version it
-does not know stops before writing anything and shows "update the app or the
-controller" (`unsupported-version`). Only the first byte is guaranteed in every
-future version.
-
-### 2.2 Control (write with response)
-
-Each write is one complete frame; nothing is reassembled across writes.
-
-```
-[protocol version = 1][opcode][sequence][payload…]
-```
-
-The sequence is any byte; the status notification echoes it.
-
-| Opcode | Name | Payload | WLED JSON it becomes |
-| --- | --- | --- | --- |
-| `0x10` | `LIGHT_ALL` | brightness (1–255), auto-off minutes (0 = never) | `{on:true, bri, tt:0, live:false, lor:1, nl, udpn:{nn:true}, seg:[segment 0 over the whole cable, every segment solid white]}` |
-| `0x11` | `OFF` | — | `{on:false, tt:0, live:false, udpn:{nn:true}}` |
-| `0x12` | `PREVIEW_BEGIN` | brightness | Wake at brightness, nightlight off, segment 0 = whole cable, solid black; other segments off (not deleted) |
-| `0x13` | `SET_PIXELS` | runs of 6 bytes: start (u16), count (1–255), r, g, b | `{tt:0, udpn:{nn:true}, seg:[{id:0, i:[start, start+count, "RRGGBB", …]}]}` |
-| `0x14` | `AUTO_OFF` | minutes (0 stops it) | `{nl:{on:true, dur, mode:0, tbri:0}}` or `{nl:{on:false}}` |
-| `0x15` | `WAKE` | brightness | `{on:true, bri, tt:0, nl:{on:false}, udpn:{nn:true}}` |
-
-These are the operations `LedControllerDriver` needs: `probe` reads Info,
-`lightAll` sends `LIGHT_ALL`, `turnOff` sends `OFF` (also "clear"), and a preview
-sends `PREVIEW_BEGIN` once, `WAKE` before later updates when auto-off is set,
-then `SET_PIXELS` (blacking the previously lit LEDs and colouring the new ones),
-then `AUTO_OFF` so the countdown runs from the latest write. That is the same
-sequence the Wi-Fi driver sends as JSON.
-
-**Chunking.** A frame never exceeds `min(ATT MTU − 3, info max frame)`. The app
-asks for ATT MTU 247 on Android (iOS negotiates by itself) and falls back to the
-default 23:
-
-| ATT MTU | Bytes per write | Runs per `SET_PIXELS` |
-| --- | --- | --- |
-| 23 (default) | 20 | 2 |
-| 247 | 244 | 40 |
-| 517, controller buffer 512 | 512 | 84 |
-
-Neighbouring LEDs with the same colour share one run, so the two LEDs behind one
-hold cost 6 bytes, not 12.
-
-### 2.3 Status (notify)
-
-```
-[protocol version = 1][sequence][result][reserved = 0]
-```
-
-| Result | Meaning | App error |
-| --- | --- | --- |
-| 0 | Applied | — |
-| 1 | Unsupported protocol version | `unsupported-version` |
-| 2 | Malformed frame | `command-failed` |
-| 3 | An LED range is past the cable; nothing applied | `invalid-indices` |
-| 4 | Busy (queue full) | `command-failed` |
-| 5 | Unknown opcode | `command-failed` |
-
-The app waits for the status of each frame before writing the next, so one
-phone never has more than one frame in flight. A frame without a status within
-3 s is a `timeout`; a failed GATT write is `command-failed`; a failed connect is
-`unavailable`.
+For a Bluetooth Spraywall the app hides its brightness slider and auto-off
+choice and says the controller keeps its own.
 
 ## 3. Test vectors
 
-Asserted byte for byte in
-`packages/shared/led-controller/src/__tests__/wled-ble.test.ts`.
+Asserted byte for byte in `packages/shared/ble-protocol/src/__tests__/aurora.test.ts`
+and `packages/shared/led-controller/src/__tests__/ble.test.ts`.
 
-| Frame | Bytes (hex) |
+| Packet | Bytes (hex) |
 | --- | --- |
-| `LIGHT_ALL`, seq 1, brightness 64, auto-off 30 min | `01 10 01 40 1e` |
-| `OFF`, seq 2 | `01 11 02` |
-| `PREVIEW_BEGIN`, seq 3, brightness 128 | `01 12 03 80` |
-| `SET_PIXELS`, seq 4, LEDs 10–11 red, LED 20 green | `01 13 04 0a 00 02 ff 00 00 14 00 01 00 ff 00` |
-| `SET_PIXELS`, seq 5, LED 300 blue | `01 13 05 2c 01 01 00 00 ff` |
-| `AUTO_OFF`, seq 6, 15 min | `01 14 06 0f` |
-| `WAKE`, seq 7, brightness 64 | `01 15 07 40` |
-| Status, seq 4, applied | `01 04 00 00` |
-| Status, seq 5, out of range | `01 05 03 00` |
-| Info: lit, 150 LEDs, buffer 512, "WLED", "0.15.3" | `01 01 96 00 00 02 04 57 4c 45 44 06 30 2e 31 35 2e 33` |
+| Clear (empty `T`) | `01 01 ab 02 54 03` |
+| LED 0 white | `01 04 ac 02 54 00 00 ff 03` |
+| LED 300 blue | `01 04 7b 02 54 2c 01 03 03` |
+| LEDs 10–11 red, LED 20 green | `01 0a a6 02 54 0a 00 e0 0b 00 e0 14 00 1c 03` |
+| LED 11 blue | `01 04 9d 02 54 0b 00 03 03` |
+| 85 LEDs | `R` message with 84 LEDs (body 253 bytes), then `S` with one |
 
-## 4. Security
+Framing: `[0x01][body length][checksum][0x02][body][0x03]`, checksum =
+`(sum of body bytes & 0xff) ^ 0xff`, body = command byte + LEDs, ≤ 255 bytes.
+Colour byte = `RRRGGGBB` (`r >> 5`, `g >> 5`, `b >> 6`).
 
-- **Writes need a bonded phone.** Control and Status require an encrypted,
-  authenticated (MITM) link. The usermod sets NimBLE to bonding + MITM + Secure
-  Connections with IO capability "display only" and a **static 6-digit
-  passkey**. The first time a phone writes, iOS/Android show the system pairing
-  dialog and the climber types the passkey. Nothing in the app handles the
-  passkey; it never leaves the OS.
-- **The passkey is shown in WLED's UI**: Settings → Usermods → Boardsesh BLE,
-  next to a "Forget all phones" switch and a "Pairing open" switch. It is
-  random on first boot (stored in WLED's `cfg.json`, never all zeros) and can be
-  changed there. Anyone who can open WLED's UI on the Wi-Fi can already control
-  the LEDs, so this keeps the same trust boundary.
-- **New phones only while pairing is open.** "Pairing open" is on for 10 minutes
-  after boot and whenever it is switched on in the UI; outside that window the
-  usermod refuses to start new pairings, so an already bonded phone keeps working
-  but a stranger in range cannot even try passkeys. Up to 4 bonds are kept.
-- **Info is public**: name, firmware version, LED count. This is the same data
-  WLED's `/json/info` shows to anyone on the Wi-Fi.
-- **Bluetooth ids stay on the phone.** iOS gives every phone a different id for
-  the same peripheral, so the chosen controller is stored on the phone only
-  (`sprayWallLedBleDevice:<wall>`), and erased with the rest of the Spraywall LED
-  copy on sign-out or when the wall is withdrawn. The server stores only
-  `controller_type = 'wled-ble'`.
+## 4. Advertising and the board pickers
 
-Not covered: a hostile device that advertises the same service near the
-Spraywall. The worst it can do is receive route colours the phone sends it.
+The Spraywall build advertises **`Boardsesh Spraywall XXXX`** (the last two MAC
+bytes) and **no service UUID**: neither the Aurora service
+`4488b571-…` nor Nordic UART (which stays in GATT). Its name has no
+`#serial@api` suffix. So:
 
-## 5. Sharing, range and coexistence
+- Aurora pickers and the quickstart (`isLikelyBoardDevice`, scan family
+  `aurora`) need the Aurora service UUID, an Aurora board name or a
+  `#serial@N` suffix: none match.
+- MoonBoard pickers accept Nordic UART in the advertisement or a
+  MoonBoard/Woods name: none match. On iOS the native MoonBoard scan filters
+  on UART/RedBearLab UUIDs, which the controller does not advertise.
+- `parseAnyBoardTypeFromDeviceName` returns nothing for the name.
 
-- **One phone at a time over Bluetooth.** The usermod allows one connection and
-  stops advertising while connected. The app drops its link after 60 s without
-  writes, so the next climber's phone can connect. Climbers on the Spraywall's
-  Wi-Fi keep using the `wled` driver at the same time; both end up as the same
-  WLED state changes, and the last write wins, exactly as two Wi-Fi phones do
-  today.
-- **Every phone picks the controller once**, from the LED section on the edit
-  screen ("Find Bluetooth controller"). A phone without a stored controller that
-  sends a route looks for one: if exactly one controller advertises the service
-  nearby, it uses and remembers it; otherwise lighting fails with the usual
-  toast.
-- **Range.** BLE indoors through a plastic enclosure is typically 5–15 m with a
-  clear line of sight. The Gledopto's antenna is a PCB trace inside a metal-free
-  box, so the Spraywall should be in range from the mat; this **needs measuring**.
-- **Wi-Fi/BLE coexistence.** The ESP32 shares one 2.4 GHz radio between Wi-Fi and
-  BLE by time slicing (ESP-IDF software coexistence). ESP-IDF requires Wi-Fi
-  modem sleep while Bluetooth is enabled, and WLED's "Disable WiFi sleep"
-  setting (on by default on ESP32) asks for the opposite. The usermod switches
-  Wi-Fi sleep back on at start-up and the README tells the builder to untick
-  that option; **whether WLED 0.15 then logs or misbehaves needs checking on the
-  device.** Expect slightly higher Wi-Fi latency while a phone is connected.
-- **Aurora boards.** Kilter, Tension and MoonBoard keep their own adapters and,
-  on iOS, their own native Bluetooth manager. The Spraywall transport only uses
-  the shared `getBleManager()` for its own device id: it never stops another
-  connection, and it scans only when the climber taps "Find Bluetooth
-  controller" or when a route needs a controller and none is stored (a few
-  seconds). ble-plx has one scan slot, so a Spraywall scan started while the
-  board picker is scanning would replace that scan; the two are on different
-  screens.
+Tests pin this in `board-device-filter.test.ts`, `quickstart-scan-device.test.ts`
+and `advertised-identity.test.ts`. The Spraywall scan (`Find Bluetooth
+controller`) is unfiltered and keeps names starting with
+`SPRAY_LED_CONTROLLER_NAME_PREFIX`, the way the pickers match Kilter-built boxes
+by name.
 
-## 6. Memory and flash budget on the GL-C-015WL-D
+## 5. No pairing
 
-| Item | Known | Source |
-| --- | --- | --- |
-| SoC | ESP32 (classic, dual-core 240 MHz), which has BLE 4.2 | Retailer spec pages (see README) |
-| Module, flash size, PSRAM | **Unknown**: not published. Most ESP32 WLED controllers carry 4 MB flash and no PSRAM | Needs `esptool.py flash_id` or WLED's Info page |
-| Shipped WLED version | **Unknown**: listings say only "WLED pre-installed" | Check Info in the WLED UI |
-| Partition layout | **Unknown** for the factory image | Read with `esptool.py read_flash 0x8000 0xc00` |
+Any phone in range can connect and light the Spraywall, as with a Kilter board in
+a gym. The Nordic UART characteristics need no encryption, and there is no
+bond, passkey or token. Over Bluetooth there is only LED lighting; the
+controller's settings, Wi-Fi and firmware updates stay on its own setup page
+(its Wi-Fi access point or the Spraywall's Wi-Fi) or the USB cable.
 
-Estimates, **to be measured**: NimBLE-Arduino adds roughly 200–350 KB of flash
-and 40–70 KB of heap (controller + host, one connection). A WLED 0.15 ESP32
-build is about 1.3 MB; with WLED's 4 MB layout (two ~1.5 MB app slots) there is
-little margin, so the override env drops a few unused features. If the factory
-partition table has smaller app slots, OTA will refuse the image and only a USB
-flash with WLED's layout works. Heap: WLED shows free heap on its Info page;
-keep at least ~40 KB free with the LED count of the Spraywall.
+One phone at a time: the firmware stops advertising while a phone is connected
+and starts again when it leaves. The app lets go after 60 s without writes, so
+the next climber's phone can connect. Climbers on the Wi-Fi path are unaffected.
 
-## 7. Files
+Bluetooth ids stay on the phone (iOS gives every phone a different id for the
+same peripheral): `sprayWallLedBleDevice:<wall>`, erased with the rest of the
+Spraywall LED copy. The server stores only `controller_type = 'ble'`
+(`controller_type` is text, so no migration). A phone with no stored controller
+that sends a climb uses the only controller advertising nearby and remembers
+it; with none or several, lighting fails with the usual toast.
 
-- `packages/shared/led-controller/src/wled-ble-protocol.ts`: frames, UUIDs.
-- `packages/shared/led-controller/src/wled-ble.ts`: the driver and its
-  transport interface; `registerWledBleTransport`.
-- `packages/mobile/src/lib/spray/spray-led-ble-transport.ts`: the ble-plx
-  transport, scan and idle disconnect.
-- `packages/mobile/src/lib/spray/spray-led-ble-transport-loader.ts`: registers
-  the transport as a lazy import, so ble-plx loads only for a Bluetooth
-  Spraywall.
+## 6. No Wi-Fi network
+
+The Kilter build starts Bluetooth only once Wi-Fi has connected. The Spraywall
+build starts it **at boot**, whatever Wi-Fi does:
+
+- **No saved Wi-Fi**: the firmware opens its setup access point
+  `Boardsesh-Setup` (open, captive portal to the setup page at 192.168.4.1) and
+  keeps it up. Bluetooth runs beside it on the shared 2.4 GHz radio (ESP-IDF
+  software coexistence).
+- **Saved Wi-Fi that is gone**: it keeps retrying the saved network and does
+  not open the access point by itself (current board-controller behaviour);
+  Bluetooth still works. To reach the setup page then, clear Wi-Fi over USB or
+  bring the network back.
+- **Recommended for a Bluetooth-only gym**: leave Wi-Fi unconfigured. Setup,
+  brightness and firmware updates (`/api/firmware/upload` on the setup page)
+  then go through `Boardsesh-Setup` or the USB cable. The access point is open,
+  as the Kilter build's is; anyone who joins it can reach the setup page.
+
+## 7. Range, sharing, coexistence with boards
+
+- Range: BLE indoors is typically 5–15 m; **needs measuring** on the Spraywall.
+- Kilter/Tension/MoonBoard connections are untouched: the Spraywall transport uses
+  the shared `getBleManager()` only for its own device id and never stops
+  another connection. ble-plx has one scan slot, so a Spraywall scan started
+  while a board picker is scanning would replace that scan; they live on
+  different screens.
+
+## 8. Files
+
+- `packages/shared/ble-protocol/src/aurora.ts`: `getAuroraV3LedPacket`.
+- `packages/shared/ble-protocol/src/advertised-identity.ts`:
+  `SPRAY_LED_CONTROLLER_NAME_PREFIX`, `isSprayLedControllerName`.
+- `packages/shared/led-controller/src/ble.ts`: the `ble` driver.
+- `packages/mobile/src/lib/spray/spray-led-ble-transport.ts` (+ `-loader.ts`):
+  the ble-plx transport, name scan and idle disconnect, loaded only for a
+  Bluetooth Spraywall.
 - `packages/mobile/src/lib/spray/spray-wall-led-ble-device.ts`: the phone's
   chosen controller per Spraywall.
-- `firmware/wled-usermod-boardsesh-ble/`: the usermod, build override, README.
+- `embedded/projects/board-controller` env `gledopto-c015-spraywall`, and the
+  `advertiseAuroraService` option in `embedded/libs/nordic-uart-ble`.
