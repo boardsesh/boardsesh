@@ -9,6 +9,7 @@ import {
   parseBoardTypeFromDeviceName,
   isKilterBuiltBox,
   getAuroraBluetoothPacket,
+  getAuroraV3LedPacket,
 } from '../aurora';
 import { MESSAGE_BODY_MAX_LENGTH } from '../transport';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
@@ -382,5 +383,50 @@ describe('getAuroraBluetoothPacket allLedsDark', () => {
     // The same route at a size the ladder can light stays writable.
     const sparse = toFlatFrames('p1r43p2r43,"p3r43', 'kilter');
     expect(getAuroraBluetoothPacket(sparse, { 1: 1, 2: 2, 3: 3 }, 'kilter', 2).allLedsDark).toBe(false);
+  });
+});
+
+const hex = (bytes: Uint8Array) => [...bytes].map((value) => value.toString(16).padStart(2, '0')).join(' ');
+
+/** The Aurora v3 vectors in docs/spray-wall-led-ble.md, byte for byte. */
+describe('getAuroraV3LedPacket', () => {
+  it('clears with the same empty ONLY message as an Aurora board', () => {
+    expect(hex(getAuroraV3LedPacket([]))).toBe('01 01 ab 02 54 03');
+    expect(getAuroraV3LedPacket([])).toEqual(getAuroraBluetoothPacket('', {}, 'kilter', 3).packet);
+  });
+
+  it('encodes LED indices with 16-bit positions and 3-3-2 colours', () => {
+    const packet = getAuroraV3LedPacket([
+      { position: 10, color: [255, 0, 0] },
+      { position: 11, color: [255, 0, 0] },
+      { position: 20, color: [0, 255, 0] },
+    ]);
+    expect(hex(packet)).toBe('01 0a a6 02 54 0a 00 e0 0b 00 e0 14 00 1c 03');
+    expect(hex(getAuroraV3LedPacket([{ position: 300, color: [0, 0, 255] }]))).toBe('01 04 7b 02 54 2c 01 03 03');
+    expect(hex(getAuroraV3LedPacket([{ position: 0, color: [255, 255, 255] }]))).toBe('01 04 ac 02 54 00 00 ff 03');
+  });
+
+  it('matches the placement encoder for the same LEDs', () => {
+    const viaPlacements = getAuroraBluetoothPacket('p1r42', { 1: 7 }, 'kilter', 3).packet;
+    // Kilter role 42 is the green start colour, 00FF00.
+    expect(getAuroraV3LedPacket([{ position: 7, color: [0, 255, 0] }])).toEqual(viaPlacements);
+  });
+
+  it('splits into FIRST and LAST messages past 84 LEDs, each with a valid checksum', () => {
+    const leds = Array.from({ length: 85 }, (_, position) => ({ position, color: [255, 255, 255] as const }));
+    const packet = [...getAuroraV3LedPacket(leds)];
+    const firstLength = packet[1];
+    expect(firstLength).toBe(1 + 84 * 3);
+    expect(packet[4]).toBe(82); // 'R'
+    const first = packet.slice(4, 4 + firstLength);
+    expect(packet[2]).toBe(checksum(first));
+    const second = packet.slice(4 + firstLength + 1);
+    expect(second.slice(0, 4)).toEqual([1, 4, checksum(second.slice(4, 8)), 2]);
+    expect(second[4]).toBe(83); // 'S'
+  });
+
+  it('refuses positions and colours that do not fit', () => {
+    expect(() => getAuroraV3LedPacket([{ position: 70000, color: [0, 0, 0] }])).toThrow(RangeError);
+    expect(() => getAuroraV3LedPacket([{ position: 1, color: [256, 0, 0] }])).toThrow(RangeError);
   });
 });

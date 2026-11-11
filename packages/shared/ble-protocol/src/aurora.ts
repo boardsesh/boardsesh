@@ -196,6 +196,56 @@ const V2_COMMANDS: CommandBytes = {
   only: V2_PACKET_ONLY,
 };
 
+/**
+ * Pack encoded LEDs into framed messages: each body starts with its command
+ * byte (ONLY for a single message, else FIRST … MIDDLE … LAST) and stays
+ * within MESSAGE_BODY_MAX_LENGTH. No LEDs is the ONLY message with an empty
+ * body: the board's "nothing lit".
+ */
+const packAuroraMessages = (encodedLeds: readonly number[][], cmds: CommandBytes): Uint8Array => {
+  const resultArray: number[][] = [];
+  let tempArray = [cmds.middle];
+  for (const encoded of encodedLeds) {
+    if (tempArray.length + encoded.length > MESSAGE_BODY_MAX_LENGTH) {
+      resultArray.push(tempArray);
+      tempArray = [cmds.middle];
+    }
+    tempArray.push(...encoded);
+  }
+  resultArray.push(tempArray);
+  if (resultArray.length === 1) resultArray[0][0] = cmds.only;
+  else {
+    resultArray[0][0] = cmds.first;
+    resultArray[resultArray.length - 1][0] = cmds.last;
+  }
+  return Uint8Array.from(resultArray.flatMap(wrapBytes));
+};
+
+/** One LED by index on the cable and its RGB colour. */
+export type AuroraV3Led = { position: number; color: readonly [number, number, number] };
+
+const hexByte = (value: number) => value.toString(16).padStart(2, '0');
+
+/**
+ * The API v3 packet for LEDs given directly by position and RGB, for
+ * controllers that have no Aurora placements (a Spraywall's WLED controller).
+ * Same framing, command bytes and 3-3-2 colour as `getAuroraBluetoothPacket`;
+ * no LEDs is its "clear" packet.
+ */
+export const getAuroraV3LedPacket = (leds: readonly AuroraV3Led[]): Uint8Array =>
+  packAuroraMessages(
+    leds.map(({ position, color }) => {
+      if (!Number.isInteger(position) || position < 0 || position > 0xffff) {
+        throw new RangeError(`LED position ${position} does not fit 16 bits`);
+      }
+      if (color.some((channel) => !Number.isInteger(channel) || channel < 0 || channel > 255)) {
+        throw new RangeError('LED colour channels must be 0–255');
+      }
+      return encodePositionAndColorV3(position, color.map(hexByte).join(''));
+    }),
+    V3_COMMANDS,
+  );
+
 export type BluetoothPacketResult = {
   packet: Uint8Array;
   /** Placements in frames with no LED position for this board size */
@@ -327,9 +377,8 @@ export const getAuroraBluetoothPacket = (
   // Compute v2 power scale (v3 doesn't need it)
   const v2Scale = isV2 ? computeV2Scale(ledEntries, getLedsPerHold(boardName)) : 1;
 
-  // Build message parts
-  const resultArray: number[][] = [];
-  let tempArray = [cmds.middle];
+  // Encoded LEDs, packed into messages below.
+  const encodedLeds: number[][] = [];
   let ledsWritten = 0;
   // LEDs whose encoded bytes carry at least one non-zero colour bit. When this
   // stays at 0 for a packet that DID write LEDs, the board receives a full,
@@ -349,11 +398,7 @@ export const getAuroraBluetoothPacket = (
       continue;
     }
 
-    if (tempArray.length + encoded.length > MESSAGE_BODY_MAX_LENGTH) {
-      resultArray.push(tempArray);
-      tempArray = [cmds.middle];
-    }
-    tempArray.push(...encoded);
+    encodedLeds.push(encoded);
     ledsWritten++;
     // Byte layout, per `encodePositionAndColorV2` / `encodePositionAndColorV3`
     // above: v2 emits [posLo, (r<<6)|(g<<4)|(b<<2)|posHi], so colour is bits
@@ -378,15 +423,8 @@ export const getAuroraBluetoothPacket = (
     };
   }
 
-  resultArray.push(tempArray);
-  if (resultArray.length === 1) resultArray[0][0] = cmds.only;
-  else {
-    resultArray[0][0] = cmds.first;
-    resultArray[resultArray.length - 1][0] = cmds.last;
-  }
-
   return {
-    packet: Uint8Array.from(resultArray.flatMap(wrapBytes)),
+    packet: packAuroraMessages(encodedLeds, cmds),
     skippedPositionCount,
     skippedRoleCount,
     totalPlacements,
