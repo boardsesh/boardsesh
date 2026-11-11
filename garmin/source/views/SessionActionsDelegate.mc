@@ -6,12 +6,15 @@ using Toybox.Lang;
 //   * Switch session    -> re-query mySessions and show the picker
 //   * End activity      -> ExitConfirm
 class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
+    private var _context;
 
     function initialize() {
         Menu2InputDelegate.initialize();
+        _context = TokenStore.snapshot();
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
+        if (!TokenStore.current(_context)) { return; }
         var id = item.getId();
 
         if (id == :resend) {
@@ -31,7 +34,8 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
         }
     }
 
-    function onResend(code as Lang.Number, data) as Void {
+    function onResend(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (code >= 200 && code < 300) {
             Toast.show(WatchUi.loadResource(Rez.Strings.Resent));
         } else {
@@ -39,7 +43,8 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
         }
     }
 
-    function onSessions(code as Lang.Number, data) as Void {
+    function onSessions(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (code == 401) {
             return;
         }
@@ -47,6 +52,7 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
             Router.toNoSession();
             return;
         }
+        AppState.authContext = origin;
         var active = AppState.activeSessions(data);
         if (active.size() == 0) {
             Router.toNoSession();
@@ -57,6 +63,7 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     function onBack() as Void {
+        if (!TokenStore.current(_context)) { return; }
         WatchUi.popView(WatchUi.SLIDE_DOWN);
     }
 }

@@ -30,6 +30,6 @@ module BuildConfig {
     // trust our local index for this long before the server index wins.
     const OPTIMISTIC_WINDOW_MS = 1500;
 
-    // Bounded offline tick queue (drop-oldest when full).
+    // Bounded owned tick queue (refuse new logs when full).
     const TICK_QUEUE_MAX = 25;
 }

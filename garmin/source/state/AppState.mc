@@ -6,6 +6,8 @@ using Toybox.Lang;
 // /api/session/state and the navigation generation used to reject stale poll
 // callbacks while a navigate + authoritative refresh is in flight.
 module AppState {
+    // Assigned from the admitted response origin, never from global auth after a reply.
+    var authContext = null;
     // Lang.String or Null — the attached multiplayer session id.
     var sessionId = null;
     // Lang.String or Null — human label for the session (from mySessions).

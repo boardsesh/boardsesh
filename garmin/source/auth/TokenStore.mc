@@ -1,45 +1,95 @@
-using Toybox.Application;
 using Toybox.Lang;
 
-// Persisted auth tokens for the mobile JWT flow.
-//
-// NOTE: Application.Storage is NOT a secure enclave — values sit in the app's
-// object store in plaintext. These are native-session credentials, not a
-// watch-only permission scope. Treat a paired watch as signed into the account.
-// Refresh tokens are single-use and rotated on refresh; see the shared-watch
-// security notes in README.md.
+// Credentials, verified owner, scope and revision are ONE storage value.
+// Application.Storage is plaintext, not a secure enclave. Keep watch access
+// private. Storage failure never publishes a new token in memory.
 module TokenStore {
-    const KEY_JWT     = "bs.jwt";
+    const KEY = "bs.auth.v2";
+    const KEY_JWT = "bs.jwt";
     const KEY_REFRESH = "bs.refresh";
-    const KEY_EXP     = "bs.exp";
+    const KEY_EXP = "bs.exp";
+    var _blocked = false;
+
+    function snapshot() {
+        if (_blocked) { return null; }
+        try {
+            var stored = WatchStore.read(KEY);
+            if (stored != null) { return AuthState.valid(stored) ? stored : null; }
+            var migrated = AuthState.bootstrap(WatchStore.read(KEY_JWT),
+                WatchStore.read(KEY_REFRESH), WatchStore.read(KEY_EXP));
+            // Once V2 exists, legacy keys are NEVER consulted again. Legacy
+            // queue ownership is deliberately unrelated to this migration.
+            WatchStore.write(KEY, migrated);
+            return migrated;
+        } catch (exception) {
+            return null;
+        }
+    }
+
+    function current(captured) as Lang.Boolean {
+        return AuthState.sameScope(captured, snapshot());
+    }
+
+    function currentRevision(captured) as Lang.Boolean {
+        return AuthState.sameRevision(captured, snapshot());
+    }
+
+    function replace(captured, next) as Lang.Boolean {
+        if (!AuthState.valid(next) || !currentRevision(captured)) { return false; }
+        try {
+            WatchStore.write(KEY, next);
+            return true;
+        } catch (exception) {
+            return false;
+        }
+    }
 
     function jwt() as Lang.String or Null {
-        return Application.Storage.getValue(KEY_JWT);
+        var state = snapshot();
+        return AuthState.canUseAccess(state) ? state["jwt"] : null;
     }
 
     function refreshToken() as Lang.String or Null {
-        return Application.Storage.getValue(KEY_REFRESH);
+        var state = snapshot();
+        return state != null && (AuthState.statusIs(state, "active") || AuthState.statusIs(state, "bootstrap")) ? state["refresh"] : null;
     }
 
     function expiresAt() as Lang.String or Null {
-        return Application.Storage.getValue(KEY_EXP);
+        var state = snapshot();
+        return state != null ? state["expires"] : null;
     }
 
     function hasTokens() as Lang.Boolean {
-        return Application.Storage.getValue(KEY_JWT) != null;
+        var state = snapshot();
+        return AuthState.canUseAccess(state) || AuthState.statusIs(state, "bootstrap");
     }
 
-    // Persist a fresh token triple. Callers MUST store the rotated pair BEFORE
-    // issuing another request that could 401 again (single-use refresh tokens).
-    function store(jwtValue as Lang.String, refreshValue as Lang.String, expValue as Lang.String) as Void {
-        Application.Storage.setValue(KEY_JWT, jwtValue);
-        Application.Storage.setValue(KEY_REFRESH, refreshValue);
-        Application.Storage.setValue(KEY_EXP, expValue);
+    // Persist the tombstone even when already signed out. Failure blocks this
+    // process; a restart sees either the previous complete envelope or tombstone.
+    function clear() as Lang.Boolean {
+        var state = snapshot();
+        var next = AuthState.clear(state);
+        if (replace(state, next)) { return true; }
+        _blocked = true;
+        return false;
     }
 
-    function clear() as Void {
-        Application.Storage.deleteValue(KEY_JWT);
-        Application.Storage.deleteValue(KEY_REFRESH);
-        Application.Storage.deleteValue(KEY_EXP);
+    // Pair attempts invalidate every prior login/request before network I/O.
+    function beginPairing() {
+        if (!clear()) { return null; }
+        return snapshot();
+    }
+
+    function acceptPair(captured, response) as Lang.Boolean {
+        return replace(captured, AuthState.accept(captured, response, true));
+    }
+
+    function beginRotation(captured) {
+        var pending = AuthState.beginRotation(captured);
+        return replace(captured, pending) ? pending : null;
+    }
+
+    function acceptRotation(captured, response) as Lang.Boolean {
+        return replace(captured, AuthState.accept(captured, response, false));
     }
 }

@@ -32,13 +32,16 @@ class SessionPickerView extends WatchUi.Menu2 {
 
 class SessionPickerDelegate extends WatchUi.Menu2InputDelegate {
     private var _view as SessionPickerView;
+    private var _context;
 
     function initialize(view as SessionPickerView) {
         Menu2InputDelegate.initialize();
         _view = view;
+        _context = AppState.authContext;
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
+        if (!TokenStore.current(_context)) { return; }
         // MenuItem ids are the backing-array indexes we set in the constructor;
         // getId() is typed Object?, so narrow it back to the Number sessionAt wants.
         var session = _view.sessionAt(item.getId() as Lang.Number);
@@ -47,6 +50,7 @@ class SessionPickerDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     function onBack() as Void {
+        if (!TokenStore.current(_context)) { return; }
         // Back out of the picker to the splash (which re-resolves).
         Router.toLoading();
     }

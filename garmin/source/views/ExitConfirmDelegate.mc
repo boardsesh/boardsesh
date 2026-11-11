@@ -10,6 +10,7 @@ using Toybox.Lang;
 // ClimbView is the root view, so leaving it exits the app. We flush any pending
 // ticks first (best-effort) and exit when the flush settles.
 class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
+    private var _context;
     private var _flusher as TickFlusher or Null;
     // Set once we start the async flush. Blocks a second Save/Discard (which
     // would spawn a duplicate TickFlusher — duplicate saveTick requests)
@@ -18,11 +19,13 @@ class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
 
     function initialize() {
         Menu2InputDelegate.initialize();
+        _context = TokenStore.snapshot();
         _flusher = null;
         _submitting = false;
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
+        if (!TokenStore.current(_context)) { return; }
         if (_submitting) {
             return;   // a flush is already running; ignore repeat selects
         }
@@ -47,10 +50,15 @@ class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     function onFlushed() as Void {
-        System.exit();
+        _submitting = false;
+        if (!TokenStore.current(_context)) { return; }
+        exitProcess();
     }
 
+    function exitProcess() as Void { System.exit(); }
+
     function onBack() as Void {
+        if (!TokenStore.current(_context)) { return; }
         if (_submitting) {
             return;   // committing/exiting; swallow the back press
         }

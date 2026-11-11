@@ -9,10 +9,12 @@ using Toybox.Lang;
 // process-wide Services.activity singleton (started idempotently on show, kept
 // running across view transitions). Inputs are handled by ClimbDelegate.
 class ClimbView extends WatchUi.View {
+    private var _context;
     private var _poller as PollController;
 
     function initialize() {
         View.initialize();
+        _context = AppState.authContext;
         _poller = new PollController(method(:onStateChanged));
     }
 
@@ -20,6 +22,7 @@ class ClimbView extends WatchUi.View {
     }
 
     function onShow() as Void {
+        if (!TokenStore.current(_context)) { return; }
         var sessionId = AppState.sessionId;
         if (!(sessionId instanceof Lang.String)) {
             Router.toLoading();
@@ -39,6 +42,7 @@ class ClimbView extends WatchUi.View {
 
     // Invoked by PollController when the visible state changed.
     function onStateChanged() as Void {
+        if (!TokenStore.current(_context)) { return; }
         WatchUi.requestUpdate();
     }
 
@@ -158,6 +162,7 @@ class ClimbView extends WatchUi.View {
 }
 
 class ClimbDelegate extends WatchUi.BehaviorDelegate {
+    private var _context;
     // Per-verb debounce timestamps (ms). BACK=attempt is a twitchy button;
     // guard against accidental double-logs.
     private var _lastAttemptMs as Lang.Number = 0;
@@ -166,6 +171,7 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
 
     function initialize() {
         BehaviorDelegate.initialize();
+        _context = AppState.authContext;
     }
 
     // UP button / swipe-up = previous.
@@ -203,6 +209,7 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
 
     // MENU / long-press = session actions (Re-send / Switch / End).
     function onMenu() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }
         WatchUi.pushView(Menus.buildActionsMenu(), new SessionActionsDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
@@ -219,8 +226,9 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
     // like navigation. TickLogger reacts to the async save result (offline
     // queue on a retryable failure, a toast on a permanent rejection).
     private function _log(kind as Lang.String) as Void {
+        if (!TokenStore.current(_context)) { return; }
         var state = AppState.state;
-        if (AppState.navigationPending || state == null || state["climb"] == null ||
+        if (!TokenStore.current(AppState.authContext) || AppState.navigationPending || state == null || state["climb"] == null ||
                 AppState.sessionId == null) {
             Feedback.boundary();   // nothing to log
             return;
@@ -243,12 +251,19 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
         var gradeVal = climb["difficulty"];
         var gradeLabel = (gradeVal == null) ? null : gradeVal.toString();
 
-        var status = "attempt";
+        var flashEligible = !kind.equals("attempt") && SessionLog.isFlashEligible(uuid);
+        var status = kind.equals("attempt") ? "attempt" : (flashEligible ? "flash" : "send");
+        var input = BsEndpoints.saveTickInput(
+            state, AppState.sessionId, status, 1, TimeUtil.nowIso(), Uuid.generate());
+        if (!new TickLogger(input).submit()) {
+            Feedback.error();
+            Toast.show(WatchUi.loadResource(Rez.Strings.LogFailed));
+            return;
+        }
         if (kind.equals("attempt")) {
             SessionLog.incAttempt(uuid);
             Feedback.attempt();
         } else {
-            var flashEligible = SessionLog.isFlashEligible(uuid);
             if (flashEligible) {
                 status = "flash";
                 Feedback.flash();
@@ -271,17 +286,11 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
             : SessionLog.attemptsFor(uuid) + 1;
         Services.activity.recordAttempt(status, gradeLabel, state["angle"], attemptNum);
 
-        // Each tick carries attemptCount = 1 (one logged effort). The per-climb
-        // effort total lives in SessionLog + the FIT lap fields; keeping the tick
-        // at 1 preserves the existing backend saveTick contract (each attempt/send
-        // press is its own tick, exactly as the previous log menu sent them).
-        var input = BsEndpoints.saveTickInput(
-            state, AppState.sessionId, status, 1, TimeUtil.nowIso(), Uuid.generate());
-        new TickLogger(input).submit();
         WatchUi.requestUpdate();
     }
 
     private function _navigate(action as Lang.String) as Void {
+        if (!TokenStore.current(_context)) { return; }
         var state = AppState.state;
         if (AppState.navigationPending || state == null || AppState.sessionId == null) {
             Feedback.boundary();
@@ -305,7 +314,8 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
         Services.client.navigate(AppState.sessionId, action, method(:onNavResult));
     }
 
-    function onNavResult(code as Lang.Number, data) as Void {
+    function onNavResult(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (!AppState.navigationPending ||
                 !AppState.acceptsStateGeneration(_navGeneration)) {
             return;
@@ -333,7 +343,8 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
         Services.client.fetchState(AppState.sessionId, method(:onNavState));
     }
 
-    function onNavState(code as Lang.Number, data) as Void {
+    function onNavState(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (!AppState.navigationPending ||
                 !AppState.acceptsStateGeneration(_navGeneration)) {
             return;

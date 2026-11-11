@@ -188,7 +188,9 @@ class PollStateResponse {
         _generation = generation;
     }
 
-    function onResult(code as Lang.Number, data) as Void {
+    function onResult(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
+        AppState.authContext = origin;
         _controller.onStateForGeneration(_generation, code, data);
     }
 }

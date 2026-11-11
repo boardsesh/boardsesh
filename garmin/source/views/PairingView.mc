@@ -22,6 +22,8 @@ class PairingView extends WatchUi.View {
     const CHARSET = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
     const CODE_LEN = 8;
 
+    private var _attempt = null;
+    private var _viewScope;
     private var _entered as Lang.String;
     private var _index as Lang.Number;          // candidate index into CHARSET
     private var _submitting as Lang.Boolean;
@@ -29,6 +31,7 @@ class PairingView extends WatchUi.View {
 
     function initialize() {
         View.initialize();
+        _viewScope = TokenStore.snapshot();
         _entered = "";
         _index = 0;
         _submitting = false;
@@ -41,18 +44,21 @@ class PairingView extends WatchUi.View {
     // ---- Input handlers (called by PairingDelegate) -------------------------
 
     function charUp() as Void {
+        if (!TokenStore.current(_viewScope)) { return; }
         if (_submitting) { return; }
         _index = (_index + CHARSET.length() - 1) % CHARSET.length();
         WatchUi.requestUpdate();
     }
 
     function charDown() as Void {
+        if (!TokenStore.current(_viewScope)) { return; }
         if (_submitting) { return; }
         _index = (_index + 1) % CHARSET.length();
         WatchUi.requestUpdate();
     }
 
     function confirm() as Void {
+        if (!TokenStore.current(_viewScope)) { return; }
         if (_submitting) { return; }
         _error = false;
         _entered = _entered + _candidate();
@@ -64,6 +70,7 @@ class PairingView extends WatchUi.View {
     }
 
     function deleteOrExit() as Void {
+        if (!TokenStore.current(_viewScope)) { return; }
         if (_submitting) { return; }
         if (_entered.length() > 0) {
             _entered = _entered.substring(0, _entered.length() - 1);
@@ -77,19 +84,22 @@ class PairingView extends WatchUi.View {
     // ---- Submit -------------------------------------------------------------
 
     private function _submit() as Void {
+        if (!TokenStore.current(_viewScope)) { return; }
+        if (Services.activity != null && Services.activity.isRecording()) { Services.activity.stopAndSave(); }
+        _attempt = TokenStore.beginPairing();
+        if (_attempt == null) { _viewScope = null; _error = true; return; }
+        _viewScope = _attempt;
+        AppState.attachSession(null, null);
+        AppState.authContext = null;
+        SessionLog.reset();
         _submitting = true;
         Services.client.pair(_entered, method(:onPairResult));
     }
 
-    function onPairResult(code as Lang.Number, data) as Void {
-        if (code >= 200 && code < 300 && data != null && data["jwt"] != null) {
-            TokenStore.store(data["jwt"], data["refreshToken"], data["expiresAt"]);
-            // A fresh pairing may be a DIFFERENT account than the one whose ticks
-            // are still queued locally (shared / re-paired watch). Drop them so
-            // account A's ticks can't be flushed under account B's JWT, and clear
-            // the per-climb log so account A's pips/summary don't bleed through.
-            TickQueue.clear();
-            SessionLog.reset();
+    function onPairResult(code as Lang.Number, data, origin) as Void {
+        _submitting = false;
+        if (code == BsResponse.STALE || !AuthState.sameRevision(_attempt, origin) || !TokenStore.currentRevision(_attempt)) { return; }
+        if (code >= 200 && code < 300 && TokenStore.acceptPair(_attempt, data)) {
             Router.toLoading();
             return;
         }
@@ -113,6 +123,18 @@ class PairingView extends WatchUi.View {
         dc.clear();
         var cx = Theme.cx;
         var cy = Theme.cy;
+
+        // Invalid/unavailable storage is not an empty account. Explain the
+        // refusal without overwriting data, adopting credentials or clearing
+        // the tombstone. A later restart may retry a transient storage failure;
+        // corrupt persisted data still needs explicit recovery.
+        if (_viewScope == null) {
+            Theme.textC(dc, cx, cy - 16, Theme.metaFont(), Theme.WARN,
+                WatchUi.loadResource(Rez.Strings.PairStorageUnavailable));
+            Theme.textC(dc, cx, cy + 16, Theme.metaFont(), Theme.DIM,
+                WatchUi.loadResource(Rez.Strings.PairStoragePaused));
+            return;
+        }
 
         Theme.textC(dc, cx, cy - 52, Theme.metaFont(), Theme.DIM,
             WatchUi.loadResource(Rez.Strings.EnterCode));

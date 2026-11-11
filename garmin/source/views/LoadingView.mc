@@ -32,7 +32,8 @@ class LoadingView extends WatchUi.View {
             WatchUi.loadResource(Rez.Strings.Loading));
     }
 
-    function onSessions(code as Lang.Number, data) as Void {
+    function onSessions(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (code == 401) {
             // BsClient is refreshing / routing to pairing.
             return;
@@ -43,6 +44,7 @@ class LoadingView extends WatchUi.View {
             return;
         }
 
+        AppState.authContext = origin;
         var active = AppState.activeSessions(data);
         if (active.size() == 0) {
             Router.toNoSession();
@@ -61,11 +63,14 @@ class LoadingView extends WatchUi.View {
 }
 
 class LoadingDelegate extends WatchUi.BehaviorDelegate {
+    private var _context;
     function initialize() {
         BehaviorDelegate.initialize();
+        _context = TokenStore.snapshot();
     }
 
     function onBack() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }
         // System.exit() does not return, so no `return` follows (it'd be dead code).
         System.exit();
     }
