@@ -168,7 +168,12 @@ describe('AUTH_CUTOFF_ENFORCEMENT', () => {
 });
 
 describe('staged writers under observe', () => {
-  const authority = { CURRENT_STORE_AUTH_PROJECTION_ID: 'projection-1', CURRENT_STORE_AUTH_WRITER_EPOCH: '1' };
+  const authority = {
+    CURRENT_STORE_AUTH_PROJECTION_ID: 'projection-1',
+    CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+    // Every staged mode needs the deleted-address key (#7418), or configuration refuses first.
+    CURRENT_STORE_DELETED_EMAIL_KEY: 'cutoff-test-deleted-email-key-0123456789abcdef',
+  };
 
   it('the backend refuses to start with any staged writer mode on', () => {
     for (const modeName of STAGED_WRITER_MODE_ENV) {
@@ -197,7 +202,9 @@ describe('staged writers under observe', () => {
 
   it('every staged command refuses its authority under observe', () => {
     expect(currentStoreAuthorityConfiguration(authority).expectedWriterEpoch).toBe(1);
-    expect(() => currentStoreAuthorityConfiguration({ ...authority, AUTH_CUTOFF_ENFORCEMENT: 'observe' })).toThrow();
+    expect(() => currentStoreAuthorityConfiguration({ ...authority, AUTH_CUTOFF_ENFORCEMENT: 'observe' })).toThrow(
+      'Staged auth writers need cutoff enforcement',
+    );
     expect(() => currentStoreAuthorityConfiguration({ ...authority, AUTH_CUTOFF_ENFORCEMENT: 'bogus' })).toThrow();
   });
 });
