@@ -28,6 +28,8 @@ const configured: SprayWallLedSettings = {
   version: 1,
   enabled: true,
   controller: { type: 'wled', url: 'http://wall.local' },
+  brightness: 64,
+  autoOffMinutes: 0,
 };
 
 function deferred<T>() {
@@ -59,6 +61,8 @@ describe('the phone copy of a wall\u2019s LED settings', () => {
       version: 1,
       enabled: false,
       controller: { type: 'wled', url: '' },
+      brightness: 64,
+      autoOffMinutes: 0,
     });
     expect(preferences.get).toHaveBeenCalledWith('sprayWallLedSettings:wall-one', { strictParsing: true });
     expect(preferences.set).not.toHaveBeenCalled();

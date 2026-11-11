@@ -19,7 +19,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    **Keep address anyway** to save it. Invalid URL syntax, or an address that is
    not on a local network, must be corrected.
 4. After a successful check, **Light all LEDs** sets the entire configured strip
-   to solid white at 25% brightness. **Turn LEDs off** ends the test.
+   to solid white at the wall's brightness. **Turn LEDs off** ends the test.
+   **Brightness** (5–100 %, stored as WLED's 1–255, 25 % by default) and **Turn
+   off automatically** (never, 15, 30, 60 or 120 minutes) save to the wall with
+   the rest of the setup (`brightness`, `autoOffMinutes` on
+   `spray_wall_led_setups`), so every phone lights it the same way. A change
+   applies from the next lighting. Auto-off uses WLED's nightlight in instant
+   mode, so the controller switches the wall off by itself even when the phone
+   is asleep or gone, and each new route or test restarts the countdown.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
    For offset grids choose whether the top row starts inset. Match four rings to
    the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50 rows and up to 99 offset columns). The preview updates as the rings move. Count every distinct vertical position for offset columns: 8 + 7 holes means

@@ -3,7 +3,12 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
-import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  DEFAULT_LED_BRIGHTNESS,
+  getLedControllerDriver,
+  LedControllerError,
+  normalizeLocalControllerUrl,
+} from '@boardsesh/led-controller';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,7 +17,32 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
+import { ValueSlider } from '../ValueSlider';
+
+const AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
+const MIN_BRIGHTNESS_PERCENT = 5;
+// The slider shows a percentage; WLED stores brightness as 1–255.
+function brightnessPercent(brightness: number): number {
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round((brightness * 100) / 255 / 5) * 5));
+}
+function brightnessFromPercent(percent: number): number {
+  return Math.max(1, Math.min(255, Math.round((percent * 255) / 100)));
+}
+// The three below run inside the slider's gesture, so they must be worklets.
+function roundBrightnessPercent(raw: number): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round(raw / 5) * 5));
+}
+function brightnessNotch(percent: number): number {
+  'worklet';
+  return Math.round(percent / 25);
+}
+function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, percent + direction * 5));
+}
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
@@ -70,6 +100,17 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     savingRef.current = true;
     try {
       await save({ ...settings, enabled });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  /** Brightness and auto-off save to the wall, so every phone lights it the same way. */
+  async function saveLighting(update: { brightness?: number; autoOffMinutes?: number }) {
+    if (locked || !settings || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await save({ ...settings, ...update });
     } finally {
       savingRef.current = false;
     }
@@ -270,6 +311,36 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                         : t('sprayLed.lightFailed')}
                 </Text>
               ) : null}
+              <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
+              <ValueSlider
+                value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
+                min={MIN_BRIGHTNESS_PERCENT}
+                max={100}
+                round={roundBrightnessPercent}
+                notch={brightnessNotch}
+                format={(percent) => t('sprayLed.brightnessValue', { percent })}
+                accessibilityLabel={t('sprayLed.brightness')}
+                adjust={adjustBrightnessPercent}
+                disabled={locked}
+                onLiveChange={() => undefined}
+                onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.brightnessHint')}
+              </Text>
+              <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
+              <SegmentedControl
+                options={AUTO_OFF_CHOICES.map((minutes) => ({
+                  key: String(minutes),
+                  label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
+                }))}
+                selectedKey={String(settings.autoOffMinutes)}
+                onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
+                accessibilityLabel={t('sprayLed.autoOff')}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.autoOffHint')}
+              </Text>
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

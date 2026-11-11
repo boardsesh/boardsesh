@@ -25,6 +25,8 @@ export function useSprayLedPreviewForSettings(
   const enabled = !loading && settings?.enabled === true;
   const url = settings?.controller.url ?? '';
   const controllerType = settings?.controller.type ?? 'wled';
+  const brightness = settings?.brightness;
+  const autoOffMinutes = settings?.autoOffMinutes;
   const runtime = useRef<PreviewRuntime | null>(null);
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
@@ -43,7 +45,7 @@ export function useSprayLedPreviewForSettings(
     if (!enabled || !url) return;
     let session: LedPreviewSession;
     try {
-      session = createLedPreviewSession(getLedControllerDriver(controllerType), url);
+      session = createLedPreviewSession(getLedControllerDriver(controllerType), url, { brightness, autoOffMinutes });
     } catch {
       return;
     }
@@ -74,7 +76,7 @@ export function useSprayLedPreviewForSettings(
       subscription.remove();
       void session.close().catch(() => undefined);
     };
-  }, [wallUuid, enabled, url, controllerType]);
+  }, [wallUuid, enabled, url, controllerType, brightness, autoOffMinutes]);
 
   const run = useCallback(
     async (

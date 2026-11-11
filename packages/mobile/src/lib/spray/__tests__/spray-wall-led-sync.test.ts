@@ -52,7 +52,13 @@ const LAYOUT_KEY = 'sprayWallTnutLayout:wall-one';
 const UNSENT_SETTINGS = 'sprayWallLedUnsent:settings:wall-one';
 const UNSENT_LAYOUT = 'sprayWallLedUnsent:layout:wall-one';
 
-const local = { version: 1, enabled: true, controller: { type: 'wled', url: 'http://wled.local' } };
+const local = {
+  version: 1,
+  enabled: true,
+  controller: { type: 'wled', url: 'http://wled.local' },
+  brightness: 64,
+  autoOffMinutes: 0,
+};
 
 function layout(photoKey = 'photo-key'): TnutLayout {
   return {
@@ -72,6 +78,8 @@ const rowFor = (overrides: Record<string, unknown> = {}) => ({
   boardUuid: WALL,
   controllerType: 'wled',
   controllerUrl: 'http://wled.local',
+  brightness: 64,
+  autoOffMinutes: 0,
   enabled: true,
   layout: null as unknown,
   updatedAt: '2026-11-09T00:00:00.000Z',
@@ -289,6 +297,8 @@ describe('one-time adoption of a phone-only setup', () => {
       controllerType: 'wled',
       controllerUrl: 'http://wled.local',
       enabled: true,
+      brightness: 64,
+      autoOffMinutes: 0,
       layout: layout(),
     });
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
@@ -391,7 +401,14 @@ describe('saving', () => {
     expect(storage.records.get(UNSENT_SETTINGS)).toBe(true);
     await settle();
     expect(saves()).toEqual([
-      { boardUuid: WALL, controllerType: 'wled', controllerUrl: 'http://wled.local', enabled: true },
+      {
+        boardUuid: WALL,
+        controllerType: 'wled',
+        controllerUrl: 'http://wled.local',
+        enabled: true,
+        brightness: 64,
+        autoOffMinutes: 0,
+      },
     ]);
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(uploadOutcomes).toEqual(['uploaded']);

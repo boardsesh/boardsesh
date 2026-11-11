@@ -45,6 +45,22 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+const lightingControls = vi.hoisted(() => ({
+  slider: null as null | { value: number; onCommit: (value: number) => void },
+  autoOff: null as null | { selectedKey: string; onSelect: (key: string) => void },
+}));
+vi.mock('../../ValueSlider', () => ({
+  ValueSlider: (props: { value: number; onCommit: (value: number) => void }) => {
+    lightingControls.slider = props;
+    return null;
+  },
+}));
+vi.mock('../../SegmentedControl', () => ({
+  SegmentedControl: (props: { selectedKey: string; onSelect: (key: string) => void }) => {
+    lightingControls.autoOff = props;
+    return null;
+  },
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -120,6 +136,8 @@ const savedSettings = (enabled = true, url = ''): SprayWallLedSettings => ({
   version: 1,
   enabled,
   controller: { type: 'wled', url },
+  brightness: 64,
+  autoOffMinutes: 0,
 });
 function deferred<T>() {
   let resolve!: (result: T) => void;
@@ -176,6 +194,21 @@ describe('SprayWallLedSection', () => {
     expect(controller.probe).not.toHaveBeenCalled();
     expect(controller.lightAll).not.toHaveBeenCalled();
     expect(controller.turnOff).not.toHaveBeenCalled();
+  });
+
+  it('saves brightness and auto-off to the wall from the slider and the auto-off choice', async () => {
+    storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    // 64 of 255 shows as 25 %.
+    expect(lightingControls.slider?.value).toBe(25);
+    expect(lightingControls.autoOff?.selectedKey).toBe('0');
+    act(() => lightingControls.slider?.onCommit(50));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toMatchObject({ brightness: 128 }));
+    act(() => lightingControls.autoOff?.onSelect('30'));
+    await waitFor(() =>
+      expect(storage.records.get(settingsKey)).toMatchObject({ brightness: 128, autoOffMinutes: 30 }),
+    );
   });
 
   // iOS asks for Local Network access on the first contact, so that must be a press.

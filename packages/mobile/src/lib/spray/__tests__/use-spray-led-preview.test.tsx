@@ -75,7 +75,7 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
     mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://new.local' } };
     rerender();
-    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local');
+    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local', expect.any(Object));
   });
 
   it('chases in supplied order, at 100ms intervals, then clears', async () => {
