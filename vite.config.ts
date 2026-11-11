@@ -1164,6 +1164,10 @@ export default defineConfig({
         command: 'vp test run --config packages/backend/vite.native-contract.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:auth-authority': {
+        command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
       'test:auth-prototype': {
         command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
         cache: false,
