@@ -1,3 +1,4 @@
+import { isSprayLedControllerName } from '@boardsesh/ble-protocol/advertised-identity';
 import { getAuroraV3LedPacket, type AuroraV3Led } from '@boardsesh/ble-protocol/aurora';
 import { effectiveChunkSizeForMtu, splitMessages } from '@boardsesh/ble-protocol/transport';
 import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
@@ -29,8 +30,13 @@ export interface BleLedLink {
 }
 
 export interface BleLedTransport {
-  /** Connect to a device, or hand back the connection already open to it. */
-  connect(deviceId: string, signal?: AbortSignal): Promise<BleLedLink>;
+  /**
+   * Connect to the controller advertising this exact name, or hand back the
+   * connection already open to it. The platform resolves the name to its own
+   * device id (ids differ per phone) and rejects with `bluetooth-unavailable`
+   * when Bluetooth is off or not allowed.
+   */
+  connect(controllerName: string, signal?: AbortSignal): Promise<BleLedLink>;
 }
 
 export interface BleLedDriverOptions {
@@ -52,21 +58,24 @@ export interface BleLedDriverOptions {
 export const DEFAULT_BLE_LIGHT_ALL_LEDS = 500;
 
 const TARGET_PREFIX = 'ble:';
-const DEVICE_ID = /^[A-Za-z0-9:_-]{1,128}$/u;
 
-/** The controller "address" a Bluetooth wall is driven at: `ble:<device id>`. */
-export function bleControllerTarget(deviceId: string): string {
-  if (!DEVICE_ID.test(deviceId)) throw new LedControllerError('invalid-url');
-  return `${TARGET_PREFIX}${deviceId}`;
+/**
+ * The address a Bluetooth Spraywall is saved and driven at, the same on every
+ * phone: `ble:` and the name its controller advertises, e.g.
+ * `ble:Boardsesh Spraywall 1A2B`. Each phone finds the device by that name.
+ */
+export function bleControllerTarget(controllerName: string): string {
+  if (!isSprayLedControllerName(controllerName)) throw new LedControllerError('invalid-url');
+  return `${TARGET_PREFIX}${controllerName}`;
 }
 
 export function normalizeBleControllerTarget(target: string): string {
-  const trimmed = target.trim();
-  if (!trimmed.startsWith(TARGET_PREFIX)) throw new LedControllerError('invalid-url');
-  return bleControllerTarget(trimmed.slice(TARGET_PREFIX.length));
+  if (!target.startsWith(TARGET_PREFIX)) throw new LedControllerError('invalid-url');
+  return bleControllerTarget(target.slice(TARGET_PREFIX.length));
 }
 
-function deviceIdOf(target: string): string {
+/** The advertised name in a `ble:` address. */
+export function bleControllerName(target: string): string {
   return normalizeBleControllerTarget(target).slice(TARGET_PREFIX.length);
 }
 
@@ -109,7 +118,7 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
   const lightAllLeds = options.lightAllLeds ?? DEFAULT_BLE_LIGHT_ALL_LEDS;
 
   async function connect(target: string, signal?: AbortSignal): Promise<BleLedLink> {
-    const deviceId = deviceIdOf(target);
+    const controllerName = bleControllerName(target);
     let transport: BleLedTransport | null;
     try {
       transport = await options.transport();
@@ -117,17 +126,30 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
       transport = null;
     }
     if (!transport) throw new LedControllerError('unavailable');
-    return withDeadline(() => transport.connect(deviceId, signal), Math.max(timeoutMs, 15_000), signal, 'unavailable');
+    // Connecting may include a name scan and a retry, beyond the per-write timeout.
+    return withDeadline(
+      () => transport.connect(controllerName, signal),
+      Math.max(timeoutMs, 30_000),
+      signal,
+      'unavailable',
+    );
   }
 
-  /** The same chunking the board adapters use: MTU-sized, framing unchanged. */
-  async function send(target: string, leds: readonly AuroraV3Led[], signal?: AbortSignal) {
+  /**
+   * The same chunking the board adapters use: MTU-sized, framing unchanged.
+   * `onWritten` runs once the first chunk reached the controller: from then on
+   * the wall may show something, before that it cannot have changed.
+   */
+  async function send(target: string, leds: readonly AuroraV3Led[], signal?: AbortSignal, onWritten?: () => void) {
     const packet = getAuroraV3LedPacket(leds);
     const link = await connect(target, signal);
     for (const chunk of splitMessages(packet, effectiveChunkSizeForMtu(link.mtu))) {
       await withDeadline(() => link.write(chunk), timeoutMs, signal, 'command-failed');
+      onWritten?.();
     }
   }
+
+  const allWhite = () => Array.from({ length: lightAllLeds }, (_, position) => ({ position, color: white }));
 
   const white = [255, 255, 255] as const;
   const driver: LedControllerDriver = {
@@ -138,17 +160,18 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
       return { name: link.name.trim() || 'Spraywall', version: 'Aurora API v3', ledCount: 0 };
     },
     async lightAll(target, signal) {
-      await send(
-        target,
-        Array.from({ length: lightAllLeds }, (_, position) => ({ position, color: white })),
-        signal,
-      );
+      await send(target, allWhite(), signal);
     },
     async turnOff(target, signal) {
       await send(target, [], signal);
     },
     createPreview(target) {
+      // Only true once a write reached the controller, so a climb that never
+      // connected costs no second connect to "turn off" what never lit.
       let mayBeLit = false;
+      const written = () => {
+        mayBeLit = true;
+      };
       return {
         async show(indices, pixels) {
           const pixelSnapshot = snapshotLedPixels(indices, pixels);
@@ -159,12 +182,10 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
             position,
             color: byIndex.get(position) ?? white,
           }));
-          mayBeLit = true;
-          await send(target, leds);
+          await send(target, leds, undefined, written);
         },
         async lightAll() {
-          mayBeLit = true;
-          await driver.lightAll(target);
+          await send(target, allWhite(), undefined, written);
         },
         async turnOff() {
           if (!mayBeLit) return;

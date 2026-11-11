@@ -228,7 +228,7 @@ const hexByte = (value: number) => value.toString(16).padStart(2, '0');
 
 /**
  * The API v3 packet for LEDs given directly by position and RGB, for
- * controllers that have no Aurora placements (a Spraywall's WLED controller).
+ * controllers that have no Aurora placements (a Spraywall's LED controller).
  * Same framing, command bytes and 3-3-2 colour as `getAuroraBluetoothPacket`;
  * no LEDs is its "clear" packet.
  */

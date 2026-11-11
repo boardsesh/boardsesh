@@ -49,6 +49,11 @@
       "types": "./src/scan-constants.ts",
       "import": "./src/scan-constants.ts",
       "default": "./src/scan-constants.ts"
+    },
+    "./advertised-identity": {
+      "types": "./src/advertised-identity.ts",
+      "import": "./src/advertised-identity.ts",
+      "default": "./src/advertised-identity.ts"
     }
   },
   "scripts": {

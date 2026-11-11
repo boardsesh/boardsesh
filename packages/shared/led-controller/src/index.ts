@@ -8,6 +8,7 @@ export { createLedPreviewSession, type LedPreviewSession } from './preview';
 export { discoverLedControllers, wledScanHosts, type DiscoverOptions, type DiscoveredLedController } from './discovery';
 export { createWledDriver, wledDriver, type WledDriverOptions } from './wled';
 export {
+  bleControllerName,
   bleControllerTarget,
   createBleLedDriver,
   DEFAULT_BLE_LIGHT_ALL_LEDS,

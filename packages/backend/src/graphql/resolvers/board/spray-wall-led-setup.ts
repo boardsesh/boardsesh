@@ -102,6 +102,21 @@ export const sprayWallLedSetupMutations = {
     }
     if (wall.archivedAt != null) throw sprayWallArchivedError();
 
+    // An address sent without its type must still fit the type already saved:
+    // a Bluetooth name on a Wi-Fi setup (or the reverse) reaches no controller.
+    if (controllerType == null && controllerUrl) {
+      const [stored] = await db
+        .select({ controllerType: dbSchema.sprayWallLedSetups.controllerType })
+        .from(dbSchema.sprayWallLedSetups)
+        .where(eq(dbSchema.sprayWallLedSetups.boardId, board.id))
+        .limit(1);
+      if ((stored?.controllerType === 'ble') !== controllerUrl.startsWith('ble:')) {
+        throw new GraphQLError('controllerUrl does not fit the saved controllerType', {
+          extensions: { code: 'BAD_USER_INPUT' },
+        });
+      }
+    }
+
     // An app from before hand-made hold links sends a layout without `holdLeds`.
     // Saving that as is would erase the links a newer phone made, so keep them.
     const sentLinks =

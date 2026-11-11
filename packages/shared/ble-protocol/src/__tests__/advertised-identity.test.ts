@@ -25,11 +25,14 @@ describe('advertised board identity', () => {
 });
 
 describe('Spraywall LED controller identity', () => {
-  it('recognizes the usermod name and nothing a board advertises', () => {
+  it('recognizes exactly the name the Spraywall firmware advertises, and nothing a board does', () => {
     expect(isSprayLedControllerName('Boardsesh Spraywall 1A2B')).toBe(true);
     expect(isSprayLedControllerName('Kilter Board#751737@3')).toBe(false);
     expect(isSprayLedControllerName('MoonBoard A')).toBe(false);
     expect(isSprayLedControllerName(undefined)).toBe(false);
+    expect(isSprayLedControllerName('Boardsesh Spraywall')).toBe(false);
+    expect(isSprayLedControllerName('Boardsesh Spraywall 1a2b')).toBe(false);
+    expect(isSprayLedControllerName(' Boardsesh Spraywall 1A2B')).toBe(false);
   });
 
   it('is never read as a board type', () => {

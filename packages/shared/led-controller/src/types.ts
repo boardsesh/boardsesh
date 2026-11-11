@@ -6,6 +6,8 @@ export type LedControllerErrorCode =
   | 'timeout'
   | 'command-failed'
   | 'invalid-indices'
+  /** Bluetooth is off, or the app may not use it. */
+  | 'bluetooth-unavailable'
   | 'cancelled';
 
 export class LedControllerError extends Error {

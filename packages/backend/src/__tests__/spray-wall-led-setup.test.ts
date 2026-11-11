@@ -267,6 +267,30 @@ describe('saving a wall’s LED setup', () => {
     await expect(read(uuid, OWNER)).resolves.toEqual({ viewerCanEdit: true, setup: null });
   });
 
+  it('saves a Bluetooth controller as the exact name it advertises', async () => {
+    const uuid = await createWall();
+    await save(uuid, OWNER, { enabled: true, controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' });
+    const setup = (await read(uuid, OWNER))?.setup;
+    expect(setup).toMatchObject({ controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' });
+    // Another address on the same Bluetooth setup must be a controller name too.
+    await save(uuid, OWNER, { controllerUrl: 'ble:Boardsesh Spraywall 00FF' });
+    await expect(save(uuid, OWNER, { controllerUrl: 'http://wled.local' })).rejects.toThrow(/controllerType/);
+    expect((await read(uuid, OWNER))?.setup?.controllerUrl).toBe('ble:Boardsesh Spraywall 00FF');
+  });
+
+  it.each([
+    { controllerType: 'ble', controllerUrl: 'http://wled.local' },
+    { controllerType: 'ble', controllerUrl: 'ble:AA:BB:CC:DD:EE:FF' },
+    { controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1a2b' },
+    { controllerType: 'ble', controllerUrl: 'ble:Kilter Board#123456@3' },
+    { controllerType: 'wled', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' },
+    { controllerUrl: 'ble:Boardsesh Spraywall 1A2B' },
+  ])('refuses an address that does not fit its controller type: %j', async (fields) => {
+    const uuid = await createWall();
+    await expect(save(uuid, OWNER, fields)).rejects.toThrow(/controller/);
+    await expect(read(uuid, OWNER)).resolves.toEqual({ viewerCanEdit: true, setup: null });
+  });
+
   it('accepts clearing the address', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, { controllerUrl: 'http://wled.local' });

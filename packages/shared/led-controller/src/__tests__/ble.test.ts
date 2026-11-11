@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAuroraBluetoothPacket, getAuroraV3LedPacket } from '@boardsesh/ble-protocol/aurora';
 import { createLedPreviewSession } from '../preview';
 import { LedControllerError } from '../types';
-import { bleControllerTarget, createBleLedDriver, normalizeBleControllerTarget, type BleLedLink } from '../ble';
+import {
+  bleControllerName,
+  bleControllerTarget,
+  createBleLedDriver,
+  normalizeBleControllerTarget,
+  type BleLedLink,
+} from '../ble';
 
 const hex = (bytes: Uint8Array) => [...bytes].map((value) => value.toString(16).padStart(2, '0')).join(' ');
 
@@ -27,13 +33,22 @@ function fakeController(options: FakeOptions = {}) {
 
 afterEach(() => vi.useRealTimers());
 
-describe('Bluetooth WLED driver', () => {
-  const target = bleControllerTarget('AA:BB:CC:DD:EE:FF');
+describe('Bluetooth Spraywall driver', () => {
+  const target = bleControllerTarget('Boardsesh Spraywall 1A2B');
 
-  it('names targets and refuses anything else', () => {
-    expect(target).toBe('ble:AA:BB:CC:DD:EE:FF');
-    expect(normalizeBleControllerTarget(' ble:5E2C1A40-1234 ')).toBe('ble:5E2C1A40-1234');
-    for (const bad of ['http://wled.local', 'ble:', 'ble:a b', 'ble:../x']) {
+  it('addresses a controller by the exact name it advertises, and refuses anything else', () => {
+    expect(target).toBe('ble:Boardsesh Spraywall 1A2B');
+    expect(normalizeBleControllerTarget('ble:Boardsesh Spraywall 00FF')).toBe('ble:Boardsesh Spraywall 00FF');
+    expect(bleControllerName(target)).toBe('Boardsesh Spraywall 1A2B');
+    for (const bad of [
+      'http://wled.local',
+      'ble:',
+      'ble:AA:BB:CC:DD:EE:FF',
+      'ble:Boardsesh Spraywall',
+      'ble:Boardsesh Spraywall 1a2b',
+      ' ble:Boardsesh Spraywall 1A2B',
+      'ble:Kilter Board#123456@3',
+    ]) {
       expect(() => normalizeBleControllerTarget(bad)).toThrow(LedControllerError);
     }
   });
@@ -46,7 +61,7 @@ describe('Bluetooth WLED driver', () => {
       version: 'Aurora API v3',
       ledCount: 0,
     });
-    expect(fake.connect).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF', undefined);
+    expect(fake.connect).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B', undefined);
     expect(fake.chunks).toEqual([]);
   });
 
@@ -156,5 +171,44 @@ describe('Bluetooth WLED driver', () => {
     await expect(session.close()).resolves.toBeUndefined();
     expect(hex(fake.written())).toBe('01 04 a7 02 54 05 00 ff 03 01 01 ab 02 54 03');
     expect(() => createLedPreviewSession(driver, 'http://wled.local')).toThrow(LedControllerError);
+  });
+
+  it('connects once for a climb that never reached the controller, closing included', async () => {
+    const connect = vi.fn(async () => {
+      throw new LedControllerError('unavailable');
+    });
+    const driver = createBleLedDriver({ transport: () => ({ connect }) });
+    const session = createLedPreviewSession(driver, target);
+    await expect(session.show([5])).rejects.toMatchObject({ code: 'unavailable' });
+    await session.stop();
+    await session.close();
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('still clears after a climb that reached the controller and then failed', async () => {
+    const fake = fakeController();
+    let writes = 0;
+    const flaky: BleLedLink = {
+      ...fake.link,
+      write: (chunk) => (++writes === 2 ? Promise.reject(new Error('GATT error')) : fake.link.write(chunk)),
+    };
+    const connect = vi.fn(async () => flaky);
+    const driver = createBleLedDriver({ transport: () => ({ connect }) });
+    const leds = Array.from({ length: 100 }, (_, index) => index);
+    const session = createLedPreviewSession(driver, target);
+    await expect(session.show(leds)).rejects.toMatchObject({ code: 'command-failed' });
+    // The first chunk may have changed the wall: the cleanup clears it.
+    expect(hex(fake.chunks[fake.chunks.length - 1])).toBe('01 01 ab 02 54 03');
+  });
+
+  it('reports Bluetooth that is off apart from an unreachable controller', async () => {
+    const driver = createBleLedDriver({
+      transport: () => ({
+        connect: async () => {
+          throw new LedControllerError('bluetooth-unavailable');
+        },
+      }),
+    });
+    await expect(driver.probe(target)).rejects.toMatchObject({ code: 'bluetooth-unavailable' });
   });
 });
