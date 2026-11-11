@@ -64,6 +64,8 @@ export function backgroundJobReconciler(database: DbInstance) {
 export async function clearExpiredAuthRecords(database: DbInstance): Promise<void> {
   // SQL failures can carry bound values. Keep fixed categories; the next minute retries.
   try {
+    // A prefix LIKE cannot use the text primary key under en_US collation, so this
+    // reads all of verificationTokens each minute: 32 kB in production on 2026-11-11.
     await deleteExpiredCommandClaims(database);
   } catch {
     logger.warn('Current-store command claim cleanup unavailable');

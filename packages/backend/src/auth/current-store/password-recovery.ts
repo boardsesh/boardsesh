@@ -243,7 +243,7 @@ async function previewLegacyResetOwner(
 /**
  * A pre-switch reset link, once BA-02 makes addresses unique: it binds to the
  * one account holding its exact address, ends at its original deadline, works
- * once, and dies on any later security change. Then it resets exactly as a
+ * once, and dies on any later recorded security mutation. Then it resets exactly as a
  * UID-bound receipt does. Same lock order: manifest (held), reservation, user,
  * credential, cutoff.
  */

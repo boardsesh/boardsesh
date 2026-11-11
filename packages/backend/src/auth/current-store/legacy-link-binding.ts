@@ -49,7 +49,8 @@ export async function accountsHoldingAddress(
 
 /**
  * A legacy link was issued exactly one lifetime before its deadline. It dies on
- * any later password reset, change, set or deletion, as a UID-bound receipt
+ * any later recorded security mutation (a staged reset, change, set or deletion;
+ * the legacy set-password route records none), as a UID-bound receipt
  * does when the subject generation moves.
  */
 export function issuedBeforeRevocation(

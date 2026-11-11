@@ -1210,6 +1210,87 @@ describe('UID-bound password recovery over the restricted current store', () => 
     return db.select().from(verificationTokens).where(eq(verificationTokens.identifier, identifier));
   }
 
+  it('answers a known and an unknown address alike when the digest key is missing', async () => {
+    const known = await seed();
+    vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
+    vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const replies = [];
+    for (const email of [known.email, `unknown.${randomUUID()}@example.test`]) {
+      const response = await rpc(forgot(email));
+      replies.push({ status: response.status, body: await response.json() });
+    }
+    expect(replies[0]).toEqual(replies[1]);
+    expect(replies[0].status).toBe(503);
+    expect(await db.select().from(authPasswordRecoveryTokens)).toEqual([]);
+  });
+
+  /** One index that is not BA-02's: each must leave a live link unbound. */
+  const notUniqueness: readonly (readonly [string, SQL])[] = [
+    [
+      'a partial unique index',
+      sql`CREATE UNIQUE INDEX users_email_lower_key ON ${users} (lower(email)) WHERE email <> ''`,
+    ],
+    ['a non-unique index', sql`CREATE INDEX users_email_lower_key ON ${users} (lower(email))`],
+  ];
+  it.each(notUniqueness)('leaves a live link unbound behind %s', async (_kind, create) => {
+    const user = await seed();
+    const link = await legacyResetLink(user.email);
+    await admin(create);
+    try {
+      expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email))).outcome).toBe(
+        'legacy_unbound',
+      );
+    } finally {
+      await admin(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+    }
+    expect((await credential(user.id)).passwordHash).toBe(originalHash);
+  });
+  it('leaves a live link unbound behind an invalid index a failed concurrent build left', async () => {
+    const user = await seed();
+    const link = await legacyResetLink(user.email);
+    // BA-02 builds the index CONCURRENTLY; a duplicate makes that build fail and leave it invalid (and unready).
+    const duplicate = randomUUID();
+    await db.insert(users).values({ id: duplicate, email: normalizeAccountEmail(user.email), name: 'Owned duplicate' });
+    await expect(
+      db.execute(sql`CREATE UNIQUE INDEX CONCURRENTLY users_email_lower_key ON ${users} (lower(email))`),
+    ).rejects.toThrow();
+    await db.delete(users).where(eq(users.id, duplicate));
+    try {
+      const [state] = await admin(
+        sql`SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass('public.users_email_lower_key')`,
+      );
+      expect(state).toMatchObject({ indisvalid: false });
+      expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email))).outcome).toBe(
+        'legacy_unbound',
+      );
+    } finally {
+      await admin(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+    }
+    expect((await credential(user.id)).passwordHash).toBe(originalHash);
+  });
+
+  it('leaves a live link unbound behind a built but not yet validated index', async () => {
+    const user = await seed();
+    const link = await legacyResetLink(user.email);
+    await admin(sql`CREATE UNIQUE INDEX users_email_lower_key ON ${users} (lower(email))`);
+    try {
+      // The state a concurrent build is in between its build and validation passes.
+      await admin(
+        sql`UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass('public.users_email_lower_key')`,
+      );
+      const [state] = await admin(
+        sql`SELECT indisready, indisvalid FROM pg_index WHERE indexrelid = to_regclass('public.users_email_lower_key')`,
+      );
+      expect(state).toMatchObject({ indisready: true, indisvalid: false });
+      expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email))).outcome).toBe(
+        'legacy_unbound',
+      );
+    } finally {
+      await admin(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+    }
+    expect((await credential(user.id)).passwordHash).toBe(originalHash);
+  });
+
   it('leaves a live pre-switch link unbound until BA-02 makes addresses unique', async () => {
     const user = await seed();
     const link = await legacyResetLink(user.email);

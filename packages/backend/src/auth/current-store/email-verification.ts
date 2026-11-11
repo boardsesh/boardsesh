@@ -190,7 +190,7 @@ function sameBinding(first: Receipt, locked: Receipt) {
 /**
  * A pre-switch verification link, once BA-02 makes addresses unique: it binds
  * to the one account holding its exact address, ends at its original deadline,
- * works once, and dies on any later security change, as a UID-bound receipt
+ * works once, and dies on any later recorded security mutation, as a UID-bound receipt
  * does. Lock order: manifest (held), reservation, user, cutoff.
  */
 async function consumeBoundLegacyVerification(

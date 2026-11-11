@@ -620,6 +620,21 @@ describe('mounted account deletion and current-store authority', () => {
       await expectUnavailableUnchanged();
     },
   );
+  it('rejects a missing digest key before any deletion transaction or content statement', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
+    const before = await snapshot();
+    const enterTransaction = vi.spyOn(db, 'transaction');
+    await expect(remove()).rejects.toMatchObject({
+      extensions: { code: 'SERVICE_UNAVAILABLE', http: { status: 503 } },
+    });
+    expect(enterTransaction).not.toHaveBeenCalled();
+    expect(stagedFailureLogs()).toEqual([[stagedFailureLine, { failureCode: 'configuration' }]]);
+    expect(await snapshot()).toEqual(before);
+    expect(effects.publish).not.toHaveBeenCalled();
+    expect(effects.purge).not.toHaveBeenCalled();
+  });
   it('rejects an invalid fixed-owner selector before entering the deletion transaction', async () => {
     await seedPair({ system: true });
     await seedBoard();
