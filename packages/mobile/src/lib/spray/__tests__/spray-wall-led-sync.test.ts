@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
 const backend = vi.hoisted(() => ({ request: vi.fn() }));
-const storage = vi.hoisted(() => ({ records: new Map<string, unknown>(), writes: [] as string[] }));
+const storage = vi.hoisted(() => ({
+  records: new Map<string, unknown>(),
+  writes: [] as string[],
+  beforeWrite: vi.fn(async (_key: string) => undefined),
+}));
 
 const auth = vi.hoisted(() => ({ token: 'token' as string | null }));
 vi.mock('../../auth-store', () => ({ getAuthToken: async () => auth.token }));
@@ -10,6 +14,7 @@ vi.mock('../../graphql/client', () => ({ getHttpClient: () => backend }));
 vi.mock('../../preference-store', () => ({
   getPreference: async (key: string) => (storage.records.has(key) ? storage.records.get(key) : null),
   setPreference: async (key: string, value: unknown) => {
+    await storage.beforeWrite(key);
     storage.writes.push(key);
     storage.records.set(key, value);
   },
@@ -108,6 +113,7 @@ beforeEach(() => {
   backend.request.mockReset().mockResolvedValue(answering(true, null));
   storage.records.clear();
   storage.writes.length = 0;
+  storage.beforeWrite.mockReset().mockResolvedValue(undefined);
   resetSprayWallLedSyncForTests();
   configurationEvents = [];
   serverChanges = [];
@@ -315,10 +321,65 @@ describe('one-time adoption of a phone-only setup', () => {
 
 describe('saving', () => {
   async function saveLocally(field: 'settings' | 'layout', value: unknown) {
-    await markSprayWallLedSaveStarted(WALL, field);
-    storage.records.set(field === 'settings' ? SETTINGS_KEY : LAYOUT_KEY, value);
+    await markSprayWallLedSaveStarted(WALL, field, async () => {
+      storage.records.set(field === 'settings' ? SETTINGS_KEY : LAYOUT_KEY, value);
+    });
     queueSprayWallLedUpload(WALL, field);
   }
+
+  it('keeps a layout saved while a refresh is writing settings', async () => {
+    storage.records.set(SETTINGS_KEY, { ...local, enabled: false });
+    storage.records.set(LAYOUT_KEY, layout('old-local'));
+    const settingsWrite = deferred<void>();
+    storage.beforeWrite.mockImplementation(async (key: string) => {
+      if (key === SETTINGS_KEY) await settingsWrite.promise;
+    });
+    backend.request.mockImplementation(async (document: unknown) =>
+      String(document).includes('mutation')
+        ? Promise.reject(new Error('offline'))
+        : answering(true, rowFor({ layout: layout('old-server') })),
+    );
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await vi.waitFor(() => expect(storage.beforeWrite).toHaveBeenCalledWith(SETTINGS_KEY));
+    const saving = markSprayWallLedSaveStarted(WALL, 'layout', async () => {
+      storage.records.set(LAYOUT_KEY, layout('new-local'));
+    });
+    settingsWrite.resolve();
+    await saving;
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('new-local'));
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+  });
+
+  it('preserves a newer unsent save when an older upload finishes during its disk write', async () => {
+    const firstUpload = deferred<unknown>();
+    backend.request.mockReturnValueOnce(firstUpload.promise).mockRejectedValue(new Error('offline'));
+    await saveLocally('layout', layout('first'));
+    await settle();
+    const diskWrite = deferred<void>();
+    const saving = markSprayWallLedSaveStarted(WALL, 'layout', async () => {
+      await diskWrite.promise;
+      storage.records.set(LAYOUT_KEY, layout('newest'));
+    });
+    firstUpload.resolve({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    await settle();
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+    diskWrite.resolve();
+    await saving;
+    queueSprayWallLedUpload(WALL, 'layout');
+    await settle();
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+    resetSprayWallLedSyncForTests();
+    backend.request.mockImplementation(async (document: unknown) =>
+      String(document).includes('mutation')
+        ? Promise.reject(new Error('offline'))
+        : answering(true, rowFor({ layout: layout('server-still-old') })),
+    );
+    await prepareSprayWallLedRead(WALL, 'layout');
+    await settle();
+    expect(storage.records.get(LAYOUT_KEY)).toEqual(layout('newest'));
+    expect(storage.records.get(UNSENT_LAYOUT)).toBe(true);
+  });
 
   it('uploads and clears the unsent mark', async () => {
     backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });

@@ -33,6 +33,8 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 7. Continue to save the holes to the wall and choose LEDs in, behind or below
    the hold. Next opens the LED editor: choose Add, Move or Remove to edit
    individual positions with the same full-width, zoomable, fullscreen photo.
+   Adding or removing a position asks before clearing existing cable paths and
+   skipped counts; cancel keeps the layout, and Undo restores confirmed edits.
    Its tools also start inactive. Orange rings mark holes and purple
    dots mark LEDs, including coincident positions. Below shifts by half a row in
    the calibrated grid plane, then projects through its homography. Behind the
@@ -207,15 +209,21 @@ reads the newest copy when it goes, so step saves collapse and cannot land out o
 order. A failed upload shows the normal save error, stays marked unsent on the
 phone, and retries on the next load; while unsent the phone's copy wins over the
 server's. A setup that exists only on this phone (from before this shipped) is
-uploaded once if the wall has no row and this viewer owns the wall. The cached
-copy is cleared at sign-out and when wall access is withdrawn.
+uploaded once if the wall has no row and this viewer owns the wall. Server
+merges, local saves and upload acknowledgements share a cache write lane.
+A newer save keeps its unsent marker until its own upload succeeds. The cached
+copy is cleared at sign-out and when wall access is withdrawn; erasure waits
+for outstanding disk writes and prevents old saves from uploading afterwards.
 
 ## Controller boundary
 
 `@boardsesh/led-controller` owns URL validation and transport, with a driver registry
 and `probe`, `lightAll`, `turnOff` and `createPreview` operations. The preview
 transport accepts physical LED indices and optional RGB colors through `show`, plus full-strip and off
-commands. Serialized preview sessions prevent overlapping animation commands.
+commands. Serialized preview sessions prevent overlapping animation commands, including the
+settings screen’s full-strip test and explicit off command. A deliberate off
+command clears the controller even when that screen has not lit it; cleanup
+only stops lighting still owned by that screen.
 Add future systems as drivers,
 then extend the versioned settings discriminator and provider selection UI. The
 editor does not contain WLED request payloads. No backend proxy is needed: requests

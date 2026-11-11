@@ -86,6 +86,32 @@ export function subscribeSprayWallLedCacheErased(listener: (wallUuid: string | n
   return () => erasureListeners.delete(listener);
 }
 
+// All cache writes and erasures share one lane per wall. A global erasure also
+// blocks newly queued writes until every old lane has drained and been erased.
+const cacheWrites = new Map<string, Promise<unknown>>();
+let globalErasure: Promise<unknown> = Promise.resolve();
+let accountGeneration = 0;
+const wallErasureGenerations = new Map<string, number>();
+
+export function sprayWallLedCacheGeneration(wallUuid: string): string {
+  return `${accountGeneration}:${wallErasureGenerations.get(wallUuid) ?? 0}`;
+}
+
+export function serializeSprayWallLedCacheWrite<Result>(
+  wallUuid: string,
+  operation: () => Promise<Result>,
+): Promise<Result> {
+  const preceding = cacheWrites.get(wallUuid) ?? Promise.resolve();
+  const pending = Promise.allSettled([preceding, globalErasure]).then(operation);
+  cacheWrites.set(wallUuid, pending);
+  void pending
+    .finally(() => {
+      if (cacheWrites.get(wallUuid) === pending) cacheWrites.delete(wallUuid);
+    })
+    .catch(() => undefined);
+  return pending;
+}
+
 // ============================================
 // Forgetting the copy
 // ============================================
@@ -97,21 +123,30 @@ export function subscribeSprayWallLedCacheErased(listener: (wallUuid: string | n
  * withdrawal, neither of which may throw.
  */
 export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
+  wallErasureGenerations.set(wallUuid, (wallErasureGenerations.get(wallUuid) ?? 0) + 1);
   for (const listener of erasureListeners) listener(wallUuid);
-  await Promise.allSettled([
-    removePreference(sprayWallLedSettingsKey(wallUuid)),
-    removePreference(sprayWallLedLayoutKey(wallUuid)),
-    removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
-    removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
-  ]);
+  await serializeSprayWallLedCacheWrite(wallUuid, () =>
+    Promise.allSettled([
+      removePreference(sprayWallLedSettingsKey(wallUuid)),
+      removePreference(sprayWallLedLayoutKey(wallUuid)),
+      removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
+      removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
+    ]),
+  );
 }
 
 /** Sign-out and account changes: the next climber on this phone starts from the server. */
 export async function eraseAllSprayWallLedCaches(): Promise<void> {
+  accountGeneration += 1;
   for (const listener of erasureListeners) listener(null);
-  try {
-    await removePreferencesMatching((key) => CACHE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)));
-  } catch {
-    // A locked store must not stop the sign-out. The next launch's reads overwrite this copy.
-  }
+  const pendingWrites = [...cacheWrites.values(), globalErasure];
+  const clearing = Promise.allSettled(pendingWrites).then(async () => {
+    try {
+      await removePreferencesMatching((key) => CACHE_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)));
+    } catch {
+      // A locked store must not stop sign-out.
+    }
+  });
+  globalErasure = clearing;
+  await clearing;
 }

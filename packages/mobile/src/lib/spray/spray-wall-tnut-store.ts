@@ -1,7 +1,7 @@
 import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import { getPreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
-import { sprayWallLedLayoutKey } from './spray-wall-led-cache';
+import { sprayWallLedCacheGeneration, sprayWallLedLayoutKey } from './spray-wall-led-cache';
 import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from './spray-wall-led-sync';
 
 const pendingWrites = new Map<string, Promise<void>>();
@@ -23,14 +23,23 @@ export async function loadSprayWallTnutLayout(wallUuid: string): Promise<TnutLay
 export async function saveSprayWallTnutLayout(wallUuid: string, layout: TnutLayout): Promise<void> {
   const validated = readTnutLayout(layout);
   if (!validated) throw new Error('Invalid T-nut layout');
+  const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
+  const assertCurrent = () => {
+    if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
+  };
   const preceding = pendingWrites.get(wallUuid);
   const write = Promise.resolve(preceding)
     .catch(() => undefined)
-    .then(() => markSprayWallLedSaveStarted(wallUuid, 'layout'))
-    .then(() => setPreference(sprayWallLedLayoutKey(wallUuid), validated));
+    .then(() => {
+      assertCurrent();
+      return markSprayWallLedSaveStarted(wallUuid, 'layout', () =>
+        setPreference(sprayWallLedLayoutKey(wallUuid), validated),
+      );
+    });
   pendingWrites.set(wallUuid, write);
   try {
     await write;
+    assertCurrent();
     notifySprayLedConfiguration(wallUuid);
     queueSprayWallLedUpload(wallUuid, 'layout');
   } finally {

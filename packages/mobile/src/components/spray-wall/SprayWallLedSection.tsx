@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
 import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
 import { BuilderTextInput, SectionLabel } from '../board-discovery/BoardMetaFields';
@@ -18,7 +19,7 @@ type ProbeResult =
   | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
   | { kind: 'invalidUrl' | 'notLocal'; url: null };
 
-/** One surface and one controller. No climb output or hold-to-LED mapping yet. */
+/** One surface and one controller, shared with setup and route lighting. */
 export function SprayWallLedSection({ wallUuid, disabled = false }: { wallUuid: string; disabled?: boolean }) {
   return <SprayWallLedEditor key={wallUuid} wallUuid={wallUuid} disabled={disabled} />;
 }
@@ -28,6 +29,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
   const { settings, loading, saving, error, reload, save } = useSprayWallLedSettings(wallUuid);
+  const { lightAll, clear, stop } = useSprayLedPreviewForSettings(wallUuid, { settings, loading });
   const [expanded, setExpanded] = useState(false);
   const [draftUrl, setDraftUrl] = useState<string | null>(null);
   const [result, setResult] = useState<ProbeResult | null>(null);
@@ -40,7 +42,8 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     request.current?.abort();
     request.current = null;
     setPending(null);
-  }, []);
+    void stop();
+  }, [stop]);
   useEffect(() => () => request.current?.abort(), [wallUuid]);
   useEffect(() => {
     if (disabled) cancelRequest();
@@ -118,9 +121,10 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setPending('lights');
     setLighting(null);
     try {
-      const driver = getLedControllerDriver(settings.controller.type);
-      await (on ? driver.lightAll(result.url, controller.signal) : driver.turnOff(result.url, controller.signal));
-      if (request.current === controller && !controller.signal.aborted) setLighting(on ? 'lit' : 'off');
+      const completed = await (on ? lightAll() : clear());
+      if (request.current === controller && !controller.signal.aborted) {
+        setLighting(completed ? (on ? 'lit' : 'off') : 'failed');
+      }
     } catch {
       if (request.current === controller && !controller.signal.aborted) setLighting('failed');
     } finally {

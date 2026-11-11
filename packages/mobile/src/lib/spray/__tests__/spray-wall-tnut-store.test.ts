@@ -2,15 +2,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, generateTnutGrid, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
 const preferences = vi.hoisted(() => ({ get: vi.fn(), set: vi.fn(), records: new Map<string, unknown>() }));
-vi.mock('../../preference-store', () => ({ getPreference: preferences.get, setPreference: preferences.set }));
+vi.mock('../../preference-store', () => ({
+  getPreference: preferences.get,
+  setPreference: preferences.set,
+  removePreference: async (key: string) => {
+    preferences.records.delete(key);
+  },
+}));
 
 vi.mock('../spray-wall-led-sync', () => ({
   prepareSprayWallLedRead: vi.fn(async () => undefined),
-  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async (_wallUuid: string, _field: string, writeCopy?: () => Promise<void>) =>
+    writeCopy?.(),
+  ),
   queueSprayWallLedUpload: vi.fn(),
 }));
 
 import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from '../spray-wall-led-sync';
+import { eraseSprayWallLedCache } from '../spray-wall-led-cache';
 import { loadSprayWallTnutLayout, saveSprayWallTnutLayout } from '../spray-wall-tnut-store';
 
 const layoutKey = 'sprayWallTnutLayout:wall-one';
@@ -123,8 +132,9 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
     expect(prepareSprayWallLedRead).toHaveBeenCalledWith('wall-one', 'layout');
 
     order.length = 0;
-    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async () => {
+    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async (_wallUuid, _field, writeCopy) => {
       order.push('mark');
+      await writeCopy?.();
     });
     preferences.set.mockImplementationOnce(async () => {
       order.push('write');
@@ -204,6 +214,24 @@ describe('the phone copy of a wall\u2019s T-nut layout', () => {
       await Promise.all([first, second]);
     }
     await expect(loadSprayWallTnutLayout('wall-one')).resolves.toEqual(latest);
+  });
+
+  it('rejects both an in-flight save and an older queued save when wall access is withdrawn', async () => {
+    const write = deferred();
+    preferences.set.mockImplementationOnce(async () => {
+      await write.promise;
+    });
+    const first = saveSprayWallTnutLayout('wall-one', configured());
+    const firstRejected = expect(first).rejects.toThrow('withdrawn');
+    const second = saveSprayWallTnutLayout('wall-one', { ...configured(), holes: [{ x: 0.3, y: 0.4 }] });
+    const secondRejected = expect(second).rejects.toThrow('withdrawn');
+    await vi.waitFor(() => expect(preferences.set).toHaveBeenCalledTimes(1));
+    await eraseSprayWallLedCache('wall-one');
+    const uploadCount = vi.mocked(queueSprayWallLedUpload).mock.calls.length;
+    write.resolve();
+    await Promise.all([firstRejected, secondRejected]);
+    expect(preferences.set).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(queueSprayWallLedUpload).mock.calls).toHaveLength(uploadCount);
   });
 
   it('continues an already queued save after the preceding write fails', async () => {

@@ -13,6 +13,8 @@ import { getPreference, removePreference, setPreference } from '../preference-st
 import { notifySprayLedConfiguration } from './spray-led-config-events';
 import {
   eraseSprayWallLedCache,
+  serializeSprayWallLedCacheWrite as serializeCacheWrite,
+  sprayWallLedCacheGeneration,
   notifySprayWallLedServerChange,
   notifySprayWallLedUploadOutcome,
   readSprayWallLedSettings,
@@ -61,6 +63,11 @@ type UploadQueue = { dirty: Set<SprayWallLedField> };
 const fetches = new Map<string, Promise<void>>();
 const freshness = new Map<string, Freshness>();
 const uploads = new Map<string, UploadQueue>();
+const fieldGenerations = new Map<string, Partial<Record<SprayWallLedField, number>>>();
+
+function fieldGenerationOf(wallUuid: string, field: SprayWallLedField): number {
+  return fieldGenerations.get(wallUuid)?.[field] ?? 0;
+}
 /** Bumped when the copy changes for any reason but a read's answer: a read started earlier is stale. */
 const writeGenerations = new Map<string, number>();
 let epoch = 0;
@@ -175,6 +182,7 @@ function publishServerChange(wallUuid: string): void {
  * An address the server would refuse stays behind.
  */
 async function adoptLocalSetup(wallUuid: string): Promise<void> {
+  const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
   const [settings, layout] = await Promise.all([readCachedSettings(wallUuid), readCachedLayout(wallUuid)]);
   const hasSettings = settings !== null && (settings.enabled || settings.controller.url !== '');
   const fields: SprayWallLedField[] = [];
@@ -182,7 +190,7 @@ async function adoptLocalSetup(wallUuid: string): Promise<void> {
   if (layout !== null) fields.push('layout');
   if (fields.length === 0) return;
   await Promise.all(fields.map((field) => setPreference(sprayWallLedUnsentKey(field, wallUuid), true)));
-  queueUpload(wallUuid, fields);
+  if (sprayWallLedCacheGeneration(wallUuid) === cacheGeneration) queueUpload(wallUuid, fields);
 }
 
 async function mergeServerAnswer(
@@ -217,7 +225,7 @@ async function mergeServerAnswer(
   if (!isCurrent()) return;
   const settingsChanged = settingsUnsent ? false : await applyServerSettings(wallUuid, serverSettings);
   const layoutChanged = layoutUnsent ? false : await applyServerLayout(wallUuid, serverLayout);
-  if (settingsChanged || layoutChanged) publishServerChange(wallUuid);
+  if (isCurrent() && (settingsChanged || layoutChanged)) publishServerChange(wallUuid);
 }
 
 function refreshFromServer(wallUuid: string): Promise<void> {
@@ -234,7 +242,12 @@ function refreshFromServer(wallUuid: string): Promise<void> {
         boardUuid: wallUuid,
       });
       freshForMs = FRESH_FOR_MS;
-      await mergeServerAnswer(wallUuid, response.sprayWallLedSetup, startedAt);
+      // Erasure owns its own lane; nesting it inside a write would deadlock.
+      if (response.sprayWallLedSetup === null) {
+        await mergeServerAnswer(wallUuid, null, startedAt);
+      } else {
+        await serializeCacheWrite(wallUuid, () => mergeServerAnswer(wallUuid, response.sprayWallLedSetup, startedAt));
+      }
     } catch {
       // The copy stands. A storage failure reads like a dropped connection: try again later.
     }
@@ -254,6 +267,7 @@ async function hasCachedCopy(field: SprayWallLedField, wallUuid: string): Promis
 }
 
 async function retryUnsent(wallUuid: string): Promise<void> {
+  const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
   if (uploads.has(wallUuid)) return;
   const [settingsUnsent, layoutUnsent] = await Promise.all([
     isUnsent('settings', wallUuid),
@@ -262,7 +276,7 @@ async function retryUnsent(wallUuid: string): Promise<void> {
   const fields: SprayWallLedField[] = [];
   if (settingsUnsent) fields.push('settings');
   if (layoutUnsent) fields.push('layout');
-  if (fields.length > 0) queueUpload(wallUuid, fields);
+  if (fields.length > 0 && sprayWallLedCacheGeneration(wallUuid) === cacheGeneration) queueUpload(wallUuid, fields);
 }
 
 /**
@@ -293,10 +307,29 @@ export function recheckSprayWallLedAccess(wallUuid: string): void {
 }
 
 /** Call before writing the copy: from here until the server has it, a read must not replace it. */
-export async function markSprayWallLedSaveStarted(wallUuid: string, field: SprayWallLedField): Promise<void> {
-  if (isLocalOnlyWall(wallUuid)) return;
+export async function markSprayWallLedSaveStarted(
+  wallUuid: string,
+  field: SprayWallLedField,
+  writeCopy: () => Promise<void> = async () => undefined,
+): Promise<void> {
+  if (isLocalOnlyWall(wallUuid)) return writeCopy();
+  const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
+  const assertCurrent = () => {
+    if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
+  };
   bumpGeneration(wallUuid);
-  await setPreference(sprayWallLedUnsentKey(field, wallUuid), true);
+  fieldGenerations.set(wallUuid, {
+    ...fieldGenerations.get(wallUuid),
+    [field]: fieldGenerationOf(wallUuid, field) + 1,
+  });
+  await serializeCacheWrite(wallUuid, async () => {
+    assertCurrent();
+    await setPreference(sprayWallLedUnsentKey(field, wallUuid), true);
+    assertCurrent();
+    await writeCopy();
+    assertCurrent();
+  });
+  assertCurrent();
 }
 
 /** Call after the copy is written. */
@@ -346,26 +379,37 @@ async function drainUploads(wallUuid: string, queue: UploadQueue): Promise<void>
     while (queue.dirty.size > 0 && !stale()) {
       const fields = [...queue.dirty];
       queue.dirty.clear();
+      // Capture before reading disk, including saves whose copy write has not finished.
+      const sentGenerations = new Map(fields.map((field) => [field, fieldGenerationOf(wallUuid, field)]));
+      const clearAcknowledgedFields = () =>
+        serializeCacheWrite(wallUuid, async () => {
+          if (stale()) return;
+          for (const field of fields) {
+            if (fieldGenerationOf(wallUuid, field) === sentGenerations.get(field) && !queue.dirty.has(field)) {
+              await removePreference(sprayWallLedUnsentKey(field, wallUuid));
+            }
+          }
+        });
       try {
-        const input = await buildUploadInput(wallUuid, fields);
+        const input = await serializeCacheWrite(wallUuid, () => buildUploadInput(wallUuid, fields));
+        if (stale()) return;
         if (input) {
           const client = await httpClient();
+          if (stale()) return;
           await client.request<SaveSprayWallLedSetupMutationResponse>(SAVE_SPRAY_WALL_LED_SETUP, { input });
         }
         if (stale()) return;
         // A read started before this upload landed still holds the old copy.
         bumpGeneration(wallUuid);
-        await Promise.all(
-          fields
-            .filter((field) => !queue.dirty.has(field))
-            .map((field) => removePreference(sprayWallLedUnsentKey(field, wallUuid))),
-        );
+        await clearAcknowledgedFields();
+        if (stale()) return;
         if (queue.dirty.size === 0) notifySprayWallLedUploadOutcome(wallUuid, 'uploaded');
       } catch (uploadError) {
         if (stale()) return;
         if (isSprayWallLedSaveRefused(uploadError)) {
           // This viewer can never send it: the server's copy wins on the next read.
-          await Promise.all(fields.map((field) => removePreference(sprayWallLedUnsentKey(field, wallUuid))));
+          await clearAcknowledgedFields();
+          if (stale()) return;
           freshness.delete(wallUuid);
         } else {
           freshness.set(wallUuid, { settledAtMs: Date.now(), freshForMs: RETRY_AFTER_FAILURE_MS });
@@ -390,4 +434,5 @@ export function resetSprayWallLedSyncForTests(): void {
   freshness.clear();
   uploads.clear();
   writeGenerations.clear();
+  fieldGenerations.clear();
 }

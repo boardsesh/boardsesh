@@ -4,6 +4,7 @@ import { getPreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
 import {
   readSprayWallLedSettings,
+  sprayWallLedCacheGeneration,
   sprayWallLedSettingsKey,
   subscribeSprayWallLedServerChange,
   subscribeSprayWallLedUploadOutcome,
@@ -139,13 +140,14 @@ export function useSprayWallLedSettings(wallUuid: string) {
       ) {
         return false;
       }
+      const cacheGeneration = sprayWallLedCacheGeneration(wallUuid);
       // This ref changes before React renders, so two taps cannot enqueue two writes.
       session.saving = true;
       setState((previous) => ({ ...previous, saving: true, error: null }));
       try {
         const settings = readSprayWallLedSettings(next);
         if (settings.controller.url) normalizeLocalControllerUrl(settings.controller.url);
-        const write = markSprayWallLedSaveStarted(wallUuid, 'settings').then(() =>
+        const write = markSprayWallLedSaveStarted(wallUuid, 'settings', () =>
           setPreference(sprayWallLedSettingsKey(wallUuid), settings),
         );
         pendingWrites.set(wallUuid, write);
@@ -154,6 +156,7 @@ export function useSprayWallLedSettings(wallUuid: string) {
         } finally {
           if (pendingWrites.get(wallUuid) === write) pendingWrites.delete(wallUuid);
         }
+        if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
         notifySprayLedConfiguration(wallUuid);
         queueSprayWallLedUpload(wallUuid, 'settings');
         if (!session.active) return false;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { useIsFocused } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -68,10 +68,22 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const leds = layout.ledPositions ?? NO_LEDS;
 
+  function changePositions(ledPositions: LedPosition[]) {
+    const apply = () => change({ ledPositions, wiring: undefined });
+    if (!layout.wiring?.paths.length) {
+      apply();
+      return;
+    }
+    Alert.alert(t('sprayLedSetup.clearCableTitle'), t('sprayLedSetup.clearCableBody'), [
+      { text: t('sprayLedSetup.keepEditing'), style: 'cancel' },
+      { text: t('sprayLedSetup.clearCable'), style: 'destructive', onPress: apply },
+    ]);
+  }
+
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
     if (mode === 'remove') {
       const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
-      if (index >= 0) change({ ledPositions: leds.filter((_, entry) => entry !== index), wiring: undefined });
+      if (index >= 0) changePositions(leds.filter((_, entry) => entry !== index));
     } else if (
       mode === 'add' &&
       leds.length < MAX_LED_POSITIONS &&
@@ -80,7 +92,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
       const ids = new Set(leds.map((led) => led.id));
       let serial = 0;
       while (ids.has(`manual-${serial}`)) serial++;
-      change({ ledPositions: [...leds, { ...point, id: `manual-${serial}` }], wiring: undefined });
+      changePositions([...leds, { ...point, id: `manual-${serial}` }]);
     }
   }
 

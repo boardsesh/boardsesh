@@ -2,10 +2,15 @@
 import { createElement, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LedControllerError, type LedControllerInfo } from '@boardsesh/led-controller';
+import {
+  createLedPreviewSession,
+  getLedControllerDriver,
+  LedControllerError,
+  type LedControllerInfo,
+} from '@boardsesh/led-controller';
 import type { SprayWallLedSettings } from '../../../lib/spray/use-spray-wall-led-settings';
 
-const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn() }));
+const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn(), show: vi.fn() }));
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 
@@ -13,7 +18,7 @@ vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/led-controller')>()),
-  getLedControllerDriver: () => controller,
+  getLedControllerDriver: () => ({ ...controller, createPreview: () => controller }),
 }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: storage.read,
@@ -21,12 +26,15 @@ vi.mock('../../../lib/preference-store', () => ({
 }));
 vi.mock('../../../lib/spray/spray-wall-led-sync', () => ({
   prepareSprayWallLedRead: vi.fn(async () => undefined),
-  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async (_wallUuid: string, _field: string, writeCopy?: () => Promise<void>) =>
+    writeCopy?.(),
+  ),
   queueSprayWallLedUpload: vi.fn(),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  AppState: { addEventListener: () => ({ remove: vi.fn() }) },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -146,11 +154,15 @@ beforeEach(() => {
   storage.write.mockReset().mockImplementation(async (key: string, settings: unknown) => {
     storage.records.set(key, settings);
   });
+  controller.show.mockReset().mockResolvedValue(undefined);
   controller.probe.mockReset().mockResolvedValue(controllerInfo);
   controller.lightAll.mockReset().mockResolvedValue(undefined);
   controller.turnOff.mockReset().mockResolvedValue(undefined);
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  await act(async () => undefined);
+});
 
 describe('SprayWallLedSection', () => {
   it('starts collapsed and disabled, without contacting or lighting a controller', async () => {
@@ -215,10 +227,47 @@ describe('SprayWallLedSection', () => {
     expect(controller.lightAll).not.toHaveBeenCalled();
     fireEvent.click(button('lightAll'));
     await waitFor(() => expect(screen.queryByText('sprayLed.lit')).not.toBeNull());
-    expect(controller.lightAll).toHaveBeenCalledWith('http://wled.local', expect.any(AbortSignal));
+    expect(controller.lightAll).toHaveBeenCalledWith();
     fireEvent.click(button('turnOff'));
     await waitFor(() => expect(screen.queryByText('sprayLed.off')).not.toBeNull());
     expect(controller.turnOff).toHaveBeenCalledTimes(1);
+  });
+
+  it('deliberately clears a controller even before this editor has lit anything', async () => {
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    await connect();
+    fireEvent.click(button('turnOff'));
+    await waitFor(() => expect(screen.queryByText('sprayLed.off')).not.toBeNull());
+    expect(controller.turnOff).toHaveBeenCalledWith('http://wled.local');
+  });
+
+  it('serializes settings tests behind route writes and leaves a newer route lit on unmount', async () => {
+    storage.records.set(settingsKey, savedSettings());
+    const view = render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    await connect();
+    const route = createLedPreviewSession(getLedControllerDriver('wled'), 'http://wled.local');
+    const routeWrite = deferred<void>();
+    controller.show.mockReturnValueOnce(routeWrite.promise);
+    const sending = route.show([1]);
+    await waitFor(() => expect(controller.show).toHaveBeenCalledTimes(1));
+    fireEvent.click(button('lightAll'));
+    await act(async () => undefined);
+    expect(controller.lightAll).not.toHaveBeenCalled();
+    await act(async () => {
+      routeWrite.resolve();
+      await sending;
+    });
+    await waitFor(() => expect(screen.queryByText('sprayLed.lit')).not.toBeNull());
+    await act(async () => {
+      await route.show([2]);
+    });
+    view.unmount();
+    await act(async () => undefined);
+    expect(controller.turnOff).not.toHaveBeenCalled();
+    await route.close();
   });
 
   it.each(['unavailable', 'timeout', 'not-wled'] as const)(
@@ -307,7 +356,7 @@ describe('SprayWallLedSection', () => {
     await connect();
     fireEvent.click(button('lightAll'));
     fireEvent.click(button('lightAll'));
-    expect(controller.lightAll).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(controller.lightAll).toHaveBeenCalledTimes(1));
     await act(async () => {
       command.reject(new LedControllerError('command-failed'));
     });

@@ -10,7 +10,9 @@ vi.mock('../../preference-store', () => ({
 
 vi.mock('../spray-wall-led-sync', () => ({
   prepareSprayWallLedRead: vi.fn(async () => undefined),
-  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async (_wallUuid: string, _field: string, writeCopy?: () => Promise<void>) =>
+    writeCopy?.(),
+  ),
   queueSprayWallLedUpload: vi.fn(),
 }));
 
@@ -213,8 +215,9 @@ describe('the phone copy of a wall\u2019s LED settings', () => {
     expect(prepareSprayWallLedRead).toHaveBeenCalledWith('wall-one', 'settings');
 
     order.length = 0;
-    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async () => {
+    vi.mocked(markSprayWallLedSaveStarted).mockImplementationOnce(async (_wallUuid, _field, writeCopy) => {
       order.push('mark');
+      await writeCopy?.();
     });
     preferences.set.mockImplementationOnce(async () => {
       order.push('write');

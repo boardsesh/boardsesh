@@ -7,14 +7,21 @@ import {
   type LedControllerErrorCode,
   type LedPreviewSession,
 } from '@boardsesh/led-controller';
-import { useSprayWallLedSettings } from './use-spray-wall-led-settings';
+import { useSprayWallLedSettings, type SprayWallLedSettings } from './use-spray-wall-led-settings';
 
 export type SprayLedPreviewState = 'idle' | 'sending' | 'lit' | 'chasing' | 'stopping';
 type PreviewRuntime = { session: LedPreviewSession; active: boolean; generation: number };
 
 /** No controller traffic until the user selects LEDs or starts a lighting test. */
 export function useSprayLedPreview(wallUuid: string) {
-  const { settings, loading } = useSprayWallLedSettings(wallUuid);
+  return useSprayLedPreviewForSettings(wallUuid, useSprayWallLedSettings(wallUuid));
+}
+
+/** Reuse the editor's live settings so a newly confirmed URL is immediately available. */
+export function useSprayLedPreviewForSettings(
+  wallUuid: string,
+  { settings, loading }: { settings: SprayWallLedSettings | null; loading: boolean },
+) {
   const enabled = !loading && settings?.enabled === true;
   const url = settings?.controller.url ?? '';
   const controllerType = settings?.controller.type ?? 'wled';
@@ -92,6 +99,7 @@ export function useSprayLedPreview(wallUuid: string) {
     [run],
   );
   const lightAll = useCallback(() => run('sending', (current) => current.session.lightAll(), 'lit'), [run]);
+  const clear = useCallback(() => run('stopping', (current) => current.session.clear(), 'idle'), [run]);
   const stop = useCallback(() => run('stopping', (current) => current.session.stop(), 'idle'), [run]);
   const chase = useCallback(
     (indices: readonly number[]) => {
@@ -116,5 +124,5 @@ export function useSprayLedPreview(wallUuid: string) {
     [run],
   );
 
-  return { available, state, error, show, lightAll, stop, chase };
+  return { available, state, error, show, lightAll, clear, stop, chase };
 }

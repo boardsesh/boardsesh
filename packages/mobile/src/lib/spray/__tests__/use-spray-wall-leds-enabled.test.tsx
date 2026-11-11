@@ -10,7 +10,9 @@ vi.mock('../../preference-store', () => ({
 
 vi.mock('../spray-wall-led-sync', () => ({
   prepareSprayWallLedRead: vi.fn(async () => undefined),
-  markSprayWallLedSaveStarted: vi.fn(async () => undefined),
+  markSprayWallLedSaveStarted: vi.fn(async (_wallUuid: string, _field: string, writeCopy?: () => Promise<void>) =>
+    writeCopy?.(),
+  ),
   queueSprayWallLedUpload: vi.fn(),
 }));
 
