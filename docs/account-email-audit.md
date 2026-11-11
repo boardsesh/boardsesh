@@ -121,3 +121,51 @@ resource limits and output/cleanup errors exit nonzero with `status:
 "incomplete"` and a fixed category. They emit no partial aggregate as a complete
 result and never print the underlying SQL, URL or exception. Preserve failed
 artifacts; fix the cause and use a new report path for the next run.
+
+## Evidence report for shared addresses (BA-02)
+
+`account-email-evidence.ts` turns the audit's collision groups into the private
+worksheet the owner uses to pick keepers and send contact emails. It is
+read-only and has no apply mode. Run it on the DR standby, so its per-table
+counts put no load on the primary:
+
+```sh
+mkdir -p -m 700 ~/Private/boardsesh-ba02
+ACCOUNT_EMAIL_EVIDENCE_DATABASE_URL='postgresql://<role>@<standby-host>/boardsesh?sslmode=verify-full' \
+  vp exec tsx packages/backend/src/scripts/account-email-evidence.ts \
+  --out ~/Private/boardsesh-ba02/evidence-$(date +%F).json
+```
+
+- **Connection.** Only `ACCOUNT_EMAIL_EVIDENCE_DATABASE_URL`, with the same URL
+  rules as the audit above. It never reads `DATABASE_URL`, takes no URL argument
+  and refuses `DEBUG_SQL=true`. A primary is refused with `PRIMARY_NOT_ALLOWED`
+  unless you add `--allow-primary`.
+- **Snapshot.** One `REPEATABLE READ READ ONLY` transaction, 60 s per statement,
+  15 minutes per run. The worksheet is written only after that snapshot was
+  confirmed read-only and the connection is closed. A standby replay conflict
+  ends the run with `STANDBY_CONFLICT` and a lock held for 5 s with
+  `LOCK_TIMEOUT`; rerun either.
+- **Tables.** Every foreign key to `users(id)` is read from the live catalog, so
+  a new table counts without a code change. Partitions are counted once through
+  their parent. References without a foreign key are not seen.
+- **Own data.** A member has data when any of their rows sits in a referencing
+  column, except identity housekeeping (profile, credentials, provider links,
+  tokens, sessions, devices, `auth_*`, `oauth_*`), `user_climb_percentiles`
+  (computed for everyone), and rows other people caused (feed and notification
+  recipient, follows received). Those rows still appear in the worksheet as
+  `excludedRows`.
+- **Kinds.** A: two or more members have data, so the address gets the contact
+  email. B: the only data holder is unstamped and an empty member is stamped; a
+  bare stamp is not proof, so B follows the C/D rule with no email. C: one data
+  holder, the rest have no live provider link or token. D: one data holder, an
+  empty member still has a Google/Apple link or a live refresh token. E: nobody
+  has data. Facebook-only links count as no login method.
+- **Output.** The worksheet (mode 0600, never overwritten, refused inside the
+  repository) holds addresses, names, user IDs, the proposal per group and the
+  contact list. Stdout holds counts only, plus the worksheet's SHA-256.
+
+Accept a run when stdout shows `status: "complete"` and all three `checks` are
+`true`: kinds sum to the group count, SQL `lower()` agrees with the JS rule on
+every row, and the rows without a login method are exactly the three fixed
+system accounts. A `false` check means stop and report the counts, never the
+worksheet.
