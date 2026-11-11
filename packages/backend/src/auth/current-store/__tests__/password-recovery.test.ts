@@ -1194,4 +1194,121 @@ describe('UID-bound password recovery over the restricted current store', () => 
       expect(await db.select().from(authPasswordRecoveryTokens)).toHaveLength(0);
     }
   });
+
+  /** A link the old web route sent: `password-reset:<exact address>` and the SHA-256 of its secret. */
+  async function legacyResetLink(email: string, remainingMs = 30 * 60_000) {
+    const token = randomUUID();
+    const row = {
+      identifier: `password-reset:${email}`,
+      token: createHash('sha256').update(token).digest('hex'),
+      expires: new Date(Date.now() + remainingMs),
+    };
+    await db.insert(verificationTokens).values(row);
+    return { token, row };
+  }
+  async function legacyRow(identifier: string) {
+    return db.select().from(verificationTokens).where(eq(verificationTokens.identifier, identifier));
+  }
+
+  it('leaves a live pre-switch link unbound until BA-02 makes addresses unique', async () => {
+    const user = await seed();
+    const link = await legacyResetLink(user.email);
+    const response = await rpc(reset(link.token, user.email));
+    expect(response.status).toBe(503);
+    expect(resetPasswordReplySchema.parse(await response.json()).outcome).toBe('legacy_unbound');
+    expect((await credential(user.id)).passwordHash).toBe(originalHash);
+  });
+
+  describe('a pre-switch link once BA-02 makes addresses unique', () => {
+    beforeEach(async () => {
+      await admin(sql`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key ON ${users} (lower(email))`);
+    });
+    afterEach(async () => {
+      await admin(sql`DROP INDEX IF EXISTS users_email_lower_key`);
+    });
+
+    it('resets the one account holding its exact address, once, and leaves the old row alone', async () => {
+      const user = await seed();
+      await seedRefreshToken(user.id);
+      const link = await legacyResetLink(user.email);
+      const response = await rpc(reset(link.token, user.email));
+      expect(response.status).toBe(200);
+      expect(resetPasswordReplySchema.parse(await response.json()).outcome).toBe('reset');
+      const changed = (await credential(user.id)).passwordHash;
+      expect(await bcrypt.compare(nextPassword, changed)).toBe(true);
+      expect((await db.select().from(authSecurityMutationEvents)).map((event) => [event.userId, event.kind])).toEqual([
+        [user.id, 'password-reset'],
+      ]);
+      expect(await liveRefreshRows(user.id)).toEqual({ total: 1, live: 0 });
+      expect(await legacyRow(link.row.identifier)).toEqual([link.row]);
+
+      const replay = await consumePasswordRecovery(
+        writers[0],
+        authority,
+        reset(link.token, user.email, 'another-owned-password'),
+      );
+      expect(replay.outcome).toBe('invalid_or_expired');
+      expect((await credential(user.id)).passwordHash).toBe(changed);
+    });
+
+    it('rejects the link with any other address, even its own in another case', async () => {
+      const owner = await seed();
+      const other = await seed();
+      const link = await legacyResetLink(owner.email);
+      for (const email of [other.email, owner.email.toLowerCase(), owner.email.toUpperCase()])
+        expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, email))).outcome).toBe(
+          'invalid_or_expired',
+        );
+      for (const id of [owner.id, other.id]) expect((await credential(id)).passwordHash).toBe(originalHash);
+      expect(await db.select().from(authSecurityMutationEvents)).toEqual([]);
+    });
+
+    it('ends at its original deadline when that passes while the new password hashes', async () => {
+      const user = await seed();
+      const link = await legacyResetLink(user.email, 1500);
+      const reply = await duringHash(reset(link.token, user.email), async (_pending, resume) => {
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, link.row.expires.getTime() - Date.now() + 150)));
+        resume();
+      });
+      expect(reply.outcome).toBe('invalid_or_expired');
+      expect((await credential(user.id)).passwordHash).toBe(originalHash);
+    });
+
+    it('refuses a deadline longer than the hour the old route gave', async () => {
+      const user = await seed();
+      const link = await legacyResetLink(user.email, 2 * 3600_000);
+      expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email))).outcome).toBe(
+        'invalid_or_expired',
+      );
+      expect((await credential(user.id)).passwordHash).toBe(originalHash);
+    });
+
+    it('dies once a later reset has moved the account on', async () => {
+      const { user, plan } = await issued();
+      const link = await legacyResetLink(user.email);
+      expect((await consumePasswordRecovery(writers[0], authority, reset(plan.token))).outcome).toBe('reset');
+      const afterReset = (await credential(user.id)).passwordHash;
+      expect(
+        (await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email, 'third-owned-password')))
+          .outcome,
+      ).toBe('invalid_or_expired');
+      expect((await credential(user.id)).passwordHash).toBe(afterReset);
+    });
+
+    it.each([
+      ['shared by a collision group', 'blocked_ambiguous', 'legacy_unbound'],
+      ['retired by a deletion', 'blocked_deleted', 'invalid_or_expired'],
+    ] as const)('binds nothing when the address is %s', async (_label, state, outcome) => {
+      const user = await seed();
+      const link = await legacyResetLink(user.email);
+      await db
+        .update(authEmailReservations)
+        .set({ state, ownerUserId: null })
+        .where(eq(authEmailReservations.normalizedEmail, normalizeAccountEmail(user.email)));
+      expect((await consumePasswordRecovery(writers[0], authority, reset(link.token, user.email))).outcome).toBe(
+        outcome,
+      );
+      expect((await credential(user.id)).passwordHash).toBe(originalHash);
+    });
+  });
 });

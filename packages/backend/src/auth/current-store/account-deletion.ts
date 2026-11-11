@@ -1,6 +1,8 @@
 import {
   authEmailReservationMembers,
   authEmailReservations,
+  authEmailVerificationTokens,
+  authPasswordRecoveryTokens,
   authSubjectCutoffs,
   users,
 } from '@boardsesh/db/schema/auth';
@@ -117,6 +119,7 @@ async function requireRepresentedDeletionEmail(
 
   // A blocked collision/empty key still represents this exact authenticated
   // UID. Deleting it must neither release the key nor elect another member.
+  // A collision can be down to this one member: deleted members leave the group.
   const [subjectMember] = await transaction
     .select({ userId: authEmailReservationMembers.userId })
     .from(authEmailReservationMembers)
@@ -125,7 +128,7 @@ async function requireRepresentedDeletionEmail(
   const representedBlockedKey =
     reservation.ownerUserId === null &&
     subjectMember !== undefined &&
-    ((reservation.state === 'blocked_ambiguous' && key.length > 0 && members.length === 2) ||
+    ((reservation.state === 'blocked_ambiguous' && key.length > 0) ||
       (reservation.state === 'blocked_invalid' && key.length === 0));
   if (!representedBlockedKey) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
 }
@@ -184,4 +187,8 @@ export async function recordReservedAccountDeletion(
     kind: 'account-deletion',
     domains: ['first-party', 'partner'],
   });
+  // The receipts carry the address they were sent to (decision 1, epic #6975).
+  // Their purpose generations stay, so no old receipt snapshot can come back.
+  await transaction.delete(authPasswordRecoveryTokens).where(eq(authPasswordRecoveryTokens.userId, command.userId));
+  await transaction.delete(authEmailVerificationTokens).where(eq(authEmailVerificationTokens.userId, command.userId));
 }

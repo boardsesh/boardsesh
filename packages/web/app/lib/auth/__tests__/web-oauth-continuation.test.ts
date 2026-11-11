@@ -226,6 +226,17 @@ describe('stateless encrypted Apple continuation', () => {
   describe('behind the standalone server, whose request URL is its bind address', () => {
     const body = new URLSearchParams({ state, code: 'owned-code' }).toString();
 
+    it('answers Apple with a 303 to www when NEXTAUTH_URL names www', async () => {
+      vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+      const scope = createWebOAuthCookieScope();
+      const signedState = await stateCookie(scope);
+      const response = await holdAppleOAuthCallback(request('POST', signedState, body, bindOrigin), base, scope, state);
+      expect(response.status).toBe(303);
+      expect(response.headers.get('Location')).toBe(
+        `https://www.boardsesh.com${callbackPath}?boardseshOAuthContinue=${scope}`,
+      );
+    });
+
     it('sends Apple back to the configured site and resumes there', async () => {
       const scope = createWebOAuthCookieScope();
       const signedState = await stateCookie(scope);

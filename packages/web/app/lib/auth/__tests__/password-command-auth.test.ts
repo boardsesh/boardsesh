@@ -4,7 +4,11 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import type { NextAuthOptions } from 'next-auth';
 import type { PasswordReply } from '@boardsesh/auth-protocol';
 vi.mock('server-only', () => ({}));
-import { createPasswordCommandAuthRequest } from '../password-command-auth.server';
+import {
+  createPasswordCommandAuthRequest,
+  limitPasswordLoginPerClient,
+  unavailablePasswordAuthResponse,
+} from '../password-command-auth.server';
 
 const reply: Extract<PasswordReply, { outcome: 'authenticated' }> = {
   protocolVersion: 2,
@@ -120,5 +124,28 @@ describe('request-local backend password verdict', () => {
       provider(unavailable.options).authorize({ email: 'x', password: 'y' }, { headers: {} }),
     ).rejects.toThrow('AuthBackendUnavailable');
     expect(unavailable.unavailable()).toBe(true);
+  });
+});
+
+describe('on the standalone server, whose request URL is its bind address', () => {
+  const bindAddress = 'https://0.0.0.0:3000/api/auth/callback/credentials';
+  const www = 'https://www.boardsesh.com/auth/error?error=AuthBackendUnavailable';
+
+  it('points the unavailable result at the configured site', async () => {
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    expect(await unavailablePasswordAuthResponse(bindAddress).json()).toEqual({ url: www });
+  });
+
+  it('points a client over its login limit at the configured site', async () => {
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
+    const attempt = () =>
+      limitPasswordLoginPerClient(
+        new Request(bindAddress, { method: 'POST', headers: { 'X-Forwarded-For': '203.0.113.201' } }),
+      );
+    for (let count = 0; count < 10; count += 1) expect(attempt()).toBeNull();
+    const limited = attempt();
+    expect(limited?.status).toBe(429);
+    expect(await limited?.json()).toEqual({ url: www });
   });
 });

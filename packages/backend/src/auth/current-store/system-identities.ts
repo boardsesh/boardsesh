@@ -17,7 +17,7 @@ import {
 import { and, eq, ne } from 'drizzle-orm';
 import { lockFixedSystemOwnerTransaction } from '@boardsesh/db/fixed-system-owner-order';
 import { normalizeAccountEmail } from '../normalize-email';
-import { reserveEnforcedEmail } from './email-reservations';
+import { lockKeyReservation, reserveEnforcedEmail } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -82,11 +82,7 @@ export async function ensureReservedSystemIdentity(
     .where(eq(authSubjectCutoffs.userId, userId))
     .for('update');
   if (cutoff?.deletedAt) throw new CurrentStoreFoundationError('SUBJECT_DELETED');
-  const [reservation] = await transaction
-    .select()
-    .from(authEmailReservations)
-    .where(eq(authEmailReservations.normalizedEmail, key))
-    .for('update');
+  const reservation = await lockKeyReservation(transaction, key);
   const [otherReservation] = await transaction
     .select({ normalizedEmail: authEmailReservations.normalizedEmail })
     .from(authEmailReservations)

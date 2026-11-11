@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
+  AUTH_COMMAND_FUTURE_SKEW_MS,
   AUTH_PROTOCOL_VERSION,
   emailVerificationTokenSchema,
   isReservedAuthRecordIdentifier,
@@ -27,10 +28,13 @@ import {
   assertFresh,
   captureAuthority,
   claimCommand,
+  claimLegacyLink,
   transactionSettings,
   type WebPasswordAuthority,
 } from './command-context';
+import { lockKeyReservation } from './email-reservations';
 import { lockEnforcedProjection, lockUserRowUnderManifest, type CurrentStoreTransaction } from './foundation-context';
+import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
 
 const purpose = 'email-verification' as const;
 const lifetimeMs = 24 * 60 * 60 * 1000;
@@ -183,6 +187,54 @@ function sameBinding(first: Receipt, locked: Receipt) {
   );
 }
 
+/**
+ * A pre-switch verification link, once BA-02 makes addresses unique: it binds
+ * to the one account holding its exact address, ends at its original deadline,
+ * works once, and dies on any later security change, as a UID-bound receipt
+ * does. Lock order: manifest (held), reservation, user, cutoff.
+ */
+async function consumeBoundLegacyVerification(
+  transaction: CurrentStoreTransaction,
+  authority: WebPasswordAuthority,
+  link: { readonly email: string; readonly token: string; readonly deadline: Date; readonly now: number },
+): Promise<'verified' | 'invalid_token' | 'expired' | 'legacy_unbound'> {
+  if (!(await isEmailUniquenessEnforced(transaction))) return 'legacy_unbound';
+  // The old issuer gave every link 24 hours. A longer deadline is not one it made.
+  if (link.deadline.getTime() > link.now + lifetimeMs + AUTH_COMMAND_FUTURE_SKEW_MS) return 'invalid_token';
+  const key = normalizeAccountEmail(link.email);
+  const owner = await reservationOwner(transaction, authority, key);
+  if (!owner)
+    return (await lockKeyReservation(transaction, key))?.state === 'blocked_deleted'
+      ? 'invalid_token'
+      : 'legacy_unbound';
+  const user = await lockUserRowUnderManifest(transaction, owner);
+  const holders = await accountsHoldingAddress(transaction, key);
+  if (!user || normalizeAccountEmail(user.email) !== key || holders.length !== 1 || holders[0].id !== owner)
+    return 'invalid_token';
+  const [cutoff] = await transaction
+    .select()
+    .from(authSubjectCutoffs)
+    .where(eq(authSubjectCutoffs.userId, owner))
+    .for('update');
+  if (cutoff?.deletedAt || issuedBeforeRevocation(link.deadline, lifetimeMs, cutoff)) return 'invalid_token';
+  // Read after every lock wait: the deadline is checked at the moment of use.
+  const verifiedAt = new Date(await clock(transaction));
+  if (link.deadline.getTime() <= verifiedAt.getTime()) return 'expired';
+  const claimed = await claimLegacyLink(transaction, {
+    purpose,
+    identifier: link.email,
+    storedToken: link.token,
+    expires: link.deadline,
+  });
+  if (!claimed) return 'invalid_token';
+  if (!user.emailVerified)
+    await transaction
+      .update(users)
+      .set({ emailVerified: verifiedAt })
+      .where(and(eq(users.id, owner), isNull(users.emailVerified)));
+  return 'verified';
+}
+
 /** A verification receipt never creates a session, a fresh-login claim or an owner reassignment. */
 export async function consumeEmailVerification(
   database: DbInstance,
@@ -222,19 +274,25 @@ export async function consumeEmailVerification(
           ? { ...base, outcome: 'invalid_token' }
           : { ...base, outcome: 'error', code: 'unavailable' };
       if (!email) return { ...base, outcome: 'invalid_token' };
-      // READ ONLY legacy classification. Never resolve any current email owner,
-      // delete an orphan, extend its deadline or import an invented binding.
+      // The old row is never changed, removed or given a later deadline. Until
+      // BA-02 makes addresses unique, its original owner cannot be inferred
+      // from today's users, and a live link stays unbound.
       const [legacy] = await transaction
         .select({ expires: verificationTokens.expires })
         .from(verificationTokens)
         .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, token)));
       const now = await clock(transaction);
       assertFresh(issuedAt);
-      return !legacy
-        ? { ...base, outcome: 'invalid_token' }
-        : legacy.expires.getTime() <= now
-          ? { ...base, outcome: 'expired' }
-          : { ...base, outcome: 'legacy_unbound' };
+      if (!legacy) return { ...base, outcome: 'invalid_token' };
+      if (legacy.expires.getTime() <= now) return { ...base, outcome: 'expired' };
+      const outcome = await consumeBoundLegacyVerification(transaction, authority, {
+        email,
+        token,
+        deadline: new Date(legacy.expires.getTime()),
+        now,
+      });
+      assertFresh(issuedAt);
+      return { ...base, outcome };
     }
     if (!initial || initial.purpose !== purpose) return { ...base, outcome: 'invalid_token' };
     const owner = await reservationOwner(transaction, authority, initial.normalizedEmail);

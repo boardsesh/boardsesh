@@ -110,9 +110,10 @@ is separate work. A caller that catches a foundation error and commits its
 credential changes violates this contract; the helper alone cannot prove an
 entire command's transaction boundary.
 
-On account deletion, owned keys become `blocked_deleted`; ambiguous keys and all
-historical members remain blocked. Deleting one member never elects a surviving
-owner. A deleted user ID cannot reserve another address or advance a new security
+On account deletion, every key the account alone held becomes a
+`blocked_deleted` digest row and its memberships go (see the
+[deletion doc](./better-auth-account-deletion.md)); a shared key stays blocked
+with its other members. Deleting one member never elects a surviving owner. A deleted user ID cannot reserve another address or advance a new security
 mutation. No deleted-key release, outbox dispatcher, consumer acknowledgment,
 retry worker or credential-mutation callback API is included.
 

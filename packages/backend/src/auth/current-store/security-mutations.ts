@@ -1,5 +1,6 @@
-import { authEmailReservations, authSecurityMutationEvents, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
+import { authSecurityMutationEvents, authSubjectCutoffs } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
+import { retireDeletedSubjectEmails } from './email-reservations';
 import {
   captureExpectedAuthority,
   CurrentStoreFoundationError,
@@ -95,13 +96,8 @@ export async function recordSecurityMutation(
     })
     .returning();
   if (!event) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-  if (kind === 'account-deletion') {
-    await transaction
-      .update(authEmailReservations)
-      .set({ state: 'blocked_deleted', ownerUserId: null })
-      .where(and(eq(authEmailReservations.ownerUserId, userId), eq(authEmailReservations.state, 'owned')));
-    // Ambiguous keys and their historical memberships remain ambiguous. A
-    // deleted collision member never causes an automatic surviving owner.
-  }
+  // Keep only a keyed digest of the deleted address (decision 1, epic #6975). A
+  // group the account shared stays blocked and never elects a surviving owner.
+  if (kind === 'account-deletion') await retireDeletedSubjectEmails(transaction, userId);
   return { cutoff, event };
 }

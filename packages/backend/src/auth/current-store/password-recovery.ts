@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
+  AUTH_COMMAND_FUTURE_SKEW_MS,
   AUTH_PROTOCOL_VERSION,
   isVersionedPasswordRecoveryToken,
   passwordRecoveryTokenSchema,
@@ -11,7 +12,6 @@ import {
 } from '@boardsesh/auth-protocol';
 import {
   authEmailReservationMembers,
-  authEmailReservations,
   authPasswordRecoveryState,
   authPasswordRecoveryTokens,
   authSubjectCutoffs,
@@ -28,16 +28,19 @@ import {
   assertFresh,
   captureAuthority,
   claimCommand,
+  claimLegacyLink,
   preflight,
   transactionSettings,
   type WebPasswordAuthority,
 } from './command-context';
+import { lockKeyReservation } from './email-reservations';
 import {
   CurrentStoreFoundationError,
   lockEnforcedProjection,
   lockUserRowUnderManifest,
   type CurrentStoreTransaction,
 } from './foundation-context';
+import { accountsHoldingAddress, isEmailUniquenessEnforced, issuedBeforeRevocation } from './legacy-link-binding';
 import { recordSecurityMutation } from './security-mutations';
 
 const purpose = 'password-reset' as const;
@@ -78,11 +81,8 @@ async function owner(
   key: string,
   required = false,
 ) {
-  const [reservation] = await transaction
-    .select()
-    .from(authEmailReservations)
-    .where(eq(authEmailReservations.normalizedEmail, key))
-    .for('update');
+  // A deleted owner's key survives only as its digest row, which is never owned.
+  const reservation = await lockKeyReservation(transaction, key);
   if (!reservation) {
     if (required) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     return null;
@@ -211,6 +211,123 @@ function sameBinding(first: Receipt, locked: Receipt) {
   );
 }
 
+type LegacyResetPreview = { readonly userId: string; readonly passwordHash: string };
+
+/**
+ * Unlocked read before bcrypt, as the UID-bound path reads its receipt: the
+ * account a live pre-switch link would bind to, and its current hash. Nothing
+ * here grants anything; the transaction checks it all again under locks.
+ */
+async function previewLegacyResetOwner(
+  database: DbInstance,
+  email: string,
+  token: string,
+): Promise<LegacyResetPreview | undefined> {
+  if (!(await isEmailUniquenessEnforced(database))) return undefined;
+  const [link] = await database
+    .select({ expires: verificationTokens.expires })
+    .from(verificationTokens)
+    .where(
+      and(
+        eq(verificationTokens.identifier, `password-reset:${email}`),
+        eq(verificationTokens.token, createHash('sha256').update(token).digest('hex')),
+      ),
+    );
+  if (!link || link.expires.getTime() <= Date.now()) return undefined;
+  const holders = await accountsHoldingAddress(database, normalizeAccountEmail(email));
+  if (holders.length !== 1) return undefined;
+  const [credential] = await database.select().from(userCredentials).where(eq(userCredentials.userId, holders[0].id));
+  return credential ? { userId: credential.userId, passwordHash: credential.passwordHash } : undefined;
+}
+
+/**
+ * A pre-switch reset link, once BA-02 makes addresses unique: it binds to the
+ * one account holding its exact address, ends at its original deadline, works
+ * once, and dies on any later security change. Then it resets exactly as a
+ * UID-bound receipt does. Same lock order: manifest (held), reservation, user,
+ * credential, cutoff.
+ */
+async function consumeBoundLegacyReset(
+  transaction: CurrentStoreTransaction,
+  authority: WebPasswordAuthority,
+  link: {
+    readonly requestId: string;
+    readonly email: string;
+    readonly identifier: string;
+    readonly storedToken: string;
+    readonly deadline: Date;
+    readonly now: number;
+    readonly preview: LegacyResetPreview;
+    readonly passwordHash: string;
+  },
+): Promise<'reset' | 'invalid_or_expired' | 'legacy_unbound'> {
+  if (!(await isEmailUniquenessEnforced(transaction))) return 'legacy_unbound';
+  // The old issuer gave every link one hour. A longer deadline is not one it made.
+  if (link.deadline.getTime() > link.now + lifetimeMs + AUTH_COMMAND_FUTURE_SKEW_MS) return 'invalid_or_expired';
+  const key = normalizeAccountEmail(link.email);
+  const userId = await owner(transaction, authority, key);
+  if (!userId)
+    return (await lockKeyReservation(transaction, key))?.state === 'blocked_deleted'
+      ? 'invalid_or_expired'
+      : 'legacy_unbound';
+  if (userId !== link.preview.userId) return 'legacy_unbound';
+  const user = await lockUserRowUnderManifest(transaction, userId);
+  const holders = await accountsHoldingAddress(transaction, key);
+  if (!user || normalizeAccountEmail(user.email) !== key || holders.length !== 1 || holders[0].id !== userId)
+    return 'invalid_or_expired';
+  const [credential] = await transaction
+    .select()
+    .from(userCredentials)
+    .where(eq(userCredentials.userId, userId))
+    .for('update');
+  const [cutoff] = await transaction
+    .select()
+    .from(authSubjectCutoffs)
+    .where(eq(authSubjectCutoffs.userId, userId))
+    .for('update');
+  // Read after every lock wait: the deadline is checked at the moment of use.
+  const resetAt = new Date(await clock(transaction));
+  if (
+    !credential ||
+    credential.passwordHash !== link.preview.passwordHash ||
+    cutoff?.deletedAt ||
+    issuedBeforeRevocation(link.deadline, lifetimeMs, cutoff) ||
+    link.deadline.getTime() <= resetAt.getTime()
+  )
+    return 'invalid_or_expired';
+  const claimed = await claimLegacyLink(transaction, {
+    purpose,
+    identifier: link.identifier,
+    storedToken: link.storedToken,
+    expires: link.deadline,
+  });
+  if (!claimed) return 'invalid_or_expired';
+  const [changed] = await transaction
+    .update(userCredentials)
+    .set({ passwordHash: link.passwordHash, updatedAt: resetAt })
+    .where(and(eq(userCredentials.userId, userId), eq(userCredentials.passwordHash, link.preview.passwordHash)))
+    .returning({ userId: userCredentials.userId });
+  if (!changed) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  if (!user.emailVerified)
+    await transaction
+      .update(users)
+      .set({ emailVerified: resetAt, updatedAt: resetAt })
+      .where(and(eq(users.id, userId), isNull(users.emailVerified)));
+  await recordSecurityMutation(transaction, {
+    ...authority,
+    operationId: link.requestId,
+    userId,
+    expectedGeneration: cutoff?.generation ?? 0,
+    kind: 'password-reset',
+    domains: ['first-party', 'partner'],
+  });
+  await transaction
+    .update(mobileRefreshTokens)
+    .set({ revokedAt: resetAt })
+    .where(and(eq(mobileRefreshTokens.userId, userId), isNull(mobileRefreshTokens.revokedAt)));
+  return 'reset';
+}
+
 /** Records revocation intent; legacy issuers/validators are NOT adopted here. */
 export async function consumePasswordRecovery(
   database: DbInstance,
@@ -250,8 +367,13 @@ export async function consumePasswordRecovery(
   const initialCredential = beforeCredential
     ? { userId: beforeCredential.userId, passwordHash: beforeCredential.passwordHash }
     : undefined;
+  const legacyAddress = legacyEmail?.success ? legacyEmail.data.email : undefined;
+  const legacyPreview =
+    !supported && !versioned && body && legacyAddress
+      ? await previewLegacyResetOwner(database, legacyAddress, body.token)
+      : undefined;
   const passwordHash =
-    initial && initialCredential && !initial.consumedAt && !initial.supersededAt && body
+    body && ((initial && initialCredential && !initial.consumedAt && !initial.supersededAt) || legacyPreview)
       ? await bcrypt.hash(body.password, 12)
       : undefined;
   return database.transaction(async (transaction): Promise<ResetPasswordReply> => {
@@ -273,22 +395,34 @@ export async function consumePasswordRecovery(
         return /^pr1_/i.test(body.token)
           ? { ...base, outcome: 'invalid_or_expired' }
           : { ...base, outcome: 'error', code: 'unavailable' };
-      // Only this literal namespace is constructed. Never consume or clean up
-      // any legacy row, and never infer its original owner from today's users.
+      // Only this literal namespace is constructed, from the exact address the
+      // link carries. The old row is never changed or removed. Until BA-02
+      // makes addresses unique, its original owner cannot be inferred from
+      // today's users, and a live link stays unbound.
       const email = legacyEmail?.success ? legacyEmail.data.email : undefined;
       if (!email) return { ...base, outcome: 'invalid_or_expired' };
+      const identifier = `password-reset:${email}`;
+      const storedToken = createHash('sha256').update(body.token).digest('hex');
       const [legacy] = await transaction
         .select({ expires: verificationTokens.expires })
         .from(verificationTokens)
-        .where(
-          and(
-            eq(verificationTokens.identifier, `password-reset:${email}`),
-            eq(verificationTokens.token, createHash('sha256').update(body.token).digest('hex')),
-          ),
-        );
+        .where(and(eq(verificationTokens.identifier, identifier), eq(verificationTokens.token, storedToken)));
       const now = await clock(transaction);
       assertFresh(issuedAt);
-      return { ...base, outcome: legacy && legacy.expires.getTime() > now ? 'legacy_unbound' : 'invalid_or_expired' };
+      if (!legacy || legacy.expires.getTime() <= now) return { ...base, outcome: 'invalid_or_expired' };
+      if (!legacyPreview || !passwordHash) return { ...base, outcome: 'legacy_unbound' };
+      const outcome = await consumeBoundLegacyReset(transaction, authority, {
+        requestId,
+        email,
+        identifier,
+        storedToken,
+        deadline: new Date(legacy.expires.getTime()),
+        now,
+        preview: legacyPreview,
+        passwordHash,
+      });
+      assertFresh(issuedAt);
+      return { ...base, outcome };
     }
     if (!initial || initial.purpose !== purpose || !initialCredential || !passwordHash)
       return { ...base, outcome: 'invalid_or_expired' };

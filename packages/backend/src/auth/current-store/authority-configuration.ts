@@ -49,6 +49,29 @@ export function currentStoreRpcSecret(environment: Environment): string {
   return rpcSecret;
 }
 
+export const DELETED_EMAIL_KEY_ENV = 'CURRENT_STORE_DELETED_EMAIL_KEY';
+
+/**
+ * The HMAC key behind a deleted account's address digest. Rotating it frees
+ * every address deleted in the last 90 days early, so it stays put once set.
+ */
+export function currentStoreDeletedEmailKey(environment: Environment = process.env): string {
+  const key = environment[DELETED_EMAIL_KEY_ENV];
+  if (
+    !key ||
+    key !== key.trim() ||
+    Buffer.byteLength(key, 'utf8') < 32 ||
+    [
+      environment.NEXTAUTH_SECRET,
+      environment.CRON_SECRET,
+      environment.CURRENT_STORE_AUTH_RPC_SECRET,
+      environment[BATCH_SYSTEM_USER_COMMAND_ENV.secret],
+    ].some((otherSecret) => Boolean(otherSecret) && otherSecret === key)
+  )
+    throw new Error('Invalid current-store deleted-email configuration');
+  return key;
+}
+
 /** Invoked only after the caller explicitly selects its own staging mode. */
 export function currentStoreAuthorityConfiguration(environment: Environment): WebPasswordAuthority {
   if (environment.DEBUG_SQL === 'true') throw new Error('Unsafe current-store auth SQL logging');
@@ -109,5 +132,8 @@ export function currentStoreAccountDeletionConfiguration(
   const mode = environment.CURRENT_STORE_ACCOUNT_DELETION_MODE;
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid account deletion mode');
-  return { mode, authority: currentStoreAuthorityConfiguration(environment) };
+  const authority = currentStoreAuthorityConfiguration(environment);
+  // Checked before content runs: the digest is only written in the final bookkeeping.
+  currentStoreDeletedEmailKey(environment);
+  return { mode, authority };
 }
