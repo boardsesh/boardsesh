@@ -14,35 +14,47 @@ function nextEventLoopTurn() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
+/** The read's answer for each user it found active: here, the user's own ID. */
+function answerFor(userIds: Iterable<string>): ReadonlyMap<string, string> {
+  return new Map([...userIds].map((userId) => [userId, `state-of-${userId}`]));
+}
+
 describe('admission read coalescer', () => {
   it('serves a same-tick burst of distinct users from one read', async () => {
-    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => new Set(userIds));
+    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => answerFor(userIds));
     const admit = createAdmissionCoalescer(readActiveUserIds);
     const userIds = Array.from({ length: 60 }, (_unused, index) => `user-${index}`);
 
-    await expect(Promise.all(userIds.map(admit))).resolves.toEqual(userIds.map(() => true));
+    await expect(Promise.all(userIds.map(admit))).resolves.toEqual(userIds.map((userId) => `state-of-${userId}`));
 
     expect(readActiveUserIds).toHaveBeenCalledTimes(1);
     expect(readActiveUserIds.mock.calls[0][0]).toEqual(userIds);
   });
 
   it('shares one lookup between callers asking about the same user', async () => {
-    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => new Set(userIds));
+    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => answerFor(userIds));
     const admit = createAdmissionCoalescer(readActiveUserIds);
 
-    await expect(Promise.all([admit('same'), admit('same'), admit('same')])).resolves.toEqual([true, true, true]);
+    await expect(Promise.all([admit('same'), admit('same'), admit('same')])).resolves.toEqual([
+      'state-of-same',
+      'state-of-same',
+      'state-of-same',
+    ]);
 
     expect(readActiveUserIds.mock.calls[0][0]).toEqual(['same']);
   });
 
   it('answers each caller from the shared read', async () => {
-    const admit = createAdmissionCoalescer(async () => new Set(['active']));
+    const admit = createAdmissionCoalescer(async () => answerFor(['active']));
 
-    await expect(Promise.all([admit('active'), admit('deleted-or-missing')])).resolves.toEqual([true, false]);
+    await expect(Promise.all([admit('active'), admit('deleted-or-missing')])).resolves.toEqual([
+      'state-of-active',
+      undefined,
+    ]);
   });
 
   it('splits a burst larger than one batch', async () => {
-    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => new Set(userIds));
+    const readActiveUserIds = vi.fn(async (userIds: readonly string[]) => answerFor(userIds));
     const admit = createAdmissionCoalescer(readActiveUserIds);
     const userIds = Array.from({ length: AUTH_ADMISSION_BATCH_SIZE + 1 }, (_unused, index) => `user-${index}`);
 
@@ -69,14 +81,14 @@ describe('admission read coalescer', () => {
   });
 
   it('never lets a caller join a read that has already started', async () => {
-    let finishFirstRead = (_activeUserIds: ReadonlySet<string>) => {};
-    const firstRead = new Promise<ReadonlySet<string>>((resolve) => {
+    let finishFirstRead = (_answers: ReadonlyMap<string, string>) => {};
+    const firstRead = new Promise<ReadonlyMap<string, string>>((resolve) => {
       finishFirstRead = resolve;
     });
     const readActiveUserIds = vi
-      .fn<(userIds: readonly string[]) => Promise<ReadonlySet<string>>>()
+      .fn<(userIds: readonly string[]) => Promise<ReadonlyMap<string, string>>>()
       .mockReturnValueOnce(firstRead)
-      .mockResolvedValueOnce(new Set());
+      .mockResolvedValueOnce(new Map());
     const admit = createAdmissionCoalescer(readActiveUserIds);
 
     const earlyCaller = admit('account');
@@ -88,10 +100,10 @@ describe('admission read coalescer', () => {
     const lateCaller = admit('account');
     await nextEventLoopTurn();
     expect(readActiveUserIds).toHaveBeenCalledTimes(2);
-    await expect(lateCaller).resolves.toBe(false);
+    await expect(lateCaller).resolves.toBeUndefined();
 
-    finishFirstRead(new Set(['account']));
-    await expect(earlyCaller).resolves.toBe(true);
+    finishFirstRead(answerFor(['account']));
+    await expect(earlyCaller).resolves.toBe('state-of-account');
   });
 
   /** Occupies every read with one caller each, in separate event-loop turns. */
@@ -99,12 +111,12 @@ describe('admission read coalescer', () => {
     const finishReads: Array<() => void> = [];
     const readActiveUserIds = vi.fn(
       (userIds: readonly string[]) =>
-        new Promise<ReadonlySet<string>>((resolve) => {
-          finishReads.push(() => resolve(new Set(userIds)));
+        new Promise<ReadonlyMap<string, string>>((resolve) => {
+          finishReads.push(() => resolve(answerFor(userIds)));
         }),
     );
     const admit = createAdmissionCoalescer(readActiveUserIds);
-    const runningCallers: Promise<boolean>[] = [];
+    const runningCallers: Promise<string | undefined>[] = [];
     for (let index = 0; index < MAX_CONCURRENT_COALESCED_ADMISSION_READS; index += 1) {
       runningCallers.push(admit(`running-${index}`));
       await nextEventLoopTurn();
@@ -130,7 +142,7 @@ describe('admission read coalescer', () => {
     expect(readActiveUserIds.mock.calls.at(-1)?.[0]).toEqual(['held']);
 
     for (const finish of finishReads.slice(1)) finish();
-    await expect(heldCaller).resolves.toBe(true);
+    await expect(heldCaller).resolves.toBe('state-of-held');
     await Promise.all(runningCallers);
   });
 

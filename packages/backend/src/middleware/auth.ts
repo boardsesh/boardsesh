@@ -5,12 +5,15 @@ import { esp32Controllers } from '@boardsesh/db/schema/app';
 import { eq } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 import { decryptLegacyWebJwe } from '../auth/legacy-web-jwe';
-import { AuthAdmissionUnavailableError, isHumanSubjectActive } from '../auth/human-admission';
+import { AuthAdmissionUnavailableError, admitsCredential, readHumanSubjectState } from '../auth/human-admission';
+import { decideCredential, type PresentedCredential } from '../auth/credential-cutoffs';
 
 export type AuthResult = {
   userId: string;
   isAuthenticated: true;
   credentialExpiresAt?: number;
+  /** The stamps admission decided on, so the WebSocket sweep can decide again without decrypting. */
+  credential: PresentedCredential;
 };
 
 export type ControllerAuthResult = {
@@ -23,8 +26,9 @@ export type ControllerAuthResult = {
   setIds: string;
 };
 
-// Short-lived in-process cache for validated tokens: token → { result, expiresAt }
-// Avoids repeated JWE decryption for the same token across rapid requests.
+// Short-lived in-process cache for verified tokens: token → { result, expiresAt }
+// Avoids repeated JWE decryption for the same token across rapid requests. It
+// holds cryptography only: admission (account, generations) is read every call.
 const TOKEN_CACHE_TTL_MS = 60_000; // 60 seconds
 type TokenCacheEntry = {
   result: AuthResult;
@@ -55,7 +59,7 @@ function secretDigest(secret: string): string {
 
 function cacheCryptoResult(token: string, result: AuthResult, format: TokenCacheEntry['format'], secret: string) {
   tokenCache.set(token, {
-    result: Object.freeze(result),
+    result: Object.freeze({ ...result, credential: Object.freeze(result.credential) }),
     format,
     secretDigest: secretDigest(secret),
     expiresAt: Math.min(Date.now() + TOKEN_CACHE_TTL_MS, (result.credentialExpiresAt ?? Infinity) + 60_000),
@@ -65,7 +69,9 @@ function cacheCryptoResult(token: string, result: AuthResult, format: TokenCache
 async function admitCryptoResult(result: AuthResult | null): Promise<AuthResult | null> {
   // Keep database uncertainty OUTSIDE cryptographic catches. Every invocation,
   // including a warm cache and either direct exported validator, checks primary.
-  return result && (await isHumanSubjectActive(result.userId)) ? result : null;
+  if (!result) return null;
+  const subject = await readHumanSubjectState(result.userId);
+  return admitsCredential(decideCredential(result.credential, subject, Date.now()), 'request') ? result : null;
 }
 
 /**
@@ -99,6 +105,12 @@ async function verifyNextAuthToken(token: string, secret: string): Promise<AuthR
       userId,
       isAuthenticated: true,
       ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
+      credential: {
+        kind: 'web-session',
+        generationClaim: payload.gen,
+        sessionKeyClaim: payload.authSessionId,
+        authTimeClaim: payload.auth_time,
+      },
     };
     cacheCryptoResult(token, result, 'jwe', secret);
     return result;
@@ -144,6 +156,12 @@ async function verifyMobileJwt(token: string, secret: string): Promise<AuthResul
       userId,
       isAuthenticated: true,
       ...(typeof payload.exp === 'number' ? { credentialExpiresAt: payload.exp * 1000 } : {}),
+      credential: {
+        kind: 'native-access',
+        generationClaim: payload.gen,
+        nativeGenerationClaim: payload.ngen,
+        authTimeClaim: payload.auth_time,
+      },
     };
     cacheCryptoResult(token, result, 'jws', secret);
     return result;

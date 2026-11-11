@@ -470,6 +470,29 @@ The `connect_timeout` choice, measured with the same three faults:
 The black-hole number depends on where in its timeout the swallowed dial was when
 the path healed, so the worst case is the `connect_timeout` itself.
 
+### The read returns generations too (BA-04 PR 2)
+
+The same statement now also selects `auth_subject_cutoffs.generation` and
+`native_generation` from the row it already joined for `deleted_at`, so readers
+can decide credential cutoffs (docs/better-auth-migration.md, "Credential
+cutoffs"). Still one statement per coalesced read: the mounted test counts one
+admission-pool statement and no main-pool select for one validation, and one
+for a same-tick burst of 80 validations across 40 accounts.
+
+Measured on the local test Postgres with 10,000 users, 4,000 interleaved runs of
+each exact statement on one connection, `prepare: false` (milliseconds,
+median / p99):
+
+| cutoff rows | users per read | before | after |
+| --- | ---: | ---: | ---: |
+| none (production today) | 1 | 0.237 / 0.435 | 0.240 / 0.406 |
+| none | 128 | 1.011 / 1.276 | 1.026 / 1.296 |
+| 5% of accounts | 1 | 0.231 / 0.278 | 0.233 / 0.284 |
+| 5% of accounts | 128 | 1.015 / 1.350 | 1.028 / 1.359 |
+
+`EXPLAIN (ANALYZE, BUFFERS)` gives the same plan and the same shared-buffer hits
+before and after in all four cells (3, 164, 6 and 173).
+
 ### How much can queue on two connections
 
 At most two coalesced reads and one sweep batch compete for the two connections

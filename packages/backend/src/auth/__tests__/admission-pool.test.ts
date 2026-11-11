@@ -25,7 +25,7 @@ import {
 } from '../admission-pool';
 import { MAX_CONCURRENT_COALESCED_ADMISSION_READS } from '../admission-read-coalescer';
 import {
-  activeHumanSubjectIds,
+  readHumanSubjectStates,
   AUTH_ADMISSION_RESPONSE_DEADLINE_MS,
   AuthAdmissionUnavailableError,
   isHumanSubjectActive,
@@ -58,7 +58,7 @@ function nextEventLoopTurn() {
 /** Holds every main-pool connection inside a transaction, as withSerialPlan does. */
 async function holdMainPoolFull() {
   // Opening the admission connections is a separate cost; these tests time queueing.
-  await activeHumanSubjectIds([activeUserId]);
+  await readHumanSubjectStates([activeUserId]);
   const mainPoolSize = createPool().options.max;
   const holdersReleased = deferred();
   let heldConnections = 0;
@@ -255,8 +255,8 @@ describe('auth admission pool', () => {
         expect(mainPoolRead.result).toBeInstanceOf(AuthAdmissionUnavailableError);
         expect(mainPoolRead.elapsedMs).toBeGreaterThanOrEqual(AUTH_ADMISSION_RESPONSE_DEADLINE_MS - 5);
 
-        const admissionRead = await timed(() => activeHumanSubjectIds([activeUserId]));
-        expect(admissionRead.result).toEqual(new Set([activeUserId]));
+        const admissionRead = await timed(() => readHumanSubjectStates([activeUserId]));
+        expect([...admissionRead.result.keys()]).toEqual([activeUserId]);
         expect(admissionRead.elapsedMs).toBeLessThan(ANSWERED_WELL_INSIDE_DEADLINE_MS);
       } finally {
         await mainPool.release();
@@ -303,7 +303,7 @@ describe('auth admission pool', () => {
 
   it('runs on two connections of its own, never more, however many reads arrive', async () => {
     expect(AUTH_ADMISSION_POOL_MAX_CONNECTIONS).toBe(2);
-    const readers = Array.from({ length: 8 }, () => activeHumanSubjectIds([activeUserId]));
+    const readers = Array.from({ length: 8 }, () => readHumanSubjectStates([activeUserId]));
     await Promise.all(readers);
     expect(getAdmissionPool().options.max).toBe(AUTH_ADMISSION_POOL_MAX_CONNECTIONS);
     const connections = await admissionConnectionCount();
@@ -312,7 +312,7 @@ describe('auth admission pool', () => {
   });
 
   it('hands its connections back to the server when closed', async () => {
-    await activeHumanSubjectIds([activeUserId]);
+    await readHumanSubjectStates([activeUserId]);
     expect(await admissionConnectionCount()).toBeGreaterThan(0);
     await closeAdmissionPool();
     await vi.waitFor(async () => expect(await admissionConnectionCount()).toBe(0), { timeout: 3000, interval: 25 });
@@ -384,7 +384,7 @@ describe('auth admission pool', () => {
 
     async function waitForAnAnswer(stopwatch: Stopwatch, maximumRunningMs: number) {
       for (;;) {
-        const answered = await activeHumanSubjectIds([activeUserId]).then(
+        const answered = await readHumanSubjectStates([activeUserId]).then(
           () => true,
           () => false,
         );
@@ -398,7 +398,7 @@ describe('auth admission pool', () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
-        await Promise.all([activeHumanSubjectIds([activeUserId]), activeHumanSubjectIds([activeUserId])]);
+        await Promise.all([readHumanSubjectStates([activeUserId]), readHumanSubjectStates([activeUserId])]);
 
         proxy.hangExistingConnections();
         const sinceHang = pauses.stopwatch();
@@ -416,7 +416,7 @@ describe('auth admission pool', () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
-        await activeHumanSubjectIds([activeUserId]);
+        await readHumanSubjectStates([activeUserId]);
 
         proxy.severExistingConnections();
         proxy.setSwallowNewConnections(true);
@@ -438,7 +438,7 @@ describe('auth admission pool', () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
-        await activeHumanSubjectIds([activeUserId]);
+        await readHumanSubjectStates([activeUserId]);
 
         proxy.severExistingConnections();
         proxy.setOpenDelayMs(AUTH_ADMISSION_READ_WATCHDOG_MS + 500);
@@ -491,13 +491,13 @@ describe('auth admission pool', () => {
       });
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
-        await activeHumanSubjectIds([activeUserId]);
+        await readHumanSubjectStates([activeUserId]);
 
         proxy.setFreezeNewConnections(true);
         proxy.hangExistingConnections();
         const sinceFault = pauses.stopwatch();
         while (sinceFault.runningMs() < 12000) {
-          await activeHumanSubjectIds([activeUserId]).catch(() => undefined);
+          await readHumanSubjectStates([activeUserId]).catch(() => undefined);
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
 
@@ -514,7 +514,7 @@ describe('auth admission pool', () => {
       const proxy = await startPostgresProxy();
       try {
         vi.stubEnv('DATABASE_URL', proxy.url);
-        await activeHumanSubjectIds([activeUserId]);
+        await readHumanSubjectStates([activeUserId]);
 
         proxy.hangExistingConnections();
         const hungRead = readOnAdmissionConnection(
@@ -575,7 +575,7 @@ describe('auth admission pool', () => {
     });
     try {
       await lockGranted.promise;
-      await expect(activeHumanSubjectIds([activeUserId])).rejects.toBeInstanceOf(AuthAdmissionUnavailableError);
+      await expect(readHumanSubjectStates([activeUserId])).rejects.toBeInstanceOf(AuthAdmissionUnavailableError);
       // The server gave up while the lock is still held. Without the startup
       // parameter this statement sits on the connection until the lock clears.
       await vi.waitFor(async () => expect(await runningAdmissionStatements()).toBe(0), {
@@ -587,7 +587,9 @@ describe('auth admission pool', () => {
       await holdingLock;
       await lockHolder.end();
     }
-    await expect(activeHumanSubjectIds([activeUserId])).resolves.toEqual(new Set([activeUserId]));
+    await expect(readHumanSubjectStates([activeUserId])).resolves.toEqual(
+      new Map([[activeUserId, { generation: 0, nativeGeneration: 0, deniedSessionKeys: new Set() }]]),
+    );
   });
 
   it('opens on the primary, never the replica, with the same TLS as the main pool', async () => {

@@ -16,9 +16,9 @@ export const MAX_CONCURRENT_COALESCED_ADMISSION_READS = 2;
 /** Distinct users allowed to wait for a read before new callers are refused. */
 export const MAX_WAITING_ADMISSION_USERS = 1024;
 
-type AdmissionWaiter = {
+type AdmissionWaiter<Answer> = {
   enqueuedAt: number;
-  resolve: (isActive: boolean) => void;
+  resolve: (answer: Answer | undefined) => void;
   reject: (error: unknown) => void;
 };
 
@@ -29,11 +29,14 @@ type AdmissionWaiter = {
  *
  * A caller only ever joins a read that has not started, so its answer is never
  * older than its question. This coalesces work; it is not a cache.
+ *
+ * The read answers for each active user it found. A user it has no answer for
+ * (deleted or missing) resolves to undefined.
  */
-export function createAdmissionCoalescer(
-  readActiveUserIds: (userIds: readonly string[]) => Promise<ReadonlySet<string>>,
-): (userId: string) => Promise<boolean> {
-  const waitersByUserId = new Map<string, AdmissionWaiter[]>();
+export function createAdmissionCoalescer<Answer>(
+  readAnswers: (userIds: readonly string[]) => Promise<ReadonlyMap<string, Answer>>,
+): (userId: string) => Promise<Answer | undefined> {
+  const waitersByUserId = new Map<string, AdmissionWaiter<Answer>[]>();
   let inFlightReads = 0;
   let isFlushScheduled = false;
 
@@ -44,8 +47,8 @@ export function createAdmissionCoalescer(
   }
 
   /** Removes up to one batch of waiters, refusing any that outlived the deadline. */
-  function claimNextBatch(): Map<string, AdmissionWaiter[]> {
-    const claimedWaiters = new Map<string, AdmissionWaiter[]>();
+  function claimNextBatch(): Map<string, AdmissionWaiter<Answer>[]> {
+    const claimedWaiters = new Map<string, AdmissionWaiter<Answer>[]>();
     const oldestAllowed = performance.now() - AUTH_ADMISSION_RESPONSE_DEADLINE_MS;
     for (const [userId, waiters] of waitersByUserId) {
       if (claimedWaiters.size === AUTH_ADMISSION_BATCH_SIZE) break;
@@ -66,11 +69,11 @@ export function createAdmissionCoalescer(
       const claimedWaiters = claimNextBatch();
       if (claimedWaiters.size === 0) continue;
       inFlightReads += 1;
-      void readActiveUserIds([...claimedWaiters.keys()])
+      void readAnswers([...claimedWaiters.keys()])
         .then(
-          (activeUserIds) => {
+          (answers) => {
             for (const [userId, waiters] of claimedWaiters) {
-              for (const waiter of waiters) waiter.resolve(activeUserIds.has(userId));
+              for (const waiter of waiters) waiter.resolve(answers.get(userId));
             }
           },
           (error: unknown) => {
@@ -87,7 +90,7 @@ export function createAdmissionCoalescer(
   }
 
   return (userId) =>
-    new Promise<boolean>((resolve, reject) => {
+    new Promise<Answer | undefined>((resolve, reject) => {
       const waiters = waitersByUserId.get(userId);
       if (!waiters && waitersByUserId.size >= MAX_WAITING_ADMISSION_USERS) {
         reject(new AuthAdmissionUnavailableError());

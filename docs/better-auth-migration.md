@@ -233,10 +233,10 @@ renewing credentials. New compatible JWTs may preserve their public claim shape
 while being issued and revoked by the new authority; prove the key transition
 against every backend instance and supported client.
 
-### Credential stamps (BA-04 PR 1: written, not yet read)
+### Credential stamps (BA-04 PR 1)
 
 Every credential issued from BA-04 PR 1 on records what a later reader needs to
-end it. No validator reads these yet; BA-04 PR 2 does.
+end it. Every reader decides them from BA-04 PR 2 on ("Credential cutoffs" below).
 
 | Credential | Stamps | Renewal |
 | --- | --- | --- |
@@ -256,6 +256,76 @@ The native issuer reads the generations in a statement that starts after it hold
 `users FOR KEY SHARE`. The locking statement's own snapshot is taken before it
 waits, so it misses a reset that held `users FOR UPDATE` and committed during
 that wait.
+
+### Credential cutoffs (BA-04 PR 2)
+
+One pure function, `decideCredential` (`packages/backend/src/auth/credential-cutoffs.ts`),
+decides every first-party credential from its stamps and the climber's state.
+Every reader calls it: the HTTP and GraphQL validators (`middleware/auth.ts`,
+`handlers/auth-admission.ts`), the WebSocket handshake, subscribe check and
+one-second sweep (`websocket/setup.ts`), and the native refresh issuer. The web
+(`credential-admission.server.ts`) sends the exact cookie to the backend's
+`authenticatedUserId`, so it gets the same answer.
+
+| Credential | Used while | Authentication age |
+| --- | --- | --- |
+| Web JWE without `gen` (before PR 1) | generation is 0, `authSessionId` not denied | `auth_time` if present, else unknown |
+| Web JWE with `gen` | `gen` equals generation, `authSessionId` not denied; native generation is never compared (decision 10) | `auth_time` if present, else unknown |
+| Native JWT without `gen`/`ngen` | generation and native generation are both 0 | unknown |
+| Native JWT with `gen`, `ngen` | both equal the current generations | `auth_time` if present, else unknown |
+| Refresh row with NULL stamps | not revoked, both generations 0 | unknown |
+| Refresh row with stamps | not revoked, both stamps equal the current generations | `authenticated_at` if present, else unknown |
+| Any, account deleted or missing | never | n/a |
+
+- A missing stamp stands for 0. A stamp present but not a whole number of at
+  least 0 is refused. A stamp must equal the generation: higher is refused too.
+- Age is read only from `auth_time` or `authenticated_at`, never from whether
+  `gen` is there: a transfer token or watch code mints `gen` without `auth_time`.
+  Nothing requires fresh authentication yet; BA-04 PR 9 adds that check.
+- A refresh whose parent no longer matches is answered 401 and mints nothing.
+  A child copies its parent's stamps, so without this the app would get a token
+  pair every reader refuses and loop refresh, 401, refresh. The app signs out.
+- No query is added. The admission read already joined `auth_subject_cutoffs`
+  for `deleted_at`; it now also returns `generation` and `native_generation`
+  from the same statement. Plan, buffers and timing are unchanged
+  (docs/db-connectivity.md, "Admission reads have their own pool").
+- The decision also takes denied web logins (`authSessionId`). No table holds
+  them until BA-04 PR 6 and nothing writes one until web sign-out does (PR 9),
+  so the read returns none today.
+
+**Unavailable is never denied.** A read that fails or misses its deadline answers
+503 on HTTP, refuses a new socket with 1013, and never closes an open socket from
+the sweep, even when the generation has in fact moved; the socket closes 4401 on
+the first sweep that can read it. A socket that starts a subscription during an
+outage is still closed with 1013 so the client reconnects (unchanged since #7350).
+
+**`AUTH_CUTOFF_ENFORCEMENT`** (backend, default `enforce`):
+
+| Value | Effect |
+| --- | --- |
+| unset, empty, `enforce` | Every denial above is refused |
+| `observe` | A credential refused only by a cutoff (generation, native generation, denied login, malformed stamp) is used anyway and logged as `observed`: the behaviour of the build before PR 2. A deleted account is still refused |
+
+The backend refuses to start with `observe` while any staged writer mode is on
+(`CURRENT_STORE_WEB_AUTH_MODE`, `CURRENT_STORE_WEB_OAUTH_MODE`,
+`CURRENT_STORE_NATIVE_REGISTRATION_MODE`, `CURRENT_STORE_NATIVE_OAUTH_MODE`,
+`CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE`, `CURRENT_STORE_ACCOUNT_DELETION_MODE`,
+`CURRENT_STORE_BATCH_SYSTEM_USERS_MODE`), or with any other value. Each staged
+command also refuses its authority under `observe`, so a reset never bumps a
+generation that no reader enforces.
+
+**Logs.** `[auth-cutoff] credential refused by a cutoff` with `reader`
+(`request`, `socket-sweep`, `refresh`), `outcome` (`denied` or `observed`) and
+`reason`, once per kind per 10 s with a count line after. No user ID, token or
+claim. Deletions are not logged here. The web logs
+`auth_generation_read_unavailable` and sends it to Sentry as a warning when its
+sign-in read of the generation fails; that sign-in is stamped 0 and, for a
+climber whose generation has moved, answered 401 before any cookie is sent.
+
+With no cutoff rows, which is production until a staged writer mode is on, every
+generation is 0 and every existing credential matches, so nobody is denied. Once
+any cutoff row exists, this build is the rollback floor
+(docs/production-deploy.md, "Credential cutoff rollback floor").
 
 ## Native, watch, and browser compatibility
 

@@ -14,6 +14,10 @@ const controls = vi.hoisted(() => ({
   deleteDuringJwt: false,
   deleteDuringSignOut: false,
   presented: [] as string[],
+  // auth_subject_cutoffs.generation per climber, and what a sign-in stamps (a
+  // failed read in auth-options stamps 0).
+  generations: new Map<string, number>(),
+  signInStamp: 0,
 }));
 const secret = 'owned-mounted-deletion-fixture-secret';
 vi.mock('@/app/lib/auth/auth-options', async () => {
@@ -30,7 +34,10 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
       ],
       callbacks: {
         jwt: async ({ token, user }: { token: JWT; user?: { id: string } }) => {
-          if (user) token.authSessionId = `login-${user.id}`;
+          if (user) {
+            token.authSessionId = `login-${user.id}`;
+            token.gen = controls.signInStamp;
+          }
           if (controls.deleteDuringJwt && token.sub) controls.deleted.add(token.sub);
           return token;
         },
@@ -58,7 +65,9 @@ vi.mock('@/app/lib/auth/credential-admission.server', async (importOriginal) => 
       controls.presented.push(credential);
       if (controls.unavailable) throw new actual.CredentialAuthorityUnavailable();
       const token = await publicDecode({ token: credential, secret: 'owned-mounted-deletion-fixture-secret' });
-      return token?.sub && !controls.deleted.has(token.sub) ? token.sub : null;
+      if (!token?.sub || controls.deleted.has(token.sub)) return null;
+      // The backend's generation rule (BA-04 PR 2): a missing stamp is 0.
+      return (token.gen ?? 0) === (controls.generations.get(token.sub) ?? 0) ? token.sub : null;
     },
   };
 });
@@ -124,6 +133,8 @@ beforeEach(async () => {
   controls.deleted.clear();
   controls.unavailable = controls.deleteDuringJwt = controls.deleteDuringSignOut = false;
   controls.presented = [];
+  controls.generations.clear();
+  controls.signInStamp = 0;
   cookies = new Map();
   const response = await invoke('csrf');
   remember(response);
@@ -180,6 +191,20 @@ describe('actual public NextAuth deletion publication', () => {
     expect(response.status).toBe(200);
     remember(response);
     expect((await decode({ token: cookies.get('next-auth.session-token'), secret }))?.sub).toBe('owner-b');
+  });
+
+  it('answers 401 with no cookie when a failed generation read stamped 0 after a reset', async () => {
+    controls.generations.set('owner-a', 1);
+    controls.signInStamp = 0;
+    const refused = await login();
+    expect(refused.status).toBe(401);
+    expect(refused.headers.getSetCookie()).toEqual([]);
+    // The next attempt reads the generation and signs in.
+    controls.signInStamp = 1;
+    const admitted = await login();
+    expect(admitted.status).toBe(200);
+    remember(admitted);
+    expect((await decode({ token: cookies.get('next-auth.session-token'), secret }))?.gen).toBe(1);
   });
 
   it('preserves the old cookie on authority outage rather than clearing it', async () => {

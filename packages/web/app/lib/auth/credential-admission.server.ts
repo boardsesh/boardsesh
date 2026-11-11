@@ -19,6 +19,9 @@ function isRecord(candidate: unknown): candidate is Record<string, unknown> {
 /**
  * Admit the exact presented JWE through the backend's primary authority.
  * No caller-supplied UID, session timestamp, or cached positive result is proof.
+ * The backend decides deletion and the cookie's `gen` stamp against the
+ * climber's current generation (BA-04 PR 2), so a reset ends the cookie here too.
+ * Only its explicit UNAUTHENTICATED is a denial; anything else is unavailable.
  */
 export async function admitPresentedWebCredential(credential: string): Promise<string | null> {
   const secret = process.env.NEXTAUTH_SECRET;

@@ -11,13 +11,14 @@ import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
 import { validateHttpAuthToken } from './auth-admission';
 import {
+  admitsCredential,
   AuthAdmissionUnavailableError,
   AuthSubjectDeniedError,
   isAuthAdmissionUnavailable,
   isHumanSubjectActive,
   requireHumanSubjectForIssuance,
-  type IssuanceGenerations,
 } from '../auth/human-admission';
+import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
@@ -381,8 +382,8 @@ type RefreshStamps = Pick<
 >;
 
 /**
- * What a new token pair descends from. No reader enforces the stamps yet
- * (BA-04 PR 2); they are written so that one can.
+ * What a new token pair descends from. Every reader decides the stamps by
+ * `decideCredential` (BA-04 PR 2).
  */
 type NativeCredentialOrigin =
   /**
@@ -409,7 +410,7 @@ function signedInNow(): NativeCredentialOrigin {
 /** A sign-in that hands over a login made elsewhere: its age is unknown. */
 const SIGN_IN_OF_UNKNOWN_AGE: NativeCredentialOrigin = { kind: 'sign-in', authenticatedAt: null };
 
-function credentialStamps(origin: NativeCredentialOrigin, generations: IssuanceGenerations): CredentialStamps {
+function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCutoffState): CredentialStamps {
   if (origin.kind === 'sign-in') {
     return {
       subjectGeneration: generations.generation,
@@ -442,6 +443,25 @@ async function generateTokenPair(
 }> {
   await transactionSettings(transaction);
   const generations = await requireHumanSubjectForIssuance(transaction, userId);
+  if (origin.kind === 'refresh') {
+    // A child copies its parent's stamps, so a parent from before a reset or an
+    // app sign-out would mint a pair every reader refuses, and the app would
+    // loop refresh -> 401. Refuse the parent instead: a 401 here signs the app out.
+    // Every cutoff writer locks `users` FOR UPDATE first, and this issuer holds
+    // KEY SHARE, so no cutoff commits between this read and the child's insert.
+    const { parent } = origin;
+    const decision = decideCredential(
+      {
+        kind: 'native-refresh',
+        subjectGeneration: parent.subjectGeneration,
+        nativeGeneration: parent.nativeGeneration,
+        authenticatedAt: parent.authenticatedAt,
+      },
+      generations,
+      Date.now(),
+    );
+    if (!admitsCredential(decision, 'refresh')) throw new AuthSubjectDeniedError();
+  }
   const signingSecret = getSigningSecret();
   if (!signingSecret) throw new AuthAdmissionUnavailableError();
   const stamps = credentialStamps(origin, generations);
