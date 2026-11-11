@@ -4,9 +4,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { accumulateFramesToMaps, toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { buildSprayLedMapping } from '@boardsesh/spray-wall-geometry';
 import {
-  bleControllerTarget,
   createLedPreviewSession,
   getLedControllerDriver,
+  LedControllerError,
   type LedPixel,
   type LedPreviewSession,
 } from '@boardsesh/led-controller';
@@ -19,25 +19,11 @@ import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawa
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 /**
- * This phone's Bluetooth controller for the wall. A phone that never picked one
- * (a climber who cannot edit the wall) uses the only controller advertising
- * nearby, and remembers it; with none or several, there is nothing to light.
+ * Why a climb did not light, when the climber can do something about it:
+ * Bluetooth is off or not allowed, or the Bluetooth Spraywall has no controller
+ * saved. Anything else is the generic "could not light".
  */
-async function bluetoothTarget(wallUuid: string): Promise<string> {
-  const [{ loadSprayWallBleDevice, saveSprayWallBleDevice }, { findOnlySprayLedController }] = await Promise.all([
-    import('./spray-wall-led-ble-device'),
-    // Also registers the transport with the driver before the session uses it.
-    import('./spray-led-ble-transport-loader').then(({ loadSprayLedBleTransport }) => loadSprayLedBleTransport()),
-  ]);
-  let device = await loadSprayWallBleDevice(wallUuid);
-  if (!device) {
-    const only = await findOnlySprayLedController();
-    if (!only) return '';
-    device = { id: only.id, name: only.name };
-    await saveSprayWallBleDevice(wallUuid, device, { restartLighting: false });
-  }
-  return bleControllerTarget(device.id);
-}
+export type SprayLedFailureReason = 'bluetoothOff' | 'bluetoothNotSetUp';
 
 type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
 
@@ -52,12 +38,18 @@ export function useSprayLedRouteSender({
   colorOverrides,
   onInvalidated,
   onFailure,
+  confirmBluetoothUse,
 }: {
   boardName?: string;
   layoutId?: number;
   colorOverrides?: HoldColorOverrides;
   onInvalidated: (retry?: boolean) => void;
-  onFailure?: () => void;
+  onFailure?: (reason?: SprayLedFailureReason) => void;
+  /**
+   * Explain, once, why a held climb is about to ask for Bluetooth, before the
+   * first system prompt. Resolves false when the climber says not now.
+   */
+  confirmBluetoothUse?: () => Promise<boolean>;
 }) {
   const queryClient = useQueryClient();
   const runtime = useRef<RouteRuntime | null>(null);
@@ -74,6 +66,8 @@ export function useSprayLedRouteSender({
   invalidate.current = onInvalidated;
   const failure = useRef(onFailure);
   failure.current = onFailure;
+  const confirmBluetooth = useRef(confirmBluetoothUse);
+  confirmBluetooth.current = confirmBluetoothUse;
   const currentConfig = `${boardName}:${layoutId}`;
   const config = useRef(currentConfig);
   config.current = currentConfig;
@@ -144,14 +138,14 @@ export function useSprayLedRouteSender({
         credentials === getCredentialGeneration();
       if (!isCurrent()) return false;
       let enabled = false;
-      const fail = () => {
+      const fail = (reason?: SprayLedFailureReason) => {
         if (!enabled || !isCurrent()) return false;
         // Nobody reads a toast on a locked phone. The write is retried on return.
         if (away.current) {
           missedWhileAway.current = true;
         } else if (!failureShown.current) {
           failureShown.current = true;
-          failure.current?.();
+          failure.current?.(reason);
         }
         return false;
       };
@@ -187,8 +181,24 @@ export function useSprayLedRouteSender({
         }
         enabled = true;
         if (mirrored) return fail();
-        const target = settings.controller.type === 'ble' ? await bluetoothTarget(wallUuid) : settings.controller.url;
-        if (!isCurrent()) return false;
+        // The Wi-Fi address, or `ble:` and the name the wall's controller advertises.
+        const target = settings.controller.url;
+        if (settings.controller.type === 'ble') {
+          // No controller saved: only an editor can find one, in the LED settings.
+          if (!target) return fail('bluetoothNotSetUp');
+          const [{ sprayLedBluetoothNeedsPrimer, markSprayLedBluetoothPrimed }] = await Promise.all([
+            import('./spray-led-ble-primer'),
+            // Registers the Bluetooth transport with the driver before the session uses it.
+            import('./spray-led-ble-transport-loader'),
+          ]);
+          if (!isCurrent()) return false;
+          if (await sprayLedBluetoothNeedsPrimer()) {
+            const go = (await confirmBluetooth.current?.()) ?? true;
+            if (!isCurrent()) return false;
+            if (!go) return false;
+            await markSprayLedBluetoothPrimed();
+          }
+        }
         if (!target) return fail();
         let current = runtime.current;
         // A changed brightness or auto-off needs a fresh session: its first write applies them.
@@ -239,9 +249,11 @@ export function useSprayLedRouteSender({
         }
         if (!isCurrent()) return false;
         return settled(await current.session.show([...pixels.keys()], [...pixels.values()]));
-      } catch {
+      } catch (error) {
         if (isCurrent()) {
-          fail();
+          fail(
+            error instanceof LedControllerError && error.code === 'bluetooth-unavailable' ? 'bluetoothOff' : undefined,
+          );
           // Away, the wall is left alone until the retry on return.
           if (!away.current) stop();
         }

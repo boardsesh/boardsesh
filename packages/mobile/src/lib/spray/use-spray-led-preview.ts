@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import {
-  bleControllerTarget,
   createLedPreviewSession,
   getLedControllerDriver,
   LedControllerError,
@@ -9,7 +8,6 @@ import {
   type LedPreviewSession,
 } from '@boardsesh/led-controller';
 import { useSprayWallLedSettings, type SprayWallLedSettings } from './use-spray-wall-led-settings';
-import { useSprayWallBleDevice, type SprayWallBleDevice } from './spray-wall-led-ble-device';
 import './spray-led-ble-transport-loader';
 
 export type SprayLedPreviewState = 'idle' | 'sending' | 'lit' | 'chasing' | 'stopping';
@@ -20,24 +18,14 @@ export function useSprayLedPreview(wallUuid: string) {
   return useSprayLedPreviewForSettings(wallUuid, useSprayWallLedSettings(wallUuid));
 }
 
-/** Where a preview reaches the wall: its Wi-Fi address, or this phone's Bluetooth controller. */
-export function sprayLedControllerTarget(
-  settings: SprayWallLedSettings | null,
-  bleDevice: SprayWallBleDevice | null,
-): string {
-  if (!settings) return '';
-  if (settings.controller.type !== 'ble') return settings.controller.url;
-  return bleDevice ? bleControllerTarget(bleDevice.id) : '';
-}
-
 /** Reuse the editor's live settings so a newly confirmed URL is immediately available. */
 export function useSprayLedPreviewForSettings(
   wallUuid: string,
   { settings, loading }: { settings: SprayWallLedSettings | null; loading: boolean },
 ) {
-  const bleDevice = useSprayWallBleDevice(wallUuid);
-  const enabled = !loading && settings?.enabled === true && (settings.controller.type !== 'ble' || !bleDevice.loading);
-  const url = sprayLedControllerTarget(settings, bleDevice.device);
+  const enabled = !loading && settings?.enabled === true;
+  // The Wi-Fi address, or `ble:` and the name the wall's Bluetooth controller advertises.
+  const url = settings?.controller.url ?? '';
   const controllerType = settings?.controller.type ?? 'wled';
   const brightness = settings?.brightness;
   const autoOffMinutes = settings?.autoOffMinutes;
@@ -168,7 +156,7 @@ export function useSprayLedPreviewForSettings(
     [run],
   );
 
-  // Why lighting is off: a Bluetooth Spraywall needs this phone to have found its controller, not a WLED address.
+  // Why lighting is off: a Bluetooth Spraywall needs its controller found in the LED settings, not a WLED address.
   const unavailableMessage =
     controllerType === 'ble'
       ? ('sprayLedSetup.lightingUnavailableBle' as const)

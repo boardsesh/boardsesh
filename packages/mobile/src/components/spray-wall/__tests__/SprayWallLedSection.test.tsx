@@ -31,9 +31,13 @@ const bluetooth = vi.hoisted(() => ({
   scan: vi.fn(),
   stop: vi.fn(),
   update: null as null | ((candidates: { id: string; name: string; rssi: number }[]) => void),
-  stopped: null as null | ((outcome: 'done' | 'unavailable') => void),
+  stopped: null as null | ((outcome: 'done' | 'unavailable' | 'busy') => void),
 }));
-vi.mock('../../../lib/spray/spray-led-ble-transport', () => ({ scanForSprayLedControllers: bluetooth.scan }));
+const remembered = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock('../../../lib/spray/spray-led-ble-transport', () => ({
+  scanForSprayLedControllers: bluetooth.scan,
+  rememberSprayLedController: remembered,
+}));
 vi.mock('@react-native-community/netinfo', () => ({ default: { fetch: network.fetch } }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: storage.read,
@@ -205,19 +209,19 @@ afterEach(async () => {
 });
 
 describe('SprayWallLedSection', () => {
-  const bleDeviceKey = 'sprayWallLedBleDevice:wall-1';
-  const bluetoothSettings = (): SprayWallLedSettings => ({
-    ...savedSettings(true, 'http://wled.local'),
-    controller: { type: 'ble', url: 'http://wled.local' },
+  const address = 'ble:Boardsesh Spraywall 1A2B';
+  const bluetoothSettings = (url = ''): SprayWallLedSettings => ({
+    ...savedSettings(true, ''),
+    controller: { type: 'ble', url },
   });
 
-  it('switches the Spraywall to Bluetooth, finds a controller and keeps it on this phone only', async () => {
+  it('switches the Spraywall to Bluetooth, finds a controller and saves its name to the Spraywall', async () => {
     storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();
     expect(lightingControls.connection?.selectedKey).toBe('wled');
     act(() => lightingControls.connection?.onSelect('ble'));
-    // The type is the wall's; the Wi-Fi address stays for climbers on the Wi-Fi.
+    // A Wi-Fi address is no Bluetooth controller: the new type starts without one.
     await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings()));
     expect(screen.queryByRole('textbox', { name: 'sprayLed.url' })).toBeNull();
     expect(bluetooth.scan).not.toHaveBeenCalled();
@@ -233,11 +237,11 @@ describe('SprayWallLedSection', () => {
     act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'Boardsesh Spraywall 1A2B', rssi: -60 }]));
     fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleResult' }));
     expect(bluetooth.stop).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(storage.records.get(bleDeviceKey)).toEqual({ id: 'AA:BB:CC:DD:EE:FF', name: 'Home wall' }),
-    );
-    expect(controller.probe).toHaveBeenCalledWith('ble:AA:BB:CC:DD:EE:FF', expect.any(AbortSignal));
-    expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings());
+    // Every phone finds the controller by the name saved on the Spraywall; the id stays on this phone.
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings(address)));
+    expect(remembered).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B', 'AA:BB:CC:DD:EE:FF');
+    expect(controller.probe).toHaveBeenCalledWith(address, expect.any(AbortSignal));
+    expect(JSON.stringify(storage.records.get(settingsKey))).not.toContain('AA:BB');
     expect(screen.queryByText('sprayLed.bleConnected')).not.toBeNull();
 
     await waitFor(() => expect((button('lightAll') as HTMLButtonElement).disabled).toBe(false));
@@ -246,12 +250,11 @@ describe('SprayWallLedSection', () => {
     expect(controller.lightAll).toHaveBeenCalledWith();
     fireEvent.click(button('turnOff'));
     await waitFor(() => expect(screen.queryByText('sprayLed.off')).not.toBeNull());
-    expect(controller.turnOff).toHaveBeenCalledWith('ble:AA:BB:CC:DD:EE:FF');
+    expect(controller.turnOff).toHaveBeenCalledWith(address);
   });
 
   it('checks the stored Bluetooth controller only on a tap, and says when it is no Spraywall controller', async () => {
-    storage.records.set(settingsKey, bluetoothSettings());
-    storage.records.set(bleDeviceKey, { id: 'AA:BB:CC:DD:EE:FF', name: 'Home wall' });
+    storage.records.set(settingsKey, bluetoothSettings(address));
     controller.probe.mockRejectedValue(new LedControllerError('not-wled'));
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();
@@ -275,12 +278,25 @@ describe('SprayWallLedSection', () => {
     await waitFor(() => expect(bluetooth.scan).toHaveBeenCalledTimes(2));
     act(() => bluetooth.stopped?.('done'));
     expect(await screen.findByText('sprayLed.bleFindNone')).toBeTruthy();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalledTimes(3));
+    act(() => bluetooth.stopped?.('busy'));
+    expect(await screen.findByText('sprayLed.bleScanBusy')).toBeTruthy();
     expect(controller.probe).not.toHaveBeenCalled();
   });
 
+  it('says Bluetooth is off when checking the controller finds the radio off', async () => {
+    storage.records.set(settingsKey, bluetoothSettings(address));
+    controller.probe.mockRejectedValue(new LedControllerError('bluetooth-unavailable'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleCheck' }));
+    expect(await screen.findByText('sprayLed.bleUnavailable')).toBeTruthy();
+    expect(screen.queryByText('sprayLed.bleUnreachable')).toBeNull();
+  });
+
   it('reports a Bluetooth controller that does not answer in time with Bluetooth advice', async () => {
-    storage.records.set(settingsKey, bluetoothSettings());
-    storage.records.set(bleDeviceKey, { id: 'AA:BB:CC:DD:EE:FF', name: 'Home wall' });
+    storage.records.set(settingsKey, bluetoothSettings(address));
     controller.probe.mockRejectedValue(new LedControllerError('timeout'));
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     await openSection();

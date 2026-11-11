@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
 import {
+  bleControllerName,
   bleControllerTarget,
   createWledDriver,
   DEFAULT_LED_BRIGHTNESS,
@@ -18,7 +19,6 @@ import {
 } from '@boardsesh/led-controller';
 import type { SprayLedBleCandidate } from '../../lib/spray/spray-led-ble-transport';
 import { loadSprayLedBleTransport } from '../../lib/spray/spray-led-ble-transport-loader';
-import { saveSprayWallBleDevice, useSprayWallBleDevice } from '../../lib/spray/spray-wall-led-ble-device';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
@@ -66,18 +66,19 @@ function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
 
 type BleScanState =
   | { kind: 'idle' }
-  | { kind: 'unavailable' }
+  | { kind: 'unavailable' | 'busy' }
   | { kind: 'scanning' | 'done'; found: SprayLedBleCandidate[] };
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
-  | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
+  | { kind: 'unavailable' | 'timeout' | 'notWled' | 'bluetoothOff'; url: string }
   | { kind: 'invalidUrl' | 'notLocal'; url: null };
 
-function probeFailureKind(failure: unknown): 'timeout' | 'notWled' | 'unavailable' {
+function probeFailureKind(failure: unknown): 'timeout' | 'notWled' | 'bluetoothOff' | 'unavailable' {
   if (!(failure instanceof LedControllerError)) return 'unavailable';
   if (failure.code === 'timeout') return 'timeout';
   if (failure.code === 'not-wled') return 'notWled';
+  if (failure.code === 'bluetooth-unavailable') return 'bluetoothOff';
   return 'unavailable';
 }
 
@@ -113,7 +114,6 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     scanRequest.current = null;
     setScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
   }, []);
-  const bleDevice = useSprayWallBleDevice(wallUuid).device;
   const [bleScan, setBleScan] = useState<BleScanState>({ kind: 'idle' });
   const stopBleScan = useRef<(() => void) | null>(null);
   const cancelBleScan = useCallback(() => {
@@ -139,9 +139,12 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
 
   const bluetooth = settings?.controller.type === 'ble';
   const url = draftUrl ?? settings?.controller.url ?? '';
-  // What the preview and route lighting contact: the Wi-Fi address, or this phone's controller.
-  const target = bluetooth ? (bleDevice ? bleControllerTarget(bleDevice.id) : '') : url;
-  const savedTarget = bluetooth ? target : (settings?.controller.url ?? '');
+  // What the preview and route lighting contact: the Wi-Fi address, or `ble:`
+  // and the name the wall's Bluetooth controller advertises (every phone finds
+  // its own device by that name).
+  const target = bluetooth ? (settings?.controller.url ?? '') : url;
+  const savedTarget = settings?.controller.url ?? '';
+  const savedBleName = bluetooth && savedTarget ? bleControllerName(savedTarget) : null;
   const locked = disabled || loading || saving || savingRef.current || !settings;
 
   /** Wi-Fi or Bluetooth: saved to the wall, so every phone there knows how to reach it. */
@@ -154,7 +157,10 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setLighting(null);
     savingRef.current = true;
     try {
-      await save({ ...settings, controller: { ...settings.controller, type } });
+      // A Wi-Fi address is no Bluetooth controller, nor the reverse: the other
+      // type starts without one.
+      setDraftUrl(null);
+      await save({ ...settings, controller: { type, url: '' } });
     } finally {
       savingRef.current = false;
     }
@@ -172,13 +178,13 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
       stopScan?.();
     };
     stopBleScan.current = stop;
-    const finish = (outcome: 'done' | 'unavailable') => {
+    const finish = (outcome: 'done' | 'unavailable' | 'busy') => {
       if (stopBleScan.current !== stop) return;
       stopBleScan.current = null;
       setBleScan((current) =>
-        outcome === 'unavailable'
-          ? { kind: 'unavailable' }
-          : { kind: 'done', found: current.kind === 'scanning' ? current.found : [] },
+        outcome === 'done'
+          ? { kind: 'done', found: current.kind === 'scanning' ? current.found : [] }
+          : { kind: outcome },
       );
     };
     void loadSprayLedBleTransport().then(
@@ -192,21 +198,29 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     );
   }
 
-  /** Check a Bluetooth controller answers, then keep it on this phone (never on the server). */
-  async function confirmBluetooth(candidate: { id: string; name: string }) {
+  /**
+   * Check a Bluetooth controller answers, then save its advertised name to the
+   * wall, so every phone there can find it. A scanned candidate's device id is
+   * remembered on this phone only, which saves this phone a second scan.
+   */
+  async function confirmBluetooth(candidate: { id?: string; name: string }) {
     if (locked || !settings?.enabled || request.current) return;
-    const bleTarget = bleControllerTarget(candidate.id);
+    const bleTarget = bleControllerTarget(candidate.name);
     const controller = new AbortController();
     request.current = controller;
     setPending('probe');
     setResult(null);
     setLighting(null);
     try {
+      if (candidate.id) {
+        const { rememberSprayLedController } = await loadSprayLedBleTransport();
+        await rememberSprayLedController(candidate.name, candidate.id);
+      }
       const info = await getLedControllerDriver('ble').probe(bleTarget, controller.signal);
       if (request.current !== controller || controller.signal.aborted) return;
-      await saveSprayWallBleDevice(wallUuid, { id: candidate.id, name: info.name });
-      if (request.current !== controller || controller.signal.aborted) return;
-      setResult({ kind: 'connected', url: bleTarget, name: info.name, ledCount: info.ledCount });
+      // The name it was found by: the probe's own name can be empty.
+      setResult({ kind: 'connected', url: bleTarget, name: candidate.name, ledCount: info.ledCount });
+      if (settings.controller.url !== bleTarget) await persistUrl(bleTarget);
     } catch (failure) {
       if (request.current !== controller || controller.signal.aborted) return;
       setResult({ kind: probeFailureKind(failure), url: bleTarget });
@@ -351,11 +365,13 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
             ? t('sprayLed.notLocal')
             : result?.kind === 'notWled'
               ? t(bluetooth ? 'sprayLed.bleNotController' : 'sprayLed.notWled')
-              : result?.kind === 'timeout'
-                ? t(bluetooth ? 'sprayLed.bleTimeout' : 'sprayLed.timeout')
-                : result?.kind === 'unavailable'
-                  ? t(bluetooth ? 'sprayLed.bleUnreachable' : 'sprayLed.unavailable')
-                  : null;
+              : result?.kind === 'bluetoothOff'
+                ? t('sprayLed.bleUnavailable')
+                : result?.kind === 'timeout'
+                  ? t(bluetooth ? 'sprayLed.bleTimeout' : 'sprayLed.timeout')
+                  : result?.kind === 'unavailable'
+                    ? t(bluetooth ? 'sprayLed.bleUnreachable' : 'sprayLed.unavailable')
+                    : null;
   const canLight = result?.kind === 'connected' && savedTarget === result.url && target === result.url;
   const canKeep = !bluetooth && result?.url && result.kind !== 'connected' && settings?.controller.url !== result.url;
 
@@ -411,16 +427,16 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                   <Text variant="footnote" color={systemColors.secondaryLabel}>
                     {t('sprayLed.bleHint')}
                   </Text>
-                  {bleDevice ? (
+                  {savedBleName ? (
                     <>
                       <Text variant="caption1" color={systemColors.secondaryLabel}>
-                        {t('sprayLed.bleSaved', { name: bleDevice.name })}
+                        {t('sprayLed.bleSaved', { name: savedBleName })}
                       </Text>
                       <Button
                         title={t('sprayLed.bleCheck')}
                         variant="outlined"
                         disabled={locked || pending !== null}
-                        onPress={() => void confirmBluetooth(bleDevice)}
+                        onPress={() => void confirmBluetooth({ name: savedBleName })}
                       />
                     </>
                   ) : null}
@@ -435,9 +451,9 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                       {t('sprayLed.bleFinding')}
                     </Text>
                   ) : null}
-                  {bleScan.kind === 'unavailable' ? (
+                  {bleScan.kind === 'unavailable' || bleScan.kind === 'busy' ? (
                     <Text variant="footnote" accessibilityLiveRegion="polite">
-                      {t('sprayLed.bleUnavailable')}
+                      {t(bleScan.kind === 'busy' ? 'sprayLed.bleScanBusy' : 'sprayLed.bleUnavailable')}
                     </Text>
                   ) : null}
                   {bleScan.kind === 'done' && !bleScan.found.length ? (

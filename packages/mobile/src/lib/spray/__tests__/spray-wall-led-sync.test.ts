@@ -259,13 +259,25 @@ describe('reading a wall’s LED setup', () => {
     expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ controller: { url: '' } });
   });
 
-  it('keeps a Bluetooth controller type and its Wi-Fi address from the server', async () => {
-    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType: 'ble' })));
+  it('keeps a Bluetooth controller saved as the name it advertises', async () => {
+    backend.request.mockResolvedValue(
+      answering(false, rowFor({ controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' })),
+    );
     await prepareSprayWallLedRead(WALL, 'settings');
     expect(storage.records.get(SETTINGS_KEY)).toEqual({
       ...local,
-      controller: { type: 'ble', url: 'http://wled.local' },
+      controller: { type: 'ble', url: 'ble:Boardsesh Spraywall 1A2B' },
     });
+  });
+
+  it.each([
+    ['a Wi-Fi address on a Bluetooth setup', 'ble', 'http://wled.local'],
+    ['a device id instead of a name', 'ble', 'ble:AA:BB:CC:DD:EE:FF'],
+    ['a Bluetooth name on a Wi-Fi setup', 'wled', 'ble:Boardsesh Spraywall 1A2B'],
+  ])('treats %s from the server as no address', async (_name, controllerType, controllerUrl) => {
+    backend.request.mockResolvedValue(answering(false, rowFor({ controllerType, controllerUrl })));
+    await prepareSprayWallLedRead(WALL, 'settings');
+    expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ controller: { type: controllerType, url: '' } });
   });
 
   it('switches off a controller type from a newer app instead of driving it as WLED', async () => {
@@ -519,7 +531,6 @@ describe('forgetting a wall', () => {
   it('drops the copy, the unsent marks and any answer still on the wire when access is withdrawn', async () => {
     storage.records.set(LAYOUT_KEY, layout());
     storage.records.set(SETTINGS_KEY, local);
-    storage.records.set('sprayWallLedBleDevice:wall-one', { id: 'AA:BB', name: 'Spraywall' });
     await markSprayWallLedSaveStarted(WALL, 'layout');
 
     const answer = deferred<unknown>();
@@ -538,7 +549,8 @@ describe('forgetting a wall', () => {
     storage.records.set(SETTINGS_KEY, local);
     storage.records.set('sprayWallTnutLayout:wall-two', layout());
     storage.records.set('sprayWallLedUnsent:settings:wall-two', true);
-    storage.records.set('sprayWallLedBleDevice:wall-two', { id: 'AA:BB', name: 'Spraywall' });
+    // The device ids this phone found for Bluetooth controller names go at sign-out too.
+    storage.records.set('sprayLedBleDeviceId:Boardsesh Spraywall 1A2B', 'AA:BB');
     storage.records.set('someOtherPreference', 'kept');
 
     const upload = deferred<unknown>();

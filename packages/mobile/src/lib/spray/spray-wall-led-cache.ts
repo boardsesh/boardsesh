@@ -1,6 +1,8 @@
 import {
   DEFAULT_LED_BRIGHTNESS,
   LED_CONTROLLER_TYPES,
+  normalizeBleControllerTarget,
+  normalizeLocalControllerUrl,
   resolveLedLightingOptions,
   type LedControllerType,
 } from '@boardsesh/led-controller';
@@ -9,7 +11,10 @@ import { removePreference, removePreferencesMatching } from '../preference-store
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
-  /** `ble` reaches the controller over Bluetooth; `url` then stays as the Wi-Fi address, unused. */
+  /**
+   * `wled`: `url` is the controller's local-network address. `ble`: `url` is
+   * `ble:` and the name the controller advertises (`ble:Boardsesh Spraywall 1A2B`).
+   */
   controller: { type: LedControllerType; url: string };
   /** WLED master brightness, 1–255, shared by every phone at the wall. */
   brightness: number;
@@ -20,6 +25,19 @@ export type SprayWallLedSettings = {
 export type SprayWallLedField = 'settings' | 'layout';
 
 /**
+ * The address in the form its controller type needs, or '' when it is no such
+ * address: this phone never contacts it, and never uploads it.
+ */
+export function sprayLedControllerAddressOrEmpty(type: LedControllerType, url: string): string {
+  if (url === '') return '';
+  try {
+    return type === 'ble' ? normalizeBleControllerTarget(url) : normalizeLocalControllerUrl(url);
+  } catch {
+    return '';
+  }
+}
+
+/**
  * The phone's copy of a wall's LED setup. The server is the source of truth
  * (`spray-wall-led-sync`); this copy is what lights the wall with no internet.
  * Kept apart from the sync so a screen can subscribe without pulling in the
@@ -27,8 +45,11 @@ export type SprayWallLedField = 'settings' | 'layout';
  */
 export const sprayWallLedSettingsKey = (wallUuid: string) => `sprayWallLedSettings:${wallUuid}`;
 export const sprayWallLedLayoutKey = (wallUuid: string) => `sprayWallTnutLayout:${wallUuid}`;
-/** This phone's Bluetooth controller for the wall. Never uploaded: iOS ids differ per phone. */
-export const sprayWallLedBleDeviceKey = (wallUuid: string) => `sprayWallLedBleDevice:${wallUuid}`;
+/**
+ * The device id this phone found for a Bluetooth controller name. Never uploaded:
+ * ids differ per phone. Not wall data, so only sign-out erases it.
+ */
+export const sprayLedBleDeviceIdKey = (controllerName: string) => `sprayLedBleDeviceId:${controllerName}`;
 /** Set before a save writes the copy, and cleared once the server has it. */
 export const sprayWallLedUnsentKey = (field: SprayWallLedField, wallUuid: string) =>
   `sprayWallLedUnsent:${field}:${wallUuid}`;
@@ -37,7 +58,7 @@ const CACHE_KEY_PREFIXES = [
   'sprayWallLedSettings:',
   'sprayWallTnutLayout:',
   'sprayWallLedUnsent:',
-  'sprayWallLedBleDevice:',
+  'sprayLedBleDeviceId:',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -163,7 +184,6 @@ export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
     Promise.allSettled([
       removePreference(sprayWallLedSettingsKey(wallUuid)),
       removePreference(sprayWallLedLayoutKey(wallUuid)),
-      removePreference(sprayWallLedBleDeviceKey(wallUuid)),
       removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
       removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
     ]),

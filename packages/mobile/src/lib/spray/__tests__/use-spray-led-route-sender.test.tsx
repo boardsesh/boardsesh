@@ -36,16 +36,28 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => 'query-client' }));
 vi.mock('@boardsesh/spray-wall-geometry', () => ({ buildSprayLedMapping: mocks.mapping }));
-vi.mock('@boardsesh/led-controller', () => ({
-  createLedPreviewSession: mocks.create,
-  getLedControllerDriver: () => 'wled-driver',
-  bleControllerTarget: (id: string) => 'ble:' + id,
+const ble = vi.hoisted(() => ({
+  driver: vi.fn((type: string) => `${type}-driver`),
+  needsPrimer: vi.fn(),
+  primed: vi.fn(),
+  loaded: vi.fn(),
 }));
-const ble = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), findOnly: vi.fn() }));
-vi.mock('../spray-wall-led-ble-device', () => ({ loadSprayWallBleDevice: ble.load, saveSprayWallBleDevice: ble.save }));
-vi.mock('../spray-led-ble-transport-loader', () => ({
-  loadSprayLedBleTransport: async () => ({ findOnlySprayLedController: ble.findOnly }),
+vi.mock('@boardsesh/led-controller', async (original) => {
+  const actual = await original<typeof import('@boardsesh/led-controller')>();
+  return {
+    LedControllerError: actual.LedControllerError,
+    createLedPreviewSession: mocks.create,
+    getLedControllerDriver: ble.driver,
+  };
+});
+vi.mock('../spray-led-ble-primer', () => ({
+  sprayLedBluetoothNeedsPrimer: ble.needsPrimer,
+  markSprayLedBluetoothPrimed: ble.primed,
 }));
+vi.mock('../spray-led-ble-transport-loader', () => {
+  ble.loaded();
+  return { loadSprayLedBleTransport: vi.fn() };
+});
 vi.mock('../../privacy/privacy-cache', () => ({
   getCredentialGeneration: () => mocks.credential,
   subscribeToCredentialChanges: (listener: () => void) => {
@@ -160,39 +172,58 @@ describe('spray route transport', () => {
   });
 
   describe('a Bluetooth Spraywall', () => {
-    const bluetooth = { enabled: true, controller: { type: 'ble', url: 'http://wall.local' } };
+    const address = 'ble:Boardsesh Spraywall 1A2B';
+    const bluetooth = { enabled: true, controller: { type: 'ble', url: address } };
 
-    it('lights through the controller this phone picked, never the Wi-Fi address', async () => {
+    it('lights through the Bluetooth driver at the controller name saved on the wall', async () => {
       mocks.settings.mockResolvedValue(bluetooth);
-      ble.load.mockResolvedValue({ id: 'AA:BB', name: 'Spraywall' });
+      ble.needsPrimer.mockResolvedValue(false);
       const { result } = renderHook(() => useSender());
       expect(await result.current.send('p7r1')).toBe(true);
-      expect(mocks.create).toHaveBeenCalledWith('wled-driver', 'ble:AA:BB', expect.anything());
-      expect(ble.findOnly).not.toHaveBeenCalled();
+      expect(ble.driver).toHaveBeenCalledWith('ble');
+      expect(mocks.create).toHaveBeenCalledWith('ble-driver', address, expect.anything());
+      // The transport is registered before the session first connects.
+      expect(ble.loaded).toHaveBeenCalled();
     });
 
-    it('adopts the only controller nearby on a phone that never picked one', async () => {
-      mocks.settings.mockResolvedValue(bluetooth);
-      ble.load.mockResolvedValue(null);
-      ble.findOnly.mockResolvedValue({ id: 'CC:DD', name: 'Spraywall', rssi: -50 });
-      const { result } = renderHook(() => useSender());
-      expect(await result.current.send('p7r1')).toBe(true);
-      expect(ble.save).toHaveBeenCalledWith(
-        'spray-wall',
-        { id: 'CC:DD', name: 'Spraywall' },
-        { restartLighting: false },
-      );
-      expect(mocks.create).toHaveBeenCalledWith('wled-driver', 'ble:CC:DD', expect.anything());
-    });
-
-    it('fails with the usual toast when no single controller is nearby', async () => {
-      mocks.settings.mockResolvedValue(bluetooth);
-      ble.load.mockResolvedValue(null);
-      ble.findOnly.mockResolvedValue(null);
+    it('says the controller is not set up, instead of adopting one, when the wall has no name', async () => {
+      mocks.settings.mockResolvedValue({ enabled: true, controller: { type: 'ble', url: '' } });
       const { result } = renderHook(() => useSender());
       expect(await result.current.send('p7r1')).toBe(false);
       expect(mocks.create).not.toHaveBeenCalled();
-      expect(mocks.failure).toHaveBeenCalledTimes(1);
+      expect(mocks.failure).toHaveBeenCalledWith('bluetoothNotSetUp');
+    });
+
+    it('explains Bluetooth once before the first system prompt, and lights nothing on "not now"', async () => {
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.needsPrimer.mockResolvedValue(true);
+      const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      const { result } = renderHook(() =>
+        useSprayLedRouteSender({
+          boardName: 'spray',
+          layoutId: 42,
+          onInvalidated: mocks.invalidate,
+          onFailure: mocks.failure,
+          confirmBluetoothUse: confirm,
+        }),
+      );
+      expect(await result.current.send('p7r1')).toBe(false);
+      expect(mocks.create).not.toHaveBeenCalled();
+      expect(mocks.failure).not.toHaveBeenCalled();
+      expect(ble.primed).not.toHaveBeenCalled();
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(ble.primed).toHaveBeenCalledTimes(1);
+      expect(confirm).toHaveBeenCalledTimes(2);
+    });
+
+    it('tells the climber Bluetooth is off rather than that the controller failed', async () => {
+      const { LedControllerError } = await import('@boardsesh/led-controller');
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.needsPrimer.mockResolvedValue(false);
+      mocks.show.mockRejectedValue(new LedControllerError('bluetooth-unavailable'));
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(false);
+      expect(mocks.failure).toHaveBeenCalledWith('bluetoothOff');
     });
   });
 

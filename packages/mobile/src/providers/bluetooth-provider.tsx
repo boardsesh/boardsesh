@@ -90,7 +90,7 @@ import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 import { useLocalBluetoothHolder } from './use-local-bluetooth-holder';
 import { SHEET_SETTLE_MS } from './sheet-presentation-provider';
 import { useStaleCurrentHoldEnabled } from './feature-flags-provider';
-import { useSprayLedRouteSender } from '../lib/spray/use-spray-led-route-sender';
+import { useSprayLedRouteSender, type SprayLedFailureReason } from '../lib/spray/use-spray-led-route-sender';
 
 export type ReassertWallOptions = {
   /** A press whose own connect brought the link up: carry the ask to that link. */
@@ -1699,15 +1699,37 @@ export function BluetoothProvider({
     lastPhysicalFramesRef.current = null;
     if (retry) setReassertNonce((nonce) => nonce + 1);
   }, []);
-  const reportSprayLedFailure = useCallback(() => {
-    showToast(sprayTranslationRef.current('sprayLed.lightFailed'), 'error');
-  }, [showToast]);
+  const reportSprayLedFailure = useCallback(
+    (reason?: SprayLedFailureReason) => {
+      const t = sprayTranslationRef.current;
+      showToast(
+        reason === 'bluetoothOff'
+          ? t('sprayLed.bleUnavailable')
+          : reason === 'bluetoothNotSetUp'
+            ? t('sprayLed.bleNotSetUp')
+            : t('sprayLed.lightFailed'),
+        'error',
+      );
+    },
+    [showToast],
+  );
+  const confirmSprayLedBluetoothUse = useCallback(async () => {
+    const t = sprayTranslationRef.current;
+    const { confirmSprayLedBluetooth } = await import('../lib/spray/spray-led-ble-primer');
+    return confirmSprayLedBluetooth({
+      title: t('sprayLed.blePrimerTitle'),
+      body: t('sprayLed.blePrimerBody'),
+      allow: t('sprayLed.blePrimerContinue'),
+      notNow: t('sprayLed.blePrimerNotNow'),
+    });
+  }, []);
   const { send: sendSprayLedFrames, release: releaseSprayLedFrames } = useSprayLedRouteSender({
     boardName,
     layoutId,
     colorOverrides: bluetoothColorOverrides,
     onInvalidated: invalidateSprayLedFrames,
     onFailure: reportSprayLedFailure,
+    confirmBluetoothUse: confirmSprayLedBluetoothUse,
   });
 
   /**
