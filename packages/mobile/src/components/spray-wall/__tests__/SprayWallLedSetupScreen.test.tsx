@@ -313,6 +313,7 @@ function advanceToWiring() {
 }
 function finish() {
   advanceToWiring();
+  next(); // skipped LEDs
   next(); // Test LEDs
   next(); // save
 }
@@ -535,16 +536,32 @@ describe('SprayWallLedSetupScreen', () => {
     expect(screen.queryByRole('textbox', { name: 'sprayLedSetup.skipCount' })).toBeNull();
     fireEvent.click(button('cutCable'));
     fireEvent.click(button('connectCable'));
+    // Skipped LEDs have their own step after the cable editor (#7355 item 10).
+    expect(screen.queryByRole('button', { name: 'sprayLedSetup.insertSkips' })).toBeNull();
+    next();
+    expect(screen.getByText('sprayLedSetup.skipsTitle')).toBeTruthy();
+    expect(screen.getByText('sprayLedSetup.skipsNoConnection')).toBeTruthy();
+    expect((button('insertSkips') as HTMLButtonElement).disabled).toBe(true);
+    // A tap on the line between the first two LEDs picks that connection.
+    tap({ x: 0.35, y: 0.3 });
+    expect(screen.getByText('sprayLedSetup.skipsSelected')).toBeTruthy();
+    expect(screen.getByText('sprayLedSetup.skipsNone')).toBeTruthy();
+    // Light the ends lights only the two LEDs on either side of the connection.
+    fireEvent.click(button('skipsLightEnds'));
+    expect(preview.show).toHaveBeenLastCalledWith([2, 3]);
     fireEvent.click(button('insertSkips'));
     fireEvent.change(field('skipCount'), { target: { value: '2' } });
     fireEvent.click(screen.getByRole('button', { name: 'sprayLed.confirm' }));
+    expect(screen.getByText('sprayLedSetup.gapLabel:2')).toBeTruthy();
+    // With two LEDs skipped, the far end is now physical LED 5.
+    expect(preview.show).toHaveBeenLastCalledWith([2, 5]);
+    fireEvent.click(button('skipsEndsOff'));
     next();
     expect(screen.getByText('sprayLedSetup.lightingTitle')).toBeTruthy();
     fireEvent.click(button('lightingChase'));
     expect(preview.chase).toHaveBeenLastCalledWith([2, 5, 6]);
     back();
-    fireEvent.click(button('selectLeds'));
-    expect(checkbox().getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('sprayLedSetup.skipsTitle')).toBeTruthy();
     next();
     next();
     await waitFor(() => expect(controls.back).toHaveBeenCalledOnce());
@@ -1140,7 +1157,8 @@ describe('SprayWallLedSetupScreen', () => {
     fireEvent.click(radio('ledSides'));
     advanceToWiring();
     expect(screen.getByText('sprayLedSetup.wiringTitle')).toBeTruthy();
-    next();
+    next(); // skipped LEDs
+    next(); // Test LEDs
     storage.save.mockRejectedValueOnce(new Error('Disk full'));
     next();
     await screen.findByText('sprayLedSetup.saveFailed');
