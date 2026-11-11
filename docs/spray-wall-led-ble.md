@@ -52,7 +52,14 @@ board-controller firmware as the ESP32 reference.
 Writes are with response, chunk by chunk (MTU 247 asked for on Android, chunks
 clamp to 244 bytes; 20 bytes at the default MTU). A write that fails is
 `command-failed`, one that is not acknowledged in 3 s is `timeout`, a failed
-connect is `unavailable`.
+connect is `unavailable`, and Bluetooth off or not allowed is
+`bluetooth-unavailable` (the app says "Bluetooth is off or not allowed", not
+"another phone may be connected").
+
+A preview counts the wall as possibly lit only once a chunk reached the
+controller. A climb that never connected therefore costs one connect: neither
+the failure cleanup nor closing the session connects again to clear a wall that
+never changed.
 
 ### Brightness and auto-off: no protocol extension
 
@@ -89,8 +96,9 @@ Colour byte = `RRRGGGBB` (`r >> 5`, `g >> 5`, `b >> 6`).
 
 ## 4. Advertising and the board pickers
 
-The Spraywall build advertises **`Boardsesh Spraywall XXXX`** (the last two MAC
-bytes) and **no service UUID**: neither the Aurora service
+The Spraywall build advertises **`Boardsesh Spraywall XXXX`** (the last two
+bytes of its Bluetooth MAC, which Android shows, in upper-case hex) and **no
+service UUID**: neither the Aurora service
 `4488b571-…` nor Nordic UART (which stays in GATT). Its name has no
 `#serial@api` suffix. So:
 
@@ -104,9 +112,9 @@ bytes) and **no service UUID**: neither the Aurora service
 
 Tests pin this in `board-device-filter.test.ts`, `quickstart-scan-device.test.ts`
 and `advertised-identity.test.ts`. The Spraywall scan (`Find Bluetooth
-controller`) is unfiltered and keeps names starting with
-`SPRAY_LED_CONTROLLER_NAME_PREFIX`, the way the pickers match Kilter-built boxes
-by name.
+controller`) is unfiltered and keeps exactly that name form
+(`isSprayLedControllerName`), the way the pickers match Kilter-built boxes by
+name.
 
 ## 5. No pairing
 
@@ -117,15 +125,36 @@ controller's settings, Wi-Fi and firmware updates stay on its own setup page
 (its Wi-Fi access point or the Spraywall's Wi-Fi) or the USB cable.
 
 One phone at a time: the firmware stops advertising while a phone is connected
-and starts again when it leaves. The app lets go after 60 s without writes, so
-the next climber's phone can connect. Climbers on the Wi-Fi path are unaffected.
+and starts again when it leaves. So that one pocketed phone cannot hold the
+Spraywall:
 
-Bluetooth ids stay on the phone (iOS gives every phone a different id for the
-same peripheral): `sprayWallLedBleDevice:<wall>`, erased with the rest of the
-Spraywall LED copy. The server stores only `controller_type = 'ble'`
-(`controller_type` is text, so no migration). A phone with no stored controller
-that sends a climb uses the only controller advertising nearby and remembers
-it; with none or several, lighting fails with the usual toast.
+- the app lets go after 60 s without writes, on the background-safe timer
+  (`setBackgroundSafeTimeout`, which still fires while Android pauses JS
+  timers), and at once when the app goes to the background. The lights stay as
+  they are; only the connection is released;
+- the firmware disconnects a phone that has not written for 90 s
+  (`SPRAYWALL_IDLE_DISCONNECT_SECONDS`) and advertises again.
+
+Climbers on the Wi-Fi path are unaffected.
+
+### Which controller a phone uses
+
+When someone who can edit the Spraywall picks a controller in "Find Bluetooth
+controller", the app saves its advertised name on the wall:
+`controller_type = 'ble'`, `controller_url = 'ble:Boardsesh Spraywall 1A2B'`
+(both text columns, so no migration). The backend accepts only that form for
+`ble`, and only a local address for `wled`, also when an update resends the
+address without its type.
+
+Every phone then finds that exact name by scanning and remembers the device id
+it found (`sprayLedBleDeviceId:<name>`, on the phone only, never uploaded,
+erased at sign-out): iOS gives every phone a different id for the same
+controller. A remembered id that no longer connects is forgotten and the name
+scanned for once more. Nothing adopts "whatever controller is nearby": a
+Bluetooth Spraywall with no saved name says its controller is not set up yet.
+
+The first time a held climb on a Bluetooth Spraywall would make the system ask
+for Bluetooth, the app first explains why (once; "Not now" lights nothing).
 
 ## 6. No Wi-Fi network
 
@@ -150,9 +179,17 @@ build starts it **at boot**, whatever Wi-Fi does:
 - Range: BLE indoors is typically 5–15 m; **needs measuring** on the Spraywall.
 - Kilter/Tension/MoonBoard connections are untouched: the Spraywall transport uses
   the shared `getBleManager()` only for its own device id and never stops
-  another connection. ble-plx has one scan slot, so a Spraywall scan started
-  while a board picker is scanning would replace that scan; they live on
-  different screens.
+  another connection.
+- ble-plx has one scan slot. `lib/ble/ble-scan-slot.ts` records who holds it:
+  the Rogue timer notes its scans there, a Spraywall scan never starts while
+  another holds the slot ("Bluetooth is busy"), and stops only a scan it still
+  owns. The board pickers and the quickstart do not register; they run on their
+  own screens.
+- Firmware: one task writes the strip. The NimBLE host task only copies each
+  complete frame (`setFrameCallback` in nordic-uart-ble, Spraywall build only;
+  the Kilter build still shows frames on the host task as before); `loop()`
+  shows it, stamps the auto-off from its arrival, and an explicit clear
+  leaves nothing for the auto-off.
 
 ## 8. Files
 
@@ -161,9 +198,10 @@ build starts it **at boot**, whatever Wi-Fi does:
   `SPRAY_LED_CONTROLLER_NAME_PREFIX`, `isSprayLedControllerName`.
 - `packages/shared/led-controller/src/ble.ts`: the `ble` driver.
 - `packages/mobile/src/lib/spray/spray-led-ble-transport.ts` (+ `-loader.ts`):
-  the ble-plx transport, name scan and idle disconnect, loaded only for a
-  Bluetooth Spraywall.
-- `packages/mobile/src/lib/spray/spray-wall-led-ble-device.ts`: the phone's
-  chosen controller per Spraywall.
+  the ble-plx transport, name lookup and remembered ids, idle and background
+  release, loaded only for a Bluetooth Spraywall.
+- `packages/mobile/src/lib/spray/spray-led-ble-primer.ts`: the one-time
+  explanation before the first Bluetooth prompt from a held climb.
+- `packages/mobile/src/lib/ble/ble-scan-slot.ts`: the shared scan slot.
 - `embedded/projects/board-controller` env `gledopto-c015-spraywall`, and the
   `advertiseAuroraService` option in `embedded/libs/nordic-uart-ble`.
