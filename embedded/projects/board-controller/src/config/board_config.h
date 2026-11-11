@@ -29,9 +29,23 @@
 #endif
 
 // BLE configuration
+#ifdef SPRAYWALL_LED_CONTROLLER
+// Spraywall LED controller (env gledopto-c015-spraywall): the Boardsesh app
+// drives it with the same Aurora API v3 frames over Nordic UART, but it must
+// never pass for a Kilter board. It advertises this prefix plus the last two
+// MAC bytes ("Boardsesh Spraywall 1A2B"), no Aurora service UUID and no
+// "#serial@api" suffix. Lockstep with SPRAY_LED_CONTROLLER_NAME_PREFIX in
+// packages/shared/ble-protocol/src/advertised-identity.ts.
+#define BLE_DEVICE_NAME_PREFIX "Boardsesh Spraywall"
+// Turn the string off this many minutes after the last climb arrived (0: never).
+#ifndef SPRAYWALL_AUTO_OFF_MINUTES
+#define SPRAYWALL_AUTO_OFF_MINUTES 30
+#endif
+#else
 // Match the Aurora/Kilter board name format so the official app discovers this
 // debug controller as a test board.
 #define BLE_DEVICE_NAME "Kilter Board#123456@3"
+#endif
 
 // Backend configuration (defaults)
 #define DEFAULT_BACKEND_HOST "ws.boardsesh.com"

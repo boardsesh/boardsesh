@@ -10,7 +10,7 @@ NordicUartBLE::NordicUartBLE()
       connectedDeviceHandle(BLE_HS_CONN_HANDLE_NONE), connectCallback(nullptr), dataCallback(nullptr),
       ledDataCallback(nullptr), rawForwardCallback(nullptr) {}
 
-void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
+void NordicUartBLE::begin(const char* deviceName, bool startAdv, bool advertiseAuroraService) {
     NimBLEDevice::init(deviceName);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
@@ -35,7 +35,9 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
 
     // Always configure advertising data (even if not starting yet)
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
+    if (advertiseAuroraService) {
+        pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
+    }
     // A legacy BLE advertisement only has 31 bytes. Advertising both 128-bit UUIDs
     // overflows the packet, so expose Aurora for discovery and keep NUS in GATT.
     pAdvertising->enableScanResponse(true);

@@ -53,6 +53,10 @@ static bool g_lastBlePayloadSeen = false;
 static int g_lastBleLedCount = 0;
 static int g_lastBleAngle = 0;
 static unsigned long g_lastBlePayloadAt = 0;
+#ifdef SPRAYWALL_LED_CONTROLLER
+// Set by every climb that arrives over Bluetooth; the auto-off clears it.
+static volatile bool g_spraywallLit = false;
+#endif
 
 #ifdef HAS_DISPLAY
 // Navigation mutation debounce - wait for rapid presses to stop before sending mutation
@@ -454,8 +458,19 @@ void initializeBLE() {
         return;  // Already initialized
     }
 
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // A short id from the MAC tells two Spraywalls in one gym apart.
+    static char bleName[32];
+    uint64_t mac = ESP.getEfuseMac();
+    snprintf(bleName, sizeof(bleName), "%s %02X%02X", BLE_DEVICE_NAME_PREFIX, (unsigned)((mac >> 32) & 0xff),
+             (unsigned)((mac >> 40) & 0xff));
+    Logger.logln("Initializing BLE as '%s'...", bleName);
+    // No Aurora service UUID in the advertisement: board pickers skip it.
+    BLE.begin(bleName, true, false);
+#else
     Logger.logln("Initializing BLE as '%s'...", BLE_DEVICE_NAME);
     BLE.begin(BLE_DEVICE_NAME, true);
+#endif
     BLE.setConnectCallback(onBLEConnect);
     BLE.setDataCallback(onBLEData);
     BLE.setLedDataCallback(onBLELedData);
@@ -568,8 +583,9 @@ void setup() {
     WebConfig.setStatusProvider(fillWebStatus);
     WebConfig.begin();
 
-#ifdef ENABLE_WAVESHARE_AMOLED_DISPLAY
-    // The portable preview board accepts climbs locally without WiFi setup.
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) || defined(SPRAYWALL_LED_CONTROLLER)
+    // The portable preview board and the Spraywall LED controller accept climbs
+    // locally without WiFi setup: Bluetooth starts at boot, beside the setup AP.
     initializeBLE();
 #endif
 
@@ -622,6 +638,17 @@ void loop() {
         Proxy.loop();
 #endif
     }
+
+#if defined(SPRAYWALL_LED_CONTROLLER) && SPRAYWALL_AUTO_OFF_MINUTES > 0
+    // A Spraywall in a gym is lit from any phone and nobody may clear it, so
+    // the controller turns the string off itself after the last climb.
+    if (g_spraywallLit && millis() - g_lastBlePayloadAt > SPRAYWALL_AUTO_OFF_MINUTES * 60UL * 1000UL) {
+        g_spraywallLit = false;
+        LEDs.clear();
+        LEDs.show();
+        Logger.logln("Spraywall: auto-off after %d minutes", SPRAYWALL_AUTO_OFF_MINUTES);
+    }
+#endif
 
     // Process WebSocket if WiFi connected
     if (wifiConnected) {
@@ -978,6 +1005,9 @@ void onBLELedData(const LedCommand* commands, int count, int angle) {
     g_lastBleLedCount = count;
     g_lastBleAngle = angle;
     g_lastBlePayloadAt = millis();
+#ifdef SPRAYWALL_LED_CONTROLLER
+    g_spraywallLit = true;
+#endif
 
 #if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) && defined(ENABLE_BOARD_IMAGE)
     queueBlePreviewPayload(commands, count, angle);

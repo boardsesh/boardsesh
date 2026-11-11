@@ -131,6 +131,15 @@ void test_begin_registers_aurora_service_uuid(void) {
     TEST_ASSERT_TRUE(found);
 }
 
+void test_begin_can_leave_aurora_service_out_of_the_advertisement(void) {
+    // The Spraywall LED controller: same NUS GATT service, but nothing a
+    // Kilter/Tension picker matches in its advertisement.
+    ble->begin("Boardsesh Spraywall 1A2B", true, false);
+    TEST_ASSERT_EQUAL(0, NimBLEDevice::getAdvertising()->getServiceUUIDs().size());
+    TEST_ASSERT_EQUAL_STRING("Boardsesh Spraywall 1A2B", NimBLEDevice::getAdvertising()->getScanResponseName().c_str());
+    TEST_ASSERT_NOT_NULL(NimBLEDevice::getServer()->getServiceByUUID(NUS_SERVICE_UUID));
+}
+
 void test_begin_advertises_device_name_in_scan_response(void) {
     ble->begin("Kilter Board#123456@3");
     NimBLEAdvertising* advertising = NimBLEDevice::getAdvertising();
@@ -670,6 +679,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_begin_can_delay_advertising);
     RUN_TEST(test_start_advertising_tracks_state);
     RUN_TEST(test_begin_registers_aurora_service_uuid);
+    RUN_TEST(test_begin_can_leave_aurora_service_out_of_the_advertisement);
     RUN_TEST(test_begin_advertises_device_name_in_scan_response);
     RUN_TEST(test_begin_registers_nus_gatt_service_uuid);
 

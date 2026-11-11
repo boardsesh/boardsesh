@@ -26,7 +26,10 @@ class NordicUartBLE : public NimBLEServerCallbacks, public NimBLECharacteristicC
     NordicUartBLE();
 
     // Initialize BLE server. If startAdvertising is false, call startAdvertising() later.
-    void begin(const char* deviceName, bool startAdv = true);
+    // advertiseAuroraService=false keeps the Aurora service UUID out of the
+    // advertisement, so Kilter/Tension apps and pickers do not list the device
+    // (the Spraywall LED controller). The GATT service is the same either way.
+    void begin(const char* deviceName, bool startAdv = true, bool advertiseAuroraService = true);
     void loop();
 
     // Start BLE advertising (public so proxy can call after board connection)
