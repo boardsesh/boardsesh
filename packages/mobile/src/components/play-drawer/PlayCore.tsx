@@ -190,12 +190,14 @@ import { isMoonboardBoardName } from '@boardsesh/board-config';
 import { LostHoldsBanner } from './LostHoldsBanner';
 import { useLostHoldRemix } from './use-lost-hold-remix';
 import { getBoardRenderData } from '../../lib/board-details';
+import { resolvePlayerWallLink } from '../../lib/spray/spray-led-wall-link';
+import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
 import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { hapticSuccess } from '../../lib/haptics';
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { swipeStaysViewOnly } from './play-drawer-navigation';
-import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { useLightbulbControl, type LightbulbControl } from '../ble/use-lightbulb-control';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { trackBoardControlsOpened } from '../../lib/analytics-board-connect';
 import {
@@ -860,12 +862,12 @@ export function PlayCore({
   const canRelayToHolder = isPreview && !showBoardMismatch;
   const {
     lit: lightbulbActive,
-    localConnected: bluetoothConnected,
+    localConnected: radioConnected,
     pending: lightbulbPending,
     onPress: handleLightbulb,
-    connect: connectLightbulb,
+    connect: connectRadio,
     moveToClimbBoard: moveLightbulbToClimbBoard,
-    pressAction: lightbulbPressAction,
+    pressAction: bulbPressAction,
     holderIsAuthoritative: lightbulbHolderIsAuthoritative,
     wallHeldLocally,
     ledless: boardIsLedless,
@@ -875,11 +877,40 @@ export function PlayCore({
     canRelay: canRelayToHolder,
   });
   const { data: activeBoardForNavigation } = useActiveBoard();
+  // A spray wall with its LED setup on for this phone. Only the wall the
+  // provider drives counts: the LAN sender lights that wall and no other, so a
+  // climb from another board or wall never borrows it.
+  const sprayLedsEnabled = useSprayWallLedsEnabled(boardName, layoutId);
+  const sprayLedWall = sprayLedsEnabled && bluetooth?.boardName === boardName && bluetooth.layoutId === layoutId;
+  const {
+    pressAction: lightbulbPressAction,
+    phoneLinked,
+    sprayLedHold,
+  } = resolvePlayerWallLink({
+    sprayLedWall,
+    pressAction: bulbPressAction,
+    radioConnected,
+    wallHeldLocally,
+    holderIsAuthoritative: lightbulbHolderIsAuthoritative,
+    canRelay: canRelayToHolder,
+  });
+  // A spray wall's connect is taking the wall: no radio and no picker, and the
+  // auto-sender's first send on the hold lights the climb.
+  const connectLightbulb = useCallback<LightbulbControl['connect']>(
+    (surface, climb) => {
+      if (!sprayLedWall) return connectRadio(surface, climb);
+      if (lightbulbPressAction !== 'connect') return Promise.resolve(false);
+      bluetooth?.takeVirtualWall();
+      return Promise.resolve(bluetooth !== null);
+    },
+    [sprayLedWall, connectRadio, lightbulbPressAction, bluetooth],
+  );
   // Something on the wall lights up: an LED kit, or a wall device that follows
   // the board feed (`boardHasLights`). A wall-device board keeps the wall button
   // and the lit state even though its bulb takes the wall instead of connecting.
   // `ledless` above is the bulb's `drivesWithoutBluetooth` (no light kit, or a
-  // wall device), so a board it marks has lights only through its wall device.
+  // wall device), so a board it marks has lights only through its wall device,
+  // or on a spray wall through this phone's LED setup, which counts the same.
   // The type is the rendered climb's board, as before; the wall device counts
   // only while that is the active board's type, so a climb rendered on another
   // board never borrows this one's device.
@@ -887,9 +918,11 @@ export function PlayCore({
     () => ({
       boardType: boardName,
       hasLeds: !boardIsLedless,
-      litByWallDevice: activeBoardForNavigation?.boardType === boardName && litByWallDevice(activeBoardForNavigation),
+      litByWallDevice:
+        sprayLedWall ||
+        (activeBoardForNavigation?.boardType === boardName && litByWallDevice(activeBoardForNavigation)),
     }),
-    [boardName, boardIsLedless, activeBoardForNavigation],
+    [boardName, boardIsLedless, activeBoardForNavigation, sprayLedWall],
   );
   const playerBoardHasLights = boardHasLights(playerBoardLighting);
   // The board at this gym that draws the climb on screen, when it isn't the
@@ -1250,7 +1283,7 @@ export function PlayCore({
     // while the board is found. Never while
     // another account holds the board: it takes one phone at a time.
     tapConnects:
-      (lightbulbPressAction === 'connect' || (lightbulbPending && !bluetoothConnected)) &&
+      (lightbulbPressAction === 'connect' || (lightbulbPending && !phoneLinked)) &&
       !(bluetooth?.wallHeldByOtherUser ?? false),
   });
   // #4979: the board connected but the hold kept this climb dark, because it
@@ -1275,12 +1308,12 @@ export function PlayCore({
   // forgets it, so the next connect's lit climb doesn't read dark; so does the
   // wall coming back to the cleared climb (clear A, Next, Previous), since that
   // write lit it again.
-  const linkedBeforeRef = useRef(bluetoothConnected);
+  const linkedBeforeRef = useRef(phoneLinked);
   useEffect(() => {
-    const dropped = linkedBeforeRef.current && !bluetoothConnected;
-    linkedBeforeRef.current = bluetoothConnected;
+    const dropped = linkedBeforeRef.current && !phoneLinked;
+    linkedBeforeRef.current = phoneLinked;
     if (dropped) resetWallCleared();
-  }, [bluetoothConnected]);
+  }, [phoneLinked]);
   const wallClimbBeforeRef = useRef(wallClimbUuid);
   useEffect(() => {
     const changed = wallClimbBeforeRef.current !== wallClimbUuid;
@@ -1289,7 +1322,7 @@ export function PlayCore({
   }, [wallClimbUuid, wallClearedClimbUuid]);
   const clearedClimbOnScreen =
     wallClearedClimbUuid !== null &&
-    bluetoothConnected &&
+    phoneLinked &&
     !isAnonymous &&
     !showBoardMismatch &&
     displayedClimbUuid === wallClearedClimbUuid &&
@@ -1336,7 +1369,7 @@ export function PlayCore({
   // the link has its own store above, which a re-light resets at once, while the
   // feed's copy would wait for the echo and read dark over a lit climb.
   const feedClearedClimbUuid = usePresenceClearedClimbUuid();
-  const presenceClearedClimbUuid = bluetoothConnected ? null : feedClearedClimbUuid;
+  const presenceClearedClimbUuid = phoneLinked ? null : feedClearedClimbUuid;
   const displayedWallLit = resolveWallLit({
     isAnonymous,
     boardHasLights: bluetooth !== null && playerBoardHasLights,
@@ -1356,7 +1389,7 @@ export function PlayCore({
   // head): the board sheet marks the wall's climb, so this preview reads dark.
   const clearedWallPreviewOnScreen =
     wallClearedClimbUuid !== null &&
-    bluetoothConnected &&
+    phoneLinked &&
     displayedClimbUuid === wallClearedClimbUuid &&
     displayedClimbUuid === wallClimbUuid &&
     currentClimbQueueItem?.climb.uuid !== wallClearedClimbUuid;
@@ -1432,7 +1465,7 @@ export function PlayCore({
   // Unknown (signed out, nothing loaded yet) is never read as somebody else.
   const viewerUserId = useViewerUserId();
   // A story can say this phone holds the board (`ScenarioOverrides.player.selfHoldsBoard`).
-  const wallLinked = scenarioPlayer?.selfHoldsBoard === true || bluetoothConnected;
+  const wallLinked = scenarioPlayer?.selfHoldsBoard === true || phoneLinked;
   const selfHoldsBoard = wallLinked || wallHeldLocally;
   // This climber's profile: their face while they hold the board.
   const { data: wallSelfProfile } = useProfile({ enabled: selfHoldsBoard && !isAnonymous });
@@ -1778,7 +1811,7 @@ export function PlayCore({
     wallClimbName: wallClimb.name,
     inCrew: isSharedSession,
     wallDriven: lightbulbActive,
-    holdsLink: bluetoothConnected,
+    holdsLink: phoneLinked,
     wallPresenceTrusted,
   });
   const browseCaption = formatBrowseCaption(
@@ -2120,7 +2153,7 @@ export function PlayCore({
       );
       return true;
     }
-    if (!bluetoothConnected) return false;
+    if (!phoneLinked) return false;
     handlePutHeldClimbOnWall();
     return true;
   }, [
@@ -2131,7 +2164,7 @@ export function PlayCore({
     connectLightbulb,
     lightbulbPressAction,
     currentClimbQueueItem,
-    bluetoothConnected,
+    phoneLinked,
     handlePutHeldClimbOnWall,
   ]);
   // "On the wall" with no link (QA #147, Marco): the tap still connects and
@@ -2151,7 +2184,7 @@ export function PlayCore({
       resetWallCleared();
       bluetoothForRelightRef.current?.reassertWall(options);
     };
-    if (bluetoothConnected) {
+    if (phoneLinked) {
       relight();
       return true;
     }
@@ -2161,14 +2194,7 @@ export function PlayCore({
       if (connected) relight({ carryToConnect: true });
     });
     return true;
-  }, [
-    currentClimbQueueItem,
-    commitBarModel.mode,
-    handleSetActive,
-    displayedClimb,
-    bluetoothConnected,
-    connectLightbulb,
-  ]);
+  }, [currentClimbQueueItem, commitBarModel.mode, handleSetActive, displayedClimb, phoneLinked, connectLightbulb]);
   // Start driving the wall (#7113): what the wall button's swipe and its
   // "Light every climb" action run, through `useWallControl`. Built on the
   // light-again path: the climb on screen goes up (a preview is committed
@@ -2198,7 +2224,7 @@ export function PlayCore({
         startedBy,
         committing,
         commit: () => handleSetActive({ skipBusyWall: true }),
-        connected: bluetoothConnected,
+        connected: phoneLinked,
         connect: () => connectLightbulb(committing ? 'put_on_wall' : 'play_drawer', climb),
         // A press, so after its connect the ask carries to the link it brought
         // up (`carryToConnect`); with the link already up that is a no-op.
@@ -2216,7 +2242,7 @@ export function PlayCore({
       commitBarModel.mode,
       handleSetActive,
       displayedClimb,
-      bluetoothConnected,
+      phoneLinked,
       connectLightbulb,
     ],
   );
@@ -2316,29 +2342,38 @@ export function PlayCore({
   // the board control opens it through `useWallControl`, which logs Board
   // Controls Opened with the view; ⋯ › Board controls logs its own.
   const openBoardSheet = useCallback(() => {
-    if (!bluetooth?.isConnected) return;
+    if (!phoneLinked) return;
     setBleControlVisible(true);
-  }, [bluetooth]);
+  }, [phoneLinked]);
   // The board sheet offers Light every climb wherever the swipe is offered
   // (#7113): the visible way in for the bulb view, and for Put on board with
   // no link, where a hold opens no sheet. So ⋯ › Board controls opens it then
   // even with no link, showing only that row.
   const sheetOffersDrive = swipeToDriveEnabled && !isAnonymous && wallControl.swipeAction === 'drive';
   const handleMenuBoardControls = useCallback(() => {
-    if (!bluetooth?.isConnected && !sheetOffersDrive) return;
+    if (!phoneLinked && !sheetOffersDrive) return;
     trackBoardControlsOpened({ surface: 'play_drawer', source: 'player_menu' });
     setBleControlVisible(true);
-  }, [bluetooth, sheetOffersDrive]);
+  }, [phoneLinked, sheetOffersDrive]);
+  // Disconnect board. A spray wall's LAN hold has no radio to hang up, so it
+  // gives the wall back, as the board sheet's Disconnect does there.
+  const handleDisconnectBoard = useCallback(() => {
+    if (sprayLedHold) bluetooth?.releaseVirtualWall();
+    else disconnectAllBluetooth();
+  }, [sprayLedHold, bluetooth]);
+  // The bulb's own press would take a crewmate's spray wall from them: it knows
+  // nothing of the LED setup, so the relay is run from here.
+  const relaysFromPlayer = climbOnCrewGymBoard || (sprayLedWall && lightbulbPressAction === 'relay');
   // What each tap action runs; `useWallControl` (below) picks one from the model.
   const wallControlRunners = useMemo(
     () => ({
       light: handleLightThisClimb,
       // On the crew's gym board the relay commits the preview to the session;
       // the bulb's own press would connect this phone to its own board.
-      toggle: climbOnCrewGymBoard ? handleRelayToHolder : handleLightbulb,
+      toggle: relaysFromPlayer ? handleRelayToHolder : handleLightbulb,
       // Disconnect board: let go of it, as the board sheet's Disconnect does.
       // That frees it for the next climber; it stays remembered for 10 minutes.
-      disconnect: disconnectAllBluetooth,
+      disconnect: handleDisconnectBoard,
       openSheet: openBoardSheet,
       lightAgain: handleLightAgain,
       moveToBoard: handleMoveToGymBoard,
@@ -2347,9 +2382,10 @@ export function PlayCore({
     }),
     [
       handleLightThisClimb,
-      climbOnCrewGymBoard,
+      relaysFromPlayer,
       handleRelayToHolder,
       handleLightbulb,
+      handleDisconnectBoard,
       openBoardSheet,
       handleLightAgain,
       handleMoveToGymBoard,
@@ -2712,7 +2748,7 @@ export function PlayCore({
     // is the stretch it shows a climb rather than its placeholder.
     playerOpen: isPane ? displayedClimb != null : isSheetOpen,
     visible: wallControlDrawn,
-    linked: bluetoothConnected,
+    linked: phoneLinked,
     // Why the climb on screen is a preview: how often a default preview gets
     // lit is the 2.7 question.
     previewReason: wallControlPreviewReason({
@@ -3143,7 +3179,7 @@ export function PlayCore({
             climbUuid={displayedClimbUuid ?? null}
             eligible={wallControlDrawn && !boardIsLedless && boardName !== 'spray' && !climbBoardMismatch}
             sessionId={sessionId}
-            connected={bluetoothConnected}
+            connected={phoneLinked}
             displayedLit={displayedLit}
             mirrored={isMirrored}
             model={wallControl}
@@ -3319,7 +3355,7 @@ export function PlayCore({
                                       onOpenViewOptions={handleOpenSectionsSettings}
                                       dismissPlayerAndWait={dismissPlayerAndWait}
                                       onOpenBoardControls={
-                                        bluetoothConnected || sheetOffersDrive ? handleMenuBoardControls : undefined
+                                        phoneLinked || sheetOffersDrive ? handleMenuBoardControls : undefined
                                       }
                                     />
                                   ) : (

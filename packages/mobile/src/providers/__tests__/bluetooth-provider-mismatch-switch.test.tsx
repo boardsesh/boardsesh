@@ -1828,3 +1828,7 @@ describe('BluetoothProvider spill skip', () => {
     );
   });
 });
+vi.mock('../../lib/spray/use-spray-led-route-sender', () => {
+  const sender = { send: async () => null, release: () => undefined };
+  return { useSprayLedRouteSender: () => sender };
+});

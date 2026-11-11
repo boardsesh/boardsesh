@@ -45,6 +45,7 @@ import {
   type DriveWatchSnapshot,
 } from './drive-mode-store';
 import { useBoardLetsGo } from './use-board-lets-go';
+import { useSprayWallLedsEnabled } from '../../lib/spray/use-spray-wall-leds-enabled';
 import { useDriveCrewPutUp, useDriveWallConfirms } from './use-drive-follow';
 import { useDisconnectWhenDrivingEnds } from './use-driving-ended-disconnect';
 
@@ -123,8 +124,11 @@ export function DriveModeWatcher(): null {
   const drive = useDriveMode();
   // Ends a drive whose link dropped, and says so when this phone didn't drop it.
   const endDriveForLinkDrop = useBoardLetsGo({ linked, pending, boardId, drive, signedIn: isAuthenticated });
+  // A spray wall's LED hold is this phone's own link, as a radio is on other boards.
+  const sprayLedsEnabled = useSprayWallLedsEnabled(bluetooth?.boardName, bluetooth?.layoutId);
+  const ownLink = (bluetooth?.isConnected ?? false) || (sprayLedsEnabled && (bluetooth?.virtualWallHeld ?? false));
   // Goes live, and counts the climbs lit, at this phone's own link's confirms.
-  useDriveWallConfirms(bluetooth?.isConnected ?? false);
+  useDriveWallConfirms(ownLink);
   useDisconnectWhenDrivingEnds(bluetooth);
   // The roster's crew, after its arrival dwell: until it forms, the climber is solo.
   const isCrewSession = useIsCrewSession();
@@ -246,7 +250,6 @@ export function DriveModeWatcher(): null {
   // automatically drives signed out too, as the two switches it replaced
   // lit). Each ends one drive and starts the next at once, so Drive Mode
   // Ended / Started pair up per session, board and account, by design.
-  const ownLink = bluetooth?.isConnected ?? false;
   const driveActive = drive !== null;
   const windowed = drive?.windowMs != null;
   // Flipping the switch is a fresh choice: a stop made before it no longer holds.

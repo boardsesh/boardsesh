@@ -758,6 +758,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     setSprayWallRenderSettings(input: SetSprayWallRenderSettingsInput!): SprayWall!
 
     """
+    Save part of a spray wall's LED setup. Owner only: this value reaches every
+    climber's phone at the wall. Refuses an address that is not on a local network
+    and a layout outside the shared caps.
+    """
+    saveSprayWallLedSetup(input: SaveSprayWallLedSetupInput!): SprayWallLedSetup!
+
+    """
     Attach a photo to the wall as a new DRAFT version, and compute its
     photo→canonical homography from the anchors by 4-point DLT.
 

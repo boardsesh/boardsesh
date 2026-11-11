@@ -35,6 +35,8 @@ type BleControlSheetProps = {
    * also live, so the sheet is just the board's actions. Today's bar keeps them.
    */
   showLightingSwitches?: boolean;
+  /** Disconnecting when the drive ends applies to a Bluetooth connection. */
+  showDisconnectWhenDrivingEnds?: boolean;
   /**
    * This phone's link is up. Without it the board's own actions (Re-light,
    * Turn off all lights, Disconnect) would no-op, so only Light every climb
@@ -76,6 +78,7 @@ function BleControlSheet({
   alwaysDrive,
   onToggleAlwaysDrive,
   showLightingSwitches = true,
+  showDisconnectWhenDrivingEnds = true,
   linked = true,
   onDrive,
   status,
@@ -118,7 +121,7 @@ function BleControlSheet({
             raw RN Switches, which render system green on iOS: HIG Color asks for
             one tint across every control. */}
         {/* Under Stop driving after, as on Settings › Board: what happens when the drive ends. */}
-        {showLightingSwitches && (
+        {showLightingSwitches && showDisconnectWhenDrivingEnds && (
           <SwitchRow
             label={tSettings('ble.lighting.drivingEnds.label')}
             description={tSettings('ble.lighting.drivingEnds.description')}

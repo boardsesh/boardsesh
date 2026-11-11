@@ -253,6 +253,9 @@ importers:
       '@boardsesh/kiosk':
         specifier: workspace:*
         version: link:../shared/kiosk
+      '@boardsesh/led-controller':
+        specifier: workspace:*
+        version: link:../shared/led-controller
       '@boardsesh/moonboard-sync':
         specifier: workspace:*
         version: link:../moonboard-sync
@@ -686,6 +689,9 @@ importers:
       '@boardsesh/key-value-storage':
         specifier: workspace:*
         version: link:../shared/key-value-storage
+      '@boardsesh/led-controller':
+        specifier: workspace:*
+        version: link:../shared/led-controller
       '@boardsesh/logbook':
         specifier: workspace:*
         version: link:../shared/logbook
@@ -1461,6 +1467,12 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
+  packages/shared/led-controller:
     devDependencies:
       typescript:
         specifier: ~7.0.2

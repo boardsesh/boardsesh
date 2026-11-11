@@ -42,6 +42,7 @@ import { useViewerUserId } from '../../src/hooks/use-viewer-user-id';
 import { viewerOwnsSprayWall } from '../../src/components/board-discovery/spray-detail-rows';
 import { SprayWallBackgroundPicker } from '../../src/components/spray-wall/SprayWallBackgroundPicker';
 import { SprayWallTrainingConsentRow } from '../../src/components/spray-wall/SprayWallTrainingConsentRow';
+import { SprayWallLedSection } from '../../src/components/spray-wall/SprayWallLedSection';
 import { useSprayWallBackgroundEditor } from '../../src/components/spray-wall/use-spray-wall-background-editor';
 import { sprayArtRefusalMessageKey } from '../../src/components/spray-wall/spray-background-gate';
 
@@ -447,6 +448,9 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfig={lockedConfig}
       lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
+      sprayLedSection={
+        isSprayWall && !wallArchived ? <SprayWallLedSection wallUuid={board.uuid} disabled={submitting} /> : undefined
+      }
       sprayTrainingSection={viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner /> : undefined}
       sprayBackgroundSection={
         isSprayWall ? (

@@ -154,18 +154,26 @@ vi.mock('../../../src/components/board-discovery/BoardForm', () => ({
     errorMessage,
     sprayBackgroundSection,
     sprayTrainingSection,
+    sprayLedSection,
   }: {
     onSubmit: () => void;
     errorMessage?: string | null;
     sprayBackgroundSection?: ReactNode;
     sprayTrainingSection?: ReactNode;
+    sprayLedSection?: ReactNode;
   }) =>
     createElement('div', null, [
       createElement('button', { key: 'submit', type: 'button', onClick: onSubmit }, 'submit'),
       errorMessage ? createElement('span', { key: 'error', 'data-testid': 'error' }, errorMessage) : null,
       createElement('div', { key: 'training' }, sprayTrainingSection),
       createElement('div', { key: 'background' }, sprayBackgroundSection),
+      createElement('div', { key: 'led' }, sprayLedSection),
     ]),
+}));
+
+vi.mock('../../../src/components/spray-wall/SprayWallLedSection', () => ({
+  SprayWallLedSection: ({ wallUuid, disabled }: { wallUuid: string; disabled: boolean }) =>
+    createElement('span', { 'data-testid': 'led-settings', 'data-disabled': String(disabled) }, wallUuid),
 }));
 
 vi.mock('../../../src/components/spray-wall/SprayWallTrainingConsentRow', () => ({
@@ -762,5 +770,37 @@ describe('EditBoard — Help train hold finding', () => {
     state.boardType = 'moonboard';
     render(createElement(EditBoard));
     expect(screen.queryByTestId('training-consent')).toBeNull();
+  });
+});
+
+describe('EditBoard — spray wall LED settings', () => {
+  it('wires the wall UUID into the LED section for the wall owner', () => {
+    state.boardType = 'spray';
+    state.profileId = 'owner-id';
+    render(createElement(EditBoard));
+    expect(screen.getByTestId('led-settings').textContent).toBe('board-uuid');
+    expect(screen.getByTestId('led-settings').getAttribute('data-disabled')).toBe('false');
+  });
+
+  // Changing the LED setup follows Edit board, so gym staff can set up a gym's wall.
+  it('shows the LED section to an editor who does not own the wall', () => {
+    state.boardType = 'spray';
+    state.profileId = 'gym-admin';
+    render(createElement(EditBoard));
+    expect(screen.getByTestId('led-settings')).not.toBeNull();
+  });
+
+  it('does not add the spray wall LED section to catalogue boards', () => {
+    render(createElement(EditBoard));
+    expect(screen.queryByTestId('led-settings')).toBeNull();
+  });
+
+  it('locks the LED section while the board form is saving', async () => {
+    state.boardType = 'spray';
+    state.profileId = 'owner-id';
+    updateBoardMock.mockReturnValueOnce(new Promise(() => {}));
+    render(createElement(EditBoard));
+    fireEvent.click(screen.getByRole('button', { name: 'submit' }));
+    await waitFor(() => expect(screen.getByTestId('led-settings').getAttribute('data-disabled')).toBe('true'));
   });
 });

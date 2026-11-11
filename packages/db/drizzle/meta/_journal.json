@@ -2129,6 +2129,13 @@
       "when": 1794352988594,
       "tag": "0303_stamp_new_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 304,
+      "version": "7",
+      "when": 1794392099632,
+      "tag": "0304_spray_wall_led_setups",
+      "breakpoints": true
     }
   ]
 }
