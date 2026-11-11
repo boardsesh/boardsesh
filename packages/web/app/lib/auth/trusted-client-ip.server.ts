@@ -53,6 +53,26 @@ export function trustedClientRateLimitKey(request: Request): string {
   return visitor ? clientBucket(visitor) : EDGE_WITHOUT_VISITOR_KEY;
 }
 
+/**
+ * The visitor's own address, but only when a Cloudflare edge vouches for it:
+ * the last `X-Forwarded-For` hop is a Cloudflare edge and `CF-Connecting-IP`
+ * holds a usable address. Otherwise null.
+ *
+ * `trustedClientRateLimitKey` falls back to values every caller can share: the
+ * constant `unknown` with no forwarded hop, one fixed bucket for an edge request
+ * with no visitor, and the last hop itself, which is our ingress's own address
+ * if the web ingress appends that rather than the peer it observed. Nobody has
+ * yet checked which one the web service sees in production (see
+ * docs/better-auth-web-password-delegation.md), so a limit that must never put
+ * every visitor in one bucket keys on this instead and skips when it is null.
+ */
+export function cloudflareVisitorRateLimitKey(request: Request): string | null {
+  const lastHop = normalizeIpAddress(request.headers.get('x-forwarded-for')?.split(',').at(-1));
+  if (!lastHop || !isCloudflareEdgeAddress(lastHop)) return null;
+  const visitor = normalizeIpAddress(request.headers.get('cf-connecting-ip') ?? undefined);
+  return visitor ? clientBucket(visitor) : null;
+}
+
 /** Null unless staged email auth is on, so legacy routes keep their existing limiter input. */
 export function stagedPasswordClientKey(request: Request): string | null {
   try {

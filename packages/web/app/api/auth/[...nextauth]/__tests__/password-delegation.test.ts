@@ -49,12 +49,14 @@ async function invoke(
   form?: Record<string, string>,
   parameters = path.split('/'),
   forwardedFor = clientAddress,
+  extraHeaders: Record<string, string> = {},
 ) {
   const request = new NextRequest(`${baseUrl}/api/auth/${path}`, {
     method: form ? 'POST' : 'GET',
     headers: {
       Cookie: [...cookies].map(([name, cookie]) => `${name}=${cookie}`).join('; '),
       'X-Forwarded-For': forwardedFor,
+      ...extraHeaders,
       ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
     },
     ...(form ? { body: new URLSearchParams(form) } : {}),
@@ -62,7 +64,11 @@ async function invoke(
   const context = { params: Promise.resolve({ nextauth: parameters }) };
   return requestStorage.run(request, () => (form ? POST(request, context) : GET(request, context)));
 }
-async function password(forwardedFor = clientAddress, email = selected.email) {
+async function password(
+  forwardedFor = clientAddress,
+  email = selected.email,
+  extraHeaders: Record<string, string> = {},
+) {
   return invoke(
     'callback/credentials',
     {
@@ -74,7 +80,13 @@ async function password(forwardedFor = clientAddress, email = selected.email) {
     },
     ['callback', 'credentials'],
     forwardedFor,
+    extraHeaders,
   );
+}
+/** A sign-in that crossed a Cloudflare edge, which vouches for the visitor's address. */
+const CLOUDFLARE_EDGE = '172.70.1.2';
+async function passwordFromVisitor(visitor = clientAddress, email = selected.email) {
+  return password(CLOUDFLARE_EDGE, email, { 'CF-Connecting-IP': visitor });
 }
 function backendResponse(
   options: { verified?: boolean; outcome?: string; status?: number; privateField?: boolean } = {},
@@ -232,16 +244,23 @@ describe('public NextAuth App Router password delegation', () => {
   });
   // Legacy sign-in runs bcrypt on the web process for every address, unknown ones
   // included, so one client must not be able to fill its event loop.
-  it('limits legacy sign-in per client, with the same answer for every address', async () => {
+  it('never limits right passwords in legacy mode: 20 sign-ins from one visitor all succeed', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    legacyAuthorize.mockResolvedValue({ id: 'legacy-user', email: 'legacy@example.com' });
+    legacySignIn.mockResolvedValue(true);
+    vi.stubGlobal('fetch', vi.fn());
+    for (let attempt = 0; attempt < 20; attempt += 1) expect((await passwordFromVisitor()).status).toBe(200);
+    expect(legacyAuthorize).toHaveBeenCalledTimes(20);
+  });
+  it('limits the 11th wrong legacy password from one visitor, with the same answer for every address', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     legacyAuthorize.mockResolvedValue(null);
     vi.stubGlobal('fetch', vi.fn());
-    for (let attempt = 0; attempt < 10; attempt += 1) expect((await password()).status).toBe(401);
+    for (let attempt = 0; attempt < 10; attempt += 1) expect((await passwordFromVisitor()).status).toBe(401);
     expect(legacyAuthorize).toHaveBeenCalledTimes(10);
 
-    // A forged first hop cannot buy a fresh bucket: the ingress appends the real one last.
-    const existingAddress = await password(`203.0.113.77, ${clientAddress}`);
-    const unknownAddress = await password(clientAddress, 'nobody-here@example.com');
+    const existingAddress = await passwordFromVisitor();
+    const unknownAddress = await passwordFromVisitor(clientAddress, 'nobody-here@example.com');
     for (const limited of [existingAddress, unknownAddress]) {
       expect(limited.status).toBe(429);
       expect(Number(limited.headers.get('Retry-After'))).toBeGreaterThan(0);
@@ -251,8 +270,22 @@ describe('public NextAuth App Router password delegation', () => {
     }
     expect(legacyAuthorize).toHaveBeenCalledTimes(10);
 
-    expect((await password('198.51.100.251')).status).toBe(401);
+    expect((await passwordFromVisitor('198.51.100.251')).status).toBe(401);
     expect(legacyAuthorize).toHaveBeenCalledTimes(11);
+  });
+  it('skips the legacy limit, rather than put every visitor in one bucket, when no Cloudflare edge vouches', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    legacyAuthorize.mockResolvedValue(null);
+    vi.stubGlobal('fetch', vi.fn());
+    // Two different callers behind a hop we cannot vouch for: neither is ever limited.
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      expect((await password()).status).toBe(401);
+      expect((await password('fd12:3456::1')).status).toBe(401);
+    }
+    expect(legacyAuthorize).toHaveBeenCalledTimes(24);
+    expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+    warn.mockRestore();
   });
   it('uses the exact original credentials path in legacy mode without RPC configuration', async () => {
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
