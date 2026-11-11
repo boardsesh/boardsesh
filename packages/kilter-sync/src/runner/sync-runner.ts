@@ -25,6 +25,7 @@ import {
   type SharedSyncClaimToken,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
+import { resolvePoolMax } from '@boardsesh/db/client';
 import {
   DEFAULT_DAEMON_OPTIONS,
   DaemonLease,
@@ -208,9 +209,11 @@ export class SyncRunner {
       // prepare: false matches aurora-sync — Railway's pooled URL uses
       // PgBouncer in transaction mode, which is incompatible with prepared
       // statements. Direct (non-pooled) URLs work either way, so this is
-      // the safe default for both.
+      // the safe default for both. `DB_POOL_MAX` caps it the way it caps
+      // `createDb()`: 5 when unset, never below 2. See docs/db-connectivity.md,
+      // "Pool budgets".
       const client = postgres(connectionString, {
-        max: 5,
+        max: resolvePoolMax(),
         idle_timeout: 30,
         connect_timeout: 30,
         prepare: false,

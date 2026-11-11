@@ -2471,7 +2471,7 @@ with `53300` is not retried. Pick one before leaving `off`
 
 | Option | Drain | Cost |
 | --- | --- | --- |
-| Cap the web at 4 (a variable) and the sync daemons at 3 (a source change) | 95 | Two changes, one of them code |
+| Cap the web at 4 and the sync daemons at 3: `DB_POOL_MAX=4` on `boardsesh-web`, `DB_POOL_MAX=3` in the sync host's `sync.env` | 95 | Two variables, no code. The daemons are disabled in production today, so until the routine cutover is rolled back their cap is headroom the table already counts |
 | Raise `max_connections` | 107, under the new limit | A Postgres restart |
 | `LOGBOOK_SNAPSHOT_POOL_MAX` to 1, with the web cap | 97 | No headroom at all; a cold snapshot build makes that replica's page reads wait |
 | `PARTNER_POOL_MAX` to 2 | 4 fewer than without it | Authorize, `/v1` and token requests share two connections |

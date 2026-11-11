@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
@@ -1634,5 +1634,56 @@ describe('SyncRunner daemon switch and claim', () => {
     const outcome = await runner.syncCredential(donorCredential());
 
     expect(outcome).toMatchObject({ status: 'error', transient: true, retryAfterMs: 90_000 });
+  });
+});
+
+describe('the daemon pool honours DB_POOL_MAX', () => {
+  // postgres.js connects on the first query, so building the pool opens nothing.
+  type PoolPrivates = {
+    getClient: () => { client: { options: { max: number }; end: () => Promise<void> } | null };
+  };
+  const previousPoolMax = process.env.DB_POOL_MAX;
+
+  afterEach(() => {
+    if (previousPoolMax === undefined) delete process.env.DB_POOL_MAX;
+    else process.env.DB_POOL_MAX = previousPoolMax;
+  });
+
+  async function poolMaxWith(poolMax: string | undefined): Promise<number> {
+    if (poolMax === undefined) delete process.env.DB_POOL_MAX;
+    else process.env.DB_POOL_MAX = poolMax;
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+    const { client } = (new SyncRunner() as unknown as PoolPrivates).getClient();
+    if (!client) throw new Error('A runner without an injected database owns its pool');
+    try {
+      return client.options.max;
+    } finally {
+      await client.end();
+    }
+  }
+
+  it('keeps five connections when DB_POOL_MAX is unset', async () => {
+    expect(await poolMaxWith(undefined)).toBe(5);
+  });
+
+  it('takes DB_POOL_MAX, so the connection budget can cap the daemon at 3', async () => {
+    expect(await poolMaxWith('3')).toBe(3);
+  });
+
+  it('clamps DB_POOL_MAX to the shared two-connection floor', async () => {
+    expect(await poolMaxWith('1')).toBe(2);
+  });
+
+  it('keeps five when DB_POOL_MAX is not a number', async () => {
+    expect(await poolMaxWith('three')).toBe(5);
+  });
+
+  it('caps DB_POOL_MAX at 100, so a typo cannot exhaust the heap', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await poolMaxWith('100000')).toBe(100);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

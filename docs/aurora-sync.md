@@ -622,6 +622,7 @@ Postgres and remains effective across daemon restarts and overlapping deploys.
 | `DATABASE_URL`              | Postgres connection string                           |
 | `AURORA_CREDENTIALS_SECRET` | Same key as the web app (for decrypting credentials) |
 | `SYNC_DAEMON_DISABLED`      | `true` once the worker families own routine syncs: the daemon exits 0 |
+| `DB_POOL_MAX`               | Optional. The daemon's Postgres pool size: 5 when unset, never below 2 or above 100 ([db-connectivity.md](./db-connectivity.md), "Pool budgets and pg-boss timers") |
 
 ### 2. Run it
 

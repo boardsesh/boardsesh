@@ -210,7 +210,7 @@ Already shipped. The `similarClimbs` resolver reads through `findSimilarClimbsCa
 ### C15. Memory budget
 
 - Run `ADMIN_DATABASE_URL=... vp run db:verify-serial-plan` (from `packages/db`; the logic lives in `scripts/serial-plan-default.ts`). The repo contract is 0 parallel workers per gather and the live value was 2 (P).
-- After C1 and this PR's code defaults: backend pool 5 and pg-boss 2; the web pool remains explicitly at 10, and sync daemons remain at 5. A web cap of 4 is a separate operator change; a daemon cap of 3 requires a source change.
+- After C1 and this PR's code defaults: backend pool 5 and pg-boss 2; the web pool remains explicitly at 10, and sync daemons remain at 5. A web cap of 4 and a daemon cap of 3 are both operator changes: `DB_POOL_MAX=4` on `boardsesh-web` and `DB_POOL_MAX=3` in the sync host's `sync.env`; see docs/db-connectivity.md, "Pool budgets and pg-boss timers".
 - pg-boss: `flowIntervalSeconds 3600`, `cronMonitorIntervalSeconds 45`, `monitorIntervalSeconds ≤120`.
 - Keep `max_connections=100`. Consider lowering it only after supported pool caps are applied and a week of deploy peaks stays below 45; the projected 67-connection drain exceeds the 57 application slots available at `max_connections=60`.
 

@@ -159,6 +159,48 @@ void describe('postgres client', () => {
       assert.equal(options.max, 5);
     });
 
+    void it('resolves DB_POOL_MAX for pools built outside createDb, with their own fallback', async () => {
+      // The sync daemons build their own postgres.js pools through this.
+      const { resolvePoolMax } = await import('../postgres');
+      const previous = process.env.DB_POOL_MAX;
+      try {
+        delete process.env.DB_POOL_MAX;
+        assert.equal(resolvePoolMax(), 5);
+        assert.equal(resolvePoolMax(7), 7);
+        process.env.DB_POOL_MAX = '3';
+        assert.equal(resolvePoolMax(7), 3);
+        process.env.DB_POOL_MAX = '1';
+        assert.equal(resolvePoolMax(), 2);
+        process.env.DB_POOL_MAX = 'abc';
+        assert.equal(resolvePoolMax(7), 7);
+      } finally {
+        if (previous === undefined) delete process.env.DB_POOL_MAX;
+        else process.env.DB_POOL_MAX = previous;
+      }
+    });
+
+    void it('clamps DB_POOL_MAX to 100 with a warning, so a typo cannot exhaust the heap', async (context) => {
+      // postgres.js allocates one connection object per slot: 100000 took 736 MB.
+      const warn = context.mock.method(console, 'warn', () => {});
+      const options = await poolOptionsWith({ DB_POOL_MAX: '100000' });
+      assert.equal(options.max, 100);
+      assert.ok(
+        warn.mock.calls.some((call) => String(call.arguments[0]).includes('DB_POOL_MAX=100000 is above 100')),
+        'the clamp must be logged',
+      );
+      const { resolvePoolMax } = await import('../postgres');
+      const previous = process.env.DB_POOL_MAX;
+      try {
+        process.env.DB_POOL_MAX = '100';
+        assert.equal(resolvePoolMax(), 100);
+        process.env.DB_POOL_MAX = '1000000';
+        assert.equal(resolvePoolMax(), 100);
+      } finally {
+        if (previous === undefined) delete process.env.DB_POOL_MAX;
+        else process.env.DB_POOL_MAX = previous;
+      }
+    });
+
     void it('falls back to the serverless default when DB_POOL_MAX is not a number on Vercel', async () => {
       const options = await poolOptionsWith({ DB_POOL_MAX: 'abc', VERCEL: '1' });
       assert.equal(options.max, 3);

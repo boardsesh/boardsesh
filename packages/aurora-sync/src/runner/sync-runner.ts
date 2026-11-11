@@ -26,6 +26,7 @@ import {
   type SharedSyncClaimToken,
   type SyncBatchRunner,
 } from '@boardsesh/db/queries';
+import { resolvePoolMax } from '@boardsesh/db/client';
 import { circuitPlaylistConflictSyncError } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, getCircuitPlaylistOwnershipConflictState } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
@@ -257,8 +258,10 @@ export class SyncRunner {
       }
       // `prepare: false` is required for Railway's PgBouncer pooled URL
       // (transaction-pooling mode is incompatible with prepared statements).
+      // `DB_POOL_MAX` caps it the way it caps `createDb()`: 5 when unset, never
+      // below 2. See docs/db-connectivity.md, "Pool budgets".
       this.client = postgres(connectionString, {
-        max: 5,
+        max: resolvePoolMax(),
         idle_timeout: 30,
         connect_timeout: 30,
         prepare: false,
