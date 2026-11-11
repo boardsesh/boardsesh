@@ -374,3 +374,14 @@ photo renderer follows the stored photo-to-canonical homography; Android uses an
 affine mesh with a 0.5 fitted-pixel error target and a bounded subdivision count.
 Higher magnification can expose that existing approximation. No unverified photo
 warp correction was introduced.
+
+## Testing without a controller
+
+`vp run dev:wled-sim` starts a fake WLED controller on your computer
+(`scripts/wled-simulator.ts`). It answers the parts of WLED's JSON API the app's
+driver uses (info, state, individual LED colours) and prints every command as a
+coloured strip with the lit LED indices. Options go after `--`: `--leds 120`
+sets the strip length (300 by default), `--port 8090` the port (8080 by default)
+and `--row 50` the LEDs per printed row; `--verbose` also prints each request.
+Enter one of the addresses it prints as the WLED address on a phone on the same
+network. On Windows the firewall may need to allow Node.js on that port.
