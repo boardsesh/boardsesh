@@ -101,6 +101,10 @@ Native transfer payloads carry the signed source SID, generation and known
 authentication time/guard. Required mode derives them from the exact admitted
 source JWE. Older transfer payloads retain their compatibility treatment;
 neither producer nor consumer treats a new transfer timestamp as a new login.
+Generation-only legacy transfers also preserve their signed generation through
+web verification and cookie issuance; a missing old generation means zero.
+They cannot acquire the primary's newer generation or satisfy required-proof
+mode without a complete credential proof. Their authentication age stays unknown.
 No native application or Bluetooth code changes here.
 
 ## Verification

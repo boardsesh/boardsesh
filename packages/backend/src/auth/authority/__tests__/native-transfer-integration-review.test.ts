@@ -62,6 +62,7 @@ it('an unattributed web-issued transfer cannot outlive signout of its source SID
       authSessionId,
       generation: 0,
       requiresAccountCutoff: false,
+      linkGuarded: false,
       authenticatedAt: null,
       expiresAt: new Date(now.getTime() + 3600000),
     },

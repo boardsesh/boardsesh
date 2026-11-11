@@ -105,6 +105,7 @@ it('retains a native SID denial through source expiry and prevents canonical reb
           authSessionId: sessionId,
           generation: 0,
           requiresAccountCutoff: false,
+          linkGuarded: false,
           authenticatedAt: null,
           expiresAt: sourceExpiresAt,
         },

@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import {
   issueNativeOAuthTransferToken,
@@ -248,6 +249,7 @@ describe('native OAuth transfer token', () => {
     const token = issueNativeOAuthTransferToken({
       userId: proof.userId,
       nextPath: '/settings',
+      generation: 9,
       credentialProof: proof,
     });
     const payload = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8')) as {
@@ -264,5 +266,76 @@ describe('native OAuth transfer token', () => {
     expect(() =>
       issueNativeOAuthTransferToken({ userId: 'other-owner', nextPath: '/', credentialProof: proof }),
     ).toThrow();
+  });
+});
+
+describe('signed transfer compatibility and proof completeness', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-03T12:00:00Z'));
+    vi.stubEnv('NEXTAUTH_SECRET', 'owned-transfer-completeness-fixture');
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  function signedClaims(claims: Record<string, unknown>): string {
+    const encoded = Buffer.from(
+      JSON.stringify({
+        userId: 'signed-source',
+        nextPath: '/',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 120,
+        ...claims,
+      }),
+    ).toString('base64url');
+    return `${encoded}.${createHmac('sha256', 'owned-transfer-completeness-fixture').update(encoded).digest('base64url')}`;
+  }
+
+  it.each([
+    { claims: {}, generation: 0 },
+    { claims: { gen: 7 }, generation: 7 },
+  ])(
+    'inherits generation-only legacy bytes without inventing age or a complete proof: $generation',
+    ({ claims, generation }) => {
+      expect(verifyNativeOAuthTransferToken(signedClaims(claims))).toEqual({
+        userId: 'signed-source',
+        nextPath: '/',
+        generation,
+      });
+    },
+  );
+  it('carries source SID without an analytics receipt and inherits unknown age', () => {
+    const token = issueNativeOAuthTransferToken({
+      userId: 'signed-source',
+      nextPath: '/',
+      generation: 7,
+      authSessionId: 'stable-source',
+    });
+    expect(verifyNativeOAuthTransferToken(token)).toEqual({
+      userId: 'signed-source',
+      nextPath: '/',
+      generation: 7,
+      credentialProof: {
+        version: 1,
+        userId: 'signed-source',
+        authSessionId: 'stable-source',
+        generation: 7,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+    });
+  });
+  it.each([-1, 1.5, '7', null, Number.MAX_SAFE_INTEGER + 1])('refuses invalid signed legacy generation %s', (gen) => {
+    expect(verifyNativeOAuthTransferToken(signedClaims({ gen }))).toBeNull();
+  });
+  it.each([
+    { gen: 3, auth_time: 1775214000 },
+    { gen: 3, link_guarded: true },
+    { authSessionId: 'source', auth_time: 1775214000 },
+    { authSessionId: 'source', link_guarded: true },
+  ])('refuses partial freshness claims without a complete signed source: %j', (claims) => {
+    expect(verifyNativeOAuthTransferToken(signedClaims(claims))).toBeNull();
   });
 });
