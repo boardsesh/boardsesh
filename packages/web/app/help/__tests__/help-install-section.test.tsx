@@ -38,12 +38,9 @@ vi.mock('../help-clip', () => ({
 
 // Imported up front, so a slow module load is not charged to a test's timeout.
 const SUB_PAGES = [
-  ['beta-videos', (await import('../beta-videos/beta-videos-content')).default],
   ['board-and-bluetooth', (await import('../board-and-bluetooth/board-and-bluetooth-content')).default],
-  ['climb-actions', (await import('../climb-actions/climb-actions-content')).default],
   ['finding-climbs', (await import('../finding-climbs/finding-climbs-content')).default],
   ['logbook', (await import('../logbook/logbook-content')).default],
-  ['playlists', (await import('../playlists/playlists-content')).default],
   ['sessions', (await import('../sessions/sessions-content')).default],
 ] as const;
 
@@ -61,8 +58,8 @@ describe('help sub-page store button', () => {
     Object.defineProperty(navigator, 'userAgent', { value: ORIGINAL_UA, configurable: true });
   });
 
-  it('covers all seven sub-pages', () => {
-    expect(SUB_PAGES).toHaveLength(7);
+  it('covers all four sub-pages', () => {
+    expect(SUB_PAGES).toHaveLength(4);
   });
 
   it.each(SUB_PAGES)('/help/%s ends with a store button carrying the help link id', async (_slug, Content) => {

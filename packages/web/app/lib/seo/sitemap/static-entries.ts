@@ -17,18 +17,12 @@ export const STATIC_ENTRIES: readonly SitemapItem[] = [
   // /help became a hub over its topic pages once adoption data showed people
   // were missing shipped features rather than asking for new ones.
   { path: '/help', changeFrequency: 'monthly', priority: 0.7, lastModified: new Date('2026-09-19') },
-  // Playlists: building one, pruning one, and the eight auto-curated lists.
-  { path: '/help/playlists', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
   // Sessions: starting one, sharing the link, and who drives the wall.
   { path: '/help/sessions', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
-  // Search: the hold, zone and setter filters almost nobody has found yet.
-  { path: '/help/finding-climbs', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
+  // Find, play and save climbs: swiping a list, the press-and-hold menu, filters and playlists.
+  { path: '/help/finding-climbs', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-11-03') },
   // Logbook: logging a send, then fixing the grade or rating afterwards.
   { path: '/help/logbook', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
-  // Climb actions: about one in five climbers who open a climb have found it.
-  { path: '/help/climb-actions', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
-  // Beta videos: sharing a clip in, and finding the ones already on a climb.
-  { path: '/help/beta-videos', changeFrequency: 'monthly', priority: 0.6, lastModified: new Date('2026-09-19') },
   // Bluetooth: the top support topic by error volume.
   {
     path: '/help/board-and-bluetooth',
