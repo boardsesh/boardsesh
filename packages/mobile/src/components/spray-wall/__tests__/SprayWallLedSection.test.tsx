@@ -33,10 +33,11 @@ const bluetooth = vi.hoisted(() => ({
   update: null as null | ((candidates: { id: string; name: string; rssi: number }[]) => void),
   stopped: null as null | ((outcome: 'done' | 'unavailable' | 'busy') => void),
 }));
-const remembered = vi.hoisted(() => vi.fn(async () => undefined));
+const picked = vi.hoisted(() => ({ hint: vi.fn(), keep: vi.fn(async () => undefined) }));
 vi.mock('../../../lib/spray/spray-led-ble-transport', () => ({
   scanForSprayLedControllers: bluetooth.scan,
-  rememberSprayLedController: remembered,
+  hintSprayLedController: picked.hint,
+  keepSprayLedController: picked.keep,
 }));
 vi.mock('@react-native-community/netinfo', () => ({ default: { fetch: network.fetch } }));
 vi.mock('../../../lib/preference-store', () => ({
@@ -239,7 +240,8 @@ describe('SprayWallLedSection', () => {
     expect(bluetooth.stop).toHaveBeenCalled();
     // Every phone finds the controller by the name saved on the Spraywall; the id stays on this phone.
     await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings(address)));
-    expect(remembered).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B', 'AA:BB:CC:DD:EE:FF');
+    expect(picked.hint).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B', 'AA:BB:CC:DD:EE:FF');
+    expect(picked.keep).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B');
     expect(controller.probe).toHaveBeenCalledWith(address, expect.any(AbortSignal));
     expect(JSON.stringify(storage.records.get(settingsKey))).not.toContain('AA:BB');
     expect(screen.queryByText('sprayLed.bleConnected')).not.toBeNull();
@@ -283,6 +285,33 @@ describe('SprayWallLedSection', () => {
     act(() => bluetooth.stopped?.('busy'));
     expect(await screen.findByText('sprayLed.bleScanBusy')).toBeTruthy();
     expect(controller.probe).not.toHaveBeenCalled();
+  });
+
+  it('remembers a scanned controller only once it answered', async () => {
+    storage.records.set(settingsKey, bluetoothSettings());
+    controller.probe.mockRejectedValue(new LedControllerError('unavailable'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalled());
+    act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'Boardsesh Spraywall 1A2B', rssi: -60 }]));
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleResult' }));
+    expect(await screen.findByText('sprayLed.bleUnreachable')).toBeTruthy();
+    expect(picked.hint).toHaveBeenCalled();
+    expect(picked.keep).not.toHaveBeenCalled();
+    expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings());
+  });
+
+  it('brings the Wi-Fi address back after a trip to Bluetooth', async () => {
+    storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    act(() => lightingControls.connection?.onSelect('ble'));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings()));
+    await waitFor(() => expect(lightingControls.connection?.selectedKey).toBe('ble'));
+    act(() => lightingControls.connection?.onSelect('wled'));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(savedSettings(true, 'http://wled.local')));
+    expect(urlInput().value).toBe('http://wled.local');
   });
 
   it('says Bluetooth is off when checking the controller finds the radio off', async () => {

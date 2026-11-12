@@ -6,7 +6,7 @@ import {
   resolveLedLightingOptions,
   type LedControllerType,
 } from '@boardsesh/led-controller';
-import { removePreference, removePreferencesMatching } from '../preference-store';
+import { getPreference, removePreference, removePreferencesMatching, setPreference } from '../preference-store';
 
 export type SprayWallLedSettings = {
   version: 1;
@@ -50,6 +50,11 @@ export const sprayWallLedLayoutKey = (wallUuid: string) => `sprayWallTnutLayout:
  * ids differ per phone. Not wall data, so only sign-out erases it.
  */
 export const sprayLedBleDeviceIdKey = (controllerName: string) => `sprayLedBleDeviceId:${controllerName}`;
+/**
+ * The wall's last Wi-Fi address on this phone, kept while the wall is on
+ * Bluetooth so switching back restores it. The server keeps one address per type.
+ */
+export const sprayWallLedWifiAddressKey = (wallUuid: string) => `sprayWallLedWifiAddress:${wallUuid}`;
 /** Set before a save writes the copy, and cleared once the server has it. */
 export const sprayWallLedUnsentKey = (field: SprayWallLedField, wallUuid: string) =>
   `sprayWallLedUnsent:${field}:${wallUuid}`;
@@ -59,6 +64,7 @@ const CACHE_KEY_PREFIXES = [
   'sprayWallTnutLayout:',
   'sprayWallLedUnsent:',
   'sprayLedBleDeviceId:',
+  'sprayWallLedWifiAddress:',
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -184,6 +190,7 @@ export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
     Promise.allSettled([
       removePreference(sprayWallLedSettingsKey(wallUuid)),
       removePreference(sprayWallLedLayoutKey(wallUuid)),
+      removePreference(sprayWallLedWifiAddressKey(wallUuid)),
       removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
       removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
     ]),
@@ -204,4 +211,23 @@ export async function eraseAllSprayWallLedCaches(): Promise<void> {
   });
   globalErasure = clearing;
   await clearing;
+}
+
+/** Keep the Wi-Fi address this wall is leaving, to restore it when it comes back to Wi-Fi. */
+export async function rememberSprayWallWifiAddress(wallUuid: string, url: string): Promise<void> {
+  const address = sprayLedControllerAddressOrEmpty('wled', url);
+  if (!address) return;
+  await serializeSprayWallLedCacheWrite(wallUuid, () =>
+    setPreference(sprayWallLedWifiAddressKey(wallUuid), address),
+  ).catch(() => undefined);
+}
+
+/** The Wi-Fi address this wall last had on this phone, or ''. */
+export async function recallSprayWallWifiAddress(wallUuid: string): Promise<string> {
+  try {
+    const stored = await getPreference<unknown>(sprayWallLedWifiAddressKey(wallUuid));
+    return typeof stored === 'string' ? sprayLedControllerAddressOrEmpty('wled', stored) : '';
+  } catch {
+    return '';
+  }
 }

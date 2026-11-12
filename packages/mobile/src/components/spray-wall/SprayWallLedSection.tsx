@@ -20,6 +20,7 @@ import {
 import type { SprayLedBleCandidate } from '../../lib/spray/spray-led-ble-transport';
 import { loadSprayLedBleTransport } from '../../lib/spray/spray-led-ble-transport-loader';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
+import { recallSprayWallWifiAddress, rememberSprayWallWifiAddress } from '../../lib/spray/spray-wall-led-cache';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
 import { BuilderTextInput, SectionLabel } from '../board-discovery/BoardMetaFields';
@@ -157,10 +158,15 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setLighting(null);
     savingRef.current = true;
     try {
-      // A Wi-Fi address is no Bluetooth controller, nor the reverse: the other
-      // type starts without one.
+      // A Wi-Fi address is no Bluetooth controller, nor the reverse. The
+      // server keeps one address per type, so this phone keeps the Wi-Fi one
+      // while the wall is on Bluetooth and brings it back on the way back.
       setDraftUrl(null);
-      await save({ ...settings, controller: { type, url: '' } });
+      if (settings.controller.type === 'wled' && settings.controller.url) {
+        await rememberSprayWallWifiAddress(wallUuid, settings.controller.url);
+      }
+      const url = type === 'wled' ? await recallSprayWallWifiAddress(wallUuid) : '';
+      await save({ ...settings, controller: { type, url } });
     } finally {
       savingRef.current = false;
     }
@@ -212,12 +218,12 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setResult(null);
     setLighting(null);
     try {
-      if (candidate.id) {
-        const { rememberSprayLedController } = await loadSprayLedBleTransport();
-        await rememberSprayLedController(candidate.name, candidate.id);
-      }
+      const transport = await loadSprayLedBleTransport();
+      // Tried first, but remembered on this phone only once it answered.
+      if (candidate.id) transport.hintSprayLedController(candidate.name, candidate.id);
       const info = await getLedControllerDriver('ble').probe(bleTarget, controller.signal);
       if (request.current !== controller || controller.signal.aborted) return;
+      await transport.keepSprayLedController(candidate.name);
       // The name it was found by: the probe's own name can be empty.
       setResult({ kind: 'connected', url: bleTarget, name: candidate.name, ledCount: info.ledCount });
       if (settings.controller.url !== bleTarget) await persistUrl(bleTarget);
