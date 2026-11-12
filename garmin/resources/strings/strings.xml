@@ -13,7 +13,9 @@
     <string id="EnterCode">Enter pairing code</string>
     <string id="Pairing">Pairing…</string>
     <string id="GetCode">Get a code in the Boardsesh app</string>
-    <string id="PairFailed">Bad code — try again</string>
+    <string id="PairFailed">Pairing failed — try again</string>
+    <string id="PairStorageUnavailable">Saved data unavailable</string>
+    <string id="PairStoragePaused">Pairing paused</string>
 
     <!-- Climb screen -->
     <string id="EmptyQueue">Queue is empty</string>

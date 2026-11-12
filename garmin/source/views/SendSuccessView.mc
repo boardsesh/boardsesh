@@ -10,6 +10,7 @@ using Toybox.Lang;
 // on a black background with a green accent — a rewarding beat that stays
 // battery/burn-in friendly on AMOLED because it's transient, not persistent.
 class SendSuccessView extends WatchUi.View {
+    private var _context;
     private var _grade as Lang.String;
     private var _flash as Lang.Boolean;
     private var _timer as Timer.Timer or Null;
@@ -17,6 +18,7 @@ class SendSuccessView extends WatchUi.View {
 
     function initialize(grade as Lang.String, isFlash as Lang.Boolean) {
         View.initialize();
+        _context = TokenStore.snapshot();
         _grade = grade;
         _flash = isFlash;
         _timer = null;
@@ -62,6 +64,7 @@ class SendSuccessView extends WatchUi.View {
     }
 
     function dismiss() as Void {
+        if (!TokenStore.current(_context)) { return; }
         if (_done) {
             return;
         }

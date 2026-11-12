@@ -32,20 +32,22 @@ class LoadingView extends WatchUi.View {
             WatchUi.loadResource(Rez.Strings.Loading));
     }
 
-    function onSessions(code as Lang.Number, data) as Void {
+    function onSessions(code as Lang.Number, data, origin) as Void {
+        if (code == BsResponse.STALE || !TokenStore.current(origin)) { return; }
         if (code == 401) {
             // BsClient is refreshing / routing to pairing.
             return;
         }
         if (code < 200 || code >= 300 || data == null) {
             // Treat any error as "no session"; NoSessionView offers Retry.
-            Router.toNoSession();
+            showNoSession();
             return;
         }
 
+        AppState.authContext = origin;
         var active = AppState.activeSessions(data);
         if (active.size() == 0) {
-            Router.toNoSession();
+            showNoSession();
         } else if (active.size() == 1) {
             _attach(active[0]);
             Router.toClimb();
@@ -54,6 +56,9 @@ class LoadingView extends WatchUi.View {
         }
     }
 
+    // Shared by unavailable reads and a successful empty-session reply.
+    function showNoSession() as Void { Router.toNoSession(); }
+
     private function _attach(session as Lang.Dictionary) as Void {
         AppState.attachSession(session["id"], session["name"]);
     }
@@ -61,11 +66,14 @@ class LoadingView extends WatchUi.View {
 }
 
 class LoadingDelegate extends WatchUi.BehaviorDelegate {
+    private var _context;
     function initialize() {
         BehaviorDelegate.initialize();
+        _context = TokenStore.snapshot();
     }
 
     function onBack() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }
         // System.exit() does not return, so no `return` follows (it'd be dead code).
         System.exit();
     }

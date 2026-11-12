@@ -57,19 +57,23 @@ class SessionSummaryView extends WatchUi.View {
 }
 
 class SessionSummaryDelegate extends WatchUi.BehaviorDelegate {
+    private var _context;
 
     function initialize() {
         BehaviorDelegate.initialize();
+        _context = TokenStore.snapshot();
     }
 
     // START = commit: open the Save / Discard / Keep-going confirm.
     function onSelect() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }
         WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
 
     // BACK = back to the climb screen (keep recording).
     function onBack() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }
         WatchUi.popView(WatchUi.SLIDE_DOWN);
         return true;
     }

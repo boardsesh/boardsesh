@@ -17,10 +17,9 @@ Because Garmin gives Connect IQ apps **plain HTTPS only (no WebSocket)**, the
 watch **polls** `/api/session/state` every 3s while the climb screen is in the
 foreground. Real-time control is therefore foreground-only.
 
-> This project sits **outside** the repo's bun/`vp` toolchain. It is **not** a
-> workspace in the root `package.json` and is **not** run by `vp test`. Build it
-> with the Connect IQ SDK's `monkeyc`. `garmin/bin/` and the `developer_key`
-> are gitignored.
+> This project is not a workspace in the root `package.json` and is not run
+> by `vp test`. Invoke the Connect IQ SDK tools through `vp exec`. `garmin/bin/`
+> and the `developer_key` are gitignored.
 
 ---
 
@@ -44,7 +43,7 @@ unit tests.
 Verify:
 
 ```bash
-monkeyc --version
+vp exec monkeyc --version
 ```
 
 ## 2. Generate a developer signing key (one-time, no account needed)
@@ -66,7 +65,7 @@ store updates of a published app, so keep it somewhere safe if you ever publish.
 
 ```bash
 # from the repo root
-monkeyc -f garmin/monkey.jungle \
+vp exec monkeyc -f garmin/monkey.jungle \
   -o garmin/bin/boardsesh.prg \
   -y garmin/developer_key \
   -d fenix7
@@ -85,7 +84,7 @@ copy (`https://ws.boardsesh.com`) and a `(:staging)` copy. The base build strips
 Set the placeholder staging URL to your test backend before use:
 
 ```bash
-monkeyc -f "garmin/monkey.jungle;garmin/monkey-staging.jungle" \
+vp exec monkeyc -f "garmin/monkey.jungle;garmin/monkey-staging.jungle" \
   -o garmin/bin/boardsesh-staging.prg -y garmin/developer_key -d fenix7
 ```
 
@@ -98,10 +97,10 @@ and note the phone must trust the TLS cert). Rebuild with both jungle files in t
 
 ```bash
 # start the simulator (once)
-connectiq
+vp exec connectiq
 
 # side-load the built app into the running simulator
-monkeydo garmin/bin/boardsesh.prg fenix7
+vp exec monkeydo garmin/bin/boardsesh.prg fenix7
 ```
 
 The simulator can fake outbound HTTP. For the pairing flow you'll want a real or
@@ -115,12 +114,12 @@ functions under `garmin/tests/`. Build a **test** binary (`-t`) and run it with
 `-t`:
 
 ```bash
-monkeyc -f garmin/monkey.jungle \
+vp exec monkeyc -f garmin/monkey.jungle \
   -o garmin/bin/boardsesh-test.prg \
   -y garmin/developer_key \
   -d fenix7 -t
 
-monkeydo garmin/bin/boardsesh-test.prg fenix7 -t
+vp exec monkeydo garmin/bin/boardsesh-test.prg fenix7 -t
 ```
 
 `monkeydo ... -t` (equivalently `--unit-test`) runs every `(:test)` function and
@@ -136,47 +135,76 @@ The watch authenticates with a short-lived **mobile JWT**. To obtain one:
    swipe) to change the highlighted character, **START** to confirm each
    character, **BACK** to delete. Confirming the 8th character submits.
 3. The watch calls `POST /api/watch/pair`, stores the returned
-   `{ jwt, refreshToken, expiresAt }` in `Application.Storage`, then resolves the
-   active session and opens the climb screen.
+   verified `{ jwt, refreshToken, expiresAt, userId }` response in one versioned
+   auth value, then resolves the active session and opens the climb screen.
 
-Tokens are refreshed automatically on a `401` via `POST /auth/native/refresh`.
-Refresh tokens are **single-use** (rotated every refresh); the client persists
-the new pair before retrying and serializes concurrent refreshes. A definitive authentication rejection clears tokens and returns to pairing.
-Transport errors, rate limits and server failures retain credentials for retry.
+Tokens are refreshed on a `401` via `POST /auth/native/refresh`. The auth envelope
+binds credentials to the verified response owner, login scope and credential
+revision. Requests capture their own JWT and scope; an old request never retries
+with another login's credentials. Concurrent refreshes share only their own
+scope's flight. A persisted rotation marker precedes the single-use refresh
+request. Proven pre-send refusal (SDK no-connection or queue-full) and the
+existing endpoint's explicit overload/admission-rollback/rate-limit responses
+restore same-scope retry eligibility. Timeouts, lost responses and unrecognized
+server failures retain the marker and never retry a potentially consumed refresh
+secret. A known owner's existing access JWT and offline logging may continue;
+a later access rejection requires explicit pairing. Unknown-owner bootstrap
+cannot acquire an owner from an ambiguous result. A successful rotation whose
+storage write fails never publishes its new tokens and requires explicit
+recovery. Pending ticks remain stored throughout.
 
-### Shared-watch security
+This distinguishes Garmin's documented pre-send refusal codes from timeout and
+connection-loss outcomes; see
+[Communications error meanings](https://developer.garmin.com/connect-iq/api-docs/Toybox/Communications.html).
+The legacy refresh protocol cannot recover a committed token pair after its
+response is lost. No idempotency or backend protocol change is claimed here.
 
-A paired watch holds native-session credentials in Garmin's application storage,
-which is not a secure enclave. They are not restricted to a watch-only API scope.
-Treat the watch as signed into the account and do not share it while paired.
-Re-pairing successfully clears offline ticks from the previous account; those
-pending ticks are not transferred to the new account. A definitive refresh
-rejection also clears credentials and the pending queue. Device loss and
-server-side session revocation follow the account's native-session controls.
+### Shared-watch security and queued ticks
 
-### Owner-aware outbox preparation
+A paired watch holds native-session credentials in Garmin's plaintext application
+storage, which is not a secure enclave. Treat it as signed into the account.
+Re-pairing advances a persisted monotonic scope; clearing credentials preserves
+that tombstone. Counter exhaustion refuses further changes rather than wrapping.
+The V2 auth value remains authoritative even after sign-out or corruption; old
+credential keys are never consulted once it exists. A verified legacy-credential
+refresh may bind only those credentials into a new scope, never old queued ticks.
 
-`OwnedTickOutbox` is an unwired, copy-on-write kernel for the next queue adapter.
-It partitions ticks by exact account ID, acknowledges an exact owner/UUID pair,
-and refuses an append at capacity while preserving every existing tick. One
-versioned envelope is intended to be persisted atomically by that adapter.
+`TickQueue` persists the complete owner-partitioned `OwnedTickOutbox` envelope
+before the first request and before FIT laps, counters or success feedback.
+Logical capacity and storage failures refuse new logs without evicting saved
+efforts. Each request owns an owner/scope/UUID lease. Only a typed successful
+response acknowledging the exact UUID under the current scope removes a tick.
+Every other result, including permanent HTTP errors and GraphQL errors, retains
+the tick and stops the drain. Recovery from a permanently rejected tick is
+intentionally deferred; there is no automatic discard path.
 
-Legacy arrays remain unowned. The old pairing callback writes the new tokens
-before clearing the previous queue; an interrupted pairing can leave ticks from
-one account beside credentials for another. Current credentials therefore cannot
-prove a legacy tick's owner. The kernel retains that data in quarantine and
-never attaches it to a later account. Persistence, request-scope guards and the
-pairing/refresh UI are the next stacked change; the owner's existing test
-watch and legacy tick recovery remain rollout gates in owner runbook
-[#7430](https://github.com/boardsesh/boardsesh/issues/7430).
+Legacy arrays remain unowned forever. Historical pairing wrote new credentials
+before clearing the queue, so neither current credentials, a verified refresh,
+nor same-account re-pairing proves those ticks' owner. They remain quarantined.
+Known-owner partitions survive re-pairing and become eligible only when that
+verified owner signs in again. Stale requests may settle their own flight or
+lease; they cannot acknowledge ticks, overwrite state, route, or exit a newer
+login. Pairing saves any outgoing FIT activity before resetting session state.
 
-SDK 9.2.0 validation uses the staging overlay and an ephemeral simulator key.
-The test runner reports 53 passing tests, including 12 ownership cases. Its
-launcher currently exits 1 on both unchanged main's 41 passing tests and the
-53 passing tests; record the complete SDK verdict separately from that exit
-status. Mutation checks require a successful compile and an explicit named SDK
-assertion failure. Never count a compiler error or an incomplete report as a
-killed mutation.
+Auth and outbox use separate SDK storage values to avoid combining credentials
+with potentially large quarantine data. Garmin documents a 32KB per-value limit
+and exceptions when storage is full; adapters catch failures and publish only
+after a successful write. This is one write per envelope, with no claim of
+power-loss atomicity across keys. See the official
+[Storage contract](https://developer.garmin.com/connect-iq/api-docs/Toybox/Application/Storage.html).
+
+The application currently exists only on the owner's test watch; public
+publication is planned for December. Existing queued test data, original-key
+update safety, and real-watch queue/FIT QA remain activation/release gates in
+owner runbook [#7430](https://github.com/boardsesh/boardsesh/issues/7430).
+SDK simulation and ephemeral-key compiles do not close those gates. Older
+array-only builds cannot consume the V2 envelope; safe downgrade/recovery is
+also unqualified, rather than an implicit rollback promise.
+
+SDK validation must use the complete test report rather than its launcher exit
+status: the local launcher can exit 1 even when every SDK test passes. Mutation
+checks require a successful compile and an explicit named assertion failure;
+compiler errors and incomplete reports never count as killed mutations.
 
 ## 7. How the board actually gets repainted (delivery model)
 
@@ -238,7 +266,7 @@ garmin/
     auth/TokenStore.mc    JWT/refresh/exp persistence in Application.Storage
     state/AppState.mc     Session state singleton + PURE nav reconciliation
     state/PollController.mc  3s foreground poll w/ backoff + optimistic reconcile
-    state/TickQueue.mc    Bounded offline tick FIFO + sequential flusher
+    state/TickQueue.mc    Owner-partitioned durable outbox + scoped flusher
     recording/ActivityController.mc  FIT recording (start/lap/save/discard)
     util/TimeUtil.mc      UTC ISO-8601 climbedAt helper
     util/Toast.mc         Transient feedback (showToast w/ vibrate fallback)

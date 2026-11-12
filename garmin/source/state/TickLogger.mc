@@ -1,44 +1,27 @@
 using Toybox.WatchUi;
 using Toybox.Lang;
 
-// Handles ONE logged tick's async save result. One instance per press, so rapid
-// one-press logs never clobber a shared field. The instance stays alive until
-// the saveTick callback fires (the bound Method retains it — the same pattern as
-// TickFlusher).
-//
-// The FIT lap, haptics, and counters are applied by the CALLER on press
-// (optimistic, decoupled from the network); this class only reacts to the save
-// outcome via the SAME classifier the offline flusher uses. submit() persists
-// first, so a crash or exit between request and callback cannot lose the tick:
-//   * :success -> remove its uuid from the outbox.
-//   * :retry   -> leave it queued for a later flush.
-//   * :drop    -> remove it and surface the permanent rejection.
+// One durable tick, one owner/scope, one exact request lease.
 class TickLogger {
-    private var _input as Lang.Dictionary;
+    private var _input;
+    private var _context;
+    private var _lease = null;
+    function initialize(input) { _input = input; _context = TokenStore.snapshot(); }
 
-    function initialize(input as Lang.Dictionary) {
-        _input = input;
+    // Caller must check acceptance BEFORE FIT, counters or success feedback.
+    function submit() as Lang.Boolean {
+        if (!TickQueue.enqueue(_input, _context)) { return false; }
+        _lease = TickQueue.acquire(_context, _input["uuid"]);
+        if (_lease != null) { Services.client.saveTick(_input, method(:onResult)); }
+        return true;
     }
-
-    function submit() as Void {
-        TickQueue.enqueue(_input);
-        Services.client.saveTick(_input, method(:onResult));
-    }
-
-    function onResult(code as Lang.Number, data) as Void {
-        var outcome = TickQueue.classifyFlushResult(code, data != null);
-        if (outcome == :retry) {
-            Feedback.offlineQueued();
-            Toast.show(WatchUi.loadResource(Rez.Strings.QueuedOffline));
-        } else {
-            var tickUuid = _input["uuid"];
-            if (tickUuid instanceof Lang.String) {
-                TickQueue.removeUuid(tickUuid);
-            }
-        }
-        if (outcome == :drop) {
-            Feedback.error();
-            Toast.show(WatchUi.loadResource(Rez.Strings.LogFailed));
-        }
+    function onResult(code as Lang.Number, response, origin) as Void {
+        var completed = _lease;
+        _lease = null;
+        if (!TickQueue.release(completed)) { return; }
+        if (!AuthState.sameScope(_context, origin) || !TickQueue.activeContext(_context)) { return; }
+        if (TickQueue.exactAck(code, response, _input["uuid"]) && TickQueue.acknowledge(_context, _input["uuid"])) { return; }
+        Feedback.offlineQueued();
+        Toast.show(WatchUi.loadResource(Rez.Strings.QueuedOffline));
     }
 }

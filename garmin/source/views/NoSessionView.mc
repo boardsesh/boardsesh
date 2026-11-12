@@ -68,16 +68,20 @@ class NoSessionView extends WatchUi.View {
 }
 
 class NoSessionDelegate extends WatchUi.BehaviorDelegate {
+    private var _context;
     function initialize() {
         BehaviorDelegate.initialize();
+        _context = TokenStore.snapshot();
     }
 
-    function onSelect() as Lang.Boolean {   // START -> retry
+    function onSelect() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }   // START -> retry
         Router.toLoading();
         return true;
     }
 
-    function onBack() as Lang.Boolean {     // BACK -> exit
+    function onBack() as Lang.Boolean {
+        if (!TokenStore.current(_context)) { return true; }     // BACK -> exit
         // System.exit() does not return, so no `return` follows (it'd be dead code).
         System.exit();
     }

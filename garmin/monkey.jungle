@@ -1,9 +1,8 @@
 ################################################################################
 # Boardsesh Connect IQ build config (monkey.jungle)
 #
-# Toolchain note: this Garmin project sits OUTSIDE the repo's bun/vp toolchain.
-# It is NOT a workspace in the root package.json and is NOT run by `vp test`.
-# Build it with the Connect IQ SDK's `monkeyc`. See garmin/README.md.
+# Garmin is not a package.json workspace and is not run by `vp test`.
+# Invoke the Connect IQ SDK through `vp exec monkeyc`. See garmin/README.md.
 ################################################################################
 
 project.manifest = manifest.xml
