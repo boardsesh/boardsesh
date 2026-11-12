@@ -130,8 +130,9 @@ Spraywall:
 
 - the app lets go after 60 s without writes, on the background-safe timer
   (`setBackgroundSafeTimeout`, which still fires while Android pauses JS
-  timers), and at once when the app goes to the background. The lights stay as
-  they are; only the connection is released;
+  timers), and 2 s after the last write once the app is in the background (a
+  screen's clear on leaving still goes out over the open link). The lights stay
+  as they are; only the connection is released;
 - the firmware disconnects a phone that has not written for 90 s
   (`SPRAYWALL_IDLE_DISCONNECT_SECONDS`) and advertises again.
 
@@ -149,12 +150,20 @@ address without its type.
 Every phone then finds that exact name by scanning and remembers the device id
 it found (`sprayLedBleDeviceId:<name>`, on the phone only, never uploaded,
 erased at sign-out): iOS gives every phone a different id for the same
-controller. A remembered id that no longer connects is forgotten and the name
-scanned for once more. Nothing adopts "whatever controller is nearby": a
+controller. When a remembered id does not connect, the name is scanned for
+once: the id is replaced only if the controller shows up under another id. A
+controller busy with another phone does not advertise, so its id stays and the
+connect fails as unreachable (10 s connect + 5 s scan + 10 s connect, inside the
+driver's 30 s). Nothing adopts "whatever controller is nearby": a
 Bluetooth Spraywall with no saved name says its controller is not set up yet.
 
 The first time a held climb on a Bluetooth Spraywall would make the system ask
-for Bluetooth, the app first explains why (once; "Not now" lights nothing).
+for Bluetooth, the app first explains why. One alert at a time; after "Not now"
+it does not ask again until the app restarts, and those climbs show the usual
+"Bluetooth is off or not allowed" toast.
+
+Switching a Spraywall from Wi-Fi to Bluetooth and back restores its Wi-Fi
+address from this phone's LED cache (the server keeps one address per type).
 
 ## 6. No Wi-Fi network
 
