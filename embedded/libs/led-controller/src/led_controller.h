@@ -88,11 +88,22 @@ class LedController {
     // Run quick blink (for feedback)
     void blink(uint8_t r, uint8_t g, uint8_t b, int count = 3, int delayMs = 100);
 
+    // A current cap for every show() (power_limit.h). 0 mA (the default) is no
+    // cap, and show() is then exactly FastLED.show() at the set brightness.
+    void setPowerLimit(uint32_t maxMilliamps, uint16_t perPixelMilliamps);
+    // What the last show() estimated, after the cap, and whether the cap dimmed it.
+    uint32_t getEstimatedMilliamps();
+    bool wasPowerLimited();
+
   private:
     CRGB leds[MAX_LEDS];
     uint16_t numLeds;
     uint8_t brightness;
     bool initialized;
+    uint32_t maxMilliamps;
+    uint16_t perPixelMilliamps;
+    uint32_t estimatedMilliamps;
+    bool powerLimited;
 };
 
 extern LedController LEDs;

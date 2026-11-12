@@ -41,6 +41,17 @@
 #ifndef SPRAYWALL_AUTO_OFF_MINUTES
 #define SPRAYWALL_AUTO_OFF_MINUTES 30
 #endif
+// Current cap, set at build time (platformio.ini, env gledopto-c015-spraywall):
+// the most the supply may deliver, and what one pixel draws at full white. The
+// board cannot measure its supply. The defaults are the safe worst case, 5 A
+// and 60 mA (5 V WS2812B); whoever builds for a 12 V / 24 V string raises them
+// from its datasheet. The GL-C-015WL-D carries 10 A per output, 15 A in total.
+#ifndef SPRAYWALL_MAX_CURRENT_MA
+#define SPRAYWALL_MAX_CURRENT_MA 5000
+#endif
+#ifndef SPRAYWALL_PIXEL_FULL_WHITE_MA
+#define SPRAYWALL_PIXEL_FULL_WHITE_MA 60
+#endif
 #else
 // Match the Aurora/Kilter board name format so the official app discovers this
 // debug controller as a test board.

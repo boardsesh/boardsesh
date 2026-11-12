@@ -104,6 +104,10 @@ void serviceSpraywall() {
         LEDs.clear();
         if (count > 0) LEDs.setLeds(frame, count);
         LEDs.show();
+        if (LEDs.wasPowerLimited()) {
+            Logger.logln("Spraywall: dimmed to stay within the current limit (~%u mA)",
+                         (unsigned)LEDs.getEstimatedMilliamps());
+        }
         // An explicit clear (empty frame) leaves nothing for the auto-off.
         g_spraywallLit = count > 0;
     }
@@ -432,6 +436,13 @@ void fillWebStatus(JsonDocument& doc) {
 
     doc["wifi_connected"] = wifiConnected;
     doc["wifi_ip"] = WiFiMgr.getIP();
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Read-only: the cap is set at build time.
+    doc["led_max_current_ma"] = SPRAYWALL_MAX_CURRENT_MA;
+    doc["led_pixel_full_white_ma"] = SPRAYWALL_PIXEL_FULL_WHITE_MA;
+    doc["led_estimated_ma"] = LEDs.getEstimatedMilliamps();
+    doc["led_power_limited"] = LEDs.wasPowerLimited();
+#endif
     doc["ble_initialized"] = bleInitialized;
     doc["ble_connected"] = bleInitialized && BLE.isConnected();
     doc["ble_advertising"] = bleInitialized && BLE.isAdvertising();
@@ -613,6 +624,10 @@ void setup() {
     Logger.logln("Initializing LEDs on pin %d...", LED_DATA_PIN);
     LEDs.begin(NUM_LEDS);
     LEDs.setBrightness(Config.getInt("brightness", DEFAULT_BRIGHTNESS));
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Before the startup animation: its all-blue flash is capped too.
+    LEDs.setPowerLimit(SPRAYWALL_MAX_CURRENT_MA, SPRAYWALL_PIXEL_FULL_WHITE_MA);
+#endif
 
     // Startup animation (brief to confirm LEDs working)
     startupAnimation();
