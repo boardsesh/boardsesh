@@ -138,6 +138,7 @@ export {
   setWiringSkip,
   setWiringInitialSkip,
   assignLedIndices,
+  wiredLedCount,
   rowMajorLedIndices,
   traceLedPath,
   type LedPosition,

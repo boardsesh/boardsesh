@@ -92,6 +92,32 @@ describe('Bluetooth Spraywall driver', () => {
     expect(hex(fake.written())).toBe('01 0a ab 02 54 00 00 ff 01 00 ff 02 00 ff 03');
   });
 
+  it("lights exactly the wall's LED count when its layout knows it, never the 500 fallback", async () => {
+    const fake = fakeController();
+    const driver = createBleLedDriver({ transport: () => fake.transport });
+    await driver.lightAll(target, undefined, { ledCount: 3 });
+    expect(hex(fake.written())).toBe('01 0a ab 02 54 00 00 ff 01 00 ff 02 00 ff 03');
+    fake.chunks.length = 0;
+    // The preview session's Light all reads it from the lighting options too.
+    await driver.createPreview(target, { ledCount: 2 }).lightAll();
+    expect(fake.written()).toEqual(
+      getAuroraV3LedPacket([
+        { position: 0, color: [255, 255, 255] },
+        { position: 1, color: [255, 255, 255] },
+      ]),
+    );
+  });
+
+  it('falls back to 500 LEDs when the count is unknown or not a usable count', async () => {
+    for (const ledCount of [undefined, 0, -4, 2.5, 70_000]) {
+      const fake = fakeController();
+      await createBleLedDriver({ transport: () => fake.transport }).lightAll(target, undefined, { ledCount });
+      expect(fake.written()).toEqual(
+        getAuroraV3LedPacket(Array.from({ length: 500 }, (_, position) => ({ position, color: [255, 255, 255] }))),
+      );
+    }
+  });
+
   it('sends a preview as one Aurora v3 packet that replaces what was lit', async () => {
     const fake = fakeController();
     const preview = createBleLedDriver({ transport: () => fake.transport }).createPreview(target);

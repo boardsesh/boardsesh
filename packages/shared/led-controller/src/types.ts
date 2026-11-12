@@ -30,6 +30,12 @@ export interface LedLightingOptions {
   brightness?: number;
   /** Turn the wall off this many minutes after it was last lit (1–255); 0 or absent never does. */
   autoOffMinutes?: number;
+  /**
+   * LEDs on the cable as the wall's layout wires them. A controller that cannot
+   * report its length (Bluetooth) lights exactly this many on "Light all".
+   * Absent: the driver's own fallback.
+   */
+  ledCount?: number;
 }
 
 export const DEFAULT_LED_BRIGHTNESS = 64;
@@ -39,6 +45,7 @@ export const MAX_LED_AUTO_OFF_MINUTES = 255;
 export function resolveLedLightingOptions(options: LedLightingOptions = {}): {
   brightness: number;
   autoOffMinutes: number;
+  ledCount?: number;
 } {
   const brightness = Number.isFinite(options.brightness)
     ? Math.min(255, Math.max(1, Math.round(options.brightness ?? DEFAULT_LED_BRIGHTNESS)))
@@ -46,7 +53,12 @@ export function resolveLedLightingOptions(options: LedLightingOptions = {}): {
   const autoOffMinutes = Number.isFinite(options.autoOffMinutes)
     ? Math.min(MAX_LED_AUTO_OFF_MINUTES, Math.max(0, Math.round(options.autoOffMinutes ?? 0)))
     : 0;
-  return { brightness, autoOffMinutes };
+  // Aurora positions are 16-bit; anything else is no count at all.
+  const ledCount =
+    Number.isSafeInteger(options.ledCount) && options.ledCount! > 0 && options.ledCount! <= 0xffff
+      ? options.ledCount
+      : undefined;
+  return { brightness, autoOffMinutes, ...(ledCount ? { ledCount } : {}) };
 }
 
 /** An RGB route colour for one physical LED on the configured cable. */

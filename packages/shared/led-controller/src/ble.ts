@@ -1,7 +1,13 @@
 import { isSprayLedControllerName } from '@boardsesh/ble-protocol/advertised-identity';
 import { getAuroraV3LedPacket, type AuroraV3Led } from '@boardsesh/ble-protocol/aurora';
 import { effectiveChunkSizeForMtu, splitMessages } from '@boardsesh/ble-protocol/transport';
-import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
+import {
+  LedControllerError,
+  resolveLedLightingOptions,
+  type LedControllerDriver,
+  type LedControllerInfo,
+  type LedLightingOptions,
+} from './types';
 import { snapshotLedPixels } from './led-pixels';
 
 /**
@@ -12,7 +18,8 @@ import { snapshotLedPixels } from './led-pixels';
  * use, over Nordic UART, with LED indices as positions. Every packet replaces
  * what is lit, as on an Aurora board, and the empty packet clears. Brightness
  * and auto-off are the controller's own settings: the protocol has no field
- * for them, so this driver ignores the wall's lighting options.
+ * for them, so this driver ignores those options. It reads only `ledCount`:
+ * the protocol reports no cable length, so "Light all" lights that many.
  */
 
 /**
@@ -48,9 +55,10 @@ export interface BleLedDriverOptions {
   /** Per write. Connecting gets at least 15 s: it includes service discovery. */
   timeoutMs?: number;
   /**
-   * How many LEDs "Light all" sends. The protocol does not report the cable
-   * length, and the controller ignores positions past its string, so this is
-   * the board-controller firmware's MAX_LEDS.
+   * How many LEDs "Light all" sends when the wall's layout gives no count
+   * (`LedLightingOptions.ledCount`). The protocol does not report the cable
+   * length, and the controller ignores positions past its string, so this
+   * fallback is the board-controller firmware's MAX_LEDS.
    */
   lightAllLeds?: number;
 }
@@ -149,7 +157,12 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
     }
   }
 
-  const allWhite = () => Array.from({ length: lightAllLeds }, (_, position) => ({ position, color: white }));
+  // The wall's own LED count when its layout knows it, else the fallback.
+  const allWhite = (lighting?: LedLightingOptions) =>
+    Array.from({ length: resolveLedLightingOptions(lighting).ledCount ?? lightAllLeds }, (_, position) => ({
+      position,
+      color: white,
+    }));
 
   const white = [255, 255, 255] as const;
   const driver: LedControllerDriver = {
@@ -159,13 +172,13 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
       // The protocol reports no LED count or firmware version.
       return { name: link.name.trim() || 'Spraywall', version: 'Aurora API v3', ledCount: 0 };
     },
-    async lightAll(target, signal) {
-      await send(target, allWhite(), signal);
+    async lightAll(target, signal, lighting) {
+      await send(target, allWhite(lighting), signal);
     },
     async turnOff(target, signal) {
       await send(target, [], signal);
     },
-    createPreview(target) {
+    createPreview(target, lighting) {
       // Only true once a write reached the controller, so a climb that never
       // connected costs no second connect to "turn off" what never lit.
       let mayBeLit = false;
@@ -185,7 +198,7 @@ export function createBleLedDriver(options: BleLedDriverOptions): LedControllerD
           await send(target, leds, undefined, written);
         },
         async lightAll() {
-          await send(target, allWhite(), undefined, written);
+          await send(target, allWhite(lighting), undefined, written);
         },
         async turnOff() {
           if (!mayBeLit) return;

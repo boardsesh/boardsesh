@@ -354,6 +354,13 @@ export function assignLedIndices(wiring: TnutWiring): { id: string; index: numbe
     }),
   );
 }
+/**
+ * How many LEDs the cable carries up to its last wired LED: the highest index
+ * plus one, so skipped LEDs (gaps, the initial skip) count too. 0 with nothing wired.
+ */
+export function wiredLedCount(wiring: TnutWiring): number {
+  return assignLedIndices(wiring).reduce((count, { index }) => Math.max(count, index + 1), 0);
+}
 /** Physical LED indices in top-to-bottom rows, left-to-right within every row. */
 export function rowMajorLedIndices(leds: LedPosition[], wiring: TnutWiring, layout?: TnutLayout): number[] {
   const indices = new Map(assignLedIndices(wiring).map(({ id, index }) => [id, index]));

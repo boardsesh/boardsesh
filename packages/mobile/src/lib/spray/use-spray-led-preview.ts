@@ -7,6 +7,9 @@ import {
   type LedControllerErrorCode,
   type LedPreviewSession,
 } from '@boardsesh/led-controller';
+import { wiredLedCount } from '@boardsesh/spray-wall-geometry';
+import { subscribeSprayLedConfiguration } from './spray-led-config-events';
+import { loadSprayWallTnutLayout } from './spray-wall-tnut-store';
 import { useSprayWallLedSettings, type SprayWallLedSettings } from './use-spray-wall-led-settings';
 import './spray-led-ble-transport-loader';
 
@@ -37,6 +40,32 @@ export function useSprayLedPreviewForSettings(
   // or the one LED the row-by-row test has reached.
   const [allLit, setAllLit] = useState(false);
   const [chaseIndex, setChaseIndex] = useState<number | null>(null);
+  // A Bluetooth controller reports no cable length: "Light all" lights the
+  // LEDs the saved layout wires, and only falls back to the driver's 500
+  // when there is no wiring yet.
+  const [ledCount, setLedCount] = useState<number | undefined>(undefined);
+  const bluetooth = controllerType === 'ble';
+
+  useEffect(() => {
+    setLedCount(undefined);
+    if (!bluetooth || !enabled) return;
+    let active = true;
+    const load = () => {
+      void loadSprayWallTnutLayout(wallUuid)
+        .then((layout) => {
+          if (active) setLedCount(layout?.wiring ? wiredLedCount(layout.wiring) || undefined : undefined);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const unsubscribe = subscribeSprayLedConfiguration((changed) => {
+      if (changed === wallUuid) load();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [wallUuid, bluetooth, enabled]);
 
   useEffect(() => {
     setState('idle');
@@ -47,7 +76,11 @@ export function useSprayLedPreviewForSettings(
     if (!enabled || !url) return;
     let session: LedPreviewSession;
     try {
-      session = createLedPreviewSession(getLedControllerDriver(controllerType), url, { brightness, autoOffMinutes });
+      session = createLedPreviewSession(getLedControllerDriver(controllerType), url, {
+        brightness,
+        autoOffMinutes,
+        ledCount,
+      });
     } catch {
       return;
     }
@@ -78,7 +111,7 @@ export function useSprayLedPreviewForSettings(
       subscription.remove();
       void session.close().catch(() => undefined);
     };
-  }, [wallUuid, enabled, url, controllerType, brightness, autoOffMinutes]);
+  }, [wallUuid, enabled, url, controllerType, brightness, autoOffMinutes, ledCount]);
 
   const run = useCallback(
     async (
