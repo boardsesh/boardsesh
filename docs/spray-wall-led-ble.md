@@ -46,7 +46,7 @@ board-controller firmware as the ESP32 reference.
 | --- | --- |
 | `probe` | Connect and find the Nordic UART write characteristic. Name = the advertised name. The protocol reports no LED count or version (`ledCount: 0`) |
 | preview `show(indices, colours)` | One Aurora v3 packet with every LED to light; it replaces what was lit, as on a Kilter board, so nothing is blanked first |
-| `lightAll` | White on positions 0–499 (the firmware's `MAX_LEDS`); positions past the string are ignored by the firmware |
+| `lightAll` | White on the wall's wired LEDs (`ledCount` from its layout); 0–499 only when the layout has no wiring yet. Positions past the string are ignored by the firmware |
 | `turnOff` / clear | The empty packet |
 
 Writes are with response, chunk by chunk (MTU 247 asked for on Android, chunks
@@ -75,6 +75,24 @@ keeps its own:
 
 For a Bluetooth Spraywall the app hides its brightness slider and auto-off
 choice and says the controller keeps its own.
+
+### Current limit: in the firmware only
+
+The app knows nothing about power. The Spraywall build caps its own draw: before
+every frame it estimates the current and dims the frame to fit
+`SPRAYWALL_MAX_CURRENT_MA` (default 5000) with `SPRAYWALL_PIXEL_FULL_WHITE_MA`
+per pixel at full white (default 60, 5 V WS2812B). The defaults are the safe
+worst case; whoever builds for a 12 V or 24 V string raises them from its
+datasheet, within the GL-C-015WL-D's 10 A per output and 15 A in total, and
+rebuilds and reflashes. Examples, the factory backup and the way back to WLED
+are in `embedded/README.md` ("GLEDOPTO GL-C-015WL-D variant").
+
+"Light all" lights exactly the LEDs the wall's saved wiring reaches (highest
+wired index + 1, `wiredLedCount`), in white; only a wall with no wiring yet
+falls back to 500 positions. Either way the firmware's cap applies.
+
+This firmware replaces WLED on that controller: it then works over Bluetooth
+only, not with the app's Wi-Fi (`wled`) controller type.
 
 ## 3. Test vectors
 
