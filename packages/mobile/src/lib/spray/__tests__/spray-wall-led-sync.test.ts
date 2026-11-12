@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 
+// The sync module loads its storage and network layers on first use; under a
+// full parallel run that can take longer than the default 5 s.
+vi.setConfig({ testTimeout: 20_000 });
+
 const backend = vi.hoisted(() => ({ request: vi.fn() }));
 const storage = vi.hoisted(() => ({
   records: new Map<string, unknown>(),
