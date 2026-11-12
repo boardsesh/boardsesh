@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-11T22:13:15.924Z",
+  "generatedAt": "2026-11-12T06:44:11.576Z",
   "entries": [
+    {
+      "prNumber": 7264,
+      "category": "improved",
+      "title": "The help guides are shorter and explain what driving the wall means and where a swipe takes you",
+      "mergedAt": "2026-11-12T06:31:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7264"
+    },
     {
       "prNumber": 7318,
       "category": "fixed",

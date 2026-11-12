@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-12
+
+### Improved
+
+- The help guides are shorter and explain what driving the wall means and where a swipe takes you ([#7264](https://github.com/boardsesh/boardsesh/pull/7264))
+
 ## 2026-11-11
 
 ### App update
