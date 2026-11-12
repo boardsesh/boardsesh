@@ -96,7 +96,7 @@ vi.mock('../spray-wall-loader', () => ({ fetchSprayWallUuid: mocks.uuid, fetchSp
 vi.mock('../use-spray-wall-led-settings', () => ({ loadSprayWallLedSettings: mocks.settings }));
 vi.mock('../spray-wall-tnut-store', () => ({ loadSprayWallTnutLayout: mocks.layout }));
 
-import { useSprayLedRouteSender } from '../use-spray-led-route-sender';
+import { resetSprayLedBluetoothPromptForTests, useSprayLedRouteSender } from '../use-spray-led-route-sender';
 import { sprayLedPhotoKey } from '../spray-led-photo-key';
 
 const homography = [1, 0, 0, 0, 1, 0, 0, 0, 1];
@@ -116,6 +116,7 @@ const useSender = (boardName = 'spray', layoutId = 42) =>
   useSprayLedRouteSender({ boardName, layoutId, onInvalidated: mocks.invalidate, onFailure: mocks.failure });
 
 beforeEach(() => {
+  resetSprayLedBluetoothPromptForTests();
   vi.clearAllMocks();
   mocks.credential = 0;
   mocks.privacy = 'current';
@@ -197,7 +198,7 @@ describe('spray route transport', () => {
     it('explains Bluetooth once before the first system prompt, and lights nothing on "not now"', async () => {
       mocks.settings.mockResolvedValue(bluetooth);
       ble.needsPrimer.mockResolvedValue(true);
-      const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      const confirm = vi.fn().mockResolvedValue(false);
       const { result } = renderHook(() =>
         useSprayLedRouteSender({
           boardName: 'spray',
@@ -211,9 +212,42 @@ describe('spray route transport', () => {
       expect(mocks.create).not.toHaveBeenCalled();
       expect(mocks.failure).not.toHaveBeenCalled();
       expect(ble.primed).not.toHaveBeenCalled();
-      expect(await result.current.send('p7r1')).toBe(true);
-      expect(ble.primed).toHaveBeenCalledTimes(1);
-      expect(confirm).toHaveBeenCalledTimes(2);
+      // "Not now" holds for the app session: later climbs say why once, and never alert again.
+      expect(await result.current.send('p7r1')).toBe(false);
+      expect(await result.current.send('p7r1')).toBe(false);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(mocks.failure).toHaveBeenCalledTimes(1);
+      expect(mocks.failure).toHaveBeenCalledWith('bluetoothOff');
+      expect(mocks.create).not.toHaveBeenCalled();
+    });
+
+    it('opens one explanation for climbs sent while it is showing, and lights after Continue', async () => {
+      mocks.settings.mockResolvedValue(bluetooth);
+      ble.needsPrimer.mockResolvedValue(true);
+      let answer!: (go: boolean) => void;
+      const confirm = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)));
+      const { result } = renderHook(() =>
+        useSprayLedRouteSender({
+          boardName: 'spray',
+          layoutId: 42,
+          onInvalidated: mocks.invalidate,
+          onFailure: mocks.failure,
+          confirmBluetoothUse: confirm,
+        }),
+      );
+      const first = result.current.send('p7r1');
+      await vi.waitFor(() => expect(confirm).toHaveBeenCalled());
+      // Another climb held while the explanation is showing waits on the same one.
+      const second = result.current.send('p7r1');
+      await vi.waitFor(() => expect(ble.needsPrimer).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      answer(true);
+      // The newest send wins; the older one is superseded.
+      expect(await second).toBe(true);
+      expect(await first).toBe(false);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(ble.primed).toHaveBeenCalled();
     });
 
     it('tells the climber Bluetooth is off rather than that the controller failed', async () => {

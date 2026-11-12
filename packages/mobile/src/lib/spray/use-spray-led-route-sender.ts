@@ -25,6 +25,38 @@ import { sprayPrivacyGeneration } from './spray-privacy-generation';
  */
 export type SprayLedFailureReason = 'bluetoothOff' | 'bluetoothNotSetUp';
 
+/**
+ * The Bluetooth explanation, for the whole app session: one alert at a time,
+ * shared by every send that is waiting on it, and after "Not now" no alert
+ * again until the app restarts.
+ */
+let bluetoothDeclined = false;
+let bluetoothAsking: Promise<boolean> | null = null;
+
+function askBluetoothOnce(confirm: (() => Promise<boolean>) | undefined): Promise<boolean> {
+  if (bluetoothDeclined) return Promise.resolve(false);
+  if (!confirm) return Promise.resolve(true);
+  if (!bluetoothAsking) {
+    const asking = confirm()
+      .catch(() => false)
+      .then((go) => {
+        if (!go) bluetoothDeclined = true;
+        return go;
+      })
+      .finally(() => {
+        if (bluetoothAsking === asking) bluetoothAsking = null;
+      });
+    bluetoothAsking = asking;
+  }
+  return bluetoothAsking;
+}
+
+/** For tests: a fresh app session. */
+export function resetSprayLedBluetoothPromptForTests(): void {
+  bluetoothDeclined = false;
+  bluetoothAsking = null;
+}
+
 type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
 
 /**
@@ -193,9 +225,11 @@ export function useSprayLedRouteSender({
           ]);
           if (!isCurrent()) return false;
           if (await sprayLedBluetoothNeedsPrimer()) {
-            const go = (await confirmBluetooth.current?.()) ?? true;
+            // A decline already seen this session: no new alert, the usual one toast.
+            const declinedBefore = bluetoothDeclined;
+            const go = await askBluetoothOnce(confirmBluetooth.current);
             if (!isCurrent()) return false;
-            if (!go) return false;
+            if (!go) return declinedBefore ? fail('bluetoothOff') : false;
             await markSprayLedBluetoothPrimed();
           }
         }
