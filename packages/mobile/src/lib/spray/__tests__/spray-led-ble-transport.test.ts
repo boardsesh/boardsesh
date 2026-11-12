@@ -6,6 +6,7 @@ type ScanCallback = (error: unknown, device: { id: string; localName?: string; r
 const radio = vi.hoisted(() => ({
   permitted: true,
   poweredOn: true,
+  state: 'active',
   appState: null as ((next: string) => void) | null,
   timers: [] as { callback: () => void; cancelled: boolean; delay: number }[],
   scan: null as ScanCallback | null,
@@ -38,6 +39,9 @@ const manager = vi.hoisted(() => ({
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   AppState: {
+    get currentState() {
+      return radio.state;
+    },
     addEventListener: (_event: string, listener: (next: string) => void) => {
       radio.appState = listener;
       return { remove: () => (radio.appState = null) };
@@ -69,7 +73,10 @@ vi.mock('../../preference-store', () => ({
 
 import { currentBleScanOwner, noteBleScanStarted, releaseBleScan } from '../../ble/ble-scan-slot';
 import {
+  SPRAY_LED_BLE_BACKGROUND_IDLE_MS,
   SPRAY_LED_BLE_IDLE_MS,
+  hintSprayLedController,
+  keepSprayLedController,
   rememberSprayLedController,
   resetSprayLedBleTransportForTests,
   scanForSprayLedControllers,
@@ -82,10 +89,8 @@ const flush = async () => {
   for (let turn = 0; turn < 20; turn++) await Promise.resolve();
 };
 /** Fire the newest background-safe timer that is still armed. */
-const fireIdleTimer = () => {
-  const timer = [...radio.timers]
-    .reverse()
-    .find((candidate) => !candidate.cancelled && candidate.delay === SPRAY_LED_BLE_IDLE_MS);
+const fireIdleTimer = (delay = SPRAY_LED_BLE_IDLE_MS) => {
+  const timer = [...radio.timers].reverse().find((candidate) => !candidate.cancelled && candidate.delay === delay);
   expect(timer).toBeDefined();
   timer!.cancelled = true;
   timer!.callback();
@@ -96,6 +101,7 @@ beforeEach(() => {
   resetSprayLedBleTransportForTests();
   radio.permitted = true;
   radio.poweredOn = true;
+  radio.state = 'active';
   radio.timers = [];
   radio.scan = null;
   radio.disconnects.clear();
@@ -169,15 +175,55 @@ describe('the Spraywall Bluetooth transport', () => {
     expect(manager.connectToDevice).toHaveBeenCalledTimes(2);
   });
 
-  it('lets go of the controller when the app goes to the background', async () => {
+  it('lets go of the controller soon after the app goes to the background, after a last clear', async () => {
     await rememberSprayLedController(NAME, 'AA:BB');
-    await sprayLedBleTransport.connect(NAME);
+    const link = await sprayLedBleTransport.connect(NAME);
     radio.appState?.('inactive');
     await flush();
-    expect(manager.cancelDeviceConnection).not.toHaveBeenCalled();
+    radio.state = 'background';
     radio.appState?.('background');
     await flush();
+    // A screen's clear on leaving still goes out over the same link: no reconnect.
+    await (await sprayLedBleTransport.connect(NAME)).write(Uint8Array.from([1, 1, 0xab, 2, 0x54, 3]));
+    expect(manager.connectToDevice).toHaveBeenCalledTimes(1);
+    expect(link).toBeDefined();
+    expect(manager.cancelDeviceConnection).not.toHaveBeenCalled();
+    fireIdleTimer(SPRAY_LED_BLE_BACKGROUND_IDLE_MS);
     expect(manager.cancelDeviceConnection).toHaveBeenCalledWith('AA:BB');
+  });
+
+  it('keeps the remembered device when the controller is busy with another phone', async () => {
+    await rememberSprayLedController(NAME, 'AA:BB');
+    radio.failing.add('AA:BB');
+    const connecting = sprayLedBleTransport.connect(NAME);
+    const result = expect(connecting).rejects.toMatchObject({ code: 'unavailable' });
+    // Connected to another phone, it does not advertise: the scan ends empty.
+    await vi.waitFor(() => expect(radio.scan).not.toBeNull());
+    const scanTimer = radio.timers.find((timer) => timer.delay !== SPRAY_LED_BLE_IDLE_MS && !timer.cancelled);
+    scanTimer?.callback();
+    await result;
+    expect(radio.storage.get(ID_KEY)).toBe('AA:BB');
+    expect(manager.connectToDevice).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the remembered device when the scan sees it under the same id', async () => {
+    await rememberSprayLedController(NAME, 'AA:BB');
+    radio.failing.add('AA:BB');
+    const connecting = sprayLedBleTransport.connect(NAME);
+    const result = expect(connecting).rejects.toMatchObject({ code: 'unavailable' });
+    await advertise('AA:BB');
+    await result;
+    expect(radio.storage.get(ID_KEY)).toBe('AA:BB');
+  });
+
+  it('tries a scanned pick first, and remembers it only once it answered', async () => {
+    hintSprayLedController(NAME, 'PICK');
+    await sprayLedBleTransport.connect(NAME);
+    expect(manager.connectToDevice).toHaveBeenCalledWith('PICK', expect.anything());
+    expect(manager.startDeviceScan).not.toHaveBeenCalled();
+    expect(radio.storage.get(ID_KEY)).toBeUndefined();
+    await keepSprayLedController(NAME);
+    expect(radio.storage.get(ID_KEY)).toBe('PICK');
   });
 
   it('forgets a link the controller dropped', async () => {

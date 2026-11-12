@@ -28,15 +28,23 @@ import { sprayLedBleDeviceIdKey } from './spray-wall-led-cache';
  * scan slot (ble-scan-slot.ts), never over or instead of another scan.
  */
 
-const CONNECTION_TIMEOUT_MS = 12_000;
+// Worst case of one connect: the remembered id (10 s), a name scan (5 s) and
+// the id it found (10 s), plus discovery, stays inside the driver's 30 s.
+const CONNECTION_TIMEOUT_MS = 10_000;
 // The board adapter's choice: DLE-friendly, and chunks clamp to 244 anyway.
 const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
 /** Let go after a minute without writes, so the next climber's phone can connect. */
 export const SPRAY_LED_BLE_IDLE_MS = 60_000;
+/**
+ * In the background, let go this soon after the last write instead: a screen's
+ * clear on leaving still goes out over the open link, and nothing holds the
+ * controller once it has.
+ */
+export const SPRAY_LED_BLE_BACKGROUND_IDLE_MS = 2_000;
 export const SPRAY_LED_BLE_SCAN_MS = 10_000;
 /** Finding a known name: it advertises every few hundred milliseconds when on. */
-export const SPRAY_LED_BLE_FIND_MS = 6_000;
+export const SPRAY_LED_BLE_FIND_MS = 5_000;
 
 export type SprayLedBleCandidate = { id: string; name: string; rssi: number };
 export type SprayLedBleScanOutcome = 'done' | 'unavailable' | 'busy';
@@ -47,6 +55,8 @@ type OpenLink = { deviceId: string; link: BleLedLink; cancelIdle: (() => void) |
 const links = new Map<string, Promise<OpenLink>>();
 /** The device id this phone found for each controller name, mirrored to storage. */
 const knownIds = new Map<string, string>();
+/** A device just picked from a scan, tried first and kept only once it answered. */
+const hints = new Map<string, string>();
 
 function release(name: string, entry: OpenLink) {
   entry.cancelIdle?.();
@@ -61,12 +71,16 @@ function release(name: string, entry: OpenLink) {
 // background, and one pocketed phone would hold the controller for everyone.
 function touch(name: string, entry: OpenLink) {
   entry.cancelIdle?.();
-  entry.cancelIdle = setBackgroundSafeTimeout(() => release(name, entry), SPRAY_LED_BLE_IDLE_MS);
+  const idleMs = AppState.currentState === 'background' ? SPRAY_LED_BLE_BACKGROUND_IDLE_MS : SPRAY_LED_BLE_IDLE_MS;
+  entry.cancelIdle = setBackgroundSafeTimeout(() => release(name, entry), idleMs);
 }
 
 /**
- * Leaving the app lets go of every Spraywall controller at once. The lights
- * stay as they are: only the connection is released, for the next phone.
+ * Leaving the app lets go of every Spraywall controller within a moment. The
+ * lights stay as they are: only the connection is released, for the next
+ * phone. Not at once: a screen that clears the wall as it goes to the
+ * background (the LED settings preview) still sends that clear over the open
+ * link, instead of connecting again from the background just to clear.
  */
 let appStateWatch: { remove(): void } | null = null;
 function watchAppState() {
@@ -74,8 +88,7 @@ function watchAppState() {
   appStateWatch = AppState.addEventListener('change', (next) => {
     if (next !== 'background') return;
     for (const [name, pending] of links) {
-      links.delete(name);
-      void pending.then((entry) => release(name, entry)).catch(() => undefined);
+      void pending.then((entry) => touch(name, entry)).catch(() => undefined);
     }
   });
 }
@@ -97,6 +110,15 @@ async function readKnownId(name: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Try this device first for `name` on the next connect, without remembering
+ * it: the section picks a scanned controller and remembers it only once the
+ * controller answered (`rememberSprayLedController`).
+ */
+export function hintSprayLedController(name: string, deviceId: string): void {
+  if (isSprayLedControllerName(name)) hints.set(name, deviceId);
 }
 
 /** Remember which device advertises `name` on this phone. Never uploaded. */
@@ -169,25 +191,34 @@ async function openDevice(name: string, deviceId: string): Promise<OpenLink> {
 
 /**
  * The device id remembered for this name, or else the one a short scan finds.
- * A remembered id that no longer connects (another phone's id, a replaced
- * controller) is forgotten and the name scanned for once more.
+ *
+ * A remembered id that does not connect is not forgotten on that alone: a
+ * controller another phone is connected to stops advertising and refuses new
+ * connections. The name is scanned for once; only when it shows up under a
+ * different id (a replaced controller, a stale id) is the old id dropped. When
+ * it does not show up, or shows up under the same id, the id stays and the
+ * connect fails as unreachable.
  */
 async function open(name: string): Promise<OpenLink> {
   await ensureRadio();
   watchAppState();
-  const remembered = await readKnownId(name);
-  if (remembered) {
+  const hinted = hints.get(name) ?? null;
+  hints.delete(name);
+  const tried = hinted ?? (await readKnownId(name));
+  if (tried) {
     try {
-      return await openDevice(name, remembered);
+      return await openDevice(name, tried);
     } catch (error) {
       if (error instanceof LedControllerError && error.code === 'not-wled') throw error;
-      forgetKnownId(name);
     }
   }
   const found = await findSprayLedControllerByName(name);
-  if (!found) throw new LedControllerError('unavailable');
-  await rememberSprayLedController(name, found.id);
-  return openDevice(name, found.id);
+  if (!found || found.id === tried) throw new LedControllerError('unavailable');
+  if (tried && !hinted) forgetKnownId(name);
+  const entry = await openDevice(name, found.id);
+  // A hinted pick is remembered by its caller once it answered.
+  if (!hinted) await rememberSprayLedController(name, found.id);
+  return entry;
 }
 
 export const sprayLedBleTransport: BleLedTransport = {
@@ -299,6 +330,19 @@ export function findSprayLedControllerByName(name: string): Promise<SprayLedBleC
 export function resetSprayLedBleTransportForTests(): void {
   links.clear();
   knownIds.clear();
+  hints.clear();
   appStateWatch?.remove();
   appStateWatch = null;
+}
+
+/** Remember the device the open link to `name` uses, once it answered. Never uploaded. */
+export async function keepSprayLedController(name: string): Promise<void> {
+  const pending = links.get(name);
+  if (!pending) return;
+  try {
+    const entry = await pending;
+    await rememberSprayLedController(name, entry.deviceId);
+  } catch {
+    // Not connected after all: nothing to keep.
+  }
 }
