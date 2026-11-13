@@ -22,6 +22,7 @@ export const LEGACY_WEB_CLOCK_TOLERANCE_SECONDS = 60;
 export interface VerifiedLegacyWebCredential {
   readonly kind: 'nextauth-v4-jwe';
   readonly userId: string;
+  readonly generation: number;
   readonly issuedAt: Date;
   readonly expiresAt: Date;
   readonly validUntil: Date;
@@ -121,6 +122,8 @@ export async function verifyLegacyNextAuthJwe(
     )
       return null;
 
+    const generation = payload.gen ?? 0;
+    if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
     const claimedSessionId = payload.authSessionId;
     if (
       claimedSessionId !== undefined &&
@@ -132,6 +135,7 @@ export async function verifyLegacyNextAuthJwe(
     return {
       kind: 'nextauth-v4-jwe',
       userId,
+      generation,
       issuedAt: new Date(issuedAt * 1000),
       expiresAt: new Date(expiresAt * 1000),
       // Keep the signed expiry distinct from the accepted transport grace.
@@ -241,7 +245,13 @@ export async function verifyLegacyWebCookie(
   const proofs = verified.filter((proof) => proof !== null);
   if (proofs.length === 0) return null;
   const first = proofs[0];
-  if (proofs.some((proof) => proof.userId !== first.userId || proof.lineageId !== first.lineageId)) return null;
+  if (
+    proofs.some(
+      (proof) =>
+        proof.userId !== first.userId || proof.lineageId !== first.lineageId || proof.generation !== first.generation,
+    )
+  )
+    return null;
   const fingerprints = [...new Set(proofs.map((proof) => proof.credentialFingerprint))].sort();
   return {
     ...first,

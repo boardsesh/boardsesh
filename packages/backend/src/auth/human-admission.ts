@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { users, authSubjectCutoffs, userCredentials } from '@boardsesh/db/schema/auth';
+import { users, authSubjectCutoffs, userCredentials, authSessionDenials } from '@boardsesh/db/schema/auth';
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
@@ -49,14 +49,18 @@ export class AuthCredentialRefusedError extends Error {
 
 type AdmissionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-/** Nothing writes a per-login denial yet (BA-04 PRs 6 and 9). */
+/** A fresh set is supplied by every admission read. */
 const NO_DENIED_SESSIONS: ReadonlySet<string> = new Set();
 
-function cutoffState(generation: number | null, nativeGeneration: number | null): SubjectCutoffState {
+function cutoffState(
+  generation: number | null,
+  nativeGeneration: number | null,
+  deniedSessionKeys: ReadonlySet<string> = NO_DENIED_SESSIONS,
+): SubjectCutoffState {
   return {
     generation: generation ?? 0,
     nativeGeneration: nativeGeneration ?? 0,
-    deniedSessionKeys: NO_DENIED_SESSIONS,
+    deniedSessionKeys,
   };
 }
 
@@ -93,13 +97,23 @@ export async function readHumanSubjectStates(
           id: users.id,
           generation: authSubjectCutoffs.generation,
           nativeGeneration: authSubjectCutoffs.nativeGeneration,
+          deniedSessionKey: authSessionDenials.sessionId,
         })
         .from(users)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+        .leftJoin(authSessionDenials, eq(authSessionDenials.userId, users.id))
         .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
-      return new Map(
-        subjects.map((subject) => [subject.id, cutoffState(subject.generation, subject.nativeGeneration)]),
-      );
+      // One primary statement for users, generations and SID tombstones.
+      // Multiple denials produce joined rows, folded into one state per user.
+      const states = new Map<string, SubjectCutoffState>();
+      const denialsBySubject = new Map<string, Set<string>>();
+      for (const subject of subjects) {
+        const deniedSessionKeys = denialsBySubject.get(subject.id) ?? new Set<string>();
+        denialsBySubject.set(subject.id, deniedSessionKeys);
+        if (subject.deniedSessionKey) deniedSessionKeys.add(subject.deniedSessionKey);
+        states.set(subject.id, cutoffState(subject.generation, subject.nativeGeneration, deniedSessionKeys));
+      }
+      return states;
     }),
   );
 }

@@ -55,6 +55,14 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
         readFileSync(new URL('../../../../../db/drizzle/0305_auth_email_resolution_log.sql', import.meta.url), 'utf8'),
       );
     }
+    const [authorityTables] = await owner<
+      { present: boolean }[]
+    >`SELECT to_regclass('public.auth_session_denials') IS NOT NULL AS present`;
+    if (!authorityTables.present) {
+      await owner.unsafe(
+        readFileSync(new URL('../../../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url), 'utf8'),
+      );
+    }
     const plan = await runAuthFence(['plan', '--confirm-host', address.hostname], environment);
     expect('sql' in plan && plan.sql).toContain('CREATE ROLE "boardsesh_web" LOGIN');
     createdRole = true;
@@ -90,6 +98,18 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       >`SELECT has_table_privilege('boardsesh_web','auth_subject_cutoffs','SELECT') AS cutoff, has_table_privilege('boardsesh_web','gyms','INSERT,UPDATE,DELETE') AS gyms, has_table_privilege('boardsesh_web','auth_session','SELECT') AS sessions`;
     });
     expect(access).toEqual({ cutoff: true, gyms: true, sessions: false });
+  });
+  it('refuses a web role unable to read primary login denials', async () => {
+    await owner
+      .begin(async (transaction) => {
+        await transaction.unsafe('REVOKE SELECT ON auth_session_denials FROM boardsesh_web');
+        await expect(verifyFence(transaction)).rejects.toThrow('SESSION_DENIAL_READ_REQUIRED');
+        throw new Error('ROLLBACK_FIXTURE');
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof Error) || error.message !== 'ROLLBACK_FIXTURE') throw error;
+      });
+    expect(await verifyFence(owner)).toMatchObject({ verified: true });
   });
   it('detects PUBLIC and column grants and owner/membership counterexamples', async () => {
     for (const mutation of [
@@ -209,6 +229,7 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
     expect(after.count).toBe(before.count + 3);
     await expect(web.unsafe('SELECT * FROM auth_session')).rejects.toMatchObject({ code: '42501' });
     await web.unsafe('SELECT * FROM auth_subject_cutoffs');
+    await web.unsafe('SELECT * FROM auth_session_denials');
   });
   it('prepare and activate both wait on the exclusive gate and fail at the 2-second deadline', async () => {
     await owner.begin(async (transaction) => {

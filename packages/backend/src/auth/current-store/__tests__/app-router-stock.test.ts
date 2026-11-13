@@ -3,6 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus
 import {
   accounts,
   authSubjectCutoffs,
+  authSessionDenials,
   sessions,
   userCredentials,
   userProfiles,
@@ -18,7 +19,7 @@ import type { ConfiguredIdentity, ConfiguredProvider } from './fixtures/app-rout
 const role = `ba03_router_stock_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
 const tables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens];
-const admissionReadTables = [authSubjectCutoffs];
+const admissionReadTables = [authSubjectCutoffs, authSessionDenials];
 let roleTracked = false;
 let harness: Awaited<ReturnType<typeof startAppRouterHarness>> | undefined;
 async function admin(statement: SQL) {

@@ -8,6 +8,7 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
+  authSessionDenials,
   sessions,
   userProfiles,
   users,
@@ -41,7 +42,7 @@ const mutable = [
   authEmailReservationMembers,
   authSubjectCutoffs,
 ];
-const allTables = [...mutable, authSecurityMutationEvents];
+const allTables = [...mutable, authSecurityMutationEvents, authSessionDenials];
 let pool: ReturnType<typeof postgres> | undefined;
 let readUrl: string;
 let authority: ExpectedCurrentStoreAuthority;
@@ -133,7 +134,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
         sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${userProfiles} FROM ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
-        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs} TO ${sql.identifier(readRole)}`,
+        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs}, ${authSessionDenials} TO ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(mutable, sql`, `)} TO ${sql.identifier(writerRole)}`,

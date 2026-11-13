@@ -2150,6 +2150,13 @@
       "when": 1794395533905,
       "tag": "0306_yielding_scrambler",
       "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1794403570492,
+      "tag": "0307_legacy_web_signout",
+      "breakpoints": true
     }
   ]
 }
