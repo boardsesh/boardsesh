@@ -2,6 +2,37 @@
 
 Status: implemented for default-off staging, with dual-version PostgreSQL QA on 2026-11-05. This is the next bounded BA-03 slice after [web password delegation](./better-auth-web-password-delegation.md). Production activation remains **NO-GO**. This does not complete BA-03 or change the authentication authority.
 
+## Selected identity writer adoption, 2026-11-13
+
+Resend and consumption now capture the enforced manifest's identity authority
+inside their transaction and revalidate that receipt before committing any
+outcome. The process's configured epoch does not pin a command to an older
+writer. Issuance retains its explicit helper epoch contract; callers supply the
+epoch from their selected receipt. The existing reservation, immutable token
+binding, deadline, deletion and single-use policies remain in place.
+
+Verification goes through the bound identity authority. With Better Auth
+selected, its real transaction-bound adapter updates the shared user. The exact
+receipt redemption timestamp is then restored in the same transaction, following
+the existing trusted timestamp conversion used by identity creation. A previously
+verified timestamp remains unchanged. The selected reverse mirror preserves
+canonical credentials and provider subjects in the rollback copy; the current
+store uses its existing optional forward mirror. Failure aborts user verification,
+receipt consumption, terminal purpose generation and the command nonce together.
+No verification operation creates a session or authentication freshness.
+
+The new disposable PostgreSQL authority suite passes 22 tests covering both
+writers, mirror on/off, canonical credentials with no legacy copies, original
+UID/purpose/address/deadline/generations, single-use races, supersession, expiry,
+address/generation drift, authority changes and mirror failure rollback. The
+existing registration, identity-authority and recovery suites pass 49 tests;
+the mounted verification and legacy-link regression suite passes 39 tests.
+Scoped backend TypeScript and changed-source canonical checks pass. These are
+local synthetic results; independent review remains separate evidence.
+Production activation, issuer inventory,
+email uniqueness, fencing, real delivery, restored-copy rehearsals and operational
+rollback remain open in #7430.
+
 ## Scope and decisions
 
 Move verification issuance, consumption and resend together through the existing default-off backend transport. Registration must issue the new receipt in its existing identity/reservation transaction. Password changes, resets, account deletion, OAuth adoption and production activation remain separate work.
