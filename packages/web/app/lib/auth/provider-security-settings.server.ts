@@ -22,6 +22,7 @@ import {
   type ProviderSecurityFlow,
 } from './provider-security-flow.server';
 import { publicProviderSecurityReady } from './provider-security-readiness';
+import { createProviderSecurityDirectPublication } from './provider-security-direct.server';
 import { checkRateLimit } from './rate-limiter';
 import {
   captureProviderBrowserContext,
@@ -34,6 +35,8 @@ export const PROVIDER_SETTINGS_PATHS = Object.freeze({
   methods: '/api/internal/auth/provider-security/methods',
   intent: '/api/internal/auth/provider-security/intent',
   password: '/api/internal/auth/provider-security/reauthenticate-password',
+  unlink: '/api/internal/auth/provider-security/unlink',
+  acknowledge: '/api/internal/auth/provider-security/acknowledge',
 });
 const MAX_BODY_BYTES = 65_536;
 const MAX_COOKIE_HEADER_BYTES = 32_768;
@@ -56,6 +59,8 @@ const intentInput = z.discriminatedUnion('action', [
 const passwordInput = z
   .object({ actorContextKey, operationKey: operationKeySchema, password: z.string().min(1).max(16_384) })
   .strict();
+const unlinkInput = z.object({ actorContextKey, operationKey: operationKeySchema }).strict();
+const acknowledgeInput = z.object({ operationKey: operationKeySchema }).strict();
 
 class Refusal extends Error {
   constructor(
@@ -170,6 +175,10 @@ export function createProviderSecuritySettingsBroker(
     readonly clientFactory?: () => ProviderSecurityCommandClient;
     readonly clock?: () => Date;
     readonly rateLimit?: typeof checkRateLimit;
+    readonly directPublicationFactory?: () => Pick<
+      ReturnType<typeof createProviderSecurityDirectPublication>,
+      'unlink' | 'acknowledge'
+    >;
   } = {},
 ) {
   const environment = Object.freeze({ ...(options.environment ?? process.env) });
@@ -178,6 +187,9 @@ export function createProviderSecuritySettingsBroker(
   const clientFactory = options.clientFactory ?? (() => createProviderSecurityCommandClient({ environment }));
   const clock = options.clock ?? (() => new Date());
   const rateLimit = options.rateLimit ?? checkRateLimit;
+  const directPublicationFactory =
+    options.directPublicationFactory ??
+    (() => createProviderSecurityDirectPublication({ environment, ready, readSelection, clientFactory }));
   function checkAttempt(current: ProviderBrowserContext, operation: 'intent' | 'password'): void {
     // Only a primary-admitted account selects the bucket. Proxy addresses and
     // caller-provided identity claims cannot lock out unrelated accounts.
@@ -252,6 +264,23 @@ export function createProviderSecuritySettingsBroker(
         });
       }
       const input: unknown = await readJson(request);
+      if (operation === 'unlink') {
+        const command = unlinkInput.parse(input);
+        return await directPublicationFactory().unlink({
+          cookieHeader: cookies,
+          operationKey: command.operationKey,
+          actorContextKey: command.actorContextKey,
+          signal: request.signal,
+        });
+      }
+      if (operation === 'acknowledge') {
+        const command = acknowledgeInput.parse(input);
+        return await directPublicationFactory().acknowledge({
+          cookieHeader: cookies,
+          operationKey: command.operationKey,
+          signal: request.signal,
+        });
+      }
       if (operation === 'intent') {
         const command = intentInput.parse(input);
         assertProviderSecurityFlowSecret(environment.NEXTAUTH_SECRET ?? '');
@@ -370,5 +399,7 @@ export function createProviderSecuritySettingsBroker(
     methods: (request: Request) => run(request, 'methods'),
     intent: (request: Request) => run(request, 'intent'),
     reauthenticatePassword: (request: Request) => run(request, 'password'),
+    unlink: (request: Request) => run(request, 'unlink'),
+    acknowledge: (request: Request) => run(request, 'acknowledge'),
   });
 }

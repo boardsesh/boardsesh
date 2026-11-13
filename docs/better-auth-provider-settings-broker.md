@@ -3,8 +3,9 @@
 The Settings broker is a server-only factory for reading selected sign-in
 methods, recording an explicit Google/Apple link or unlink intent, and
 submitting the account's actual password for an operation-bound reauthentication
-receipt. Its public readiness function remains false. No public route, Settings
-card, OAuth callback or credential publisher uses this factory yet.
+receipt. Five public route exports now delegate to this boundary with code-owned
+readiness still false. They return unavailable; no Settings card or OAuth
+callback uses the flow yet.
 
 Each request requires an exact Host matching the configured canonical HTTPS
 origin. The standalone server's internal request URL supplies only the route
@@ -43,7 +44,7 @@ requesting session's original age or expiry, create a credential, or finalize a
 provider mutation. Its injected-client tests qualify this HTTP and sealed-flow
 boundary; they do not replace the existing real bcrypt/Postgres proofs.
 
-Public route and card wiring, actual Google reauthentication, complete buffered
+Settings card wiring, actual Google reauthentication, complete buffered
 OAuth publication, ordinary owned-account sign-in, browser transport and
 lost-reply recovery remain separate joined acceptance work. The
 [provider-security adoption record](./better-auth-provider-security-adoption.md)
@@ -53,7 +54,7 @@ separate purpose-bound flow; its email confirmation is never provider freshness.
 
 ## Direct unlink publication
 
-The unmounted direct publication factory now composes the selected actor reader,
+The default-dark direct publication factory composes the selected actor reader,
 sealed operation, actual credential issuer, cookie planner and private
 prepare/finalize commands. Its caller must first apply the Settings route's
 canonical Host/Origin and bounded JSON checks. Default readiness remains false,
@@ -78,6 +79,11 @@ The required HTTPS Chromium task exercises this factory with actual password
 comparison, provider preparation/finalization, canonical or JWE issuance and a
 next-request acknowledgment across both authorities. Body-loss, unknown-finalizer
 and whole-header capacity controls use the same server seam. These fixtures use
-an explicitly injected owned database; they do not qualify the future public
-JSON mount, restricted LOGIN composition, external proxies or the full browser
-response-order matrix.
+an explicitly injected owned database. The Settings JSON driver also streams
+actual browser request bodies, canonical Host/Origin and cookie headers through
+the same dispatcher, proves a stale UI key leaves the operation unchanged, and
+completes unlink plus exact ACK across both authorities and source kinds. The
+actual App Router exports separately prove their production code gate remains
+false despite staged environment and HTTP claims. These do not qualify the
+complete Next.js application, restricted LOGIN composition, external proxies or
+the full browser response-order matrix.
