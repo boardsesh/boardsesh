@@ -18,7 +18,7 @@ HTTPS origin and exact source window before taking its single transferred port.
 Each subsequent request/reply binds the connection, request ID and operation.
 The client rejects lower versions and unexpected binding changes; different
 binding recovery is a separate authority-qualified operation. Connections,
-active requests and replay history are bounded. At the256-request connection
+active requests and replay history are bounded. At the 256-request connection
 lifetime the client explicitly closes; `isClosed()` requires a new handshake
 and fresh primary read, never new binding initialization merely to reconnect.
 Closing or timing out a client
