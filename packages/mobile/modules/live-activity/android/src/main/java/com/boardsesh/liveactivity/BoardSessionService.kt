@@ -587,6 +587,10 @@ class BoardSessionService : Service() {
     @VisibleForTesting
     internal fun buildCardView(layoutId: Int, card: CardPayload, tone: CardTone, art: ArtPlan): RemoteViews {
         val views = RemoteViews(packageName, layoutId)
+        // Colorized notifications are unavailable before API 26 and may be
+        // overridden by SystemUI. Keep the pinned light ink readable even while
+        // art is pending, failed, or stripped by the Binder-budget fallback.
+        views.setInt(R.id.session_card_root, "setBackgroundColor", SessionCardPainter.surfaceFor(tone))
         val expanded = layoutId == R.layout.notification_card_expanded
         val restShown = restTimer?.let { resolveRestDisplay(it, wallClockMs()) } != null
         val connected = boardConnection == CONNECTION_CONNECTED_BY_ME

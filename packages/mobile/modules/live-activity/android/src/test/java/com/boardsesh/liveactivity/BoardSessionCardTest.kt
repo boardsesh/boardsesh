@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
 import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
@@ -345,6 +346,26 @@ class BoardSessionCardTest {
     }
 
     // --- Budget and failure ---
+
+    @Test
+    @Config(sdk = [24, 25, 30])
+    fun `artwork-free cards keep an opaque backing in both tones without system colorization`() {
+        val service = startCard(composer = { null })
+        service.send(update())
+
+        fun assertBacking(tone: CardTone) {
+            for (view in listOf(collapsed(), expanded())) {
+                assertEquals(View.GONE, visibility(view, R.id.session_card_art))
+                val background = view.findViewById<View>(R.id.session_card_root).background as ColorDrawable
+                assertEquals(SessionCardPainter.surfaceFor(tone), background.color)
+                assertEquals(255, background.alpha)
+            }
+        }
+
+        assertBacking(CardTone.Grey)
+        service.send(lighting(BoardSessionService.LIGHT_STATE_DRIVING))
+        assertBacking(CardTone.Colour)
+    }
 
     @Test
     fun `art over the budget drops the bokeh first and keeps the board`() {

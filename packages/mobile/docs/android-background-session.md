@@ -68,6 +68,9 @@ grade colours and contrast stay in tested TypeScript. Kotlin only paints
 - **No box edge.** The bitmap fades into the surface at its edges, and the notification
   is colorized to that surface under the grain. Change the surface or grain alpha and
   `edgeColorFor` has to change with them.
+- **A dark backing stays under both layouts,** including while art loads or is dropped.
+  The text stays readable when Android ignores notification colorization (API 24–25
+  and system overrides); the backing follows the same colour/grey tone as the art.
 - **A true full-bleed card needs a media session**, and that would cost the live rest
   clock and grade colour and need a permanently fake "playing" state.
 

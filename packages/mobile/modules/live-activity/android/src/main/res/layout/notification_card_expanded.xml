@@ -3,8 +3,10 @@
      darker part of the scrim. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/session_card_root"
     android:layout_width="match_parent"
-    android:layout_height="140dp">
+    android:layout_height="140dp"
+    android:background="@color/session_card_surface">
 
     <ImageView
         android:id="@+id/session_card_art"
