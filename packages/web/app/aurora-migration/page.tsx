@@ -18,7 +18,7 @@ export async function generateMetadata() {
 export default async function AuroraMigrationPage() {
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'aurora']}>
+    <I18nProvider locale={locale} namespaces={['common', 'aurora', 'settings', 'feed']}>
       <AuroraMigrationContent />
     </I18nProvider>
   );

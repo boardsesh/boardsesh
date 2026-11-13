@@ -132,7 +132,7 @@ export default async function ProfilePage({ params }: PageProps) {
   ]);
 
   return (
-    <I18nProvider locale={locale} namespaces={['profile', 'feed']}>
+    <I18nProvider locale={locale} namespaces={['profile', 'feed', 'settings']}>
       {/* Success path only — the notFound() above and the metadata catch branch
           are both `noindex, follow`, and neither reaches here. */}
       {!initialProfile.isPrivate && (

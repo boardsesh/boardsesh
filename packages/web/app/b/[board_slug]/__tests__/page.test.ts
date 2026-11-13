@@ -160,9 +160,10 @@ describe('/b/[board_slug] with a home board share link (?invite=)', () => {
     const rendered = (await BoardSlugPage({
       params: Promise.resolve({ board_slug: 'stale-slug' }),
       searchParams: Promise.resolve({ invite: TOKEN }),
-    })) as { type: unknown; props: { boardName: string; inviteToken: string } };
-    expect(rendered.type).toBe(BoardInviteJoin);
-    expect(rendered.props).toEqual({ boardName: 'Friends Garage', inviteToken: TOKEN });
+    })) as { props: { children: { type: unknown; props: { boardName: string; inviteToken: string } } } };
+    const confirmation = rendered.props.children;
+    expect(confirmation.type).toBe(BoardInviteJoin);
+    expect(confirmation.props).toEqual({ boardName: 'Friends Garage', inviteToken: TOKEN });
     expect(redeemBoardInvite).not.toHaveBeenCalled();
     expect(resolveBoardBySlug).not.toHaveBeenCalled();
   });

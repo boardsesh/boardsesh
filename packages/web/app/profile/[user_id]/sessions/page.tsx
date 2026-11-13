@@ -21,7 +21,7 @@ export default async function ProfileSessionsPage({ params }: PageProps) {
   const authToken = await getServerAuthToken();
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['profile']}>
+    <I18nProvider locale={locale} namespaces={['profile', 'feed', 'session']}>
       <ProfileSessionsContent userId={user_id} isAuthenticatedSSR={!!authToken} />
     </I18nProvider>
   );

@@ -411,7 +411,7 @@ export default async function GymPage(props: GymRouteProps) {
     : null;
 
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk']}>
+    <I18nProvider locale={locale} namespaces={['common', 'boards', 'kiosk', 'settings']}>
       {qrLanding && <GymQrLandingTracker gymSlug={gym_slug} medium={qrLanding.medium} />}
       {jsonLd && <JsonLd data={jsonLd} />}
       {/* PageShell owns the fixed-header clearance and the page measure, so the

@@ -19,7 +19,7 @@ export default async function ProfileClimbsPage({ params }: PageProps) {
   const { user_id } = await params;
   const locale = await getLocale();
   return (
-    <I18nProvider locale={locale} namespaces={['profile']}>
+    <I18nProvider locale={locale} namespaces={['profile', 'climbs']}>
       <ClimbsContent userId={user_id} />
     </I18nProvider>
   );

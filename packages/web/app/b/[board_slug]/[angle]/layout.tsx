@@ -22,7 +22,7 @@ export default async function BoardSlugLayout(props: PropsWithChildren) {
   const locale = await getLocale();
 
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed']}>
+    <I18nProvider locale={locale} namespaces={['climbs', 'feed']}>
       <Box sx={boardShellSx}>{children}</Box>
     </I18nProvider>
   );

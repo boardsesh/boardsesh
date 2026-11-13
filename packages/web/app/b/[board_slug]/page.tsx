@@ -14,6 +14,7 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { WALL_CAPABILITY_PARAM, readWallCapability } from '@/app/lib/spray/spray-visibility';
 import BoardInviteSignIn from './board-invite-sign-in';
 import BoardInviteJoin from './board-invite-join';
+import I18nProvider from '@/app/components/providers/i18n-provider';
 
 type BoardSlugPageParams = {
   board_slug: string;
@@ -67,7 +68,13 @@ async function handleBoardInvite(boardSlug: string, inviteToken: string): Promis
   const authToken = await getServerAuthToken();
   const preview = await previewBoardInvite(inviteToken);
   if (!preview) return null;
-  if (authToken) return <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} />;
+  if (authToken) {
+    return (
+      <I18nProvider locale={await getLocale()} namespaces={['boards']}>
+        <BoardInviteJoin boardName={preview.name} inviteToken={inviteToken} />
+      </I18nProvider>
+    );
+  }
   // Back in the visitor's language after sign-in: `/es/b/...` stays Spanish.
   const returnPath = localeHref(
     `/b/${encodeURIComponent(boardSlug)}?${BOARD_INVITE_PARAM}=${inviteToken}`,

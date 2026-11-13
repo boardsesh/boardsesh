@@ -65,7 +65,7 @@ export default async function PlaylistsPage() {
       : t('directory.lead', { count: total, formattedCount: new Intl.NumberFormat(locale).format(total) });
 
   return (
-    <I18nProvider locale={locale} namespaces={['playlists', 'climbs', 'feed']}>
+    <I18nProvider locale={locale} namespaces={['playlists']}>
       {lcpPreloadUrl && <link rel="preload" as="image" href={lcpPreloadUrl} fetchPriority="high" />}
       <PageShell width="wide" title={t('directory.h1')} lead={lead}>
         {/* The generated cohort lists lead, and the heading says they are

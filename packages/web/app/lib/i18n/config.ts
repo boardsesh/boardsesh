@@ -15,7 +15,9 @@ export {
   type Namespace as SeedNamespace,
 } from '@boardsesh/i18n';
 
-export const ROOT_NAMESPACES = ['common'] as const;
+// Shared chrome and the sign-in dialog render outside page providers. Keep
+// their catalogs here; page-specific catalogs belong to the route that uses them.
+export const ROOT_NAMESPACES = ['common', 'consent', 'auth'] as const;
 
 export const LOCALE_HEADER = 'x-boardsesh-locale';
 export const LOCALE_COOKIE = 'boardsesh-locale';

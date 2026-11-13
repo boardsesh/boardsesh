@@ -110,21 +110,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <AppThemeProvider>
-                <I18nProvider
-                  locale={locale}
-                  namespaces={[
-                    'common',
-                    'consent',
-                    'playlists',
-                    'session',
-                    'auth',
-                    'settings',
-                    'boards',
-                    'climbs',
-                    'profile',
-                    'feed',
-                  ]}
-                >
+                <I18nProvider locale={locale}>
                   <ConsentProvider>
                     <Suspense fallback={null}>
                       <AnalyticsIdentity />

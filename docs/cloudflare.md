@@ -881,6 +881,23 @@ what the rate-limit rule below is for.
 
 ### Caching list and climb-view HTML (#4652)
 
+#### Keep translation catalogs out of unrelated HTML
+
+Every server-seeded i18n catalog is serialized into the page's React payload,
+including on a cache miss caused by a crawler fetching a new URL. The root
+provider seeds only `common`, `consent`, and `auth`, which the shared chrome,
+privacy choices, and sign-in dialog need. The two board-route layouts add
+`climbs` and `feed`; the homepage adds `marketing`. Other routes seed their own
+catalogs, including the `settings` strings used by privacy and follow controls.
+
+Keep catalogs available on the first server render and on later interactions.
+A page provider does not seed its sibling header/footer or a different page's
+route, and the browser's accumulated catalogs can hide missing seeds during
+navigation. The real-catalog SSR tests in `app/lib/i18n/__tests__/route-resources.test.tsx`
+cover all five locales and keep the public climb translation payload below half
+the former compressed size. That budget measures translation data, not total
+HTML size or a guaranteed reduction in the Railway bill.
+
 `packages/web/middleware.ts` has decorated list pages and climb-view pages with
 `CDN-Cache-Control: s-maxage=86400, stale-while-revalidate=604800` since long
 before www moved to Railway (TTLs from `app/lib/list-page-cache.ts`). Those
