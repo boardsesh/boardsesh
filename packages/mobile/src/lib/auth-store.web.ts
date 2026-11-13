@@ -2,6 +2,13 @@ import { invalidateCredentialSnapshots } from './privacy/privacy-cache';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { webApiUrl } from './env';
 import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
+import {
+  sameBrowserBackendLeaseOwner,
+  type BrowserBackendLeaseOwner,
+} from '@boardsesh/auth-protocol/browser-backend-lease';
+import { readBrowserBackendSessionScope } from '@boardsesh/auth-protocol/browser-backend-session';
+import { expoBrowserBackendClient } from './browser-backend-client.web';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -17,6 +24,8 @@ export type AuthSessionResult =
 export type WebAuthIdentity = {
   userId: string;
   authSessionId: string;
+  /** Local public owner metadata, never a source credential or channel claim. */
+  browserSelection?: Readonly<BrowserBackendLeaseOwner>;
 };
 
 type NextAuthSession = {
@@ -131,6 +140,7 @@ function notifyAuthTokenChange(token: string | null, source: AuthTokenChangeSour
 function clearInMemoryTokens(source: AuthTokenChangeSource): void {
   sessionGeneration += 1;
   backendToken = null;
+  expoBrowserBackendClient.retire();
   invalidateCredentialSnapshots();
   synchronization?.controller.abort(new Error('Authentication session cleared'));
   synchronization = null;
@@ -222,7 +232,14 @@ function unavailable(
 
 function sameIdentity(left: WebAuthIdentity | null, right: WebAuthIdentity | null): boolean {
   if (left === null || right === null) return left === right;
-  return left.userId === right.userId && left.authSessionId === right.authSessionId;
+  if (left.userId !== right.userId || left.authSessionId !== right.authSessionId) return false;
+  if (left.browserSelection || right.browserSelection)
+    return Boolean(
+      left.browserSelection &&
+      right.browserSelection &&
+      sameBrowserBackendLeaseOwner(left.browserSelection, right.browserSelection),
+    );
+  return true;
 }
 
 function rotateForConfirmedIdentity(
@@ -246,6 +263,7 @@ function rotateForConfirmedIdentity(
 }
 
 function invalidateUnscopedAuthenticatedIdentity(generation: number): number {
+  expoBrowserBackendClient.retire();
   if (confirmedSessionIdentity === undefined && backendToken === null) return generation;
   confirmedSessionIdentity = undefined;
   backendToken = null;
@@ -329,6 +347,46 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
 
       const session = (await readJsonObject(sessionResponse, signal)) as NextAuthSession;
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+      const observed = readBrowserBackendSessionScope(session);
+      if (observed.status === 'selected' || 'browserSelection' in session || expoBrowserBackendClient.isSelected()) {
+        try {
+          // Only this successful central response establishes scope. Reserved
+          // malformed/missing metadata after selection cannot restore legacy.
+          expoBrowserBackendClient.acceptSession(session);
+        } catch (error) {
+          activeGeneration = invalidateUnscopedAuthenticatedIdentity(activeGeneration);
+          return unavailable(error, undefined, true);
+        }
+        if (observed.status === 'anonymous') {
+          const anonymous = rotateForConfirmedIdentity(null, activeGeneration);
+          activeGeneration = anonymous.generation;
+          return { status: 'anonymous' };
+        }
+        if (observed.status !== 'selected') return unavailable(new Error('Selected session is unavailable'));
+        const resolvedIdentity: WebAuthIdentity = {
+          userId: observed.owner.userId,
+          authSessionId: observed.owner.authSessionId,
+          browserSelection: observed.owner,
+        };
+        lastConfirmedIdentity = resolvedIdentity;
+        const confirmed = rotateForConfirmedIdentity(resolvedIdentity, activeGeneration);
+        activeGeneration = confirmed.generation;
+        identityChangedDuringSynchronization ||= confirmed.changed;
+        try {
+          const lease = await expoBrowserBackendClient.acquire(observed.owner);
+          if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+          if (signal.aborted) throw new BrowserBackendConsumerError('unavailable');
+          const scope = expoBrowserBackendClient.capture(lease.token);
+          if (!scope) throw new BrowserBackendConsumerError('superseded');
+          expoBrowserBackendClient.assertCurrent(scope, lease);
+          backendToken = lease.token;
+          return { status: 'authenticated', token: lease.token, ...resolvedIdentity };
+        } catch (error) {
+          if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+          backendToken = null;
+          return unavailable(error, resolvedIdentity, identityChangedDuringSynchronization);
+        }
+      }
       if (!session.user) {
         const confirmedAnonymous = rotateForConfirmedIdentity(null, activeGeneration);
         activeGeneration = confirmedAnonymous.generation;
@@ -460,7 +518,30 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
 
 /** The backend JWE is intentionally process-memory only. */
 export async function getAuthToken(): Promise<string | null> {
+  if (expoBrowserBackendClient.isSelected()) {
+    const generation = captureAuthCredentialGeneration();
+    const owner = expoBrowserBackendClient.getSnapshot().owner;
+    if (!owner) {
+      if (expoBrowserBackendClient.isAnonymous() && confirmedSessionIdentity === null) return null;
+      throw new BrowserBackendConsumerError('unavailable');
+    }
+    const lease = await expoBrowserBackendClient.acquire(owner);
+    if (!isAuthCredentialGenerationCurrent(generation)) throw new BrowserBackendConsumerError('superseded');
+    const scope = expoBrowserBackendClient.capture(lease.token);
+    if (!scope) throw new BrowserBackendConsumerError('superseded');
+    expoBrowserBackendClient.assertCurrent(scope, lease);
+    backendToken = lease.token;
+    return lease.token;
+  }
   return backendToken;
+}
+
+/** Unknown/retired credentials are never evidence of an anonymous session. */
+export function hasConfirmedAnonymousWebSession(): boolean {
+  return (
+    confirmedSessionIdentity === null &&
+    (!expoBrowserBackendClient.isSelected() || expoBrowserBackendClient.isAnonymous())
+  );
 }
 
 export async function getRefreshToken(): Promise<null> {
@@ -544,7 +625,7 @@ export async function isolateTokensForSignOut(): Promise<void> {
 export function broadcastSignOutStarted(identity: WebAuthIdentity): void {
   broadcastAuthTokenClear({
     reason: 'signout-started',
-    identity: { ...identity },
+    identity: { userId: identity.userId, authSessionId: identity.authSessionId },
   });
 }
 
@@ -558,7 +639,7 @@ export function broadcastConfirmedSignOut(
   }
   broadcastAuthTokenClear({
     reason: 'confirmed-signout',
-    identity: { ...departingIdentity },
+    identity: { userId: departingIdentity.userId, authSessionId: departingIdentity.authSessionId },
   });
 }
 

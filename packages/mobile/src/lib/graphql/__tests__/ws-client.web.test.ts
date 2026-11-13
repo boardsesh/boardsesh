@@ -6,9 +6,22 @@ type WebAuthRecoveryResult = 'authenticated' | 'anonymous' | 'unavailable' | 'su
 
 let capturedOptions: CreateGraphQLClientOptions | null = null;
 const disposeSpy = vi.fn();
-const singletonClient = { dispose: disposeSpy } as unknown as ExtendedClient;
+const singletonClient = {
+  dispose: disposeSpy,
+  subscribe: vi.fn(() => () => {}),
+  on: vi.fn(() => () => {}),
+  terminate: vi.fn(),
+  iterate: vi.fn(() => {
+    const iterator: AsyncIterableIterator<never> = {
+      next: () => Promise.resolve({ done: true, value: undefined }),
+      [Symbol.asyncIterator]: () => iterator,
+    };
+    return iterator;
+  }),
+} as unknown as ExtendedClient;
 
-vi.mock('@boardsesh/graphql-client', () => ({
+vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
   createGraphQLClient: (options: CreateGraphQLClientOptions) => {
     capturedOptions = options;
     return singletonClient;
@@ -19,6 +32,8 @@ vi.mock('../../auth-store.web', () => ({
   captureAuthCredentialGeneration: vi.fn().mockReturnValue(1),
   getAuthToken: vi.fn().mockResolvedValue('browser-jwe'),
   isAuthCredentialGenerationCurrent: vi.fn().mockReturnValue(true),
+  hasConfirmedAnonymousWebSession: vi.fn().mockReturnValue(true),
+  subscribeAuthCredentialGenerationChanges: vi.fn(() => () => {}),
 }));
 
 vi.mock('../../auth-interceptor.web', () => ({
@@ -30,7 +45,10 @@ vi.mock('../../error-reporting', () => ({
   reportHandledError: vi.fn(),
 }));
 
-vi.mock('../../env', () => ({ BACKEND_URL: 'https://api.test' }));
+vi.mock('../../env', () => ({
+  BACKEND_URL: 'https://api.test',
+  webApiUrl: (path: string) => `https://www.owned.test${path}`,
+}));
 vi.mock('../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 
 const { CLIENT_IDENTITY } = vi.hoisted(() => ({ CLIENT_IDENTITY: 'boardsesh-mobile-web/2.6.0 (web)' }));
