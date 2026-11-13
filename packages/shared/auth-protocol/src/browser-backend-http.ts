@@ -9,6 +9,7 @@ type LeaseAuthority = {
   readonly assertCurrent: (this: void, lease: unknown) => void;
   readonly isCurrent: (this: void) => boolean;
   readonly dispose: (this: void) => void;
+  readonly refuse?: (this: void) => void;
 };
 
 /** The host SDK supplies only the response it actually decoded. Authority is
@@ -86,6 +87,13 @@ function createHttpTransport(client: BrowserClient, performFetch: typeof fetch, 
       try {
         authority.assertCurrent(lease);
         if (signal?.aborted) throw signal.reason ?? new Error('GraphQL request aborted');
+        // Only the cold Expo view owns this policy. A confirmed refusal may
+        // retire its exact live receipt, never an expired/aborted old request
+        // or another account, and the command is never replayed.
+        if (response.status === 401 && source.refuse) {
+          source.refuse();
+          throw new BrowserBackendConsumerError('denied');
+        }
       } catch (error) {
         void response.body?.cancel().catch(() => {});
         throw error;
@@ -155,5 +163,6 @@ export function createBrowserBackendHttpTransportForView(options: {
     assertCurrent: (lease) => source.assertCurrent(lease),
     isCurrent: () => source.isCurrent(),
     dispose: () => source.dispose(),
+    refuse: () => source.invalidate(),
   });
 }

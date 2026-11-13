@@ -197,4 +197,62 @@ describe('SDK-independent browser HTTP authority and delivery receipts', () => {
     expect(isCurrentBrowserBackendHttpResult(result, original.client)).toBe(true);
     expect(isCurrentBrowserBackendHttpResult(result, later.client)).toBe(false);
   });
+  it('a confirmed cold-view 401 retires only its original live scope and never replays the request', async () => {
+    const current = fixture();
+    current.graphFetch.mockResolvedValueOnce(Response.json({ error: 'denied' }, { status: 401 }));
+    const transport = current.create();
+    const revision = current.client.getSnapshot().revision;
+    await expect(transport.fetch('/graphql', undefined)).rejects.toMatchObject({ status: 'denied' });
+    expect(current.graphFetch).toHaveBeenCalledTimes(1);
+    expect(current.leaseFetch).toHaveBeenCalledTimes(1);
+    expect(current.client.getSnapshot().owner?.userId).toBe('owned-A');
+    expect(current.client.getSnapshot().revision).toBe(revision + 1);
+    expect(current.client.isAnonymous()).toBe(false);
+    expect(transport.isCurrent()).toBe(false);
+  });
+  it.each(['expired', 'B', 'ABA', 'aborted', 'disposed', 'generation'] as const)(
+    'an old %s 401 cannot retire the live account or borrow a newer same-owner lease',
+    async (change) => {
+      const current = fixture();
+      let release!: (response: Response) => void;
+      current.graphFetch.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)));
+      const transport = current.create();
+      const controller = new AbortController();
+      const reason = new Error('Owned cancellation');
+      const pending = transport.fetch('/graphql', { signal: controller.signal });
+      void pending.catch(() => {});
+      await vi.waitFor(() => expect(current.graphFetch).toHaveBeenCalledTimes(1));
+      if (change === 'expired') {
+        current.setClock(90_000);
+        await current.client.acquire(current.owner());
+        current.setClock(120_001);
+      } else if (change === 'B' || change === 'ABA') {
+        current.switchAccount('owned-B');
+        if (change === 'ABA') current.switchAccount('owned-A');
+        await current.client.acquire(current.owner());
+      } else if (change === 'aborted') controller.abort(reason);
+      else if (change === 'disposed') transport.dispose();
+      else current.retireGeneration();
+      release(Response.json({ error: 'denied' }, { status: 401 }));
+      if (change === 'aborted') await expect(pending).rejects.toBe(reason);
+      else await expect(pending).rejects.toMatchObject({ status: 'superseded' });
+      expect(current.graphFetch).toHaveBeenCalledTimes(1);
+      expect(current.client.getSnapshot().owner?.userId).toBe(current.owner().userId);
+      expect(current.client.isAnonymous()).toBe(false);
+      const live = await current.client.acquire(current.owner());
+      expect(current.client.capture(live.token)).not.toBeNull();
+    },
+  );
+  it('the fixed WWW creator preserves its released 401 behavior without retiring the account', async () => {
+    const current = fixture();
+    const lease = await current.client.acquire(current.owner());
+    const scope = captureBrowserBackendHttpScope(lease.token, current.client)!;
+    const response = Response.json({ errors: [{ message: 'Owned refusal' }] }, { status: 401 });
+    current.graphFetch.mockResolvedValueOnce(response);
+    const transport = createBrowserBackendHttpTransport({ client: current.client, scope, fetch: current.graphFetch });
+    expect(await transport.fetch('/graphql', undefined)).toBe(response);
+    expect(() => transport.admitResponse({ kind: 'error', headers: response.headers })).not.toThrow();
+    expect(current.client.getSnapshot().owner?.userId).toBe('owned-A');
+    expect(current.graphFetch).toHaveBeenCalledTimes(1);
+  });
 });
