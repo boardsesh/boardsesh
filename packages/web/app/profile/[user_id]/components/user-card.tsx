@@ -36,7 +36,7 @@ export default function UserCard({ userId, profile, isOwnProfile, onProfileUpdat
           </MuiAvatar>
           <div className={styles.profileDetails}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="h6" component="h4" className={styles.displayName}>
+              <Typography variant="h6" component="h1" className={styles.displayName}>
                 {displayName}
               </Typography>
               {!isOwnProfile && (

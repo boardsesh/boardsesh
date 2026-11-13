@@ -21,8 +21,25 @@ type ProfileResponse = {
   } | null;
 };
 
-export async function getProfileData(userId: string, viewerUserId?: string): Promise<UserProfile | null> {
-  const authToken = await getServerAuthToken();
+export type ServerProfileDataOptions = {
+  /** A supplied undefined explicitly selects an anonymous backend request. */
+  readonly authToken?: string;
+  /** Public server props never include local mappings or an owner's email. */
+  readonly publicOnly?: boolean;
+};
+
+export async function getProfileData(
+  userId: string,
+  viewerUserId?: string,
+  options: ServerProfileDataOptions = {},
+): Promise<UserProfile | null> {
+  const publicOnly = options.publicOnly === true;
+  const suppliedToken = options.authToken;
+  const authToken = publicOnly
+    ? undefined
+    : Object.hasOwn(options, 'authToken')
+      ? suppliedToken
+      : await getServerAuthToken();
   const { publicProfile: profile } = await executeAuthenticatedGraphQL<ProfileResponse>(
     `
     query WebProfile($userId: ID!) {
@@ -35,9 +52,9 @@ export async function getProfileData(userId: string, viewerUserId?: string): Pro
     authToken,
   );
   if (!profile) return null;
-  const isOwnProfile = viewerUserId === userId;
+  const isOwnProfile = !publicOnly && viewerUserId === userId;
   const [mappings, users] = await Promise.all([
-    profile.canViewActivity ? getUserBoardMappings(userId) : Promise.resolve([]),
+    !publicOnly && profile.canViewActivity ? getUserBoardMappings(userId) : Promise.resolve([]),
     isOwnProfile
       ? getDb().select({ email: schema.users.email }).from(schema.users).where(eq(schema.users.id, userId)).limit(1)
       : Promise.resolve([]),
