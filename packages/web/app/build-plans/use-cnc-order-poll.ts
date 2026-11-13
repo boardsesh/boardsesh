@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CncOrder, CncOrderStatus } from '@boardsesh/shared-schema';
 import {
@@ -119,12 +119,16 @@ export type CncOrderPollResult = {
 
 export function useCncOrderPoll({
   licenceId,
+  ownerId,
+  authSessionId,
   initialOrder,
   authToken,
   enabled,
 }: {
   /** The order being watched. Null before a licence exists — nothing to poll yet. */
   licenceId: string | null;
+  ownerId: string | null;
+  authSessionId?: string | null;
   /** Server-fetched, so the order page's first paint already shows the real status. */
   initialOrder?: CncOrder;
   authToken: string | null;
@@ -132,21 +136,42 @@ export function useCncOrderPoll({
   enabled: boolean;
 }): CncOrderPollResult {
   const queryClient = useQueryClient();
+  const scopeKey = JSON.stringify([ownerId, authSessionId ?? null, licenceId]);
+  const scopeRef = useRef(scopeKey);
+  scopeRef.current = scopeKey;
+  const initialScopeRef = useRef(scopeKey);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const scopedInitialOrder = ownerId && scopeKey === initialScopeRef.current ? initialOrder : undefined;
 
   // Refs, not state: both only ever feed the next poll decision and the
   // fallback render, and bumping React state from inside `queryFn` would
   // re-render the component a second time for every tick.
-  const lastKnownOrderRef = useRef<CncOrder | null>(initialOrder ?? null);
+  const lastKnownOrderRef = useRef<CncOrder | null>(scopedInitialOrder ?? null);
   const consecutiveNullPollsRef = useRef(0);
+  const previousScopeRef = useRef(scopeKey);
+  if (previousScopeRef.current !== scopeKey) {
+    previousScopeRef.current = scopeKey;
+    lastKnownOrderRef.current = null;
+    consecutiveNullPollsRef.current = 0;
+  }
 
   const query = useQuery({
-    queryKey: ['cncOrder', licenceId] as const,
-    queryFn: async () => {
+    queryKey: ['cncOrder', ownerId, authSessionId ?? null, licenceId] as const,
+    queryFn: async ({ signal }) => {
       if (!licenceId || !authToken) throw new Error('useCncOrderPoll: queryFn ran without a licence id and token');
       const client = createGraphQLHttpClient(authToken);
-      const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>(GET_CNC_ORDER, {
-        licenceId,
+      const response = await client.request<GetCncOrderQueryResponse, GetCncOrderQueryVariables>({
+        document: GET_CNC_ORDER,
+        variables: { licenceId },
+        signal,
       });
+      if (signal.aborted || !mountedRef.current || scopeRef.current !== scopeKey) return null;
       const polledOrder = response.cncOrder;
       if (polledOrder) {
         lastKnownOrderRef.current = polledOrder;
@@ -163,9 +188,9 @@ export function useCncOrderPoll({
     // that IS the freshness contract here; `refetchInterval` fires regardless
     // of staleness, so a live order still polls on time. Skipped entirely when
     // there is no `initialOrder` to seed from — the configurator's case.
-    ...(initialOrder ? { initialData: initialOrder, initialDataUpdatedAt: () => Date.now() } : {}),
+    ...(scopedInitialOrder ? { initialData: scopedInitialOrder, initialDataUpdatedAt: () => Date.now() } : {}),
     staleTime: ORDER_POLL_INTERVAL_MS,
-    enabled: enabled && licenceId !== null && !!authToken,
+    enabled: enabled && ownerId !== null && licenceId !== null && !!authToken,
     // Re-read from the last known order on every tick, so the moment the order
     // settles the next interval is `false` and the polling stops by itself —
     // while a transient `null` leaves the interval alone.
@@ -178,15 +203,16 @@ export function useCncOrderPoll({
 
   const seedOrder = useCallback(
     (order: CncOrder) => {
+      if (!ownerId || !mountedRef.current || scopeRef.current !== scopeKey) return;
       lastKnownOrderRef.current = order;
       consecutiveNullPollsRef.current = 0;
-      queryClient.setQueryData(['cncOrder', order.licenceId], order);
+      queryClient.setQueryData(['cncOrder', ownerId, authSessionId ?? null, order.licenceId], order);
     },
-    [queryClient],
+    [queryClient, ownerId, authSessionId, scopeKey],
   );
 
   return {
-    order: query.data ?? lastKnownOrderRef.current,
+    order: ownerId ? (query.data ?? lastKnownOrderRef.current) : null,
     isError: query.isError,
     errorKey: query.error ? cncErrorKey(query.error) : null,
     seedOrder,

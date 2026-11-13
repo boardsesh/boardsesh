@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { FinaliseCncOrderInput } from '@boardsesh/shared-schema';
 import {
   FINALISE_CNC_ORDER,
@@ -9,6 +9,7 @@ import {
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { removePreference } from '@/app/lib/user-preferences-db';
+import { useCncRequestScope } from '../use-cnc-request-scope';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from './configurator-state';
 
@@ -77,11 +78,17 @@ function currentSiteOrigin(): string | null {
 }
 
 export function useCncFinalise(authToken: string | null): CncFinaliseResult {
+  const beginRequest = useCncRequestScope(authToken);
   const [isFinalising, setIsFinalising] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
+  useEffect(() => {
+    setIsFinalising(false);
+    setErrorKey(null);
+  }, [authToken]);
 
   const finalise = useCallback(
     async (input: FinaliseCncOrderInput) => {
+      const isCurrent = beginRequest();
       setErrorKey(null);
       setIsFinalising(true);
       try {
@@ -90,6 +97,7 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
           FINALISE_CNC_ORDER,
           { input },
         );
+        if (!isCurrent()) return;
         const { checkoutUrl } = response.finaliseCncOrder;
         if (!isCheckoutRedirectUrl(checkoutUrl)) {
           // Same generic error as any other failed finalise, and the draft is
@@ -104,13 +112,13 @@ export function useCncFinalise(authToken: string | null): CncFinaliseResult {
         // IndexedDB once the order carries them. `removePreference` swallows
         // its own errors, so a failed wipe never blocks the redirect.
         await removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
-        window.location.assign(checkoutUrl);
+        if (isCurrent()) window.location.assign(checkoutUrl);
       } catch (error) {
-        setErrorKey(cncErrorKey(error));
-        setIsFinalising(false);
+        if (isCurrent()) setErrorKey(cncErrorKey(error));
+        if (isCurrent()) setIsFinalising(false);
       }
     },
-    [authToken],
+    [authToken, beginRequest],
   );
 
   return { finalise, isFinalising, errorKey };

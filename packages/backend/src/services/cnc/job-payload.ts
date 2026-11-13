@@ -126,8 +126,8 @@ export type CncWorkerJob = {
   };
   /**
    * Where the zip must be written. Boardsesh dictates the key; the worker never
-   * invents one. A preview writes to the `_preview.zip` sibling of the pack's
-   * key, so the two can coexist for one licence.
+   * invents one. Generation, deliverable and attempt each have a separate
+   * namespace so stale uploads cannot replace a completed artifact.
    */
   outputKey: string;
   /**
@@ -143,40 +143,23 @@ export type CncWorkerJob = {
   issuedAt: string;
 };
 
-/**
- * Where an order's pack is stored.
- *
- * `anon` covers the one case where `user_id` is null: the account was deleted.
- * The licence outlives it (`onDelete: 'set null'`), so the pack has to keep a
- * stable key rather than move — a regenerate writes to the same place, which is
- * what makes a regenerated pack replace the old one instead of leaking a second
- * copy of a licensed file.
- */
-export function cncPackOutputKey(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
-  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}.zip`;
+type ArtifactOrder = Pick<CncOrder, 'userId' | 'licenceId' | 'generation' | 'attempts'>;
+
+/** Each lease attempt owns its artifacts; stale workers cannot replace a winner. */
+function artifactDirectory(order: ArtifactOrder, deliverable: CncDeliverable): string {
+  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}/g${order.generation}/${deliverable}/a${order.attempts}/`;
 }
 
-/**
- * Where an order's PREVIEW zip is stored: the `_preview.zip` sibling of its
- * pack key.
- *
- * A sibling rather than a subdirectory so one glance at the bucket says which
- * licence a preview belongs to, and so the download route's key pattern can
- * stay a single regex over one directory shape.
- */
-export function cncPreviewOutputKey(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
-  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}_preview.zip`;
+export function cncPackOutputKey(order: ArtifactOrder): string {
+  return `${artifactDirectory(order, 'full')}pack.zip`;
 }
 
-/**
- * Where an order's individual preview PNGs are stored.
- *
- * A directory of its own, under the licence, because there are many of them and
- * they are the only objects in this system a browser fetches one at a time.
- * Every completion's `previewKeys` is checked against this exact prefix.
- */
-export function cncPreviewPrefix(order: Pick<CncOrder, 'userId' | 'licenceId'>): string {
-  return `cnc-packs/${order.userId ?? 'anon'}/${order.licenceId}/preview/`;
+export function cncPreviewOutputKey(order: ArtifactOrder): string {
+  return `${artifactDirectory(order, 'preview')}preview.zip`;
+}
+
+export function cncPreviewPrefix(order: ArtifactOrder, deliverable: CncDeliverable = 'preview'): string {
+  return `${artifactDirectory(order, deliverable)}preview/`;
 }
 
 /** Read a boolean option. Anything that is not an explicit `true` is off — the engrave gates fail closed. */
@@ -338,7 +321,7 @@ export function buildWorkerJob(order: CncOrder, { bucket, issuedAt }: BuildWorke
       paper: optionString(order.options, 'paper'),
     },
     outputKey: deliverable === 'preview' ? cncPreviewOutputKey(order) : cncPackOutputKey(order),
-    previewPrefix: cncPreviewPrefix(order),
+    previewPrefix: cncPreviewPrefix(order, deliverable),
     bucket,
     issuedAt: issuedAt.toISOString(),
   };

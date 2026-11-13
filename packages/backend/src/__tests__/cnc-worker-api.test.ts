@@ -48,6 +48,8 @@ import { eq } from 'drizzle-orm';
 import { cncArtAssets, cncOrders, users, type CncOrderOptions } from '@boardsesh/db/schema';
 import { db } from '../db/client';
 import { handleCncWorkerApi } from '../handlers/cnc-worker';
+import { handleCncPackDownload, handleCncPackPreviewImage } from '../handlers/cnc-download';
+vi.mock('../middleware/auth', () => ({ validateToken: vi.fn(async () => ({ userId: 'user-123' })) }));
 import { cncArtAssetKey, createArtAsset } from '../services/cnc/art-assets';
 
 const WORKER_SECRET = 'worker-secret-for-tests';
@@ -327,7 +329,7 @@ describe('POST /api/cnc/worker/claim', () => {
         dxfFlavour: 'R12_circles',
         paper: 'A3',
       },
-      outputKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+      outputKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
       bucket: 'boardsesh-private',
     });
     expect(typeof job?.claimToken).toBe('string');
@@ -471,8 +473,8 @@ describe('preview jobs', () => {
   /** The keys a preview job is allowed to report. */
   function previewKeysFor(licenceId: string): string[] {
     return [
-      `cnc-packs/user-123/${licenceId}/preview/panel1.png`,
-      `cnc-packs/user-123/${licenceId}/preview/assembly.png`,
+      `cnc-packs/user-123/${licenceId}/g1/preview/a1/preview/panel1.png`,
+      `cnc-packs/user-123/${licenceId}/g1/preview/a1/preview/assembly.png`,
     ];
   }
 
@@ -487,8 +489,8 @@ describe('preview jobs', () => {
       deliverable: 'preview',
       // The `_preview.zip` sibling of the pack key, so the two can coexist for
       // one licence.
-      outputKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
-      previewPrefix: `cnc-packs/user-123/${preview.licenceId}/preview/`,
+      outputKey: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`,
+      previewPrefix: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview/`,
       // Nothing has been licensed yet, and the sheets say so with a watermark
       // rather than a name.
       tier: null,
@@ -500,7 +502,7 @@ describe('preview jobs', () => {
   it('marks the order preview_ready, stores the images, and does NOT mail anybody', async () => {
     const preview = await insertQueuedPreview();
     const job = await claimJob();
-    const outputKey = `cnc-packs/user-123/${preview.licenceId}_preview.zip`;
+    const outputKey = `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`;
     getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
 
     const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
@@ -544,7 +546,7 @@ describe('preview jobs', () => {
     await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`,
         sizeBytes: 2048,
         sha256: previewSha,
         previewKeys: previewKeysFor(preview.licenceId),
@@ -566,7 +568,7 @@ describe('preview jobs', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`,
         sizeBytes: 2048,
         sha256: previewSha,
         previewKeys: ['exports/user-999/data.png'],
@@ -587,10 +589,10 @@ describe('preview jobs', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`,
         sizeBytes: 2048,
         sha256: previewSha,
-        previewKeys: [`cnc-packs/user-123/${preview.licenceId}/preview/panel1.dxf`],
+        previewKeys: [`cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview/panel1.dxf`],
       },
     });
 
@@ -606,7 +608,7 @@ describe('preview jobs', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(preview.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${preview.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${preview.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 2048,
         sha256: previewSha,
         previewKeys: [],
@@ -623,7 +625,7 @@ describe('preview jobs', () => {
     getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 2048, contentType: 'application/zip' });
     const body = {
       claimToken: job?.claimToken,
-      zipKey: `cnc-packs/user-123/${preview.licenceId}_preview.zip`,
+      zipKey: `cnc-packs/user-123/${preview.licenceId}/g1/preview/a1/preview.zip`,
       sizeBytes: 2048,
       sha256: previewSha,
       previewKeys: previewKeysFor(preview.licenceId),
@@ -725,7 +727,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
   it('marks the order ready, stores the manifest and mails the buyer', async () => {
     const order = await insertQueuedOrder();
     const job = await claimJob();
-    const outputKey = `cnc-packs/user-123/${order.licenceId}.zip`;
+    const outputKey = `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`;
     getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
 
     const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
@@ -751,7 +753,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     // The token is kept, not cleared: it is what makes a retried completion
     // recognisable as a duplicate rather than a stranger's report.
     expect(ready.claimToken).toBe(job?.claimToken);
-    expect(sendPackReadyMock).toHaveBeenCalledTimes(1);
+    expect(sendPackReadyMock).toHaveBeenCalledTimes(2);
   });
 
   it('409s and leaves the order generating when the uploaded object is a different size', async () => {
@@ -762,7 +764,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: 'b'.repeat(64),
         fingerprintManifest: {},
@@ -782,7 +784,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: 'c'.repeat(64),
         fingerprintManifest: {},
@@ -796,7 +798,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
   it('answers a retried completion 200 duplicate without mailing the buyer twice', async () => {
     const order = await insertQueuedOrder();
     const job = await claimJob();
-    const outputKey = `cnc-packs/user-123/${order.licenceId}.zip`;
+    const outputKey = `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`;
     getS3ObjectMetadataMock.mockResolvedValue({ contentLength: 4096, contentType: 'application/zip' });
     const completion = {
       claimToken: job?.claimToken,
@@ -814,7 +816,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     expect(second.json()).toEqual({ ok: true, status: 'ready', duplicate: true });
     // One email, one generation stamp: the redelivery is an answer, not a
     // second transition.
-    expect(sendPackReadyMock).toHaveBeenCalledTimes(1);
+    expect(sendPackReadyMock).toHaveBeenCalledTimes(2);
     expect((await readOrder(order.id)).status).toBe('ready');
   });
 
@@ -825,7 +827,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: 'f'.repeat(64),
         fingerprintManifest: {},
@@ -836,7 +838,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: 'not-the-token-that-completed-it',
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: 'f'.repeat(64),
         fingerprintManifest: {},
@@ -864,7 +866,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/complete', () => {
     const res = await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: stale?.claimToken,
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: '9'.repeat(64),
         fingerprintManifest: { seed: 'from-the-dead-worker' },
@@ -956,7 +958,7 @@ describe('POST /api/cnc/worker/jobs/:orderId/fail', () => {
     await callWorker(`/api/cnc/worker/jobs/${String(order.id)}/complete`, {
       body: {
         claimToken: job?.claimToken,
-        zipKey: `cnc-packs/user-123/${order.licenceId}.zip`,
+        zipKey: `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`,
         sizeBytes: 4096,
         sha256: '1'.repeat(64),
         fingerprintManifest: {},
@@ -1278,5 +1280,57 @@ describe('GET /api/cnc/worker/assets/:assetId — unleased (pre-purchase)', () =
 
     expect(res.statusCode).toBe(404);
     expect(getFromS3Mock).not.toHaveBeenCalled();
+  });
+});
+
+describe('artifact isolation after a lease is reclaimed', () => {
+  it.each(['full', 'preview'] as const)('keeps winning %s bytes after a late stale upload', async (deliverable) => {
+    const order = deliverable === 'full' ? await insertQueuedOrder() : await insertQueuedPreview();
+    const first = await claimJob('stalled-worker');
+    const expired = new Date(Date.now() - 60 * 60 * 1000);
+    await db.update(cncOrders).set({ claimedAt: expired, heartbeatAt: expired }).where(eq(cncOrders.id, order.id));
+    const replacement = await claimJob('replacement-worker');
+    expect(replacement?.outputKey).not.toBe(first?.outputKey);
+    const files = new Map<string, string>();
+    const winnerKey = String(replacement?.outputKey);
+    const winnerImage = `${String(replacement?.previewPrefix)}panel1.png`;
+    files.set(winnerKey, 'winner');
+    files.set(winnerImage, 'winner');
+    getS3ObjectMetadataMock.mockImplementation(async (_bucket: string, key: string) =>
+      files.has(key) ? { contentLength: 6 } : null,
+    );
+    getFromS3Mock.mockImplementation(async (_bucket: string, key: string) => ({
+      stream: Readable.from([files.get(key)]),
+      contentLength: 6,
+    }));
+    const completion = (job: Record<string, unknown> | null) => ({
+      claimToken: job?.claimToken,
+      zipKey: job?.outputKey,
+      sizeBytes: 6,
+      sha256: 'a'.repeat(64),
+      fingerprintManifest: {},
+      ...(deliverable === 'preview' ? { previewKeys: [`${String(job?.previewPrefix)}panel1.png`] } : {}),
+    });
+    const path = `/api/cnc/worker/jobs/${order.id}/complete`;
+    expect((await callWorker(path, { body: completion(replacement) })).statusCode).toBe(200);
+    files.set(String(first?.outputKey), 'loser!');
+    files.set(`${String(first?.previewPrefix)}panel1.png`, 'loser!');
+    expect((await callWorker(path, { body: completion(first) })).statusCode).toBe(409);
+    const response = new StreamingTestResponse();
+    const request = makeRequest({ method: 'GET', headers: { authorization: 'Bearer test-owner' } });
+    const downloadPath =
+      deliverable === 'full'
+        ? `/api/cnc/packs/${order.licenceId}/download`
+        : `/api/cnc/packs/${order.licenceId}/preview/panel1.png`;
+    const finished = once(response, 'finish');
+    const handler = deliverable === 'full' ? handleCncPackDownload : handleCncPackPreviewImage;
+    await handler(
+      request as unknown as import('http').IncomingMessage,
+      response as unknown as import('http').ServerResponse,
+      new URL(downloadPath, 'http://backend.test'),
+    );
+    await finished;
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe('winner');
   });
 });

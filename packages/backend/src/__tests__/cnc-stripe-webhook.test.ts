@@ -33,6 +33,14 @@ const { sendOrderReceivedMock, captureEventMock } = vi.hoisted(() => ({
 
 vi.mock('../email/cnc-emails', () => ({ sendCncOrderReceivedEmail: sendOrderReceivedMock }));
 vi.mock('../services/analytics/posthog', () => ({ captureBackendEvent: captureEventMock }));
+const { retrieveMetadataMock } = vi.hoisted(() => ({
+  retrieveMetadataMock: vi.fn<() => Promise<Record<string, string>>>(async () => ({})),
+}));
+vi.mock('../services/cnc/stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services/cnc/stripe')>()),
+  retrievePaymentIntentMetadata: retrieveMetadataMock,
+}));
+import * as stripeEvents from '../services/cnc/stripe-events';
 
 const WEBHOOK_SECRET = 'whsec_test_cnc_webhook';
 const BUYER_ID = 'cnc-webhook-buyer';
@@ -368,6 +376,62 @@ describe('POST /api/cnc/stripe/webhook', () => {
     // The buyer is emailed once, not once per Stripe retry.
     expect(sendOrderReceivedMock).not.toHaveBeenCalled();
     expect(captureEventMock).not.toHaveBeenCalled();
+  });
+
+  it('rolls back claim and order on a failed stamp, then retries concurrent deliveries once', async () => {
+    const order = await createOrder();
+    const event = completedEvent(order);
+    const stamp = vi.spyOn(stripeEvents, 'markStripeEventProcessed');
+    stamp.mockRejectedValueOnce(new Error('simulated death before commit'));
+    try {
+      expect((await deliver(event)).statusCode).toBe(500);
+      expect((await readOrder(order.id)).status).toBe('pending_payment');
+      expect(await db.select().from(cncStripeEvents).where(eq(cncStripeEvents.id, event.id))).toHaveLength(0);
+      const responses = await Promise.all([deliver(event), deliver(event)]);
+      expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+      expect(responses.filter((response) => JSON.parse(response.body).duplicate)).toHaveLength(1);
+      expect((await readOrder(order.id)).status).toBe('queued');
+      expect(sendOrderReceivedMock).toHaveBeenCalledTimes(2);
+    } finally {
+      stamp.mockRestore();
+    }
+  });
+
+  it('recovers an unfinished claim left by the old webhook', async () => {
+    const order = await createOrder();
+    const event = completedEvent(order);
+    await db.insert(cncStripeEvents).values({ id: event.id, type: event.type });
+    expect((await deliver(event)).statusCode).toBe(200);
+    expect((await readOrder(order.id)).status).toBe('queued');
+  });
+
+  it('keeps an early refund terminal through checkout and refund redelivery', async () => {
+    const order = await createOrder();
+    retrieveMetadataMock.mockResolvedValueOnce({ orderId: String(order.id), licenceId: order.licenceId });
+    const event = {
+      id: nextEventId(),
+      type: 'charge.refunded',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: 'ch_early', payment_intent: `pi_test_${order.id}`, refunded: true } },
+    };
+    expect((await deliver(event)).statusCode).toBe(200);
+    expect((await readOrder(order.id)).status).toBe('refunded');
+    await deliver(completedEvent(order));
+    await deliver(event);
+    expect((await readOrder(order.id)).status).toBe('refunded');
+    expect(sendOrderReceivedMock).not.toHaveBeenCalled();
+  });
+
+  it('does not refund the order when canonical metadata has the wrong licence', async () => {
+    const order = await createOrder();
+    retrieveMetadataMock.mockResolvedValueOnce({ orderId: String(order.id), licenceId: 'BS-CNC-ZZZZZZ' });
+    await deliver({
+      id: nextEventId(),
+      type: 'charge.refunded',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: 'ch_mismatch', payment_intent: `pi_test_${order.id}`, refunded: true } },
+    });
+    expect((await readOrder(order.id)).status).toBe('pending_payment');
   });
 
   it('does nothing when a different event completes an already-queued order', async () => {

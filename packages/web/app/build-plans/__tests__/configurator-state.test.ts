@@ -8,6 +8,7 @@ import {
   engraveOptions,
   finaliseBlockers,
   fromDraft,
+  fromOwnedDraft,
   isPreviewStale,
   hasKickerSets,
   initialConfiguratorState,
@@ -396,5 +397,47 @@ describe('option value keys', () => {
     expect(optionValueKey('2440x1220')).toBe('2440x1220');
     expect(optionValueKey('R12_circles')).toBe('R12_circles');
     expect(optionValueKey('true')).toBe('true');
+  });
+});
+
+describe('draft account boundaries', () => {
+  it('carries a signed-out wall into sign-in without licence or previous preview details', () => {
+    const configured = {
+      ...initialConfiguratorState(tenByTwelve()),
+      options: { ...defaultOptions(tenByTwelve()), sheetStock: '3600x1220' },
+      licenseeName: 'Private name',
+      licenseeEmail: 'private@example.com',
+      customerSiteName: 'Private site',
+      previewOrderId: '41',
+      previewLicenceId: 'BS-CNC-ABC234',
+      previewConfigKey: 'old-config',
+    };
+    const restored = fromOwnedDraft(
+      { ownerId: null, authSessionId: null, draft: toDraft(configured) },
+      [tenByTwelve()],
+      'buyer-a',
+      'login-a',
+    );
+    expect(restored).toMatchObject({
+      options: { sheetStock: '3600x1220' },
+      licenseeName: '',
+      licenseeEmail: '',
+      customerSiteName: '',
+      previewOrderId: null,
+      previewLicenceId: null,
+      previewConfigKey: null,
+      licenceAccepted: false,
+    });
+  });
+
+  it('refuses a previous account or login draft', () => {
+    const saved = {
+      ownerId: 'buyer-a',
+      authSessionId: 'login-a',
+      draft: toDraft(initialConfiguratorState(tenByTwelve())),
+    };
+    expect(fromOwnedDraft(saved, [tenByTwelve()], 'buyer-b', 'login-b')).toBeNull();
+    expect(fromOwnedDraft(saved, [tenByTwelve()], 'buyer-a', 'login-new')).toBeNull();
+    expect(fromOwnedDraft(saved, [tenByTwelve()], null, null)).toBeNull();
   });
 });

@@ -46,6 +46,7 @@ const LEGAL_TRANSITIONS: ReadonlyArray<[CncOrderFromStatus, CncOrderEvent]> = [
   ['generating', 'claim'],
   ['generating', 'complete'],
   ['generating', 'fail'],
+  ['pending_payment', 'refund'],
   ['queued', 'refund'],
   ['generating', 'refund'],
   ['ready', 'refund'],
@@ -103,8 +104,8 @@ describe('canTransition', () => {
     expect(wronglyAllowed).toEqual([]);
   });
 
-  it('never lets an unpaid or cancelled order be refunded', () => {
-    expect(canTransition('pending_payment', 'refund')).toBe(false);
+  it('accepts a verified early refund but keeps terminal states terminal', () => {
+    expect(canTransition('pending_payment', 'refund')).toBe(true);
     expect(canTransition('cancelled', 'refund')).toBe(false);
     expect(canTransition('refunded', 'refund')).toBe(false);
   });

@@ -1,0 +1,448 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Progetti di costruzione per un pannello domestico",
+      "description": "File CNC pronti per il taglio di una parete di arrampicata domestica: pannelli e fori per dadi a ragno e LED, disposti sui fogli disponibili nella tua officina."
+    },
+    "orders": {
+      "title": "I tuoi progetti di costruzione",
+      "description": "Tutti i pacchetti di costruzione che hai acquistato e il loro stato."
+    },
+    "order": {
+      "title": "Progetto di costruzione {{licenceId}}",
+      "description": "Stato e download di un pacchetto di costruzione Boardsesh."
+    }
+  },
+  "hero": {
+    "title": "Progetti per costruire il tuo pannello domestico",
+    "subtitle": "File DXF utilizzabili direttamente da un'officina CNC. Tutti i pannelli, la griglia dei dadi a ragno, i fori LED e il kicker, disposti sui fogli già disponibili nella tua officina.",
+    "firstBoard": "Kilter Homewall è il primo pannello supportato. Ne seguiranno altri.",
+    "included": {
+      "heading": "Cosa ricevi",
+      "dxf": "Sono inclusi anche i disegni di assemblaggio, per allineare i pannelli senza andare a tentativi.",
+      "pdf": "Pagine stampabili in A3 o Tabloid, con la disposizione definita prima di tagliare il primo foglio.",
+      "bom": "Numero di fogli, dimensioni dei pannelli e conteggio di tutti i fori, prima di ordinare il materiale.",
+      "licence": "Intestata a te e valida per una parete, da conservare.",
+      "dxfLabel": "Un DXF per pannello",
+      "pdfLabel": "Fogli di verifica",
+      "bomLabel": "Distinta di taglio",
+      "licenceLabel": "La tua licenza"
+    },
+    "trademarkNote": "Boardsesh non è affiliata ad Aurora Climbing, Kilter o ad alcun produttore di pannelli. Questi progetti servono a costruire una parete compatibile con prese e LED acquistati separatamente.",
+    "cta": "Configura la tua parete"
+  },
+  "tiers": {
+    "heading": "Scegli una licenza",
+    "intro": "Una licenza, una parete. Per una seconda parete serve una seconda licenza.",
+    "personal": {
+      "name": "Personale",
+      "blurb": "Costruisci una parete per te. Nel garage, nel capanno o nella stanza libera."
+    },
+    "commercial": {
+      "name": "Commerciale, singola costruzione",
+      "blurb": "Costruisci una parete per un cliente o una palestra. L'installazione è indicata nella licenza."
+    },
+    "contact": {
+      "heading": "Ne costruisci più di una?",
+      "body": "Per pacchetti da dieci costruzioni e condizioni OEM, parliamone direttamente. Raccontaci cosa stai costruendo e ti proporremo un prezzo.",
+      "cta": "Scrivici",
+      "subject": "Progetti di costruzione: licenza per più costruzioni"
+    },
+    "licenceLink": "Leggi la licenza",
+    "ordersLink": "I tuoi progetti di costruzione",
+    "perWall": "per parete"
+  },
+  "configurator": {
+    "heading": "Configura la tua parete",
+    "intro": "Ogni scelta qui sotto modifica il taglio. Scegli le misure usate dalla tua officina.",
+    "wall": {
+      "heading": "La tua parete",
+      "help": "Il pannello e le dimensioni che vuoi costruire. Tutto il resto dipende da questa scelta."
+    },
+    "board": {
+      "label": "Pannello",
+      "help": "Kilter Homewall è l'unico pannello attualmente in vendita."
+    },
+    "size": {
+      "label": "Dimensioni della parete",
+      "help": "Le dimensioni Kilter che vuoi costruire. Determinano la griglia delle prese e le misure della parete."
+    },
+    "kicker": {
+      "help": "Il pannello inclinato alla base. È presente solo sulle pareti da 12 piedi.",
+      "include": "Includi il kicker",
+      "exclude": "Senza kicker"
+    },
+    "options": {
+      "heading": "Lavorazione",
+      "help": "Le impostazioni predefinite sono quelle che usiamo noi. Adattale alla tua officina.",
+      "sheetStock": {
+        "label": "Dimensioni del foglio",
+        "help": "Il compensato da cui taglia la tua officina. Con un foglio da 3,6 m puoi ricavare una fila della parete senza giunzioni.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "Foro per dado a ragno",
+        "help": "Adattalo al diametro del corpo dei dadi a ragno acquistati. 12,5 mm è adatto ai comuni M10.",
+        "values": {
+          "11_1": "11,1 mm",
+          "12": "12 mm",
+          "12_5": "12,5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "Foro LED",
+        "help": "Adattalo al kit LED che installerai dietro la parete.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12,5 mm",
+          "12_7": "12,7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Spazio tra kicker e materasso",
+        "help": "Lo spazio libero che il kicker lascia sopra il materasso.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Distanza dai montanti",
+        "help": "Sposta lateralmente la griglia delle prese per evitare che i fori coincidano con un montante. 0 mm mantiene la disposizione centrata sulla parete.",
+        "values": {
+          "0": "Nessuno",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Distanza tra le prese",
+        "help": "100 mm per una costruzione metrica, 101,6 mm per avere esattamente 4 pollici.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101,6 mm (4 pollici)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "Formato DXF",
+        "help": "R12 usa cerchi reali, che più controllori macchina riconoscono come punti di foratura.",
+        "values": {
+          "R12_circles": "R12, cerchi",
+          "R2010_polylines": "R2010, polilinee"
+        }
+      },
+      "paper": {
+        "label": "Fogli stampati",
+        "help": "Il formato della carta per le stampe di verifica.",
+        "values": {
+          "A3": "A3",
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 × 17 pollici)",
+          "LETTER": "Letter (8,5 × 11 pollici)"
+        }
+      },
+      "supportStrips": {
+        "label": "Listelli di rinforzo delle giunzioni",
+        "help": "Listelli di compensato da 150 mm, con asole per i dadi a ragno, da posizionare dietro ogni giunzione orizzontale. Lasciali attivi, a meno che la struttura sostenga già le giunzioni.",
+        "values": {
+          "false": "Disattivati",
+          "true": "Attivati"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Incidi i numeri delle prese",
+        "help": "Incide il numero della presa Kilter accanto a ogni dado a ragno.",
+        "values": {
+          "false": "Disattivato",
+          "true": "Attivato"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Incidi gli angoli delle viti di fissaggio",
+        "help": "Incide una tacca che indica la direzione di ogni vite di fissaggio.",
+        "values": {
+          "false": "Disattivato",
+          "true": "Attivato"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Incisione",
+      "help": "Numeri delle prese e angoli delle viti di fissaggio, incisi nel pannello durante il taglio. Entrambi sono attivi per impostazione predefinita.",
+      "note": "Derivano dal layout Kilter e sono utili quando monti le prese: il numero accanto a ogni dado a ragno indica quale presa va in quel punto, mentre la tacca indica la direzione della vite di fissaggio."
+    },
+    "artwork": {
+      "heading": "Testi e loghi personalizzati",
+      "help": "Incidi le tue parole in un pannello oppure carica un logo. Fino a {{count}} elementi: li controlliamo tutti rispetto alla griglia dei fori prima dell'acquisto.",
+      "add": "Aggiungi una scritta",
+      "remove": "Rimuovi",
+      "itemLabel": "Scritta {{number}}",
+      "full": "Hai inserito tutte le {{count}} scritte disponibili per questo pacchetto.",
+      "remaining_one": "Spazio per un'altra scritta ({{count}}).",
+      "remaining_other": "Spazio per altre {{count}} scritte.",
+      "text": "Testo della scritta",
+      "textHelp": "Fino a {{max}} caratteri. Il taglio segue i contorni, così il risultato è identico su qualsiasi macchina.",
+      "font": "Carattere",
+      "fontHelp": "I caratteri disponibili per la fresatura.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "Tipo di lavorazione",
+      "modes": {
+        "engrave": {
+          "label": "Incisione",
+          "help": "Segna la superficie. È poco profonda e il pannello mantiene la sua resistenza."
+        },
+        "pocket": {
+          "label": "Scavo",
+          "help": "Scava l'interno delle lettere fino a una certa profondità, per farle risaltare alla luce."
+        },
+        "cut_through": {
+          "label": "Taglio passante",
+          "help": "Attraversa tutto lo spessore. Richiede più spazio attorno ai fori e asporta materiale dal pannello."
+        }
+      },
+      "panel": "Pannello",
+      "panelHelp": "Il foglio in cui verrà fresato.",
+      "panelLoading": "Calcolo dei pannelli…",
+      "kickerPanel": "kicker",
+      "checking": "Verifica dello spazio…",
+      "fits": "Ci sta. Non tocca fori o giunzioni.",
+      "doesNotFit": "Non si può tagliare in questa posizione. Spostalo e ripeteremo il controllo.",
+      "signInToCheck": "Accedi per verificare le scritte rispetto alla griglia dei fori.",
+      "issues": {
+        "text": "Inserisci il testo di questa scritta.",
+        "textTooLong": "Il testo supera {{chars}} caratteri.",
+        "width": "La larghezza deve essere compresa tra {{min}} e {{max}} mm.",
+        "rotation": "La rotazione deve essere compresa tra -180° e 180°."
+      },
+      "collisions": {
+        "off_panel": "L'elemento esce dal pannello o è troppo vicino al bordo.",
+        "keepout": "L'elemento coincide con un foro per dado a ragno o LED.",
+        "cut_through_keepout": "Questo taglio passante richiede più spazio attorno ai fori.",
+        "crosses_seam": "L'elemento attraversa due pannelli e verrebbe tagliato a metà.",
+        "unknown": "Non è possibile fresare l'elemento in questa posizione."
+      },
+      "upload": {
+        "button": "Carica un logo",
+        "busy": "Caricamento…",
+        "help": "SVG, fino a 5 MB. Prima converti i tratti in contorni: il taglio segue il tracciato, non il suo perimetro.",
+        "signIn": "Accedi per caricare un logo.",
+        "previewAlt": "Il logo che hai caricato",
+        "stored": "Il logo che hai caricato",
+        "errors": {
+          "tooLarge": "Il file è troppo grande. Il limite è di 5 MB.",
+          "noFile": "Non è arrivato alcun file. Seleziona di nuovo il logo e caricalo.",
+          "unsupportedType": "Non è stato possibile leggere il disegno. Esportalo di nuovo come SVG semplice.",
+          "unsafeDrawing": "Il disegno contiene elementi che non possiamo tagliare: script, caratteri collegati o immagini esterne. Esportalo di nuovo come SVG semplice.",
+          "noViewBox": "Il disegno non ha un viewBox e manca un riferimento per le dimensioni. Esportalo di nuovo dal tuo editor.",
+          "tooComplex": "Il disegno contiene più dettagli di quanti una fresatrice possa seguire. Semplifica i tracciati e riprova.",
+          "imageTooSmall": "L'immagine è troppo piccola per ricavarne un tracciato. Servono almeno 64 pixel per lato.",
+          "imageTooLarge": "L'immagine è troppo grande per ricavarne un tracciato. Il limite è di 4096 pixel per lato.",
+          "unreadableImage": "Non è stato possibile aprire l'immagine. Esportala di nuovo come PNG.",
+          "rateLimited": "Hai caricato molti file. Aspetta qualche minuto e riprova.",
+          "unavailable": "Il caricamento non è disponibile al momento. Non è stato addebitato nulla. Riprova tra poco.",
+          "generic": "Il caricamento non è riuscito. Riprova."
+        }
+      },
+      "editor": {
+        "canvasLabel": "La tua parete. Trascina la scritta dove vuoi.",
+        "placeholder": "Il tuo testo",
+        "keyboardHelp": "Le frecce spostano di 10 mm; tieni premuto Maiusc per 1 mm. [ e ] ruotano di 5°. Più e meno modificano la larghezza.",
+        "resizeHandle": "Trascina per ridimensionare",
+        "rotateHandle": "Trascina per ruotare",
+        "width": "Larghezza (mm)",
+        "rotation": "Rotazione (gradi)",
+        "holesUnavailable": "Accedi per vedere la griglia dei fori sulla tua parete.",
+        "offPanel": "L'elemento esce dal pannello o è troppo vicino al bordo.",
+        "holesInTheWay_one": "L'elemento coincide con {{count}} foro. Spostalo per liberarlo.",
+        "holesInTheWay_other": "L'elemento coincide con {{count}} fori. Spostalo per liberarli.",
+        "crossesSeam": "L'elemento attraversa una giunzione e verrebbe tagliato a metà.",
+        "clear": "Non tocca nessun foro o giunzione su questo pannello."
+      },
+      "blocksPreview": "Sposta le scritte in una posizione adatta prima di richiedere l'anteprima."
+    },
+    "summary": {
+      "heading": "Cosa verrà tagliato",
+      "wall": "Parete",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Altezza del kicker",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Pannelli",
+      "panelsValue_one": "{{count}} pannello",
+      "panelsValue_other": "{{count}} pannelli",
+      "sheets": "Fogli",
+      "sheetsValue_one": "{{count}} foglio",
+      "sheetsValue_other": "{{count}} fogli",
+      "tnuts": "Fori per dadi a ragno",
+      "leds": "Fori LED",
+      "seamNotches": "Fori LED su una giunzione",
+      "seamNotchesHelp": "Questi fori LED si trovano sulla giunzione tra pannelli. Ogni foro viene ricavato come un incavo in entrambi i pannelli; il LED si inserisce nell'incavo dopo l'assemblaggio.",
+      "warningsHeading": "Da sapere",
+      "unavailable": "La distinta di taglio non si carica al momento. Tutte le tue scelte sono ancora qui."
+    },
+    "licensee": {
+      "name": "Nome sulla licenza",
+      "email": "Email",
+      "emailHelp": "L'indirizzo a cui riceverai il pacchetto quando sarà pronto.",
+      "siteName": "Nome del cliente o della palestra",
+      "siteHelp": "L'unica installazione coperta da questa licenza commerciale.",
+      "required": "Compila questo campo prima dell'acquisto."
+    },
+    "licence": {
+      "accept": "Accetto la licenza di fabbricazione",
+      "link": "Leggila prima"
+    },
+    "preview": {
+      "heading": "La tua anteprima",
+      "signedOut": "Accedi e disegneremo la tua parete. Le anteprime sono gratuite e non serve una carta.",
+      "idle": "Disponiamo ogni foglio e ti mostriamo i disegni con filigrana. Modifica ciò che vuoi e richiedi una nuova anteprima.",
+      "working": "Stiamo disegnando i fogli. Ci vogliono circa quindici secondi.",
+      "ready": "Disegni di verifica con filigrana. Completa l'acquisto per ottenere i file DXF da tagliare in officina.",
+      "stale": "Hai modificato la parete dopo questi disegni. Aggiorna l'anteprima per vedere quelli nuovi.",
+      "failed": "Non è stato possibile generare l'anteprima. Non è stato addebitato nulla: riprova.",
+      "rateLimited": "Hai esaurito le anteprime gratuite per quest'ora. Quelle già create sono nella pagina dei tuoi progetti di costruzione; potrai crearne un'altra allo scoccare dell'ora.",
+      "download": "Scarica l'anteprima",
+      "downloading": "Preparazione del link…",
+      "galleryLabel": "Fogli di anteprima",
+      "bomLabel": "Cosa ricavi da questi fogli",
+      "panel": "Pannello {{number}}",
+      "assembly": "Assemblaggio",
+      "generated": "Anteprima creata"
+    },
+    "finalise": {
+      "heading": "Intestatario della licenza",
+      "help": "La licenza compare su ogni file del pacchetto, così eventuali copie diffuse possono essere ricondotte all'acquisto.",
+      "stale": "Aggiorna prima l'anteprima: la parete è cambiata rispetto a questi disegni."
+    }
+  },
+  "cta": {
+    "preview": "Ottieni un'anteprima gratuita",
+    "previewSignedOut": "Accedi per un'anteprima gratuita",
+    "previewUpdate": "Aggiorna l'anteprima",
+    "previewing": "Creazione dell'anteprima…",
+    "previewRetry": "Riprova",
+    "finalise": "Completa e acquista",
+    "finalising": "Apertura del pagamento…",
+    "free": "Le anteprime sono gratuite. Non serve una carta.",
+    "signInTitle": "Accedi per la tua anteprima gratuita",
+    "signInBody": "Serve un account per conservare la tua anteprima. Ti riporteremo direttamente alla tua configurazione."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "Questa combinazione non è adatta al taglio. Modifica una delle scelte qui sopra e la ricontrolleremo.",
+    "CNC_WORKER_UNAVAILABLE": "Il generatore di progetti non risponde al momento. Non è stato addebitato nulla. Riprova tra un minuto.",
+    "CNC_CHECKOUT_UNAVAILABLE": "I pagamenti non sono disponibili al momento. Non è stato addebitato nulla. Riprova tra poco.",
+    "generic": "L'operazione non è riuscita. Non è stato addebitato nulla.",
+    "RATE_LIMITED": "Hai richiesto molte anteprime in un'ora. Non è stato addebitato nulla: potrai crearne un'altra allo scoccare dell'ora."
+  },
+  "status": {
+    "pending_payment": "In attesa del pagamento",
+    "queued": "In coda",
+    "generating": "Preparazione dei file di taglio",
+    "ready": "Pronto da scaricare",
+    "failed": "Generazione non riuscita",
+    "cancelled": "Pagamento scaduto",
+    "refunded": "Rimborsato",
+    "preview_queued": "Anteprima in coda",
+    "preview_generating": "Creazione dell'anteprima",
+    "preview_ready": "Anteprima pronta",
+    "preview_failed": "Anteprima non riuscita"
+  },
+  "orders": {
+    "heading": "I tuoi progetti di costruzione",
+    "intro": "Tutte le pareti di cui hai richiesto un'anteprima o che hai acquistato, dalla più recente. La licenza resta tua indipendentemente da questa pagina.",
+    "configureAnother": "Configura un'altra parete",
+    "empty": "Non ci sono ancora pareti.",
+    "emptyBody": "Configura una parete e prepareremo un'anteprima gratuita di ogni foglio. Non viene addebitato nulla finché non completi l'acquisto.",
+    "emptyCta": "Configura una parete",
+    "previewTier": "Anteprima",
+    "orderedOn": "Ordinato il {{date}}",
+    "previewedOn": "Anteprima del {{date}}",
+    "view": "Apri",
+    "viewOne": "Apri il progetto di costruzione {{licenceId}}",
+    "finalise": "Completa",
+    "loadError": "Non è stato possibile caricare i tuoi progetti di costruzione. Ricarica la pagina."
+  },
+  "order": {
+    "back": "Tutti i tuoi progetti di costruzione",
+    "board": "Parete",
+    "tier": "Licenza",
+    "placed": "Iniziato",
+    "previewed": "Anteprima creata",
+    "size": "Dimensioni del pacchetto",
+    "sizeValue": "{{megabytes}} MB",
+    "downloads": "Download",
+    "facts": {
+      "heading": "Di cosa si tratta"
+    },
+    "timeline": {
+      "heading": "Stato di avanzamento",
+      "preview": "Anteprima gratuita creata",
+      "finalised": "Licenza intestata e pagata",
+      "building": "Preparazione dei file di taglio",
+      "ready": "Pronto da scaricare"
+    },
+    "waiting": "I pacchetti richiedono un paio di minuti. Questa pagina si aggiorna automaticamente.",
+    "previewWaiting": "Le anteprime richiedono circa quindici secondi. Questa pagina si aggiorna automaticamente.",
+    "preview": {
+      "heading": "La tua anteprima gratuita",
+      "note": "Disegni di verifica con filigrana. Completa l'acquisto per ottenere i file DXF da tagliare in officina.",
+      "drawing": "Stiamo disegnando i fogli. Compariranno qui appena saranno pronti.",
+      "panel": "Pannello {{number}}",
+      "assembly": "Assemblaggio"
+    },
+    "finalise": "Completa e acquista",
+    "downloadPreview": "Scarica l'anteprima",
+    "download": "Scarica il pacchetto",
+    "downloading": "Preparazione del link…",
+    "downloadError": "Non è stato possibile ottenere il link. Riprova.",
+    "checkoutSuccess": "Pagamento riuscito. Stiamo preparando i file di taglio del tuo pacchetto.",
+    "checkoutCancelled": "Il pagamento è stato annullato. Non è stato addebitato nulla.",
+    "previewFailed": {
+      "heading": "Non è stato possibile disegnare questa anteprima",
+      "body": "Non è stato addebitato nulla. Modifica qualcosa nella tua parete e richiedi una nuova anteprima, oppure scrivici e controlleremo.",
+      "contact": "Scrivici e risolveremo il problema",
+      "subject": "Anteprima del progetto di costruzione {{licenceId}} non riuscita"
+    },
+    "failed": {
+      "heading": "Non è stato possibile generare questo pacchetto",
+      "contact": "Scrivici e risolveremo il problema",
+      "subject": "Generazione del progetto di costruzione {{licenceId}} non riuscita"
+    },
+    "refunded": {
+      "heading": "Rimborsato",
+      "body": "Questo ordine è stato rimborsato, quindi il download è disattivato. Acquista di nuovo quando vuoi iniziare a costruire."
+    },
+    "notFound": {
+      "heading": "Progetto di costruzione inesistente",
+      "body": "La licenza non esiste oppure appartiene a un altro account."
+    },
+    "loadError": "Non è stato possibile caricare questo progetto di costruzione. Ricarica la pagina.",
+    "downloadCard": {
+      "heading": "Il tuo pacchetto di costruzione",
+      "note": "Un DXF per pannello, disegni di assemblaggio, fogli da stampare e la tua licenza, in un unico file ZIP."
+    }
+  },
+  "flow": {
+    "heading": "Come funziona",
+    "intro": "Le anteprime sono gratuite. Non viene addebitato nulla finché non completi l'acquisto.",
+    "configure": {
+      "title": "Configura la tua parete",
+      "body": "Scegli le dimensioni, i fogli usati dalla tua officina, i diametri dei fori e ciò che vuoi fresare in un pannello."
+    },
+    "preview": {
+      "title": "Ottieni un'anteprima gratuita",
+      "body": "Disponiamo ogni foglio e ti mostriamo i disegni con filigrana. Modifica qualcosa e richiedi un'altra anteprima ogni volta che vuoi."
+    },
+    "finalise": {
+      "title": "Completa e costruisci",
+      "body": "Intesta la licenza e paga: i file DXF pronti per il taglio e i fogli da stampare arriveranno nel tuo account."
+    }
+  }
+}

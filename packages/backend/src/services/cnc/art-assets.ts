@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { cncArtAssets, type CncArtAsset } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
+import type { CncOrdersExecutor } from './orders';
 import { logger } from '../../utils/logger';
 
 /**
@@ -186,15 +187,16 @@ export async function attachAssetsToOrder(
  * stamp costs the buyer one re-upload; a stuck order costs them a support
  * ticket. So a failure is logged and swallowed, and the count comes back 0.
  */
-export async function releaseArtAssetsForOrder(orderId: number): Promise<number> {
+export async function releaseArtAssetsForOrder(orderId: number, executor: CncOrdersExecutor = db): Promise<number> {
   try {
-    const released = await db
+    const released = await executor
       .update(cncArtAssets)
       .set({ orderId: null })
       .where(eq(cncArtAssets.orderId, orderId))
       .returning({ id: cncArtAssets.id });
     return released.length;
   } catch (error) {
+    if (executor !== db) throw error;
     logger.error('[cnc-art] could not release the art assets of a cancelled order', { orderId, error });
     return 0;
   }

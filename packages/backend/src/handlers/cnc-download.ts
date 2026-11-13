@@ -87,13 +87,16 @@ async function identifyRequester(req: IncomingMessage, res: ServerResponse, url:
  * and this route streams whatever key the row names to an authenticated caller.
  * Cheap, local, and it fails closed.
  */
-const PACK_KEY_PATTERN = /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\.zip$/;
+const PACK_KEY_PATTERN =
+  /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\/g[1-9][0-9]*\/full\/a[1-9][0-9]*\/pack\.zip$/;
 
-/** The same rule for the preview zip, which lives beside the pack as `_preview.zip`. */
-const PREVIEW_ZIP_KEY_PATTERN = /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}_preview\.zip$/;
+/** Preview archives live in their own immutable generation/attempt namespace. */
+const PREVIEW_ZIP_KEY_PATTERN =
+  /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\/g[1-9][0-9]*\/preview\/a[1-9][0-9]*\/preview\.zip$/;
 
 /** And for one watermarked PNG, which lives in a directory under the licence. */
-const PREVIEW_IMAGE_KEY_PATTERN = /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\/preview\/[A-Za-z0-9._-]+\.png$/;
+const PREVIEW_IMAGE_KEY_PATTERN =
+  /^cnc-packs\/[A-Za-z0-9._-]+\/BS-CNC-[A-Z0-9]{6}\/g[1-9][0-9]*\/preview\/a[1-9][0-9]*\/preview\/[A-Za-z0-9._-]+\.png$/;
 
 /** The pack's filename on the buyer's disk. Licence id only — it is already printed inside every file. */
 function attachmentFilename(licenceId: string, kind: CncDeliverable): string {
@@ -191,7 +194,7 @@ export async function handleCncPackDownload(req: IncomingMessage, res: ServerRes
   }
 
   const keyPattern = kind === 'preview' ? PREVIEW_ZIP_KEY_PATTERN : PACK_KEY_PATTERN;
-  if (!keyPattern.test(objectKey)) {
+  if (!keyPattern.test(objectKey) || !objectKey.startsWith(`cnc-packs/${order.userId}/${order.licenceId}/`)) {
     // Never the buyer's problem, and never something to act on: refuse to read
     // the key at all rather than find out what is there.
     logger.error('[cnc-download] order is ready but its zip key is not a pack key; refusing to read it', {
@@ -344,7 +347,11 @@ export async function handleCncPackPreviewImage(req: IncomingMessage, res: Serve
   // A name that is not one of this order's sheets is a 404 rather than a 400:
   // the client got the list from us, so the only ways to be here are a stale
   // page and somebody guessing.
-  if (!objectKey || !PREVIEW_IMAGE_KEY_PATTERN.test(objectKey)) {
+  if (
+    !objectKey ||
+    !PREVIEW_IMAGE_KEY_PATTERN.test(objectKey) ||
+    !objectKey.startsWith(`cnc-packs/${order.userId}/${order.licenceId}/`)
+  ) {
     sendJson(res, 404, { error: 'Not found' });
     return;
   }

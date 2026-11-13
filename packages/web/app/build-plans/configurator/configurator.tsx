@@ -66,7 +66,7 @@ import {
   finaliseBlockers,
   findEntry,
   formatPrice,
-  fromDraft,
+  fromOwnedDraft,
   hasKickerSets,
   initialConfiguratorState,
   isPreviewStale,
@@ -133,12 +133,39 @@ type ConfiguratorProps = {
  * out, because the whole funnel starts with a stranger deciding whether this
  * wall is the one they want.
  */
-export default function Configurator({ catalog, locale }: ConfiguratorProps) {
+export default function Configurator(props: ConfiguratorProps) {
+  const { data: session, status } = useSession();
+  if (status === 'loading') return null;
+  const ownerId = session?.user?.id ?? null;
+  const authSessionId = session?.authSessionId ?? null;
+  return (
+    <OwnedConfigurator
+      key={JSON.stringify([ownerId, authSessionId])}
+      {...props}
+      ownerId={ownerId}
+      authSessionId={authSessionId}
+    />
+  );
+}
+
+function OwnedConfigurator({
+  catalog,
+  locale,
+  ownerId,
+  authSessionId,
+}: ConfiguratorProps & { ownerId: string | null; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { openAuthModal } = useAuthModal();
   const { token, isAuthenticated } = useWsAuthToken();
   const { data: session } = useSession();
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
   const entries = catalog.entries;
   const [state, dispatch] = useReducer(configuratorReducer, entries[0], initialConfiguratorState);
   const entry = findEntry(entries, state) ?? entries[0];
@@ -169,7 +196,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     order: previewOrder,
     errorKey: pollErrorKey,
     seedOrder,
-  } = useCncOrderPoll({ licenceId: state.previewLicenceId, authToken: token, enabled: true });
+  } = useCncOrderPoll({ licenceId: state.previewLicenceId, ownerId, authSessionId, authToken: token, enabled: true });
   const { finalise, isFinalising, errorKey: finaliseErrorKey } = useCncFinalise(token);
 
   // Published from the same constants the backend enforces, so a slider's
@@ -284,22 +311,22 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     void (async () => {
       const stored = await getPreference<unknown>(CNC_CONFIGURATOR_DRAFT_KEY);
       if (cancelled) return;
-      const restored = fromDraft(stored, entries);
+      const restored = fromOwnedDraft(stored, entries, ownerId, authSessionId);
       if (restored) dispatch({ type: 'restoreDraft', state: restored });
       setIsDraftRestored(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [entries]);
+  }, [entries, ownerId, authSessionId]);
 
   useEffect(() => {
     if (!isDraftRestored) return;
     const timer = setTimeout(() => {
-      void setPreference(CNC_CONFIGURATOR_DRAFT_KEY, toDraft(state));
+      void setPreference(CNC_CONFIGURATOR_DRAFT_KEY, { ownerId, authSessionId, draft: toDraft(state) });
     }, DRAFT_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [state, isDraftRestored]);
+  }, [state, isDraftRestored, ownerId, authSessionId]);
 
   // Prefill the licensee from the session, but never overwrite typing: the
   // account's email is a good guess, not an answer, and someone buying a
@@ -384,6 +411,8 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
 
   const handlePreview = async () => {
     if (!isAuthenticated) {
+      await setPreference(CNC_CONFIGURATOR_DRAFT_KEY, { ownerId, authSessionId, draft: toDraft(state) });
+      if (!isMountedRef.current) return;
       // The draft is already on disk, and OAuth leaves the page entirely, so the
       // callback has to carry the buyer back here for the restore to happen.
       openAuthModal({
@@ -407,7 +436,7 @@ export default function Configurator({ catalog, locale }: ConfiguratorProps) {
     // for.
     const sentConfigKey = currentConfigKey;
     const order = await requestPreview(configInput);
-    if (!order) return;
+    if (!order || !isMountedRef.current) return;
     seedOrder(order);
     dispatch({ type: 'previewCreated', orderId: order.id, licenceId: order.licenceId, configKey: sentConfigKey });
   };

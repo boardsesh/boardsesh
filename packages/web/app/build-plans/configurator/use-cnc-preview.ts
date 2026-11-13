@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CncBoardConfigInput, CncOrder } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
@@ -11,6 +11,7 @@ import {
   type CreateCncPreviewMutationVariables,
 } from '@boardsesh/graphql/operations/cnc-packs';
 import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/client';
+import { useCncRequestScope } from '../use-cnc-request-scope';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
 
 /**
@@ -62,12 +63,19 @@ export function isBackendDownloadUrl(url: string): boolean {
 }
 
 export function useCncPreview(authToken: string | null): CncPreviewResult {
+  const beginRequest = useCncRequestScope(authToken);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
+  useEffect(() => {
+    setIsRequesting(false);
+    setIsDownloading(false);
+    setErrorKey(null);
+  }, [authToken]);
 
   const requestPreview = useCallback(
     async (config: CncBoardConfigInput): Promise<CncOrder | null> => {
+      const isCurrent = beginRequest();
       setErrorKey(null);
       setIsRequesting(true);
       try {
@@ -76,19 +84,20 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CREATE_CNC_PREVIEW,
           { config },
         );
-        return response.createCncPreview;
+        return isCurrent() ? response.createCncPreview : null;
       } catch (error) {
-        setErrorKey(cncErrorKey(error));
+        if (isCurrent()) setErrorKey(cncErrorKey(error));
         return null;
       } finally {
-        setIsRequesting(false);
+        if (isCurrent()) setIsRequesting(false);
       }
     },
-    [authToken],
+    [authToken, beginRequest],
   );
 
   const downloadPreview = useCallback(
     async (licenceId: string) => {
+      const isCurrent = beginRequest();
       setErrorKey(null);
       setIsDownloading(true);
       try {
@@ -97,6 +106,7 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CreateCncDownloadGrantMutationResponse,
           CreateCncDownloadGrantMutationVariables
         >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind: 'PREVIEW' });
+        if (!isCurrent()) return;
         const grantUrl = response.createCncDownloadGrant.url;
         if (!isBackendDownloadUrl(grantUrl)) {
           setErrorKey('generic');
@@ -108,12 +118,12 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
         // back into this one through `window.opener`.
         window.open(grantUrl, '_blank', 'noopener,noreferrer');
       } catch (error) {
-        setErrorKey(cncErrorKey(error));
+        if (isCurrent()) setErrorKey(cncErrorKey(error));
       } finally {
-        setIsDownloading(false);
+        if (isCurrent()) setIsDownloading(false);
       }
     },
-    [authToken],
+    [authToken, beginRequest],
   );
 
   return {

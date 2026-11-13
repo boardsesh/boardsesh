@@ -35,7 +35,7 @@ for this" and "who is generating it right now" can never disagree.
 | `queued` / `generating` (stale lease) | worker claim | `generating` |
 | `generating` | complete | `ready` |
 | `generating` | fail | `queued`, or `failed` once the attempt budget is spent |
-| any paid state | `charge.refunded` | `refunded` (downloads stop) |
+| verified charged `pending_payment` or any paid state | `charge.refunded` | `refunded` (generation and downloads stop) |
 | `ready` / `failed` | admin regenerate | `queued` |
 
 The table lives in `packages/backend/src/services/cnc/order-state.ts` as data.
@@ -191,12 +191,18 @@ Status codes are a contract with Stripe's retry machinery:
   unresolvable orders and redeliveries. An event we decided not to act on is
   handled, not failed.
 
-Idempotency is a uniqueness constraint, not application logic: the event id goes
-into `cnc_stripe_events` with `ON CONFLICT DO NOTHING` before any side effect,
-and a second delivery of the same id loses that race and answers
-`{received: true, duplicate: true}`. A handler that throws releases its claim so
-the retry can work; a process *killed* mid-handler leaves a row with a null
-`processed_at`, which is the intended "started and died" trace.
+The event claim, order transition and processed stamp commit in one database
+transaction. Concurrent deliveries serialize on the event id; only a fully
+processed duplicate receives `{received: true, duplicate: true}`. A failed or
+killed transaction rolls back its claim, allowing Stripe to retry. Legacy
+unfinished claims are locked and retried rather than acknowledged as complete.
+
+Refunds are correlated by the stored PaymentIntent id or, when checkout
+completion has not arrived, canonical PaymentIntent metadata cross-checked
+against the order and licence. Checkout and refund processing lock the order,
+so either delivery order converges to `refunded`. A verified charged order can
+move directly from `pending_payment` to `refunded`; later checkout completion
+cannot queue it. Unrelated charges remain ignored.
 
 ### Stripe Tax
 
@@ -298,8 +304,8 @@ the worker polls every few seconds. Otherwise:
       "dxfFlavour": "R12_circles",
       "paper": "A3"
     },
-    "outputKey": "cnc-packs/<user_id or \"anon\">/<licence_id>.zip",
-    "previewPrefix": "cnc-packs/<user_id or \"anon\">/<licence_id>/preview/",
+    "outputKey": "cnc-packs/<owner>/<licence_id>/g1/full/a1/pack.zip",
+    "previewPrefix": "cnc-packs/<owner>/<licence_id>/g1/full/a1/preview/",
     "bucket": "<private bucket name>",
     "issuedAt": "2026-09-06T02:14:11.402Z"
   }
@@ -323,8 +329,8 @@ Notes the worker implementer needs:
   watermark is what the sheets say instead of a name. A `full` job always has
   both.
 - **`outputKey` is the preview's own key on a preview job**
-  (`<licence_id>_preview.zip`), so a preview and the pack it becomes can sit
-  beside each other for one licence.
+  (`g<generation>/preview/a<attempt>/preview.zip`), separate from the full
+  pack at `g<generation>/full/a<attempt>/pack.zip`.
 - **`previewPrefix` is where the sheet PNGs go, and it is enforced.** Every key
   in a completion's `previewKeys` must start with it and end in `.png`, or the
   completion is refused with a 409 and nothing is stored. Those strings become
@@ -335,9 +341,11 @@ Notes the worker implementer needs:
   byte what `POST /layout` takes, so it can go straight into `compute_layout`
   with no second translation.
 - **`outputKey` is dictated, never invented.** `anon` appears when the buyer
-  deleted their account: the licence outlives it, so the key has to stay stable.
-  A regenerate writes to the same key on purpose — the new zip replaces the old
-  one rather than leaving a second licensed copy around.
+  deleted their account. Every generation and attempt has its own path, including
+  preview images. A worker that loses its lease can upload only to its own
+  attempt path. The claim-token-guarded completion publishes the winning keys;
+  downloads read those saved keys rather than recomputing them from the latest
+  attempt counter. Stale artifacts are never published or deleted automatically.
 - **`attempt` is 1-based and counts reclaims.** `generation` only moves on an
   admin regenerate.
 - **`artwork[].assetKey` and `mime` come off the ORDER, not off
@@ -805,10 +813,10 @@ inside the signed payload, so there is one token shape and one verifier.
 `Mutation.regenerateCncPack(licenceId)`, admin only (`requireAdmin`).
 
 Allowed from `ready` and `failed`. It puts the order back in `queued` with
-`generation + 1`, the attempt budget reset to 0 and the lease cleared — **same
-licence id, same output key**, so the rebuilt zip replaces the old one instead of
-issuing a second licensed copy of the same wall. The generation counter is what
-tells two builds of one licence apart in the fingerprint trail.
+`generation + 1`, the attempt budget reset to 0 and the lease cleared. The licence
+id stays the same, while each attempt writes to a new generation path. A successful
+completion publishes the new key without allowing old workers to overwrite it.
+The download filename remains the licence filename.
 
 Runbook, when a buyer's pack failed:
 
@@ -983,8 +991,9 @@ can all be done before anything is visible to anyone.
    and check the dimensions against the built wall. The generator's goldens
    prove it did not change; they do not prove it was right the first time.
 6. **Flip `cnc-packs` in PostHog.** Ramp it rather than jumping to 100% — the
-   pages, the sitemap shard and the footer link all read the same flag, so a
+   pages and the footer link read the same flag, so a
    percentage rollout is also how the first real checkouts are throttled.
+   The sitemap stays empty while the pages remain `noindex`.
    `FEATURE_FLAG_OVERRIDES=cnc-packs=false` on the web service is the kill
    switch if something goes wrong; it does not need a deploy.
 
@@ -999,10 +1008,10 @@ closed when PostHog is down. Following `docs/feature-flags.md`, that PR:
   `packages/web/app/flags.ts` and `SERVER_FEATURE_FLAG_KEYS`;
 - swaps `createNoIndexMetadata` for `createPageMetadata` with a `path` on
   `/build-plans` and `/build-plans/licence`, which is what emits the canonical
-  and the four-locale `alternates.languages` hreflang block. `/build-plans/orders`
+  and the five-locale `alternates.languages` hreflang block. `/build-plans/orders`
   and `/build-plans/orders/[licenceId]` stay `noindex` — they are per-buyer
   utility pages;
-- replaces the flag read in `build-plans-entries.ts` with the plain list, so the
+- replaces the empty pre-launch result in `build-plans-entries.ts` with the public list, so the
   sitemap shard publishes unconditionally, and adds `/build-plans/licence` to it
   (a unit test refuses any listed path with no `page.tsx` behind it);
 - rewrites the gate's tests as "this route renders" rather than deleting them;

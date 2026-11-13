@@ -149,9 +149,9 @@ export const CNC_ORDER_TRANSITIONS: readonly CncOrderTransition[] = [
   },
   {
     event: 'refund',
-    // Every paid state, and only paid states: pending_payment was never
-    // charged, cancelled never paid, and refunded is already terminal.
-    from: ['queued', 'generating', 'ready', 'failed'],
+    // A verified refund may precede checkout completion. Cancelled and
+    // already-refunded orders remain terminal.
+    from: ['pending_payment', 'queued', 'generating', 'ready', 'failed'],
     to: 'refunded',
     why: 'The charge was refunded. The pack stays generated; downloads stop.',
   },
@@ -159,7 +159,7 @@ export const CNC_ORDER_TRANSITIONS: readonly CncOrderTransition[] = [
     event: 'regenerate',
     from: ['ready', 'failed'],
     to: 'queued',
-    why: 'Admin rebuild: generation+1, same licence id and same object key.',
+    why: 'Admin rebuild: generation+1, same licence id and new artifact namespace.',
   },
 ];
 

@@ -3,11 +3,15 @@ import type Stripe from 'stripe';
 import type { CncOrder } from '@boardsesh/db/schema';
 import { readJsonBody, sendJson } from './http-utils';
 import { logger } from '../utils/logger';
-import { constructWebhookEvent, isStripeWebhookConfigured } from '../services/cnc/stripe';
-import { claimStripeEvent, markStripeEventProcessed, releaseStripeEvent } from '../services/cnc/stripe-events';
+import {
+  constructWebhookEvent,
+  isStripeWebhookConfigured,
+  retrievePaymentIntentMetadata,
+} from '../services/cnc/stripe';
+import { claimStripeEvent, markStripeEventProcessed } from '../services/cnc/stripe-events';
 import {
   getAccountEmail,
-  getOrderById,
+  lockOrderById,
   getOrderByPaymentIntentId,
   transitionOrder,
   type CncOrdersExecutor,
@@ -33,8 +37,8 @@ import { captureBackendEvent } from '../services/analytics/posthog';
  * - **400** only for a body that did not come from Stripe (bad or missing
  *   signature, oversized payload). Stripe does not usefully retry these, and
  *   nothing else should ever produce one.
- * - **500** only when the database would not answer. That is the one failure
- *   worth a redelivery, and answering 200 to it would lose a paid order.
+ * - **500** when the database or canonical Stripe lookup fails. These need
+ *   redelivery; acknowledging them would lose the payment/refund transition.
  * - **200** for everything else, including event types we ignore, sessions that
  *   were not actually paid, orders we cannot resolve, and redeliveries. An
  *   event we have decided not to act on is handled, not failed; leaving it to
@@ -44,11 +48,8 @@ import { captureBackendEvent } from '../services/analytics/posthog';
  * is inserted into `cnc_stripe_events` before any side effect, and a second
  * delivery of the same id loses that race and no-ops.
  *
- * The claim insert commits on its own — a failed handler hands it back with
- * `releaseStripeEvent` so Stripe's retry is not eaten as a duplicate — but the
- * order transition and the "processed" stamp share one transaction. Marking an
- * event processed after a transition that then rolled back would leave a paid
- * order in `pending_payment` and tell every redelivery there was nothing to do.
+ * Claim, transition and processed stamp share one transaction: a crash rolls
+ * everything back so Stripe redelivery can safely retry.
  */
 
 /** 1 MB. Stripe's largest events are a few tens of KB; anything near this is not from Stripe. */
@@ -106,7 +107,7 @@ async function resolveSessionOrder(
     return null;
   }
 
-  const order = await getOrderById(orderId, tx);
+  const order = await lockOrderById(orderId, tx);
   if (!order) {
     logger.warn('[cnc-webhook] no order for the session metadata', { eventType, orderId, sessionId: session.id });
     return null;
@@ -222,10 +223,8 @@ async function handleCheckoutExpired(
   const order = await resolveSessionOrder(session, event.type, tx);
   if (!order) return IGNORED;
 
-  await transitionOrder(order.id, 'checkoutExpired', {}, { executor: tx });
-  // Best-effort and deliberately on the pooled connection rather than `tx`:
-  // handing the artwork back must never abort the webhook's transaction.
-  await releaseArtAssetsForOrder(order.id);
+  const cancelled = await transitionOrder(order.id, 'checkoutExpired', {}, { executor: tx });
+  if (cancelled) await releaseArtAssetsForOrder(order.id, tx);
   return { orderId: order.id, queued: null };
 }
 
@@ -251,20 +250,29 @@ async function handleChargeRefunded(
     return IGNORED;
   }
 
-  const order = await getOrderByPaymentIntentId(paymentIntentId, tx);
+  let order = await getOrderByPaymentIntentId(paymentIntentId, tx);
   if (!order) {
-    // Every Stripe charge on the account lands here, including ones that have
-    // nothing to do with build packs, so this is not necessarily a bug — but
-    // it is worth a look, so warn rather than info. The payment intent id is
-    // enough to check by hand in the Stripe dashboard; the body is never
-    // logged (it carries the buyer's email and the full charge record).
-    logger.warn("[cnc-webhook] no build-pack order for the refunded charge's payment intent", {
-      paymentIntentId,
-    });
-    return IGNORED;
+    // Checkout writes this metadata onto the PaymentIntent at creation. It
+    // survives out-of-order delivery, unlike our completion-populated column.
+    const metadata = await retrievePaymentIntentMetadata(paymentIntentId);
+    const orderId = Number(metadata.orderId);
+    if (!metadata.orderId || !Number.isSafeInteger(orderId) || orderId <= 0 || !metadata.licenceId) return IGNORED;
+    order = await lockOrderById(orderId, tx);
+    if (!order || order.licenceId !== metadata.licenceId) return IGNORED;
+  } else {
+    order = await lockOrderById(order.id, tx);
   }
+  if (!order || (order.stripePaymentIntentId && order.stripePaymentIntentId !== paymentIntentId)) return IGNORED;
 
-  await transitionOrder(order.id, 'refund', { refundedAt: new Date(event.created * 1000) }, { executor: tx });
+  await transitionOrder(
+    order.id,
+    'refund',
+    {
+      refundedAt: new Date(event.created * 1000),
+      stripePaymentIntentId: paymentIntentId,
+    },
+    { executor: tx },
+  );
   return { orderId: order.id, queued: null };
 }
 
@@ -396,46 +404,25 @@ export async function handleCncStripeWebhook(req: IncomingMessage, res: ServerRe
     return;
   }
 
-  let claimed: boolean;
+  let outcome: WebhookOutcome | null;
   try {
-    claimed = await claimStripeEvent(event.id, event.type);
-  } catch (error) {
-    logger.error('[cnc-webhook] could not record the event; asking Stripe to retry', { eventId: event.id, error });
-    sendJson(res, 500, { error: 'Event could not be recorded' });
-    return;
-  }
-
-  if (!claimed) {
-    sendJson(res, 200, { received: true, duplicate: true });
-    return;
-  }
-
-  let outcome: WebhookOutcome;
-  try {
-    // One transaction, so the order transition and the stamp that says this
-    // event will never be acted on again land together or not at all.
     outcome = await db.transaction(async (tx) => {
+      if (!(await claimStripeEvent(event.id, event.type, tx))) return null;
       const processed = await processEvent(event, tx);
       await markStripeEventProcessed(event.id, processed.orderId, tx);
       return processed;
     });
   } catch (error) {
-    logger.error('[cnc-webhook] handler failed; releasing the claim so Stripe can retry', {
+    logger.error('[cnc-webhook] transaction failed; asking Stripe to retry', {
       eventId: event.id,
       type: event.type,
       error,
     });
-    // Without this the retry would see the claim row and no-op, leaving a paid
-    // order stuck in `pending_payment` with no further deliveries able to fix
-    // it. A process KILLED mid-handler never reaches here, and the row it
-    // leaves with a null `processed_at` is the intended "started and died"
-    // trace.
-    try {
-      await releaseStripeEvent(event.id);
-    } catch (releaseError) {
-      logger.error('[cnc-webhook] could not release the event claim', { eventId: event.id, releaseError });
-    }
     sendJson(res, 500, { error: 'Event handling failed' });
+    return;
+  }
+  if (!outcome) {
+    sendJson(res, 200, { received: true, duplicate: true });
     return;
   }
 

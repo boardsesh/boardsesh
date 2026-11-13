@@ -30,7 +30,7 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 }));
 
 vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: null }),
+  useSession: () => ({ data: { user: { id: 'buyer-a' } }, status: 'authenticated' }),
 }));
 
 const openAuthModal = vi.hoisted(() => vi.fn());

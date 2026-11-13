@@ -27,7 +27,8 @@
     "gymDuplicates": "Palestre duplicate",
     "locationSync": "Sincronizzazioni delle sedi congelate",
     "sprayWalls": "Dati di addestramento Spraywall",
-    "boards": "Pannelli registrati"
+    "boards": "Pannelli registrati",
+    "buildPlans": "Ordini dei pacchetti di costruzione"
   },
   "feedback": {
     "title": "Segnalazioni di bug e feedback",
@@ -541,5 +542,43 @@
       "unlisted": "Non in elenco",
       "private": "Privato"
     }
+  },
+  "buildPlans": {
+    "title": "Ordini dei pacchetti di costruzione",
+    "subtitle": "Tutti gli ordini, comprese le anteprime gratuite, dal più recente. Leggi l'errore del generatore e rimetti il pacchetto in coda.",
+    "previewsLastHour_one": "{{count}} anteprima creata nell'ultima ora, tra gli ordini caricati qui.",
+    "previewsLastHour_other": "{{count}} anteprime create nell'ultima ora, tra gli ordini caricati qui.",
+    "backToAdmin": "Torna all'amministrazione",
+    "statusFilter": {
+      "all": "Tutti"
+    },
+    "table": {
+      "licence": "Licenza",
+      "licensee": "Licenziatario",
+      "tier": "Tipo di licenza",
+      "wall": "Parete",
+      "status": "Stato",
+      "attempts": "Tentativi",
+      "created": "Creato",
+      "actions": "Azioni"
+    },
+    "actions": {
+      "regenerate": "Rigenera"
+    },
+    "confirm": {
+      "title": "Rigenerare questo pacchetto?",
+      "body": "Il pacchetto {{licenceId}} viene rigenerato con lo stesso ID di licenza e sostituisce il file scaricato dall'acquirente. La licenza acquistata rimane valida.",
+      "cancel": "Lascialo così",
+      "confirm": "Rigenera"
+    },
+    "snackbar": {
+      "regenerated": "Di nuovo in coda",
+      "regenerateFailed": "Impossibile rimettere il pacchetto in coda"
+    },
+    "empty": "Nessun ordine corrisponde a questi filtri.",
+    "error": "Impossibile caricare gli ordini.",
+    "retry": "Riprova",
+    "loadMore": "Carica altri",
+    "unknown": "Non indicato"
   }
 }

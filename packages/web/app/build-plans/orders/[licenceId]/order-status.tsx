@@ -1,5 +1,6 @@
 'use client';
 
+import { useSession } from 'next-auth/react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Alert from '@mui/material/Alert';
@@ -18,6 +19,7 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient, getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
+import { useCncRequestScope } from '../../use-cnc-request-scope';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
 import { finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
@@ -95,22 +97,52 @@ const SUPPORT_EMAIL = 'support@boardsesh.com';
 type OrderStatusProps = {
   /** Server-fetched, so the first paint already shows the real status. */
   initialOrder: CncOrder;
+  initialOwnerId: string;
   wallLabel: string;
   checkoutOutcome: 'success' | 'cancelled' | null;
   locale: string;
 };
 
-export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, locale }: OrderStatusProps) {
+export default function OrderStatus(props: OrderStatusProps) {
+  const { data: session } = useSession();
+  const ownerId = session?.user?.id ?? null;
+  if (!ownerId || ownerId !== props.initialOwnerId) return null;
+  const authSessionId = session?.authSessionId ?? null;
+  return (
+    <OwnedOrderStatus
+      key={JSON.stringify([ownerId, authSessionId])}
+      {...props}
+      ownerId={ownerId}
+      authSessionId={authSessionId}
+    />
+  );
+}
+
+function OwnedOrderStatus({
+  initialOrder,
+  wallLabel,
+  checkoutOutcome,
+  locale,
+  ownerId,
+  authSessionId,
+}: OrderStatusProps & { ownerId: string; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { token } = useWsAuthToken();
+  const beginRequest = useCncRequestScope(token);
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
   const [downloadErrorKey, setDownloadErrorKey] = useState<CncErrorKey | null>(null);
   const [pendingKind, setPendingKind] = useState<CncDownloadKind | null>(null);
+  useEffect(() => {
+    setPendingKind(null);
+    setDownloadErrorKey(null);
+  }, [token]);
 
   const licenceId = initialOrder.licenceId;
   const { order: polledOrder, isError } = useCncOrderPoll({
     licenceId,
+    ownerId,
+    authSessionId,
     initialOrder,
     authToken: token,
     enabled: true,
@@ -135,6 +167,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
 
   const handleDownload = useCallback(
     async (kind: CncDownloadKind) => {
+      const isCurrent = beginRequest();
       setDownloadErrorKey(null);
       setPendingKind(kind);
       try {
@@ -143,6 +176,7 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
           CreateCncDownloadGrantMutationResponse,
           CreateCncDownloadGrantMutationVariables
         >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind });
+        if (!isCurrent()) return;
         const grantUrl = response.createCncDownloadGrant.url;
         if (!isBackendDownloadUrl(grantUrl)) {
           setDownloadErrorKey('generic');
@@ -154,11 +188,12 @@ export default function OrderStatus({ initialOrder, wallLabel, checkoutOutcome, 
         // pending flag is deliberately not cleared on the success path.
         window.location.assign(grantUrl);
       } catch (error) {
+        if (!isCurrent()) return;
         setDownloadErrorKey(cncErrorKey(error));
         setPendingKind(null);
       }
     },
-    [token, licenceId],
+    [token, licenceId, beginRequest],
   );
 
   // Memoised on the locale alone: constructing an `Intl.DateTimeFormat` walks

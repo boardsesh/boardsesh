@@ -181,7 +181,7 @@ async function insertOrder(overrides: Partial<typeof cncOrders.$inferInsert> = {
       licenseeEmail: 'marco@example.com',
       currency: 'AUD',
       amountCents: 14900,
-      zipKey: `cnc-packs/user-123/${licenceId}.zip`,
+      zipKey: `cnc-packs/user-123/${licenceId}/g1/full/a1/pack.zip`,
       zipSizeBytes: ZIP_BYTES,
       generatedAt: new Date(),
       ...overrides,
@@ -198,10 +198,10 @@ async function readOrder(orderId: number) {
 /** Everything a preview adds to an order row, keyed off its licence id. */
 function previewColumns(licenceId: string) {
   return {
-    previewZipKey: `cnc-packs/user-123/${licenceId}_preview.zip`,
+    previewZipKey: `cnc-packs/user-123/${licenceId}/g1/preview/a1/preview.zip`,
     previewZipSizeBytes: ZIP_BYTES,
     previewGeneratedAt: new Date(),
-    previewKeys: [`cnc-packs/user-123/${licenceId}/preview/panel1.png`],
+    previewKeys: [`cnc-packs/user-123/${licenceId}/g1/preview/a1/preview/panel1.png`],
     previewsGenerated: 1,
   };
 }
@@ -278,7 +278,7 @@ describe('GET /api/cnc/packs/:licenceId/download', () => {
     expect(res.headers['Cache-Control']).toBe('no-store');
     expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
     expect(res.headers['Content-Length']).toBe(String(ZIP_BYTES));
-    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}.zip`);
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`);
 
     const counted = await readOrder(order.id);
     expect(counted.downloadCount).toBe(1);
@@ -489,7 +489,10 @@ describe('GET /api/cnc/packs/:licenceId/download?kind=preview', () => {
     expect(res.headers['Content-Disposition']).toBe(
       `attachment; filename="boardsesh-build-plans-preview-${order.licenceId}.zip"`,
     );
-    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}_preview.zip`);
+    expect(getFromS3Mock).toHaveBeenCalledWith(
+      'private',
+      `cnc-packs/user-123/${order.licenceId}/g1/preview/a1/preview.zip`,
+    );
   });
 
   it('does not count a preview fetch as a pack download', async () => {
@@ -553,7 +556,7 @@ describe('GET /api/cnc/packs/:licenceId/download?kind=preview', () => {
     const res = await download(order.licenceId, { bearer: 'session-token' });
 
     expect(res.statusCode).toBe(200);
-    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}.zip`);
+    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}/g1/full/a1/pack.zip`);
   });
 });
 
@@ -570,7 +573,10 @@ describe('GET /api/cnc/packs/:licenceId/preview/:name', () => {
     // would be a dozen HMACs and a dozen bucket reads for an unchanging image.
     expect(res.headers['Cache-Control']).toBe('private, max-age=3600');
     expect(res.headers['X-Content-Type-Options']).toBe('nosniff');
-    expect(getFromS3Mock).toHaveBeenCalledWith('private', `cnc-packs/user-123/${order.licenceId}/preview/panel1.png`);
+    expect(getFromS3Mock).toHaveBeenCalledWith(
+      'private',
+      `cnc-packs/user-123/${order.licenceId}/g1/preview/a1/preview/panel1.png`,
+    );
   });
 
   it('accepts a grant token, the way an <img src> has to', async () => {

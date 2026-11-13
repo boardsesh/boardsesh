@@ -17,6 +17,13 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
+const useSession = vi.hoisted(() =>
+  vi.fn<() => { data: { user: { id: string }; authSessionId: string } | null }>(() => ({
+    data: { user: { id: 'buyer-a' }, authSessionId: 'login-a' },
+  })),
+);
+vi.mock('next-auth/react', () => ({ useSession }));
+
 const useWsAuthToken = vi.hoisted(() => vi.fn());
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken }));
 
@@ -93,7 +100,13 @@ function renderStatus(initialOrder: CncOrder, checkoutOutcome: 'success' | 'canc
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrderStatus initialOrder={initialOrder} wallLabel="10x12" checkoutOutcome={checkoutOutcome} locale="en-US" />
+      <OrderStatus
+        initialOwnerId="buyer-a"
+        initialOrder={initialOrder}
+        wallLabel="10x12"
+        checkoutOutcome={checkoutOutcome}
+        locale="en-US"
+      />
     </QueryClientProvider>,
   );
 }
@@ -101,6 +114,7 @@ function renderStatus(initialOrder: CncOrder, checkoutOutcome: 'success' | 'canc
 const locationAssign = vi.fn();
 
 beforeEach(() => {
+  useSession.mockReset().mockReturnValue({ data: { user: { id: 'buyer-a' }, authSessionId: 'login-a' } });
   useWsAuthToken.mockReset().mockReturnValue({ token: 'ws-token', isAuthenticated: true });
   routerReplace.mockReset();
   // Default to "the order has not changed" so a component that DOES poll (a
@@ -401,5 +415,49 @@ describe('terminal states', () => {
   it('reports the checkout outcome the buyer came back with', () => {
     renderStatus(order({ status: 'queued' }), 'success');
     expect(screen.getByText('Payment went through. Your pack is being cut now.')).toBeTruthy();
+  });
+});
+
+describe('account isolation', () => {
+  it('removes the server-seeded order immediately when another account signs in', () => {
+    const initialOrder = order({ status: 'ready', licenseeName: 'Private buyer A' });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = () => (
+      <QueryClientProvider client={queryClient}>
+        <OrderStatus
+          initialOwnerId="buyer-a"
+          initialOrder={initialOrder}
+          wallLabel="10x12"
+          checkoutOutcome={null}
+          locale="en-US"
+        />
+      </QueryClientProvider>
+    );
+    const mounted = render(view());
+    expect(screen.getAllByText('BS-CNC-K7QM3T').length).toBeGreaterThan(0);
+    useSession.mockReturnValue({ data: { user: { id: 'buyer-b' }, authSessionId: 'login-b' } });
+    mounted.rerender(view());
+    expect(screen.queryByText('BS-CNC-K7QM3T')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Download the pack' })).toBeNull();
+  });
+
+  it('removes the server-seeded order on logout', () => {
+    const initialOrder = order({ licenseeName: 'Private buyer A' });
+    const queryClient = new QueryClient();
+    const view = () => (
+      <QueryClientProvider client={queryClient}>
+        <OrderStatus
+          initialOwnerId="buyer-a"
+          initialOrder={initialOrder}
+          wallLabel="10x12"
+          checkoutOutcome={null}
+          locale="en-US"
+        />
+      </QueryClientProvider>
+    );
+    const mounted = render(view());
+    useSession.mockReturnValue({ data: null });
+    mounted.rerender(view());
+    expect(screen.queryByText('BS-CNC-K7QM3T')).toBeNull();
   });
 });

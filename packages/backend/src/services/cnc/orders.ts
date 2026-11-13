@@ -198,6 +198,12 @@ export async function getOrderById(orderId: number, executor: CncOrdersExecutor 
   return order ?? null;
 }
 
+/** Serialize checkout and refund decisions for the same order. */
+export async function lockOrderById(orderId: number, executor: CncOrdersExecutor): Promise<CncOrder | null> {
+  const [order] = await executor.select().from(cncOrders).where(eq(cncOrders.id, orderId)).limit(1).for('update');
+  return order ?? null;
+}
+
 /**
  * One order by Stripe PaymentIntent id.
  *

@@ -236,3 +236,13 @@ export function constructWebhookEvent(rawBody: string, signatureHeader: string |
     throw new CncStripeSignatureError('Webhook signature verification failed', error);
   }
 }
+
+/** Canonical ownership metadata, also available before checkout completion. */
+export async function retrievePaymentIntentMetadata(paymentIntentId: string): Promise<Stripe.Metadata> {
+  const intent = await getStripe().paymentIntents.retrieve(
+    paymentIntentId,
+    {},
+    { timeout: 10_000, maxNetworkRetries: 0 },
+  );
+  return intent.metadata;
+}

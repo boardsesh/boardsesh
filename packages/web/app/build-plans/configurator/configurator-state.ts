@@ -770,3 +770,30 @@ export function tierPrice(
 export function formatPrice(amountCents: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amountCents / 100);
 }
+
+/** Restore only this login's draft, or a signed-out wall stripped of private fields. */
+export function fromOwnedDraft(
+  raw: unknown,
+  entries: readonly CncCatalogEntry[],
+  ownerId: string | null,
+  authSessionId: string | null,
+): CncConfiguratorState | null {
+  if (!raw || typeof raw !== 'object' || !('ownerId' in raw) || !('authSessionId' in raw) || !('draft' in raw))
+    return null;
+  const sameLogin = raw.ownerId === ownerId && raw.authSessionId === authSessionId;
+  if (!sameLogin && raw.ownerId !== null) return null;
+  const restored = fromDraft(raw.draft, entries);
+  if (!restored) return null;
+  if (raw.ownerId !== null) return restored;
+  return {
+    ...restored,
+    licenseeName: '',
+    licenseeEmail: '',
+    customerSiteName: '',
+    licenceAccepted: false,
+    previewOrderId: null,
+    previewLicenceId: null,
+    previewConfigKey: null,
+    artwork: restored.artwork.filter((item) => item.kind === 'text' && item.assetId === null),
+  };
+}

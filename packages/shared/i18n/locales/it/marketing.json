@@ -379,7 +379,11 @@
       "licenseLink": "CC BY 4.0",
       "copyright": ". Copyright 2024 Fonticons, Inc."
     },
-    "footer": "Questo documento è fornito a scopo informativo e non costituisce consulenza legale. Ultimo aggiornamento: 10-08-2026"
+    "footer": "Questo documento è fornito a scopo informativo e non costituisce consulenza legale. Ultimo aggiornamento: 10-08-2026",
+    "buildPlans": {
+      "title": "Progetti di costruzione",
+      "body": "Boardsesh vende progetti CNC per una parete domestica: file di taglio generati per una parete e concessi in licenza per una sola parete, senza cederne la proprietà. Il generatore che li produce è a codice chiuso e non viene distribuito; l'app rimane gratuita e open source. I progetti sono compatibili con la disposizione dei fori di Kilter Homewall: una dichiarazione sulle posizioni dei fori, senza alcun rapporto con i produttori. Le condizioni complete sono nella pagina della <licence>licenza di fabbricazione dei progetti di costruzione</licence>."
+    }
   },
   "help": {
     "clip": {

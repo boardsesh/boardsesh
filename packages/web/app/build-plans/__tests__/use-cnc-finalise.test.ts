@@ -162,3 +162,27 @@ describe('useCncFinalise', () => {
     expect(locationAssign).not.toHaveBeenCalled();
   });
 });
+
+it('restores the finalise button after credentials refresh during a pending request', async () => {
+  let finish: ((response: ReturnType<typeof checkoutUrlResponse>) => void) | undefined;
+  graphqlRequest.mockImplementation(
+    () =>
+      new Promise<ReturnType<typeof checkoutUrlResponse>>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const mounted = renderHook(({ token }) => useCncFinalise(token), { initialProps: { token: 'old-token' } });
+  let pending: Promise<void> | undefined;
+  act(() => {
+    pending = mounted.result.current.finalise(FINALISE_INPUT);
+  });
+  expect(mounted.result.current.isFinalising).toBe(true);
+  mounted.rerender({ token: 'new-token' });
+  expect(mounted.result.current.isFinalising).toBe(false);
+  await act(async () => {
+    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/old'));
+    await pending;
+  });
+  expect(locationAssign).not.toHaveBeenCalled();
+  expect(removePreference).not.toHaveBeenCalled();
+});

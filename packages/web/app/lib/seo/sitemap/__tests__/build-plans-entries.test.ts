@@ -24,36 +24,14 @@ describe('buildBuildPlansEntries', () => {
     await expect(buildBuildPlansEntries()).resolves.toEqual([]);
   });
 
-  it('lists the shop once cnc-packs is on', async () => {
+  it('keeps the shard empty even when access is enabled', async () => {
     getServerFeatureFlagMock.mockResolvedValue(true);
-
-    const items = await buildBuildPlansEntries();
-
-    expect(items.map((item) => item.path)).toContain('/build-plans');
+    await expect(buildBuildPlansEntries()).resolves.toEqual([]);
+    expect(getServerFeatureFlagMock).not.toHaveBeenCalled();
   });
 
-  it('evaluates the flag for anonymous visitors', async () => {
-    // Without `allowAnonymous` the flag resolves `no-distinct-id` for a crawler
-    // — which has no person behind it — and the shard would stay empty however
-    // the PostHog rollout is configured. That failure is invisible: the shard
-    // still answers 200 with a valid empty urlset.
-    getServerFeatureFlagMock.mockResolvedValue(true);
-
-    await buildBuildPlansEntries();
-
-    expect(getServerFeatureFlagMock).toHaveBeenCalledWith('cnc-packs', {
-      distinctId: null,
-      allowAnonymous: true,
-    });
-  });
-
-  it('hands back a copy, so a caller that sorts it cannot rewrite the constant', async () => {
-    getServerFeatureFlagMock.mockResolvedValue(true);
-
-    const items = await buildBuildPlansEntries();
-    items.length = 0;
-
-    expect(BUILD_PLANS_ENTRIES.length).toBeGreaterThan(0);
+  it('returns a fresh empty list', async () => {
+    expect(await buildBuildPlansEntries()).not.toBe(BUILD_PLANS_ENTRIES);
   });
 
   it('lists no path without a page behind it', () => {

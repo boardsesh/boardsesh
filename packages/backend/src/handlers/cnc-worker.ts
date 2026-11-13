@@ -9,6 +9,7 @@ import {
   claimNextJob,
   failStaleExhaustedJobs,
   getOrderById,
+  getAccountEmail,
   recordWorkerHeartbeat,
   transitionOrder,
   type CncOrderPatch,
@@ -582,19 +583,25 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
 
   const ready = await transitionOrder(orderId, 'complete', patch, { claimToken: body.claimToken });
   if (!ready) {
-    // The lease moved between the read above and this UPDATE. Rare, and
-    // harmless: the object is already at the agreed key, so whoever holds the
-    // job now will overwrite it.
+    // The lease moved while uploading. This attempt's private key cannot
+    // replace the current worker's artifacts.
     sendJson(res, 409, { error: 'This job is no longer yours' });
     return;
   }
 
   sendJson(res, 200, { ok: true, status: ready.status });
 
-  if (ready.licenseeEmail) {
+  let accountEmail: string | null = null;
+  try {
+    accountEmail = ready.userId ? await getAccountEmail(ready.userId) : null;
+  } catch (error) {
+    logger.warn('[cnc-worker] could not look up buyer email', { orderId, error });
+  }
+  const recipients = new Set([accountEmail, ready.licenseeEmail].filter((email): email is string => Boolean(email)));
+  for (const recipient of recipients) {
     try {
       await sendCncPackReadyEmail({
-        to: ready.licenseeEmail,
+        to: recipient,
         licenseeName: ready.licenseeName ?? 'there',
         licenceId: ready.licenceId,
         boardLabel: describeBoard(ready),

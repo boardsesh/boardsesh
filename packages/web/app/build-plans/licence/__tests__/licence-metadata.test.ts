@@ -87,6 +87,7 @@ describe('metadata', () => {
       es: '/es/build-plans/licence',
       fr: '/fr/build-plans/licence',
       de: '/de/build-plans/licence',
+      it: '/it/build-plans/licence',
       'x-default': '/build-plans/licence',
     });
   });

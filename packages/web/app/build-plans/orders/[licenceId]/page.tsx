@@ -14,6 +14,7 @@ import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPa
 import { wallLabel } from '../../order-display';
 import { PageFrame } from '../../ui';
 import OrderStatus from './order-status';
+import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 
 /** One person's order, with a live status. Never cached, never static. */
 export const dynamic = 'force-dynamic';
@@ -74,8 +75,8 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
   }
   const searchParams = await props.searchParams;
 
-  const authToken = await getServerAuthToken();
-  if (!authToken) {
+  const [authToken, session] = await Promise.all([getServerAuthToken(), getAdmittedServerSession()]);
+  if (!authToken || !session?.user?.id) {
     redirect(`/auth/login?callbackUrl=${encodeURIComponent(`/build-plans/orders/${licenceId}`)}`);
   }
 
@@ -126,6 +127,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
           chip, so it cannot be rendered on the server half of this page. */}
       <OrderStatus
         initialOrder={order}
+        initialOwnerId={session.user.id}
         wallLabel={wallLabel(catalog, order)}
         checkoutOutcome={checkoutOutcome}
         locale={locale}

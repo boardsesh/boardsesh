@@ -152,3 +152,25 @@ describe('useCncPreview', () => {
     await waitFor(() => expect(result.current.errorKey).toBe('generic'));
   });
 });
+
+it('restores preview controls when credentials refresh while drawing', async () => {
+  let finish: ((response: { createCncPreview: CncOrder }) => void) | undefined;
+  graphqlRequest.mockImplementation(
+    () =>
+      new Promise<{ createCncPreview: CncOrder }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const mounted = renderHook(({ token }) => useCncPreview(token), { initialProps: { token: 'old-token' } });
+  let pending: Promise<CncOrder | null> | undefined;
+  act(() => {
+    pending = mounted.result.current.requestPreview(CONFIG);
+  });
+  expect(mounted.result.current.isRequesting).toBe(true);
+  mounted.rerender({ token: 'new-token' });
+  expect(mounted.result.current.isRequesting).toBe(false);
+  await act(async () => {
+    finish?.({ createCncPreview: previewOrder() });
+    expect(await pending).toBeNull();
+  });
+});
