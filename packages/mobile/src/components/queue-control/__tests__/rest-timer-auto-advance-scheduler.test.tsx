@@ -66,9 +66,7 @@ vi.mock('@boardsesh/play-view', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/play-view')>();
   return {
     ...actual,
-    computeNavigationStateWithSuggestions: (
-      ...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>
-    ) =>
+    computeNavigationStateWithSuggestions: (...args: Parameters<typeof actual.computeNavigationStateWithSuggestions>) =>
       useRealNavigation
         ? actual.computeNavigationStateWithSuggestions(...args)
         : {

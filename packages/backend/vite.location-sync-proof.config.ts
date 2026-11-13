@@ -5,6 +5,8 @@ import { defineConfig } from 'vite-plus';
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'location-sync-proof',
     environment: 'node',
     include: ['src/auth/prototype/location-sync.integration.proof.ts'],

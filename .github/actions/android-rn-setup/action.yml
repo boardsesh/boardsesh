@@ -41,6 +41,10 @@ runs:
       run: |
         yes | sdkmanager --licenses > /dev/null 2>&1 || true
         sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+        # React Native's generated Gradle project requires this exact NDK.
+        # Provision it before Gradle so missing tools fail here with install logs.
+        sdkmanager --install "ndk;27.1.12297006"
+        test -f "$ANDROID_HOME/ndk/27.1.12297006/source.properties"
 
     - name: Restore Gradle cache (read-only, warmed by android-apk-rn.yml on main)
       # restore, not cache: PR runs never save. Each save was a 3.4 GB entry that

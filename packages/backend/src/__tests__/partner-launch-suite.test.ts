@@ -743,7 +743,9 @@ describe('partner OAuth on, in the real server', () => {
         });
 
         // Approve: the app gets a code, its state and the issuer (RFC 9207), checked by oauth4webapi.
+        const approvalStartedAt = Date.now();
         const approved = await approve(consentScreen.location, climber);
+        const approvalFinishedAt = Date.now();
         expect(approved.reply.status).toBe(200);
         const callback = new URL(approved.body.url as string);
         expect(`${callback.origin}${callback.pathname}`).toBe(app.redirectUri);
@@ -756,10 +758,10 @@ describe('partner OAuth on, in the real server', () => {
           .select()
           .from(oauthVerification)
           .where(eq(oauthVerification.identifier, grant.authorizationCodeId));
-        // Both times were written by the one request, so this holds however slow the machine is.
-        const codeLifetimeMs = codeRow.expiresAt.getTime() - (codeRow.createdAt?.getTime() ?? 0);
-        expect(codeLifetimeMs).toBeGreaterThan(59_000);
-        expect(codeLifetimeMs).toBeLessThanOrEqual(61_000);
+        // Issuance follows the provider row's creation and async connection locks.
+        // Bound its exact 60-second expiry by the request, not the earlier row timestamp.
+        expect(codeRow.expiresAt.getTime()).toBeGreaterThanOrEqual(approvalStartedAt + 60_000);
+        expect(codeRow.expiresAt.getTime()).toBeLessThanOrEqual(approvalFinishedAt + 60_000);
         // Approved but not redeemed: the connection is not live yet, so it fills no cap.
         expect(connection.connectedAt).toBeNull();
 

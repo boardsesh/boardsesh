@@ -373,7 +373,7 @@ function expectNoPrivateData(text: string, { reportStdout = true, sqlText = fals
 
 let firstGroupMemberIds: string[][] = [];
 
-describe.sequential('account email evidence on real Postgres', () => {
+describe('account email evidence on real Postgres', { concurrent: false }, () => {
   beforeAll(async () => {
     admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
     await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);

@@ -36,9 +36,9 @@ beforeEach(async () => {
 });
 
 describe('local user-data ownership', () => {
-  it('reads a never-synced device as unstamped, not as a match', () => {
-    expect(getLocalUserId(db)).resolves.toBeNull();
-    return expect(assertLocalUserDataOwner(db, CLIMBER_A)).resolves.toBe('unstamped');
+  it('reads a never-synced device as unstamped, not as a match', async () => {
+    await expect(getLocalUserId(db)).resolves.toBeNull();
+    await expect(assertLocalUserDataOwner(db, CLIMBER_A)).resolves.toBe('unstamped');
   });
 
   it('serves once the stamp names the signed-in climber', async () => {

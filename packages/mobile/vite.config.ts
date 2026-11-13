@@ -22,6 +22,8 @@ export default defineConfig({
     dedupe: ['react', 'react-dom', '@tanstack/react-query'],
   },
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'mobile',
     globalSetup: [fileURLToPath(new URL('./test/screenshot-fixture-setup.ts', import.meta.url))],
     globals: true,

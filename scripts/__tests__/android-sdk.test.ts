@@ -66,6 +66,21 @@ describe('Android SDK provisioning', () => {
     expect(installCommands).not.toContain('"platforms;android-37"');
   });
 
+  it('provisions the exact React Native NDK before the shared Android prebuild', () => {
+    const setup = parse(
+      readFileSync(new URL('../../.github/actions/android-rn-setup/action.yml', import.meta.url), 'utf8'),
+    ) as { runs: { steps: { name?: string; run?: string }[] } };
+    const installIndex = setup.runs.steps.findIndex(
+      (step) => step.name === 'Accept licenses and install SDK components',
+    );
+    const prebuildIndex = setup.runs.steps.findIndex((step) => step.name === 'Expo prebuild (generate android/)');
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect(prebuildIndex).toBeGreaterThan(installIndex);
+    const installCommands = setup.runs.steps[installIndex]!.run;
+    expect(installCommands).toContain('sdkmanager --install "ndk;27.1.12297006"');
+    expect(installCommands).toContain('test -f "$ANDROID_HOME/ndk/27.1.12297006/source.properties"');
+  });
+
   it('installs the Expo compile SDK and build tools without downloading an emulator for builds', () => {
     const home = installedSdkTools();
 

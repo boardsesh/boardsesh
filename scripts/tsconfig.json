@@ -14,6 +14,7 @@
     "types": ["node"]
   },
   "include": [
+    "__tests__/vp-toolchain-alignment.test.ts",
     "auth-rehearsal/**/*.ts",
     "../packages/backend/src/__tests__/auth-rehearsal/worker.ts",
     "verify-user-reference-catalog.ts",

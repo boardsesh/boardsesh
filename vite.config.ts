@@ -129,6 +129,10 @@ export default defineConfig({
     ],
   },
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
+    // Keep project Vite servers separate, matching the previous runner.
+    sharedViteServer: false,
     projects: [
       './packages/web/vite.config.ts',
       './packages/backend/vite.config.ts',
@@ -519,17 +523,19 @@ export default defineConfig({
       codegen: {
         command:
           'tsx packages/shared-schema/scripts/print-schema.ts && graphql-codegen && vp fmt packages/shared-schema/src/generated/ packages/shared/graphql/src/generated/',
-        input: [
-          'codegen.ts',
-          'packages/shared-schema/scripts/print-schema.ts',
-          'packages/shared-schema/src/schema/**/*.ts',
-          'packages/shared-schema/src/types/**/*.ts',
-          'packages/shared/graphql/src/**/*.ts',
-          '!packages/shared/graphql/src/generated/**',
-          'packages/web/app/**/*.{ts,tsx}',
-          '!packages/web/app/lib/graphql/**',
-          '!packages/web/**/*.test.{ts,tsx}',
-        ],
+        cache: {
+          input: [
+            'codegen.ts',
+            'packages/shared-schema/scripts/print-schema.ts',
+            'packages/shared-schema/src/schema/**/*.ts',
+            'packages/shared-schema/src/types/**/*.ts',
+            'packages/shared/graphql/src/**/*.ts',
+            '!packages/shared/graphql/src/generated/**',
+            'packages/web/app/**/*.{ts,tsx}',
+            '!packages/web/app/lib/graphql/**',
+            '!packages/web/**/*.test.{ts,tsx}',
+          ],
+        },
       },
 
       // --- Build (topological order via dependsOn) ---
@@ -587,7 +593,7 @@ export default defineConfig({
         // the static fallback on NODE_ENV=development — but the flag is still
         // read at request time (the Expo auth bridge in app/layout.tsx, the
         // middleware /app carve-out), so keep it in the key.
-        env: ['BOARDSESH_WEB'],
+        cache: { env: ['BOARDSESH_WEB'] },
       },
       'build:expo-web': {
         // Static Expo web export into packages/web/public/app (gitignored) —

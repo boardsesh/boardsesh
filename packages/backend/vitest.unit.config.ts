@@ -17,6 +17,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   root: import.meta.dirname,
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'backend-unit',
     globals: true,
     environment: 'node',
