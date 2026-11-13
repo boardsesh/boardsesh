@@ -10,7 +10,7 @@ import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { providerCandidateCredentialHash } from './provider-security-command-client.server';
 import { sessionCookieNameCandidates } from './secure-cookies';
 
-type Prepared = Extract<ProviderSecurityReply, { outcome: 'prepared' }>;
+type Prepared = Extract<ProviderSecurityReply, { operation: 'prepare'; outcome: 'prepared' }>;
 export type ProviderSecurityPublicationCursor = Prepared['browserCursor'];
 export type ProviderSecurityCandidate = { readonly kind: ProviderSecurityActor['kind']; readonly credential: string };
 export interface ProviderSecurityCookiePlan {

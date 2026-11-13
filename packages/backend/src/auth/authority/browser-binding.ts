@@ -452,7 +452,7 @@ export async function beginBrowserIntent(
       actorDeadline = admitted.session.expiresAt.getTime();
     } else if (input.presented) return { status: 'denied' as const };
     if (
-      input.operation !== 'login' &&
+      (input.operation !== 'login' || input.expectedIdentity !== undefined) &&
       (!input.expectedIdentity ||
         input.expectedIdentity.userId !== binding.userId ||
         input.expectedIdentity.authSessionId !== binding.authSessionId)

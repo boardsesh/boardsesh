@@ -24,6 +24,90 @@ const actor = {
 };
 const bound = { actor, intentToken: token, browserIntentToken: token };
 const candidate = { kind: 'legacy-jwe', credential: 'exact-locally-buffered-candidate' };
+const signinBound = { ...bound, flowHash: 'c'.repeat(64), nonceHash: 'd'.repeat(64) };
+
+it('ordinary owned-provider login accepts only verified-provider transport fields, never callback freshness claims', () => {
+  const providerProof = {
+    provider: 'google',
+    subject: 'already-owned-subject',
+    nonce: 'actual-scoped-nonce',
+    idToken: 'actual-signed-id-token',
+  };
+  const submitted = { ...metadata, operation: 'signin-prepare', payload: { ...signinBound, providerProof } };
+  expect(providerSecurityCommandSchema.safeParse(submitted).success).toBe(true);
+  for (const extra of [
+    { authenticatedAt: metadata.issuedAt },
+    { iat: metadata.issuedAt },
+    { verified: true },
+    { prompt: 'login' },
+  ])
+    expect(
+      providerSecurityCommandSchema.safeParse({
+        ...submitted,
+        payload: { ...submitted.payload, providerProof: { ...providerProof, ...extra } },
+      }).success,
+    ).toBe(false);
+  expect(
+    providerSecurityCommandSchema.safeParse({
+      ...submitted,
+      payload: { ...submitted.payload, providerProof: { ...providerProof, provider: 'facebook' } },
+    }).success,
+  ).toBe(false);
+});
+
+it('ordinary login finalize requires exact candidate and preparation capability rather than UID or SID alone', () => {
+  const payload = {
+    ...signinBound,
+    preparationToken: token,
+    preparation: {
+      provider: 'apple',
+      subject: 'already-owned-apple',
+      credentialProof: {
+        version: 1,
+        userId: 'other-owned-account',
+        authSessionId: 'new-login-session',
+        generation: 2,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+      credentialExpiresAt: '2026-11-14T12:00:00.000Z',
+      expiresAt: '2026-11-13T12:05:00.000Z',
+      proposedCanonicalTokenHash: null,
+    },
+  };
+  expect(providerSecurityCommandSchema.safeParse({ ...metadata, operation: 'signin-finalize', payload }).success).toBe(
+    false,
+  );
+  const parsed = providerSecurityCommandSchema.parse({
+    ...metadata,
+    operation: 'signin-finalize',
+    payload: { ...payload, candidate },
+  });
+  payload.preparation.credentialProof.userId = 'later-mutated-user';
+  if (parsed.operation !== 'signin-finalize') throw new Error('Unexpected command narrowing');
+  expect(parsed.payload.preparation.credentialProof.userId).toBe('other-owned-account');
+  expect(
+    providerSecurityCommandSchema.safeParse({
+      ...metadata,
+      operation: 'signin-finalize',
+      payload: { ...payload, candidate, callbackCompletedAt: metadata.issuedAt },
+    }).success,
+  ).toBe(false);
+});
+
+it.each(['committed', 'recovered'] as const)('ordinary login %s returns only an ACK and cursor', (outcome) => {
+  const reply = {
+    providerSecurityVersion: PROVIDER_SECURITY_VERSION,
+    requestId,
+    operation: 'signin-finalize',
+    outcome,
+    candidateCredentialHash: 'a'.repeat(64),
+    browserCursor: { bindingId: 'b'.repeat(64), version: 8, bindingExpiresAt: '2026-11-14T12:00:00.000Z' },
+  };
+  expect(providerSecurityReplySchema.safeParse(reply).success).toBe(true);
+  expect(providerSecurityReplySchema.safeParse({ ...reply, candidate }).success).toBe(false);
+  expect(providerSecurityReplySchema.safeParse({ ...reply, credential: candidate.credential }).success).toBe(false);
+});
 
 it.each(['intent', 'owned-provider'])('refuses Facebook at the %s product ingress', (operation) => {
   const payload =
