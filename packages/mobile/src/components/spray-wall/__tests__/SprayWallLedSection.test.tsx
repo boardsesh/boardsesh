@@ -13,13 +13,33 @@ import type { SprayWallLedSettings } from '../../../lib/spray/use-spray-wall-led
 const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOff: vi.fn(), show: vi.fn() }));
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const network = vi.hoisted(() => ({ fetch: vi.fn() }));
 
 vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/led-controller')>()),
-  getLedControllerDriver: () => ({ ...controller, createPreview: () => controller }),
+  // The Bluetooth driver keys its preview lane on `ble:<id>`, not a LAN URL.
+  getLedControllerDriver: (type: string) => ({
+    ...controller,
+    createPreview: () => controller,
+    ...(type === 'ble' ? { normalizeTarget: (target: string) => target } : {}),
+  }),
+  createWledDriver: () => ({ probe: (url: string, signal?: AbortSignal) => controller.probe(url, signal) }),
 }));
+const bluetooth = vi.hoisted(() => ({
+  scan: vi.fn(),
+  stop: vi.fn(),
+  update: null as null | ((candidates: { id: string; name: string; rssi: number }[]) => void),
+  stopped: null as null | ((outcome: 'done' | 'unavailable' | 'busy') => void),
+}));
+const picked = vi.hoisted(() => ({ hint: vi.fn(), keep: vi.fn(async () => undefined) }));
+vi.mock('../../../lib/spray/spray-led-ble-transport', () => ({
+  scanForSprayLedControllers: bluetooth.scan,
+  hintSprayLedController: picked.hint,
+  keepSprayLedController: picked.keep,
+}));
+vi.mock('@react-native-community/netinfo', () => ({ default: { fetch: network.fetch } }));
 vi.mock('../../../lib/preference-store', () => ({
   getPreference: storage.read,
   setPreference: storage.write,
@@ -45,6 +65,24 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
+const lightingControls = vi.hoisted(() => ({
+  slider: null as null | { value: number; onCommit: (value: number) => void },
+  autoOff: null as null | { selectedKey: string; onSelect: (key: string) => void },
+  connection: null as null | { selectedKey: string; onSelect: (key: string) => void },
+}));
+vi.mock('../../ValueSlider', () => ({
+  ValueSlider: (props: { value: number; onCommit: (value: number) => void }) => {
+    lightingControls.slider = props;
+    return null;
+  },
+}));
+vi.mock('../../SegmentedControl', () => ({
+  SegmentedControl: (props: { selectedKey: string; onSelect: (key: string) => void; accessibilityLabel: string }) => {
+    if (props.accessibilityLabel === 'sprayLed.connection') lightingControls.connection = props;
+    else lightingControls.autoOff = props;
+    return null;
+  },
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -120,6 +158,8 @@ const savedSettings = (enabled = true, url = ''): SprayWallLedSettings => ({
   version: 1,
   enabled,
   controller: { type: 'wled', url },
+  brightness: 64,
+  autoOffMinutes: 0,
 });
 function deferred<T>() {
   let resolve!: (result: T) => void;
@@ -158,6 +198,11 @@ beforeEach(() => {
   controller.probe.mockReset().mockResolvedValue(controllerInfo);
   controller.lightAll.mockReset().mockResolvedValue(undefined);
   controller.turnOff.mockReset().mockResolvedValue(undefined);
+  bluetooth.scan.mockReset().mockImplementation((update, stopped) => {
+    bluetooth.update = update;
+    bluetooth.stopped = stopped;
+    return bluetooth.stop;
+  });
 });
 afterEach(async () => {
   cleanup();
@@ -165,6 +210,130 @@ afterEach(async () => {
 });
 
 describe('SprayWallLedSection', () => {
+  const address = 'ble:Boardsesh Spraywall 1A2B';
+  const bluetoothSettings = (url = ''): SprayWallLedSettings => ({
+    ...savedSettings(true, ''),
+    controller: { type: 'ble', url },
+  });
+
+  it('switches the Spraywall to Bluetooth, finds a controller and saves its name to the Spraywall', async () => {
+    storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    expect(lightingControls.connection?.selectedKey).toBe('wled');
+    act(() => lightingControls.connection?.onSelect('ble'));
+    // A Wi-Fi address is no Bluetooth controller: the new type starts without one.
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings()));
+    expect(screen.queryByRole('textbox', { name: 'sprayLed.url' })).toBeNull();
+    expect(bluetooth.scan).not.toHaveBeenCalled();
+    // The Aurora frames carry no brightness or auto-off: the controller keeps its own.
+    expect(screen.queryByText('sprayLed.bleLightingHint')).not.toBeNull();
+    expect(screen.queryByText('sprayLed.brightnessHint')).toBeNull();
+    expect(screen.queryByText('sprayLed.autoOffHint')).toBeNull();
+    expect(screen.queryByText('sprayLed.blePasskeyHint')).toBeNull();
+
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalled());
+    expect(screen.queryByText('sprayLed.bleFinding')).not.toBeNull();
+    act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'Boardsesh Spraywall 1A2B', rssi: -60 }]));
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleResult' }));
+    expect(bluetooth.stop).toHaveBeenCalled();
+    // Every phone finds the controller by the name saved on the Spraywall; the id stays on this phone.
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings(address)));
+    expect(picked.hint).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B', 'AA:BB:CC:DD:EE:FF');
+    expect(picked.keep).toHaveBeenCalledWith('Boardsesh Spraywall 1A2B');
+    expect(controller.probe).toHaveBeenCalledWith(address, expect.any(AbortSignal));
+    expect(JSON.stringify(storage.records.get(settingsKey))).not.toContain('AA:BB');
+    expect(screen.queryByText('sprayLed.bleConnected')).not.toBeNull();
+
+    await waitFor(() => expect((button('lightAll') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button('lightAll'));
+    await waitFor(() => expect(screen.queryByText('sprayLed.lit')).not.toBeNull());
+    expect(controller.lightAll).toHaveBeenCalledWith();
+    fireEvent.click(button('turnOff'));
+    await waitFor(() => expect(screen.queryByText('sprayLed.off')).not.toBeNull());
+    expect(controller.turnOff).toHaveBeenCalledWith(address);
+  });
+
+  it('checks the stored Bluetooth controller only on a tap, and says when it is no Spraywall controller', async () => {
+    storage.records.set(settingsKey, bluetoothSettings(address));
+    controller.probe.mockRejectedValue(new LedControllerError('not-wled'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    expect(await screen.findByText('sprayLed.bleSaved')).toBeTruthy();
+    expect(controller.probe).not.toHaveBeenCalled();
+    fireEvent.click(button('bleCheck'));
+    expect(await screen.findByText('sprayLed.bleNotController')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'sprayLed.lightAll' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'sprayLed.keepUrl' })).toBeNull();
+  });
+
+  it('says when Bluetooth is off, and when no controller answered the scan', async () => {
+    storage.records.set(settingsKey, bluetoothSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalled());
+    act(() => bluetooth.stopped?.('unavailable'));
+    expect(await screen.findByText('sprayLed.bleUnavailable')).toBeTruthy();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalledTimes(2));
+    act(() => bluetooth.stopped?.('done'));
+    expect(await screen.findByText('sprayLed.bleFindNone')).toBeTruthy();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalledTimes(3));
+    act(() => bluetooth.stopped?.('busy'));
+    expect(await screen.findByText('sprayLed.bleScanBusy')).toBeTruthy();
+    expect(controller.probe).not.toHaveBeenCalled();
+  });
+
+  it('remembers a scanned controller only once it answered', async () => {
+    storage.records.set(settingsKey, bluetoothSettings());
+    controller.probe.mockRejectedValue(new LedControllerError('unavailable'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('bleFind'));
+    await waitFor(() => expect(bluetooth.scan).toHaveBeenCalled());
+    act(() => bluetooth.update?.([{ id: 'AA:BB:CC:DD:EE:FF', name: 'Boardsesh Spraywall 1A2B', rssi: -60 }]));
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleResult' }));
+    expect(await screen.findByText('sprayLed.bleUnreachable')).toBeTruthy();
+    expect(picked.hint).toHaveBeenCalled();
+    expect(picked.keep).not.toHaveBeenCalled();
+    expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings());
+  });
+
+  it('brings the Wi-Fi address back after a trip to Bluetooth', async () => {
+    storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    act(() => lightingControls.connection?.onSelect('ble'));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(bluetoothSettings()));
+    await waitFor(() => expect(lightingControls.connection?.selectedKey).toBe('ble'));
+    act(() => lightingControls.connection?.onSelect('wled'));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(savedSettings(true, 'http://wled.local')));
+    expect(urlInput().value).toBe('http://wled.local');
+  });
+
+  it('says Bluetooth is off when checking the controller finds the radio off', async () => {
+    storage.records.set(settingsKey, bluetoothSettings(address));
+    controller.probe.mockRejectedValue(new LedControllerError('bluetooth-unavailable'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleCheck' }));
+    expect(await screen.findByText('sprayLed.bleUnavailable')).toBeTruthy();
+    expect(screen.queryByText('sprayLed.bleUnreachable')).toBeNull();
+  });
+
+  it('reports a Bluetooth controller that does not answer in time with Bluetooth advice', async () => {
+    storage.records.set(settingsKey, bluetoothSettings(address));
+    controller.probe.mockRejectedValue(new LedControllerError('timeout'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'sprayLed.bleCheck' }));
+    expect(await screen.findByText('sprayLed.bleTimeout')).toBeTruthy();
+    expect(screen.queryByText('sprayLed.timeout')).toBeNull();
+  });
+
   it('starts collapsed and disabled, without contacting or lighting a controller', async () => {
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     expect(button('title').getAttribute('aria-expanded')).toBe('false');
@@ -176,6 +345,49 @@ describe('SprayWallLedSection', () => {
     expect(controller.probe).not.toHaveBeenCalled();
     expect(controller.lightAll).not.toHaveBeenCalled();
     expect(controller.turnOff).not.toHaveBeenCalled();
+  });
+
+  it('finds a controller on the Wi-Fi and connects to it with one tap', async () => {
+    network.fetch.mockResolvedValue({ type: 'wifi', details: { ipAddress: '192.168.1.50', subnet: '255.255.255.0' } });
+    controller.probe.mockImplementation(async (url: string) => {
+      if (url === 'http://192.168.1.40') return controllerInfo;
+      throw new LedControllerError('unavailable');
+    });
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('find'));
+    const found = await screen.findByRole('button', { name: 'sprayLed.findResult' });
+    // The scan never probes the phone's own address.
+    expect(controller.probe).not.toHaveBeenCalledWith('http://192.168.1.50', expect.anything());
+    fireEvent.click(found);
+    await waitFor(() => expect(storage.records.get(settingsKey)).toEqual(savedSettings(true, 'http://192.168.1.40')));
+    expect(urlInput().value).toBe('http://192.168.1.40');
+  });
+
+  it('asks for Wi-Fi instead of scanning on mobile data', async () => {
+    network.fetch.mockResolvedValue({ type: 'cellular', details: { cellularGeneration: '5g' } });
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('find'));
+    expect(await screen.findByText('sprayLed.findNoWifi')).toBeTruthy();
+    expect(controller.probe).not.toHaveBeenCalled();
+  });
+
+  it('saves brightness and auto-off to the wall from the slider and the auto-off choice', async () => {
+    storage.records.set(settingsKey, savedSettings(true, 'http://wled.local'));
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    // 64 of 255 shows as 25 %.
+    expect(lightingControls.slider?.value).toBe(25);
+    expect(lightingControls.autoOff?.selectedKey).toBe('0');
+    act(() => lightingControls.slider?.onCommit(50));
+    await waitFor(() => expect(storage.records.get(settingsKey)).toMatchObject({ brightness: 128 }));
+    act(() => lightingControls.autoOff?.onSelect('30'));
+    await waitFor(() =>
+      expect(storage.records.get(settingsKey)).toMatchObject({ brightness: 128, autoOffMinutes: 30 }),
+    );
   });
 
   // iOS asks for Local Network access on the first contact, so that must be a press.
@@ -404,7 +616,15 @@ describe('SprayWallLedSection', () => {
 
   it('allows retrying a failed settings read and opens this wall’s setup route without contacting WLED', async () => {
     storage.records.set(settingsKey, savedSettings());
-    storage.read.mockRejectedValueOnce(new Error('Storage unavailable'));
+    // Only the settings read fails: the phone's Bluetooth controller is read too.
+    let failedOnce = false;
+    storage.read.mockImplementation(async (key: string) => {
+      if (key === settingsKey && !failedOnce) {
+        failedOnce = true;
+        throw new Error('Storage unavailable');
+      }
+      return storage.records.get(key) ?? null;
+    });
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     fireEvent.click(button('title'));
     await waitFor(() => expect(screen.queryByText('sprayLed.loadFailed')).not.toBeNull());

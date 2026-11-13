@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assignLedIndices,
+  wiredLedCount,
   connectWiring,
   createWiring,
   cutWiring,
@@ -393,5 +394,20 @@ describe('persisted LED setup validation', () => {
     expect(readLedPositions([leds[0], leds[0]])).toBeNull();
     expect(readLedPositions([{ ...leds[0], x: Number.NaN }])).toBeNull();
     expect(readLedPositions([{ ...leds[0], y: 1.01 }])).toBeNull();
+  });
+});
+
+describe('wiredLedCount', () => {
+  it('counts the cable up to its last wired LED, skipped LEDs included', () => {
+    const wiring = {
+      direction: 'custom' as const,
+      startCorner: 'tl' as const,
+      paths: [['a', 'b', 'c']],
+      skips: [{ from: 'a', to: 'b', count: 2 }],
+      initialSkip: 1,
+    };
+    // a = 1, b = 4, c = 5: six LEDs on the cable.
+    expect(wiredLedCount(wiring)).toBe(6);
+    expect(wiredLedCount({ ...wiring, paths: [] })).toBe(0);
   });
 });

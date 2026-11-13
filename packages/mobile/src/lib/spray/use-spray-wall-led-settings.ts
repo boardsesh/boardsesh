@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 import { getPreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
 import {
   readSprayWallLedSettings,
+  sprayLedControllerAddressOrEmpty,
   sprayWallLedCacheGeneration,
   sprayWallLedSettingsKey,
   subscribeSprayWallLedServerChange,
@@ -40,15 +40,14 @@ function initialState(wallUuid: string): SettingsState {
   return { wallUuid, settings: null, loading: true, saving: false, error: null };
 }
 
-/** A value that fails the local rule is no address at all, so nothing ever contacts it. */
+/**
+ * A value that fails its type's rule (a local address for Wi-Fi, a Spraywall
+ * controller name for Bluetooth) is no address at all, so nothing contacts it.
+ */
 function withLocalAddress(settings: SprayWallLedSettings): SprayWallLedSettings {
   if (!settings.controller.url) return settings;
-  try {
-    normalizeLocalControllerUrl(settings.controller.url);
-    return settings;
-  } catch {
-    return { ...settings, controller: { ...settings.controller, url: '' } };
-  }
+  const url = sprayLedControllerAddressOrEmpty(settings.controller.type, settings.controller.url);
+  return url === settings.controller.url ? settings : { ...settings, controller: { ...settings.controller, url } };
 }
 
 /** The setup for this wall: the server's answer, or this phone's copy when the server can't say. */
@@ -146,7 +145,12 @@ export function useSprayWallLedSettings(wallUuid: string) {
       setState((previous) => ({ ...previous, saving: true, error: null }));
       try {
         const settings = readSprayWallLedSettings(next);
-        if (settings.controller.url) normalizeLocalControllerUrl(settings.controller.url);
+        if (
+          settings.controller.url &&
+          !sprayLedControllerAddressOrEmpty(settings.controller.type, settings.controller.url)
+        ) {
+          throw new Error('Invalid LED controller address');
+        }
         const write = markSprayWallLedSaveStarted(wallUuid, 'settings', () =>
           setPreference(sprayWallLedSettingsKey(wallUuid), settings),
         );

@@ -1,4 +1,10 @@
-import { LedControllerError, type LedControllerDriver, type LedControllerInfo } from './types';
+import {
+  LedControllerError,
+  resolveLedLightingOptions,
+  type LedControllerDriver,
+  type LedControllerInfo,
+  type LedLightingOptions,
+} from './types';
 import { normalizeLocalControllerUrl } from './url';
 import { snapshotLedPixels } from './led-pixels';
 
@@ -53,6 +59,15 @@ function segmentIds(payload: unknown): number[] {
 
 function isSwitchedOff(state: unknown): boolean {
   return isRecord(state) && (state.on === false || state.bri === 0);
+}
+
+/**
+ * WLED's nightlight in "instant" mode (0) drops to brightness 0 after `dur`
+ * minutes, so the controller turns the wall off by itself even when the phone
+ * is asleep or gone. The timer starts when `nl.on` changes from false to true.
+ */
+function nightlight(autoOffMinutes: number) {
+  return autoOffMinutes > 0 ? { on: true, dur: autoOffMinutes, mode: 0, tbri: 0 } : { on: false };
 }
 
 export function createWledDriver(options: WledDriverOptions = {}): LedControllerDriver {
@@ -133,7 +148,8 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     async probe(url, signal) {
       return readInfo(await request(url, 'info', signal));
     },
-    async lightAll(url, signal) {
+    async lightAll(url, signal, lighting) {
+      const { brightness, autoOffMinutes } = resolveLedLightingOptions(lighting);
       // Re-read the count and segments: a previous successful probe can be stale.
       const info = readInfo(await request(url, 'info', signal));
       const ids = segmentIds(await request(url, 'state', signal));
@@ -144,11 +160,11 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
         url,
         {
           on: true,
-          bri: 64,
+          bri: brightness,
           tt: 0,
           live: false,
           lor: 1,
-          nl: { on: false },
+          nl: nightlight(autoOffMinutes),
           udpn: { nn: true },
           seg: ids.map((id) => ({
             id,
@@ -172,7 +188,8 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     async turnOff(url, signal) {
       await send(url, { on: false, tt: 0, live: false, udpn: { nn: true } }, signal);
     },
-    createPreview(url) {
+    createPreview(url, lighting) {
+      const { brightness, autoOffMinutes } = resolveLedLightingOptions(lighting);
       let count: number | null = null;
       let previous: number[] = [];
       let mayBeLit = false;
@@ -208,7 +225,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
             mayBeLit = true;
             await send(url, {
               on: true,
-              bri: 64,
+              bri: brightness,
               tt: 0,
               live: false,
               lor: 1,
@@ -235,6 +252,11 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
                   : { id, on: false },
               ),
             });
+          } else if (autoOffMinutes > 0) {
+            // The auto-off may already have switched the wall off since the last
+            // write. Wake it again, and stop the old timer so the next colour
+            // write restarts it: the countdown runs from the latest activity.
+            await send(url, { on: true, bri: brightness, tt: 0, nl: { on: false }, udpn: { nn: true } });
           }
           const colors: (number | string)[] = count === null ? [0, ledCount, '00000000'] : [];
           for (const index of previous) colors.push(index, '00000000');
@@ -242,7 +264,12 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
           // Keep requests below WLED's JSON buffer even for a large selection.
           for (let offset = 0; offset < colors.length; offset += offset === 0 && count === null ? 259 : 256) {
             const size = offset === 0 && count === null ? 259 : 256;
-            await send(url, { tt: 0, udpn: { nn: true }, seg: [{ id: 0, i: colors.slice(offset, offset + size) }] });
+            await send(url, {
+              tt: 0,
+              udpn: { nn: true },
+              ...(offset === 0 && autoOffMinutes > 0 ? { nl: nightlight(autoOffMinutes) } : {}),
+              seg: [{ id: 0, i: colors.slice(offset, offset + size) }],
+            });
           }
           count = ledCount;
           previous = next;
@@ -251,7 +278,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
           count = null;
           previous = [];
           mayBeLit = true;
-          await driver.lightAll(url);
+          await driver.lightAll(url, undefined, lighting);
         },
         async turnOff() {
           if (!mayBeLit) return;

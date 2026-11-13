@@ -28,6 +28,8 @@ jobs:
             name: esp32-legacy
           - env: gledopto-c015
             name: gledopto-c015
+          - env: gledopto-c015-spraywall
+            name: gledopto-c015-spraywall
 
     steps:
       - name: Checkout repository

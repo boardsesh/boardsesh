@@ -1,11 +1,15 @@
 #include "led_controller.h"
 
+#include "power_limit.h"
+
 // LED_CHIPSET / LED_DATA_PIN / LED_COLOR_ORDER are resolved from build flags in
 // led_controller.h (the single source of truth).
 
 LedController LEDs;
 
-LedController::LedController() : numLeds(0), brightness(128), initialized(false) {
+LedController::LedController()
+    : numLeds(0), brightness(128), initialized(false), maxMilliamps(0), perPixelMilliamps(0), estimatedMilliamps(0),
+      powerLimited(false) {
     memset(leds, 0, sizeof(leds));
 }
 
@@ -57,7 +61,32 @@ void LedController::clear() {
 }
 
 void LedController::show() {
+    if (maxMilliamps > 0) {
+        // CRGB is three bytes, r g b, so the buffer is a flat RGB array.
+        uint64_t channels = PowerLimit::channelSum(reinterpret_cast<const uint8_t*>(leds), numLeds);
+        uint8_t shown = PowerLimit::limitBrightness(channels, perPixelMilliamps, brightness, maxMilliamps);
+        powerLimited = shown < brightness;
+        estimatedMilliamps = PowerLimit::estimateMilliamps(channels, perPixelMilliamps, shown);
+        FastLED.setBrightness(shown);
+    }
     FastLED.show();
+}
+
+void LedController::setPowerLimit(uint32_t maxMa, uint16_t perPixelMa) {
+    maxMilliamps = maxMa;
+    perPixelMilliamps = perPixelMa;
+    if (maxMilliamps == 0) {
+        powerLimited = false;
+        FastLED.setBrightness(brightness);
+    }
+}
+
+uint32_t LedController::getEstimatedMilliamps() {
+    return estimatedMilliamps;
+}
+
+bool LedController::wasPowerLimited() {
+    return powerLimited;
 }
 
 void LedController::setBrightness(uint8_t b) {

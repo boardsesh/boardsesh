@@ -201,6 +201,11 @@ const sprayWallLedSetupsSchema = readFileSync(
   new URL('../../../db/drizzle/0304_spray_wall_led_setups.sql', import.meta.url),
   'utf8',
 );
+// Its shared brightness and auto-off, from the migration that added them.
+const sprayWallLedBrightnessSchema = readFileSync(
+  new URL('../../../db/drizzle/0306_spray_wall_led_brightness.sql', import.meta.url),
+  'utf8',
+);
 // The workout a climber followed in a session (#6903), straight from the
 // generated migration, after board_sessions and users.
 const sessionWorkoutsSchema = readFileSync(
@@ -2330,6 +2335,7 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   ${climbMutationReceiptsSchema}
   ${deletedUpstreamPlaylistsSchema}
   ${sprayWallLedSetupsSchema}
+  ${sprayWallLedBrightnessSchema}
   DROP TABLE IF EXISTS auth_email_reservation_members;
   DROP TABLE IF EXISTS auth_email_reservations;
   DROP TABLE IF EXISTS auth_email_projection;

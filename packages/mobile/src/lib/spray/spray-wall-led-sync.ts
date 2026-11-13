@@ -7,7 +7,7 @@ import {
   type SprayWallLedSetupData,
 } from '@boardsesh/graphql/operations/spray-walls';
 import { isSprayWallLedSaveRefused } from '@boardsesh/graphql/errors';
-import { normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import { LED_CONTROLLER_TYPES, type LedControllerType } from '@boardsesh/led-controller';
 import { readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import { getPreference, removePreference, setPreference } from '../preference-store';
 import { notifySprayLedConfiguration } from './spray-led-config-events';
@@ -18,6 +18,7 @@ import {
   notifySprayWallLedServerChange,
   notifySprayWallLedUploadOutcome,
   readSprayWallLedSettings,
+  sprayLedControllerAddressOrEmpty,
   sprayWallLedLayoutKey,
   sprayWallLedSettingsKey,
   sprayWallLedUnsentKey,
@@ -103,22 +104,32 @@ function isLocalOnlyWall(wallUuid: string): boolean {
   return wallUuid.startsWith('dev-story-');
 }
 
-/** Not a local address means no address: this phone will never contact it. */
-function localAddressOrEmpty(url: string): string {
-  if (url === '') return '';
-  try {
-    return normalizeLocalControllerUrl(url);
-  } catch {
-    return '';
-  }
-}
-
 function settingsFromServer(setup: SprayWallLedSetupData): SprayWallLedSettings {
+  const knownType = (LED_CONTROLLER_TYPES as readonly string[]).includes(setup.controllerType)
+    ? (setup.controllerType as LedControllerType)
+    : null;
   return {
     version: 1,
-    enabled: setup.controllerType === 'wled' && setup.enabled,
-    controller: { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
+    // A controller type from a newer app is no controller this phone can drive.
+    enabled: knownType !== null && setup.enabled,
+    controller: {
+      type: knownType ?? 'wled',
+      url: knownType ? sprayLedControllerAddressOrEmpty(knownType, setup.controllerUrl) : '',
+    },
+    // A server from before these settings sends neither; read them with the defaults.
+    ...readSprayWallLedLighting(setup),
   };
+}
+
+function readSprayWallLedLighting(setup: SprayWallLedSetupData) {
+  const { brightness, autoOffMinutes } = readSprayWallLedSettings({
+    version: 1,
+    enabled: false,
+    controller: { type: 'wled', url: '' },
+    brightness: setup.brightness ?? undefined,
+    autoOffMinutes: setup.autoOffMinutes ?? undefined,
+  });
+  return { brightness, autoOffMinutes };
 }
 
 function isUnsent(field: SprayWallLedField, wallUuid: string): Promise<boolean> {
@@ -152,7 +163,13 @@ function sameLayout(left: TnutLayout | null, right: TnutLayout | null): boolean 
 }
 
 function sameSettings(left: SprayWallLedSettings, right: SprayWallLedSettings): boolean {
-  return left.enabled === right.enabled && left.controller.url === right.controller.url;
+  return (
+    left.enabled === right.enabled &&
+    left.controller.type === right.controller.type &&
+    left.controller.url === right.controller.url &&
+    left.brightness === right.brightness &&
+    left.autoOffMinutes === right.autoOffMinutes
+  );
 }
 
 async function applyServerSettings(wallUuid: string, server: SprayWallLedSettings | null): Promise<boolean> {
@@ -358,11 +375,13 @@ async function buildUploadInput(
   if (fields.includes('settings')) {
     const stored = await getPreference<unknown>(sprayWallLedSettingsKey(wallUuid), { strictParsing: true });
     const settings = readSprayWallLedSettings(stored);
-    const url = localAddressOrEmpty(settings.controller.url);
+    const url = sprayLedControllerAddressOrEmpty(settings.controller.type, settings.controller.url);
     input.controllerType = settings.controller.type;
     input.controllerUrl = url;
     // Sent as stored: the switch can be on before an address exists.
     input.enabled = settings.enabled;
+    input.brightness = settings.brightness;
+    input.autoOffMinutes = settings.autoOffMinutes;
   }
   if (fields.includes('layout')) {
     const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });

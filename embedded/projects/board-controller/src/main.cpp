@@ -53,6 +53,84 @@ static bool g_lastBlePayloadSeen = false;
 static int g_lastBleLedCount = 0;
 static int g_lastBleAngle = 0;
 static unsigned long g_lastBlePayloadAt = 0;
+#ifdef SPRAYWALL_LED_CONTROLLER
+#include <esp_mac.h>
+// One task writes the strip. The NimBLE host task only copies each complete
+// frame here (onSprayFrame); loop() applies it, runs the auto-off, and lets go
+// of an idle phone, so the auto-off can never clear a climb that just arrived
+// or race a show() on the other core.
+static portMUX_TYPE g_sprayFrameMux = portMUX_INITIALIZER_UNLOCKED;
+static LedCommand g_sprayFrame[MAX_LEDS];
+static size_t g_sprayFrameCount = 0;
+static bool g_sprayFramePending = false;
+// When the last frame (a clear included) arrived, and the last write of any kind.
+static unsigned long g_sprayFrameAt = 0;
+static volatile unsigned long g_lastBleWriteAt = 0;
+// loop()'s own: whether the strip shows a climb, for the auto-off.
+static bool g_spraywallLit = false;
+// A connected phone that stops writing (pocketed, app gone) is let go, so the
+// next climber's phone can connect: the controller takes one phone at a time.
+#ifndef SPRAYWALL_IDLE_DISCONNECT_SECONDS
+#define SPRAYWALL_IDLE_DISCONNECT_SECONDS 90
+#endif
+
+void onSprayFrame(const LedCommand* commands, size_t count) {
+    size_t kept = count < (size_t)MAX_LEDS ? count : (size_t)MAX_LEDS;
+    portENTER_CRITICAL(&g_sprayFrameMux);
+    if (kept > 0) memcpy(g_sprayFrame, commands, kept * sizeof(LedCommand));
+    g_sprayFrameCount = kept;
+    g_sprayFramePending = true;
+    // Stamped with the frame, before loop() shows it: the auto-off measures from here.
+    g_sprayFrameAt = millis();
+    portEXIT_CRITICAL(&g_sprayFrameMux);
+}
+
+void serviceSpraywall() {
+    static LedCommand frame[MAX_LEDS];
+    size_t count = 0;
+    bool pending = false;
+    unsigned long frameAt;
+    portENTER_CRITICAL(&g_sprayFrameMux);
+    if (g_sprayFramePending) {
+        count = g_sprayFrameCount;
+        if (count > 0) memcpy(frame, g_sprayFrame, count * sizeof(LedCommand));
+        g_sprayFramePending = false;
+        pending = true;
+    }
+    frameAt = g_sprayFrameAt;
+    portEXIT_CRITICAL(&g_sprayFrameMux);
+
+    if (pending) {
+        LEDs.clear();
+        if (count > 0) LEDs.setLeds(frame, count);
+        LEDs.show();
+        if (LEDs.wasPowerLimited()) {
+            Logger.logln("Spraywall: dimmed to stay within the current limit (~%u mA)",
+                         (unsigned)LEDs.getEstimatedMilliamps());
+        }
+        // An explicit clear (empty frame) leaves nothing for the auto-off.
+        g_spraywallLit = count > 0;
+    }
+
+#if SPRAYWALL_AUTO_OFF_MINUTES > 0
+    // A Spraywall in a gym is lit from any phone and nobody may clear it, so
+    // the controller turns the string off itself after the last climb.
+    if (g_spraywallLit && millis() - frameAt > SPRAYWALL_AUTO_OFF_MINUTES * 60UL * 1000UL) {
+        g_spraywallLit = false;
+        LEDs.clear();
+        LEDs.show();
+        Logger.logln("Spraywall: auto-off after %d minutes", SPRAYWALL_AUTO_OFF_MINUTES);
+    }
+#endif
+
+    if (BLE.isConnected() && millis() - g_lastBleWriteAt > SPRAYWALL_IDLE_DISCONNECT_SECONDS * 1000UL) {
+        Logger.logln("Spraywall: no write for %d s, letting the phone go", SPRAYWALL_IDLE_DISCONNECT_SECONDS);
+        // The library restarts advertising when the phone has gone.
+        g_lastBleWriteAt = millis();
+        BLE.disconnectClient();
+    }
+}
+#endif
 
 #ifdef HAS_DISPLAY
 // Navigation mutation debounce - wait for rapid presses to stop before sending mutation
@@ -358,6 +436,13 @@ void fillWebStatus(JsonDocument& doc) {
 
     doc["wifi_connected"] = wifiConnected;
     doc["wifi_ip"] = WiFiMgr.getIP();
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Read-only: the cap is set at build time.
+    doc["led_max_current_ma"] = SPRAYWALL_MAX_CURRENT_MA;
+    doc["led_pixel_full_white_ma"] = SPRAYWALL_PIXEL_FULL_WHITE_MA;
+    doc["led_estimated_ma"] = LEDs.getEstimatedMilliamps();
+    doc["led_power_limited"] = LEDs.wasPowerLimited();
+#endif
     doc["ble_initialized"] = bleInitialized;
     doc["ble_connected"] = bleInitialized && BLE.isConnected();
     doc["ble_advertising"] = bleInitialized && BLE.isAdvertising();
@@ -454,11 +539,27 @@ void initializeBLE() {
         return;  // Already initialized
     }
 
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // A short id tells two Spraywalls in one gym apart: the last two bytes of
+    // the Bluetooth MAC (base MAC + 2 on a classic ESP32), as Android shows it.
+    static char bleName[32];
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_BT);
+    snprintf(bleName, sizeof(bleName), "%s %02X%02X", BLE_DEVICE_NAME_PREFIX, mac[4], mac[5]);
+    Logger.logln("Initializing BLE as '%s'...", bleName);
+    // No Aurora service UUID in the advertisement: board pickers skip it.
+    BLE.begin(bleName, true, false);
+#else
     Logger.logln("Initializing BLE as '%s'...", BLE_DEVICE_NAME);
     BLE.begin(BLE_DEVICE_NAME, true);
+#endif
     BLE.setConnectCallback(onBLEConnect);
     BLE.setDataCallback(onBLEData);
     BLE.setLedDataCallback(onBLELedData);
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Frames are applied in loop(), not on the NimBLE host task.
+    BLE.setFrameCallback(onSprayFrame);
+#endif
 
 #ifdef ENABLE_BLE_PROXY
     // Set up raw data forwarding for proxy mode
@@ -523,6 +624,10 @@ void setup() {
     Logger.logln("Initializing LEDs on pin %d...", LED_DATA_PIN);
     LEDs.begin(NUM_LEDS);
     LEDs.setBrightness(Config.getInt("brightness", DEFAULT_BRIGHTNESS));
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Before the startup animation: its all-blue flash is capped too.
+    LEDs.setPowerLimit(SPRAYWALL_MAX_CURRENT_MA, SPRAYWALL_PIXEL_FULL_WHITE_MA);
+#endif
 
     // Startup animation (brief to confirm LEDs working)
     startupAnimation();
@@ -568,8 +673,9 @@ void setup() {
     WebConfig.setStatusProvider(fillWebStatus);
     WebConfig.begin();
 
-#ifdef ENABLE_WAVESHARE_AMOLED_DISPLAY
-    // The portable preview board accepts climbs locally without WiFi setup.
+#if defined(ENABLE_WAVESHARE_AMOLED_DISPLAY) || defined(SPRAYWALL_LED_CONTROLLER)
+    // The portable preview board and the Spraywall LED controller accept climbs
+    // locally without WiFi setup: Bluetooth starts at boot, beside the setup AP.
     initializeBLE();
 #endif
 
@@ -622,6 +728,10 @@ void loop() {
         Proxy.loop();
 #endif
     }
+
+#ifdef SPRAYWALL_LED_CONTROLLER
+    if (bleInitialized) serviceSpraywall();
+#endif
 
     // Process WebSocket if WiFi connected
     if (wifiConnected) {
@@ -889,6 +999,10 @@ void onWiFiStateChange(WiFiConnectionState state) {
 }
 
 void onBLEConnect(bool connected) {
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // A phone that connects and never writes is idle from here.
+    if (connected) g_lastBleWriteAt = millis();
+#endif
     if (connected) {
         Logger.logln("BLE client connected");
 #ifdef HAS_DISPLAY
@@ -903,6 +1017,10 @@ void onBLEConnect(bool connected) {
 }
 
 void onBLEData(const uint8_t* data, size_t len) {
+#ifdef SPRAYWALL_LED_CONTROLLER
+    // Any write, a partial frame included, keeps the phone's connection.
+    g_lastBleWriteAt = millis();
+#endif
     // Raw BLE data callback - Aurora parsing is handled by nordic_uart_ble library
 }
 

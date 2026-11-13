@@ -8,9 +8,9 @@ NordicUartBLE::NordicUartBLE()
     : pServer(nullptr), pTxCharacteristic(nullptr), pRxCharacteristic(nullptr), deviceConnected(false),
       advertising(false), advertisingEnabled(false), lastAdvertisingEnsureAt(0),
       connectedDeviceHandle(BLE_HS_CONN_HANDLE_NONE), connectCallback(nullptr), dataCallback(nullptr),
-      ledDataCallback(nullptr), rawForwardCallback(nullptr) {}
+      ledDataCallback(nullptr), rawForwardCallback(nullptr), frameCallback(nullptr) {}
 
-void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
+void NordicUartBLE::begin(const char* deviceName, bool startAdv, bool advertiseAuroraService) {
     NimBLEDevice::init(deviceName);
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
@@ -35,7 +35,9 @@ void NordicUartBLE::begin(const char* deviceName, bool startAdv) {
 
     // Always configure advertising data (even if not starting yet)
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
+    if (advertiseAuroraService) {
+        pAdvertising->addServiceUUID(AURORA_ADVERTISED_SERVICE_UUID);
+    }
     // A legacy BLE advertisement only has 31 bytes. Advertising both 128-bit UUIDs
     // overflows the packet, so expose Aurora for discovery and keep NUS in GATT.
     pAdvertising->enableScanResponse(true);
@@ -105,6 +107,10 @@ void NordicUartBLE::setLedDataCallback(BLELedDataCallback callback) {
 
 void NordicUartBLE::setRawForwardCallback(BLERawForwardCallback callback) {
     rawForwardCallback = callback;
+}
+
+void NordicUartBLE::setFrameCallback(BLEFrameCallback callback) {
+    frameCallback = callback;
 }
 
 void NordicUartBLE::setProtocolDebug(bool enabled) {
@@ -216,14 +222,18 @@ void NordicUartBLE::onWrite(NimBLECharacteristic* characteristic, NimBLEConnInfo
         // behaviour for a "clear board" command.)
         const std::vector<LedCommand>& commands = protocol.getLedCommands();
 
-        LEDs.clear();
-        if (commands.size() > 0) {
-            LEDs.setLeds(commands.data(), commands.size());
-            Logger.logln("BLE: Updated %zu LEDs from Bluetooth", commands.size());
+        if (frameCallback) {
+            frameCallback(commands.data(), commands.size());
         } else {
-            Logger.logln("BLE: Cleared board from Bluetooth");
+            LEDs.clear();
+            if (commands.size() > 0) {
+                LEDs.setLeds(commands.data(), commands.size());
+                Logger.logln("BLE: Updated %zu LEDs from Bluetooth", commands.size());
+            } else {
+                Logger.logln("BLE: Cleared board from Bluetooth");
+            }
+            LEDs.show();
         }
-        LEDs.show();
 
         // Forward to the backend only for non-empty climbs: the callback's job
         // is climb matching, and an empty clear-board frame has nothing to

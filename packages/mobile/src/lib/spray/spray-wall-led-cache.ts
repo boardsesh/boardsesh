@@ -1,12 +1,41 @@
-import { removePreference, removePreferencesMatching } from '../preference-store';
+import {
+  DEFAULT_LED_BRIGHTNESS,
+  LED_CONTROLLER_TYPES,
+  normalizeBleControllerTarget,
+  normalizeLocalControllerUrl,
+  resolveLedLightingOptions,
+  type LedControllerType,
+} from '@boardsesh/led-controller';
+import { getPreference, removePreference, removePreferencesMatching, setPreference } from '../preference-store';
 
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
-  controller: { type: 'wled'; url: string };
+  /**
+   * `wled`: `url` is the controller's local-network address. `ble`: `url` is
+   * `ble:` and the name the controller advertises (`ble:Boardsesh Spraywall 1A2B`).
+   */
+  controller: { type: LedControllerType; url: string };
+  /** WLED master brightness, 1–255, shared by every phone at the wall. */
+  brightness: number;
+  /** Minutes after the last lighting before the controller turns the wall off; 0 never does. */
+  autoOffMinutes: number;
 };
 
 export type SprayWallLedField = 'settings' | 'layout';
+
+/**
+ * The address in the form its controller type needs, or '' when it is no such
+ * address: this phone never contacts it, and never uploads it.
+ */
+export function sprayLedControllerAddressOrEmpty(type: LedControllerType, url: string): string {
+  if (url === '') return '';
+  try {
+    return type === 'ble' ? normalizeBleControllerTarget(url) : normalizeLocalControllerUrl(url);
+  } catch {
+    return '';
+  }
+}
 
 /**
  * The phone's copy of a wall's LED setup. The server is the source of truth
@@ -16,11 +45,27 @@ export type SprayWallLedField = 'settings' | 'layout';
  */
 export const sprayWallLedSettingsKey = (wallUuid: string) => `sprayWallLedSettings:${wallUuid}`;
 export const sprayWallLedLayoutKey = (wallUuid: string) => `sprayWallTnutLayout:${wallUuid}`;
+/**
+ * The device id this phone found for a Bluetooth controller name. Never uploaded:
+ * ids differ per phone. Not wall data, so only sign-out erases it.
+ */
+export const sprayLedBleDeviceIdKey = (controllerName: string) => `sprayLedBleDeviceId:${controllerName}`;
+/**
+ * The wall's last Wi-Fi address on this phone, kept while the wall is on
+ * Bluetooth so switching back restores it. The server keeps one address per type.
+ */
+export const sprayWallLedWifiAddressKey = (wallUuid: string) => `sprayWallLedWifiAddress:${wallUuid}`;
 /** Set before a save writes the copy, and cleared once the server has it. */
 export const sprayWallLedUnsentKey = (field: SprayWallLedField, wallUuid: string) =>
   `sprayWallLedUnsent:${field}:${wallUuid}`;
 
-const CACHE_KEY_PREFIXES = ['sprayWallLedSettings:', 'sprayWallTnutLayout:', 'sprayWallLedUnsent:'];
+const CACHE_KEY_PREFIXES = [
+  'sprayWallLedSettings:',
+  'sprayWallTnutLayout:',
+  'sprayWallLedUnsent:',
+  'sprayLedBleDeviceId:',
+  'sprayWallLedWifiAddress:',
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -28,21 +73,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Fail closed on future versions or corruption; never replace them with defaults. */
 export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings {
-  if (stored === null) return { version: 1, enabled: false, controller: { type: 'wled', url: '' } };
+  if (stored === null)
+    return {
+      version: 1,
+      enabled: false,
+      controller: { type: 'wled', url: '' },
+      brightness: DEFAULT_LED_BRIGHTNESS,
+      autoOffMinutes: 0,
+    };
   if (
     !isRecord(stored) ||
     stored.version !== 1 ||
     typeof stored.enabled !== 'boolean' ||
     !isRecord(stored.controller) ||
-    stored.controller.type !== 'wled' ||
-    typeof stored.controller.url !== 'string'
+    !(LED_CONTROLLER_TYPES as readonly unknown[]).includes(stored.controller.type) ||
+    typeof stored.controller.url !== 'string' ||
+    (stored.brightness !== undefined && typeof stored.brightness !== 'number') ||
+    (stored.autoOffMinutes !== undefined && typeof stored.autoOffMinutes !== 'number')
   ) {
     throw new Error('Invalid spray wall LED settings');
   }
+  // A copy saved before brightness and auto-off existed reads with the defaults.
+  const lighting = resolveLedLightingOptions({
+    brightness: stored.brightness as number | undefined,
+    autoOffMinutes: stored.autoOffMinutes as number | undefined,
+  });
   return {
     version: 1,
     enabled: stored.enabled,
-    controller: { type: 'wled', url: stored.controller.url },
+    controller: { type: stored.controller.type as LedControllerType, url: stored.controller.url },
+    brightness: lighting.brightness,
+    autoOffMinutes: lighting.autoOffMinutes,
   };
 }
 
@@ -129,6 +190,7 @@ export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
     Promise.allSettled([
       removePreference(sprayWallLedSettingsKey(wallUuid)),
       removePreference(sprayWallLedLayoutKey(wallUuid)),
+      removePreference(sprayWallLedWifiAddressKey(wallUuid)),
       removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
       removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
     ]),
@@ -149,4 +211,23 @@ export async function eraseAllSprayWallLedCaches(): Promise<void> {
   });
   globalErasure = clearing;
   await clearing;
+}
+
+/** Keep the Wi-Fi address this wall is leaving, to restore it when it comes back to Wi-Fi. */
+export async function rememberSprayWallWifiAddress(wallUuid: string, url: string): Promise<void> {
+  const address = sprayLedControllerAddressOrEmpty('wled', url);
+  if (!address) return;
+  await serializeSprayWallLedCacheWrite(wallUuid, () =>
+    setPreference(sprayWallLedWifiAddressKey(wallUuid), address),
+  ).catch(() => undefined);
+}
+
+/** The Wi-Fi address this wall last had on this phone, or ''. */
+export async function recallSprayWallWifiAddress(wallUuid: string): Promise<string> {
+  try {
+    const stored = await getPreference<unknown>(sprayWallLedWifiAddressKey(wallUuid));
+    return typeof stored === 'string' ? sprayLedControllerAddressOrEmpty('wled', stored) : '';
+  } catch {
+    return '';
+  }
 }

@@ -104,6 +104,42 @@ describe('WLED individual preview', () => {
     expect(commands()[0]).toMatchObject({ seg: [{ id: 0, i: [10, '00000000', 12, '00000000', 11, 'FFFFFFFF'] }] });
   });
 
+  it('uses the chosen brightness and arms the auto-off timer on the first colour write', async () => {
+    const { driver, commands } = fixture();
+    const preview = driver.createPreview('timer.local', { brightness: 200, autoOffMinutes: 30 });
+    await preview.show([4]);
+    expect(commands()[0]).toMatchObject({ on: true, bri: 200, nl: { on: false } });
+    expect(commands()[1]).toMatchObject({
+      nl: { on: true, dur: 30, mode: 0, tbri: 0 },
+      seg: [{ id: 0, i: [0, 1000, '00000000', 4, 'FFFFFFFF'] }],
+    });
+  });
+
+  it('wakes the wall again and restarts the auto-off timer on every later selection', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const preview = driver.createPreview('timer-again.local', { autoOffMinutes: 15 });
+    await preview.show([4]);
+    fetchController.mockClear();
+    await preview.show([5]);
+    // The controller may have switched itself off since the last write.
+    expect(commands()).toEqual([
+      { on: true, bri: 64, tt: 0, nl: { on: false }, udpn: { nn: true } },
+      {
+        tt: 0,
+        udpn: { nn: true },
+        nl: { on: true, dur: 15, mode: 0, tbri: 0 },
+        seg: [{ id: 0, i: [4, '00000000', 5, 'FFFFFFFF'] }],
+      },
+    ]);
+  });
+
+  it('clamps out-of-range lighting options to what WLED accepts', async () => {
+    const { driver, commands } = fixture();
+    await driver.createPreview('clamped.local', { brightness: 900, autoOffMinutes: -5 }).show([1]);
+    expect(commands()[0]).toMatchObject({ bri: 255, nl: { on: false } });
+    expect(commands()[1]).not.toHaveProperty('nl');
+  });
+
   it.each([-1, 1.5, NaN, 1000])('rejects invalid physical index %j before any write', async (index) => {
     const { driver, commands } = fixture();
     await expect(driver.createPreview('wall.local').show([index])).rejects.toMatchObject({ code: 'invalid-indices' });
@@ -169,6 +205,22 @@ describe('serialized LED preview ownership', () => {
       expect.objectContaining({ seg: [{ id: 0, i: [0, 1000, '00000000', 2, 'FFFFFFFF'] }] }),
     ]);
     await session.close();
+  });
+
+  it('wakes with the new brightness when a later session on the same controller changes it', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const dim = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 32 });
+    const keep = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 32 });
+    await dim.show([1]);
+    expect(commands()[0]).toMatchObject({ bri: 32 });
+    await dim.close();
+    const bright = createLedPreviewSession(driver, 'brightness-change.local', { brightness: 255 });
+    fetchController.mockClear();
+    await bright.show([2]);
+    expect(commands()[0]).toMatchObject({ on: true, bri: 255 });
+    expect(commands().at(-1)).toMatchObject({ seg: [{ id: 0, i: [0, 1000, '00000000', 2, 'FFFFFFFF'] }] });
+    await bright.close();
+    await keep.close();
   });
 
   it('waits for an in-flight selection before an explicit clear takes ownership', async () => {

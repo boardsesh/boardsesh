@@ -95,6 +95,10 @@ function holeBindings(layout: TnutLayout, frame: ReferenceSize): Map<string, num
     // Complementary slots are shared by equally close holes. Resolve using the
     // original slot, so moving its on-screen position cannot change ownership.
     const available = leds.map((led) => ({ led, point: originalPosition(led) }));
+    // A shared slot can sit above or below a hole. A climber looks for a hold's
+    // light underneath it, so a slot above the hole never lights it, even when
+    // no slot below is left: that hold stays unlit for a hand-made link instead.
+    const notAbove = (hole: TnutPoint, slot: TnutPoint) => slot.y >= hole.y - 1e-6;
     for (const [holeIndex, hole] of layout.holes.entries()) {
       let nearest = Infinity;
       const choices: string[] = [];
@@ -102,6 +106,7 @@ function holeBindings(layout: TnutLayout, frame: ReferenceSize): Map<string, num
         // Compare against the complete template first. A deleted LED must leave
         // a missing association rather than move that hole to its neighbor.
         const expected = generatedById.get(led.id);
+        if (!notAbove(hole, expected ?? point)) continue;
         const distance = distanceSquared(hole, expected ?? point, frame);
         if (distance < nearest - 1e-8) {
           nearest = distance;
@@ -110,7 +115,7 @@ function holeBindings(layout: TnutLayout, frame: ReferenceSize): Map<string, num
         if (Math.abs(distance - nearest) <= 1e-8) choices.push(led.id);
       }
       const templateDistance = generated.reduce(
-        (minimum, led) => Math.min(minimum, distanceSquared(hole, led, frame)),
+        (minimum, led) => (notAbove(hole, led) ? Math.min(minimum, distanceSquared(hole, led, frame)) : minimum),
         Infinity,
       );
       if (nearest > templateDistance + 1e-8) continue;

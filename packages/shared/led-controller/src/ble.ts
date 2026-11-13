@@ -1,0 +1,227 @@
+import { isSprayLedControllerName } from '@boardsesh/ble-protocol/advertised-identity';
+import { getAuroraV3LedPacket, type AuroraV3Led } from '@boardsesh/ble-protocol/aurora';
+import { effectiveChunkSizeForMtu, splitMessages } from '@boardsesh/ble-protocol/transport';
+import {
+  LedControllerError,
+  resolveLedLightingOptions,
+  type LedControllerDriver,
+  type LedControllerInfo,
+  type LedLightingOptions,
+} from './types';
+import { snapshotLedPixels } from './led-pixels';
+
+/**
+ * A Spraywall's LED controller over Bluetooth (docs/spray-wall-led-ble.md):
+ * the board-controller firmware's gledopto-c015-spraywall build.
+ *
+ * The controller speaks the Aurora API v3 frames Kilter and Tension boards
+ * use, over Nordic UART, with LED indices as positions. Every packet replaces
+ * what is lit, as on an Aurora board, and the empty packet clears. Brightness
+ * and auto-off are the controller's own settings: the protocol has no field
+ * for them, so this driver ignores those options. It reads only `ledCount`:
+ * the protocol reports no cable length, so "Light all" lights that many.
+ */
+
+/**
+ * One connection to a controller, provided by the platform (the mobile app
+ * builds it on react-native-ble-plx). The shared package never imports a
+ * Bluetooth library.
+ */
+export interface BleLedLink {
+  /** The ATT MTU negotiated for this connection (23 when nothing was negotiated). */
+  readonly mtu: number;
+  /** The name the controller advertises. */
+  readonly name: string;
+  /** Write one chunk to the Nordic UART write characteristic, with response. */
+  write(chunk: Uint8Array): Promise<void>;
+}
+
+export interface BleLedTransport {
+  /**
+   * Connect to the controller advertising this exact name, or hand back the
+   * connection already open to it. The platform resolves the name to its own
+   * device id (ids differ per phone) and rejects with `bluetooth-unavailable`
+   * when Bluetooth is off or not allowed.
+   */
+  connect(controllerName: string, signal?: AbortSignal): Promise<BleLedLink>;
+}
+
+export interface BleLedDriverOptions {
+  /**
+   * Resolved on every operation, so the app can register its transport after
+   * import, or load the Bluetooth library only when a Bluetooth wall is lit.
+   */
+  transport: () => BleLedTransport | null | Promise<BleLedTransport | null>;
+  /** Per write. Connecting gets at least 15 s: it includes service discovery. */
+  timeoutMs?: number;
+  /**
+   * How many LEDs "Light all" sends when the wall's layout gives no count
+   * (`LedLightingOptions.ledCount`). The protocol does not report the cable
+   * length, and the controller ignores positions past its string, so this
+   * fallback is the board-controller firmware's MAX_LEDS.
+   */
+  lightAllLeds?: number;
+}
+
+export const DEFAULT_BLE_LIGHT_ALL_LEDS = 500;
+
+const TARGET_PREFIX = 'ble:';
+
+/**
+ * The address a Bluetooth Spraywall is saved and driven at, the same on every
+ * phone: `ble:` and the name its controller advertises, e.g.
+ * `ble:Boardsesh Spraywall 1A2B`. Each phone finds the device by that name.
+ */
+export function bleControllerTarget(controllerName: string): string {
+  if (!isSprayLedControllerName(controllerName)) throw new LedControllerError('invalid-url');
+  return `${TARGET_PREFIX}${controllerName}`;
+}
+
+export function normalizeBleControllerTarget(target: string): string {
+  if (!target.startsWith(TARGET_PREFIX)) throw new LedControllerError('invalid-url');
+  return bleControllerTarget(target.slice(TARGET_PREFIX.length));
+}
+
+/** The advertised name in a `ble:` address. */
+export function bleControllerName(target: string): string {
+  return normalizeBleControllerTarget(target).slice(TARGET_PREFIX.length);
+}
+
+/** Settle `operation` within the timeout, or reject with `timeout` / `cancelled`. */
+async function withDeadline<Result>(
+  operation: () => Promise<Result>,
+  timeoutMs: number,
+  signal: AbortSignal | undefined,
+  failure: LedControllerError['code'],
+): Promise<Result> {
+  if (signal?.aborted) throw new LedControllerError('cancelled');
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onCancel: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    onCancel = () => reject(new LedControllerError('cancelled'));
+    signal?.addEventListener('abort', onCancel, { once: true });
+    timeout = setTimeout(() => reject(new LedControllerError('timeout')), timeoutMs);
+  });
+  const attempt = (async () => {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof LedControllerError) throw error;
+      throw new LedControllerError(failure);
+    }
+  })();
+  // A late rejection after the deadline won must not become unhandled.
+  attempt.catch(() => undefined);
+  try {
+    return await Promise.race([attempt, interrupted]);
+  } finally {
+    clearTimeout(timeout);
+    if (onCancel) signal?.removeEventListener('abort', onCancel);
+  }
+}
+
+export function createBleLedDriver(options: BleLedDriverOptions): LedControllerDriver {
+  const timeoutMs = options.timeoutMs ?? 3000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError('Invalid BLE timeout');
+  const lightAllLeds = options.lightAllLeds ?? DEFAULT_BLE_LIGHT_ALL_LEDS;
+
+  async function connect(target: string, signal?: AbortSignal): Promise<BleLedLink> {
+    const controllerName = bleControllerName(target);
+    let transport: BleLedTransport | null;
+    try {
+      transport = await options.transport();
+    } catch {
+      transport = null;
+    }
+    if (!transport) throw new LedControllerError('unavailable');
+    // Connecting may include a name scan and a retry, beyond the per-write timeout.
+    return withDeadline(
+      () => transport.connect(controllerName, signal),
+      Math.max(timeoutMs, 30_000),
+      signal,
+      'unavailable',
+    );
+  }
+
+  /**
+   * The same chunking the board adapters use: MTU-sized, framing unchanged.
+   * `onWritten` runs once the first chunk reached the controller: from then on
+   * the wall may show something, before that it cannot have changed.
+   */
+  async function send(target: string, leds: readonly AuroraV3Led[], signal?: AbortSignal, onWritten?: () => void) {
+    const packet = getAuroraV3LedPacket(leds);
+    const link = await connect(target, signal);
+    for (const chunk of splitMessages(packet, effectiveChunkSizeForMtu(link.mtu))) {
+      await withDeadline(() => link.write(chunk), timeoutMs, signal, 'command-failed');
+      onWritten?.();
+    }
+  }
+
+  // The wall's own LED count when its layout knows it, else the fallback.
+  const allWhite = (lighting?: LedLightingOptions) =>
+    Array.from({ length: resolveLedLightingOptions(lighting).ledCount ?? lightAllLeds }, (_, position) => ({
+      position,
+      color: white,
+    }));
+
+  const white = [255, 255, 255] as const;
+  const driver: LedControllerDriver = {
+    normalizeTarget: normalizeBleControllerTarget,
+    async probe(target, signal): Promise<LedControllerInfo> {
+      const link = await connect(target, signal);
+      // The protocol reports no LED count or firmware version.
+      return { name: link.name.trim() || 'Spraywall', version: 'Aurora API v3', ledCount: 0 };
+    },
+    async lightAll(target, signal, lighting) {
+      await send(target, allWhite(lighting), signal);
+    },
+    async turnOff(target, signal) {
+      await send(target, [], signal);
+    },
+    createPreview(target, lighting) {
+      // Only true once a write reached the controller, so a climb that never
+      // connected costs no second connect to "turn off" what never lit.
+      let mayBeLit = false;
+      const written = () => {
+        mayBeLit = true;
+      };
+      return {
+        async show(indices, pixels) {
+          const pixelSnapshot = snapshotLedPixels(indices, pixels);
+          if (indices.some((index) => index > 0xffff)) throw new LedControllerError('invalid-indices');
+          const byIndex = new Map((pixelSnapshot ?? []).map((pixel) => [pixel.index, pixel.color]));
+          // Each packet replaces what is lit, so no blanking of the previous LEDs.
+          const leds = [...new Set(indices)].map((position) => ({
+            position,
+            color: byIndex.get(position) ?? white,
+          }));
+          await send(target, leds, undefined, written);
+        },
+        async lightAll() {
+          await send(target, allWhite(lighting), undefined, written);
+        },
+        async turnOff() {
+          if (!mayBeLit) return;
+          await driver.turnOff(target);
+          mayBeLit = false;
+        },
+      };
+    },
+  };
+  return driver;
+}
+
+type TransportSource = BleLedTransport | (() => Promise<BleLedTransport>) | null;
+let registeredTransport: TransportSource = null;
+
+/**
+ * The app registers its Bluetooth transport, or a loader for it, once; until
+ * then every operation is `unavailable`.
+ */
+export function registerBleLedTransport(transport: TransportSource): void {
+  registeredTransport = transport;
+}
+
+export const bleLedDriver = createBleLedDriver({
+  transport: () => (typeof registeredTransport === 'function' ? registeredTransport() : registeredTransport),
+});

@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
-import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  bleControllerName,
+  bleControllerTarget,
+  createWledDriver,
+  DEFAULT_LED_BRIGHTNESS,
+  discoverLedControllers,
+  getLedControllerDriver,
+  LedControllerError,
+  normalizeLocalControllerUrl,
+  wledScanHosts,
+  type DiscoveredLedController,
+  type LedControllerType,
+} from '@boardsesh/led-controller';
+import type { SprayLedBleCandidate } from '../../lib/spray/spray-led-ble-transport';
+import { loadSprayLedBleTransport } from '../../lib/spray/spray-led-ble-transport-loader';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
+import { recallSprayWallWifiAddress, rememberSprayWallWifiAddress } from '../../lib/spray/spray-wall-led-cache';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
 import { BuilderTextInput, SectionLabel } from '../board-discovery/BoardMetaFields';
@@ -12,12 +28,60 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
+import { ValueSlider } from '../ValueSlider';
+
+// A short timeout per address: an empty address never answers, a WLED on the
+// same Wi-Fi answers in well under a second. 254 addresses, 32 at a time.
+const scanDriver = createWledDriver({ timeoutMs: 1500 });
+
+type ScanState =
+  | { kind: 'idle' }
+  | { kind: 'noWifi' }
+  | { kind: 'scanning'; checked: number; total: number; found: DiscoveredLedController[] }
+  | { kind: 'done'; found: DiscoveredLedController[] };
+
+const AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
+const MIN_BRIGHTNESS_PERCENT = 5;
+// The slider shows a percentage; WLED stores brightness as 1–255.
+function brightnessPercent(brightness: number): number {
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round((brightness * 100) / 255 / 5) * 5));
+}
+function brightnessFromPercent(percent: number): number {
+  return Math.max(1, Math.min(255, Math.round((percent * 255) / 100)));
+}
+// The three below run inside the slider's gesture, so they must be worklets.
+function roundBrightnessPercent(raw: number): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round(raw / 5) * 5));
+}
+function brightnessNotch(percent: number): number {
+  'worklet';
+  return Math.round(percent / 25);
+}
+function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, percent + direction * 5));
+}
+
+type BleScanState =
+  | { kind: 'idle' }
+  | { kind: 'unavailable' | 'busy' }
+  | { kind: 'scanning' | 'done'; found: SprayLedBleCandidate[] };
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
-  | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
+  | { kind: 'unavailable' | 'timeout' | 'notWled' | 'bluetoothOff'; url: string }
   | { kind: 'invalidUrl' | 'notLocal'; url: null };
+
+function probeFailureKind(failure: unknown): 'timeout' | 'notWled' | 'bluetoothOff' | 'unavailable' {
+  if (!(failure instanceof LedControllerError)) return 'unavailable';
+  if (failure.code === 'timeout') return 'timeout';
+  if (failure.code === 'not-wled') return 'notWled';
+  if (failure.code === 'bluetooth-unavailable') return 'bluetoothOff';
+  return 'unavailable';
+}
 
 /** One surface and one controller, shared with setup and route lighting. */
 export function SprayWallLedSection({ wallUuid, disabled = false }: { wallUuid: string; disabled?: boolean }) {
@@ -44,13 +108,135 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setPending(null);
     void stop();
   }, [stop]);
-  useEffect(() => () => request.current?.abort(), [wallUuid]);
+  const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
+  const scanRequest = useRef<AbortController | null>(null);
+  const cancelScan = useCallback(() => {
+    scanRequest.current?.abort();
+    scanRequest.current = null;
+    setScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
+  }, []);
+  const [bleScan, setBleScan] = useState<BleScanState>({ kind: 'idle' });
+  const stopBleScan = useRef<(() => void) | null>(null);
+  const cancelBleScan = useCallback(() => {
+    stopBleScan.current?.();
+    stopBleScan.current = null;
+    setBleScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
+  }, []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      scanRequest.current?.abort();
+      stopBleScan.current?.();
+    },
+    [wallUuid],
+  );
   useEffect(() => {
-    if (disabled) cancelRequest();
-  }, [disabled, cancelRequest]);
+    if (disabled) {
+      cancelRequest();
+      cancelScan();
+      cancelBleScan();
+    }
+  }, [disabled, cancelRequest, cancelScan, cancelBleScan]);
 
+  const bluetooth = settings?.controller.type === 'ble';
   const url = draftUrl ?? settings?.controller.url ?? '';
+  // What the preview and route lighting contact: the Wi-Fi address, or `ble:`
+  // and the name the wall's Bluetooth controller advertises (every phone finds
+  // its own device by that name).
+  const target = bluetooth ? (settings?.controller.url ?? '') : url;
+  const savedTarget = settings?.controller.url ?? '';
+  const savedBleName = bluetooth && savedTarget ? bleControllerName(savedTarget) : null;
   const locked = disabled || loading || saving || savingRef.current || !settings;
+
+  /** Wi-Fi or Bluetooth: saved to the wall, so every phone there knows how to reach it. */
+  async function chooseControllerType(type: LedControllerType) {
+    if (locked || !settings || savingRef.current || settings.controller.type === type) return;
+    cancelRequest();
+    cancelScan();
+    cancelBleScan();
+    setResult(null);
+    setLighting(null);
+    savingRef.current = true;
+    try {
+      // A Wi-Fi address is no Bluetooth controller, nor the reverse. The
+      // server keeps one address per type, so this phone keeps the Wi-Fi one
+      // while the wall is on Bluetooth and brings it back on the way back.
+      setDraftUrl(null);
+      if (settings.controller.type === 'wled' && settings.controller.url) {
+        await rememberSprayWallWifiAddress(wallUuid, settings.controller.url);
+      }
+      const url = type === 'wled' ? await recallSprayWallWifiAddress(wallUuid) : '';
+      await save({ ...settings, controller: { type, url } });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  /** List the controllers advertising the Boardsesh LED service nearby. */
+  function findBluetooth() {
+    if (locked || stopBleScan.current) return;
+    setBleScan({ kind: 'scanning', found: [] });
+    // Holds the slot while the Bluetooth module loads; a stop before then cancels the scan.
+    let cancelled = false;
+    let stopScan: (() => void) | null = null;
+    const stop = () => {
+      cancelled = true;
+      stopScan?.();
+    };
+    stopBleScan.current = stop;
+    const finish = (outcome: 'done' | 'unavailable' | 'busy') => {
+      if (stopBleScan.current !== stop) return;
+      stopBleScan.current = null;
+      setBleScan((current) =>
+        outcome === 'done'
+          ? { kind: 'done', found: current.kind === 'scanning' ? current.found : [] }
+          : { kind: outcome },
+      );
+    };
+    void loadSprayLedBleTransport().then(
+      ({ scanForSprayLedControllers }) => {
+        if (cancelled) return;
+        stopScan = scanForSprayLedControllers((found) => {
+          if (stopBleScan.current === stop) setBleScan({ kind: 'scanning', found });
+        }, finish);
+      },
+      () => finish('unavailable'),
+    );
+  }
+
+  /**
+   * Check a Bluetooth controller answers, then save its advertised name to the
+   * wall, so every phone there can find it. A scanned candidate's device id is
+   * remembered on this phone only, which saves this phone a second scan.
+   */
+  async function confirmBluetooth(candidate: { id?: string; name: string }) {
+    if (locked || !settings?.enabled || request.current) return;
+    const bleTarget = bleControllerTarget(candidate.name);
+    const controller = new AbortController();
+    request.current = controller;
+    setPending('probe');
+    setResult(null);
+    setLighting(null);
+    try {
+      const transport = await loadSprayLedBleTransport();
+      // Tried first, but remembered on this phone only once it answered.
+      if (candidate.id) transport.hintSprayLedController(candidate.name, candidate.id);
+      const info = await getLedControllerDriver('ble').probe(bleTarget, controller.signal);
+      if (request.current !== controller || controller.signal.aborted) return;
+      await transport.keepSprayLedController(candidate.name);
+      // The name it was found by: the probe's own name can be empty.
+      setResult({ kind: 'connected', url: bleTarget, name: candidate.name, ledCount: info.ledCount });
+      if (settings.controller.url !== bleTarget) await persistUrl(bleTarget);
+    } catch (failure) {
+      if (request.current !== controller || controller.signal.aborted) return;
+      setResult({ kind: probeFailureKind(failure), url: bleTarget });
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        setPending(null);
+      }
+    }
+  }
 
   async function persistUrl(confirmedUrl: string): Promise<boolean> {
     if (!settings || savingRef.current) return false;
@@ -75,11 +261,54 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     }
   }
 
-  async function confirmUrl() {
+  /** Brightness and auto-off save to the wall, so every phone lights it the same way. */
+  async function saveLighting(update: { brightness?: number; autoOffMinutes?: number }) {
+    if (locked || !settings || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await save({ ...settings, ...update });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  /** Probe every address on the phone's Wi-Fi (a private /24 only) and list the WLED controllers that answer. */
+  async function findOnWifi() {
+    if (locked || scanRequest.current) return;
+    const network = await NetInfo.fetch();
+    const details = network.type === 'wifi' ? network.details : null;
+    const hosts = details?.ipAddress ? wledScanHosts(details.ipAddress, details.subnet) : [];
+    if (!hosts.length) {
+      setScan({ kind: 'noWifi' });
+      return;
+    }
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    setScan({ kind: 'scanning', checked: 0, total: hosts.length, found: [] });
+    try {
+      const found = await discoverLedControllers(hosts, {
+        probe: (candidate, signal) => scanDriver.probe(candidate, signal),
+        signal: controller.signal,
+        onProgress: (checked, total) =>
+          setScan((current) => (current.kind === 'scanning' ? { ...current, checked, total } : current)),
+        onFound: (entry) =>
+          setScan((current) =>
+            current.kind === 'scanning' ? { ...current, found: [...current.found, entry] } : current,
+          ),
+      });
+      if (scanRequest.current === controller) setScan({ kind: 'done', found });
+    } catch {
+      // Cancelled: the climber typed, left or turned LEDs off.
+    } finally {
+      if (scanRequest.current === controller) scanRequest.current = null;
+    }
+  }
+
+  async function confirmUrl(candidate = url) {
     if (locked || !settings?.enabled || request.current) return;
     let normalized: string;
     try {
-      normalized = normalizeLocalControllerUrl(url);
+      normalized = normalizeLocalControllerUrl(candidate);
     } catch (urlError) {
       const notLocal = urlError instanceof LedControllerError && urlError.code === 'not-local';
       setResult({ kind: notLocal ? 'notLocal' : 'invalidUrl', url: null });
@@ -98,13 +327,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
       await persistUrl(normalized);
     } catch (failure) {
       if (request.current !== controller || controller.signal.aborted) return;
-      const kind =
-        failure instanceof LedControllerError && failure.code === 'timeout'
-          ? 'timeout'
-          : failure instanceof LedControllerError && failure.code === 'not-wled'
-            ? 'notWled'
-            : 'unavailable';
-      setResult({ kind, url: normalized });
+      setResult({ kind: probeFailureKind(failure), url: normalized });
     } finally {
       if (request.current === controller) {
         request.current = null;
@@ -115,7 +338,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
 
   async function sendLights(on: boolean) {
     if (locked || !settings?.enabled || request.current || result?.kind !== 'connected') return;
-    if (url !== result.url || settings.controller.url !== result.url) return;
+    if (target !== result.url || savedTarget !== result.url) return;
     const controller = new AbortController();
     request.current = controller;
     setPending('lights');
@@ -139,20 +362,24 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     pending === 'probe'
       ? t('sprayLed.checking')
       : result?.kind === 'connected'
-        ? t('sprayLed.connected', { name: result.name, count: result.ledCount })
+        ? bluetooth
+          ? t('sprayLed.bleConnected', { name: result.name })
+          : t('sprayLed.connected', { name: result.name, count: result.ledCount })
         : result?.kind === 'invalidUrl'
           ? t('sprayLed.invalidUrl')
           : result?.kind === 'notLocal'
             ? t('sprayLed.notLocal')
             : result?.kind === 'notWled'
-              ? t('sprayLed.notWled')
-              : result?.kind === 'timeout'
-                ? t('sprayLed.timeout')
-                : result?.kind === 'unavailable'
-                  ? t('sprayLed.unavailable')
-                  : null;
-  const canLight = result?.kind === 'connected' && settings?.controller.url === result.url && url === result.url;
-  const canKeep = result?.url && result.kind !== 'connected' && settings?.controller.url !== result.url;
+              ? t(bluetooth ? 'sprayLed.bleNotController' : 'sprayLed.notWled')
+              : result?.kind === 'bluetoothOff'
+                ? t('sprayLed.bleUnavailable')
+                : result?.kind === 'timeout'
+                  ? t(bluetooth ? 'sprayLed.bleTimeout' : 'sprayLed.timeout')
+                  : result?.kind === 'unavailable'
+                    ? t(bluetooth ? 'sprayLed.bleUnreachable' : 'sprayLed.unavailable')
+                    : null;
+  const canLight = result?.kind === 'connected' && savedTarget === result.url && target === result.url;
+  const canKeep = !bluetooth && result?.url && result.kind !== 'connected' && settings?.controller.url !== result.url;
 
   return (
     <View>
@@ -191,35 +418,146 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
               <Text variant="footnote" color={systemColors.secondaryLabel}>
                 {t('sprayLed.localHint')}
               </Text>
-              <SectionLabel>{t('sprayLed.url')}</SectionLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <BuilderTextInput
-                    value={url}
-                    onChangeText={(next) => {
-                      cancelRequest();
-                      setDraftUrl(next);
-                      setResult(null);
-                      setLighting(null);
-                    }}
-                    accessibilityLabel={t('sprayLed.url')}
-                    placeholder={t('sprayLed.urlPlaceholder')}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    maxLength={2048}
-                    editable={!locked && pending !== 'lights'}
-                    onSubmitEditing={() => void confirmUrl()}
-                    returnKeyType="done"
+              <SectionLabel>{t('sprayLed.connection')}</SectionLabel>
+              <SegmentedControl
+                options={[
+                  { key: 'wled', label: t('sprayLed.connectionWifi') },
+                  { key: 'ble', label: t('sprayLed.connectionBluetooth') },
+                ]}
+                selectedKey={settings.controller.type}
+                onSelect={(key) => void chooseControllerType(key as LedControllerType)}
+                accessibilityLabel={t('sprayLed.connection')}
+              />
+              {bluetooth ? (
+                <>
+                  <Text variant="footnote" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.bleHint')}
+                  </Text>
+                  {savedBleName ? (
+                    <>
+                      <Text variant="caption1" color={systemColors.secondaryLabel}>
+                        {t('sprayLed.bleSaved', { name: savedBleName })}
+                      </Text>
+                      <Button
+                        title={t('sprayLed.bleCheck')}
+                        variant="outlined"
+                        disabled={locked || pending !== null}
+                        onPress={() => void confirmBluetooth({ name: savedBleName })}
+                      />
+                    </>
+                  ) : null}
+                  <Button
+                    title={bleScan.kind === 'scanning' ? t('sprayLed.findStop') : t('sprayLed.bleFind')}
+                    variant="text"
+                    disabled={locked || pending !== null}
+                    onPress={() => (bleScan.kind === 'scanning' ? cancelBleScan() : findBluetooth())}
                   />
-                </View>
-                <Button
-                  title={t('sprayLed.confirm')}
-                  variant="outlined"
-                  disabled={locked || pending !== null || !url.trim()}
-                  onPress={() => void confirmUrl()}
-                />
-              </View>
+                  {bleScan.kind === 'scanning' ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.bleFinding')}
+                    </Text>
+                  ) : null}
+                  {bleScan.kind === 'unavailable' || bleScan.kind === 'busy' ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t(bleScan.kind === 'busy' ? 'sprayLed.bleScanBusy' : 'sprayLed.bleUnavailable')}
+                    </Text>
+                  ) : null}
+                  {bleScan.kind === 'done' && !bleScan.found.length ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.bleFindNone')}
+                    </Text>
+                  ) : null}
+                  {bleScan.kind === 'scanning' || bleScan.kind === 'done'
+                    ? bleScan.found.map((found) => (
+                        <Button
+                          key={found.id}
+                          title={t('sprayLed.bleResult', { name: found.name })}
+                          variant="outlined"
+                          disabled={locked || pending !== null}
+                          onPress={() => {
+                            cancelBleScan();
+                            setBleScan({ kind: 'idle' });
+                            void confirmBluetooth(found);
+                          }}
+                        />
+                      ))
+                    : null}
+                </>
+              ) : null}
+              {!bluetooth ? (
+                <>
+                  <SectionLabel>{t('sprayLed.url')}</SectionLabel>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <BuilderTextInput
+                        value={url}
+                        onChangeText={(next) => {
+                          cancelRequest();
+                          cancelScan();
+                          setDraftUrl(next);
+                          setResult(null);
+                          setLighting(null);
+                        }}
+                        accessibilityLabel={t('sprayLed.url')}
+                        placeholder={t('sprayLed.urlPlaceholder')}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        maxLength={2048}
+                        editable={!locked && pending !== 'lights'}
+                        onSubmitEditing={() => void confirmUrl()}
+                        returnKeyType="done"
+                      />
+                    </View>
+                    <Button
+                      title={t('sprayLed.confirm')}
+                      variant="outlined"
+                      disabled={locked || pending !== null || !url.trim()}
+                      onPress={() => void confirmUrl()}
+                    />
+                  </View>
+                  <Button
+                    title={scan.kind === 'scanning' ? t('sprayLed.findStop') : t('sprayLed.find')}
+                    variant="text"
+                    disabled={locked || pending !== null}
+                    onPress={() => (scan.kind === 'scanning' ? cancelScan() : void findOnWifi())}
+                  />
+                  {scan.kind === 'noWifi' ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.findNoWifi')}
+                    </Text>
+                  ) : null}
+                  {scan.kind === 'scanning' ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.finding', { checked: scan.checked, total: scan.total })}
+                    </Text>
+                  ) : null}
+                  {scan.kind === 'done' && !scan.found.length ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {t('sprayLed.findNone')}
+                    </Text>
+                  ) : null}
+                  {scan.kind === 'scanning' || scan.kind === 'done'
+                    ? scan.found.map((found) => (
+                        <Button
+                          key={found.url}
+                          title={t('sprayLed.findResult', {
+                            name: found.name,
+                            address: found.url.replace('http://', ''),
+                          })}
+                          variant="outlined"
+                          disabled={locked || pending !== null}
+                          onPress={() => {
+                            cancelScan();
+                            setScan({ kind: 'idle' });
+                            setDraftUrl(found.url);
+                            void confirmUrl(found.url);
+                          }}
+                        />
+                      ))
+                    : null}
+                </>
+              ) : null}
               {message ? (
                 <Text variant="footnote" accessibilityLiveRegion="polite">
                   {message}
@@ -235,7 +573,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                   }}
                 />
               ) : null}
-              {settings.controller.url && settings.controller.url === url ? (
+              {!bluetooth && settings.controller.url && settings.controller.url === url ? (
                 <Text variant="caption1" color={systemColors.secondaryLabel}>
                   {t('sprayLed.saved')}
                 </Text>
@@ -270,6 +608,45 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                         : t('sprayLed.lightFailed')}
                 </Text>
               ) : null}
+              {bluetooth ? (
+                // The Aurora frames carry no brightness or auto-off: the controller keeps its own.
+                <Text variant="caption1" color={systemColors.secondaryLabel}>
+                  {t('sprayLed.bleLightingHint')}
+                </Text>
+              ) : (
+                <>
+                  <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
+                  <ValueSlider
+                    value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
+                    min={MIN_BRIGHTNESS_PERCENT}
+                    max={100}
+                    round={roundBrightnessPercent}
+                    notch={brightnessNotch}
+                    format={(percent) => t('sprayLed.brightnessValue', { percent })}
+                    accessibilityLabel={t('sprayLed.brightness')}
+                    adjust={adjustBrightnessPercent}
+                    disabled={locked}
+                    onLiveChange={() => undefined}
+                    onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
+                  />
+                  <Text variant="caption1" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.brightnessHint')}
+                  </Text>
+                  <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
+                  <SegmentedControl
+                    options={AUTO_OFF_CHOICES.map((minutes) => ({
+                      key: String(minutes),
+                      label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
+                    }))}
+                    selectedKey={String(settings.autoOffMinutes)}
+                    onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
+                    accessibilityLabel={t('sprayLed.autoOff')}
+                  />
+                  <Text variant="caption1" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.autoOffHint')}
+                  </Text>
+                </>
+              )}
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

@@ -11,6 +11,7 @@ import {
 } from '@boardsesh/ble-protocol/rogue-timer';
 import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { getBleManager } from './ble-manager';
+import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
 import { uint8ArrayToBase64 } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
@@ -90,6 +91,8 @@ export class RogueTimerController {
   // `teardownConnection` stop only a scan we started, so a provider disconnect
   // can't kill an unrelated pairing-sheet scan on another controller instance.
   private scanActive = false;
+  // Its claim on ble-plx's one scan slot (ble-scan-slot.ts), so a Spraywall scan never starts over it.
+  private readonly scanToken = Symbol('rogue-timer-scan');
 
   /**
    * Start a service-filtered scan for Rogue timers. Keeps a de-duped list (by
@@ -118,6 +121,7 @@ export class RogueTimerController {
       if (stopped) return;
       stopped = true;
       this.scanActive = false;
+      releaseBleScan(this.scanToken);
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       // A sheet closed before the gating finished has no scan to stop, and
       // reaching for the ble-plx manager here would create it, which on iOS
@@ -133,6 +137,7 @@ export class RogueTimerController {
       if (!poweredOn || stopped) return;
 
       this.scanActive = true;
+      noteBleScanStarted(this.scanToken);
       scanStarted = true;
       void getBleManager().startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
         if (scanError) {
@@ -274,6 +279,7 @@ export class RogueTimerController {
         };
 
         this.scanActive = true;
+        noteBleScanStarted(this.scanToken);
         void getBleManager().startDeviceScan(
           [ROGUE_TIMER_ADVERTISED_SERVICE_UUID],
           null,
@@ -323,12 +329,14 @@ export class RogueTimerController {
       // (up to 12s) connect window degrades Android connection reliability.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
+      releaseBleScan(this.scanToken);
       void getBleManager().stopDeviceScan();
       return await this.connectById(found.deviceId);
     } finally {
       // Safety net: idempotent stop for the reject/throw paths too.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
+      releaseBleScan(this.scanToken);
       void getBleManager().stopDeviceScan();
     }
   }
@@ -378,6 +386,7 @@ export class RogueTimerController {
     // scan (e.g. an open pairing sheet).
     if (this.scanActive) {
       this.scanActive = false;
+      releaseBleScan(this.scanToken);
       void getBleManager().stopDeviceScan();
     }
 

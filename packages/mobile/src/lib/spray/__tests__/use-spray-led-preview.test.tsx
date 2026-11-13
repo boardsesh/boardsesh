@@ -3,7 +3,10 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  settings: { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } },
+  settings: { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } } as {
+    enabled: boolean;
+    controller: { type: string; url: string };
+  },
   show: vi.fn(),
   lightAll: vi.fn(),
   stop: vi.fn(),
@@ -23,6 +26,9 @@ vi.mock('react-native', () => ({
 vi.mock('../use-spray-wall-led-settings', () => ({
   useSprayWallLedSettings: () => ({ settings: mocks.settings, loading: false }),
 }));
+vi.mock('../spray-led-ble-transport-loader', () => ({}));
+const tnut = vi.hoisted(() => ({ load: vi.fn() }));
+vi.mock('../spray-wall-tnut-store', () => ({ loadSprayWallTnutLayout: tnut.load }));
 vi.mock('@boardsesh/led-controller', async (original) => ({
   ...(await original<object>()),
   getLedControllerDriver: () => ({}),
@@ -36,6 +42,7 @@ beforeEach(() => {
   mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } };
   for (const mock of [mocks.show, mocks.lightAll, mocks.stop, mocks.close]) mock.mockResolvedValue(true);
   mocks.isOwner.mockReturnValue(true);
+  tnut.load.mockResolvedValue(null);
   mocks.create.mockReturnValue({
     show: mocks.show,
     lightAll: mocks.lightAll,
@@ -50,6 +57,40 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('asks a Bluetooth Spraywall to find its controller, not for a WLED address', () => {
+    expect(renderHook(() => useSprayLedPreview('wall')).result.current.unavailableMessage).toBe(
+      'sprayLedSetup.lightingUnavailable',
+    );
+    mocks.settings = { enabled: true, controller: { type: 'ble', url: '' } };
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    expect(result.current.available).toBe(false);
+    expect(result.current.unavailableMessage).toBe('sprayLedSetup.lightingUnavailableBle');
+  });
+
+  it("lights a Bluetooth Spraywall's real LED count, from its saved wiring", async () => {
+    mocks.settings = { enabled: true, controller: { type: 'ble', url: 'ble:Boardsesh Spraywall 1A2B' } };
+    tnut.load.mockResolvedValue({
+      wiring: { direction: 'custom', startCorner: 'tl', paths: [['a', 'b', 'c']], skips: [] },
+    });
+    renderHook(() => useSprayLedPreview('wall'));
+    await waitFor(() =>
+      expect(mocks.create).toHaveBeenLastCalledWith(
+        expect.anything(),
+        'ble:Boardsesh Spraywall 1A2B',
+        expect.objectContaining({ ledCount: 3 }),
+      ),
+    );
+    // A Wi-Fi controller reports its own length: no layout read for it.
+    expect(tnut.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('drives a Bluetooth Spraywall at the controller name saved on the wall', () => {
+    mocks.settings = { enabled: true, controller: { type: 'ble', url: 'ble:Boardsesh Spraywall 1A2B' } };
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    expect(result.current.available).toBe(true);
+    expect(mocks.create).toHaveBeenCalledWith(expect.anything(), 'ble:Boardsesh Spraywall 1A2B', expect.anything());
+  });
+
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
     const { result, rerender, unmount } = renderHook(() => useSprayLedPreview('wall'));
     expect(result.current.available).toBe(true);
@@ -75,7 +116,7 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
     mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://new.local' } };
     rerender();
-    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local');
+    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local', expect.any(Object));
   });
 
   it('chases in supplied order, at 100ms intervals, then clears', async () => {

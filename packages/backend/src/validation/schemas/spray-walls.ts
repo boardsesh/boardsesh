@@ -3,7 +3,12 @@ import { OptionalReleaseContextInputSchema } from './release-context';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { LED_CONTROLLER_TYPES, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  LED_CONTROLLER_TYPES,
+  LedControllerError,
+  normalizeBleControllerTarget,
+  normalizeLocalControllerUrl,
+} from '@boardsesh/led-controller';
 import {
   MAX_TNUT_LAYOUT_BYTES,
   SPRAY_WALL_BACKGROUNDS,
@@ -405,13 +410,25 @@ export const SetSprayWallRenderSettingsInputSchema = z
  * address is held to the same local-network rule the phone applies before it
  * contacts anything, and the layout is rebuilt through `readTnutLayout` so the
  * stored JSON holds only the fields the app reads.
+ *
+ * A Bluetooth controller (`ble`) is saved as the exact name it advertises,
+ * `ble:Boardsesh Spraywall 1A2B`; each phone finds its own device id from it.
  */
+const BLE_ADDRESS_PREFIX = 'ble:';
 const SprayWallLedControllerUrlSchema = z
   .string()
   .max(2048, 'controllerUrl is too long')
   .transform((url, context) => {
     // Clearing the address is allowed; the owner may not have one yet.
     if (url.trim() === '') return '';
+    if (url.startsWith(BLE_ADDRESS_PREFIX)) {
+      try {
+        return normalizeBleControllerTarget(url);
+      } catch {
+        context.addIssue({ code: 'custom', message: 'controllerUrl is not a Spraywall Bluetooth controller name' });
+        return z.NEVER;
+      }
+    }
     try {
       return normalizeLocalControllerUrl(url);
     } catch (urlError) {
@@ -442,15 +459,32 @@ const SprayWallLedLayoutSchema = z.unknown().transform((layout, context) => {
 export const SaveSprayWallLedSetupInputSchema = z
   .object({
     boardUuid: UUIDSchema,
-    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled'" }).nullish(),
+    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled' or 'ble'" }).nullish(),
     controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
     enabled: z.boolean().nullish(),
+    brightness: z.number().int().min(1).max(255).nullish(),
+    autoOffMinutes: z.number().int().min(0).max(255).nullish(),
     layout: SprayWallLedLayoutSchema.nullish(),
   })
   .strict()
   .refine(
-    ({ controllerType, controllerUrl, enabled, layout }) =>
-      controllerType != null || controllerUrl != null || enabled != null || layout != null,
+    ({ controllerType, controllerUrl }) =>
+      controllerType == null ||
+      !controllerUrl ||
+      (controllerType === 'ble') === controllerUrl.startsWith(BLE_ADDRESS_PREFIX),
+    {
+      message: "controllerUrl must be a local address for 'wled' and a Spraywall controller name for 'ble'",
+      path: ['controllerUrl'],
+    },
+  )
+  .refine(
+    ({ controllerType, controllerUrl, enabled, brightness, autoOffMinutes, layout }) =>
+      controllerType != null ||
+      controllerUrl != null ||
+      enabled != null ||
+      brightness != null ||
+      autoOffMinutes != null ||
+      layout != null,
     'Nothing to save: send at least one field',
   );
 

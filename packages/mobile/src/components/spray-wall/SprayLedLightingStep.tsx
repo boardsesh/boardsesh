@@ -183,7 +183,7 @@ export function SprayLedLightingStep({
         </Text>
       ) : null}
       <Text variant="footnote">{t('sprayLedSetup.lightingHint')}</Text>
-      {!preview.available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+      {!preview.available ? <Text variant="footnote">{t(preview.unavailableMessage)}</Text> : null}
       <Button
         title={preview.allLit ? t('sprayLed.turnOff') : t('sprayLed.lightAll')}
         variant="outlined"

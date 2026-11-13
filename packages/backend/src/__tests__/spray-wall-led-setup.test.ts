@@ -177,6 +177,35 @@ describe('saving a wall’s LED setup', () => {
     expect(setup?.layout).toMatchObject({ photoKey: layout().photoKey, holes: layout().holes });
   });
 
+  it('shares brightness and auto-off with every phone, and keeps them through other saves', async () => {
+    const uuid = await createWall();
+    expect((await save(uuid, OWNER, { layout: layout() })).brightness).toBe(64);
+    await save(uuid, OWNER, { brightness: 51, autoOffMinutes: 30 });
+    await save(uuid, OWNER, { enabled: true });
+    const setup = (await read(uuid, OWNER))?.setup;
+    expect(setup).toMatchObject({ brightness: 51, autoOffMinutes: 30, enabled: true });
+    await expect(save(uuid, OWNER, { brightness: 0 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { brightness: 256 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { autoOffMinutes: 256 })).rejects.toThrow();
+    await expect(save(uuid, OWNER, { autoOffMinutes: 1.5 })).rejects.toThrow();
+  });
+
+  it('keeps hand-made hold links when an app that predates them saves, and clears them on request', async () => {
+    const uuid = await createWall();
+    const leds = [
+      { id: 'led-a', x: 0.25, y: 0.5, hole: { x: 0.25, y: 0.5 } },
+      { id: 'led-b', x: 0.75, y: 0.5, hole: { x: 0.75, y: 0.5 } },
+    ];
+    const linked = layout({ ledPositions: leds, holdLeds: [{ holdId: 7, ledIds: ['led-a', 'led-b'] }] });
+    await save(uuid, OWNER, { layout: linked });
+    // An older app sends no holdLeds: the links stay, minus an LED its layout dropped.
+    await save(uuid, OWNER, { layout: layout({ ledPositions: [leds[0]] }) });
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [{ holdId: 7, ledIds: ['led-a'] }] });
+    // A current app sends an explicit empty list to clear them.
+    await save(uuid, OWNER, { layout: layout({ ledPositions: leds, holdLeds: [] }) });
+    expect((await read(uuid, OWNER))?.setup?.layout).toMatchObject({ holdLeds: [] });
+  });
+
   it('stores only what the layout reader keeps, and the normalised address', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, {
@@ -235,6 +264,30 @@ describe('saving a wall’s LED setup', () => {
   ])('refuses the address %s and writes nothing', async (controllerUrl) => {
     const uuid = await createWall();
     await expect(save(uuid, OWNER, { controllerUrl })).rejects.toThrow(/controllerUrl/);
+    await expect(read(uuid, OWNER)).resolves.toEqual({ viewerCanEdit: true, setup: null });
+  });
+
+  it('saves a Bluetooth controller as the exact name it advertises', async () => {
+    const uuid = await createWall();
+    await save(uuid, OWNER, { enabled: true, controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' });
+    const setup = (await read(uuid, OWNER))?.setup;
+    expect(setup).toMatchObject({ controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' });
+    // Another address on the same Bluetooth setup must be a controller name too.
+    await save(uuid, OWNER, { controllerUrl: 'ble:Boardsesh Spraywall 00FF' });
+    await expect(save(uuid, OWNER, { controllerUrl: 'http://wled.local' })).rejects.toThrow(/controllerType/);
+    expect((await read(uuid, OWNER))?.setup?.controllerUrl).toBe('ble:Boardsesh Spraywall 00FF');
+  });
+
+  it.each([
+    { controllerType: 'ble', controllerUrl: 'http://wled.local' },
+    { controllerType: 'ble', controllerUrl: 'ble:AA:BB:CC:DD:EE:FF' },
+    { controllerType: 'ble', controllerUrl: 'ble:Boardsesh Spraywall 1a2b' },
+    { controllerType: 'ble', controllerUrl: 'ble:Kilter Board#123456@3' },
+    { controllerType: 'wled', controllerUrl: 'ble:Boardsesh Spraywall 1A2B' },
+    { controllerUrl: 'ble:Boardsesh Spraywall 1A2B' },
+  ])('refuses an address that does not fit its controller type: %j', async (fields) => {
+    const uuid = await createWall();
+    await expect(save(uuid, OWNER, fields)).rejects.toThrow(/controller/);
     await expect(read(uuid, OWNER)).resolves.toEqual({ viewerCanEdit: true, setup: null });
   });
 

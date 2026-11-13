@@ -240,6 +240,86 @@ adjust in `platformio.ini`:
 - Flicker / wrong pixels → `-D LED_CHIPSET=WS2812B`.
 - String length → `-D NUM_LEDS=<n>` (default 200, max 500).
 
+**Spraywall LED controller** (`gledopto-c015-spraywall`): the same hardware and
+firmware, built for the Boardsesh app's Bluetooth Spraywall lighting
+(`docs/spray-wall-led-ble.md`). It extends `gledopto-c015` with
+`-D SPRAYWALL_LED_CONTROLLER=1`, which:
+
+- advertises `Boardsesh Spraywall XXXX` (last two bytes of the Bluetooth MAC) with no Aurora
+  service UUID, so the Kilter app and Boardsesh's board pickers never list it;
+  the Nordic UART service and Aurora v3 decoder are unchanged, and the app sends
+  LED indices as Aurora positions;
+- starts Bluetooth at boot, with or without Wi-Fi (the setup AP
+  `Boardsesh-Setup` opens beside it when no Wi-Fi is saved);
+- turns the string off 30 minutes after the last climb
+  (`-D SPRAYWALL_AUTO_OFF_MINUTES=<n>`, 0 never);
+- disconnects a phone that has not written for 90 s
+  (`-D SPRAYWALL_IDLE_DISCONNECT_SECONDS=<n>`), so one idle phone cannot hold it;
+- applies every frame in `loop()` (one task writes the strip; nordic-uart-ble's
+  `setFrameCallback`), where the Kilter builds still show it on the NimBLE task;
+- sets `NUM_LEDS=500` (the library's `MAX_LEDS`).
+
+No pairing: any phone in range can light it, like a Kilter board. Brightness is
+the setup page's "LED Brightness" (applied after a restart).
+
+**Current limit** (Spraywall build, set at build time). The controller cannot
+measure its supply, so every frame's draw is estimated before it is shown
+(`sum((r+g+b)/765 × per-pixel mA) × brightness/255`, `libs/led-controller/src/power_limit.h`)
+and the brightness scaled down until it fits. Two flags in the
+`gledopto-c015-spraywall` env of `platformio.ini`:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `SPRAYWALL_MAX_CURRENT_MA` | `5000` | The most the string may draw, in mA |
+| `SPRAYWALL_PIXEL_FULL_WHITE_MA` | `60` | What one pixel (node) draws at full white, in mA |
+
+The defaults are the safe worst case: a 5 A budget and 5 V WS2812B pixels
+(3 × 20 mA each). Choose both from the supply and the strip's datasheet, and
+never above the controller: **10 A per output, 15 A in total**.
+
+| String | Per pixel at full white | Example settings |
+| --- | --- | --- |
+| 5 V WS2812B, 5 V 10 A supply | ~60 mA | `MAX_CURRENT_MA=9000`, `PIXEL_FULL_WHITE_MA=60` (keep a margin under 10 A) |
+| 12 V WS2811, 3 LEDs per node | ~20 mA | `MAX_CURRENT_MA=8000`, `PIXEL_FULL_WHITE_MA=20` |
+| 24 V WS2811 / WS2814, one node per segment | ~12–20 mA (datasheet) | `MAX_CURRENT_MA=6000`, `PIXEL_FULL_WHITE_MA=15` |
+
+A higher voltage moves the same light with less current, which is why 12 V and
+24 V pixels draw fewer mA. Changing either value means rebuilding and
+reflashing. The setup page's status (`/api/status`) shows the values built in
+(`led_max_current_ma`, `led_pixel_full_white_ma`), the last estimate
+(`led_estimated_ma`) and whether the cap dimmed it (`led_power_limited`); the
+serial log says so too. The startup animation's all-blue flash is capped as well.
+The Kilter builds have no cap (`show()` is unchanged).
+
+**Back up the factory firmware before flashing.** Connect the controller's
+USB/UART port and read the whole 4 MB flash with PlatformIO's bundled esptool
+(replace `COM5` with the controller's port; `/dev/ttyUSB0` on Linux):
+
+```sh
+pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --chip esp32 --port COM5 --baud 460800 read_flash 0 0x400000 gledopto-backup.bin
+```
+
+Keep `gledopto-backup.bin`. It brings the controller back exactly as it was:
+
+```sh
+pio pkg exec --package platformio/tool-esptoolpy -- esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0 gledopto-backup.bin
+```
+
+**Going back to WLED.** This firmware replaces WLED: a controller running it
+works over Bluetooth only, not with the app's Wi-Fi (WLED) controller type. To
+return to WLED, flash the backup above, or official WLED: the web installer at
+<https://install.wled.me> (Chrome or Edge, over USB) or an ESP32 image from
+<https://github.com/wled/WLED/releases>. Then, in WLED's **Config → LED
+Preferences**:
+
+- LED output **data GPIO 16**;
+- **Relay GPIO 18**, active high (leave "Invert" unticked): it switches the output
+  V+ MOSFET, so without it the strip gets no power. GPIO 12 on other revisions
+  of the family, per GLEDOPTO's manual;
+- set the LED count, chipset (WS2811/WS2812B) and colour order of the string, and
+  WLED's own current limiter.
+
+
 **Bench-supply tip:** if the supply reads its set voltage at the input but the LEDs
 are dead, check the current limit isn't clamped near 0 A (that collapses the output
 to ~0.2 V), and that barrel polarity is center-positive.

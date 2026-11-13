@@ -8,6 +8,7 @@ import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 
 const preview = vi.hoisted(() => ({
   available: true,
+  unavailableMessage: 'sprayLedSetup.lightingUnavailable',
   error: null as string | null,
   stop: vi.fn(),
   show: vi.fn(),
@@ -193,7 +194,7 @@ describe('holds and LEDs step', () => {
     expect(overlay().selectedHoldIds).toEqual([20]);
     expect(preview.stop).toHaveBeenCalled();
     fireEvent.click(button('undo'));
-    expect(changes.at(-1)).toEqual({ holdLeds: undefined });
+    expect(changes.at(-1)).toEqual({ holdLeds: [] });
     expect(overlay().unmappedHoldIds).toEqual([]);
     expect(button('undo').disabled).toBe(true);
     // Back on hold 10, a hand-made link can be given back to the automatic mapping.
@@ -204,7 +205,7 @@ describe('holds and LEDs step', () => {
     expect(changes.at(-1)).toEqual({ holdLeds: [{ holdId: 10, ledIds: ['b'] }] });
     expect(button('holdLedsReset').disabled).toBe(false);
     fireEvent.click(button('holdLedsReset'));
-    expect(changes.at(-1)).toEqual({ holdLeds: undefined });
+    expect(changes.at(-1)).toEqual({ holdLeds: [] });
     expect(overlay().selected).toEqual(['a', 'b']);
   });
 

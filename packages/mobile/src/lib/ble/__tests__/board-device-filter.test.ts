@@ -104,4 +104,11 @@ describe('isLikelyBoardDevice', () => {
     ).toBe(false);
     expect(isLikelyBoardDevice({ name: "Marco's AirPods #1", serviceUuids: [], scanFamily: 'aurora' })).toBe(false);
   });
+
+  // The Spraywall LED controller (board-controller env gledopto-c015-spraywall)
+  // advertises only its name; its Nordic UART service is in GATT, not in the
+  // advertisement. No board picker or the quickstart may list it.
+  it.each(['aurora', 'moonboard'] as const)('never lists a Spraywall LED controller on %s scans', (scanFamily) => {
+    expect(isLikelyBoardDevice({ name: 'Boardsesh Spraywall 1A2B', serviceUuids: [], scanFamily })).toBe(false);
+  });
 });
