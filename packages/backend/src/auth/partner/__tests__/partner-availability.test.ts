@@ -305,8 +305,20 @@ describe('partner OAuth availability', () => {
         replaysPerSecond: Math.round(replays / durationSeconds),
       });
 
-      // Before this fix the reset waited 8.8 s, until the replays stopped.
-      expect(resetMs).toBeLessThan(200);
+      // Runner contention can delay the measured reset without a row-lock
+      // dependency. Prove the actual boundary while the same owner's row is
+      // held: spent replays must refuse without waiting for that user lock.
+      // A regression reaches the existing SQL lock timeout and returns 503.
+      await db.transaction(async (transaction) => {
+        await transaction.select({ id: users.id }).from(users).where(eq(users.id, client.owner.userId)).for('update');
+        const blockedOwnerReplays = await Promise.all(
+          Array.from({ length: 6 }, () => postForm(environment.instance, '/oauth2/token', form)),
+        );
+        for (const replay of blockedOwnerReplays) {
+          expect(replay.response.status).toBe(400);
+          expect(replay.body.error).toBe('invalid_grant');
+        }
+      });
     },
     FLOOD_DEADLINE_MS,
   );
