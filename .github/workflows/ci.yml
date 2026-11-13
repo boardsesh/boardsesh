@@ -956,7 +956,7 @@ jobs:
       - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
         id: better-auth-boundary
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts --maxWorkers=2 --reporter=agent
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts --maxWorkers=2 --reporter=agent
 
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
@@ -1362,9 +1362,9 @@ jobs:
     # sharedDeps filter note in the `changes` job before narrowing that gate.
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
-    # Full dependency-triggered backend tests alone took 25 minutes in run
-    # 43427270658. Leave room for serial/native/auth proofs and Chromium's
-    # cold install without interrupting passing tests at the 30-minute mark.
+    # A complete 12,543-case backend run took 25m17s before its 2m12s
+    # serial pass. Keep bounded runner/setup variance here; compatibility
+    # proofs have their own independent job below.
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -1482,42 +1482,6 @@ jobs:
           vp test run --project backend-serial \
             --reporter=verbose --reporter=github-actions \
             --reporter=junit --outputFile.junit=./packages/backend/test-results/junit-backend-serial.xml
-      - name: Run released native and Garmin source contracts
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          NATIVE_CONTRACT_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          NATIVE_CONTRACT_REDIS_URL: redis://localhost:6380
-        run: vp run test:native-contract
-      - name: Run Better Auth compatibility prototype
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
-        run: vp run test:auth-prototype
-      - name: Run unmounted production authority mapping proof
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-authority
-      - name: Run identity import and read-only reconciliation proof
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-identities
-      - name: Run backend and web credential proof
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-web-credential-proof
-      - name: Install Chromium for auth compatibility proof
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        working-directory: packages/web
-        run: vp exec playwright install --with-deps chromium
-      - name: Run HTTPS auth browser proof
-        if: ${{ !cancelled() && matrix.shard == 1 }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-prototype:browser
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1526,6 +1490,89 @@ jobs:
           # Shard 1 also carries junit-backend-serial.xml.
           path: packages/backend/test-results/junit-backend-*.xml
           retention-days: 7
+
+  # Compatibility proofs own their database services and time budget.
+  # Run 43428016602 spent 25m17s in the full backend suite and 2m12s
+  # in serial tests, then hit the old 30-minute limit during auth proofs.
+  test-auth-compatibility:
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:98ed9b18b9ef23d4f0aec136bab51b600b8343a19b5f39c78c2c8deab1e96c91
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: boardsesh_backend_test
+        ports:
+          - 5433:5432
+        # Finer probe grid, identical tolerance window (10s x 5 = 50s ->
+        # 2s x 25 = 50s). Docker's first probe fires only after one interval
+        # elapses, so the coarse grid was ~13s of idle in `Initialize
+        # containers` while the server was already accepting connections.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        # Same rescale: 10s x 5 = 50s -> 2s x 25 = 50s.
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Run released native and Garmin source contracts
+        if: ${{ !cancelled() }}
+        env:
+          NATIVE_CONTRACT_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          NATIVE_CONTRACT_REDIS_URL: redis://localhost:6380
+        run: vp run test:native-contract
+      - name: Run Better Auth compatibility prototype
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
+        run: vp run test:auth-prototype
+      - name: Run unmounted production authority mapping proof
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-authority
+      - name: Run identity import and read-only reconciliation proof
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-identities
+      - name: Run backend and web credential proof
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-web-credential-proof
+      - name: Install Chromium for auth compatibility proof
+        if: ${{ !cancelled() }}
+        working-directory: packages/web
+        run: vp exec playwright install --with-deps chromium
+      - name: Run HTTPS auth browser proof
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-prototype:browser
 
   # Mirror-on qualification repeats the complete current-store suite. It owns
   # service containers so its budget is independent of baseline tests and HTTPS.
@@ -1982,6 +2029,7 @@ jobs:
       - board-art-geometry
       - test-default
       - test-backend
+      - test-auth-compatibility
       - test-auth-mirror
       - aurora-circuit-arbitration
       - test-ocr

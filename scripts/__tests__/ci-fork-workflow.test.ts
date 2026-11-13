@@ -219,22 +219,26 @@ describe('CI contribution gates', () => {
     expect(categorize('Fix warm-up length near the lowest grades')).toBe('improved');
   });
 
-  it.each(['test-default', 'test-backend', 'test-auth-mirror', 'test-ocr', 'test-location-sync-integration'])(
-    'still blocks ci-status when %s fails',
-    (failedJob) => {
-      const status = ci.jobs['ci-status'];
-      expect(status.needs).toContain(failedJob);
-      const run = status.steps[0].run;
-      if (!run) throw new Error('No ci-status shell');
-      const results = Object.fromEntries(
-        (status.needs ?? []).map((job) => [job, { result: job === failedJob ? 'failure' : 'success' }]),
-      );
-      const execution = spawnSync('bash', ['-c', run], {
-        encoding: 'utf8',
-        env: { ...process.env, RESULTS: JSON.stringify(results) },
-      });
-      expect(execution.status).toBe(1);
-      expect(execution.stdout).toContain(`${failedJob}: failure`);
-    },
-  );
+  it.each([
+    'test-default',
+    'test-backend',
+    'test-auth-compatibility',
+    'test-auth-mirror',
+    'test-ocr',
+    'test-location-sync-integration',
+  ])('still blocks ci-status when %s fails', (failedJob) => {
+    const status = ci.jobs['ci-status'];
+    expect(status.needs).toContain(failedJob);
+    const run = status.steps[0].run;
+    if (!run) throw new Error('No ci-status shell');
+    const results = Object.fromEntries(
+      (status.needs ?? []).map((job) => [job, { result: job === failedJob ? 'failure' : 'success' }]),
+    );
+    const execution = spawnSync('bash', ['-c', run], {
+      encoding: 'utf8',
+      env: { ...process.env, RESULTS: JSON.stringify(results) },
+    });
+    expect(execution.status).toBe(1);
+    expect(execution.stdout).toContain(`${failedJob}: failure`);
+  });
 });
