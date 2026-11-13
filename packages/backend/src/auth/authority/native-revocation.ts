@@ -1,6 +1,6 @@
 import type { NativeRevocationMode } from './native-revocation-configuration';
 import crypto from 'node:crypto';
-import { and, eq, isNull, sql, like } from 'drizzle-orm';
+import { and, eq, isNull, sql, like, or } from 'drizzle-orm';
 import {
   authEmailProjection,
   authSecurityMutationEvents,
@@ -113,7 +113,15 @@ export async function revokeNativeCredentials(
       });
       await transaction
         .delete(authSession)
-        .where(and(eq(authSession.userId, candidate.userId), like(authSession.legacyLineageId, 'native-refresh:%')));
+        .where(
+          and(
+            eq(authSession.userId, candidate.userId),
+            or(
+              like(authSession.legacyLineageId, 'native-refresh:%'),
+              like(authSession.legacyLineageId, 'credential:native-refresh:%'),
+            ),
+          ),
+        );
     }
     const matchingRows = await transaction
       .update(mobileRefreshTokens)
@@ -135,7 +143,13 @@ export async function revokeNativeCredentials(
         .update(authCredentialLineage)
         .set({ revokedAt: new Date() })
         .where(
-          and(eq(authCredentialLineage.userId, candidate.userId), like(authCredentialLineage.id, 'native-refresh:%')),
+          and(
+            eq(authCredentialLineage.userId, candidate.userId),
+            or(
+              like(authCredentialLineage.id, 'native-refresh:%'),
+              like(authCredentialLineage.id, 'credential:native-refresh:%'),
+            ),
+          ),
         );
     }
     await transaction

@@ -8,7 +8,7 @@ import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { decodeJwt, SignJWT } from 'jose';
 import { notificationDevices } from '@boardsesh/db/schema/app';
-import { mobileRefreshTokens, authSessionDenials } from '@boardsesh/db/schema/auth';
+import { mobileRefreshTokens, authSessionDenials, authEmailProjection } from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what verifyTransferToken reads from env
@@ -52,7 +52,7 @@ vi.mock('../db/client', () => {
           ];
     const selection = {
       from: (table: unknown) => {
-        if (table === authSessionDenials) rows = [];
+        if (table === authSessionDenials || table === authEmailProjection) rows = [];
         return selection;
       },
       leftJoin: () => selection,

@@ -89,3 +89,10 @@ It also does not replace HTTP handlers, CORS/rate limits, watch session-control
 routers or push-device cleanup. Handler recreation is not a killed-process or
 Redis/database recovery rehearsal. A real Garmin device and supported released
 mobile builds remain required QA before production cutover.
+
+## Transfer and watch ancestry continuation
+
+[The native transfer/watch capability continuation](better-auth-native-transfer-ancestry.md)
+preserves conservative ancestry through native refresh and introduces a default-off,
+source-bound private Redis capability. Its local composition evidence does not
+qualify deployed readers, old issuers, role fencing or offline watch acceptance.

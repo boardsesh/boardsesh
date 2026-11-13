@@ -85,3 +85,10 @@ Provider ID-token validity and a new native JWT `iat` are not original authentic
 Deleting a user currently cascades away `accounts`. Absence of a current link cannot prove that a subject never belonged to a deleted owner, especially after a provider email changes. This slice provides no durable provider-subject deletion history, import provenance or global re-registration policy. Existing all-writer, deletion and historical-owner gates remain open.
 
 Autonomous work can implement and test the service, mode, actual crypto/client proofs, sanitized failure handling and documentation locally. Production projection/collision measurements, role memberships/owners/alternate routines, old issuer shutdown, configured real provider registrations, SMTP/origins, all reader replicas, web fallback adoption, safe rollback and retained-key/provider-history policy are not established by these fixtures. No production credential/configuration read or mutation, identity import, data deletion, reassignment, Bluetooth or iOS runtime change is authorized.
+
+## Transfer and watch ancestry continuation
+
+[The native transfer/watch capability continuation](better-auth-native-transfer-ancestry.md)
+preserves conservative ancestry through native refresh and introduces a default-off,
+source-bound private Redis capability. Its local composition evidence does not
+qualify deployed readers, old issuers, role fencing or offline watch acceptance.

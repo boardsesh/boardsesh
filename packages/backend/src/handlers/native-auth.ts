@@ -1,7 +1,17 @@
 import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
 import { captureIdentityAuthority, revalidateIdentityAuthority } from '../auth/authority/router';
 import { authenticateIdentityPassword } from '../auth/authority/password-verification';
-import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
+import {
+  createWatchPairCapability,
+  parseWatchPairCapability,
+  WATCH_PAIR_CAPABILITY_TTL_SECONDS,
+} from '../auth/watch-pairing-capability';
+import { watchPairingMode } from '../auth/watch-pairing-configuration';
+import { nativeSessionRequiresAccountCutoff, UNKNOWN_WEB_NATIVE_SESSION_PREFIX } from '../auth/native-session-ancestry';
+import {
+  currentNativeRevocationMode,
+  parseNativeRevocationMode,
+} from '../auth/authority/native-revocation-configuration';
 import { legacyBridgeMode } from '../auth/authority/bridge';
 import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
 import { cleanupNativeRefreshRows } from '../auth/authority/native-refresh-retention';
@@ -45,7 +55,7 @@ import {
   transactionSettings,
   type WebPasswordAuthority,
 } from '../auth/current-store/command-context';
-import { CurrentStoreFoundationError } from '../auth/current-store/foundation-context';
+import { CurrentStoreFoundationError, lockIdentityManifest } from '../auth/current-store/foundation-context';
 import { insertReservedPasswordIdentity } from '../auth/current-store/reserved-password-registration';
 import {
   resolveReservedNativeOAuthIdentity,
@@ -347,6 +357,7 @@ type TransferPayload = {
   gen?: unknown;
   auth_time?: unknown;
   link_guarded?: unknown;
+  legacy_no_sid?: unknown;
   authSessionId?: unknown;
   attemptId?: unknown;
   provider?: unknown;
@@ -358,6 +369,8 @@ function verifyTransferToken(token: string): {
   authSessionId: string | null;
   authenticatedAt: Date | null;
   accountCreation?: AccountCreationReceipt;
+  requiresAccountCutoff: boolean;
+  validUntil: number;
 } | null {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new AuthAdmissionUnavailableError();
@@ -430,6 +443,10 @@ function verifyTransferToken(token: string): {
     (typeof payload.authSessionId !== 'string' || !payload.authSessionId.trim() || payload.authSessionId.length > 256)
   )
     return null;
+  if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
+  const sourceSessionId = typeof payload.authSessionId === 'string' ? payload.authSessionId : null;
+  const inheritedAncestry = sourceSessionId === null ? true : nativeSessionRequiresAccountCutoff(sourceSessionId);
+  if (inheritedAncestry === null) return null;
   const authenticationTime = readAuthTimeClaim(payload.auth_time, Date.now());
   const authenticatedAt =
     payload.link_guarded === true && authenticationTime !== null && authenticationTime <= payload.iat
@@ -438,7 +455,11 @@ function verifyTransferToken(token: string): {
   return {
     userId: payload.userId,
     generation,
-    authSessionId: typeof payload.authSessionId === 'string' ? payload.authSessionId : null,
+    authSessionId: sourceSessionId,
+    requiresAccountCutoff: payload.legacy_no_sid === true || inheritedAncestry,
+    // The installed verifier compares integer seconds with an inclusive
+    // tolerance. Reject at the first millisecond outside that same window.
+    validUntil: (payload.exp + CLOCK_SKEW_TOLERANCE_SECONDS + 1) * 1000,
     authenticatedAt,
     ...(accountCreation ? { accountCreation } : {}),
   };
@@ -477,11 +498,17 @@ type NativeCredentialOrigin =
   | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null; readonly passwordProof?: PasswordProof }
   /** The refresh row this request consumed, under the same user lock. */
   | { readonly kind: 'refresh'; readonly parent: RefreshStamps }
+  /** A legacy UID-only pending code is valid only before staged authority/cutoffs exist. */
+  | { readonly kind: 'legacy-pairing' }
   | {
       readonly kind: 'transfer';
       readonly generation: number;
       readonly authSessionId: string | null;
       readonly authenticatedAt: Date | null;
+      readonly requiresAccountCutoff: boolean;
+      /** Only a native source is bound to native sign-out; web handoff remains independent. */
+      readonly nativeGeneration?: number;
+      readonly capabilityExpiresAt?: number;
     };
 
 type CredentialStamps = {
@@ -496,15 +523,29 @@ function signedInNow(): NativeCredentialOrigin {
   return { kind: 'sign-in', authenticatedAt: new Date() };
 }
 
-/** A sign-in that hands over a login made elsewhere: its age is unknown. */
-const SIGN_IN_OF_UNKNOWN_AGE: NativeCredentialOrigin = { kind: 'sign-in', authenticatedAt: null };
+const LEGACY_PAIRING_WITHOUT_SOURCE: NativeCredentialOrigin = { kind: 'legacy-pairing' };
+
+function legacyPairingStateAllowed(subject: SubjectCutoffState): boolean {
+  return subject.generation === 0 && subject.nativeGeneration === 0 && subject.deniedSessionKeys.size === 0;
+}
+
+/** Preflight only: no Redis request runs inside this short eligibility transaction. */
+async function preflightLegacyPairing(userId: string): Promise<void> {
+  await db.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    const manifest = await lockIdentityManifest(transaction);
+    if (manifest?.phase === 'enforced') throw new AuthAdmissionUnavailableError();
+    const subject = await requireHumanSubjectForIssuance(transaction, userId);
+    if (!legacyPairingStateAllowed(subject)) throw new AuthAdmissionUnavailableError();
+  });
+}
 
 function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCutoffState): CredentialStamps {
-  if (origin.kind === 'sign-in') {
+  if (origin.kind === 'sign-in' || origin.kind === 'legacy-pairing') {
     return {
       subjectGeneration: generations.generation,
       nativeGeneration: generations.nativeGeneration,
-      authenticatedAt: origin.authenticatedAt,
+      authenticatedAt: origin.kind === 'sign-in' ? origin.authenticatedAt : null,
       sessionId: crypto.randomUUID(),
     };
   }
@@ -513,7 +554,7 @@ function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCu
       subjectGeneration: origin.generation,
       nativeGeneration: generations.nativeGeneration,
       authenticatedAt: origin.authenticatedAt,
-      sessionId: crypto.randomUUID(),
+      sessionId: `${origin.requiresAccountCutoff ? UNKNOWN_WEB_NATIVE_SESSION_PREFIX : ''}${crypto.randomUUID()}`,
     };
   // Copy, never re-read: a child is never newer than its parent. A row from
   // before the stamps stands for generation 0, so its child is stamped 0, and
@@ -542,6 +583,15 @@ async function generateTokenPair(
   expiresAt: string;
   userId: string;
 }> {
+  const assertOriginActive = () => {
+    if (
+      origin.kind === 'transfer' &&
+      origin.capabilityExpiresAt !== undefined &&
+      Date.now() >= origin.capabilityExpiresAt
+    )
+      throw new AuthSubjectDeniedError();
+  };
+  assertOriginActive();
   let generations = lockedState;
   if (!generations) {
     const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
@@ -552,10 +602,20 @@ async function generateTokenPair(
       await lockPasswordProofAuthority(transaction, passwordProof);
       await boundSignInLockWaits(transaction);
     }
+    if (origin.kind === 'legacy-pairing') {
+      const manifest = await lockIdentityManifest(transaction);
+      if (manifest?.phase === 'enforced') throw new AuthSubjectDeniedError();
+    }
     generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
   }
+  if (origin.kind === 'legacy-pairing' && !legacyPairingStateAllowed(generations)) throw new AuthSubjectDeniedError();
   if (origin.kind === 'transfer') {
-    if (origin.generation !== generations.generation) throw new AuthSubjectDeniedError();
+    assertOriginActive();
+    if (
+      origin.generation !== generations.generation ||
+      (origin.nativeGeneration !== undefined && origin.nativeGeneration !== generations.nativeGeneration)
+    )
+      throw new AuthSubjectDeniedError();
     if (origin.authSessionId) {
       const [denial] = await transaction
         .select()
@@ -586,6 +646,7 @@ async function generateTokenPair(
   const signingSecret = getSigningSecret();
   if (!signingSecret) throw new AuthAdmissionUnavailableError();
   const stamps = credentialStamps(origin, generations);
+  if (nativeSessionRequiresAccountCutoff(stamps.sessionId) === null) throw new AuthSubjectDeniedError();
   if (origin.kind === 'refresh') {
     // The parent stays readable through rollback; the canonical binding is additive.
     const parentExpiresAt = origin.parent.expiresAt;
@@ -626,6 +687,7 @@ async function generateTokenPair(
     ...stamps,
   });
 
+  assertOriginActive();
   return {
     userId,
     jwt,
@@ -762,6 +824,8 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
       generation: verified.generation,
       authSessionId: verified.authSessionId,
       authenticatedAt: verified.authenticatedAt,
+      requiresAccountCutoff: verified.requiresAccountCutoff,
+      capabilityExpiresAt: verified.validUntil,
     });
     logger.info('[NativeAuth] Token exchange successful');
     sendJson(res, 200, {
@@ -1752,7 +1816,7 @@ export async function handleNativeAuthRevoke(req: IncomingMessage, res: ServerRe
 // ---------------------------------------------------------------------------
 
 /** Pairing-code lifetime — long enough to read off a phone and type on a watch. */
-const WATCH_PAIR_CODE_TTL_SECONDS = 300;
+const WATCH_PAIR_CODE_TTL_SECONDS = WATCH_PAIR_CAPABILITY_TTL_SECONDS;
 
 /** Pairing-code length in characters. */
 const WATCH_PAIR_CODE_LENGTH = 8;
@@ -1814,6 +1878,14 @@ export async function handleWatchPairCode(req: IncomingMessage, res: ServerRespo
     return;
   }
   const token = headerValue.slice(7).trim();
+  const pairingEnvironment = { ...process.env };
+  let mode: ReturnType<typeof watchPairingMode>;
+  try {
+    mode = watchPairingMode(pairingEnvironment);
+  } catch {
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
+    return;
+  }
   const admission = token ? await validateHttpAuthToken(token, res) : { available: true as const, auth: null };
   if (!admission.available) return;
   const auth = admission.auth;
@@ -1832,17 +1904,38 @@ export async function handleWatchPairCode(req: IncomingMessage, res: ServerRespo
 
   try {
     const { publisher } = redisClientManager.getClients();
+    if (mode === 'legacy') await preflightLegacyPairing(auth.userId);
+    const bound =
+      mode === 'source-bound-staging'
+        ? await createWatchPairCapability(auth, token, pairingEnvironment.NEXTAUTH_SECRET ?? '')
+        : null;
+    if (mode === 'source-bound-staging' && !bound) {
+      sendJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+    const contents = bound?.contents ?? auth.userId;
+    const ttlSeconds = bound?.ttlSeconds ?? WATCH_PAIR_CODE_TTL_SECONDS;
     let code: string | null = null;
     for (let attempt = 0; attempt < WATCH_PAIR_CODE_MAX_ATTEMPTS; attempt++) {
       const candidate = generatePairingCode();
       // SET NX so a rare collision with a live code doesn't overwrite it.
-      const stored = await publisher.set(
-        `${WATCH_PAIR_CODE_REDIS_PREFIX}${candidate}`,
-        auth.userId,
-        'EX',
-        WATCH_PAIR_CODE_TTL_SECONDS,
-        'NX',
-      );
+      if (bound && bound.capability.expiresAt <= Date.now()) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      const stored = bound
+        ? await publisher.set(
+            `${WATCH_PAIR_CODE_REDIS_PREFIX}${candidate}`,
+            contents,
+            'PXAT',
+            bound.capability.expiresAt,
+            'NX',
+          )
+        : await publisher.set(`${WATCH_PAIR_CODE_REDIS_PREFIX}${candidate}`, contents, 'EX', ttlSeconds, 'NX');
+      if (bound && bound.capability.expiresAt <= Date.now()) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
       if (stored === 'OK') {
         code = candidate;
         break;
@@ -1855,10 +1948,11 @@ export async function handleWatchPairCode(req: IncomingMessage, res: ServerRespo
       return;
     }
 
-    const expiresAt = new Date(Date.now() + WATCH_PAIR_CODE_TTL_SECONDS * 1000).toISOString();
+    const expiresAt = new Date(bound?.capability.expiresAt ?? Date.now() + ttlSeconds * 1000).toISOString();
     logger.info('[WatchPair] Issued pairing code');
     sendJson(res, 200, { code, expiresAt });
-  } catch {
+  } catch (error) {
+    if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[WatchPair] Failed to issue pairing code', { code: 'WATCH_CODE_ISSUANCE_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
@@ -1891,6 +1985,16 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  const pairingEnvironment = { ...process.env };
+  let staged: boolean;
+  try {
+    staged =
+      watchPairingMode(pairingEnvironment) === 'source-bound-staging' ||
+      parseNativeRevocationMode(pairingEnvironment) === 'generation';
+  } catch {
+    sendJson(res, 503, { error: 'Service temporarily unavailable' });
+    return;
+  }
   let body: unknown;
   try {
     const raw = await readBody(req);
@@ -1927,8 +2031,14 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
 
   try {
     const { publisher } = redisClientManager.getClients();
-    const pendingUserId = await publisher.get(`${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`);
-    if (!pendingUserId || !(await isHumanSubjectActive(pendingUserId))) {
+    const pendingContents = await publisher.get(`${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`);
+    const capability = pendingContents ? parseWatchPairCapability(pendingContents) : null;
+    const legacyUserId =
+      pendingContents && !pendingContents.startsWith('{') && !staged && pendingContents.length <= 256
+        ? pendingContents
+        : null;
+    const pendingUserId = capability?.userId ?? legacyUserId;
+    if (!pendingContents || !pendingUserId || !(await isHumanSubjectActive(pendingUserId))) {
       sendJson(res, 401, { error: 'Invalid or expired pairing code' });
       return;
     }
@@ -1940,19 +2050,35 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
         "local owner = redis.call('GET', KEYS[1]); if owner == ARGV[1] then redis.call('DEL', KEYS[1]); return owner end; return false",
         1,
         `${WATCH_PAIR_CODE_REDIS_PREFIX}${normalized}`,
-        pendingUserId,
+        pendingContents,
       );
     } catch {
       // Redis errors can retain command arguments. Keep them out of logs and
       // never restore a claim after an uncertain atomic command outcome.
       throw new AuthAdmissionUnavailableError();
     }
-    if (!userId || userId !== pendingUserId) {
+    if (!userId || userId !== pendingContents) {
       sendJson(res, 401, { error: 'Invalid or expired pairing code' });
       return;
     }
 
-    const tokenPair = await issueTokenPair(userId, SIGN_IN_OF_UNKNOWN_AGE);
+    // Redis consumption is terminal even if the primary rejects this source.
+    // Never restore a capability after a denied or uncertain mint.
+    const tokenPair = await issueTokenPair(
+      pendingUserId,
+      capability
+        ? {
+            kind: 'transfer',
+            generation: capability.source.generation,
+            authSessionId: capability.source.authSessionId,
+            authenticatedAt:
+              capability.source.authenticatedAt === null ? null : new Date(capability.source.authenticatedAt * 1000),
+            requiresAccountCutoff: capability.source.requiresAccountCutoff,
+            ...(capability.source.kind === 'native' ? { nativeGeneration: capability.source.nativeGeneration } : {}),
+            capabilityExpiresAt: capability.expiresAt,
+          }
+        : LEGACY_PAIRING_WITHOUT_SOURCE,
+    );
     logger.info('[WatchPair] Pairing successful');
     sendJson(res, 200, tokenPair);
   } catch (error) {

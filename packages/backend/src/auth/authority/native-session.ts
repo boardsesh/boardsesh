@@ -1,3 +1,4 @@
+import { nativeSessionRequiresAccountCutoff } from '../native-session-ancestry';
 import type { NativeRevocationMode } from './native-revocation-configuration';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -25,7 +26,9 @@ export async function bindNativeRefreshSession(
   if (mode === 'off') return;
   if (mode === 'on' && revocationMode !== 'generation')
     throw new Error('NATIVE_CANONICAL_ISSUANCE_REQUIRES_GENERATION_REVOCATION');
-  const lineageId = `native-refresh:${createHash('sha256')
+  const requiresAccountCutoff = nativeSessionRequiresAccountCutoff(proof.sessionId);
+  if (requiresAccountCutoff === null) throw new AuthSubjectDeniedError();
+  const lineageId = `${requiresAccountCutoff ? 'credential:' : ''}native-refresh:${createHash('sha256')
     .update(JSON.stringify([userId, proof.sessionId]))
     .digest('hex')}`;
   await transaction.execute(sql`SELECT pg_advisory_xact_lock(6975, hashtext(${lineageId}))`);
