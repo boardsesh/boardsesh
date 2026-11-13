@@ -24,17 +24,22 @@ describe('first-password maintenance profile selection', () => {
       expect(dependencies.get).not.toHaveBeenCalled();
     },
   );
-  it.each(['legacy', 'backend-staging'])(
-    'requires the dedicated profile4 during feature mode %s, without any JWE reader key',
-    async (mode) => {
-      const refusal = new Error('owned-pool-construction-stop');
-      dependencies.get.mockRejectedValueOnce(refusal);
-      await expect(
-        runFirstPasswordPreparationMaintenance({ ...configuration, CURRENT_STORE_FIRST_PASSWORD_MODE: mode }),
-      ).rejects.toBe(refusal);
-      expect(dependencies.get).toHaveBeenCalledExactlyOnceWith('private-first-password-v1');
-    },
-  );
+  for (const contract of ['private-first-password-v1', 'private-native-handoff-v1'])
+    it.each(['legacy', 'backend-staging'])(
+      `requires the reviewed ${contract} during feature mode %s, without any JWE reader key`,
+      async (mode) => {
+        const refusal = new Error('owned-pool-construction-stop');
+        dependencies.get.mockRejectedValueOnce(refusal);
+        await expect(
+          runFirstPasswordPreparationMaintenance({
+            ...configuration,
+            AUTH_IDENTITY_DATABASE_CONTRACT: contract,
+            CURRENT_STORE_FIRST_PASSWORD_MODE: mode,
+          }),
+        ).rejects.toBe(refusal);
+        expect(dependencies.get).toHaveBeenCalledExactlyOnceWith('private-first-password-v1');
+      },
+    );
   it('rejects unknown selector or observe enforcement before pool work', async () => {
     await expect(
       runFirstPasswordPreparationMaintenance({ ...configuration, CURRENT_STORE_FIRST_PASSWORD_MODE: 'unknown' }),

@@ -1,6 +1,15 @@
 import type { DbInstance } from '@boardsesh/db/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
-const dependencies = vi.hoisted(() => ({ scrub: vi.fn(), claims: vi.fn(), emails: vi.fn(), warn: vi.fn() }));
+const dependencies = vi.hoisted(() => ({
+  scrub: vi.fn(),
+  claims: vi.fn(),
+  nativeClaims: vi.fn(),
+  emails: vi.fn(),
+  warn: vi.fn(),
+}));
+vi.mock('../native-browser-handoff-maintenance', () => ({
+  runNativeBrowserHandoffMaintenance: dependencies.nativeClaims,
+}));
 vi.mock('../first-password-maintenance', () => ({ runFirstPasswordPreparationMaintenance: dependencies.scrub }));
 vi.mock('../../current-store/command-context', () => ({ deleteExpiredCommandClaims: dependencies.claims }));
 vi.mock('../../current-store/email-reservations', () => ({ purgeRetiredEmailKeys: dependencies.emails }));

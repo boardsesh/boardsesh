@@ -57,6 +57,15 @@ vi.mock('../../../db/client', () => ({
 const rpcSecret = 'first-password-owned-default-http-rpc-key-6975';
 const sourceSecret = 'first-password-owned-default-http-source-key';
 const password = ' new first password from confirmed email ';
+const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
+if (
+  selectedHttpContract &&
+  selectedHttpContract !== 'private-first-password-v1' &&
+  selectedHttpContract !== 'private-native-handoff-v1'
+)
+  throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
+const httpContract =
+  selectedHttpContract === 'private-native-handoff-v1' ? 'private-native-handoff-v1' : 'private-first-password-v1';
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin: string;
@@ -185,7 +194,7 @@ function recoveryInput(command: Awaited<ReturnType<typeof prepare>>) {
 }
 describe('actual default first-password HTTP with one qualified profile4 pool', () => {
   beforeAll(async () => {
-    environment = await createCredentialWriterEnvironment('private-first-password-v1');
+    environment = await createCredentialWriterEnvironment(httpContract);
     await environment.owner`REVOKE INSERT,UPDATE,DELETE ON users FROM boardsesh_retired_runtime`;
     await environment.owner`GRANT USAGE ON SCHEMA public TO boardsesh_retired_runtime`;
     await environment.owner`GRANT SELECT ON users,auth_subject_cutoffs,auth_session_denials TO boardsesh_retired_runtime`;
@@ -232,7 +241,7 @@ describe('actual default first-password HTTP with one qualified profile4 pool', 
       AUTH_IDENTITY_MIRROR: 'on',
       DATABASE_URL: environment.legacyUrl,
       AUTH_IDENTITY_DATABASE_URL: environment.writerUrl,
-      AUTH_IDENTITY_DATABASE_CONTRACT: 'private-first-password-v1',
+      AUTH_IDENTITY_DATABASE_CONTRACT: httpContract,
     }))
       vi.stubEnv(name, content);
   });

@@ -127,14 +127,18 @@ export async function scrubExpiredFirstPasswordPreparations(
   });
 }
 
-/** Existing awaited maintenance hook only. Keep profile4 configured to drain
+/** Existing awaited maintenance hook only. Keep a compatible profile configured to drain
  * abandoned preparations after the feature switches off; no content fallback. */
 export async function runFirstPasswordPreparationMaintenance(
   input: Readonly<Record<string, string | undefined>> = process.env,
 ) {
   const environment = Object.freeze({ ...input });
   firstPasswordMode(environment);
-  if (environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-first-password-v1') return { observed: 0, scrubbed: 0 };
+  if (
+    environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-first-password-v1' &&
+    environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-native-handoff-v1'
+  )
+    return { observed: 0, scrubbed: 0 };
   const authority = currentStoreAuthorityConfiguration(environment);
   const database = await getCredentialDatabase('private-first-password-v1');
   return scrubExpiredFirstPasswordPreparations(database, {
