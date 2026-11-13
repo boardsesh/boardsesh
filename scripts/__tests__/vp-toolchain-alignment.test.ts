@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -44,4 +45,3 @@ describe('unified test toolchain', () => {
     }
   });
 });
-/// <reference types="node" />
