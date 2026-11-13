@@ -153,8 +153,8 @@ export class BatchSystemUserProof {
         readFileSync(new URL('../../../../../../db/drizzle/0241_background_job_runs.sql', import.meta.url), 'utf8'),
       );
     }
-    const [family] = await this
-      .ownerPool`SELECT 1 AS present FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'background_job_runs' AND column_name = 'family'`;
+    const [family] =
+      await this.ownerPool`SELECT 1 AS present FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'background_job_runs' AND column_name = 'family'`;
     if (!family) {
       await this.ownerPool.unsafe(
         readFileSync(new URL('../../../../../../db/drizzle/0243_background_job_families.sql', import.meta.url), 'utf8'),
@@ -358,8 +358,7 @@ export class BatchSystemUserProof {
     const deadline = performance.now() + 3_000;
     while (performance.now() < deadline) {
       const [waiting] = await bounded(
-        this
-          .ownerPool`SELECT count(*)::integer AS count FROM pg_stat_activity WHERE usename = ${this.backendRole} AND wait_event_type = 'Lock'`,
+        this.ownerPool`SELECT count(*)::integer AS count FROM pg_stat_activity WHERE usename = ${this.backendRole} AND wait_event_type = 'Lock'`,
         Math.max(1, deadline - performance.now()),
       );
       if (waiting.count > 0) return;
@@ -406,8 +405,8 @@ export class BatchSystemUserProof {
             throw new Error('Unsafe owned batch cleanup role');
           const [existing] = await this.ownerPool`SELECT oid FROM pg_roles WHERE rolname = ${role}`;
           if (!existing) return;
-          const [owned] = await this
-            .ownerPool`SELECT count(*)::integer AS count FROM pg_shdepend WHERE refclassid = 'pg_authid'::regclass AND refobjid = ${existing.oid} AND deptype = 'o'`;
+          const [owned] =
+            await this.ownerPool`SELECT count(*)::integer AS count FROM pg_shdepend WHERE refclassid = 'pg_authid'::regclass AND refobjid = ${existing.oid} AND deptype = 'o'`;
           if (owned.count !== 0) throw new Error('Owned fixture role unexpectedly owns objects');
           await this.ownerPool.unsafe(`DROP OWNED BY "${role}"`);
           await this.ownerPool.unsafe(`DROP ROLE "${role}"`);

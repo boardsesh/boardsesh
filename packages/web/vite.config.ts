@@ -8,6 +8,8 @@ export default defineConfig({
     'process.env.NODE_ENV': '"test"',
   },
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'web',
     environment: 'jsdom',
     globals: true,

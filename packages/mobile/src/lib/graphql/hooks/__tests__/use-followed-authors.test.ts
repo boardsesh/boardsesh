@@ -35,7 +35,7 @@ afterEach(() => {
 
 // These cases own one mutable database fixture; overlap is introduced explicitly
 // inside the race tests, not by running separate fixtures concurrently.
-describe.sequential('followed author snapshot refresh', () => {
+describe('followed author snapshot refresh', { concurrent: false }, () => {
   it('persists successive snapshots without resetting the request generation', async () => {
     for (const setter of ['first', 'second', 'third']) {
       const authors = { setterUsernames: [setter], users: [] };
@@ -108,7 +108,7 @@ describe.sequential('followed author snapshot refresh', () => {
 // #6689. While the launch update gate can still reload this runtime, the snapshot
 // write is a transaction a reload could strand: on Android it would hold SQLite's
 // write lock until the process dies. The bridge loads again once the launch settles.
-describe.sequential('followed authors while a launch reload is still possible', () => {
+describe('followed authors while a launch reload is still possible', { concurrent: false }, () => {
   it('serves the stored snapshot without a request or a write', async () => {
     setLaunchReloadPossible(true);
 

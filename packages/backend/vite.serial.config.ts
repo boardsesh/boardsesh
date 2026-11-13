@@ -8,6 +8,8 @@ const graphqlEntry = createRequire(import.meta.url).resolve('graphql');
 /** The backend tests that must run one file at a time; see vitest-serial-files.ts. */
 export default defineConfig({
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'backend-serial',
     globals: true,
     environment: 'node',

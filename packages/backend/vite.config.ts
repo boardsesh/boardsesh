@@ -11,6 +11,8 @@ const graphqlEntry = createRequire(import.meta.url).resolve('graphql');
 
 export default defineConfig({
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'backend',
     globals: true,
     environment: 'node',

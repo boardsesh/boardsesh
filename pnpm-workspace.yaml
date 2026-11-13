@@ -67,6 +67,12 @@ packageExtensions:
         optional: true
 
 overrides:
+  # Keep Vite+ and direct test imports on the same bundled Vite/Vitest instances.
+  'vite@*': npm:@voidzero-dev/vite-plus-core@1.6.0
+  'vitest@*': 5.1.0
+  # Vitest 5 accepts ws ^8.22.0; keep its 8.x graph outside the 24h release cooldown.
+  # This selector deliberately leaves consumers of ws 7 on their existing major.
+  'ws@>=8.0.0 <9.0.0': 8.22.2
   # These Expo fingerprint inputs advance with the release train's native builds.
   baseline-browser-mapping: 2.11.24
   caniuse-lite: 1.0.30001810

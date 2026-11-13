@@ -6,6 +6,8 @@ import { defineConfig } from 'vite-plus';
 // registered in the root vite.config.ts's test.projects.
 export default defineConfig({
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'deploy-app-subdomain',
     globals: true,
     environment: 'node',

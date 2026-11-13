@@ -130,7 +130,7 @@ async function invokeCli(arguments_: string[], environment: NodeJS.ProcessEnv) {
   return { code: outcome.code, stdout, stderr, childCloseObserved: true, groupDrained };
 }
 
-describe.sequential('actual read-only account email snapshot and CLI', () => {
+describe('actual read-only account email snapshot and CLI', { concurrent: false }, () => {
   beforeAll(async () => {
     writer = postgres(getWorkerDatabaseUrl(), { max: 1, onnotice: () => {} });
     reader = postgres(getWorkerDatabaseUrl(), {

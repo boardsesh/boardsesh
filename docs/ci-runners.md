@@ -130,3 +130,22 @@ Report publishing remains outside the required `ci-status` aggregate. Actual
 test jobs still contribute to that required check, so failed tests block merging.
 Changes to the follow-up workflow take effect once they reach the default branch;
 verify the next eligible fork CI run after merging.
+
+## Updating the unified toolchain
+
+Keep `vite-plus`, the `vite` alias to `@voidzero-dev/vite-plus-core`, and the
+`vite@*` override on the same release. Pin direct Vitest declarations, coverage
+providers, and the `vitest@*` override to the runner bundled with that release.
+`vp toolchain vitest` shows that version. Updating only Vite+ can install two
+runner graphs with incompatible mock state or coverage internals. Follow the
+[Vite+ upgrade guide](https://viteplus.dev/guide/upgrade-project).
+
+Vite+ 1.6 uses Vitest 5. The test configs explicitly retain `clearMocks: false`
+so setup and `beforeAll` mock histories keep their previous behavior. Serial
+suites use `{ concurrent: false }`. Task cache inputs and environment names now
+live inside each task's `cache` object.
+
+Keep the package release-age policy enabled when resolving and installing.
+The `ws` 8 override selects a compatible release outside that cooldown without
+changing consumers of `ws` 7. A frozen lockfile still needs to pass policy checks;
+do not treat a successful resolution outside those checks as a trusted lockfile.

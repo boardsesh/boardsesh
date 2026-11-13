@@ -5,6 +5,8 @@ import { defineConfig } from 'vite-plus';
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   test: {
+    // Preserve mock history from setup and beforeAll when upgrading from Vitest 4.
+    clearMocks: false,
     name: 'auth-prototype',
     environment: 'node',
     include: ['src/auth/prototype/__tests__/*.test.ts', 'src/auth/__tests__/identity-audit*.test.ts'],
