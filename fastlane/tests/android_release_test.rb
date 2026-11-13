@@ -93,6 +93,83 @@ class AndroidReleaseTest < Minitest::Test
     assert_includes receipt.fetch("limitations").join(" "), "versionName is not independently verified"
   end
 
+  def test_default_does_not_run_a_replacement_preflight
+    called = false
+    runner(review_preflight: -> { called = true; "CANCEL_IN_REVIEW_AND_SUBMIT" }).run
+    refute called
+    assert_equal "ERROR_IF_IN_REVIEW", @play.calls.last[3].fetch(:changes_in_review_behavior)
+  end
+
+  def test_explicit_replacement_checks_before_edit_and_again_immediately_before_commit
+    observed_calls = []
+    preflight = -> do
+      observed_calls << @play.calls.map(&:first)
+      "CANCEL_IN_REVIEW_AND_SUBMIT"
+    end
+    runner(replace_beta_review_version_code: VERSION_CODE - 1, review_preflight: preflight).run
+    assert_equal 2, observed_calls.length
+    assert_empty observed_calls.first
+    assert_equal :validate_edit, observed_calls.last.last
+    assert_equal "CANCEL_IN_REVIEW_AND_SUBMIT", @play.calls.last[3].fetch(:changes_in_review_behavior)
+    assert_equal false, @play.calls.last[3].fetch(:changes_not_sent_for_review)
+  end
+
+  def test_uses_the_final_preflight_if_review_finished_during_upload
+    behaviors = ["CANCEL_IN_REVIEW_AND_SUBMIT", "ERROR_IF_IN_REVIEW"]
+    runner(replace_beta_review_version_code: VERSION_CODE - 1,
+      review_preflight: -> { behaviors.shift }).run
+    assert_empty behaviors
+    assert_equal "ERROR_IF_IN_REVIEW", @play.calls.last[3].fetch(:changes_in_review_behavior)
+  end
+
+  def test_invalid_replacement_code_or_missing_preflight_fails_before_network
+    ["0", "-1", "2001310x", VERSION_CODE, VERSION_CODE + 1].each do |code|
+      assert_raises(BoardseshAndroidRelease::Error) do
+        runner(replace_beta_review_version_code: code, review_preflight: -> { raise "must not run" })
+      end
+    end
+    assert_raises(BoardseshAndroidRelease::Error) { runner(replace_beta_review_version_code: VERSION_CODE - 1) }
+    assert_empty @play.calls
+  end
+
+  def test_preflight_failure_stops_before_authentication_or_opening_edit
+    authenticated = false
+    error = assert_raises(BoardseshAndroidRelease::Error) do
+      runner(service: -> { authenticated = true; @play }, replace_beta_review_version_code: VERSION_CODE - 1,
+        review_preflight: -> { raise "private service-account diagnostic" }).run
+    end
+    refute authenticated
+    assert_empty @play.calls
+    refute_includes error.message, "private"
+  end
+
+  def test_a_changed_review_prevents_commit_without_retrying_or_leaking_errors
+    checks = 0
+    preflight = -> do
+      checks += 1
+      raise "private service-account diagnostic" if checks == 2
+      "CANCEL_IN_REVIEW_AND_SUBMIT"
+    end
+    error = assert_raises(BoardseshAndroidRelease::Error) do
+      runner(replace_beta_review_version_code: VERSION_CODE - 1, review_preflight: preflight).run
+    end
+    assert_equal 2, checks
+    assert_equal :validate_edit, @play.calls.last.first
+    refute_includes @play.calls.map(&:first), :commit_edit
+    refute_includes error.message, "private"
+  end
+
+  def test_unrecognized_preflight_behavior_cannot_cancel_a_review
+    [nil, true, "CANCEL_IN_REVIEW_AND_SUBMIT\nprivate output", "UNSPECIFIED"].each do |behavior|
+      @play = FakePlay.new
+      error = assert_raises(BoardseshAndroidRelease::Error) do
+        runner(replace_beta_review_version_code: VERSION_CODE - 1, review_preflight: -> { behavior }).run
+      end
+      assert_empty @play.calls
+      refute_includes error.message, "private"
+    end
+  end
+
   def test_fails_before_authentication_on_invalid_labels_or_artifacts
     authenticated = false
     service = -> { authenticated = true; @play }

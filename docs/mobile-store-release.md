@@ -232,6 +232,19 @@ Fastlane owns tester-track assignment, release notes from
 The upload commits both tracks in one edit and fails if another package-wide
 review is already pending. It never cancels that review or retries the commit
 with relaxed flags. Let the existing review finish, then rerun the failed job.
+For an explicitly approved replacement of an old **beta** review, manually dispatch
+**Android Play Internal Deploy (React Native)** on main with
+`replace_beta_review_version_code` set to that exact pending versionCode and
+`force_native=true`. This builds a new binary and submits it to internal and open
+testing together, restarting the selected beta review. Automatic runs keep waiting.
+The manual path checks fresh production and beta review states before building,
+before opening the upload edit, and immediately before committing. A production
+review, different or ambiguous beta review, or unreadable state stops replacement.
+If the selected review has finished, the upload retains strict review protection.
+Play's cancellation applies package-wide, so coordinate Console changes during this
+manual operation; the API has no conditional commit keyed to the old review version.
+Older native stamps use the workflow's trusted upload tooling after the binary is
+built, preserving the stamped native source and fingerprint.
 Production is a separate draft and release flow (§4: submitted by explicit manual dispatch, or
 by hand with Android Production Release).
 

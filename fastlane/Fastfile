@@ -780,8 +780,25 @@ platform :android do
     metadata_path = File.expand_path(options[:metadata_path] || ANDROID_METADATA_DIR, REPO_ROOT)
     credential = ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] || ENV["GOOGLE_PLAY_JSON_KEY"]
     service = -> { BoardseshAndroidRelease.service(json_key_data: credential) }
+    replace_review_code = options[:replace_beta_review_version_code] || ENV["REPLACE_BETA_REVIEW_VERSION_CODE"]
+    review_preflight = unless replace_review_code.to_s.empty?
+      -> do
+        require "open3"
+        stdout, _stderr, status = Open3.capture3(
+          { "REPLACE_BETA_REVIEW_VERSION_CODE" => replace_review_code.to_s,
+            "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" => credential },
+          "vp", "exec", "node", "--import", "tsx",
+          File.join(REPO_ROOT, "scripts", "mobile-store-android-review-pending.ts"), "--commit-behavior",
+          chdir: REPO_ROOT)
+        unless status.success?
+          raise BoardseshAndroidRelease::Error, "Replacement beta review preflight failed; check the exact beta review and production review state"
+        end
+        stdout.strip
+      end
+    end
     report = BoardseshAndroidRelease::Runner.new(service: service, aab: aabs.first,
-      version_code: version_code, version: version, metadata_path: metadata_path).run
+      version_code: version_code, version: version, metadata_path: metadata_path,
+      replace_beta_review_version_code: replace_review_code, review_preflight: review_preflight).run
     UI.message(JSON.pretty_generate(report))
     File.write(options[:output], JSON.pretty_generate(report) + "\n") if options[:output]
   rescue BoardseshAndroidRelease::Error => error

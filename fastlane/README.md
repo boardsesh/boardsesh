@@ -51,6 +51,7 @@ bundle exec fastlane ios testflight
 | `ANDROID_VERSION_CODE` | Exact expected uploaded versionCode |
 | `BOARDSESH_MOBILE_VERSION` | Semver release label from the build pipeline |
 | `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` | Existing Play service-account JSON |
+| `REPLACE_BETA_REVIEW_VERSION_CODE` | Optional exact older beta build whose pending review may be replaced |
 
 Android options `aab:`, `version_code:`, and `version:` override those inputs.
 `metadata_path:` defaults to committed `fastlane/metadata/android`; every
@@ -62,11 +63,18 @@ uploaded versionCode, validates both track assignments, and commits once.
 The release label is supplied by the build pipeline; the lane does not separately
 extract the embedded AAB versionName.
 
-The pinned Google API client commits with
+By default, the pinned Google API client commits with
 `changes_not_sent_for_review: false` and
 `changes_in_review_behavior: "ERROR_IF_IN_REVIEW"`. Existing review conflicts
-fail the upload; the lane never cancels a review, retries with an unsubmitted
-release, or changes production. A commit receipt is submission evidence, not
+fail the upload. An explicit `replace_beta_review_version_code:` option (or its
+environment input) permits replacing only that exact beta review with a newer
+build. The lane refreshes production and beta review evidence before opening its
+edit and immediately before commit. A production review, different beta review,
+ambiguous result, or unreadable response stops the replacement. If the prior
+review finished, the commit retains `ERROR_IF_IN_REVIEW`; otherwise it uses
+`CANCEL_IN_REVIEW_AND_SUBMIT` to restart review for the new tester build.
+Neither path retries with an unsubmitted release or changes production.
+A commit receipt is submission evidence, not
 proof of publication or delivery. Google review and managed publishing can keep
 open testing unchanged until they finish. Audit the exact build afterward.
 
