@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import {
@@ -8,6 +8,7 @@ import {
   validateRecoveryRun,
   validateRecoveryGateLog,
   recoveryCommandFailure,
+  readOriginalNativeGateLog,
 } from '../mobile-recover-android-candidate';
 
 const SOURCE = 'd'.repeat(40);
@@ -35,6 +36,157 @@ const jobs = [
 const apk = { applicationId: 'com.boardsesh.app', versionCode: '2001682', version: '2.7.1', runtime: RUNTIME };
 const releases = (state: string, code = 2001682) => ({
   releases: [{ releaseLifecycleState: state, activeArtifacts: [{ versionCode: code }] }],
+});
+
+describe('original native gate log transport', () => {
+  const signedUrl = 'https://storage.example/log.txt?private-signature=secret';
+  const options = { jobId: '132101145754', token: 'private-token' };
+  const redirect = () => new Response(null, { status: 302, headers: { location: signedUrl } });
+
+  it('authenticates only the fixed GitHub API and reads the signed hop without credentials', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(redirect())
+      .mockResolvedValueOnce(new Response('gate log'));
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl })).resolves.toBe('gate log');
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'https://api.github.com/repos/boardsesh/boardsesh/actions/jobs/132101145754/logs',
+    );
+    const apiInit = fetchImpl.mock.calls[0]?.[1];
+    expect(apiInit?.redirect).toBe('manual');
+    expect(new Headers(apiInit?.headers).get('authorization')).toBe('Bearer private-token');
+    expect(fetchImpl.mock.calls[1]?.[0]).toEqual(new URL(signedUrl));
+    expect(fetchImpl.mock.calls[1]?.[1]).toEqual({ redirect: 'error', signal: apiInit?.signal });
+  });
+
+  it.each([
+    null,
+    '/relative',
+    'http://storage.example/log',
+    'https://user:private-token@storage.example/log',
+    'not a URL',
+  ])('rejects an unsafe or missing redirect: %s', async (location) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: location === null ? {} : { location },
+      }),
+    );
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl })).rejects.toThrow(
+      location === null
+        ? 'Original native gate log API redirect has no location.'
+        : 'Original native gate log API redirect is unsafe.',
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([200, 401, 403, 404, 500])('reports the API status without exposing response content: %s', async (status) => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('private-token', { status }));
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl })).rejects.toThrow(
+      `Original native gate log API returned HTTP ${status}; expected a signed redirect.`,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([206, 503])('rejects storage HTTP %s without copying its body or signed URL', async (status) => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(redirect())
+      .mockResolvedValueOnce(new Response(signedUrl, { status }));
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl })).rejects.toThrow(
+      `Original native gate log storage returned HTTP ${status}.`,
+    );
+  });
+
+  it.each(['API', 'storage'] as const)('sanitizes %s transport errors and drops their cause', async (phase) => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    if (phase === 'storage') fetchImpl.mockResolvedValueOnce(redirect());
+    fetchImpl.mockRejectedValueOnce(new Error(`${signedUrl} private-token`));
+    const failure = await readOriginalNativeGateLog({ ...options, fetchImpl }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(`Original native gate log ${phase} network request failed.`);
+    expect((failure as Error).cause).toBeUndefined();
+  });
+
+  it('enforces the streamed size bound and cancels oversized bodies', async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('12345'));
+      },
+      cancel,
+    });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(redirect()).mockResolvedValueOnce(new Response(body));
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl, maxBytes: 4 })).rejects.toThrow(
+      'Original native gate log exceeds its size bound.',
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('rejects oversized declared lengths before reading and sanitizes cancellation errors', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        throw new Error(signedUrl);
+      },
+    });
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(redirect())
+      .mockResolvedValueOnce(new Response(body, { headers: { 'content-length': '5' } }));
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl, maxBytes: 4 })).rejects.toThrow(
+      'Original native gate log exceeds its size bound.',
+    );
+  });
+
+  it('sanitizes streamed read errors and rejects empty or invalid UTF-8 bodies', async () => {
+    for (const [body, expected] of [
+      [
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(new Error(signedUrl));
+          },
+        }),
+        'read failed',
+      ],
+      ['', 'empty body'],
+      [new Uint8Array([255]), 'not valid UTF-8'],
+    ] as const) {
+      const fetchImpl = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(redirect())
+        .mockResolvedValueOnce(new Response(body));
+      await expect(readOriginalNativeGateLog({ ...options, fetchImpl })).rejects.toThrow(expected);
+    }
+  });
+
+  it('uses a single bounded deadline for both network hops', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(redirect())
+      .mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error(signedUrl)), { once: true });
+          }),
+      );
+    await expect(readOriginalNativeGateLog({ ...options, fetchImpl, timeoutMs: 5 })).rejects.toThrow(
+      'Original native gate log storage timed out.',
+    );
+  });
+
+  it('rejects invalid IDs and bounds before making any request', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    for (const override of [
+      { jobId: '../123' },
+      { jobId: '9007199254740992' },
+      { token: '' },
+      { maxBytes: 0 },
+      { maxBytes: 33 * 1024 * 1024 },
+      { timeoutMs: 120_001 },
+    ])
+      await expect(readOriginalNativeGateLog({ ...options, fetchImpl, ...override })).rejects.toThrow();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });
 
 describe('uploaded Android candidate recovery', () => {
