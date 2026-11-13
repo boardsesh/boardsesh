@@ -39,9 +39,15 @@ async function start(input: Record<string, unknown>) {
     throw new Error('Owned identity proof requires its independent route mode');
   const webOAuthIdentity = input.webOAuthIdentity ? asRecord(input.webOAuthIdentity) : undefined;
   const compound = input.compound ? asRecord(input.compound) : undefined;
-  for (const backend of [webOAuthIdentity, compound]) {
+  const publicationPasswordBackend = input.publicationPasswordBackend
+    ? asRecord(input.publicationPasswordBackend)
+    : undefined;
+  if ((publicationPasswordBackend || input.publicationTopology) && input.sessionPublicationProof !== true)
+    throw new Error('Publication options require their explicit proof');
+  for (const backend of [webOAuthIdentity, compound, publicationPasswordBackend]) {
     if (!backend) continue;
-    if (typeof backend.origin !== 'string') throw new Error('Owned backend origin required');
+    if (typeof backend.origin !== 'string' || typeof backend.secret !== 'string')
+      throw new Error('Owned backend origin required');
     const destination = new URL(backend.origin);
     if (
       destination.origin !== backend.origin ||
@@ -73,6 +79,9 @@ async function start(input: Record<string, unknown>) {
   let publicationObserver: ReturnType<typeof observeSessionPublication> | undefined;
   let releaseEncode: (() => void) | undefined;
   let armedResponseGate: string | undefined;
+  let armedResponsePath = '/api/auth/session';
+  let setPasswordRoute: { POST(request: NextRequest): Promise<Response> } | undefined;
+  let publicationCors: ((request: NextRequest) => { applyHeaders?: (response: Response) => void } | null) | undefined;
   const responseGates = new Map<string, { pending: Promise<void>; release(): void }>();
   const observations = {
     events: [] as string[],
@@ -111,7 +120,13 @@ async function start(input: Record<string, unknown>) {
         input.sessionPublicationProof === true &&
         ['/__proof/server-session', '/__proof/page'].includes(requestUrl.split('?')[0]) &&
         request.method === 'GET';
-      if (!requestUrl.startsWith('/api/auth/') && !requestUrl.startsWith('/__proof/continue/') && !proofPath) {
+      const passwordPath = publicationPasswordBackend && requestUrl === '/api/internal/set-password';
+      if (
+        !requestUrl.startsWith('/api/auth/') &&
+        !requestUrl.startsWith('/__proof/continue/') &&
+        !proofPath &&
+        !passwordPath
+      ) {
         response.writeHead(404).end();
         return;
       }
@@ -160,6 +175,7 @@ async function start(input: Record<string, unknown>) {
       const context = { params: Promise.resolve({ nextauth: parameters }) };
       const invoke = () => (current.method === 'POST' ? route.POST(current, context) : route.GET(current, context));
       const result = await requestStorage.run(current, async () => {
+        if (passwordPath && current.method === 'POST' && setPasswordRoute) return setPasswordRoute.POST(current);
         if (input.sessionPublicationProof === true && current.nextUrl.pathname === '/__proof/server-session') {
           const { getServerSession } = webRequire(
             'next-auth/next',
@@ -172,11 +188,11 @@ async function start(input: Record<string, unknown>) {
           });
         return delegate ? delegate.run(current, invoke) : invoke();
       });
+      publicationCors?.(current)?.applyHeaders?.(result);
       if (
         input.sessionPublicationProof === true &&
         armedResponseGate &&
-        current.method === 'GET' &&
-        current.nextUrl.pathname === '/api/auth/session'
+        current.nextUrl.pathname === armedResponsePath
       ) {
         const gateId = armedResponseGate;
         armedResponseGate = undefined;
@@ -252,7 +268,7 @@ async function start(input: Record<string, unknown>) {
   });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Owned app bind failed');
-  origin = `https://localhost:${address.port}`;
+  origin = `https://${input.publicationTopology === 'shared-domain' ? 'www.boardsesh.test' : 'localhost'}:${address.port}`;
   if (input.sessionPublicationProof === true) {
     if (input.compound) throw new Error('Publication proof requires unchanged stock authority');
     // A second same-site origin supplies only an owned browser page. Actual
@@ -277,7 +293,7 @@ async function start(input: Record<string, unknown>) {
     });
     const peerAddress = peerServer.address();
     if (!peerAddress || typeof peerAddress === 'string') throw new Error('Owned peer bind failed');
-    peerOrigin = `https://localhost:${peerAddress.port}`;
+    peerOrigin = `https://${input.publicationTopology === 'shared-domain' ? 'app.boardsesh.test' : 'localhost'}:${peerAddress.port}`;
   }
   providers.registerRedirect(origin);
   const database = ownedAppRouterDatabase(String(input.databaseUrl));
@@ -286,7 +302,8 @@ async function start(input: Record<string, unknown>) {
     NEXTAUTH_URL: origin,
     NEXTAUTH_SECRET: String(input.secret),
     BASE_URL: origin,
-    AUTH_COOKIE_DOMAIN: '',
+    AUTH_COOKIE_DOMAIN: input.publicationTopology === 'shared-domain' ? '.boardsesh.test' : '',
+    ...(input.publicationTopology === 'shared-domain' ? { NEXT_PUBLIC_APP_URL: peerOrigin } : {}),
     VERCEL_ENV: '',
     VERCEL_URL: '',
     AUTH_TRUST_HOST: '1',
@@ -294,10 +311,28 @@ async function start(input: Record<string, unknown>) {
     // Authentication must use this role's primary, never an accidental replica.
     READ_REPLICA_URL: 'postgresql://owned:unused@127.0.0.1:1/unused',
     DEBUG_SQL: 'false',
-    CURRENT_STORE_WEB_AUTH_MODE: 'legacy',
+    CURRENT_STORE_WEB_AUTH_MODE: publicationPasswordBackend ? 'backend-staging' : 'legacy',
     CURRENT_STORE_WEB_OAUTH_MODE: webOAuthIdentity ? 'backend-staging' : 'legacy',
-    CURRENT_STORE_AUTH_BACKEND_ORIGIN: webOAuthIdentity ? String(webOAuthIdentity.origin) : '',
-    CURRENT_STORE_AUTH_RPC_SECRET: webOAuthIdentity ? String(webOAuthIdentity.secret) : '',
+    CURRENT_STORE_AUTH_BACKEND_ORIGIN: publicationPasswordBackend
+      ? String(publicationPasswordBackend.origin)
+      : webOAuthIdentity
+        ? String(webOAuthIdentity.origin)
+        : '',
+    CURRENT_STORE_AUTH_RPC_SECRET: publicationPasswordBackend
+      ? String(publicationPasswordBackend.secret)
+      : webOAuthIdentity
+        ? String(webOAuthIdentity.secret)
+        : '',
+    ...(publicationPasswordBackend
+      ? {
+          CURRENT_STORE_SET_PASSWORD_MODE: 'backend-staging',
+          CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE: 'required',
+          CURRENT_STORE_AUTH_PROJECTION_ID: String(publicationPasswordBackend.projectionId),
+          CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
+          AUTH_IDENTITY_MIRROR: 'off',
+          AUTH_CUTOFF_ENFORCEMENT: 'enforce',
+        }
+      : {}),
     GOOGLE_CLIENT_ID: providers.clients.google.id,
     GOOGLE_CLIENT_SECRET: providers.clients.google.secret,
     APPLE_ID: providers.clients.apple.id,
@@ -376,8 +411,14 @@ async function start(input: Record<string, unknown>) {
       ].includes(destination.pathname);
     const allowedAdmission =
       destination.origin === admissionOrigin && destination.pathname === '/graphql' && settings?.method === 'POST';
+    const allowedPassword =
+      publicationPasswordBackend &&
+      destination.origin === publicationPasswordBackend.origin &&
+      ['/api/internal/auth/current-store/password', '/api/internal/auth/current-store/set-password'].includes(
+        destination.pathname,
+      );
     if (
-      (!allowedCompound && !allowedWebIdentity && !allowedAdmission) ||
+      (!allowedCompound && !allowedWebIdentity && !allowedAdmission && !allowedPassword) ||
       destination.search ||
       destination.hash ||
       destination.username ||
@@ -524,17 +565,29 @@ async function start(input: Record<string, unknown>) {
   route = (await import(
     new URL('../../../../../../web/app/api/auth/[...nextauth]/route.ts', import.meta.url).href
   )) as typeof route;
+  if (publicationPasswordBackend)
+    setPasswordRoute = (await import(
+      new URL('../../../../../../web/app/api/internal/set-password/route.ts', import.meta.url).href
+    )) as typeof setPasswordRoute;
+  if (input.publicationTopology === 'shared-domain') {
+    const cors = (await import(
+      new URL('../../../../../../web/app/lib/auth/cross-subdomain-cors.ts', import.meta.url).href
+    )) as { resolveCrossSubdomainAuthCors: NonNullable<typeof publicationCors> };
+    publicationCors = cors.resolveCrossSubdomainAuthCors;
+  }
   phase = 'ready';
   process.on('message', (message: unknown) => {
     void (async () => {
       const command = asRecord(message);
       const id = command.id;
       if (command.action === 'arm-session-response') {
+        const responsePath = typeof command.path === 'string' ? command.path : '/api/auth/session';
         if (
           input.sessionPublicationProof !== true ||
           armedResponseGate ||
           responseGates.size ||
           typeof command.gateId !== 'string' ||
+          !['/api/auth/session', '/api/auth/callback/apple', '/api/internal/set-password'].includes(responsePath) ||
           !/^[a-f0-9-]{36}$/i.test(command.gateId)
         )
           throw new Error('Invalid owned publication gate');
@@ -544,6 +597,7 @@ async function start(input: Record<string, unknown>) {
         });
         responseGates.set(command.gateId, { pending, release });
         armedResponseGate = command.gateId;
+        armedResponsePath = responsePath;
         return send({ kind: 'reply', id, result: true });
       }
       if (command.action === 'release-session-response') {
