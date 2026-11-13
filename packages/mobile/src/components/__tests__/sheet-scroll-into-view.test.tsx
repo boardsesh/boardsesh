@@ -145,6 +145,8 @@ vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16, 6: 24 } })
 
 vi.mock('../../providers/theme-provider', () => ({
   useTheme: () => ({
+    variant: 'liquidGlass',
+    m3: { outline: '#ddd' },
     systemColors: { secondaryBackground: '#fff', separator: '#ccc', fill: '#eee', label: '#000' },
     brandColors: { primary: '#6D28D9' },
     borderRadius: { lg: 12 },

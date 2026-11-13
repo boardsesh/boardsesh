@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The card as the lock screen shows it by default. The system caps this slot at
+     48dp and draws no addAction buttons here, so the bulb and Next are content.
+     Colours are pinned: the surface is always dark, whatever the system theme. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/session_card_root"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:background="@color/session_card_surface">
+
+    <ImageView
+        android:id="@+id/session_card_art"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:importantForAccessibility="no"
+        tools:ignore="ContentDescription" />
+
+    <!-- Deepens the scrim under a rest clock. The clock's colours need more
+         contrast than the icons that usually sit there. -->
+    <ImageView
+        android:id="@+id/session_card_rest_scrim"
+        android:layout_width="104dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:alpha="0.625"
+        android:background="@color/session_card_surface"
+        android:importantForAccessibility="no"
+        android:visibility="gone"
+        tools:ignore="ContentDescription" />
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.06"
+        android:background="@drawable/session_card_grain"
+        android:importantForAccessibility="no"
+        tools:ignore="ContentDescription" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="6dp">
+
+        <ImageView
+            android:id="@+id/session_image"
+            android:layout_width="36dp"
+            android:layout_height="46dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/session_image_bg"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            tools:ignore="ContentDescription" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/session_title"
+                style="@style/SessionCard.Title.Collapsed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/session_subtitle"
+                style="@style/SessionCard.Meta.Collapsed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/session_rest"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:gravity="end"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Chronometer
+                android:id="@+id/session_rest_clock"
+                style="@style/SessionCard.Rest.Collapsed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
+
+            <Chronometer
+                android:id="@+id/session_rest_clock_over"
+                style="@style/SessionCard.Rest.Collapsed.Over"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <Chronometer
+                android:id="@+id/session_rest_clock_muted"
+                style="@style/SessionCard.Rest.Collapsed.Muted"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/session_rest_static"
+                style="@style/SessionCard.Rest.Collapsed.Muted"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/session_rest_static_over"
+                style="@style/SessionCard.Rest.Collapsed.Over"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/session_rest_caption"
+                style="@style/SessionCard.Rest.Caption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/session_bulb"
+            style="@style/SessionCard.Control"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            tools:ignore="ContentDescription" />
+
+        <ImageButton
+            android:id="@+id/session_next"
+            style="@style/SessionCard.Control.Icon"
+            android:layout_width="44dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_skip_next"
+            tools:ignore="ContentDescription" />
+    </LinearLayout>
+</FrameLayout>

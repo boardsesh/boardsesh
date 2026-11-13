@@ -13,6 +13,7 @@ import { GlassSurface } from '../GlassSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { withAlpha } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { readableTextColor } from './grade-chip-colors';
 
 export type GradeChipTone = 'neutral' | 'selected' | 'range' | 'consensus';
@@ -89,7 +90,6 @@ export function GradeChip({
   style,
 }: GradeChipProps) {
   const { systemColors, brandColors, chartColors, variant, m3 } = useTheme();
-  const material = variant === 'material';
   const accentColor = gradeColor ?? brandColors.primary;
   const selected = tone === 'selected';
   const ranged = tone === 'range';
@@ -105,21 +105,20 @@ export function GradeChip({
 
   if (colorway === 'selection') {
     textColor = systemColors.label;
-    if (selected && material) {
-      backgroundColor = m3.secondaryContainer;
-      borderColor = brandColors.primary;
-      textColor = m3.onSecondaryContainer;
-    } else if (selected) {
-      backgroundColor = brandColors.primaryFill;
-      // The ring stays 1pt and matches the fill, so it is invisible but keeps the
-      // box geometry identical to the neutral tone. React Native is border-box:
+    if (selected) {
+      backgroundColor = selectByVariant(variant, {
+        material: m3.secondaryContainer,
+        liquidGlass: brandColors.primaryFill,
+      });
+      // On Liquid Glass the 1pt ring matches the fill, so it is invisible but
+      // keeps the box geometry identical to the neutral tone. React Native is border-box:
       // dropping to 0 here grew the inner content box by 2pt and nudged the label
       // every time a chip went from unselected to selected.
-      borderColor = brandColors.primaryFill;
-      textColor = brandColors.onPrimary;
+      borderColor = selectByVariant(variant, { material: brandColors.primary, liquidGlass: brandColors.primaryFill });
+      textColor = selectByVariant(variant, { material: m3.onSecondaryContainer, liquidGlass: brandColors.onPrimary });
     } else if (consensus) {
       borderColor = brandColors.warning;
-      if (!material) borderWidth = 2;
+      borderWidth = selectByVariant(variant, { material: CHIP_BORDER_WIDTH, liquidGlass: 2 });
     }
   } else if (selected) {
     // The ring is the border every tone already has, in another colour, so a

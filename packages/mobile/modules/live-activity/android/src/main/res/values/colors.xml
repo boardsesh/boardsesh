@@ -15,4 +15,15 @@
     <!-- Rest digits once the queue has run out: still counting, but quiet.
          values-night/colors.xml lightens it for the dark notification surface. -->
     <color name="session_rest_muted">#5F6368</color>
+
+    <!-- The lock screen card. Pinned, with no night or Material You variants: the
+         card is always dark, so a wallpaper accent or light theme can't reach it. -->
+    <color name="session_card_surface">#0E0D12</color>
+    <color name="session_card_ink">#F5F2FB</color>
+    <color name="session_card_secondary">#A9A2B6</color>
+    <!-- Holds sit right under the card's text, so its line is lighter: 4.5:1 over
+         the brightest one. A heavier scrim would hide the glow instead. -->
+    <color name="session_card_meta">#D3CEDD</color>
+    <color name="session_card_rest">#A78BFA</color>
+    <color name="session_card_rest_over">#F87171</color>
 </resources>

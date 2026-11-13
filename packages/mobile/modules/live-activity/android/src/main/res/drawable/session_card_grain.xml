@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A resource rather than baked into the card's bitmap: it costs no parcel bytes,
+     and scaling a small bitmap up would blotch it. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/session_card_grain_tile"
+    android:tileMode="repeat" />

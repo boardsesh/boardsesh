@@ -88,6 +88,8 @@ type UseLiveActivityOptions = {
   /** Revalidate the generated file immediately before each native notification push. */
   validateAndroidThumbnailOverlay?: (path: string | null, loadKey: string | null) => string | null;
   androidThumbnailBackgroundPaths?: string[];
+  /** Android lock screen card payload (#7327); undefined keeps the classic card. */
+  androidBokehJson?: string;
 };
 
 // Both iOS (ActivityKit) and Android (foreground service) back the session-
@@ -191,6 +193,7 @@ export function useLiveActivity({
   androidThumbnailOverlayLoadKey,
   validateAndroidThumbnailOverlay,
   androidThumbnailBackgroundPaths,
+  androidBokehJson,
 }: UseLiveActivityOptions): UseLiveActivityResult {
   const isActiveRef = useRef(false);
   // Bumped after every successful start, so state that native drops between
@@ -241,6 +244,8 @@ export function useLiveActivity({
   overlayValidatorRef.current = validateAndroidThumbnailOverlay;
   const backgroundPathsRef = useRef(androidThumbnailBackgroundPaths);
   backgroundPathsRef.current = androidThumbnailBackgroundPaths;
+  const androidBokehJsonRef = useRef(androidBokehJson);
+  androidBokehJsonRef.current = androidBokehJson;
   const queueSequenceRef = useRef(queueSequence);
   queueSequenceRef.current = queueSequence;
   const queueRef = useRef(queue);
@@ -438,6 +443,7 @@ export function useLiveActivity({
               renderMode: renderModeRef.current,
               androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
               androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
+              androidBokehJson: androidBokehJsonRef.current,
             },
           });
         })
@@ -547,6 +553,7 @@ export function useLiveActivity({
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
         androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
+        androidBokehJson: androidBokehJsonRef.current,
       },
     });
   }, [
@@ -556,6 +563,9 @@ export function useLiveActivity({
     // resolved backgrounds change, so it re-fires the push when late-resolving
     // backgrounds arrive (the array is read at effect time).
     backgroundsKey,
+    // A string, so it fires only when the card's look changes, including a
+    // mid-session kill switch flip.
+    androidBokehJson,
     boardConnection,
     getCurrentAndroidBackgroundPaths,
     getCurrentAndroidOverlayPath,
@@ -612,6 +622,7 @@ export function useLiveActivity({
         renderMode,
         androidThumbnailOverlayPath: getCurrentAndroidOverlayPath(),
         androidThumbnailBackgroundPaths: getCurrentAndroidBackgroundPaths(),
+        androidBokehJson: androidBokehJsonRef.current,
       },
     });
   }, [
@@ -619,6 +630,9 @@ export function useLiveActivity({
     androidThumbnailOverlayPath,
     // See Effect 1: backgroundsKey re-fires the push on a late background resolution.
     backgroundsKey,
+    // A string, so it fires only when the card's look changes, including a
+    // mid-session kill switch flip.
+    androidBokehJson,
     boardConnection,
     currentClimbQueueItem,
     sendUpdate,

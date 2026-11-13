@@ -121,7 +121,7 @@ On supported layouts (Tension except layout 11, Decoy, and Woods), the BLE holde
 sees a Mirror climb button in the iOS Lock Screen / expanded Dynamic Island and
 the Android foreground notification. The button becomes Unmirror climb when the
 current queue slot is mirrored. Previous, Next, and the lightbulb remain available.
-Android uses a custom notification-content button to preserve all three action slots.
+Android's lock screen card draws every control as a content view, since the system shows no `addAction` buttons in the collapsed view. The classic card, kept as the kill switch's fallback, still uses a content button for Mirror to preserve all three action slots.
 
 Mirroring is an absolute, server-confirmed update to the current queue slot.
 iOS calls `POST /api/widget/mirror` with its registered bearer token, session ID,

@@ -39,6 +39,7 @@ const OPTION_FIELDS = [
   'boardConnecting',
   'androidThumbnailOverlayPath',
   'androidThumbnailBackgroundPaths',
+  'androidBokehJson',
 ] as const;
 
 function optionShape(options: SessionUpdate['options']): Record<string, string> {

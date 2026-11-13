@@ -153,6 +153,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'Emergency kill switch for the #4979 hold (F3, docs/current-climb-outside-queue.md section 6): when the climb on the wall has not changed for 4 hours, connecting a board keeps it dark and the wall button reads Put on board. With it on, connecting lights that climb as before. Unresolved reads as enabled.',
   },
   {
+    key: 'android-notification-bokeh-kill',
+    label: 'Disable the Android bokeh session card',
+    description:
+      'Emergency kill switch for the Android lock screen card (#7327). With it on, the app stops sending the card payload and the notification goes back to the classic layout on its next update. Unresolved reads as enabled.',
+  },
+  {
     key: 'moonboard-wide-angles',
     label: 'MoonBoard wide angles',
     description:
@@ -500,6 +506,11 @@ export function useAnonymousClimbViewEnabled(): boolean {
  */
 export function useClimbModerationEnabled(): boolean {
   return useFeatureFlag('climb-moderation-kill') !== true;
+}
+
+/** Kill switch for the Android lock screen card (#7327). Missing or unresolved reads as enabled. */
+export function useAndroidNotificationCardEnabled(): boolean {
+  return useFeatureFlag('android-notification-bokeh-kill') !== true;
 }
 
 /**

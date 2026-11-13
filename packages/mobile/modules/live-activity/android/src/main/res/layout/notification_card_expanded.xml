@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The expanded card. The holds glow across its full height; the text sits on the
+     darker part of the scrim. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/session_card_root"
+    android:layout_width="match_parent"
+    android:layout_height="140dp"
+    android:background="@color/session_card_surface">
+
+    <ImageView
+        android:id="@+id/session_card_art"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:importantForAccessibility="no"
+        tools:ignore="ContentDescription" />
+
+    <!-- Deepens the scrim behind a rest clock, whose colours need more contrast than
+         the card's other text. Soft-edged so it doesn't read as a box on the glow. -->
+    <ImageView
+        android:id="@+id/session_card_rest_scrim"
+        android:layout_width="200dp"
+        android:layout_height="140dp"
+        android:layout_gravity="end|top"
+        android:alpha="0.625"
+        android:background="@drawable/session_card_rest_scrim_soft"
+        android:importantForAccessibility="no"
+        android:visibility="gone"
+        tools:ignore="ContentDescription" />
+
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:alpha="0.06"
+        android:background="@drawable/session_card_grain"
+        android:importantForAccessibility="no"
+        tools:ignore="ContentDescription" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="12dp">
+
+        <ImageView
+            android:id="@+id/session_image"
+            android:layout_width="76dp"
+            android:layout_height="96dp"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/session_image_bg"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            tools:ignore="ContentDescription" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/session_title"
+                        style="@style/SessionCard.Title.Expanded"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <TextView
+                        android:id="@+id/session_subtitle"
+                        style="@style/SessionCard.Meta.Expanded"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp" />
+                </LinearLayout>
+
+                <!-- Never ellipsized: a V-grade is never cut. -->
+                <TextView
+                    android:id="@+id/session_card_grade"
+                    style="@style/SessionCard.Grade"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/session_rest"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:gravity="end"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <Chronometer
+                        android:id="@+id/session_rest_clock"
+                        style="@style/SessionCard.Rest.Expanded"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+
+                    <Chronometer
+                        android:id="@+id/session_rest_clock_over"
+                        style="@style/SessionCard.Rest.Expanded.Over"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone" />
+
+                    <Chronometer
+                        android:id="@+id/session_rest_clock_muted"
+                        style="@style/SessionCard.Rest.Expanded.Muted"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/session_rest_static"
+                        style="@style/SessionCard.Rest.Expanded.Muted"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/session_rest_static_over"
+                        style="@style/SessionCard.Rest.Expanded.Over"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/session_rest_caption"
+                        style="@style/SessionCard.Rest.Caption"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/session_previous"
+                    style="@style/SessionCard.Control.Icon"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:src="@drawable/ic_skip_previous"
+                    tools:ignore="ContentDescription" />
+
+                <!-- Who holds the wall, or how to connect. Replaces Previous and Next. -->
+                <TextView
+                    android:id="@+id/session_card_status"
+                    style="@style/SessionCard.Status"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="3"
+                    android:visibility="gone" />
+
+                <ImageButton
+                    android:id="@+id/session_bulb"
+                    style="@style/SessionCard.Control"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    tools:ignore="ContentDescription" />
+
+                <ImageButton
+                    android:id="@+id/session_mirror"
+                    style="@style/SessionCard.Control.Icon"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:src="@drawable/ic_mirror"
+                    android:visibility="gone"
+                    tools:ignore="ContentDescription" />
+
+                <ImageButton
+                    android:id="@+id/session_next"
+                    style="@style/SessionCard.Control.Icon"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:src="@drawable/ic_skip_next"
+                    tools:ignore="ContentDescription" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

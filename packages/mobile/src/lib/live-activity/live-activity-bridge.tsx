@@ -8,8 +8,11 @@ import { captureToSentry } from '../sentry';
 import { requestedBoardRenderMode, useBoardRenderSettings } from '../board-render-settings';
 import { resolveClimbRenderBoard } from '../boards/climb-render-board';
 import { useQueue } from '../../providers/queue-provider';
+import { useAndroidNotificationCardEnabled } from '../../providers/feature-flags-provider';
 import { useBoardConnectionState } from '../../components/ble/use-board-connection-state';
+import { useClimbWallGlow } from '../../components/queue-control/use-climb-wall-glow';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
+import { buildAndroidCardPayload } from './android-card-payload';
 import { useLiveActivity } from './use-live-activity';
 import { LiveActivityRestTimerSync } from './live-activity-rest-timer';
 import { LiveActivityLightingSync } from './live-activity-lighting';
@@ -127,6 +130,23 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     verifyOverlayFile: isAndroidSessionPresence,
   });
 
+  // The Android lock screen card's bokeh and grade (#7327). A string, so the
+  // update effects fire only when the card's look changes. Undefined keeps the
+  // classic card, which is what the kill switch asks for.
+  const androidCardEnabled = useAndroidNotificationCardEnabled() && isAndroidSessionPresence;
+  const notificationGlow = useClimbWallGlow(displayClimb, selectedBoardConfig, androidCardEnabled);
+  const androidBokehJson = useMemo(() => {
+    if (!androidCardEnabled || !displayClimb) return undefined;
+    return JSON.stringify(
+      buildAndroidCardPayload({
+        glow: notificationGlow,
+        difficulty: displayClimb.difficulty,
+        boardName: notificationBoard?.boardName ?? boardName,
+        angle: displayClimb.angle,
+      }),
+    );
+  }, [androidCardEnabled, displayClimb, notificationGlow, notificationBoard?.boardName, boardName]);
+
   // Localized strings for the Android foreground-service notification (channel +
   // Previous/Next + lightbulb actions, and the "on the wall" line). Built here
   // because hooks need a component context; ignored on iOS, where ActivityKit
@@ -190,6 +210,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
     androidThumbnailOverlayLoadKey: overlayLoadKey,
     validateAndroidThumbnailOverlay: verifyOverlayForNativeUse,
     androidThumbnailBackgroundPaths: backgroundPaths,
+    androidBokehJson,
   });
 
   // Subscribe to widget/notification Next/Previous taps. iOS publishes natively;

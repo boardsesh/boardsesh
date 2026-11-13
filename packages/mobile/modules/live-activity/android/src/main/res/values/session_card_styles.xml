@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The lock screen card's type. Colours are pinned to the card's dark surface. -->
+<resources>
+    <style name="SessionCard" />
+
+    <style name="SessionCard.Title">
+        <item name="android:ellipsize">end</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/session_card_ink</item>
+    </style>
+    <style name="SessionCard.Title.Collapsed">
+        <item name="android:maxLines">1</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="SessionCard.Title.Expanded">
+        <item name="android:maxLines">2</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="SessionCard.Meta">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/session_card_meta</item>
+    </style>
+    <style name="SessionCard.Meta.Collapsed">
+        <item name="android:textSize">12sp</item>
+    </style>
+    <style name="SessionCard.Meta.Expanded">
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="SessionCard.Grade">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/session_card_ink</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="SessionCard.Status">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/session_card_ink</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="SessionCard.Rest">
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:textColor">@color/session_card_rest</item>
+    </style>
+    <style name="SessionCard.Rest.Collapsed">
+        <item name="android:textSize">15sp</item>
+    </style>
+    <style name="SessionCard.Rest.Collapsed.Over">
+        <item name="android:textColor">@color/session_card_rest_over</item>
+    </style>
+    <style name="SessionCard.Rest.Collapsed.Muted">
+        <item name="android:textColor">@color/session_card_secondary</item>
+    </style>
+    <style name="SessionCard.Rest.Expanded">
+        <item name="android:textSize">22sp</item>
+    </style>
+    <style name="SessionCard.Rest.Expanded.Over">
+        <item name="android:textColor">@color/session_card_rest_over</item>
+    </style>
+    <style name="SessionCard.Rest.Expanded.Muted">
+        <item name="android:textColor">@color/session_card_secondary</item>
+    </style>
+    <style name="SessionCard.Rest.Caption">
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:maxWidth">88dp</item>
+        <item name="android:textColor">@color/session_card_secondary</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="SessionCard.Control">
+        <item name="android:background">?android:attr/selectableItemBackgroundBorderless</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:scaleType">centerInside</item>
+    </style>
+    <style name="SessionCard.Control.Icon">
+        <item name="android:tint">@color/session_card_ink</item>
+    </style>
+</resources>

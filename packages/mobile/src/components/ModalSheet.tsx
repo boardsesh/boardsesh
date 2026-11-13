@@ -37,6 +37,7 @@ import {
 } from '@expo/ui/community/bottom-sheet';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
+import { selectByVariant } from '../theme/variants/select-by-variant';
 import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetKeyboardInset } from './sheet-keyboard-inset';
@@ -325,7 +326,10 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
         {
           backgroundColor: footerSurface === 'flush' ? 'transparent' : systemColors.secondaryBackground,
           borderTopColor: systemColors.separator,
-          borderTopWidth: variant === 'material' && footerSurface === 'flush' ? 0 : StyleSheet.hairlineWidth,
+          borderTopWidth: selectByVariant(variant, {
+            material: footerSurface === 'flush' ? 0 : StyleSheet.hairlineWidth,
+            liquidGlass: StyleSheet.hairlineWidth,
+          }),
           // Window inset + gap at rest; just the gap while the keyboard is up,
           // so the bar rests spacing[3] above the keyboard (the column below is
           // padded by the overlap).

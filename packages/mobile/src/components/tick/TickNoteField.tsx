@@ -20,6 +20,7 @@ import React, { useCallback, useState } from 'react';
 import { StyleSheet } from 'react-native';
 
 import { useTheme } from '../../providers/theme-provider';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 
 type TickNoteFieldProps = {
   value: string;
@@ -78,7 +79,7 @@ export const TickNoteField = React.memo(function TickNoteField({
           paddingVertical: spacing[2],
           // Material draws an outlined field: the border below is the whole box,
           // so it takes M3's `outline`, which clears 3:1 where `separator` doesn't.
-          backgroundColor: variant === 'material' ? 'transparent' : systemColors.fill,
+          backgroundColor: selectByVariant(variant, { material: 'transparent', liquidGlass: systemColors.fill }),
           // A real edge at rest, not `transparent` — an unfocused field with no
           // visible boundary reads as decoration rather than somewhere to
           // type. `borderWidth` is unchanged either way, so focus recolours the
@@ -86,7 +87,9 @@ export const TickNoteField = React.memo(function TickNoteField({
           // only border role the design system has, and it clears WCAG 1.4.11's 3:1 in
           // neither scheme: ~1.9:1 in dark, ~1.6:1 in light, so dark is the
           // BETTER of the two rather than the worst case — tracked in #4722.
-          borderColor: focused ? brandColors.primary : variant === 'material' ? m3.outline : systemColors.separator,
+          borderColor: focused
+            ? brandColors.primary
+            : selectByVariant(variant, { material: m3.outline, liquidGlass: systemColors.separator }),
           color: systemColors.label,
         },
       ]}

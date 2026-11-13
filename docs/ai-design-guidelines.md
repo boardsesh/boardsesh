@@ -625,6 +625,9 @@ way it looks like this:
   Public spray-wall previews use photo-mapped hold colours. The native preset stays at its original strength.
 - The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
   the label stays centred.
+- **The one place bokeh shows without a drive: the Android lock screen card (#7327).** Its background is always
+  the climb's bokeh, fully grey (blob alpha ×0.80) unless this phone is driving. The thumbnail
+  stays in full colour. Everywhere in the app, frost still means driving.
 - **Swipe to drive: flat progress until driving is confirmed (#7113).** Dragging the button left wipes flat
   `live` amber in from the trailing edge, under the finger; the pill itself stays still. Its base colour fades in
   over 12 pt before the edge. The row is drawn twice: words and chevrons covered by amber use the amber's label

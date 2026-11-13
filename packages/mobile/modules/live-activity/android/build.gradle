@@ -30,13 +30,10 @@ android {
 }
 
 dependencies {
-  // MediaStyle for the ongoing session notification (Previous/Next actions).
-  implementation 'androidx.media:media:1.7.0'
   // ServiceCompat.startForeground(service, id, notification, type) — the 4-arg
-  // overload used for the connectedDevice FGS — needs androidx.core >= 1.12.
-  // androidx.media only pulls core 1.1.0 transitively, so pin it explicitly
-  // (also covers NotificationCompat/ContextCompat). expo-modules-core comes from
-  // the plugin above.
+  // overload used for the connectedDevice FGS — needs androidx.core >= 1.12, so
+  // pin it explicitly (also covers NotificationCompat/ContextCompat).
+  // expo-modules-core comes from the plugin above.
   implementation 'androidx.core:core-ktx:1.13.1'
 
   // JVM unit tests for the session-presence lifecycle (sessionActive flag) and

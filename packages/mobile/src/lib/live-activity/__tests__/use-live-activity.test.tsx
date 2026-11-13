@@ -324,6 +324,24 @@ describe('useLiveActivity start-failure contract', () => {
     expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
   });
 
+  it('sends the Android card payload and pushes when the kill switch removes it', async () => {
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+    const props = activeProps({ androidBokehJson: '{"expanded":[]}' });
+    const { rerender } = render(<Harness {...props} />);
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalled());
+    expect(plugin.updateLiveActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({ androidBokehJson: '{"expanded":[]}' }),
+    );
+    plugin.updateLiveActivity.mockClear();
+    plugin.updateLiveActivityClimb.mockClear();
+
+    rerender(<Harness {...props} androidBokehJson={undefined} />);
+
+    await waitFor(() => expect(plugin.updateLiveActivity).toHaveBeenCalledTimes(1));
+    expect(plugin.updateLiveActivity).toHaveBeenCalledWith(expect.objectContaining({ androidBokehJson: undefined }));
+    expect(plugin.updateLiveActivityClimb).not.toHaveBeenCalled();
+  });
+
   // #7026: the notification service strips `file://` and hands the rest to
   // BitmapFactory.decodeFile, so a percent-encoded `%2C` names a file that does
   // not exist and the artwork slot stays black. The validator still sees the

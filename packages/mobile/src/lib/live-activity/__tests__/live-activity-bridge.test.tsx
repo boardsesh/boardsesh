@@ -45,6 +45,11 @@ const queue = vi.hoisted(() => ({
 
 const platform = vi.hoisted(() => ({ android: true }));
 
+const card = vi.hoisted(() => ({
+  enabled: true,
+  useClimbWallGlow: vi.fn((..._args: unknown[]): unknown => null),
+}));
+
 const widget = vi.hoisted(() => ({
   mirrorListener: null as null | ((event: WidgetMirrorEvent) => void),
   pendingMirror: vi.fn(async (): Promise<WidgetMirrorEvent | null> => null),
@@ -118,6 +123,14 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../analytics', () => ({ track: analytics.track }));
 
 vi.mock('../../sentry', () => ({ captureToSentry: widget.captureToSentry }));
+
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useAndroidNotificationCardEnabled: () => card.enabled,
+}));
+
+vi.mock('../../../components/queue-control/use-climb-wall-glow', () => ({
+  useClimbWallGlow: (...args: unknown[]) => card.useClimbWallGlow(...args),
+}));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({
@@ -260,6 +273,49 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     } finally {
       resetLastPickForTests();
     }
+  });
+
+  function lastCardJson(): string | undefined {
+    const args = widget.useLiveActivity.mock.lastCall?.[0] as { androidBokehJson?: string };
+    return args.androidBokehJson;
+  }
+
+  it('hands the Android card its grade, angle and glow', () => {
+    card.enabled = true;
+    const climb = { uuid: 'c', difficulty: '6c/V5', angle: 40, frames: 'p1r1' };
+    queue.state = { ...queue.state, currentClimbQueueItem: { uuid: 'q', climb } as unknown as ClimbQueueItem };
+    card.useClimbWallGlow.mockReturnValue({
+      key: 'k',
+      boardWidth: 100,
+      boardHeight: 200,
+      holds: [{ x: 10, y: 10, color: '#00FF00' }],
+    });
+
+    renderBridge();
+
+    expect(JSON.parse(lastCardJson() ?? '{}')).toMatchObject({ gradeLabel: 'V5', angleLabel: '40°' });
+    expect((JSON.parse(lastCardJson() ?? '{}') as { collapsed: unknown[] }).collapsed).toHaveLength(1);
+  });
+
+  it('sends no payload once the kill switch is on, and skips the glow work', () => {
+    card.enabled = false;
+    card.useClimbWallGlow.mockClear();
+
+    renderBridge();
+
+    expect(lastCardJson()).toBeUndefined();
+    expect(card.useClimbWallGlow).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), false);
+    card.enabled = true;
+  });
+
+  it('sends no payload on iOS, which draws its own card', () => {
+    platform.android = false;
+    card.useClimbWallGlow.mockClear();
+
+    renderBridge();
+
+    expect(lastCardJson()).toBeUndefined();
+    expect(card.useClimbWallGlow).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), false);
   });
 
   it('reports a card the service could not post, with only the stage and error class', () => {

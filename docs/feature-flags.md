@@ -188,6 +188,10 @@ diagnostic) applies on native. The whole surface lives in three files:
   `useClimbModerationEnabled`, unresolved = enabled) that takes down the whole
   community-moderation surface at once: the "Report climb" action, the More-tab
   Moderation row, and the community moderation status on a climb.
+  `android-notification-bokeh-kill` is a kill switch (read through
+  `useAndroidNotificationCardEnabled`, unresolved = enabled) for the Android lock
+  screen card (#7327). On, the app stops sending the card's payload and the
+  notification returns to the classic layout on its next update.
   `stale-current-hold-kill` is a kill switch (read through
   `useStaleCurrentHoldEnabled`, unresolved = enabled) for the #4979 hold: when
   the climb on the wall has not changed for 4 h, connecting a board keeps it
