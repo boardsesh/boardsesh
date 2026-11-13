@@ -7,6 +7,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./browser-delegation-v1": {
+      "types": "./src/browser-delegation-v1.ts",
+      "import": "./src/browser-delegation-v1.ts",
+      "default": "./src/browser-delegation-v1.ts"
+    },
     "./browser-binding-v1": {
       "types": "./src/browser-binding-v1.ts",
       "import": "./src/browser-binding-v1.ts",
