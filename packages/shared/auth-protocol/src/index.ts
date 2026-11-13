@@ -24,6 +24,8 @@ export const AUTH_COMMAND_ENV = {
 } as const;
 export const AUTH_COMMAND_REQUEST_BYTES = 16_384;
 export const AUTH_COMMAND_RESPONSE_BYTES = 65_536;
+/** Existing location-sync ceiling; each private facade selects a smaller explicit budget. */
+export const AUTH_COMMAND_MAX_BODY_BYTES = 1_048_576;
 export const AUTH_COMMAND_TIMEOUT_MS = 8_000;
 export const AUTH_COMMAND_MAX_AGE_MS = 120_000;
 export const AUTH_COMMAND_FUTURE_SKEW_MS = 5_000;

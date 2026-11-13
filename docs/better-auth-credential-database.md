@@ -59,6 +59,58 @@ granted by this connection factory, no production URL is provisioned, and no
 existing activation gate is removed. Retiring old processes holding accepted
 signing keys remains a separate issuer gate.
 
+## Private browser commands
+
+The default-off browser service uses
+`/api/internal/auth/browser-binding/v1/{bootstrap,describe,read,intent,login,logout}`.
+Only `CURRENT_STORE_BROWSER_BINDING_MODE=backend-staging` enables it. Each command
+requires the private service bearer, exact versioned DTO/path and a fresh request
+before obtaining the credential pool. Browser cookies do not authorize this
+service. Its startup selector also requires enforced cutoff readers.
+
+`AUTH_IDENTITY_DATABASE_CONTRACT` defaults to the unchanged `private-web-v1`
+profile. Browser commands explicitly require `private-browser-v1`, including its
+reviewed browser-binding/intent table closure. A pool qualified for that profile
+can also serve the existing web commands. The narrower default profile cannot
+serve browser commands. Unknown profiles, a mismatched qualification receipt or
+contract changes while the pool is cached refuse without a content-pool fallback.
+The connection budget remains two retained writer connections and one transient
+content-target probe per backend process.
+
+Bootstrap chooses its 30-day correlation deadline from the database clock; the
+caller cannot select it. Describe returns only the authoritative binding cursor,
+selection state and credential kind. It cannot retrieve identity or raw proof.
+Read and authenticated transitions require actual current-version client-held
+source bytes. The backend alone attaches the legacy decryption secret; callers
+cannot submit a secret or substitute a canonical token for a JWE. Read obtains
+the profile in the same admitted transaction, and its UID must match the session.
+
+Each raw legacy proof is capped at 16 KiB of UTF8, and the entire JSON request is
+capped at 64 KiB. Two maximal actual ASCII proofs fit that envelope. JSON escaping
+can increase wire size; the overall body cap still applies before database work.
+Replies are measured as serialized UTF8 before headers and capped at 64 KiB.
+Oversized profiles produce a sanitized unavailable reply without partial identity
+or truncation. No browser cookie is emitted by this service.
+
+Shared transport defaults remain 16 KiB request / 64 KiB reply. Trusted facade
+budgets retain the already merged 1 MiB ceiling, including location sync's
+512 KiB request / 1 MiB reply. HTTP fields cannot choose these budgets. The
+browser staging service has aggregate per-operation limits of 180 mutations or
+600 read/describe requests per minute; public deployment throughput and fairness
+remain an explicit qualification gate.
+
+The owned full-schema HTTP proof covers both selected authorities and source
+kinds with the actual restricted LOGIN and default pool factory. It verifies
+correlation-only refusal, exact-candidate retries, logout denial, shortened
+canonical primary expiry, wrong or unavailable legacy keys, request/reply limits,
+profile identity and the absence of cookies or leaked source material.
+
+Public bootstrap remains disabled. Canonical www/app coordination, CSRF/Origin
+adapters, version-named host-only proof cookies, every authoritative reader,
+ordinary renewal, missing-proof recovery and final Chromium/WebKit application
+replay are still required. These private commands do not close those gates or
+authorize production schema, role, configuration or mode changes.
+
 ## Verification
 
 Owned-fixture tests cover explicit pool target selection and existing TLS behavior,

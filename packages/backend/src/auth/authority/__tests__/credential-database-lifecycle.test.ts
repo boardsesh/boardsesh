@@ -17,8 +17,11 @@ vi.mock('../../credential-database-identity', () => ({ assertSameCredentialDatab
 
 const contentUrl = 'postgresql://boardsesh_runtime:owned-content-secret@127.0.0.1:55480/owned_lifecycle';
 const writerUrl = 'postgresql://boardsesh_identity_writer:owned-writer-secret@127.0.0.1:55480/owned_lifecycle';
-// The qualifier's opaque result is irrelevant to this lifecycle contract.
-const receipt = Object.freeze({ ownedLifecycleReceipt: true }) as unknown as CredentialWriterReceipt;
+// Actual catalog/principal qualification is exercised separately on real LOGINs.
+const receipt = Object.freeze({
+  contract: 'private-web-v1',
+  ownedLifecycleReceipt: true,
+}) as unknown as CredentialWriterReceipt;
 interface PoolRecord {
   readonly pool: PoolInstance;
   readonly database: DbInstance;
@@ -67,6 +70,7 @@ describe('private credential database connection ownership', () => {
     module = undefined;
     vi.stubEnv('DATABASE_URL', contentUrl);
     vi.stubEnv('AUTH_IDENTITY_DATABASE_URL', writerUrl);
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-web-v1');
     dependencies.createPool.mockReset().mockImplementation(() => ownedPool().pool);
     dependencies.createDatabase.mockReset().mockImplementation((pool: PoolInstance) => {
       const record = pools.find((candidate) => candidate.pool === pool);
@@ -75,6 +79,48 @@ describe('private credential database connection ownership', () => {
     });
     dependencies.qualify.mockReset().mockResolvedValue(receipt);
     dependencies.probe.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('requires browser capability before opening any connection', async () => {
+    const connection = await load();
+    await expect(connection.getCredentialDatabase('private-browser-v1')).rejects.toThrow(
+      'CREDENTIAL_DATABASE_CAPABILITY_REQUIRED',
+    );
+    expect(dependencies.createPool).not.toHaveBeenCalled();
+    expect(await connection.getCredentialDatabase('private-web-v1')).toBeDefined();
+  });
+
+  it('shares one qualified browser handle with web operations only through the reviewed superset', async () => {
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-browser-v1');
+    dependencies.qualify.mockResolvedValue({ ...receipt, contract: 'private-browser-v1' });
+    const connection = await load();
+    const browserDatabase = await connection.getCredentialDatabase('private-browser-v1');
+    expect(await connection.getCredentialDatabase('private-web-v1')).toBe(browserDatabase);
+    expect(dependencies.createPool).toHaveBeenCalledOnce();
+    expect(dependencies.qualify).toHaveBeenCalledExactlyOnceWith(
+      pools[0].pool,
+      expect.objectContaining({ contract: 'private-browser-v1' }),
+    );
+  });
+
+  it('refuses a changed profile while preserving the previously qualified owner', async () => {
+    const connection = await load();
+    const original = await connection.getCredentialDatabase();
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-browser-v1');
+    await expect(connection.getCredentialDatabase('private-browser-v1')).rejects.toThrow(
+      'CREDENTIAL_DATABASE_CONFIGURATION_CHANGED',
+    );
+    expect(dependencies.createPool).toHaveBeenCalledOnce();
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-web-v1');
+    expect(await connection.getCredentialDatabase()).toBe(original);
+  });
+
+  it('closes and refuses an incorrectly labeled qualifier receipt', async () => {
+    dependencies.qualify.mockResolvedValue({ ...receipt, contract: 'private-browser-v1' });
+    const connection = await load();
+    await expect(connection.getCredentialDatabase()).rejects.toThrow('CREDENTIAL_DATABASE_CONTRACT_MISMATCH');
+    expect(pools[0].end).toHaveBeenCalledOnce();
+    expect(dependencies.probe).not.toHaveBeenCalled();
   });
   afterEach(async () => {
     for (const release of releasePending) release();

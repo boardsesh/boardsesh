@@ -9,6 +9,7 @@ describe('credential database target binding', () => {
     expect(
       credentialDatabaseConfiguration({ DATABASE_URL: contentUrl, AUTH_IDENTITY_DATABASE_URL: writerUrl }),
     ).toEqual({
+      contract: 'private-web-v1',
       connectionString: writerUrl,
       contentConnectionString: contentUrl,
       contentRole: 'boardsesh_runtime',
@@ -36,6 +37,11 @@ describe('credential database target binding', () => {
     { DATABASE_URL: contentUrl, AUTH_IDENTITY_DATABASE_URL: 'invalid-private-connection-secret' },
     { DATABASE_URL: contentUrl, AUTH_IDENTITY_DATABASE_URL: writerUrl.replace('postgresql:', 'https:') },
     { DATABASE_URL: contentUrl, AUTH_IDENTITY_DATABASE_URL: writerUrl.replace('owned_fixture', '%ZZ') },
+    {
+      DATABASE_URL: contentUrl,
+      AUTH_IDENTITY_DATABASE_URL: writerUrl,
+      AUTH_IDENTITY_DATABASE_CONTRACT: 'owner-attested',
+    },
   ])(
     'refuses missing, reused or differently routed credentials without exposing connection strings: %#',
     (environment) => {
@@ -62,10 +68,25 @@ describe('credential database target binding', () => {
         AUTH_IDENTITY_DATABASE_URL: `${writer}?sslmode=verify-full`,
       }),
     ).toEqual({
+      contract: 'private-web-v1',
       connectionString: `${writer}?sslmode=verify-full`,
       contentConnectionString: content,
       contentRole: 'boardsesh_runtime',
       databaseName: 'owned_fixture',
+    });
+  });
+
+  it('selects only the explicit reviewed browser contract without changing targets', () => {
+    expect(
+      credentialDatabaseConfiguration({
+        DATABASE_URL: contentUrl,
+        AUTH_IDENTITY_DATABASE_URL: writerUrl,
+        AUTH_IDENTITY_DATABASE_CONTRACT: 'private-browser-v1',
+      }),
+    ).toMatchObject({
+      contract: 'private-browser-v1',
+      connectionString: writerUrl,
+      contentConnectionString: contentUrl,
     });
   });
 });
