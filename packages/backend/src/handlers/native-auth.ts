@@ -48,7 +48,7 @@ import {
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
 import { logger } from '../utils/logger';
-import { getPostgresErrorCode } from '../utils/postgres-errors';
+import { getPostgresErrorCode, isUniqueViolation } from '../utils/postgres-errors';
 import {
   currentStoreNativeRegistrationConfiguration,
   currentStoreNativeOAuthConfiguration,
@@ -1027,12 +1027,11 @@ export async function handleNativeAuthRegister(
     logger.info('[NativeAuth] Registration successful');
     sendJson(res, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
   } catch (error) {
-    // Race: a concurrent request created this email between the pre-check and
-    // insert. PostgreSQL unique-violation code is '23505'. NOTE: users.email has
-    // no unique index today, so this won't fire from the email column yet — the
-    // pre-check above is the real guard. The handler stays correct once a
-    // uniqueIndex on lower-cased users.email is added (tracked as follow-up).
-    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+    // Preserve the existing top-level driver conflict contract. Wrapped email-index
+    // violations reach the same response; other wrapped constraints retain their failure path.
+    const legacyUniqueViolation =
+      error !== null && typeof error === 'object' && 'code' in error && error.code === '23505';
+    if (legacyUniqueViolation || isUniqueViolation(error, 'users_email_lower_key')) {
       sendJson(res, 409, { error: 'An account with this email already exists' });
       return;
     }
@@ -1559,6 +1558,12 @@ export async function handleNativeAuthOAuth(
       ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
     });
   } catch (error) {
+    if (isUniqueViolation(error, 'users_email_lower_key')) {
+      sendJson(res, 409, {
+        error: 'This sign-in method is not linked to that account. Use your existing sign-in method.',
+      });
+      return;
+    }
     if (respondNativeAdmissionFailure(res, error)) return;
     logger.error('[NativeAuth] OAuth sign-in failed', { code: 'OAUTH_SIGNIN_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });

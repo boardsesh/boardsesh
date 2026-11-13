@@ -110,6 +110,24 @@ describe('POST /api/auth/register', () => {
     vi.unstubAllEnvs();
   });
 
+  it('returns 409 for a wrapped email-index race without sending verification mail', async () => {
+    mockTransaction.mockRejectedValueOnce(
+      new Error('query failed', { cause: { code: '23505', constraint_name: 'users_email_lower_key' } }),
+    );
+    const response = await POST(createRequest({ email: 'race@example.test', password: 'password123' }));
+    expect(response.status).toBe(409);
+    expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('keeps unrelated unique violations as server errors', async () => {
+    mockTransaction.mockRejectedValueOnce(
+      new Error('query failed', { cause: { code: '23505', constraint_name: 'users_pkey' } }),
+    );
+    const response = await POST(createRequest({ email: 'race@example.test', password: 'password123' }));
+    expect(response.status).toBe(500);
+    expect(mockSendVerificationEmail).not.toHaveBeenCalled();
+  });
+
   it('keeps the legacy limiter key when staged auth is off', async () => {
     mockCheckRateLimit.mockReturnValueOnce({ limited: true, retryAfterSeconds: 30 });
     const response = await POST(

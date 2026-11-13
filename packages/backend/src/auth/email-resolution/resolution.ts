@@ -11,7 +11,7 @@ import {
 } from '@boardsesh/db/schema/auth';
 import type { EvidenceWorksheet } from '../email-audit/evidence';
 import { normalizeAccountEmail } from '../normalize-email';
-import { sqlNormalizedAccountEmail } from '../account-email-sql';
+import { sqlNormalizedAccountEmail } from '@boardsesh/db/account-email-sql';
 
 /** Fixed messages only. Neither database messages nor private inputs may escape the CLI. */
 export class EmailResolutionError extends Error {

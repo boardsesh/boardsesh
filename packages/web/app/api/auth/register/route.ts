@@ -6,6 +6,7 @@ import { hash } from 'bcryptjs';
 import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import { normalizeAccountEmail } from '@boardsesh/auth-protocol/account-email';
 import { findAccountsByEmail } from '@boardsesh/db/queries/account-email';
+import { isUniqueViolation } from '@boardsesh/db/errors';
 import { z } from 'zod';
 import { sendVerificationEmail } from '@boardsesh/email';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     } catch (insertError) {
       // Handle race condition: another request created this user between our check and insert
       // PostgreSQL unique constraint violation code is '23505'
-      if (insertError && typeof insertError === 'object' && 'code' in insertError && insertError.code === '23505') {
+      if (isUniqueViolation(insertError, 'users_email_lower_key')) {
         return NextResponse.json({ error: 'An account with this email already exists' }, { status: 409 });
       }
       throw insertError;

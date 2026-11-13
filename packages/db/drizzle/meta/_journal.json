@@ -2185,6 +2185,13 @@
       "when": 1794572096228,
       "tag": "0311_cnc_packs",
       "breakpoints": true
+    },
+    {
+      "idx": 312,
+      "version": "7",
+      "when": 1794582789658,
+      "tag": "0312_account_email_uniqueness",
+      "breakpoints": true
     }
   ]
 }

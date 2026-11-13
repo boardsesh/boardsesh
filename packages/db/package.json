@@ -115,6 +115,16 @@
       "types": "./src/auth-prototype/index.ts",
       "import": "./src/auth-prototype/index.ts",
       "default": "./src/auth-prototype/index.ts"
+    },
+    "./errors": {
+      "types": "./src/errors.ts",
+      "import": "./src/errors.ts",
+      "default": "./src/errors.ts"
+    },
+    "./account-email-sql": {
+      "types": "./src/account-email-sql.ts",
+      "import": "./src/account-email-sql.ts",
+      "default": "./src/account-email-sql.ts"
     }
   },
   "scripts": {
