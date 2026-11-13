@@ -28,6 +28,12 @@ let dbAvailable = false;
 // Tables the per-file beforeAll resets so each file starts on a clean slate.
 // Order doesn't matter — TRUNCATE ... CASCADE handles FK edges.
 const TABLES_TO_RESET = [
+  'account_consolidation_batches',
+  'account_consolidation_members',
+  'account_consolidation_tick_aliases',
+  'account_consolidation_import_aliases',
+  'account_consolidation_session_aliases',
+  'account_consolidation_group_audits',
   'activity_push_tokens',
   'board_session_queues',
   'board_session_participants',

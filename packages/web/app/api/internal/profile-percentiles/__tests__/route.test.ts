@@ -26,6 +26,11 @@ vi.mock('@boardsesh/db/schema', () => ({
   userClimbPercentiles: {},
 }));
 
+vi.mock('@boardsesh/db/queries', () => ({
+  refreshUserClimbPercentiles: (database: { execute: (statement: unknown) => Promise<void> }) =>
+    database.execute('refresh-percentiles'),
+}));
+
 const routeModule = await import('../route');
 
 describe('GET /api/internal/profile-percentiles', () => {
