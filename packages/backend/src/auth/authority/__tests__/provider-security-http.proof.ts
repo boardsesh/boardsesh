@@ -61,6 +61,15 @@ const requireWeb = createRequire(new URL('../../../../../web/package.json', impo
 const jwt = requireWeb('next-auth/jwt') as {
   encode(input: { secret: string; token: Record<string, unknown>; maxAge: number }): Promise<string>;
 };
+const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
+if (
+  selectedHttpContract &&
+  selectedHttpContract !== 'private-provider-v1' &&
+  selectedHttpContract !== 'private-first-password-v1'
+)
+  throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
+const httpContract =
+  selectedHttpContract === 'private-first-password-v1' ? 'private-first-password-v1' : 'private-provider-v1';
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin: string;
@@ -178,7 +187,7 @@ async function partner(userId: string) {
 
 describe('provider commands through default HTTP and the qualified provider LOGIN', () => {
   beforeAll(async () => {
-    environment = await createCredentialWriterEnvironment('private-provider-v1');
+    environment = await createCredentialWriterEnvironment(httpContract);
     await environment.ownerDatabase.transaction(async (transaction) => {
       const [manifest] = await transaction
         .select()
@@ -209,7 +218,7 @@ describe('provider commands through default HTTP and the qualified provider LOGI
     for (const [name, content] of Object.entries({
       DATABASE_URL: environment.legacyUrl,
       AUTH_IDENTITY_DATABASE_URL: environment.writerUrl,
-      AUTH_IDENTITY_DATABASE_CONTRACT: 'private-provider-v1',
+      AUTH_IDENTITY_DATABASE_CONTRACT: httpContract,
       CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging',
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
