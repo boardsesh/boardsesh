@@ -9,6 +9,7 @@ import {
   type VerifiedCurrentStoreOAuthIdentity,
   type CurrentStoreOAuthForwardedName,
 } from './provider-oauth-identity';
+import type { IdentityAuthorityReceipt } from '../authority/router';
 
 export type NativeOAuthProvider = 'apple' | 'google';
 export type VerifiedNativeOAuthIdentity = Omit<VerifiedCurrentStoreOAuthIdentity, 'image'>;
@@ -28,6 +29,7 @@ export async function resolveReservedNativeOAuthIdentity(
   provider: NativeOAuthProvider,
   identity: VerifiedNativeOAuthIdentity,
   forwardedName?: NativeOAuthForwardedName,
+  receipt?: IdentityAuthorityReceipt,
 ): Promise<ReservedNativeOAuthIdentity> {
   const result = await resolveReservedCurrentStoreOAuthIdentity(
     transaction,
@@ -36,6 +38,7 @@ export async function resolveReservedNativeOAuthIdentity(
     identity,
     { storeProviderImage: false, emailVerification: 'provider', actorUserId: null },
     forwardedName,
+    receipt,
   );
   if (result.outcome === 'linked' || result.outcome === 'created')
     return { outcome: result.outcome, userId: result.user.id, createdAt: new Date(result.user.createdAt.getTime()) };
