@@ -29,7 +29,7 @@ import {
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
 
-export type CurrentStoreOAuthProvider = 'apple' | 'google' | 'facebook';
+export type CurrentStoreOAuthProvider = 'apple' | 'google';
 export interface VerifiedCurrentStoreOAuthIdentity {
   readonly sub: string;
   readonly email: string | null;
@@ -85,6 +85,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   forwardedNameInput?: CurrentStoreOAuthForwardedName,
   receiptInput?: IdentityAuthorityReceipt,
 ): Promise<ReservedCurrentStoreOAuthIdentity> {
+  if (provider !== 'google' && provider !== 'apple') throw new CurrentStoreFoundationError('INVALID_COMMAND');
   const authority = captureExpectedAuthority(authorityInput);
   const identity = { ...identityInput };
   const policy = { ...policyInput };

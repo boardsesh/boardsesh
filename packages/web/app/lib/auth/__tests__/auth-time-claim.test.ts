@@ -325,7 +325,28 @@ describe('auth_time on the backend-staged sign-in paths', () => {
 });
 
 describe('auth_time in the jwt callback', () => {
-  it.each(['google', 'apple', 'facebook', 'credentials'])('records a %s sign-in in whole seconds', async (provider) => {
+  it('refuses a completed Facebook login without issuing claims', async () => {
+    await expect(
+      runJwtCallback({
+        token: { sub: climber.id },
+        user: { id: climber.id },
+        account: accountFor('facebook'),
+      }),
+    ).rejects.toThrow('Unsupported OAuth provider');
+  });
+
+  it('preserves an existing Facebook-issued cookie without manufacturing freshness', async () => {
+    const existing = {
+      sub: climber.id,
+      authSessionId: 'stored-facebook-login',
+      gen: 3,
+      auth_time: SIGN_IN_AT_SECONDS - 3600,
+    };
+    const claims = await runJwtCallback({ token: { ...existing }, account: accountFor('facebook') });
+    expect(claims).toMatchObject(existing);
+  });
+
+  it.each(['google', 'apple', 'credentials'])('records a %s sign-in in whole seconds', async (provider) => {
     const claims = await runJwtCallback({
       token: { sub: climber.id },
       user: { id: climber.id },

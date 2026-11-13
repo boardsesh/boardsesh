@@ -18,7 +18,7 @@ export const WEB_OAUTH_FIELD_LIMITS = {
   userId: 1024,
 } as const;
 
-export const webOAuthProviderSchema = z.enum(['google', 'apple', 'facebook']);
+export const webOAuthProviderSchema = z.enum(['google', 'apple']);
 const version = z.literal(WEB_OAUTH_PROTOCOL_VERSION);
 const requestId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 const timestamp = z.iso.datetime();
