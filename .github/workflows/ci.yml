@@ -956,7 +956,7 @@ jobs:
       - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
         id: better-auth-boundary
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts --maxWorkers=2 --reporter=agent
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts scripts/__tests__/ci-credential-writer-workflow.test.ts --maxWorkers=2 --reporter=agent
 
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
@@ -1625,6 +1625,59 @@ jobs:
           REDIS_URL: redis://localhost:6380
         run: vp run test:auth-mirror
 
+  # Dedicated synthetic LOGIN/catalog mutations must never share the baseline
+  # backend role cluster. Apply the real journal to this fresh PG18/PostGIS DB.
+  test-credential-writer:
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: epic6975_credential_ci
+      CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_ci
+    services:
+      postgres:
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:98ed9b18b9ef23d4f0aec136bab51b600b8343a19b5f39c78c2c8deab1e96c91
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: epic6975_credential_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Bootstrap the fresh owned credential proof database
+        run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh
+      - name: Run complete credential catalog and mounted HTTP proofs serially
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:credential-writer --reporter=junit --outputFile.junit=./test-results/junit-credential-writer.xml
+      - name: Upload credential proof results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-credential-writer
+          path: packages/backend/test-results/junit-credential-writer.xml
+          retention-days: 7
+
   aurora-circuit-arbitration:
     needs: [changes]
     if: needs.changes.outputs.auroraCircuitArbitration == 'true' || needs.changes.outputs.rootCi == 'true'
@@ -2031,6 +2084,7 @@ jobs:
       - test-backend
       - test-auth-compatibility
       - test-auth-mirror
+      - test-credential-writer
       - aurora-circuit-arbitration
       - test-ocr
       - test-location-sync-integration

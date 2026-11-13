@@ -89,6 +89,55 @@ void describe('postgres client', () => {
     });
   });
 
+  void describe('explicit credential pools', () => {
+    void it('uses the supplied login without reading or replacing the shared target', async () => {
+      const { createDedicatedPoolFromUrl, createPool, closePool } = await import('../postgres');
+      const previousUrl = process.env.DATABASE_URL;
+      process.env.DATABASE_URL = 'postgres://content_reader:content-secret@localhost/content_database';
+      await closePool();
+      const shared = createPool();
+      const dedicated = createDedicatedPoolFromUrl(
+        'postgres://identity_writer:writer-secret@localhost/identity_database',
+        2,
+      );
+      try {
+        assert.equal(dedicated.options.user, 'identity_writer');
+        assert.equal(dedicated.options.database, 'identity_database');
+        assert.equal(shared.options.user, 'content_reader');
+        assert.equal(shared.options.database, 'content_database');
+        assert.equal(createPool(), shared);
+        assert.equal(process.env.DATABASE_URL, 'postgres://content_reader:content-secret@localhost/content_database');
+      } finally {
+        await dedicated.end();
+        await closePool();
+        if (previousUrl === undefined) delete process.env.DATABASE_URL;
+        else process.env.DATABASE_URL = previousUrl;
+      }
+    });
+
+    void it('does not require a default URL and preserves verified TLS and bounded pool overrides', async () => {
+      const { createDedicatedPoolFromUrl } = await import('../postgres');
+      const previousUrl = process.env.DATABASE_URL;
+      delete process.env.DATABASE_URL;
+      const pool = createDedicatedPoolFromUrl(
+        'postgres://identity_writer:writer-secret@remote.example/identity_database?sslmode=verify-full&statement_timeout=45000',
+        2,
+        { connect_timeout: 2, connection: { statement_timeout: 10000 } },
+      );
+      try {
+        assert.equal(pool.options.user, 'identity_writer');
+        assert.equal(pool.options.max, 2);
+        assert.equal(pool.options.connect_timeout, 2);
+        assert.equal(pool.options.connection.statement_timeout, 10000);
+        assert.deepEqual(pool.options.ssl, { rejectUnauthorized: true });
+        assert.equal(process.env.DATABASE_URL, undefined);
+      } finally {
+        await pool.end();
+        if (previousUrl !== undefined) process.env.DATABASE_URL = previousUrl;
+      }
+    });
+  });
+
   void describe('per-deployment pool knobs', () => {
     // Asserts on the options postgres-js actually resolved, not on the source
     // text of postgres.ts. A source grep goes green-but-meaningless the moment

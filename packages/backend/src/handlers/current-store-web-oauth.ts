@@ -7,7 +7,7 @@ import {
   webOAuthReplySchema,
   webOAuthReplyStatus,
 } from '@boardsesh/auth-protocol';
-import { db } from '../db/client';
+import { getCredentialDatabase } from '../auth/credential-database';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -34,7 +34,7 @@ export function currentStoreWebOAuthConfiguration(environment: Environment = pro
 export async function handleCurrentStoreWebOAuth(
   request: IncomingMessage,
   response: ServerResponse,
-  database: DbInstance = db,
+  database?: DbInstance,
 ) {
   let configuration: ReturnType<typeof currentStoreWebOAuthConfiguration>;
   try {
@@ -86,10 +86,16 @@ export async function handleCurrentStoreWebOAuth(
   }
   try {
     checkRateLimit(`current-store-web-oauth:${operation}`, 180, 60_000);
+    const commandDatabase = database ?? (await getCredentialDatabase());
     const result =
       command.operation === 'intent'
-        ? await recordWebOAuthIntent(database, configuration.authority, configuration.nextAuthSecret, command)
-        : await resolveWebOAuthIdentity(database, configuration.authority, configuration.nextAuthSecret, command);
+        ? await recordWebOAuthIntent(commandDatabase, configuration.authority, configuration.nextAuthSecret, command)
+        : await resolveWebOAuthIdentity(
+            commandDatabase,
+            configuration.authority,
+            configuration.nextAuthSecret,
+            command,
+          );
     if (result.outcome === 'unavailable') {
       sendJson(response, 503, { error: 'unavailable' });
       return;

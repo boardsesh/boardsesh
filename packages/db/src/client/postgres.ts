@@ -383,6 +383,15 @@ function withoutOverriddenUrlParameters(connectionString: string, overriddenName
  */
 export function createDedicatedPool(max: number, overrides: DedicatedPoolOverrides = {}): PoolInstance {
   const { connectionString } = getConnectionConfig();
+  return createDedicatedPoolFromUrl(connectionString, max, overrides);
+}
+
+/** Explicit credentials; never consults or mutates the shared DATABASE_URL. */
+export function createDedicatedPoolFromUrl(
+  connectionString: string,
+  max: number,
+  overrides: DedicatedPoolOverrides = {},
+): PoolInstance {
   const sharedOptions = buildPoolOptions(connectionString);
   const dedicatedConnectionString = withoutOverriddenUrlParameters(
     connectionString,
@@ -401,8 +410,8 @@ export function createDedicatedPool(max: number, overrides: DedicatedPoolOverrid
  * owns (usually a `createDedicatedPool`), with the same connect retry. Closing
  * the pool is still the caller's job.
  */
-export function createDbOnPool(pool: PoolInstance): DbInstance {
-  return drizzle(withConnectRetry(pool), { schema: fullSchema, logger: sqlLogger });
+export function createDbOnPool(pool: PoolInstance, options: { readonly logger?: false } = {}): DbInstance {
+  return drizzle(withConnectRetry(pool), { schema: fullSchema, logger: options.logger ?? sqlLogger });
 }
 
 export async function closePool(): Promise<void> {

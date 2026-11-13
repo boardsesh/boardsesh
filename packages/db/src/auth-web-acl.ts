@@ -141,16 +141,21 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
       AS safe FROM pg_roles role WHERE rolname = ${WEB_ROLE}`;
   if (!role?.safe) throw new Error('UNSAFE_WEB_ROLE');
   const catalog = await readFenceCatalog(client);
-  const relationPrivileges = await client<{ name: string; kind: string; writes: boolean; reads: boolean }[]>`
+  const relationPrivileges = await client<
+    { name: string; kind: string; writes: boolean; reads: boolean; maintain: boolean }[]
+  >`
     SELECT relation.relname AS name, relation.relkind AS kind,
       has_table_privilege(${WEB_ROLE},relation.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
-        OR has_any_column_privilege(${WEB_ROLE},relation.oid,'INSERT,UPDATE,REFERENCES') AS writes,
-      has_table_privilege(${WEB_ROLE},relation.oid,'SELECT') OR has_any_column_privilege(${WEB_ROLE},relation.oid,'SELECT') AS reads
+        OR has_any_column_privilege(${WEB_ROLE},relation.oid,'INSERT,UPDATE,REFERENCES')
+        OR CASE WHEN current_setting('server_version_num')::integer >= 170000 THEN has_table_privilege(${WEB_ROLE},relation.oid,'MAINTAIN') ELSE false END AS writes,
+      has_table_privilege(${WEB_ROLE},relation.oid,'SELECT') OR has_any_column_privilege(${WEB_ROLE},relation.oid,'SELECT') AS reads,
+      CASE WHEN current_setting('server_version_num')::integer >= 170000 THEN has_table_privilege(${WEB_ROLE},relation.oid,'MAINTAIN') ELSE false END AS maintain
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname <> 'information_schema' AND relation.relkind IN ('r','p','v','m','f')`;
   for (const relation of relationPrivileges) {
     if ((protectedIdentityTable(relation.name) || !['r', 'p'].includes(relation.kind)) && relation.writes)
       throw new Error('IDENTITY_WRITE_PATH');
+    if (relation.maintain) throw new Error('UNREVIEWED_MAINTAIN_PATH');
     if ((relation.name === 'auth_session' || ['v', 'm', 'f'].includes(relation.kind)) && relation.reads)
       throw new Error('UNREVIEWED_READ_PATH');
   }

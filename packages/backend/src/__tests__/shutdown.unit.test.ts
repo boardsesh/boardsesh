@@ -33,8 +33,11 @@ describe('shutdown: closePool wiring', () => {
   it('index.ts imports closePool and closeReadPool from @boardsesh/db/client', () => {
     const source = readSource('src/index.ts');
     expect(source).toContain("import { closePool, closeReadPool } from '@boardsesh/db/client'");
-    expect(source).toContain('await closePool()');
-    expect(source).toContain('await closeReadPool()');
+    expect(source).toContain('await closeDatabasePools(');
+    expect(source).toContain('credential: closeCredentialDatabase');
+    expect(source).toContain('read: closeReadPool');
+    expect(source).toContain('primary: closePool');
+    expect(source).toContain('admission: closeAdmissionPool');
   });
 
   it('index.ts logs when pools are closed', () => {
@@ -44,16 +47,13 @@ describe('shutdown: closePool wiring', () => {
 
   it('index.ts handles pool close errors gracefully', () => {
     const source = readSource('src/index.ts');
-    // closePool should be in a try/catch
-    expect(source).toContain("'Error closing database pools:'");
+    expect(source).toContain("'One or more database pools failed to close'");
   });
 
-  it('index.ts closes read pool before primary pool', () => {
+  it('index.ts delegates pool shutdown to the independently tested owner', () => {
     const source = readCode('src/index.ts');
-    const readIdx = source.indexOf('await closeReadPool()');
-    const primaryIdx = source.indexOf('await closePool()');
-    expect(readIdx).toBeGreaterThanOrEqual(0);
-    expect(readIdx).toBeLessThan(primaryIdx);
+    expect(source).toContain("import { closeDatabasePools } from './shutdown-database-pools'");
+    expect(source).toContain('await closeDatabasePools(');
   });
 
   it('index.ts closes the admission pool once the shared pools have closed', () => {
@@ -61,10 +61,10 @@ describe('shutdown: closePool wiring', () => {
     // wait on it, and it must come after the HTTP and WebSocket servers.
     const source = readCode('src/index.ts');
     expect(source).toContain("import { closeAdmissionPool } from './auth/admission-pool'");
-    const primaryIdx = source.indexOf('await closePool()');
-    const admissionIdx = source.indexOf('await closeAdmissionPool()');
-    expect(admissionIdx).toBeGreaterThan(primaryIdx);
-    expect(source.indexOf('await httpServerClosed')).toBeLessThan(admissionIdx);
+    const poolIdx = source.indexOf('await closeDatabasePools(');
+    expect(poolIdx).toBeGreaterThan(0);
+    expect(source).toContain('admission: closeAdmissionPool');
+    expect(source.indexOf('await httpServerClosed')).toBeLessThan(poolIdx);
   });
 });
 
@@ -100,14 +100,14 @@ describe('shutdown: ordering', () => {
   it('index.ts shuts down services before closing the pool', () => {
     const source = readCode('src/index.ts');
     const servicesIdx = source.indexOf('shutdownServices');
-    const poolIdx = source.indexOf('closePool()');
+    const poolIdx = source.indexOf('await closeDatabasePools(');
     expect(servicesIdx).toBeLessThan(poolIdx);
   });
 
   it('index.ts closes HTTP/WS before closing the pool', () => {
     const source = readCode('src/index.ts');
     const httpIdx = source.indexOf('httpServer.close');
-    const poolIdx = source.indexOf('closePool()');
+    const poolIdx = source.indexOf('await closeDatabasePools(');
     expect(httpIdx).toBeLessThan(poolIdx);
   });
 });
@@ -250,13 +250,13 @@ describe('shutdown: stop accepting before the slow teardown', () => {
   it('still awaits the HTTP close before touching the pools', () => {
     const awaitIdx = source.indexOf('await httpServerClosed');
     expect(awaitIdx).toBeGreaterThanOrEqual(0);
-    expect(awaitIdx).toBeLessThan(source.indexOf('await closeReadPool()'));
+    expect(awaitIdx).toBeLessThan(source.indexOf('await closeDatabasePools('));
   });
 
   it('keeps every anchor the ordering assertions depend on', () => {
     // Guards readCode itself: if comment stripping ever ate real code, the
     // indexOf comparisons above would silently compare -1s instead of failing.
-    for (const anchor of ['httpServer.close(', 'wss.close(', 'await httpServerClosed', 'await closeReadPool()']) {
+    for (const anchor of ['httpServer.close(', 'wss.close(', 'await httpServerClosed', 'await closeDatabasePools(']) {
       expect(source).toContain(anchor);
     }
   });
