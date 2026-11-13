@@ -34,6 +34,15 @@ is bounded to 16 headers; leftover older names remain ineligible for selection.
 Same-version chunk-layout changes fail before publication rather than deleting
 current names. Their working renewal protocol remains to be qualified.
 
+The trusted server-only `retainObservedProofCookies` option defaults to false.
+A provider result planner may pass literal true to retain the exact old actor
+proof needed for a bounded ACK. This emits no older-proof cleanup and counts
+every actual old proof and operation carrier toward projected capacity; it does
+not filter or hide observed headers. Malformed option values fail closed.
+Initial provider finalization must retain both actor possession and recovery
+capabilities until next-request ACK is qualified. Complete reply/header loss
+without the exact candidate still needs separate fresh same-owner recovery.
+
 `buildBrowserProofCookieCandidate` is synchronous and immutable. Call it before
 a credential/selection mutation, then retain the backend transaction/receipt
 and publication fences. It bounds each cookie header, aggregate Set-Cookie
