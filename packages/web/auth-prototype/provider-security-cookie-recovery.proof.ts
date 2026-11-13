@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { and, eq } from 'drizzle-orm';
 import { authProviderSecurityIntents, authSecurityMutationEvents } from '@boardsesh/db/schema/auth';
@@ -41,6 +42,10 @@ import {
 import { readProviderSecurityRecoveryInput } from '../app/lib/auth/provider-security-recovery.server';
 import { createProviderSecurityDirectPublication } from '../app/lib/auth/provider-security-direct.server';
 import {
+  createProviderSecuritySettingsBroker,
+  PROVIDER_SETTINGS_PATHS,
+} from '../app/lib/auth/provider-security-settings.server';
+import {
   captureProviderBrowserContext,
   ProviderSecurityIdentityChangedError,
 } from '../app/lib/auth/provider-security-selection.server';
@@ -70,6 +75,7 @@ let provider: ReturnType<typeof createProviderSecurityCommandClient>;
 let binding: ReturnType<typeof createBrowserBindingCommandClient>;
 let dropFinalizerReply = false;
 let direct: ReturnType<typeof createProviderSecurityDirectPublication>;
+let settings: ReturnType<typeof createProviderSecuritySettingsBroker>;
 let directScenario:
   | {
       readonly operationKey: string;
@@ -441,6 +447,28 @@ beforeAll(async () => {
           response.end('<!doctype html><body>Owned provider cookie recovery fixture</body>');
           return;
         }
+        if (path === PROVIDER_SETTINGS_PATHS.unlink || path === PROVIDER_SETTINGS_PATHS.acknowledge) {
+          const headers = new Headers();
+          for (let index = 0; index < request.rawHeaders.length; index += 2)
+            headers.append(request.rawHeaders[index], request.rawHeaders[index + 1]);
+          // Model the standalone server's internal URL, while preserving the
+          // actual browser Host, Origin, cookie and bounded body stream.
+          const requestOptions: RequestInit & { duplex: 'half' } = {
+            method: request.method,
+            headers,
+            body: Readable.toWeb(request) as unknown as ReadableStream<Uint8Array>,
+            duplex: 'half',
+          };
+          const incoming = new Request(`http://0.0.0.0:3000${path}`, requestOptions);
+          const result =
+            path === PROVIDER_SETTINGS_PATHS.unlink
+              ? await settings.unlink(incoming)
+              : await settings.acknowledge(incoming);
+          for (const [name, content] of result.headers) if (name !== 'set-cookie') response.setHeader(name, content);
+          if (result.headers.getSetCookie().length) response.setHeader('Set-Cookie', result.headers.getSetCookie());
+          response.writeHead(result.status).end(Buffer.from(await result.arrayBuffer()));
+          return;
+        }
         if (path.startsWith('/fixture/direct-')) {
           const active = directScenario;
           if (!active) {
@@ -569,6 +597,12 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Owned HTTPS listener unavailable');
   www = `https://www.boardsesh.test:${address.port}`;
+  settings = createProviderSecuritySettingsBroker({
+    environment: { ...clientEnvironment, NEXTAUTH_URL: www },
+    ready: () => true,
+    readSelection,
+    clientFactory: () => provider,
+  });
   browser = await chromium.launch({
     headless: true,
     args: [
@@ -869,4 +903,89 @@ describe('actual direct unlink server composition', () => {
         expect(methods.providers).toHaveLength(1);
       });
     }
+});
+
+describe('actual Settings JSON dispatcher composition', () => {
+  for (const selected of ['current-store', 'better-auth'] as const)
+    for (const kind of ['legacy-jwe', 'canonical-token'] as const)
+      it(`${selected}/${kind}: canonical Host/Origin and real JSON preserve stale-key refusal, unlink and exact ACK`, async () => {
+        const { page, current } = await setupDirect(selected, kind);
+        const before = await environment.database
+          .select()
+          .from(authProviderSecurityIntents)
+          .where(eq(authProviderSecurityIntents.intentHash, current.operationKey));
+        const stale = await page.evaluate(
+          async (input) => {
+            const response = await fetch(input.path, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ operationKey: input.operationKey, actorContextKey: '0'.repeat(64) }),
+            });
+            return { status: response.status, body: await response.json() };
+          },
+          { path: PROVIDER_SETTINGS_PATHS.unlink, operationKey: current.operationKey },
+        );
+        expect(stale).toEqual({ status: 409, body: { outcome: 'identity_changed' } });
+        expect(
+          await environment.database
+            .select()
+            .from(authProviderSecurityIntents)
+            .where(eq(authProviderSecurityIntents.intentHash, current.operationKey)),
+        ).toEqual(before);
+        expect(
+          await environment.database
+            .select()
+            .from(authSecurityMutationEvents)
+            .where(eq(authSecurityMutationEvents.userId, current.userId)),
+        ).toHaveLength(0);
+        const completed = await page.evaluate(
+          async (input) => {
+            const response = await fetch(input.path, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ operationKey: input.operationKey, actorContextKey: input.actorContextKey }),
+            });
+            return { status: response.status, body: await response.json() };
+          },
+          {
+            path: PROVIDER_SETTINGS_PATHS.unlink,
+            operationKey: current.operationKey,
+            actorContextKey: current.actorContextKey,
+          },
+        );
+        expect(completed).toEqual({ status: 200, body: { outcome: 'completed' } });
+        const acknowledgedCookies = await cookies();
+        const admitted = await readSelection(acknowledgedCookies);
+        expect(admitted.status).toBe('admitted');
+        if (admitted.status !== 'admitted') throw new Error('Owned JSON candidate missing');
+        expect(admitted.session).toMatchObject({
+          userId: current.userId,
+          authSessionId: current.authSessionId,
+          generation: 1,
+          authenticatedAt: current.authenticatedAt,
+          expiresAt: current.expiresAt,
+        });
+        const ack = await page.evaluate(
+          async (input) => {
+            const response = await fetch(input.path, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ operationKey: input.operationKey }),
+            });
+            return { status: response.status, body: await response.json() };
+          },
+          { path: PROVIDER_SETTINGS_PATHS.acknowledge, operationKey: current.operationKey },
+        );
+        expect(ack).toEqual({ status: 200, body: { outcome: 'completed' } });
+        expect(await cookies()).toBe(acknowledgedCookies);
+        expect(
+          await environment.database
+            .select()
+            .from(authSecurityMutationEvents)
+            .where(eq(authSecurityMutationEvents.userId, current.userId)),
+        ).toHaveLength(1);
+      });
 });
