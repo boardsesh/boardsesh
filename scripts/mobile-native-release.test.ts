@@ -214,6 +214,7 @@ describe('main native release snapshots', () => {
           throw new Error('non-fast-forward');
         })
         .mockImplementationOnce(() => undefined),
+      currentMain: vi.fn(() => 'e'.repeat(40)),
       committed: vi.fn(() => false),
       recover: vi.fn(),
     };
@@ -222,12 +223,34 @@ describe('main native release snapshots', () => {
     expect(runtime.prepare).toHaveBeenCalledTimes(2);
   });
 
+  it('stops after an unconfirmed push on unchanged main without leaking subprocess output', () => {
+    const runtime: NativeCoordinatorRuntime = {
+      prepare: vi.fn(() => ({ mainSha: stamp.sourceSha, stampSha: stamp.sha, previousStamp: null })),
+      push: vi.fn(() => {
+        throw new Error('GH013 repository rule violation; credential-bearing command must stay private');
+      }),
+      currentMain: vi.fn(() => stamp.sourceSha),
+      committed: vi.fn(() => false),
+      recover: vi.fn(),
+    };
+    expect(() => coordinateNativeSnapshots(runtime)).toThrow(
+      new Error(
+        'Native stamp push failed while main was unchanged. Check repository App credentials and its bypass permissions for every main branch rule. No stamp publication was confirmed.',
+      ),
+    );
+    expect(runtime.committed).toHaveBeenCalledExactlyOnceWith(stamp.sha, stamp.sourceSha);
+    expect(runtime.prepare).toHaveBeenCalledTimes(1);
+    expect(runtime.push).toHaveBeenCalledTimes(1);
+    expect(runtime.recover).not.toHaveBeenCalled();
+  });
+
   it('treats a lost successful push response as committed without consuming another patch', () => {
     const runtime: NativeCoordinatorRuntime = {
       prepare: vi.fn(() => ({ mainSha: stamp.sourceSha, stampSha: stamp.sha, previousStamp: null })),
       push: vi.fn(() => {
         throw new Error('connection reset after acceptance');
       }),
+      currentMain: vi.fn(() => stamp.sha),
       committed: vi.fn(() => true),
       recover: vi.fn(),
     };
@@ -240,6 +263,7 @@ describe('main native release snapshots', () => {
     const runtime: NativeCoordinatorRuntime = {
       prepare: vi.fn(() => ({ mainSha: 'e'.repeat(40), stampSha: null, previousStamp: stamp })),
       push: vi.fn(),
+      currentMain: vi.fn(),
       committed: vi.fn(),
       recover: vi.fn(),
     };
@@ -263,6 +287,7 @@ describe('main native release snapshots', () => {
       push: vi.fn(() => {
         throw new Error('accepted response lost');
       }),
+      currentMain: vi.fn(() => stamp.sha),
       committed: vi.fn(() => true),
       recover: vi.fn(),
     };

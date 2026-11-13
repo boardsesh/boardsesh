@@ -1,7 +1,7 @@
 /// <reference types="node" />
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getAppStoreVersions } from './mobile-auto-version-bump';
+import { AppStoreAgreementRequiredError, getAppStoreVersions } from './mobile-auto-version-bump';
 import {
   mapPublicIosBuilds,
   PUBLIC_ANDROID_STATE,
@@ -216,6 +216,19 @@ describe('public iOS store evidence', () => {
 });
 
 describe('readStoreWithRetries', () => {
+  it('reports a missing Apple agreement immediately without leaking response details', async () => {
+    const agreementError = new AppStoreAgreementRequiredError();
+    const read = vi.fn<() => Promise<string>>().mockRejectedValue(agreementError);
+    const sleep = vi.fn<(milliseconds: number) => Promise<void>>();
+    const log = vi.fn<(message: string) => void>();
+
+    await expect(readStoreWithRetries(read, { sleep, log })).rejects.toBe(agreementError);
+    expect(agreementError.message).toContain('https://appstoreconnect.apple.com/business');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
+  });
+
   it('waits 10 s then 30 s and returns the first read that succeeds', async () => {
     const read = vi
       .fn<() => Promise<string>>()

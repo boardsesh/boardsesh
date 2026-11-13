@@ -197,6 +197,35 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
+export class AppStoreAgreementRequiredError extends Error {
+  constructor() {
+    super(
+      'Apple requires the account holder to accept a missing or expired agreement in App Store Connect > Business (https://appstoreconnect.apple.com/business). Then retry this workflow.',
+    );
+    this.name = 'AppStoreAgreementRequiredError';
+  }
+}
+
+function requiresAppStoreAgreement(status: number, body: string): boolean {
+  if (status !== 403) return false;
+  try {
+    const response: unknown = JSON.parse(body);
+    if (typeof response !== 'object' || response === null) return false;
+    const errors = (response as Record<string, unknown>)['errors'];
+    return (
+      Array.isArray(errors) &&
+      errors.some(
+        (error: unknown) =>
+          typeof error === 'object' &&
+          error !== null &&
+          (error as Record<string, unknown>)['code'] === 'FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED',
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function ascFetch<T>(path: string, token: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(path, APP_STORE_CONNECT_API_BASE);
   for (const [key, value] of Object.entries(params ?? {})) {
@@ -209,6 +238,7 @@ async function ascFetch<T>(path: string, token: string, params?: Record<string, 
   });
   const body = await response.text();
   if (!response.ok) {
+    if (requiresAppStoreAgreement(response.status, body)) throw new AppStoreAgreementRequiredError();
     throw new Error(`ASC ${path} → ${response.status}: ${body.slice(0, 500)}`);
   }
   return JSON.parse(body) as T;
