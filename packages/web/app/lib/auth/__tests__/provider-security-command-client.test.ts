@@ -44,7 +44,7 @@ const preparePayload = () => ({
     emailVerified: true,
   },
 });
-type PreparedReply = Extract<ProviderSecurityReply, { outcome: 'prepared' }>;
+type PreparedReply = Extract<ProviderSecurityReply, { operation: 'prepare'; outcome: 'prepared' }>;
 function prepared(command: ProviderSecurityCommand): PreparedReply {
   return {
     providerSecurityVersion: 1,
@@ -90,6 +90,175 @@ function fixture(reply: (command: ProviderSecurityCommand) => Response | Promise
   const send = vi.fn<typeof fetch>(async (_input, settings) => reply(parsedRequest(settings)));
   return { send, client: createProviderSecurityCommandClient({ environment, fetch: send }) };
 }
+
+type OwnedSigninPrepared = Extract<ProviderSecurityReply, { operation: 'signin-prepare'; outcome: 'prepared' }>;
+function ownedSigninPrepared(command: ProviderSecurityCommand): OwnedSigninPrepared {
+  const proposal = command.payload.actor.kind === 'canonical-token' ? 'F'.repeat(43) : null;
+  return {
+    providerSecurityVersion: 1,
+    requestId: command.requestId,
+    operation: 'signin-prepare',
+    outcome: 'prepared',
+    preparationToken: 'E'.repeat(43),
+    proposedCanonicalToken: proposal,
+    preparation: {
+      provider: 'apple',
+      subject: 'already-owned-other-subject',
+      credentialProof: {
+        version: 1,
+        userId: 'other-owned-user',
+        authSessionId: 'new-owned-login',
+        generation: 2,
+        authenticatedAt: null,
+        linkGuarded: false,
+      },
+      credentialExpiresAt: '2030-01-02T03:04:05.000Z',
+      expiresAt: '2030-01-01T00:01:00.000Z',
+      proposedCanonicalTokenHash: proposal
+        ? providerCandidateCredentialHash({ kind: 'canonical-token', credential: proposal })
+        : null,
+    },
+    browserCursor: {
+      bindingId: createHash('sha256').update(command.payload.actor.browserBindingToken).digest('hex'),
+      version: command.payload.actor.browserVersion,
+      bindingExpiresAt: '2030-01-02T03:04:05.000Z',
+    },
+    user: {
+      id: 'other-owned-user',
+      email: 'other@example.test',
+      name: null,
+      image: null,
+      emailVerified: null,
+      createdAt: '2019-01-01T00:00:00.000Z',
+    },
+  };
+}
+function ownedSigninPayload(kind: 'legacy-jwe' | 'canonical-token' = 'canonical-token') {
+  return {
+    ...bound(),
+    actor: { ...actor(), kind },
+    flowHash: 'a'.repeat(64),
+    nonceHash: null,
+    providerProof: { provider: 'apple' as const, subject: 'already-owned-other-subject', idToken: null, nonce: null },
+  };
+}
+
+describe('ordinary owned-account private reply binding', () => {
+  it.each(['legacy-jwe', 'canonical-token'] as const)(
+    'admits exact distinct B preparation for %s while keeping the current cursor',
+    async (kind) => {
+      const current = fixture((command) => json(ownedSigninPrepared(command)));
+      const reply = await current.client.command('signin-prepare', ownedSigninPayload(kind));
+      expect(reply).toMatchObject({
+        outcome: 'prepared',
+        operation: 'signin-prepare',
+        preparation: { credentialProof: { userId: 'other-owned-user', authenticatedAt: null, linkGuarded: false } },
+      });
+    },
+  );
+  it.each([
+    [
+      'provider',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.provider = 'google';
+      },
+    ],
+    [
+      'subject',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.subject = 'different-subject';
+      },
+    ],
+    [
+      'profile',
+      (reply: OwnedSigninPrepared) => {
+        reply.user.id = 'different-profile';
+      },
+    ],
+    [
+      'same actor',
+      (reply: OwnedSigninPrepared) => {
+        reply.user.id = 'owned-user';
+        reply.preparation.credentialProof.userId = 'owned-user';
+      },
+    ],
+    [
+      'same SID',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.credentialProof.authSessionId = 'owned-session';
+      },
+    ],
+    [
+      'missing proposal',
+      (reply: OwnedSigninPrepared) => {
+        reply.proposedCanonicalToken = null;
+        reply.preparation.proposedCanonicalTokenHash = null;
+      },
+    ],
+    [
+      'proposal hash',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.proposedCanonicalTokenHash = 'e'.repeat(64);
+      },
+    ],
+    [
+      'Apple age',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.credentialProof.authenticatedAt = '2030-01-01T00:00:00.000Z';
+        reply.preparation.credentialProof.linkGuarded = true;
+      },
+    ],
+    [
+      'beyond binding expiry',
+      (reply: OwnedSigninPrepared) => {
+        reply.preparation.credentialExpiresAt = '2031-01-01T00:00:00.000Z';
+      },
+    ],
+  ] as const)('refuses drifted %s before exposing a prepared candidate', async (_label, change) => {
+    const current = fixture((command) => {
+      const reply = ownedSigninPrepared(command);
+      change(reply);
+      return json(reply);
+    });
+    await expect(current.client.command('signin-prepare', ownedSigninPayload())).rejects.toThrow(
+      AUTH_BACKEND_UNAVAILABLE,
+    );
+  });
+  it('ACKs only the exact retained candidate hash and future browser cursor', async () => {
+    const payload = ownedSigninPayload();
+    const prepared = ownedSigninPrepared(
+      providerSecurityCommandSchema.parse({
+        providerSecurityVersion: 1,
+        operation: 'signin-prepare',
+        requestId: randomUUID(),
+        issuedAt: new Date().toISOString(),
+        payload,
+      }),
+    );
+    const candidate = { kind: 'canonical-token' as const, credential: prepared.proposedCanonicalToken! };
+    const current = fixture((command) =>
+      json({
+        providerSecurityVersion: 1,
+        requestId: command.requestId,
+        operation: 'signin-finalize',
+        outcome: 'recovered',
+        candidateCredentialHash: providerCandidateCredentialHash(candidate),
+        browserCursor: { ...prepared.browserCursor, version: actor().browserVersion + 1 },
+      }),
+    );
+    expect(
+      await current.client.command('signin-finalize', {
+        ...bound(),
+        actor: payload.actor,
+        flowHash: payload.flowHash,
+        nonceHash: payload.nonceHash,
+        preparationToken: prepared.preparationToken,
+        preparation: prepared.preparation,
+        candidate,
+      }),
+    ).toMatchObject({ outcome: 'recovered' });
+  });
+});
 
 describe('private provider security command client', () => {
   it('uses only the fixed private path and service credential and retains original proof metadata', async () => {
