@@ -1613,8 +1613,9 @@ describe('the public /v1 API', () => {
       const authorization = await environment.authorize(client, { climber });
       const accessToken = (await environment.exchange(client, authorization)).body.access_token!;
       const deleter = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+      let commit: () => void = () => {};
+      let deletion: Promise<unknown> | undefined;
       try {
-        let commit: () => void = () => {};
         const committing = new Promise<void>((resolve) => {
           commit = resolve;
         });
@@ -1623,7 +1624,7 @@ describe('the public /v1 API', () => {
           deleted = resolve;
         });
         // The deletion runs (and cascades) first, then waits to commit.
-        const deletion = deleter.begin(async (transaction) => {
+        deletion = deleter.begin(async (transaction) => {
           await transaction`delete from users where id = ${climber.userId}`;
           deleted();
           await committing;
@@ -1640,14 +1641,26 @@ describe('the public /v1 API', () => {
             `)
           ).length > 0;
         const deadline = Date.now() + 5000;
-        while (!(await waitingOnInsert()) && Date.now() < deadline) {
+        let observedInsertWait = false;
+        while (Date.now() < deadline) {
+          if (await waitingOnInsert()) {
+            // Release immediately: another monitor query can consume the
+            // real transaction's lock budget and turn this race into a 503.
+            commit();
+            observedInsertWait = true;
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
-        expect(await waitingOnInsert()).toBe(true);
+        // Also release when observation failed, so cleanup cannot strand an
+        // open deletion transaction while the assertion reports the failure.
         commit();
         await deletion;
+        expect(observedInsertWait).toBe(true);
         expectInvalidToken(await answering);
       } finally {
+        commit();
+        await deletion?.catch(() => {});
         await deleter.end({ timeout: 5 });
       }
     });
