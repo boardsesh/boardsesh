@@ -1,6 +1,6 @@
 New in 2.8.0
 
-LIGHT YOUR SPRAYWALL
+Light your Spraywall
 
 Connect your Spraywall to WLED over Wi-Fi. Mark holes on a zoomable photo, lay out the LEDs and cable, and correct which LEDs light each hold. Test individual holds and see your Spraywall light up while you set a climb. Save the setup once so your crew can light climbs too.
 

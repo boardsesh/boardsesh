@@ -1,6 +1,6 @@
 Nouveautés de la version 2.8.0
 
-ALLUME TA SPRAYWALL
+Allume ta Spraywall
 
 Connecte ta Spraywall à WLED en Wi-Fi. Place les trous sur une photo zoomable, trace les LED et le câble, puis corrige les LED associées à chaque prise. Teste les prises une par une et vois ta Spraywall s'allumer pendant que tu crées un bloc. Enregistre la configuration une fois pour que ta crew puisse aussi allumer les blocs.
 
