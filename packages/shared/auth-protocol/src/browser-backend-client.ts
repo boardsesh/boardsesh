@@ -118,6 +118,12 @@ export function createBrowserBackendClient(options: {
       consumer.assertCurrent(scope, lease);
     },
     invalidate: (scope: BrowserBackendConsumerScope) => consumer.invalidate(scope),
+    /** Local isolation is uncertainty, never a confirmed anonymous session.
+     * It also retires a first in-flight lease before any receipt exists. */
+    retire(): void {
+      confirmedAnonymous = false;
+      manager.setOwner(null);
+    },
     getSnapshot: manager.getSnapshot,
     subscribe: (listener: () => void) => manager.subscribe(listener),
     isSelected: () => selected,
