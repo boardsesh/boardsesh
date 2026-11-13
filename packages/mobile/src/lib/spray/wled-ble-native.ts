@@ -233,8 +233,11 @@ async function connect(controllerId: string, signal?: AbortSignal): Promise<Wled
     cancelFragmentTimeout?.();
     subscription?.remove();
     disconnected?.remove();
-    release();
-    if (device) await disconnectDevice(device.id);
+    try {
+      if (device) await disconnectDevice(device.id);
+    } finally {
+      release();
+    }
   }
   try {
     await permitted(controller.signal);

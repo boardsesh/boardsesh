@@ -155,6 +155,28 @@ describe('native WLED BLE ownership', () => {
     expect(commands).toEqual([{ id: expect.any(String), op: 'getInfo' }]);
     expect(mocks.cancel).toHaveBeenCalledWith('phone-device');
   });
+  it('retains native ownership until a deferred disconnect finishes', async () => {
+    const { peripheral } = device();
+    mocks.connect.mockResolvedValue(peripheral);
+    let finishDisconnect!: () => void;
+    mocks.cancel.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishDisconnect = resolve;
+      }),
+    );
+    const probe = nativeWledBleDriver.probe('wled-ble:wled-aabbccddeeff');
+    await finishScan();
+    expect(mocks.cancel).toHaveBeenCalledWith('phone-device');
+    await expect(discoverWledBluetooth()).rejects.toMatchObject({ code: 'unavailable' });
+    expect(mocks.scan).toHaveBeenCalledTimes(1);
+    finishDisconnect();
+    await expect(probe).resolves.toMatchObject({ name: 'Gym' });
+    const discovery = discoverWledBluetooth();
+    await finishScan();
+    await expect(discovery).resolves.toEqual([capabilities]);
+    expect(mocks.scan).toHaveBeenCalledTimes(2);
+  });
+
   it('never discovers or disconnects a controller while another WLED request owns it', async () => {
     const { peripheral } = device(capabilities.controllerId, true);
     mocks.connect.mockResolvedValue(peripheral);
