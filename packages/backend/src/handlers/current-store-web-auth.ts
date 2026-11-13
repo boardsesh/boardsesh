@@ -18,7 +18,7 @@ import {
   resetPasswordCommandSchema,
   type AuthCommand,
 } from '@boardsesh/auth-protocol';
-import { db } from '../db/client';
+import { getCredentialDatabase } from '../auth/credential-database';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -59,7 +59,7 @@ export function currentStoreWebAuthConfiguration(
 export async function handleCurrentStoreWebAuth(
   request: IncomingMessage,
   response: ServerResponse,
-  database: DbInstance = db,
+  database?: DbInstance,
 ): Promise<void> {
   let configuration: ReturnType<typeof currentStoreWebAuthConfiguration>;
   try {
@@ -148,20 +148,21 @@ export async function handleCurrentStoreWebAuth(
     // the real work: the backend only ever sees the web server as its peer.
     // This is not claimed as distributed production abuse protection.
     checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
+    const commandDatabase = database ?? (await getCredentialDatabase());
     const result = authCommandReplySchema.parse(
       command.operation === 'register'
-        ? await registerWebPassword(database, configuration.authority, command)
+        ? await registerWebPassword(commandDatabase, configuration.authority, command)
         : command.operation === 'password'
-          ? await authenticateWebPassword(database, configuration.authority, command)
+          ? await authenticateWebPassword(commandDatabase, configuration.authority, command)
           : command.operation === 'verify-email'
-            ? await consumeEmailVerification(database, configuration.authority, command)
+            ? await consumeEmailVerification(commandDatabase, configuration.authority, command)
             : command.operation === 'resend-verification'
-              ? await resendEmailVerification(database, configuration.authority, command)
+              ? await resendEmailVerification(commandDatabase, configuration.authority, command)
               : command.operation === 'forgot-password'
-                ? await requestPasswordRecovery(database, configuration.authority, command)
+                ? await requestPasswordRecovery(commandDatabase, configuration.authority, command)
                 : command.operation === 'set-password'
-                  ? await setWebPassword(database, configuration.authority, command)
-                  : await consumePasswordRecovery(database, configuration.authority, command),
+                  ? await setWebPassword(commandDatabase, configuration.authority, command)
+                  : await consumePasswordRecovery(commandDatabase, configuration.authority, command),
     );
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {

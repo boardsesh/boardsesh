@@ -2,6 +2,7 @@ export {
   createDb,
   createPool,
   createDedicatedPool,
+  createDedicatedPoolFromUrl,
   createDbOnPool,
   resolvePoolMax,
   applyRequestPoolDefaults,

@@ -115,6 +115,11 @@
       "types": "./src/auth-prototype/index.ts",
       "import": "./src/auth-prototype/index.ts",
       "default": "./src/auth-prototype/index.ts"
+    },
+    "./credential-writer-acl": {
+      "types": "./src/credential-writer-acl.ts",
+      "import": "./src/credential-writer-acl.ts",
+      "default": "./src/credential-writer-acl.ts"
     }
   },
   "scripts": {

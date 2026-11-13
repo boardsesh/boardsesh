@@ -2,7 +2,7 @@ import { assertWebSessionWriterConfiguration } from '../auth/current-store/web-s
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DbInstance } from '@boardsesh/db/client';
 import { AUTH_PROTOCOL_VERSION, webSignOutMode, webSignOutCommandSchema } from '@boardsesh/auth-protocol';
-import { db } from '../db/client';
+import { getCredentialDatabase } from '../auth/credential-database';
 import {
   currentStoreAuthorityConfiguration,
   currentStoreRpcSecret,
@@ -16,7 +16,7 @@ import { sendJson } from './http-utils';
 export async function handleCurrentStoreWebSignOut(
   request: IncomingMessage,
   response: ServerResponse,
-  database: DbInstance = db,
+  database?: DbInstance,
 ): Promise<void> {
   let secret: string;
   try {
@@ -48,7 +48,8 @@ export async function handleCurrentStoreWebSignOut(
   try {
     const sessionSecret = process.env.NEXTAUTH_SECRET;
     if (!sessionSecret) throw new Error('Session authority unavailable');
-    const result = await signOutLegacyWebSession(database, payload.credential, sessionSecret, new Date(), () =>
+    const commandDatabase = database ?? (await getCredentialDatabase());
+    const result = await signOutLegacyWebSession(commandDatabase, payload.credential, sessionSecret, new Date(), () =>
       currentStoreAuthorityConfiguration(process.env),
     );
     if (result.status !== 'signed-out') throw new Error('Session authority unavailable or lineage unproven');
