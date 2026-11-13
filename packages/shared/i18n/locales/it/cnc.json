@@ -16,7 +16,7 @@
   "hero": {
     "title": "Progetti per costruire il tuo pannello domestico",
     "subtitle": "File DXF utilizzabili direttamente da un'officina CNC. Tutti i pannelli, la griglia dei dadi a ragno, i fori LED e il kicker, disposti sui fogli già disponibili nella tua officina.",
-    "firstBoard": "Kilter Homewall è il primo pannello supportato. Ne seguiranno altri.",
+    "firstBoard": "Progetti compatibili con Kilter Homewall e Kilter Original (OG).",
     "included": {
       "heading": "Cosa ricevi",
       "dxf": "Sono inclusi anche i disegni di assemblaggio, per allineare i pannelli senza andare a tentativi.",
@@ -61,14 +61,17 @@
     },
     "board": {
       "label": "Pannello",
-      "help": "Kilter Homewall è l'unico pannello attualmente in vendita."
+      "help": "Scegli la disposizione delle prese del tuo pannello.",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · disposizione {{layoutId}}"
     },
     "size": {
       "label": "Dimensioni della parete",
       "help": "Le dimensioni Kilter che vuoi costruire. Determinano la griglia delle prese e le misure della parete."
     },
     "kicker": {
-      "help": "Il pannello inclinato alla base. È presente solo sulle pareti da 12 piedi.",
+      "help": "Il pannello inferiore. Disponibile per le pareti alte 12 piedi.",
       "include": "Includi il kicker",
       "exclude": "Senza kicker"
     },
@@ -280,12 +283,16 @@
       "sheets": "Fogli",
       "sheetsValue_one": "{{count}} foglio",
       "sheetsValue_other": "{{count}} fogli",
-      "tnuts": "Fori per dadi a ragno",
-      "leds": "Fori LED",
+      "tnuts": "Dadi a ragno da installare",
+      "leds": "LED da installare",
       "seamNotches": "Fori LED su una giunzione",
       "seamNotchesHelp": "Questi fori LED si trovano sulla giunzione tra pannelli. Ogni foro viene ricavato come un incavo in entrambi i pannelli; il LED si inserisce nell'incavo dopo l'assemblaggio.",
       "warningsHeading": "Da sapere",
-      "unavailable": "La distinta di taglio non si carica al momento. Tutte le tue scelte sono ancora qui."
+      "unavailable": "La distinta di taglio non si carica al momento. Tutte le tue scelte sono ancora qui.",
+      "spareMounts": "Fori di montaggio aggiuntivi",
+      "spareMountsHelp": "Posizioni aggiuntive per la disposizione Homewall compatibile. Sono fori, non ferramenta aggiuntiva per la tua configurazione OG.",
+      "skippedSeamLeds": "Fori LED da praticare dopo il montaggio",
+      "skippedSeamLedsHelp": "Queste posizioni attraversano una giunzione. Unisci i pannelli, poi pratica i fori richiesti usando le coordinate di montaggio e i diametri indicati nel pacchetto."
     },
     "licensee": {
       "name": "Nome sulla licenza",
@@ -320,6 +327,14 @@
       "heading": "Intestatario della licenza",
       "help": "La licenza compare su ogni file del pacchetto, così eventuali copie diffuse possono essere ricondotte all'acquisto.",
       "stale": "Aggiorna prima l'anteprima: la parete è cambiata rispetto a questi disegni."
+    },
+    "original": {
+      "drilling": "Consigliamo tre fori per ogni appoggio OG avvitato: un foro centrale da 13 mm per un LED, più due fori LED a 20 mm sopra e sotto. Lascia il foro centrale senza dado a ragno quando usi gli appoggi OG.",
+      "compatibility": "I fori aggiuntivi coprono tutta la disposizione Homewall corrispondente: 7×10 o 8×12, e 10×12 centrata sulle pareti OG più grandi.",
+      "angleLabel": "Incidi i segni di orientamento dei numeri delle prese",
+      "angleHelp": "Usa il Number Angle OG per indicare come orientare il numero stampato sulla presa. Gli angoli mancanti non vengono segnati.",
+      "engraveHelp": "Numeri delle prese e segni di orientamento, incisi durante il taglio del pannello. Entrambi sono attivi per impostazione predefinita.",
+      "engraveNote": "I segni di orientamento OG seguono il numero della presa, non la vite di fissaggio. Questi segni non vengono usati per praticare i fori delle viti."
     }
   },
   "cta": {
