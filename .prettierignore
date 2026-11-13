@@ -66,3 +66,6 @@ ml/holds/**/*.json
 # json.dumps(indent=2)) and regenerated whenever the model is retrained.
 # Mirrors the fmt ignore list in vite.config.ts.
 packages/shared/hold-detection/src/__tests__/fixtures/*.json
+
+# Exact published migration evidence; retain the original journal bytes.
+packages/backend/src/auth/authority/__tests__/fixtures/historical-private-browser-v1/_journal.json

@@ -82,6 +82,8 @@ export type CurrentSecurityMutationKind =
   | 'password-set'
   | 'password-change'
   | 'password-reset'
+  | 'provider-link'
+  | 'provider-unlink'
   | 'account-deletion'
   | 'admin-revocation'
   | 'legacy-signout';
@@ -90,6 +92,8 @@ const revocationKinds: ReadonlySet<string> = new Set([
   'password-set',
   'password-change',
   'password-reset',
+  'provider-link',
+  'provider-unlink',
   'account-deletion',
   'admin-revocation',
   'legacy-signout',
@@ -182,7 +186,7 @@ export async function recordCheckedSecurityMutation(
   if (!event) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   // Keep only a keyed digest of the deleted address (decision 1, epic #6975). A
   // group the account shared stays blocked and never elects a surviving owner.
-  if (kind === 'admin-revocation') {
+  if (kind === 'admin-revocation' || kind === 'provider-link' || kind === 'provider-unlink') {
     // Partner admission uses its own connection generations, not this cutoff.
     // Reuse the same transaction-safe primitive the credential trigger calls.
     await transaction.execute(sql`SELECT public.partner_revoke_user(${userId})`);

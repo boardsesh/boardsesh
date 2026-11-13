@@ -1206,6 +1206,11 @@ export default defineConfig({
           'vp test run --config packages/backend/vite.credential-writer-proof.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:provider-credential-writer': {
+        command:
+          'vp test run --config packages/backend/vite.provider-credential-writer-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
@@ -1222,6 +1227,12 @@ export default defineConfig({
       },
       'test:auth-prototype:browser': {
         command: 'cd packages/web && vp exec playwright test --config=playwright.auth-prototype.config.ts',
+        dependsOn: ['typecheck:auth-prototype-browser'],
+        cache: false,
+      },
+      'test:auth-browser-proof-cookies': {
+        command:
+          'vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
         dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },

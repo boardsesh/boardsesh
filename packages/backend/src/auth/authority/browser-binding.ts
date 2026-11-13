@@ -452,7 +452,7 @@ export async function beginBrowserIntent(
       actorDeadline = admitted.session.expiresAt.getTime();
     } else if (input.presented) return { status: 'denied' as const };
     if (
-      input.operation !== 'login' &&
+      (input.operation !== 'login' || input.expectedIdentity !== undefined) &&
       (!input.expectedIdentity ||
         input.expectedIdentity.userId !== binding.userId ||
         input.expectedIdentity.authSessionId !== binding.authSessionId)
@@ -495,7 +495,26 @@ export async function commitBrowserLogin(
   const credential = { ...presented };
   const actor = copyPossession(presentedActor);
   if (!tokenPattern.test(bindingToken) || !tokenPattern.test(intentToken)) return { status: 'denied' };
-  return withAuthority(database, qualification, async (transaction, receipt) => {
+  return withAuthority(database, qualification, (transaction, receipt) =>
+    commitBrowserLoginInTransaction(transaction, receipt, bindingToken, intentToken, credential, actor),
+  );
+}
+
+/** The credential issuer owns the transaction: source admission, its durable
+ * flow and this login CAS commit together, after final response buffering. */
+export async function commitBrowserLoginInTransaction(
+  transaction: AuthorityTransaction,
+  receipt: IdentityAuthorityReceipt,
+  bindingToken: string,
+  intentToken: string,
+  presented: FirstPartyCredential,
+  presentedActor?: BrowserSelectionCredential,
+): Promise<BrowserBindingCommitResult> {
+  const credential = { ...presented };
+  const actor = copyPossession(presentedActor);
+  if (!tokenPattern.test(bindingToken) || !tokenPattern.test(intentToken)) return { status: 'denied' };
+  await revalidateIdentityAuthority(transaction, receipt);
+  const commit = async (): Promise<BrowserBindingCommitResult> => {
     const observed = await findBinding(transaction, bindingToken);
     const admitted = await readFirstPartySession(transaction, credential, await databaseNow(transaction), (userId) =>
       readLockedWebSubjectState(transaction, userId),
@@ -560,7 +579,10 @@ export async function commitBrowserLogin(
       if (current.status !== 'admitted') return { status: current.status };
     } else if (actor) return { status: 'denied' as const };
     return applySelection(transaction, binding, intent, selected, now, credential.kind, credentialHash(credential));
-  });
+  };
+  const result = await commit();
+  await revalidateIdentityAuthority(transaction, receipt);
+  return result;
 }
 
 /** Exact displayed owner/SID is bound when the intent is prepared. A delayed

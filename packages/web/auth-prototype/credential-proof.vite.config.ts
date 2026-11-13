@@ -11,7 +11,11 @@ export default defineConfig({
     ...webConfiguration.test,
     name: 'auth-web-credential-proof',
     environment: 'node',
-    include: ['auth-prototype/web-credential-proof.integration.proof.ts'],
+    include: [
+      'auth-prototype/web-credential-proof.integration.proof.ts',
+      'auth-prototype/provider-security-auth.proof.ts',
+      'auth-prototype/provider-security-publication.proof.ts',
+    ],
     exclude: ['**/node_modules/**', '**/dist/**'],
     testTimeout: 30000,
     hookTimeout: 60000,

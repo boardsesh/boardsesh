@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
 import reviewedPrivateWebRelationShapes from './credential-writer-private-web-v1';
 import reviewedBrowserRelationShapes from './credential-writer-private-browser-v1';
+import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
-export type CredentialWriterContract = 'private-web-v1' | 'private-browser-v1';
+export type CredentialWriterContract = 'private-web-v1' | 'private-browser-v1' | 'private-provider-v1';
 export type CredentialPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 export type CredentialColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 
@@ -52,8 +53,49 @@ export const PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES: Readonly<
   auth_email_reservation_members: Object.freeze({ observed_at: Object.freeze(['UPDATE'] as const) }),
 });
 
-// These are reached only by the existing password-change trigger. The login is
-// deliberately not granted their DML or direct EXECUTE on the trigger/callee.
+/** Explicit provider security commands may revoke existing partner credentials.
+ * They cannot mint grants/tokens, read token contents, or delete connections. */
+export const PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES,
+    auth_provider_security_intents: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+    auth_provider_reauthentication_receipts: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+    oauth_verification: Object.freeze(['DELETE'] as const),
+    oauth_grants: Object.freeze(['DELETE'] as const),
+    oauth_access_token: Object.freeze(['DELETE'] as const),
+    oauth_refresh_token: Object.freeze(['DELETE'] as const),
+    oauth_consent: Object.freeze(['DELETE'] as const),
+    oauth_refresh_ancestors: Object.freeze(['DELETE'] as const),
+    oauth_consent_interactions: Object.freeze(['DELETE'] as const),
+    oauth_session: Object.freeze(['DELETE'] as const),
+  });
+const selectOnly = Object.freeze(['SELECT'] as const);
+const updateOnly = Object.freeze(['UPDATE'] as const);
+const selectAndUpdate = Object.freeze(['SELECT', 'UPDATE'] as const);
+export const PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES: Readonly<
+  Record<string, Readonly<Record<string, readonly CredentialColumnPrivilege[]>>>
+> = Object.freeze({
+  ...PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES,
+  oauth_connections: Object.freeze({
+    id: selectOnly,
+    user_id: selectOnly,
+    generation: selectAndUpdate,
+    revoked_at: selectAndUpdate,
+    revocation_reason: selectAndUpdate,
+    updated_at: updateOnly,
+  }),
+  oauth_verification: Object.freeze({ identifier: selectOnly }),
+  oauth_grants: Object.freeze({ authorization_code_id: selectOnly, connection_id: selectOnly }),
+  oauth_access_token: Object.freeze({ user_id: selectOnly }),
+  oauth_refresh_token: Object.freeze({ user_id: selectOnly }),
+  oauth_consent: Object.freeze({ user_id: selectOnly }),
+  oauth_refresh_ancestors: Object.freeze({ user_id: selectOnly }),
+  oauth_consent_interactions: Object.freeze({ user_id: selectOnly }),
+  oauth_session: Object.freeze({ user_id: selectOnly }),
+});
+
+// All profiles review the existing password-trigger closure. Only the provider
+// profile also permits the pinned invoker callee and its narrow direct grants.
 const partnerRevocationRelations = [
   'oauth_connections',
   'oauth_verification',
@@ -100,16 +142,20 @@ export async function qualifyCredentialWriter(
   const requested = { ...options };
   if (
     requested.expectedRole !== CREDENTIAL_WRITER_ROLE ||
-    !['private-web-v1', 'private-browser-v1'].includes(requested.contract) ||
+    !['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(requested.contract) ||
     !requested.expectedDatabase
   )
     refuse('CREDENTIAL_WRITER_CONTRACT_REQUIRED');
-  const capabilities =
-    requested.contract === 'private-browser-v1'
+  const directPartnerRevocation = requested.contract === 'private-provider-v1';
+  const capabilities = directPartnerRevocation
+    ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+    : requested.contract === 'private-browser-v1'
       ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
       : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
-  const columnCapabilities = PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
-  const closureRelations = [...Object.keys(capabilities), ...partnerRevocationRelations];
+  const columnCapabilities = directPartnerRevocation
+    ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
+    : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
+  const closureRelations = [...new Set([...Object.keys(capabilities), ...partnerRevocationRelations])];
   const deleteSources = [
     ...Object.entries(capabilities)
       .filter(([, privileges]) => privileges.includes('DELETE'))
@@ -125,8 +171,13 @@ export async function qualifyCredentialWriter(
       .map(([table]) => table),
     'oauth_connections',
   ];
-  const reviewedRelationShapes =
-    requested.contract === 'private-browser-v1'
+  const reviewedRelationShapes = directPartnerRevocation
+    ? [
+        ...reviewedPrivateWebRelationShapes.filter((relation) => relation.name !== 'auth_security_mutation_events'),
+        ...reviewedBrowserRelationShapes,
+        ...reviewedProviderRelationShapes,
+      ].sort((left, right) => left.name.localeCompare(right.name))
+    : requested.contract === 'private-browser-v1'
       ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>
           left.name.localeCompare(right.name),
         )
@@ -200,11 +251,7 @@ export async function qualifyCredentialWriter(
         refuse('CREDENTIAL_WRITER_REQUIRED_GRANT_MISSING');
       for (const [column, privileges] of Object.entries(allowedColumns ?? {})) {
         const effective = relation.columnPrivileges.find((entry) => entry.name === column)?.privileges;
-        if (
-          !effective ||
-          !effective.includes('SELECT') ||
-          privileges.some((privilege) => !effective.includes(privilege))
-        )
+        if (!effective || privileges.some((privilege) => !effective.includes(privilege)))
           refuse('CREDENTIAL_WRITER_REQUIRED_COLUMN_GRANT_MISSING');
       }
     }
@@ -223,6 +270,43 @@ export async function qualifyCredentialWriter(
       refuse('CREDENTIAL_WRITER_EXCESS_RELATION_GRANT');
   }
   if (required.size) refuse('CREDENTIAL_WRITER_RELATION_MISSING');
+
+  const directRoutineGrant = directPartnerRevocation
+    ? (
+        await client<
+          {
+            executable: boolean;
+            direct: boolean;
+            public: boolean;
+            grantOption: boolean;
+            reviewedSignature: boolean;
+          }[]
+        >`
+        SELECT has_function_privilege(current_user,routine.oid,'EXECUTE') AS executable,
+          EXISTS (SELECT 1 FROM aclexplode(routine.proacl) acl
+            WHERE acl.grantee=(SELECT oid FROM pg_roles WHERE rolname=current_user)
+              AND acl.privilege_type='EXECUTE' AND NOT acl.is_grantable) AS direct,
+          EXISTS (SELECT 1 FROM aclexplode(routine.proacl) acl
+            WHERE acl.grantee=0 AND acl.privilege_type='EXECUTE') AS public,
+          EXISTS (SELECT 1 FROM aclexplode(routine.proacl) acl
+            WHERE acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user)) AND acl.is_grantable) AS "grantOption",
+          routine.prokind='f' AND routine.proisstrict AND NOT routine.proretset
+            AND routine.prorettype='integer'::regtype AND routine.provariadic=0
+            AND routine.pronargdefaults=0 AND routine.proargmodes IS NULL
+            AND routine.provolatile='v' AND routine.proparallel='u' AND NOT routine.proleakproof
+            AND routine.prosupport=0
+            AND NOT EXISTS (SELECT 1 FROM pg_proc overload
+              WHERE overload.pronamespace=routine.pronamespace AND overload.proname=routine.proname
+                AND overload.oid<>routine.oid) AS "reviewedSignature"
+        FROM pg_proc routine WHERE routine.oid=to_regprocedure('public.partner_revoke_user(text)')`
+      )[0]
+    : undefined;
+  if (directPartnerRevocation) {
+    if (!directRoutineGrant?.executable) refuse('CREDENTIAL_WRITER_REQUIRED_ROUTINE_GRANT_MISSING');
+    if (directRoutineGrant.public || directRoutineGrant.grantOption || !directRoutineGrant.reviewedSignature)
+      refuse('CREDENTIAL_WRITER_UNREVIEWED_ROUTINE_PATH');
+    if (!directRoutineGrant.direct) refuse('CREDENTIAL_WRITER_REQUIRED_ROUTINE_GRANT_MISSING');
+  }
 
   const [paths] = await client<
     {
@@ -252,7 +336,8 @@ export async function qualifyCredentialWriter(
         WHERE acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user))) AS system,
     EXISTS (SELECT 1 FROM pg_proc routine JOIN pg_namespace namespace ON namespace.oid=routine.pronamespace
       WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema'
-      AND has_function_privilege(current_user,routine.oid,'EXECUTE'))
+      AND has_function_privilege(current_user,routine.oid,'EXECUTE')
+      AND (NOT ${directPartnerRevocation} OR routine.oid IS DISTINCT FROM to_regprocedure('public.partner_revoke_user(text)')))
       OR EXISTS (SELECT 1 FROM pg_proc routine CROSS JOIN LATERAL aclexplode(routine.proacl) acl
         WHERE routine.pronamespace='pg_catalog'::regnamespace AND acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user))) AS routine,
     EXISTS (SELECT 1 FROM pg_default_acl defaults CROSS JOIN LATERAL aclexplode(defaults.defaclacl) acl
@@ -376,7 +461,7 @@ export async function qualifyCredentialWriter(
     databaseOid: identity.databaseOid,
     serverVersion: identity.serverVersion,
     catalogSha256: createHash('sha256')
-      .update(JSON.stringify({ relations, paths, relationShapes, routines, triggers }))
+      .update(JSON.stringify({ relations, paths, relationShapes, routines, triggers, directRoutineGrant }))
       .digest('hex'),
   });
 }

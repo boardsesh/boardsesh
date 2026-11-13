@@ -170,6 +170,62 @@ describe('unmounted canonical-www proof cookie codec', () => {
     expect(candidate.garbageCollectionHeaders).toHaveLength(1);
     expect(candidate.headers.join('\n')).not.toContain(BROWSER_CORRELATION_COOKIE + '=');
   });
+  it.each(['legacy-jwe', 'canonical-token'] as const)(
+    'retains the exact observed older %s actor proof and operation carrier for later ACK',
+    (kind) => {
+      const previous = { ...cursor, version: cursor.version - 1 };
+      const actor = { kind, rawCredential: 'actual-original-actor-credential' };
+      const oldProof = proofHeader(actor, previous);
+      const operation = '__Host-boardsesh.provider-security.owned=actual-sealed-operation';
+      const observed = `${oldProof}; ${operation}`;
+      const candidate = buildBrowserProofCookieCandidate({
+        cursor,
+        proof: source,
+        proofMaxAgeSeconds: 3600,
+        observedCookieHeader: observed,
+        retainObservedProofCookies: true,
+      });
+      expect(candidate.garbageCollectionHeaders).toEqual([]);
+      expect(candidate.headers).toEqual(candidate.proofHeaders);
+      const nextRequest = `${observed}; ${candidate.proofHeaders.map(pair).join('; ')}`;
+      expect(readBrowserProofCookie(nextRequest, previous)).toEqual({ status: 'present', proof: actor });
+      expect(readBrowserProofCookie(nextRequest, cursor)).toEqual({ status: 'present', proof: source });
+      expect(candidate.projectedCookieHeaderBytes).toBe(Buffer.byteLength(nextRequest));
+      expect(candidate.headers.join('\n')).not.toContain('Max-Age=0');
+      expect(nextRequest).toContain(operation);
+    },
+  );
+  it('budgets every retained old proof and operation cookie from the actual observed header', () => {
+    const proof = { ...source, rawCredential: 'a'.repeat(4200) };
+    const observed = `${proofHeader(proof, { ...cursor, version: 1 })}; __Host-boardsesh.provider-security.owned=sealed-operation`;
+    const input = { cursor, proof, proofMaxAgeSeconds: 3600, observedCookieHeader: observed };
+    expect(buildBrowserProofCookieCandidate(input).projectedCookieHeaderBytes).toBeLessThan(8192);
+    expect(() => buildBrowserProofCookieCandidate({ ...input, retainObservedProofCookies: true })).toThrow(
+      'COOKIE_BUDGET',
+    );
+  });
+  it('still refuses a same-version chunk-layout change while retaining older source material', () => {
+    expect(() =>
+      buildBrowserProofCookieCandidate({
+        cursor,
+        proof: { ...source, rawCredential: 'a'.repeat(4000) },
+        proofMaxAgeSeconds: 3600,
+        observedCookieHeader: proofHeader(),
+        retainObservedProofCookies: true,
+      }),
+    ).toThrow('INVALID_FAMILY');
+  });
+  it.each([null, 'true', 1, {}, []])('refuses a malformed trusted retention selector %j', (selection) => {
+    expect(() =>
+      buildBrowserProofCookieCandidate({
+        cursor,
+        proof: source,
+        proofMaxAgeSeconds: 3600,
+        observedCookieHeader: null,
+        retainObservedProofCookies: selection as unknown as boolean,
+      }),
+    ).toThrow('INVALID_SOURCE');
+  });
   it.each(['raw-size', 'header-budget', 'request-budget', 'unrelated-cookies', 'chunk-layout', 'ttl'] as const)(
     'fails the entire candidate before a mutation is attempted: %s',
     (failure) => {

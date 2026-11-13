@@ -15,6 +15,8 @@ vi.mock('../web-oauth-command-client.server', async (importOriginal) => ({
 }));
 import { createWebOAuthIdentityAuthRequest } from '../web-oauth-auth.server';
 import { withWebOAuthIdentity } from '../web-oauth-request.server';
+import type { QualifiedWebOAuthProviderDelegate } from '../web-oauth-request.server';
+import { webOAuthFlowHash } from '../web-oauth-continuation.server';
 
 const origin = 'https://owned.example.test';
 const secret = randomBytes(32).toString('base64url');
@@ -198,6 +200,116 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+});
+
+describe('qualified provider security delegation', () => {
+  it.each(['legacy', 'backend-staging'] as const)(
+    'refuses missing delegation before any %s handler side effect',
+    async (mode) => {
+      vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+      vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', mode);
+      const unqualified = vi.fn<Invocation>(async () => new Response(null, { status: 302 }));
+      for (const action of ['signin', 'callback'])
+        for (const method of ['GET', 'POST']) {
+          const request = new NextRequest(`${origin}/api/auth/${action}/google?state=claimed`, {
+            method,
+            headers: {
+              'x-provider-security-delegate': 'true',
+              ...(method === 'POST' ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+            },
+            ...(method === 'POST' ? { body: 'delegate=true&csrfToken=claimed&code=claimed' } : {}),
+          });
+          const response = await withWebOAuthIdentity(
+            request,
+            { params: Promise.resolve({ nextauth: [action, 'google'] }) },
+            base,
+            unqualified,
+          );
+          expect(response.status).toBe(303);
+          expect(new URL(response.headers.get('Location') ?? '').searchParams.get('error')).toBe(
+            'AuthBackendUnavailable',
+          );
+          expect(response.headers.getSetCookie()).toEqual([]);
+        }
+      expect(unqualified).not.toHaveBeenCalled();
+      expect(rpc.intent).not.toHaveBeenCalled();
+      expect(rpc.resolve).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['start', 'callback'] as const)('refuses a server adapter missing its %s hook', async (missing) => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+    const incomplete = (missing === 'start'
+      ? { callback: vi.fn() }
+      : { start: vi.fn() }) as unknown as QualifiedWebOAuthProviderDelegate;
+    const unqualified = vi.fn<Invocation>(async () => new Response(null, { status: 302 }));
+    const response = await withWebOAuthIdentity(
+      new NextRequest(`${origin}/api/auth/signin/google`, { method: 'POST' }),
+      { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
+      base,
+      unqualified,
+      incomplete,
+    );
+    expect(response.status).toBe(303);
+    expect(new URL(response.headers.get('Location') ?? '').searchParams.get('error')).toBe('AuthBackendUnavailable');
+    expect(unqualified).not.toHaveBeenCalled();
+    expect(rpc.intent).not.toHaveBeenCalled();
+  });
+
+  it('gives only verified flow scaffolding to explicit delegates without consuming a legacy intent', async () => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+    const jar = new CookieJar();
+    jar.contents.set(sessionName, 'unused-legacy-cookie-is-not-central-possession');
+    const startDelegate = vi.fn<QualifiedWebOAuthProviderDelegate['start']>(async ({ response, state, flowHash }) => {
+      expect(flowHash).toBe(webOAuthFlowHash('google', state));
+      return response;
+    });
+    const callbackDelegate = vi.fn<QualifiedWebOAuthProviderDelegate['callback']>(
+      async ({ request, options, invoke: handler, state, flowHash }) => {
+        expect(flowHash).toBe(webOAuthFlowHash('google', state));
+        return handler(request, options);
+      },
+    );
+    const delegate: QualifiedWebOAuthProviderDelegate = { start: startDelegate, callback: callbackDelegate };
+    const initiation = new NextRequest(`${origin}/api/auth/signin/google`, {
+      method: 'POST',
+      headers: {
+        Cookie: jar.header(),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Forwarded-For': clientAddress,
+      },
+      body: 'csrfToken=owned-controlled-invoke',
+    });
+    const started = await withWebOAuthIdentity(
+      initiation,
+      { params: Promise.resolve({ nextauth: ['signin', 'google'] }) },
+      base,
+      invoke,
+      delegate,
+    );
+    expect(started.status).toBe(302);
+    jar.remember(started);
+    const location = started.headers.get('Location');
+    if (!location) throw new Error('Owned flow did not start');
+    const state = new URL(location).searchParams.get('state');
+    if (!state) throw new Error('Owned state missing');
+    const completed = await withWebOAuthIdentity(
+      new NextRequest(`${origin}/api/auth/callback/google?state=${state}&code=owned-code`, {
+        headers: { Cookie: jar.header() },
+      }),
+      { params: Promise.resolve({ nextauth: ['callback', 'google'] }) },
+      base,
+      invoke,
+      delegate,
+    );
+    expect(completed.status).toBe(302);
+    expect(startDelegate).toHaveBeenCalledTimes(1);
+    expect(callbackDelegate).toHaveBeenCalledTimes(1);
+    expect(rpc.intent).not.toHaveBeenCalled();
+    expect(rpc.resolve).not.toHaveBeenCalled();
+    expect(deletionNames(completed).some((name) => name.startsWith(sessionName))).toBe(false);
+    expect(jar.contents.get(sessionName)).toBe('unused-legacy-cookie-is-not-central-possession');
+  });
 });
 
 describe('abandoned sign-ins at the two-flow cap', () => {

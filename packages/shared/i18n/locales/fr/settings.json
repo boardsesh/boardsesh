@@ -697,5 +697,41 @@
     "publishLinkMessage": "Toute personne disposant du lien peut ouvrir cette board, même si elle n'apparaît ni dans la recherche ni sur la carte. Le lien reprend le nom de la board, il n'est donc pas secret. Garde son emplacement masqué si tu ne souhaites pas le partager.",
     "publishLink": "Partager le lien",
     "publishResourceMessage": "Tout le monde peut ouvrir cette séance ou cette board. Tes autres activités privées restent réservées aux personnes que tu approuves."
+  },
+  "providerMethods": {
+    "title": "Modes de connexion",
+    "description": "Gère la connexion à ce compte. Les comptes ne sont jamais fusionnés.",
+    "providers": {
+      "google": "Google",
+      "apple": "Apple"
+    },
+    "usable": "Disponible pour se connecter",
+    "notUsable": "Indisponible pour se connecter",
+    "link": "Associer {{provider}}",
+    "unlink": "Dissocier {{provider}}",
+    "noProviders": "Aucun fournisseur compatible n’est disponible pour le moment.",
+    "confirmTitle": "Confirme le changement de connexion",
+    "confirmLink": "Associer {{provider}} à ce compte ?",
+    "confirmUnlink": "Dissocier {{provider}} de ce compte ?",
+    "securityEffects": "Ta session restera active sur cet appareil. Les autres appareils et les applications partenaires seront déconnectés, et les anciens liens de récupération et de vérification cesseront de fonctionner.",
+    "confirm": "Confirmer le changement",
+    "cancel": "Annuler",
+    "reauthenticationTitle": "Confirme ton accès récent",
+    "reauthenticationDescription": "Vérifie un mode de connexion existant avant de changer les fournisseurs associés.",
+    "password": "Mot de passe actuel",
+    "verifyPassword": "Vérifier le mot de passe",
+    "verifyGoogle": "Vérifier avec Google",
+    "passwordOptions": "Ouvrir les options de mot de passe",
+    "recovery": "Récupérer le compte",
+    "recoveryNotProof": "Ouvrir les options de mot de passe ou de récupération ne confirme pas un accès récent.",
+    "reauthenticationRequired": "Confirme ton accès récent pour continuer.",
+    "reauthenticationUnavailable": "La vérification d’un accès récent est indisponible pour ce compte.",
+    "identityChanged": "Ta connexion a changé. Vérifie le compte avant de réessayer.",
+    "lastUsableMethod": "Garde au moins un mode de connexion utilisable.",
+    "ownershipConflict": "Ce compte fournisseur est déjà associé ailleurs. Ton compte reste inchangé.",
+    "unavailable": "Impossible de terminer ce changement. Réessaie.",
+    "linkCompleted": "{{provider}} est associé.",
+    "unlinkCompleted": "{{provider}} est dissocié.",
+    "redirecting": "Continue dans ton navigateur pour terminer."
   }
 }

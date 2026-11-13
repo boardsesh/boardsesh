@@ -76,17 +76,20 @@ describe('credential database target binding', () => {
     });
   });
 
-  it('selects only the explicit reviewed browser contract without changing targets', () => {
-    expect(
-      credentialDatabaseConfiguration({
-        DATABASE_URL: contentUrl,
-        AUTH_IDENTITY_DATABASE_URL: writerUrl,
-        AUTH_IDENTITY_DATABASE_CONTRACT: 'private-browser-v1',
-      }),
-    ).toMatchObject({
-      contract: 'private-browser-v1',
-      connectionString: writerUrl,
-      contentConnectionString: contentUrl,
-    });
-  });
+  it.each(['private-browser-v1', 'private-provider-v1'] as const)(
+    'selects explicit reviewed %s without changing targets',
+    (contract) => {
+      expect(
+        credentialDatabaseConfiguration({
+          DATABASE_URL: contentUrl,
+          AUTH_IDENTITY_DATABASE_URL: writerUrl,
+          AUTH_IDENTITY_DATABASE_CONTRACT: contract,
+        }),
+      ).toMatchObject({
+        contract,
+        connectionString: writerUrl,
+        contentConnectionString: contentUrl,
+      });
+    },
+  );
 });

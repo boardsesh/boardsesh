@@ -2192,6 +2192,13 @@
       "when": 1794588584225,
       "tag": "0312_browser_binding_selection",
       "breakpoints": true
+    },
+    {
+      "idx": 313,
+      "version": "7",
+      "when": 1794589219363,
+      "tag": "0313_provider_security_receipts",
+      "breakpoints": true
     }
   ]
 }

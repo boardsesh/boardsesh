@@ -29,12 +29,16 @@ const proofs = [
   'test:auth-identities',
   'test:auth-web-credential-proof',
   'test:auth-prototype:browser',
+  'test:auth-browser-proof-cookies',
 ];
 
 describe('auth compatibility CI has an independent complete budget', () => {
   it('owns its services and runs once for the same inputs as backend tests', () => {
     expect(compatibility.needs).toEqual(['changes']);
-    expect(compatibility.if).toBe(backend.if);
+    expect(backend.if).toBe(
+      "needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'",
+    );
+    expect(compatibility.if).toBe(`${backend.if} || needs.changes.outputs.authCompatibility == 'true'`);
     expect(compatibility['runs-on']).toBe('ubuntu-latest');
     expect(compatibility.strategy).toBeUndefined();
     expect(compatibility.services).toEqual(backend.services);
@@ -65,6 +69,46 @@ describe('auth compatibility CI has an independent complete budget', () => {
     expect(
       compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
     ).toHaveLength(1);
+  });
+  it('runs cookie recovery after Chromium and preserves all actual proof inputs', () => {
+    const install = compatibility.steps.findIndex(
+      (step) => step.run === 'vp exec playwright install --with-deps chromium',
+    );
+    const proof = compatibility.steps.findIndex((step) => step.run === 'vp run test:auth-browser-proof-cookies');
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(proof).toBeGreaterThan(install);
+    expect(compatibility.steps[proof].env?.AUTH_PROTOTYPE_REDIS_URL).toBe('redis://localhost:6380');
+  });
+  it('targets web auth/proof inputs without widening the baseline backend trigger', () => {
+    const source = readFileSync('.github/workflows/ci.yml', 'utf8');
+    const parsed = parse(source) as {
+      jobs: { changes: { outputs: Record<string, string>; steps: { id?: string; with?: { filters?: string } }[] } };
+    };
+    const filter = parsed.jobs.changes.steps.find((step) => step.id === 'filter')?.with?.filters;
+    expect(filter).toBeDefined();
+    const filters = parse(filter!) as Record<string, string[]>;
+    expect(filters.authCompatibility).toEqual(
+      expect.arrayContaining([
+        'packages/web/auth-prototype/**',
+        'packages/web/playwright.auth-prototype.config.ts',
+        'packages/web/app/lib/auth/**',
+        'packages/web/app/lib/partner-oauth/**',
+        'packages/web/app/api/auth/**',
+        'packages/web/app/api/internal/auth/**',
+        'packages/web/app/api/internal/ws-auth/**',
+        'packages/web/app/lib/seo/base-url.ts',
+        'packages/web/vite.config.ts',
+        'packages/web/tsconfig.json',
+        'packages/web/next.config.ts',
+        'packages/web/middleware.ts',
+      ]),
+    );
+    expect(filters.backend).not.toContain('packages/web/app/lib/auth/**');
+    expect(filters.authCompatibility).not.toContain('packages/web/**');
+    expect(parsed.jobs.changes.outputs.authCompatibility).toBe(
+      "${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.authCompatibility }}",
+    );
+    expect(parsed.jobs.changes.outputs.runAny).toContain("steps.filter.outputs.authCompatibility == 'true'");
   });
   it.each(['failure', 'cancelled'])('makes %s in compatibility fail the required aggregate', (result) => {
     const status = workflow.jobs['ci-status'];
