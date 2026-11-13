@@ -51,6 +51,10 @@ function flowKey(secret: string): Buffer {
   if (!secret || secret.trim() !== secret || Buffer.byteLength(secret) < 32) return refuse();
   return Buffer.from(hkdfSync('sha256', secret, PURPOSE, 'boardsesh-web-operation-cookie', 32));
 }
+/** Validate the same sealing configuration before creating a durable intent. */
+export function assertProviderSecurityFlowSecret(secret: string): void {
+  flowKey(secret);
+}
 function bytes(encoded: string): Buffer {
   if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) return refuse();
   const decoded = Buffer.from(encoded, 'base64url');
