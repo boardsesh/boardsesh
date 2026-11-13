@@ -1,8 +1,10 @@
-# PostGIS 3.7.0dev → 3.6.4 rehearsal
+# PostGIS cross-version spatial rehearsal
 
-Evidence for Blocker 2 of the PostgreSQL 18 rollout. Re-run 2026-09-01 against
-the PostgreSQL 18.6 producer candidate with `vp run test:postgres18-spatial-rehearsal`; the script is
-`scripts/postgres18-spatial-rehearsal.sh` and re-running it reproduces every number below.
+Evidence for Blocker 2 of the PostgreSQL 18 rollout. The 2026-09-01 run below
+records the original 21 checks against the PostgreSQL 18.6 producer candidate.
+The 2026-11-13 expansion records all 24 checks, including the later `ST_Y`
+call site. Re-run the current fixture with `vp run test:postgres18-spatial-rehearsal`;
+the mutable source tag can change its versions and must be recorded again.
 
 ## The question
 
@@ -79,6 +81,39 @@ command — and update this record.
 The digests are sensitive, not decorative: moving a single coordinate by 1e-7 degrees (~1 cm) on one
 of the 250 populated rows changes both the EWKB digest and the row digest.
 
+## Expanded latitude extraction run — 2026-11-13
+
+The location-sync proof now reads `ST_Y(location::geometry)`. The expanded
+rehearsal executes that exact extraction on every row of both restored spatial
+tables and requires equality with the original latitude, including NULLs. A
+third new check requires the correct answer for six explicit negative, zero,
+positive, polar and NULL coordinates. Equal wrong answers on both versions
+cannot pass: each side must produce the known expected result.
+
+All **24 of 24 checks passed** with 500 fixture rows per table:
+
+| Input | Exact observed version or identity |
+| --- | --- |
+| Source | PostgreSQL 16.15, PostGIS `3.8.0dev 3.7.0rc3-8-g625d3e521`, GEOS 3.16.0dev, PROJ 9.10.0 |
+| Source image | `postgis/postgis@sha256:f7126d1a09a38383a7e6104ace25d8926629c342feeacb10cbfea08586742e04` |
+| Target | PostgreSQL 18.6, PostGIS `3.6.4 94d984b`, GEOS 3.11.1, PROJ 9.9.0 |
+| Owned local target image | `boardsesh-hypopg-audit:6975`, image ID `sha256:b5a9799214c2e9b3962d4413ef202e7644af33ae5ca20563ce626afdeedae5d7` |
+| Target Dockerfile | `packages/db/docker/Dockerfile.postgres`, SHA256 `2a2bb0a4230bd22715a507b684b7f7db9fac66d400f41515d1492a0ea27e0500` |
+
+The source `master` tag has moved from the historical 3.7.0dev build to
+3.8.0dev. This run is evidence for those exact observed builds and the current
+application surface; it does not qualify an untested production source digest
+or replace the whole-catalog, sequence and failback gates. The target was an
+owned local build of the unchanged checked-in Dockerfile, not a claim about a
+published attested artifact. Both databases used the rehearsal's private Docker
+network, with no published ports or production connection.
+
+Read-only negative controls on both endpoints returned `true/false/false` for
+the correct `ST_Y` comparison, a wrong-axis `ST_X` substitution, and coercing
+NULL latitude to zero. The new assertions therefore reject both wrong-axis and
+NULL-loss regressions. `ST_X` is a negative-control instrument, not an added
+application capability or a surface-guard allowlist entry.
+
 An earlier version of this rehearsal reported a passing `ST_DWithin` check that proved nothing — the
 probe point sat 4,345 km from the nearest fixture row against a 2,000 km radius, so the count was 0 on
 both sides and no candidate ever reached the geodesic predicate. The discrimination check above is
@@ -101,8 +136,8 @@ production actually contains.
 repository, and it decays. `scripts/postgres18-spatial-surface.test.sh` is the mechanism that keeps it
 honest: it inventories every `ST_*` call site in first-party SQL and TypeScript, plus every migration
 that adds a geography column, and fails when either grows past what the rehearsal exercises. Today
-that surface is exactly `ST_MakePoint`, `ST_Distance`, `ST_DWithin` and `ST_AsText`, over `gyms` and
-`user_boards`. It runs inside `vp run test:postgres18-contract`, so a new spatial migration trips it.
+that surface is exactly `ST_MakePoint`, `ST_Distance`, `ST_DWithin`, `ST_AsText` and `ST_Y`, over
+`gyms` and `user_boards`. It runs inside `vp run test:postgres18-contract`, so a new spatial migration trips it.
 A new spatial _resolver_ only trips it on the next run of that workflow, since
 `packages/backend/**` is not in the `&database_image_paths` filter — a gap worth closing if the
 backend starts doing more with geography.
