@@ -40,6 +40,25 @@ The portable development and CI base is:
 - PGDG PostGIS `3.6.4+dfsg-2.pgdg12+1`
 - PGDG HypoPG `1.4.3-1.pgdg12+2`
 
+The pinned HypoPG build has left PGDG's live package index. Both image builders
+use the [official historical archive](https://apt-archive.postgresql.org/) with
+the existing base image's PGDG signing key and HTTPS certificate verification.
+They install the standard CA bundle before enabling that HTTPS source. Archive
+packages have APT priority `-1`; only `postgresql-18-hypopg` is permitted at `500`,
+and installation still requests the exact version above. PostgreSQL, PostGIS
+and other dependencies keep their existing live sources. The build exercises
+APT's policy engine and refuses a broadly enabled archive or an unavailable
+HypoPG pin on either architecture.
+
+The archived AMD64 package SHA-256 is
+`18121e5cbcebe81811b6e75970ca5d37f63bf555fea992a4344e216e81467b87`;
+ARM64 is `33652b0acd20d2b42df80b1b2339272e9f42a24c2386ed49273a2574777a15c7`.
+Both package bytes and index digests were checked against the archive's signed
+2026-11-11 `InRelease`. A newer live HypoPG rebuild depends on `postgresql-18 (>> 18.7)`,
+which requires an 18.7-era server package; replacing the pin with that candidate
+would violate this 18.6 base contract. These source changes require a new producer publication
+before changing any consumer digest; they do not update an accepted artifact.
+
 `.github/workflows/dev-db-docker.yml` builds both architectures of the portable
 PostGIS image and boots the native and ARM64 candidates without logging in to a
 registry. The same read-only workflow builds and boots the final seeded dev
