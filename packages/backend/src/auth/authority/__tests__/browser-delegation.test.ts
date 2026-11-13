@@ -115,7 +115,7 @@ const admit = (token: string) => admitBrowserDelegation(environment.database, qu
 describe('backend-only selected browser delegation on actual PostgreSQL', () => {
   beforeAll(async () => {
     environment = await createEnvironment();
-    for (const tag of ['0311_browser_binding_selection', '0312_browser_selection_possession'])
+    for (const tag of ['0312_browser_binding_selection'])
       await environment.client.unsafe(
         readFileSync(new URL(`../../../../../db/drizzle/${tag}.sql`, import.meta.url), 'utf8'),
       );
