@@ -90,7 +90,7 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
   const locale = await getLocale();
 
   return (
-    <I18nProvider locale={locale} namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed']}>
+    <I18nProvider locale={locale} namespaces={['climbs', 'feed']}>
       <Box sx={boardShellSx}>{children}</Box>
     </I18nProvider>
   );

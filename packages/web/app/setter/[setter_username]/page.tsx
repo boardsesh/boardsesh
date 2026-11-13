@@ -339,7 +339,7 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   const basePath = `/setter/${encodeURIComponent(username)}`;
 
   return (
-    <I18nProvider locale={locale} namespaces={['profile', 'common']}>
+    <I18nProvider locale={locale} namespaces={['profile', 'common', 'climbs', 'settings']}>
       <Box component="main" sx={containerSx}>
         <SetterJsonLd
           username={username}

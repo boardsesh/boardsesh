@@ -44,10 +44,7 @@ export default async function PlaylistDetailPage({ params }: { params: Promise<{
     : null;
 
   return (
-    <I18nProvider
-      locale={locale}
-      namespaces={['common', 'climbs', 'session', 'boards', 'profile', 'feed', 'playlists']}
-    >
+    <I18nProvider locale={locale} namespaces={['climbs', 'playlists', 'settings']}>
       <div className={styles.pageContainer}>
         <PlaylistDetailContent
           playlistUuid={playlist_uuid}

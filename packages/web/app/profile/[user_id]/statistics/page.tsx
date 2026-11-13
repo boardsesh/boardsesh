@@ -26,7 +26,7 @@ export default async function ProfileStatisticsPage({ params }: PageProps) {
   const locale = await getLocale();
 
   return (
-    <I18nProvider locale={locale} namespaces={['profile']}>
+    <I18nProvider locale={locale} namespaces={['profile', 'settings']}>
       <AnalyticsContent
         userId={user_id}
         initialProfileStats={statsData.initialProfileStats}

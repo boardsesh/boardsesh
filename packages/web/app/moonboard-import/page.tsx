@@ -16,6 +16,8 @@ import {
 import { getMoonBoardLayoutBySlug } from '@/app/lib/url-utils';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import I18nProvider from '@/app/components/providers/i18n-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
 /**
@@ -28,8 +30,8 @@ import { themeTokens } from '@/app/theme/theme-config';
  * the two old paths 308 into it carrying whatever they knew.
  *
  * Utility surface — noindex, follow. It needs none of the board-tree providers:
- * `MoonBoardBulkImport` reads next-auth, react-query, the snackbar and i18n,
- * all of which the root layout already mounts.
+ * `MoonBoardBulkImport` reads next-auth, react-query and the snackbar from the
+ * root layout. This route supplies the importer's climb translations.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const { t, locale } = await getServerTranslation('climbs');
@@ -159,14 +161,17 @@ export default async function MoonBoardImportPage(props: MoonBoardImportPageProp
   }
 
   const holdSetImages = resolveHoldSetImages(layout.layoutKey, searchParams.sets);
+  const locale = await getLocale();
 
   return (
-    <MoonBoardBulkImport
-      layoutFolder={layout.folder}
-      layoutName={layout.name}
-      layoutId={layout.id}
-      holdSetImages={holdSetImages}
-      angle={angle}
-    />
+    <I18nProvider locale={locale} namespaces={['climbs']}>
+      <MoonBoardBulkImport
+        layoutFolder={layout.folder}
+        layoutName={layout.name}
+        layoutId={layout.id}
+        holdSetImages={holdSetImages}
+        angle={angle}
+      />
+    </I18nProvider>
   );
 }
