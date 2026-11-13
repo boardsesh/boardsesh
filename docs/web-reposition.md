@@ -11,6 +11,22 @@ The full phased plan (A0–A6 teardown track + B0–B5 gym-discovery track) live
 the maintainer; this doc records the parts the repo needs: the Phase A0 audit
 findings that gate later deletions, and the blocking pre-delete QA checklist.
 
+## Translation payloads on public pages
+
+Next sends the namespaces needed by the root chrome and each route for hydration.
+`loadServerResources` additionally excludes the top-level `mobile` tree from
+`common`, `climbs` and `feed`: those branches belong to app-only screens and have
+no consumers on the surviving web surfaces. The projection creates fresh objects;
+shared catalogs and `getServerTranslation` keep their full resources.
+
+This is an explicit three-namespace rule. Web board-management forms still use
+`boards.mobile`, shared workout summaries use `session.mobile`, and connected
+account tools use `aurora.mobile`; those remain available. Browser lazy loading,
+server-rendered copy and per-request locale isolation are unchanged. The resource
+tests compare every retained key in every locale and check compressed payloads.
+They also check web and shared copy-helper references against the projected
+catalogs, including templates that could enter an omitted branch.
+
 ## Phase A0 — audit findings (gate the deletion phases)
 
 These are verified against the working tree and constrain what later phases may

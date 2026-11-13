@@ -4,6 +4,7 @@ import { gzipSync } from 'node:zlib';
 import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { useTranslation } from 'react-i18next';
+import { loadCatalog } from '@boardsesh/i18n/catalog-loader';
 import BoardSlugLayout from '@/app/b/[board_slug]/[angle]/layout';
 import ServerI18nProvider from '@/app/components/providers/i18n-provider';
 import SiteFooter from '@/app/components/site-chrome/site-footer';
@@ -11,7 +12,7 @@ import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tr
 import { I18nProvider } from '../client';
 import { SUPPORTED_LOCALES, type Locale, type SeedNamespace } from '../config';
 import { reportMissingI18nKey } from '../missing-key-reporter';
-import { getServerTranslationForLocale, loadServerResources } from '../server';
+import { getServerTranslationForLocale } from '../server';
 
 const request = vi.hoisted(() => ({ locale: 'en-US' as Locale }));
 
@@ -106,7 +107,11 @@ describe.each(SUPPORTED_LOCALES)('public climb translations in %s', (locale) => 
       </ServerI18nProvider>,
     );
     const resources = collectResources(tree);
-    const previousResources = await loadServerResources(locale, LEGACY_ROOT_NAMESPACES);
+    const previousResources = Object.fromEntries(
+      await Promise.all(
+        LEGACY_ROOT_NAMESPACES.map(async (namespace) => [namespace, (await loadCatalog(locale, namespace)).default]),
+      ),
+    );
     const currentBytes = gzipSync(JSON.stringify(resources)).byteLength;
     const previousBytes = gzipSync(JSON.stringify(previousResources)).byteLength;
 
