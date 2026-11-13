@@ -1,0 +1,102 @@
+/* The wall button's three states. Each row is a raised card: label, heading and
+   line on the left, the cropped button on the right. On a phone the button
+   comes first, then the words. Doubled selectors beat MUI Typography. */
+
+.rows {
+  display: grid;
+  gap: var(--spacing-4);
+  margin: var(--spacing-10) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-areas: 'text bar';
+  align-items: center;
+  column-gap: var(--spacing-10);
+  padding: 28px var(--spacing-8);
+  border: 1px solid var(--read-line);
+  border-radius: 24px;
+  background: var(--read-surface-raised);
+}
+
+/* The crop: a box the shape of the button, with the whole capture positioned
+   inside it so only the button shows. The three custom properties are set per
+   capture from WALL_BUTTON_CROP_OFFSETS in help-wall-button.tsx. */
+.bar {
+  grid-area: bar;
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 697 / 92;
+  border-radius: var(--border-radius-xl);
+  background: var(--semantic-background);
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
+.bar .capture {
+  position: absolute;
+  top: var(--crop-top);
+  left: var(--crop-left);
+  width: var(--crop-width);
+  max-width: none;
+  height: auto;
+}
+
+.text {
+  grid-area: text;
+  min-width: 0;
+}
+
+.label.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 var(--spacing-2);
+  color: var(--read-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--border-radius-full);
+  background: var(--neutral-400);
+}
+
+.dotLive {
+  background: var(--color-live);
+}
+
+.title.title {
+  margin: 0 0 6px;
+  color: var(--read-text);
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.body.body {
+  margin: 0;
+  color: var(--read-text-muted);
+  font-size: var(--font-size-base);
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .rows {
+    margin-top: var(--spacing-8);
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'bar'
+      'text';
+    row-gap: var(--spacing-4);
+    padding: var(--spacing-5);
+  }
+}

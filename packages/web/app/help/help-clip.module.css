@@ -1,8 +1,9 @@
 /* Deliberately the same box as help-screenshot.module.css: a clip and a still
    have to sit in one row without either one setting a different measure. */
 .figure {
+  width: 100%;
   min-width: 0;
-  max-width: 280px;
+  max-width: 340px;
   margin: 0;
 }
 
@@ -14,30 +15,33 @@
   aspect-ratio: 736 / 1600;
 }
 
-.caption {
-  margin-top: var(--spacing-3);
-  padding-inline: var(--spacing-1);
-  color: var(--neutral-600);
+.caption.caption {
+  margin: var(--spacing-4) var(--spacing-1) 0;
+  color: var(--read-text-muted);
+  font-size: 15px;
   line-height: 1.5;
 }
 
 /* Only rendered when the reader has asked for reduced motion, where the clip
    waits on the poster until they press play. */
-.hint {
+.hint.hint {
   margin-top: var(--spacing-1);
   padding-inline: var(--spacing-1);
-  color: var(--neutral-500);
+  color: var(--read-text-muted);
   line-height: 1.5;
 }
 
-/* The wide cut extends beyond the prose measure so the recorded controls stay
-   readable. Phones see the portrait cut; both players defer video downloads. */
+/* The wide cut runs the band's full width (900px at most) so the recorded
+   controls stay readable. Phones see the portrait cut; both players defer
+   video downloads. */
 .walkthroughFigure {
-  max-width: none;
-  width: min(900px, calc(100vw - var(--spacing-8) - var(--spacing-8)));
+  max-width: 900px;
+  width: 100%;
   margin-block: var(--spacing-4) var(--spacing-6);
-  margin-left: 50%;
-  transform: translateX(-50%);
+}
+
+.walkthroughFigure .landscapeFrame {
+  border-radius: var(--border-radius-xl);
 }
 
 .landscapeVideo {
@@ -52,18 +56,10 @@
   aspect-ratio: 720 / 1280;
 }
 
-@media (max-width: 600px) {
-  .figure {
-    max-width: 240px;
-  }
-}
-
 @media (max-width: 760px), (max-width: 1000px) and (max-height: 500px) and (pointer: coarse) {
   .walkthroughFigure {
-    max-width: 360px;
-    width: 100%;
+    max-width: 300px;
     margin-inline: auto;
-    transform: none;
   }
 
   .landscapeFrame {
