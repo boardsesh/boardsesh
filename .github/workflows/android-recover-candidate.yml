@@ -63,11 +63,30 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - name: Install trusted APK inspection tools
         uses: android-actions/setup-android@v3
         with:
+          cmdline-tools-version: '16111833'
           packages: ''
+      - name: Preflight selected APK inspection tools
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;37.0.0'
+          analyzer="$(command -v apkanalyzer)"
+          analyzer="$(readlink -f "$analyzer")"
+          case "$analyzer" in
+            "$ANDROID_HOME"/cmdline-tools/*/bin/apkanalyzer) ;;
+            *) echo 'APK analyzer must come from the configured Android SDK.' >&2; exit 1 ;;
+          esac
+          test -f "$RUNNER_TEMP/android-recovery-apk/boardsesh-android-beta-arm64-v8a.apk"
+          aapt2="$ANDROID_HOME/build-tools/37.0.0/aapt2"
+          java -version
+          cat "$(dirname "$analyzer")/../source.properties"
+          "$analyzer" --help
+          "$aapt2" version
+          echo "APK_ANALYZER_PATH=$analyzer" >> "$GITHUB_ENV"
+          echo "AAPT2_PATH=$aapt2" >> "$GITHUB_ENV"
       - name: Verify APK identity and read both Play tester tracks
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}

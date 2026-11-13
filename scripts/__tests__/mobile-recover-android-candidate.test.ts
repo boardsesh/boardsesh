@@ -9,6 +9,7 @@ import {
   validateRecoveryGateLog,
   recoveryCommandFailure,
   readOriginalNativeGateLog,
+  parseApkBadging,
 } from '../mobile-recover-android-candidate';
 
 const SOURCE = 'd'.repeat(40);
@@ -190,6 +191,24 @@ describe('original native gate log transport', () => {
 });
 
 describe('uploaded Android candidate recovery', () => {
+  it('extracts exact binary manifest identity while ignoring unrelated signing JSON', () => {
+    const identity = parseApkBadging(
+      "package: name='com.boardsesh.app' versionCode='2001682' versionName='2.7.1' compileSdkVersion='37'\napplication-label:'Boardsesh'\nmeta-data: '{\"keyid\":\"main\"}'\n",
+    );
+    expect(identity).toEqual({ applicationId: 'com.boardsesh.app', versionCode: '2001682', version: '2.7.1' });
+    expect(validateApkIdentity({ ...identity, runtime: RUNTIME }, '2001682')).toEqual(apk);
+  });
+
+  it.each([
+    '',
+    "package: name='com.boardsesh.app' versionCode='2001682'",
+    "package: name='com.boardsesh.app' versionCode='2001682' versionName='2.7.1' versionCode='2001683'",
+    "package: name='com.boardsesh.app' versionCode='2001682' versionName='2.7.1'\npackage: name='other.app'",
+    "package: name='com.boardsesh.app' versionCode='2001682' versionName='2.7.1' trailing",
+    'package: name="com.boardsesh.app" versionCode=2001682 versionName=2.7.1',
+  ])('rejects incomplete or ambiguous binary manifest metadata: %s', (badging) => {
+    expect(() => parseApkBadging(badging)).toThrow();
+  });
   it('reports the exact failed operation and only whitelisted process diagnostics', () => {
     const error = recoveryCommandFailure('read original native gate logs', {
       status: 1,
@@ -320,6 +339,22 @@ describe('uploaded Android candidate recovery', () => {
     const steps: Array<{ name?: string; uses?: string; run?: string; with?: Record<string, unknown> }> = recover.steps;
     expect(steps[0]!.with?.ref).toBe('${{ github.workflow_sha }}');
     const verify = steps.findIndex((step) => step.run?.endsWith(' verify'));
+    const preflight = steps.findIndex((step) => step.name === 'Preflight selected APK inspection tools');
+    const java = steps.find((step) => step.uses === 'actions/setup-java@v4');
+    const android = steps.find((step) => step.uses === 'android-actions/setup-android@v3');
+    expect(java?.with?.['java-version']).toBe('21');
+    expect(android?.with).toEqual({ 'cmdline-tools-version': '16111833', packages: '' });
+    expect(preflight).toBeGreaterThan(steps.indexOf(android!));
+    expect(preflight).toBeLessThan(verify);
+    expect(steps[preflight]?.run).toContain('command -v apkanalyzer');
+    expect(steps[preflight]?.run).toContain('readlink -f');
+    expect(steps[preflight]?.run).toContain('"$analyzer" --help');
+    expect(steps[preflight]?.run).toContain("sdkmanager 'build-tools;37.0.0'");
+    expect(steps[preflight]?.run).toContain('"$aapt2" version');
+    expect(steps[preflight]?.run).toContain('APK_ANALYZER_PATH=$analyzer');
+    expect(steps[preflight]?.run).toContain('AAPT2_PATH=$aapt2');
+    expect(steps[preflight]?.run).not.toContain('latest');
+    expect(steps[preflight]).not.toHaveProperty('env');
     const mint = steps.findIndex((step) => step.name === 'Mint short-lived candidate publication token');
     expect(mint).toBeGreaterThan(verify);
     expect(steps[mint]!.with?.['permission-contents']).toBe('write');
