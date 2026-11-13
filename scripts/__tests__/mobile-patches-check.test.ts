@@ -232,7 +232,7 @@ private func postAppContextDestroysOnce() {
 }
 `;
 
-  function checkSource(installedSource: string, version = '58.0.26') {
+  function checkSource(installedSource: string, version = '58.0.28') {
     return checkPatchesApplied(
       [coreRule],
       makeEnv({
@@ -257,6 +257,52 @@ private func postAppContextDestroysOnce() {
       'moduleRegistry.post(event: .appContextDestroys)\n  hasPostedAppContextDestroys = true',
     );
     expect(checkSource(unsafeSource).errors).toHaveLength(1);
+  });
+});
+
+describe('the shipped Expo async-function Swift compiler guard', () => {
+  const coreRule = REAL_RULES.find(
+    (rule) => rule.package === 'expo-modules-core' && rule.file === 'ios/Core/Functions/AsyncFunctionDefinition.swift',
+  )!;
+  const source = `
+      self.call(appContext, this: this, arguments: arguments) { [promise] result in
+        switch consume result {
+        case .success(let value):
+          promise.resolve(value)
+        case .failure(let error):
+          promise.reject(error)
+        }
+      }
+`;
+
+  function checkSource(installedSource: string) {
+    return checkPatchesApplied(
+      [coreRule],
+      makeEnv({
+        patchedDependencies: { [coreRule.patchedKey]: `patches/${coreRule.patchedKey}.patch` },
+        versions: { 'expo-modules-core': '58.0.28' },
+        files: { [`expo-modules-core::${coreRule.file}`]: installedSource },
+      }),
+    );
+  }
+
+  it('accepts upstream inferred failure binding with consuming success and same-error rejection', () => {
+    expect(checkSource(source).errors).toEqual([]);
+  });
+
+  it('rejects restoring the existential pattern cast that crashes Swift SILGen', () => {
+    const unsafeSource = source.replace('case .failure(let error):', 'case .failure(let error as any Error):');
+    expect(checkSource(unsafeSource).errors).toContainEqual(expect.stringContaining('contains forbidden source'));
+  });
+
+  it.each([
+    ['switch consume result {', 'switch result {'],
+    ['promise.resolve(value)', 'promise.resolve(nil)'],
+    ['promise.reject(error)', 'promise.reject(UnexpectedException(error))'],
+  ])('rejects changing the async result contract: %s', (original, replacement) => {
+    expect(checkSource(source.replace(original, replacement)).errors).toContainEqual(
+      expect.stringContaining('patch NOT applied'),
+    );
   });
 });
 
@@ -971,7 +1017,7 @@ describe('versionFromKey', () => {
 // ---------------------------------------------------------------------------
 
 const TABS_FILE = 'ios/tabs/host/RNSTabsHostComponentView.mm';
-const TABS_KEY = 'react-native-screens@4.30.0';
+const TABS_KEY = 'react-native-screens@4.30.1';
 const TABS_RULES: PatchRule[] = [
   {
     package: PKG,
@@ -1116,7 +1162,7 @@ const TABS_SELF_ARMING_SOURCE = TABS_FIXED_SOURCE.replace(
 const tabsEnv = (source: string) =>
   makeEnv({
     patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-    versions: { [PKG]: '4.30.0' },
+    versions: { [PKG]: '4.30.1' },
     files: { [`${PKG}::${TABS_FILE}`]: source },
   });
 
@@ -1300,7 +1346,7 @@ describe('the shipped react-native-screens tab-host rule', () => {
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.30.0' },
+        versions: { [PKG]: '4.30.1' },
         files: { [`${PKG}::ios/tabs/host/RNSTabsHostComponentView.mm`]: TABS_ATTACH_ONLY_SOURCE },
       }),
     );
@@ -1337,7 +1383,7 @@ ${body}
       [shippedRule as PatchRule],
       makeEnv({
         patchedDependencies: { [TABS_KEY]: `patches/${TABS_KEY}.patch` },
-        versions: { [PKG]: '4.30.0' },
+        versions: { [PKG]: '4.30.1' },
         files: { [`${PKG}::${ACCESSORY_FILE}`]: source },
       }),
     );
@@ -1739,7 +1785,7 @@ describe('checkExpoUiAndroidPatchesBuildFromSource', () => {
     package: '@expo/ui',
     file: 'android/src/main/java/expo/modules/ui/LazyRowView.kt',
     sentinels: [],
-    patchedKey: '@expo/ui@58.0.23',
+    patchedKey: '@expo/ui@58.0.25',
   };
   const published: AndroidModuleConfig = { android: { publication: { repository: 'local-maven-repo' } } };
 
