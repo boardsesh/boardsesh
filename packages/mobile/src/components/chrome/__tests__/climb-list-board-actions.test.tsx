@@ -384,7 +384,7 @@ describe('Climb list angle, history and options', () => {
     expect(state.push).not.toHaveBeenCalled();
   });
 
-  it('leaves the Material angle to the filter chip: no angle button, M3 menu target', () => {
+  it('leaves the Material angle to the leading toolbar: no trailing angle, M3 menu target', () => {
     state.os = 'android';
     const openHistory = vi.fn();
     const { getByRole, queryByRole } = render(<ClimbListBoardActions material onOpenHistory={openHistory} />);

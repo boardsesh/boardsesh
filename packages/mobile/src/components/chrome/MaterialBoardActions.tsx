@@ -25,6 +25,8 @@ import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useBulbDriveTap } from '../queue-control/bar-bulb-tap';
 import { phoneDrivesTheWall } from '../queue-control/bulb-drive-cue';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { iconMap } from '../icon-map';
 import { BoardAnglePicker } from './BoardAnglePicker';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
@@ -37,7 +39,13 @@ export function MaterialAngleAction() {
 
   const angleIcon = useCallback(
     () => (
-      <Text variant="caption1" style={[styles.materialAngleText, { color: systemColors.label }]}>
+      <Text
+        variant="title3"
+        numeric
+        numberOfLines={1}
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={[styles.materialAngleText, { color: systemColors.label }]}
+      >
         {activeBoard?.angle}°
       </Text>
     ),
@@ -45,15 +53,21 @@ export function MaterialAngleAction() {
   );
 
   if (!canAdjustBoardAngle(activeBoard)) return null;
+  const spokenLabel = tSession('mobile.angleSelector.buttonAria', { angle: activeBoard.angle });
 
   return (
     <BoardAnglePicker>
       {(open) => (
-        <Appbar.Action
-          icon={angleIcon}
-          onPress={open}
-          accessibilityLabel={tSession('mobile.angleSelector.buttonAria', { angle: activeBoard.angle })}
-        />
+        <LargeContentViewer title={spokenLabel} onActivate={open}>
+          <Appbar.Action
+            icon={angleIcon}
+            // Paper's animated icon wrapper fixes custom content to 24dp;
+            // the degree label needs the action's full width.
+            animated={false}
+            onPress={open}
+            accessibilityLabel={spokenLabel}
+          />
+        </LargeContentViewer>
       )}
     </BoardAnglePicker>
   );

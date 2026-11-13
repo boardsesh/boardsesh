@@ -106,7 +106,7 @@ type ClimbTopChromeProps = {
   /** Android Material only: the native chip row (`filterChrome`) is the default
    *  filtering surface. When set, the Material top-chrome filter affordances (grade
    *  control, filter button, condensed summary) are suppressed and `filterChrome` is
-   *  rendered under the app bar instead; the angle chip and the in-chrome grade rail
+   *  rendered under the app bar instead; the toolbar angle and in-chrome grade rail
    *  stay. Always false on Liquid Glass (its own path renders `filterChrome`). */
   showPersistentChips?: boolean;
   /** Legacy native scroll-edge wiring. The filter row draws only its individual capsules. */
