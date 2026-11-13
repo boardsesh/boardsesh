@@ -5,7 +5,6 @@ import {
   authSession,
   authSessionDenials,
   authSubjectCutoffs,
-  authSecurityMutationEvents,
   mobileRefreshTokens,
   users,
 } from '@boardsesh/db/schema/auth';
@@ -18,6 +17,8 @@ import {
   captureExpectedAuthority,
 } from '../current-store/foundation-context';
 import type { FirstPartySession } from './session-reader';
+import { captureIdentityAuthority } from './router';
+import { recordIdentitySecurityMutation } from './security-mutation';
 import { LEGACY_WEB_CLOCK_TOLERANCE_SECONDS, LEGACY_WEB_MAX_REMAINING_VALIDITY_MS } from '../legacy-web-credentials';
 
 // Include the installed JWE acceptance tolerance in the retention bound. A
@@ -85,7 +86,7 @@ async function denyCapturedFirstPartySession(
     .where(eq(users.id, session.userId))
     .for('update');
   if (session.requiresAccountCutoff) {
-    if (!subject || !manifest) throw new CurrentStoreFoundationError('SUBJECT_DELETED');
+    if (!subject || !manifest || !expectedAuthority) throw new CurrentStoreFoundationError('SUBJECT_DELETED');
     if (!Number.isSafeInteger(session.generation) || session.generation < 0)
       throw new CurrentStoreFoundationError('INVALID_COMMAND');
     const [existingCutoff] = await transaction
@@ -95,46 +96,19 @@ async function denyCapturedFirstPartySession(
       .for('update');
     if (existingCutoff?.deletedAt) throw new CurrentStoreFoundationError('SUBJECT_DELETED');
     if ((existingCutoff?.generation ?? 0) !== session.generation) return;
-    const operationId = randomUUID();
-    await transaction
-      .insert(authSubjectCutoffs)
-      .values({
+    const receipt = await captureIdentityAuthority(transaction, expectedAuthority);
+    await recordIdentitySecurityMutation(
+      transaction,
+      {
+        ...expectedAuthority,
         userId: session.userId,
-        generation: 0,
-        revokedThrough: now,
-        lastOperationId: operationId,
-      })
-      .onConflictDoNothing();
-    const [previous] = await transaction
-      .select()
-      .from(authSubjectCutoffs)
-      .where(eq(authSubjectCutoffs.userId, session.userId))
-      .for('update');
-    if (!previous || previous.deletedAt) throw new CurrentStoreFoundationError('SUBJECT_DELETED');
-    // Repeated or delayed logout cannot end a login created after this cutoff.
-    if (previous.generation !== session.generation) return;
-    const [cutoff] = await transaction
-      .update(authSubjectCutoffs)
-      .set({
-        generation: sql`${authSubjectCutoffs.generation} + 1`,
-        revokedThrough: sql`greatest(${authSubjectCutoffs.revokedThrough}, clock_timestamp())`,
-        lastOperationId: operationId,
-      })
-      .where(and(eq(authSubjectCutoffs.userId, session.userId), eq(authSubjectCutoffs.generation, session.generation)))
-      .returning();
-    if (!cutoff) throw new CurrentStoreFoundationError('STALE_GENERATION');
-    await transaction.insert(authSecurityMutationEvents).values({
-      operationId,
-      userId: session.userId,
-      generation: cutoff.generation,
-      previousGeneration: previous.generation,
-      kind: 'legacy-signout',
-      domains: ['first-party'],
-      revokedThrough: cutoff.revokedThrough,
-      writerEpoch: manifest.writerEpoch,
-      projectionId: manifest.projectionId,
-      payloadVersion: 1,
-    });
+        expectedGeneration: session.generation,
+        operationId: randomUUID(),
+        kind: 'legacy-signout',
+        domains: ['first-party'],
+      },
+      receipt,
+    );
     // Keep the evidence rows. The generation is authoritative for old raw JWTs/JWEs.
     await transaction
       .update(authSession)

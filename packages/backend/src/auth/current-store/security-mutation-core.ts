@@ -50,7 +50,8 @@ export type CurrentSecurityMutationKind =
   | 'password-change'
   | 'password-reset'
   | 'account-deletion'
-  | 'admin-revocation';
+  | 'admin-revocation'
+  | 'legacy-signout';
 export type CurrentRevocationDomain = 'first-party' | 'partner';
 const revocationKinds: ReadonlySet<string> = new Set([
   'password-set',
@@ -58,6 +59,7 @@ const revocationKinds: ReadonlySet<string> = new Set([
   'password-reset',
   'account-deletion',
   'admin-revocation',
+  'legacy-signout',
 ]);
 
 /**
@@ -86,9 +88,9 @@ export async function recordCheckedSecurityMutation(
     !Number.isSafeInteger(expectedGeneration) ||
     expectedGeneration < 0 ||
     !revocationKinds.has(kind) ||
-    domains.length !== 2 ||
+    domains.length !== (kind === 'legacy-signout' ? 1 : 2) ||
     !domains.includes('first-party') ||
-    !domains.includes('partner')
+    (kind !== 'legacy-signout' && !domains.includes('partner'))
   )
     throw new CurrentStoreFoundationError('INVALID_COMMAND');
   const manifest = await lockEnforcedProjection(transaction, expected);
@@ -137,7 +139,7 @@ export async function recordCheckedSecurityMutation(
       generation: cutoff.generation,
       previousGeneration: expectedGeneration,
       kind,
-      domains: ['first-party', 'partner'],
+      domains,
       revokedThrough: cutoff.revokedThrough,
       writerEpoch: manifest.writerEpoch,
       projectionId: manifest.projectionId,

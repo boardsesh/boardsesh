@@ -2,8 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { users } from '@boardsesh/db/schema/auth';
 import type { AuthorityDatabase } from './adapter';
-import { recordSecurityMutation } from '../current-store/security-mutations';
-import { lockEnforcedProjection, type ExpectedCurrentStoreAuthority } from '../current-store/foundation-context';
+import {
+  captureExpectedAuthority,
+  lockEnforcedProjection,
+  type ExpectedCurrentStoreAuthority,
+} from '../current-store/foundation-context';
+import { captureIdentityAuthority } from './router';
+import { recordIdentitySecurityMutation } from './security-mutation';
 
 /** Qualified core seam. Shipped operator transports must enforce activation before calling. */
 export async function revokeAdministrativeCredentials(
@@ -12,21 +17,27 @@ export async function revokeAdministrativeCredentials(
   userId: string,
   expectedGeneration: number,
 ): Promise<void> {
+  const capturedAuthority = captureExpectedAuthority(expected);
   await database.transaction(async (transaction) => {
-    await lockEnforcedProjection(transaction, expected);
+    await lockEnforcedProjection(transaction, capturedAuthority);
+    const receipt = await captureIdentityAuthority(transaction, capturedAuthority);
     const [lockedSubject] = await transaction
       .select({ id: users.id })
       .from(users)
       .where(eq(users.id, userId))
       .for('update');
     if (!lockedSubject) throw new Error('ACTIVE_SUBJECT_REQUIRED');
-    await recordSecurityMutation(transaction, {
-      ...expected,
-      userId,
-      expectedGeneration,
-      operationId: randomUUID(),
-      kind: 'admin-revocation',
-      domains: ['first-party', 'partner'],
-    });
+    await recordIdentitySecurityMutation(
+      transaction,
+      {
+        ...capturedAuthority,
+        userId,
+        expectedGeneration,
+        operationId: randomUUID(),
+        kind: 'admin-revocation',
+        domains: ['first-party', 'partner'],
+      },
+      receipt,
+    );
   });
 }
