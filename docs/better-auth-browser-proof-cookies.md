@@ -85,6 +85,24 @@ characterization is evidence AGAINST claiming rolling renewal fixed. Credential
 revision names or canonical publication serialization must resolve it; binding
 metadata must never substitute for the missing/expired actual proof.
 
+The joined result-recovery fixture adds the shipping central reader and private
+browser/provider HTTP clients and handlers over an explicit disposable database.
+It uses the actual provider finalizer and ACK transaction for both selected
+authorities and source kinds. Chromium installs the real host-only proof and
+sealed operation cookies. A deliberately truncated body preserves the old actor
+and exact new candidate for the next request; dropped complete headers or an
+unknown finalizer reply cannot reconstruct the absent candidate. Delayed original
+headers remain inert after a later actual coordinator login. Header planning
+uses the complete actual incoming cookie header before the first mutation;
+oversized unrelated cookies or a missing actual actor leave credentials intact.
+Only owned accounts, loopback listeners and synthetic provider ownership are
+used. The private handlers receive the explicit fixture database; restricted
+LOGIN qualification remains separately proved by the credential-writer suite.
+This does not mount the application catch-all, prove real provider consoles,
+qualify whole-application browser publication, or close the complete-header-loss
+fresh-proof recovery gate. The required compatibility CI task runs after its
+existing Chromium installation, with a targeted web-auth source filter.
+
 ```sh
 vp test run --project web packages/web/app/lib/auth/__tests__/browser-proof-cookies.test.ts --reporter=agent
 AUTH_PROTOTYPE_DATABASE_URL='<explicit owned localhost admin URL ending /postgres>' \
