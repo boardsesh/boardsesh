@@ -51,7 +51,7 @@ fail() {
 # ST_AsEWKB is the rehearsal's own measuring instrument rather than application
 # usage; it is listed because the inventory below cannot tell the difference,
 # and because it too has to behave identically on both sides.
-REHEARSED_FUNCTIONS='ST_AsEWKB ST_AsText ST_Distance ST_DWithin ST_MakePoint'
+REHEARSED_FUNCTIONS='ST_AsEWKB ST_AsText ST_Distance ST_DWithin ST_MakePoint ST_Y'
 
 # Every ST_* call site in first-party SQL and TypeScript. `dist/` is built
 # output and `node_modules` is not ours. Tests are deliberately IN scope: a
