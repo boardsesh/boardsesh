@@ -132,6 +132,15 @@ cookie-family GC, supported-engine matrix and recovery protocol also remain
 required. The readiness function stays false until the complete browser contract
 is reviewed and qualified.
 
+An additional first-observation gate remains: a tab holding legacy A may receive
+503 on its first central session read after another origin selected B. It has
+not observed selected metadata and cannot inspect WWW's host-only correlation
+cookie. Preserving its old legacy bearer during that uncertainty must not be
+mistaken for selected account isolation. Public activation requires an explicit
+canonical selected-dispatch observation even on refusal/unavailable responses,
+or a qualified client mode that requires selected admission before dispatch.
+An eventual successful session response alone does not cover this interval.
+
 The existing native OAuth callback still decodes `getAdmittedRawServerToken()`
 as a NextAuth JWE. The selected forwarding branch returns a backend-only lease,
 which that decoder correctly refuses. This slice does not qualify that handoff:
