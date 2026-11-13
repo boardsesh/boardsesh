@@ -161,12 +161,40 @@ describe('which backend tests must run in backend-serial', () => {
     });
   }
 
-  it('lists every backend test that starts a real PgBoss', () => {
+  it('serializes shared PgBoss tests and verifies authority suites own their databases', () => {
     const startsPgBoss = testFiles(join(backendRoot, 'src'))
       .filter((path) => /new PgBoss\(|boss\.start\(\)|startJobQueue\(/.test(readFileSync(path, 'utf8')))
       .map((path) => relative(backendRoot, path).split('\\').join('/'));
     expect(startsPgBoss.length).toBeGreaterThan(0);
-    for (const file of startsPgBoss) expect(SERIAL_TEST_FILES).toContain(file);
+    for (const file of startsPgBoss) {
+      if (!/^src\/auth\/authority\/__tests__\/[^/]+\.test\.ts$/.test(file)) {
+        expect(SERIAL_TEST_FILES).toContain(file);
+        continue;
+      }
+      // This project never receives the shared backend setup. Its queue must
+      // use the fresh database returned by the same suite-owned environment.
+      const source = readFileSync(join(backendRoot, file), 'utf8');
+      expect(source).toContain("import { createEnvironment } from './environment'");
+      expect(source).toContain('environment = await createEnvironment()');
+      expect(source).toContain('SELECT current_database() AS name');
+      expect(source).toContain('connection.pathname = `/${name}`');
+      expect(source).toContain('connectionString: connection.toString()');
+    }
+  });
+
+  it('runs owned authority PgBoss suites separately from both shared backend projects', () => {
+    const backendConfig = readFileSync(join(backendRoot, 'vite.config.ts'), 'utf8');
+    const serialConfig = readFileSync(join(backendRoot, 'vite.serial.config.ts'), 'utf8');
+    const authorityConfig = readFileSync(join(backendRoot, 'vite.auth-authority.config.ts'), 'utf8');
+    const rootConfig = readFileSync(new URL('../../vite.config.ts', import.meta.url), 'utf8');
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    expect(backendConfig).toContain("'src/auth/authority/**'");
+    expect(SERIAL_TEST_FILES.some((file) => file.startsWith('src/auth/authority/'))).toBe(false);
+    expect(serialConfig).toContain('include: SERIAL_TEST_FILES');
+    expect(authorityConfig).toContain("include: ['src/auth/authority/__tests__/*.test.ts']");
+    expect(authorityConfig).not.toMatch(/globalSetup:|setupFiles:/);
+    expect(rootConfig).toContain('vp test run --config packages/backend/vite.auth-authority.config.ts');
+    expect(workflow).toContain('run: vp run test:auth-authority');
   });
 
   it('runs the Kilter catalog fence test serially (it drives the shared kilter catalog cursor)', () => {
