@@ -51,6 +51,21 @@
       "types": "./src/native-v1.ts",
       "import": "./src/native-v1.ts",
       "default": "./src/native-v1.ts"
+    },
+    "./browser-coordinator": {
+      "types": "./src/browser-coordinator-v1.ts",
+      "import": "./src/browser-coordinator-v1.ts",
+      "default": "./src/browser-coordinator-v1.ts"
+    },
+    "./browser-coordinator-runner": {
+      "types": "./src/browser-coordinator-runner.ts",
+      "import": "./src/browser-coordinator-runner.ts",
+      "default": "./src/browser-coordinator-runner.ts"
+    },
+    "./browser-coordinator-channel": {
+      "types": "./src/browser-coordinator-channel.ts",
+      "import": "./src/browser-coordinator-channel.ts",
+      "default": "./src/browser-coordinator-channel.ts"
     }
   },
   "scripts": {
