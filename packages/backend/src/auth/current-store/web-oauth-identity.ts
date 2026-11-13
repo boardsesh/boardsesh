@@ -30,6 +30,7 @@ import {
 } from './foundation-context';
 import { readNegativeWebOAuthActor, webOAuthActorStillValid, type NegativeWebOAuthActor } from './web-oauth-actor';
 import { resolveReservedCurrentStoreOAuthIdentity } from './provider-oauth-identity';
+import { readIdentityAuthority, revalidateIdentityAuthority } from '../authority/router';
 
 export const WEB_OAUTH_INTENT_LIFETIME_MS = 15 * 60_000;
 type Unavailable = { readonly outcome: 'unavailable' };
@@ -114,14 +115,17 @@ export async function recordWebOAuthIntent(
   nextAuthSecret: string,
   input: WebOAuthIntentCommand,
 ): Promise<WebOAuthIntentReply> {
-  const authority = captureExpectedAuthority(authorityInput);
+  const configuredAuthority = captureExpectedAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const { provider, flow, actorCookie } = input.payload;
+  const receipt = await readIdentityAuthority(database, configuredAuthority);
+  const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);
   return database.transaction(async (transaction) => {
     const execute = async (): Promise<WebOAuthIntentReply> => {
       await transactionSettings(transaction);
       await lockEnforcedProjection(transaction, authority);
+      await revalidateIdentityAuthority(transaction, receipt);
       if (!(await claim(transaction, { requestId, issuedAt, operation: 'intent' })))
         return denied('intent', requestId, 'replayed');
       assertFresh(Date.parse(issuedAt));
@@ -159,6 +163,7 @@ export async function recordWebOAuthIntent(
     // the final deadline fence after all row/uniqueness waits.
     assertFresh(Date.parse(issuedAt));
     if (!webOAuthActorStillValid(captured.actor)) throw new Error('Web OAuth actor expired before commit');
+    await revalidateIdentityAuthority(transaction, receipt);
     return result;
   });
 }
@@ -169,9 +174,11 @@ export async function resolveWebOAuthIdentity(
   nextAuthSecret: string,
   input: WebOAuthResolveCommand,
 ): Promise<WebOAuthResolveReply | Unavailable> {
-  const authority = captureExpectedAuthority(authorityInput);
+  const configuredAuthority = captureExpectedAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { provider, flow, actorCookie, subject, email, name, image } = input.payload;
+  const receipt = await readIdentityAuthority(database, configuredAuthority);
+  const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);
   const intentHash = digest(['web-oauth-intent-v1', provider, flow]);
   const [initial] = await database
@@ -185,6 +192,7 @@ export async function resolveWebOAuthIdentity(
     const execute = async (): Promise<WebOAuthResolveReply | Unavailable> => {
       await transactionSettings(transaction);
       await lockEnforcedProjection(transaction, authority);
+      await revalidateIdentityAuthority(transaction, receipt);
       if (!(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
         return denied('resolve', requestId, 'replayed');
       assertFresh(Date.parse(issuedAt));
@@ -245,6 +253,8 @@ export async function resolveWebOAuthIdentity(
         provider,
         { sub: subject, email, name, image, emailVerified: false },
         { storeProviderImage: true, emailVerification: 'unverified', actorUserId: captured.actor?.userId ?? null },
+        undefined,
+        receipt,
       );
       assertFresh(Date.parse(issuedAt));
       if (
@@ -302,6 +312,7 @@ export async function resolveWebOAuthIdentity(
     // the final deadline fence after all row/uniqueness waits.
     assertFresh(Date.parse(issuedAt));
     if (!webOAuthActorStillValid(captured.actor)) throw new Error('Web OAuth actor expired before commit');
+    await revalidateIdentityAuthority(transaction, receipt);
     return result;
   });
 }

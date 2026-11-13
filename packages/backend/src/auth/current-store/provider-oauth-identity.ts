@@ -1,7 +1,13 @@
 import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
+import { mirrorAuthorityToCurrentStore } from '../authority/reverse-identity';
+import { bindIdentityAuthority } from '../authority/identity-authority';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+} from '../authority/router';
 import { randomUUID } from 'node:crypto';
 import {
-  accounts,
   authEmailReservations,
   authEmailReservationMembers,
   authSubjectCutoffs,
@@ -77,19 +83,29 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
   identityInput: VerifiedCurrentStoreOAuthIdentity,
   policyInput: CurrentStoreOAuthCreationPolicy,
   forwardedNameInput?: CurrentStoreOAuthForwardedName,
+  receiptInput?: IdentityAuthorityReceipt,
 ): Promise<ReservedCurrentStoreOAuthIdentity> {
   const authority = captureExpectedAuthority(authorityInput);
   const identity = { ...identityInput };
   const policy = { ...policyInput };
   const forwardedName = forwardedNameInput ? { ...forwardedNameInput } : undefined;
+  const suppliedReceipt = receiptInput ? Object.freeze({ ...receiptInput }) : undefined;
   const manifest = await lockEnforcedProjection(transaction, authority);
+  const receipt = suppliedReceipt ?? (await captureIdentityAuthority(transaction, authority));
+  await revalidateIdentityAuthority(transaction, receipt);
+  const storage = bindIdentityAuthority(transaction, receipt);
+  async function mirror(userId: string) {
+    if (receipt.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, userId);
+    else await mirrorIdentityIfEnabled(transaction, userId);
+    await revalidateIdentityAuthority(transaction, receipt);
+  }
   // One sign-in per provider subject at a time, before its link is read: the
   // gate no longer serializes commands (section 4). Linked: the subject, then the
   // owner's users row, then their reservation. New: the subject, then the key.
   await lockProviderSubject(transaction, provider, identity.sub);
-  const predicate = and(eq(accounts.provider, provider), eq(accounts.providerAccountId, identity.sub));
-  // Read accounts directly: a dangling or disappearing link is not a new login.
-  const [initialLink] = await transaction.select({ userId: accounts.userId }).from(accounts).where(predicate);
+  // Read only the selected authority. A dangling or disappearing link is never
+  // permission to create a replacement identity through the other store.
+  const initialLink = await storage.findProvider(provider, identity.sub);
   if (initialLink) {
     const userId = initialLink.userId;
     if (policy.actorUserId !== null && policy.actorUserId !== userId) return { outcome: 'actor_conflict' };
@@ -103,8 +119,10 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
     if (cutoff?.deletedAt) return { outcome: 'deleted' };
     if (!initialUser || !user || normalizeAccountEmail(initialUser.email) !== normalizeAccountEmail(user.email))
       throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-    const [link] = await transaction.select({ userId: accounts.userId }).from(accounts).where(predicate).for('update');
+    const link = await storage.findProvider(provider, identity.sub, 'update');
     if (!link || link.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+    if (initialLink.generation !== (cutoff?.generation ?? 0) || link.generation !== initialLink.generation)
+      throw new CurrentStoreFoundationError('STALE_GENERATION');
     const key = normalizeAccountEmail(user.email);
     const [reservation] = await transaction
       .select()
@@ -131,7 +149,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
       if (!member) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     } else throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     // Changed/missing provider email and name never rewrite a returning owner.
-    await mirrorIdentityIfEnabled(transaction, userId);
+    await mirror(userId);
     return { outcome: 'linked', user };
   }
   if (policy.actorUserId !== null) return { outcome: 'sensitive_link_unavailable' };
@@ -157,28 +175,23 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
     .limit(1);
   if (existing) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   const userId = randomUUID();
-  await reserveEnforcedEmail(transaction, { ...authority, rawEmail: email, requestedUserId: userId });
   const createdAt = new Date();
-  const [created] = await transaction
-    .insert(users)
-    .values({
-      id: userId,
-      createdAt,
-      email,
-      name: resolveCurrentStoreOAuthDisplayName(identity, forwardedName),
-      emailVerified: policy.emailVerification === 'provider' && identity.emailVerified ? new Date() : null,
-      ...(policy.storeProviderImage ? { image: identity.image ?? null } : {}),
-    })
-    .returning();
-  if (!created) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  const created = await storage.createUser({
+    id: userId,
+    createdAt,
+    email,
+    name: resolveCurrentStoreOAuthDisplayName(identity, forwardedName),
+    emailVerified: policy.emailVerification === 'provider' && identity.emailVerified ? new Date() : null,
+    ...(policy.storeProviderImage ? { image: identity.image ?? null } : {}),
+  });
+  await reserveEnforcedEmail(transaction, { ...authority, rawEmail: email, requestedUserId: userId });
   await transaction.insert(userProfiles).values({ userId }).onConflictDoNothing();
   // A legacy writer can race the absent row. A unique failure aborts ALL writes;
   // never ignore it and mint a credential for an unconfirmed provider owner.
-  const [inserted] = await transaction
-    .insert(accounts)
-    .values({ userId, type: 'oauth', provider, providerAccountId: identity.sub })
-    .returning({ userId: accounts.userId });
-  if (!inserted || inserted.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-  await mirrorIdentityIfEnabled(transaction, userId);
+  await storage.insertProvider({ userId, provider, subject: identity.sub }, 0);
+  const inserted = await storage.findProvider(provider, identity.sub);
+  if (!inserted || inserted.userId !== userId || inserted.generation !== 0)
+    throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  await mirror(userId);
   return { outcome: 'created', user: created };
 }

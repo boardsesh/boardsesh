@@ -986,7 +986,9 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     vi.stubEnv('DEBUG_SQL', 'true');
     expect((await post('intent', body)).status).toBe(503);
     vi.stubEnv('DEBUG_SQL', 'false');
-    await db.update(authEmailProjection).set({ writerEpoch: 2 });
+    // Selected commands capture the current epoch; an incompatible projection
+    // normalizer remains stale before any command or intent can be committed.
+    await db.update(authEmailProjection).set({ normalizerVersion: 'stale-normalizer-version' });
     expect((await post('intent', body)).status).toBe(503);
     expect((await db.select().from(authWebOAuthCommands)).length).toBe(0);
   });
