@@ -16,7 +16,7 @@
   "hero": {
     "title": "Build plans for your home board",
     "subtitle": "DXF files a CNC shop cuts straight from. Every panel, the T-nut grid, the LED holes and the kicker, laid out on the sheets your shop already stocks.",
-    "firstBoard": "Kilter Homewall is the first supported board. More boards follow.",
+    "firstBoard": "Plans compatible with Kilter Homewall and Kilter Original (OG).",
     "included": {
       "heading": "What you get",
       "dxf": "Assembly drawings included too, so panels line up without any guesswork.",
@@ -61,14 +61,17 @@
     },
     "board": {
       "label": "Board",
-      "help": "Kilter Homewall is the only board on sale today."
+      "help": "Choose the hold layout your wall will use.",
+      "original": "Kilter Original (OG)",
+      "homewall": "Kilter Homewall",
+      "unknownLayout": "{{board}} · layout {{layoutId}}"
     },
     "size": {
       "label": "Wall size",
       "help": "The Kilter size you are building. It sets the hold grid and the wall dimensions."
     },
     "kicker": {
-      "help": "The angled panel at the bottom. Only the 12 ft walls have one.",
+      "help": "The bottom panel. Available on the 12 ft-high walls.",
       "include": "Include the kicker",
       "exclude": "No kicker"
     },
@@ -280,12 +283,16 @@
       "sheets": "Sheets",
       "sheetsValue_one": "{{count}} sheet",
       "sheetsValue_other": "{{count}} sheets",
-      "tnuts": "T-nut holes",
-      "leds": "LED holes",
-      "seamNotches": "LED holes on a seam",
-      "seamNotchesHelp": "These LED holes sit on a panel seam. Each one is cut as a notch in both panels, and the LED sits in the notch once the panels are joined.",
+      "tnuts": "T-nuts to install",
+      "leds": "LEDs to install",
       "warningsHeading": "Worth knowing",
-      "unavailable": "The cut list is not loading right now. Everything you picked is still here."
+      "unavailable": "The cut list is not loading right now. Everything you picked is still here.",
+      "spareMounts": "Spare mounting holes",
+      "spareMountsHelp": "Extra positions for the compatible Homewall layout. These are drilled holes, not extra hardware for your OG setup.",
+      "skippedSeamLeds": "LED holes to drill after assembly",
+      "skippedSeamLedsHelp": "These positions cross a panel seam. Join the panels, then drill the required holes using the assembly coordinates and diameters in your pack.",
+      "seamNotches": "LED holes on a seam",
+      "seamNotchesHelp": "These LED holes sit on a panel seam. Each one is cut as a notch in both panels, and the LED sits in the notch once the panels are joined."
     },
     "licensee": {
       "name": "Name on the licence",
@@ -320,6 +327,14 @@
       "heading": "Who the licence names",
       "help": "The licence goes on every file in the pack, so a leaked copy traces back to it.",
       "stale": "Update your preview first — the wall has changed since these sheets."
+    },
+    "original": {
+      "drilling": "We recommend three holes at each OG screw-on foot: a 13 mm center for one LED, plus two LED holes 20 mm above and below. Leave the center free of a T-nut while using OG feet.",
+      "compatibility": "Extra holes cover the complete matching Homewall layout: 7×10 or 8×12, and a centered 10×12 on the larger OG walls.",
+      "angleLabel": "Engrave hold-number orientation marks",
+      "angleHelp": "Uses the OG Number Angle to mark how the printed hold number should face. Missing angles are left unmarked.",
+      "engraveHelp": "Hold numbers and their orientation marks, engraved while the panel is cut. Both are on by default.",
+      "engraveNote": "OG orientation marks follow the hold number, not the set screw. Screw-hole positions are not drilled from these marks."
     }
   },
   "cta": {

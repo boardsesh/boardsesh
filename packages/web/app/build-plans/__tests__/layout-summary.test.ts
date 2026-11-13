@@ -34,6 +34,8 @@ describe('readLayoutSummary', () => {
       tnutCount: 812,
       ledCount: 411,
       seamNotches: 7,
+      skippedSeamLeds: null,
+      spareMountCount: null,
       warnings: ['Kicker clearance is below the recommended 60 mm'],
     });
   });
@@ -61,10 +63,22 @@ describe('readLayoutSummary', () => {
     expect(readLayoutSummary(broken).wallHeightMm).toBeNull();
   });
 
-  it('drops non-string warnings rather than rendering them', () => {
-    const noisy = { ...GENERATOR_LAYOUT, warnings: ['a real warning', 42, null, { message: 'an object' }] };
+  it('reads generator warning messages and drops malformed warnings', () => {
+    const noisy = {
+      ...GENERATOR_LAYOUT,
+      warnings: [
+        'a real warning',
+        42,
+        null,
+        '',
+        '  \t\n',
+        { message: 'an object' },
+        { message: '' },
+        { message: ' \n ' },
+      ],
+    };
 
-    expect(readLayoutSummary(noisy).warnings).toEqual(['a real warning']);
+    expect(readLayoutSummary(noisy).warnings).toEqual(['a real warning', 'an object']);
   });
 
   it.each([
@@ -84,7 +98,40 @@ describe('readLayoutSummary', () => {
       tnutCount: null,
       ledCount: null,
       seamNotches: null,
+      skippedSeamLeds: null,
+      spareMountCount: null,
       warnings: [],
     });
+  });
+});
+
+it('shows installed hardware separately from spare bores and retains assembly warnings', () => {
+  const summary = readLayoutSummary({
+    bom_preview: {
+      tnut_count: 100,
+      led_count: 200,
+      installed_tnut_count: 60,
+      installed_led_count: 80,
+      spare_mount_count: 40,
+    },
+    warnings: [{ code: 'seam_led', message: 'Drill this LED position after assembly.' }],
+  });
+  expect(summary).toMatchObject({
+    tnutCount: 60,
+    ledCount: 80,
+    spareMountCount: 40,
+    warnings: ['Drill this LED position after assembly.'],
+  });
+});
+
+it('keeps CNC notches separate from holes awaiting assembly drilling', () => {
+  expect(
+    readLayoutSummary({
+      bom_preview: { led_count: 200, installed_led_count: 80, seam_notches: 7, skipped_seam_leds: 3 },
+    }),
+  ).toMatchObject({
+    seamNotches: 7,
+    skippedSeamLeds: 3,
+    ledCount: 80,
   });
 });

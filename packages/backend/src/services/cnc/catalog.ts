@@ -1,5 +1,9 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getSetsForLayoutAndSize, KILTER_HOMEWALL_LAYOUT_ID } from '@boardsesh/board-constants';
+import {
+  getSetsForLayoutAndSize,
+  KILTER_HOMEWALL_LAYOUT_ID,
+  KILTER_ORIGINAL_LAYOUT_ID,
+} from '@boardsesh/board-constants';
 import type { CncOrderOptions } from '@boardsesh/db/schema';
 
 /**
@@ -15,7 +19,7 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * stores the version it was priced and configured under, so a regenerate months
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-07.3';
+export const CNC_CATALOG_VERSION = '2026-09-07.4';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -32,7 +36,7 @@ export const CNC_CATALOG_VERSION = '2026-09-07.3';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = '21dce30f1df9a4ab4a2be636dab86fdad3af5dd55838a92a4365aa64764b4e2b';
+export const CNC_CATALOG_CONTENT_HASH = 'c95193951e15e5b8008a81946471585370ff01acb9297e35fc43feb012901ba1';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -75,7 +79,7 @@ export type CncCatalogEntry = {
    * panels are identical, so they all buy the same pack.
    */
   sizeAliases: readonly number[];
-  /** True when this size has kicker sets (28/29) the buyer can include or leave off. */
+  /** True when the buyer can include or leave off this size's kicker. */
   kickerOptional: boolean;
   manufacturingOptions: readonly CncManufacturingOption[];
   tiers: readonly CncTierPrice[];
@@ -125,7 +129,7 @@ const KILTER_HOMEWALL_TIERS: readonly CncTierPrice[] = [
   { tier: 'commercial_single', priceCents: 75000, currency: 'AUD', stripePriceEnv: 'STRIPE_PRICE_CNC_COMMERCIAL' },
 ];
 
-type KilterHomewallSize = {
+type KilterSize = {
   sizeId: number;
   label: string;
   sizeAliases: readonly number[];
@@ -140,34 +144,59 @@ type KilterHomewallSize = {
  * walls (23, 25) carry kicker sets, which is why `kickerOptional` is false for
  * the 10 ft ones — there is no kicker to opt out of.
  */
-const KILTER_HOMEWALL_SIZES: readonly KilterHomewallSize[] = [
+const KILTER_HOMEWALL_SIZES: readonly KilterSize[] = [
   { sizeId: 17, label: '7x10', sizeAliases: [18, 19], kickerOptional: false },
   { sizeId: 21, label: '10x10', sizeAliases: [22, 29], kickerOptional: false },
   { sizeId: 23, label: '8x12', sizeAliases: [24], kickerOptional: true },
   { sizeId: 25, label: '10x12', sizeAliases: [26], kickerOptional: true },
 ];
 
-function defaultSetIdsFor(sizeId: number): string {
-  const sets = getSetsForLayoutAndSize('kilter', KILTER_HOMEWALL_LAYOUT_ID, sizeId);
+function defaultSetIdsFor(layoutId: number, sizeId: number): string {
+  const sets = getSetsForLayoutAndSize('kilter', layoutId, sizeId);
   if (sets.length === 0) {
     // A catalogue entry whose sets vanished would silently sell an empty wall,
     // so fail at module load rather than at generation time.
-    throw new Error(`[cnc-catalog] no sets for kilter layout ${KILTER_HOMEWALL_LAYOUT_ID} size ${sizeId}`);
+    throw new Error(`[cnc-catalog] no sets for kilter layout ${layoutId} size ${sizeId}`);
   }
   return sets.map((set) => set.id).join(',');
 }
 
-export const CNC_CATALOG: readonly CncCatalogEntry[] = KILTER_HOMEWALL_SIZES.map((size) => ({
-  boardName: 'kilter' as BoardName,
-  layoutId: KILTER_HOMEWALL_LAYOUT_ID,
-  sizeId: size.sizeId,
-  setIds: defaultSetIdsFor(size.sizeId),
-  label: size.label,
-  sizeAliases: size.sizeAliases,
-  kickerOptional: size.kickerOptional,
-  manufacturingOptions: KILTER_HOMEWALL_MANUFACTURING_OPTIONS,
-  tiers: KILTER_HOMEWALL_TIERS,
-}));
+/** OG hands and feet share their sets with the kicker: inclusion must be explicit. */
+const KILTER_ORIGINAL_SIZES: readonly KilterSize[] = [
+  { sizeId: 14, label: '7x10', sizeAliases: [], kickerOptional: false },
+  { sizeId: 8, label: '8x12', sizeAliases: [], kickerOptional: true },
+  { sizeId: 10, label: '12x12', sizeAliases: [], kickerOptional: true },
+  { sizeId: 28, label: '16x12', sizeAliases: [], kickerOptional: true },
+];
+
+export const CNC_CATALOG: readonly CncCatalogEntry[] = [
+  ...KILTER_HOMEWALL_SIZES.map((size) => ({
+    boardName: 'kilter' as BoardName,
+    layoutId: KILTER_HOMEWALL_LAYOUT_ID,
+    ...size,
+    setIds: defaultSetIdsFor(KILTER_HOMEWALL_LAYOUT_ID, size.sizeId),
+    manufacturingOptions: KILTER_HOMEWALL_MANUFACTURING_OPTIONS,
+    tiers: KILTER_HOMEWALL_TIERS,
+  })),
+  ...KILTER_ORIGINAL_SIZES.map((size) => ({
+    boardName: 'kilter' as BoardName,
+    layoutId: KILTER_ORIGINAL_LAYOUT_ID,
+    ...size,
+    setIds: defaultSetIdsFor(KILTER_ORIGINAL_LAYOUT_ID, size.sizeId),
+    manufacturingOptions: [
+      ...KILTER_HOMEWALL_MANUFACTURING_OPTIONS.map((option) =>
+        option.key === 'ledHoleDiameterMm' ? { ...option, defaultValue: 12.7 } : option,
+      ),
+      {
+        key: 'includeKicker',
+        values: size.kickerOptional ? [true, false] : [false],
+        defaultValue: size.kickerOptional,
+        kickerOnly: false,
+      },
+    ],
+    tiers: KILTER_HOMEWALL_TIERS,
+  })),
+];
 
 /**
  * The typefaces a text label may be routed in.
@@ -454,5 +483,8 @@ export const CNC_KICKER_SET_IDS: readonly number[] = KICKER_SET_IDS;
  */
 export function describeBoard({ boardName, layoutId, sizeId }: CncBoardTuple): string {
   const entry = findCatalogEntry({ boardName, layoutId, sizeId });
-  return entry ? `${boardName} ${entry.label}` : `${boardName} ${String(sizeId)}`;
+  if (!entry) return `${boardName} ${String(sizeId)}`;
+  if (boardName === 'kilter' && layoutId === KILTER_ORIGINAL_LAYOUT_ID) return `Kilter Original ${entry.label}`;
+  if (boardName === 'kilter' && layoutId === KILTER_HOMEWALL_LAYOUT_ID) return `Kilter Homewall ${entry.label}`;
+  return `${boardName} ${entry.label}`;
 }
