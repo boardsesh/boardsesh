@@ -51,6 +51,7 @@
     "@boardsesh/kilter-sync": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/led-controller": "workspace:*",
+    "@boardsesh/location-sync": "workspace:*",
     "@boardsesh/moonboard-sync": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",
@@ -89,8 +90,7 @@
     "winston": "^3.19.0",
     "winston-transport": "^4.9.0",
     "ws": "^8.21.1",
-    "zod": "^4.4.3",
-    "@boardsesh/location-sync": "workspace:*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@boardsesh/graphql-client": "workspace:*",

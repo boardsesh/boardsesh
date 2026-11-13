@@ -20,12 +20,12 @@
     "lint-fix": "vp lint --fix"
   },
   "dependencies": {
+    "@boardsesh/auth-protocol": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/db": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "@boardsesh/auth-protocol": "workspace:*"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",
