@@ -5,6 +5,7 @@ const profilePageTestState = vi.hoisted(() => ({
   notFoundMock: vi.fn(),
   getServerAuthTokenMock: vi.fn(),
   getServerSessionMock: vi.fn(),
+  getServerRenderViewerMock: vi.fn(),
   getProfileDataMock: vi.fn(),
   fetchProfileStatsDataMock: vi.fn(),
   getProfileOgSummaryMock: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/app/lib/auth/server-auth', () => ({
 
 vi.mock('@/app/lib/auth/admitted-session.server', () => ({
   getAdmittedServerSession: profilePageTestState.getServerSessionMock,
+  getServerRenderViewer: profilePageTestState.getServerRenderViewerMock,
 }));
 
 vi.mock('@/app/lib/auth/auth-options', () => ({
@@ -75,6 +77,7 @@ describe('profile page route', () => {
     });
     profilePageTestState.getServerAuthTokenMock.mockResolvedValue(null);
     profilePageTestState.getServerSessionMock.mockResolvedValue(null);
+    profilePageTestState.getServerRenderViewerMock.mockResolvedValue({ kind: 'legacy' });
   });
 
   it('returns noindex metadata when the profile summary is missing', async () => {

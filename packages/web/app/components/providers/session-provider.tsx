@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import type { Session } from 'next-auth';
 import { getSession, SessionContext, type SessionContextValue } from 'next-auth/react';
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
@@ -94,6 +95,7 @@ export default function SessionProviderWrapper({
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelayRef = useRef(1000);
   const mountedRef = useRef(false);
+  const suspendedRef = useRef(false);
   const broadcastIdentityRef = useRef<string | null>(null);
 
   useIsomorphicLayoutEffect(() => {
@@ -103,6 +105,7 @@ export default function SessionProviderWrapper({
   }, []);
 
   const update = useCallback(async (payload?: unknown): Promise<Session | null> => {
+    if (suspendedRef.current) return null;
     if (retryTimerRef.current !== null) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
@@ -113,7 +116,10 @@ export default function SessionProviderWrapper({
     const controller = new AbortController();
     activeControllerRef.current = controller;
     const ownsResult = () =>
-      mountedRef.current && requestSequenceRef.current === sequence && captureWebSessionEpoch() === epoch;
+      mountedRef.current &&
+      !suspendedRef.current &&
+      requestSequenceRef.current === sequence &&
+      captureWebSessionEpoch() === epoch;
     const scheduleInitialRetry = () => {
       if (!ownsResult() || settledRef.current || retryTimerRef.current !== null) return;
       const retryDelay = retryDelayRef.current;
@@ -223,6 +229,7 @@ export default function SessionProviderWrapper({
 
   useEffect(() => {
     mountedRef.current = true;
+    suspendedRef.current = false;
     void update();
     const refresh = () => {
       void update();
@@ -234,9 +241,32 @@ export default function SessionProviderWrapper({
     const storageRefresh = (event: StorageEvent) => {
       if (event.key === NEXT_AUTH_STORAGE_KEY) externalRefresh();
     };
+    const pageHide = () => {
+      // A frozen document cannot keep an accepted private receipt. Retire
+      // before suspension, and reject even transports that ignore abort.
+      suspendedRef.current = true;
+      ++requestSequenceRef.current;
+      activeControllerRef.current?.abort();
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (browserBackendClient.isSelected()) {
+        // The browser can freeze the document as soon as this event returns.
+        // Retiring a receipt alone leaves React's pending DOM update batched.
+        flushSync(() => browserBackendClient.retire());
+      }
+    };
+    const pageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      suspendedRef.current = false;
+      externalRefresh();
+    };
     window.addEventListener(WEB_SESSION_REFRESH_EVENT, refresh);
     window.addEventListener('storage', storageRefresh);
     window.addEventListener('online', refresh);
+    window.addEventListener('pagehide', pageHide);
+    window.addEventListener('pageshow', pageShow);
     let channel: BroadcastChannel | undefined;
     const onExpoMessage = (event: MessageEvent<unknown>) => {
       if (isExpoAuthClearMessage(event.data)) externalRefresh();
@@ -261,6 +291,8 @@ export default function SessionProviderWrapper({
       window.removeEventListener(WEB_SESSION_REFRESH_EVENT, refresh);
       window.removeEventListener('storage', storageRefresh);
       window.removeEventListener('online', refresh);
+      window.removeEventListener('pagehide', pageHide);
+      window.removeEventListener('pageshow', pageShow);
       channel?.removeEventListener('message', onExpoMessage);
       channel?.close();
     };

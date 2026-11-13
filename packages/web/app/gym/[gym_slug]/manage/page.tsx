@@ -11,6 +11,7 @@ import {
   type GetGymBySlugQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
+import { getServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getLocale } from '@/app/lib/i18n/get-locale';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -18,6 +19,7 @@ import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { looksLikeGymUuid } from '@/app/components/gym-entity/manage/slug-utils';
 import ManageGymContent from './manage-gym-content';
+import SelectedManageGym from './selected-manage-gym';
 
 // Per-user, cookie-gated management surface — never static, never indexed.
 export const dynamic = 'force-dynamic';
@@ -61,6 +63,15 @@ const resolveManageGym = cache(async (slugOrUuid: string, token: string): Promis
 export async function generateMetadata(props: ManageGymRouteProps): Promise<Metadata> {
   const { gym_slug } = await props.params;
   const { t, locale } = await getServerTranslation('kiosk');
+  const viewer = await getServerRenderViewer();
+  if (viewer.kind !== 'legacy') {
+    return createNoIndexMetadata({
+      title: t('metadata.fallbackTitle'),
+      description: t('metadata.fallbackDescription'),
+      path: `/gym/${gym_slug}/manage`,
+      locale,
+    });
+  }
   const token = await getServerAuthToken();
   const gym = token ? await resolveManageGym(gym_slug, token) : null;
   // Only editors get the gym's name in the title — gymBySlug returns private
@@ -78,6 +89,19 @@ export async function generateMetadata(props: ManageGymRouteProps): Promise<Meta
 export default async function ManageGymPage(props: ManageGymRouteProps) {
   const { gym_slug } = await props.params;
   const { tab } = await props.searchParams;
+  const viewer = await getServerRenderViewer();
+  if (viewer.kind === 'selected') {
+    return (
+      <I18nProvider locale={await getLocale()} namespaces={['common', 'boards', 'kiosk', 'gyms']}>
+        <SelectedManageGym slugOrUuid={gym_slug} owner={viewer.owner} />
+      </I18nProvider>
+    );
+  }
+  if (viewer.kind === 'anonymous' || viewer.kind === 'refused') {
+    // This utility redirect establishes no anonymous session and never reads
+    // another credential family after a selected-source refusal.
+    redirect(`/auth/login?callbackUrl=${encodeURIComponent(`/gym/${gym_slug}/manage`)}`);
+  }
   const token = await getServerAuthToken();
 
   if (!token) {
