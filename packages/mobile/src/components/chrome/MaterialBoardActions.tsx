@@ -6,11 +6,7 @@
 // / `LightbulbToolbarAction` islands — each reads its own state and renders
 // nothing when it doesn't apply (no adjustable board / no bluetooth).
 //
-// The Climbs angle lives as the first chip in the native filter chip row
-// (`FilterChipRow`, Android and web), not here: the Climbs app bar keeps the
-// create and history actions and the options menu. `MaterialAngleAction` is
-// Discover's, through `CollapsingTopChrome`. Both speak the current angle
-// ("Board angle, 40°"), not just what the control does.
+// Angle sits beside the avatar on Climbs and uses the shared board picker.
 
 import { useCallback, useMemo } from 'react';
 import {
@@ -29,42 +25,51 @@ import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useBulbDriveTap } from '../queue-control/bar-bulb-tap';
 import { phoneDrivesTheWall } from '../queue-control/bulb-drive-cue';
 import { Text } from '../Text';
+import { LargeContentViewer } from '../LargeContentViewer';
+import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { iconMap } from '../icon-map';
-import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
-import { useMaterialAngleControl } from './use-material-angle-control';
+import { BoardAnglePicker } from './BoardAnglePicker';
+import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
 
 export function MaterialAngleAction() {
   const { systemColors } = useTheme();
   const { t: tSession } = useTranslation('session');
-  const { activeBoard, canAdjust, visible, open, close, change } = useMaterialAngleControl();
+  const { data: activeBoard } = useActiveBoard();
 
   const angleIcon = useCallback(
     () => (
-      <Text variant="caption1" style={[styles.materialAngleText, { color: systemColors.label }]}>
+      <Text
+        variant="title3"
+        numeric
+        numberOfLines={1}
+        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+        style={[styles.materialAngleText, { color: systemColors.label }]}
+      >
         {activeBoard?.angle}°
       </Text>
     ),
     [activeBoard?.angle, systemColors.label],
   );
 
-  if (!activeBoard || !canAdjust) return null;
+  if (!canAdjustBoardAngle(activeBoard)) return null;
+  const spokenLabel = tSession('mobile.angleSelector.buttonAria', { angle: activeBoard.angle });
 
   return (
-    <>
-      <Appbar.Action
-        icon={angleIcon}
-        onPress={open}
-        accessibilityLabel={tSession('mobile.angleSelector.buttonAria', { angle: activeBoard.angle })}
-      />
-      <AngleSelectorSheet
-        visible={visible}
-        onClose={close}
-        boardName={activeBoard.boardType}
-        layoutId={activeBoard.layoutId}
-        currentAngle={activeBoard.angle}
-        onAngleChange={change}
-      />
-    </>
+    <BoardAnglePicker>
+      {(open) => (
+        <LargeContentViewer title={spokenLabel} onActivate={open}>
+          <Appbar.Action
+            icon={angleIcon}
+            // Paper's animated icon wrapper fixes custom content to 24dp;
+            // the degree label needs the action's full width.
+            animated={false}
+            onPress={open}
+            accessibilityLabel={spokenLabel}
+          />
+        </LargeContentViewer>
+      )}
+    </BoardAnglePicker>
   );
 }
 

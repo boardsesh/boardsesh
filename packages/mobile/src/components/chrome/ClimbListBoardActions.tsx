@@ -54,8 +54,8 @@ export function climbListBoardActionCount(
  * The Climbs list's trailing board actions. Liquid Glass: the one-tap angle,
  * history, then the ⋯ menu (View options, Switch board, and the full-screen
  * Wall display on a tablet with no native MiniPlayer; one with it opens Wall
- * display from the bar's ⛶). Material leaves the angle to the filter row's
- * Angle chip, so it keeps history and the menu. The iOS 26 iPhone bar draws the
+ * display from the bar's ⛶). Material draws angle beside the avatar,
+ * so this group keeps history and the menu. The iOS 26 iPhone bar draws the
  * angle in its leading island (`showAngle` off) and puts + in this menu; so does
  * a compact Material bar.
  */

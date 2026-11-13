@@ -9,8 +9,7 @@
 // variant matches it on MaterialTopAppBar: the avatar, an empty title slot that
 // TalkBack still reads as "Climbs" (or the climb on the wall as a compact pill),
 // then history and the ⋮ menu. Create is ⋮'s first row on a phone, + in the bar
-// on a regular-width tablet. Its angle is the first chip in the filter row
-// (FilterChipRow), pinned under the bar in a dense 48dp row.
+// on a regular-width tablet. Angle sits beside the avatar, as on iPhone.
 
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
@@ -28,6 +27,7 @@ import { iconMap } from '../icon-map';
 import { CollapsingTopChrome } from '../chrome';
 import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { ClimbListBoardActions, climbListBoardActionCount } from '../chrome/ClimbListBoardActions';
+import { MaterialAngleAction } from '../chrome/MaterialBoardActions';
 import { MaterialTopAppBar } from '../chrome/MaterialTopAppBar';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { GradeRangeRail, type GradeRailChange } from '../grade';
@@ -106,7 +106,7 @@ type ClimbTopChromeProps = {
   /** Android Material only: the native chip row (`filterChrome`) is the default
    *  filtering surface. When set, the Material top-chrome filter affordances (grade
    *  control, filter button, condensed summary) are suppressed and `filterChrome` is
-   *  rendered under the app bar instead; the angle chip and the in-chrome grade rail
+   *  rendered under the app bar instead; the toolbar angle and in-chrome grade rail
    *  stay. Always false on Liquid Glass (its own path renders `filterChrome`). */
   showPersistentChips?: boolean;
   /** Legacy native scroll-edge wiring. The filter row draws only its individual capsules. */
@@ -316,7 +316,7 @@ function ClimbTopChromeComponent({
   if (isMaterial) {
     // When the persistent chip row is the default filtering surface, the Material
     // top-chrome filter affordances (grade control, filter button, condensed summary)
-    // are suppressed — the chips own filtering. The angle is the row's first chip,
+    // are suppressed — the chips own filtering. Angle stays in the toolbar,
     // view options live in the toolbar menu, and the Grade chip continues to open
     // the in-chrome rail.
     const showTopChromeFilters = !showPersistentChips;
@@ -370,7 +370,7 @@ function ClimbTopChromeComponent({
                 ) : null}
 
                 {/* The quick row carries the condensed summary when the persistent
-                chip row is off. The angle rides the persistent chip row instead. */}
+                chip row is off. */}
                 {visibleFilterSummary ? (
                   <View pointerEvents="box-none" style={styles.materialQuickRow}>
                     <Chip
@@ -406,6 +406,7 @@ function ClimbTopChromeComponent({
         }
       >
         <UserAvatarToolbarAction variant="material" />
+        <MaterialAngleAction />
         {/* The title slot, empty as on iOS: the tab names the screen and ⋮ switches
           boards. The climb on the wall sits in it as a compact pill while presence
           trusts it. TalkBack reads the screen's name from the header under it in

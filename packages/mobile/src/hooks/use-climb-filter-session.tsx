@@ -597,7 +597,6 @@ export function useClimbFilterSession<K extends string, P extends FilterChipKind
       benchmarksActive,
       onToggleBenchmarks: handleToggleBenchmarks,
       boardFit: chipBoardFit,
-      showAngle: false,
     }),
     [
       pinned,

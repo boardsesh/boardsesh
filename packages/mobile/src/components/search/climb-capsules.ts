@@ -3,14 +3,12 @@
 // imports), so the order, labels, active states and visibility rules are locked
 // by a unit test instead of three hand-written platform trees.
 //
-// Order: [Angle] Filters · N, which never move, then the pinned chips in the
+// Order: Filters · N, which never move, then the pinned chips in the
 // order the climber saved them (`pinnedChips`, set in Settings › Climbs & grades
 // › Quick filters; a fresh install's defaults follow lib/pinnable-chips.ts).
 // "Fits my board" is playlist-only (its own catalog in
 // lib/playlist-pinnable-chips.ts), as is a `sortControl` replacing the Climbs
 // sort menu.
-//   • Angle is the Material first capsule (Liquid Glass keeps its toolbar angle
-//     button); the caller passes it, or null.
 //   • Recent shows only while pinned (the default) and there are saved
 //     searches. Unpinning it hides the chip, never the searches.
 //   • Your progress hides when signed out (`canFilterProgress`); its pin persists.
@@ -56,19 +54,8 @@ import {
 } from './FilterChipRow.logic';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
-/** The Material Angle capsule: the active board's angle, opening the angle picker. */
-export type ClimbAngleCapsule = {
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-};
-
 /** Builds the climbs capsule row. Memoise the call on the props it reads. */
-export function buildClimbCapsules(
-  props: FilterChipRowProps,
-  t: TFunction<'climbs'>,
-  angle: ClimbAngleCapsule | null,
-): Capsule[] {
+export function buildClimbCapsules(props: FilterChipRowProps, t: TFunction<'climbs'>): Capsule[] {
   const {
     pinnedChips,
     activeFilterCount,
@@ -113,16 +100,6 @@ export function buildClimbCapsules(
     boardFit,
   } = props;
   const capsules: Capsule[] = [];
-
-  if (angle) {
-    capsules.push({
-      kind: 'sheet',
-      key: 'angle',
-      label: angle.label,
-      accessibilityLabel: angle.accessibilityLabel,
-      onPress: angle.onPress,
-    });
-  }
 
   // The compact icon/count control retains its full localised spoken label.
   const filtersLabel =

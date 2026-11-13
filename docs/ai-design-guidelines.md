@@ -779,6 +779,11 @@ Discover  (@ 40° +)                       ((board) (*))
 (`useAnglePickerPopover`), which needs a React view to point at: the glass "40°" is one. Moving between
 the bar and the rail swaps it for the native title item, so that move waits while the picker is open.
 
+**Material angle control.** Climbs and Discover place the angle beside the avatar
+in a standard `Appbar.Action`. Its numeric `title3` label is 22dp on Material,
+matching the visual size of the neighboring 24dp toolbar icons. Quick filters
+start with Filters; the angle stays in the toolbar when quick filters are hidden.
+
 **The Climbs capsule** (`WallStatusCapsule`, `BoardHeldCapsule`) is the climb's name over the grade
 and one fact:
 

@@ -1188,14 +1188,27 @@ describe('ClimbTopChrome', () => {
     expect(lightbulb(container)).toBeNull();
   });
 
-  // The Material angle is the first chip of the persistent filter row
-  // (FilterChipRow on Android and the web), which this component test doesn't
-  // render; filter-chip-row.test.tsx covers it. The app bar has no angle button.
-  it('keeps the angle out of the Material app bar', () => {
+  it.each([false, true])('keeps Material angle beside the avatar with persistent chips %s', (showPersistentChips) => {
     ctrl.variant = 'material';
     ctrl.board = typedBoard;
+    const { container } = render(<ClimbTopChrome {...makeProps({ showPersistentChips })} />);
+    const angle = container.querySelector('[data-appbar-action^="mobile.angleSelector"]')!;
+    expect(angle).not.toBeNull();
+    expect(angle.nextElementSibling?.querySelector('[data-role="header"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-appbar-action^="mobile.angleSelector"]')).toHaveLength(1);
+    fireEvent.click(angle);
+    expect(container.querySelector('[data-angle-selector]')?.getAttribute('data-angle-selector')).toBe('kilter:1:40');
+    fireEvent.click(container.querySelector('[data-angle-selector]')!);
+    expect(ctrl.setBoardAngle).toHaveBeenCalledWith(typedBoard, 45);
+  });
+
+  it.each([
+    ['fixed angle', { ...typedBoard, isAngleAdjustable: false }],
+    ['missing board', null],
+  ] as const)('omits the Material angle action for %s', (_label, board) => {
+    ctrl.variant = 'material';
+    ctrl.board = board;
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(angleAction(container)).toBeNull();
     expect(container.querySelector('[data-appbar-action^="mobile.angleSelector"]')).toBeNull();
   });
 
