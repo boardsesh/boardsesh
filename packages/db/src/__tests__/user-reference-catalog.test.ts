@@ -104,6 +104,34 @@ function catalogFixture(): UserReferenceCatalog {
 }
 
 void describe('canonical user-reference contract', () => {
+  void it('requires the first-password material cascade in the current-schema deletion contract', () => {
+    const expected = readExpectedUserReferences(schema);
+    const challenge = expected.find((entry) => entry.table === 'auth_first_password_challenges');
+    assert.deepEqual(challenge, {
+      schema: 'public',
+      table: 'auth_first_password_challenges',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onUpdate: 'no action',
+      onDelete: 'cascade',
+      match: 'simple',
+      validated: true,
+      deferrable: false,
+      initiallyDeferred: false,
+      deleteSetColumns: null,
+    });
+    assert.ok(challenge);
+    const missing = compareUserReferences(
+      expected,
+      expected.filter((entry) => entry !== challenge),
+    );
+    assert.equal(missing.length, 1);
+    assert.equal(missing[0].kind, 'missing');
+    assert.equal(missing[0].expected?.table, 'auth_first_password_challenges');
+    assert.equal(compareUserReferences([challenge], [{ ...challenge, onDelete: 'no action' }])[0].kind, 'different');
+  });
   void it('includes the migration-managed beta attribution once alongside actual schema declarations', () => {
     const expected = readExpectedUserReferences(schema);
     assert.ok(expected.length > 60, 'actual schema import must contribute the canonical contract');

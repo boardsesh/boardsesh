@@ -3,9 +3,14 @@ import type postgres from 'postgres';
 import reviewedPrivateWebRelationShapes from './credential-writer-private-web-v1';
 import reviewedBrowserRelationShapes from './credential-writer-private-browser-v1';
 import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
+import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
-export type CredentialWriterContract = 'private-web-v1' | 'private-browser-v1' | 'private-provider-v1';
+export type CredentialWriterContract =
+  | 'private-web-v1'
+  | 'private-browser-v1'
+  | 'private-provider-v1'
+  | 'private-first-password-v1';
 export type CredentialPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 export type CredentialColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 
@@ -94,8 +99,17 @@ export const PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES: Readonly<
   oauth_session: Object.freeze({ user_id: selectOnly }),
 });
 
-// All profiles review the existing password-trigger closure. Only the provider
-// profile also permits the pinned invoker callee and its narrow direct grants.
+/** UID-bound first-password confirmation adds one hash-only receipt relation.
+ * Expiry scrubbing uses its reviewed UPDATE; deletion and other maintenance
+ * remain outside this credential principal. */
+export const PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES,
+    auth_first_password_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+  });
+
+// All profiles review the existing password-trigger closure. The provider
+// profile and its explicit supersets permit the pinned invoker and narrow grants.
 const partnerRevocationRelations = [
   'oauth_connections',
   'oauth_verification',
@@ -142,16 +156,21 @@ export async function qualifyCredentialWriter(
   const requested = { ...options };
   if (
     requested.expectedRole !== CREDENTIAL_WRITER_ROLE ||
-    !['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(requested.contract) ||
+    !['private-web-v1', 'private-browser-v1', 'private-provider-v1', 'private-first-password-v1'].includes(
+      requested.contract,
+    ) ||
     !requested.expectedDatabase
   )
     refuse('CREDENTIAL_WRITER_CONTRACT_REQUIRED');
-  const directPartnerRevocation = requested.contract === 'private-provider-v1';
-  const capabilities = directPartnerRevocation
-    ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-    : requested.contract === 'private-browser-v1'
-      ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-      : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const firstPassword = requested.contract === 'private-first-password-v1';
+  const directPartnerRevocation = requested.contract === 'private-provider-v1' || firstPassword;
+  const capabilities = firstPassword
+    ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+    : directPartnerRevocation
+      ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+      : requested.contract === 'private-browser-v1'
+        ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+        : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
   const columnCapabilities = directPartnerRevocation
     ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
     : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
@@ -176,6 +195,7 @@ export async function qualifyCredentialWriter(
         ...reviewedPrivateWebRelationShapes.filter((relation) => relation.name !== 'auth_security_mutation_events'),
         ...reviewedBrowserRelationShapes,
         ...reviewedProviderRelationShapes,
+        ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
       ].sort((left, right) => left.name.localeCompare(right.name))
     : requested.contract === 'private-browser-v1'
       ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>

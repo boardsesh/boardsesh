@@ -6,6 +6,7 @@ import { backgroundJobRuns } from '@boardsesh/db/schema';
 import { clearFinishedProviderSyncRuns, reconcileBackgroundJobRun } from '@boardsesh/db/queries';
 import { deleteExpiredCommandClaims } from '../auth/current-store/command-context';
 import { purgeRetiredEmailKeys } from '../auth/current-store/email-reservations';
+import { runFirstPasswordPreparationMaintenance } from '../auth/authority/first-password-maintenance';
 import { logger } from '../utils/logger';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
@@ -74,6 +75,13 @@ export async function clearExpiredAuthRecords(database: DbInstance): Promise<voi
     await purgeRetiredEmailKeys(database);
   } catch {
     logger.warn('Deleted-address digest cleanup unavailable');
+  }
+  try {
+    // The existing worker awaits this bounded task and drains before the
+    // dedicated credential pool closes. It has no new timer or DB principal.
+    await runFirstPasswordPreparationMaintenance();
+  } catch {
+    logger.warn('First-password preparation scrub unavailable');
   }
 }
 
