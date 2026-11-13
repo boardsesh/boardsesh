@@ -38,17 +38,20 @@ function fixture() {
   client.acceptSession(session());
   closeClients.push(() => client.dispose());
   const graphFetch = vi.fn<typeof fetch>(async () => Response.json({ data: { preview: { id: 'owned-private' } } }));
+  const onConfirmedRefusal = vi.fn();
   const create = () =>
     createBrowserBackendHttpTransportForView({
       client,
       fetch: graphFetch,
       captureGeneration: () => generation,
       isGenerationCurrent: (expected) => expected === generation,
+      onConfirmedRefusal,
     });
   return {
     client,
     leaseFetch,
     graphFetch,
+    onConfirmedRefusal,
     create,
     owner: () => owner,
     reply,
@@ -209,6 +212,7 @@ describe('SDK-independent browser HTTP authority and delivery receipts', () => {
     expect(current.client.getSnapshot().revision).toBe(revision + 1);
     expect(current.client.isAnonymous()).toBe(false);
     expect(transport.isCurrent()).toBe(false);
+    expect(current.onConfirmedRefusal).toHaveBeenCalledTimes(1);
   });
   it.each(['expired', 'B', 'ABA', 'aborted', 'disposed', 'generation'] as const)(
     'an old %s 401 cannot retire the live account or borrow a newer same-owner lease',
@@ -239,6 +243,7 @@ describe('SDK-independent browser HTTP authority and delivery receipts', () => {
       expect(current.graphFetch).toHaveBeenCalledTimes(1);
       expect(current.client.getSnapshot().owner?.userId).toBe(current.owner().userId);
       expect(current.client.isAnonymous()).toBe(false);
+      expect(current.onConfirmedRefusal).not.toHaveBeenCalled();
       const live = await current.client.acquire(current.owner());
       expect(current.client.capture(live.token)).not.toBeNull();
     },
@@ -253,6 +258,20 @@ describe('SDK-independent browser HTTP authority and delivery receipts', () => {
     expect(await transport.fetch('/graphql', undefined)).toBe(response);
     expect(() => transport.admitResponse({ kind: 'error', headers: response.headers })).not.toThrow();
     expect(current.client.getSnapshot().owner?.userId).toBe('owned-A');
+    expect(current.graphFetch).toHaveBeenCalledTimes(1);
+    expect(current.onConfirmedRefusal).not.toHaveBeenCalled();
+  });
+  it('a throwing reachability observer cannot prevent a confirmed 401 retirement or alter denial', async () => {
+    const current = fixture();
+    current.onConfirmedRefusal.mockImplementation(() => {
+      throw new Error('Owned reporting failure');
+    });
+    current.graphFetch.mockResolvedValueOnce(Response.json({ error: 'denied' }, { status: 401 }));
+    const transport = current.create();
+    const revision = current.client.getSnapshot().revision;
+    await expect(transport.fetch('/graphql', undefined)).rejects.toMatchObject({ status: 'denied' });
+    expect(current.client.getSnapshot().revision).toBe(revision + 1);
+    expect(current.onConfirmedRefusal).toHaveBeenCalledTimes(1);
     expect(current.graphFetch).toHaveBeenCalledTimes(1);
   });
 });

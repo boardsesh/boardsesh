@@ -155,14 +155,24 @@ export function createBrowserBackendHttpTransportForView(options: {
   readonly captureGeneration: () => number;
   readonly isGenerationCurrent: (generation: number) => boolean;
   readonly fetch: typeof fetch;
+  /** Diagnostic observation only; only an actual, original-live 401 invokes
+   * it. It cannot approve a response or prevent scope retirement. */
+  readonly onConfirmedRefusal?: () => void;
 }) {
-  const { client, fetch: performFetch } = options;
+  const { client, fetch: performFetch, onConfirmedRefusal } = options;
   const source = createBrowserBackendRequestAuthority(options);
   return createHttpTransport(client, performFetch, {
     acquire: () => source.acquire(),
     assertCurrent: (lease) => source.assertCurrent(lease),
     isCurrent: () => source.isCurrent(),
     dispose: () => source.dispose(),
-    refuse: () => source.invalidate(),
+    refuse() {
+      source.invalidate();
+      try {
+        onConfirmedRefusal?.();
+      } catch {
+        // A reachability observer cannot change authentication admission.
+      }
+    },
   });
 }
