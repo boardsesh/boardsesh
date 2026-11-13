@@ -8,9 +8,13 @@ import * as compilerRuntime from 'react/compiler-runtime';
 import * as jsxRuntime from 'react/jsx-runtime';
 import * as jsxDevRuntime from 'react/jsx-dev-runtime';
 import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LedPosition, TnutPoint, TnutWiring } from '@boardsesh/spray-wall-geometry';
 import * as cableEndpointsModule from '../spray-cable-endpoints';
+
+// Every test compiles the overlay with Babel + the React Compiler; under a full
+// parallel run that takes longer than the default 5 s, so the file allows 20 s.
+vi.setConfig({ testTimeout: 20_000 });
 
 const require = createRequire(import.meta.url);
 const expoRequire = createRequire(require.resolve('expo/package.json'));

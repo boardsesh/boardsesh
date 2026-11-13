@@ -7,7 +7,12 @@ import {
   connectWiring,
   cutWiring,
   extendWiring,
+  groupLedPair,
+  ledPairs,
+  ledPartner,
+  separateLedPair,
   setWiringInitialSkip,
+  withLedPartners,
   setWiringSkip,
   traceLedPath,
   MAX_LED_POSITIONS,
@@ -35,7 +40,7 @@ const NO_LEDS: LedPosition[] = [];
 type MapEditorProps = {
   layout: TnutLayout;
   onChange: (update: Partial<TnutLayout>) => void;
-  kind: 'positions' | 'wiring';
+  kind: 'positions' | 'wiring' | 'skips';
   wallUuid: string;
   source: SprayLookPreviewSource;
   photoUri: string;
@@ -44,7 +49,8 @@ type MapEditorProps = {
 };
 
 export function SprayLedMapEditor(props: MapEditorProps) {
-  return props.kind === 'positions' ? <LedPositionsEditor {...props} /> : <CableEditor {...props} />;
+  if (props.kind === 'positions') return <LedPositionsEditor {...props} />;
+  return props.kind === 'skips' ? <SkipsEditor {...props} /> : <CableEditor {...props} />;
 }
 
 // Enough for one Undo per LED on a long cable run.
@@ -76,10 +82,19 @@ function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange
 
 function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInteractionChange }: MapEditorProps) {
   const { t } = useTranslation('boards');
-  const { brandColors } = useTheme();
+  const { brandColors, spacing } = useTheme();
   const [mode, setMode] = useState<SprayPointMode | null>(null);
+  // Pair LEDs (#7355 item 8): tap a pair to separate it, or two single LEDs to group them.
+  const [pairing, setPairing] = useState(false);
+  const [pendingPair, setPendingPair] = useState<string | null>(null);
   const { change, undo, canUndo } = useEditorHistory(layout, onChange);
   const leds = layout.ledPositions ?? NO_LEDS;
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
+  function chooseMode(next: SprayPointMode | null) {
+    setPairing(false);
+    setPendingPair(null);
+    setMode(next);
+  }
 
   function changePositions(ledPositions: LedPosition[]) {
     const apply = () => {
@@ -103,9 +118,24 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
   }
 
   function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
+    if (pairing) {
+      const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
+      if (index < 0) return;
+      const id = leds[index].id;
+      if (ledPartner(pairs, id)) {
+        change({ ledGroups: separateLedPair(layout, id).ledGroups });
+        setPendingPair(null);
+      } else if (pendingPair && pendingPair !== id) {
+        change({ ledGroups: groupLedPair(layout, pendingPair, id).ledGroups });
+        setPendingPair(null);
+      } else setPendingPair(pendingPair === id ? null : id);
+      return;
+    }
     if (mode === 'remove') {
       const index = nearestPhotoPointIndex(leds, point, renderWidth, renderHeight, 22);
-      if (index >= 0) changePositions(leds.filter((_, entry) => entry !== index));
+      // A pair goes as one unit.
+      const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
+      if (index >= 0) changePositions(leds.filter((led, entry) => entry !== index && led.id !== partner));
     } else if (
       mode === 'add' &&
       leds.length < MAX_LED_POSITIONS &&
@@ -122,12 +152,40 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
     if (mode !== 'move') return;
     const index = nearestPhotoPointIndex(leds, start, renderWidth, renderHeight, 22);
     const occupied = nearestPhotoPointIndex(leds, end, renderWidth, renderHeight, 6);
-    if (index < 0 || (occupied >= 0 && occupied !== index)) return;
-    change({ ledPositions: leds.map((led, entry) => (entry === index ? { ...led, ...end } : led)) });
+    const partner = index >= 0 ? ledPartner(pairs, leds[index].id) : null;
+    if (index < 0 || (occupied >= 0 && occupied !== index && leds[occupied].id !== partner)) return;
+    // A pair moves as one unit: its partner keeps the same offset.
+    const dx = end.x - leds[index].x,
+      dy = end.y - leds[index].y;
+    change({
+      ledPositions: leds.map((led, entry) =>
+        entry === index
+          ? { ...led, ...end }
+          : led.id === partner
+            ? { ...led, x: Math.max(0, Math.min(1, led.x + dx)), y: Math.max(0, Math.min(1, led.y + dy)) }
+            : led,
+      ),
+    });
   }
 
-  const toolbar = { mode, onModeChange: setMode, onUndo: undo, canUndo };
-  const tools = <SprayPointToolbar {...toolbar} />;
+  const toolbar = { mode: pairing ? null : mode, onModeChange: chooseMode, onUndo: undo, canUndo };
+  const pairButton = (
+    <Button
+      title={t('sprayLedSetup.pairLeds')}
+      variant={pairing ? 'filled' : 'outlined'}
+      onPress={() => {
+        setMode(null);
+        setPendingPair(null);
+        setPairing(!pairing);
+      }}
+    />
+  );
+  const tools = (
+    <View style={{ gap: spacing[2] }}>
+      <SprayPointToolbar {...toolbar} />
+      {pairButton}
+    </View>
+  );
   return (
     <>
       <Text>
@@ -144,7 +202,7 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           source,
           photoUri,
           onInteractionChange,
-          mode: mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
+          mode: pairing ? 'tap' : mode === 'move' ? 'move' : mode ? 'tap' : 'pan',
           onTap: tap,
           onMove: move,
           dragPoints: leds,
@@ -153,6 +211,8 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
             <SpraySetupOverlay
               holes={layout.holes}
               leds={leds}
+              ledPairs={pairs}
+              selected={pendingPair ? [pendingPair] : []}
               compactHoles
               liveDrag={liveDrag}
               liveDragTarget="leds"
@@ -165,8 +225,14 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
           ),
         }}
       />
-      <Text variant="footnote">{t('sprayLedSetup.legend')}</Text>
+      {pairing ? (
+        <Text variant="footnote" accessibilityLiveRegion="polite">
+          {t(pendingPair ? 'sprayLedSetup.pairLedsSecond' : 'sprayLedSetup.pairLedsHint')}
+        </Text>
+      ) : null}
+      <Text variant="footnote">{t(pairs.length ? 'sprayLedSetup.legendPairs' : 'sprayLedSetup.legend')}</Text>
       <Text>{t('sprayLedSetup.ledCount', { count: leds.length })}</Text>
+      {pairs.length ? <Text>{t('sprayLedSetup.ledPairCount', { count: pairs.length })}</Text> : null}
     </>
   );
 }
@@ -179,8 +245,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const [pendingSkip, setPendingSkip] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [highlight, setHighlight] = useState(false);
-  const [skipText, setSkipText] = useState<string | null>(null);
   const { change, changeSteps, undo, canUndo } = useEditorHistory(layout, onChange);
+  const pairs = useMemo(() => ledPairs(layout), [layout]);
   const [previewWiring, setPreviewWiring] = useState<TnutWiring | null>(null);
   const leds = layout.ledPositions ?? NO_LEDS;
   const wiring = layout.wiring;
@@ -278,15 +344,6 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   const cut = wiring && pair ? cutWiring(wiring, pair[0], pair[1]) : wiring;
   const joined = wiring && pair ? connectWiring(wiring, pair[0], pair[1]) : wiring;
   const edge = Boolean(cut && cut !== wiring);
-  const gapCount = pair
-    ? (wiring?.skips.find(
-        ({ from, to }) => (from === pair[0] && to === pair[1]) || (from === pair[1] && to === pair[0]),
-      )?.count ?? 0)
-    : 0;
-  const newSkip = skipText === null ? NaN : Number(skipText);
-  const validSkip = skipText !== null && /^\d+$/.test(skipText) && newSkip <= MAX_WIRING_SKIP;
-  const skipped = wiring && pair && validSkip ? setWiringSkip(wiring, pair[0], pair[1], newSkip) : wiring;
-  const canApplySkip = edge && validSkip && (newSkip === gapCount || skipped !== wiring);
 
   function extend(ids: string[]) {
     setPreviewWiring(null);
@@ -294,7 +351,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     // One history step per LED, so Undo removes only the last connection.
     const steps: Partial<TnutLayout>[] = [];
     let current = wiring;
-    for (const id of ids) {
+    for (const id of withLedPartners(ids, pairs, new Set(indices.keys()))) {
       const next = extendWiring(current, [id]);
       if (next === current) continue;
       steps.push({ wiring: next });
@@ -305,7 +362,10 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
 
   function previewTrace(points: TnutPoint[], tolerance: number) {
     if (mode !== 'draw' || !wiring) return;
-    const next = extendWiring(wiring, traceLedPath(leds, points, tolerance));
+    const next = extendWiring(
+      wiring,
+      withLedPartners(traceLedPath(leds, points, tolerance), pairs, new Set(indices.keys())),
+    );
     setPreviewWiring(next === wiring ? null : next);
   }
 
@@ -348,9 +408,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     <View style={{ gap: spacing[2] }}>
       <Text variant="footnote">{t('sprayLedSetup.wiringLegend')}</Text>
       <Text>
-        {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, paths: wiring?.paths.length ?? 0 })}
+        {t('sprayLedSetup.wiringStatus', { wired: indices.size, total: leds.length, count: wiring?.paths.length ?? 0 })}
       </Text>
-      {cableComplete ? <Text variant="footnote">{t('sprayLedSetup.cableComplete')}</Text> : null}
       {mode === 'light' ? (
         <>
           {available ? (
@@ -431,27 +490,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
                     if (joined && joined !== wiring) change({ wiring: joined });
                   }}
                 />
-                <Button
-                  title={t('sprayLedSetup.insertSkips')}
-                  disabled={!edge}
-                  onPress={() => setSkipText(String(gapCount || 1))}
-                />
               </View>
-              {gapCount ? <Text>{t('sprayLedSetup.gapLabel', { count: gapCount })}</Text> : null}
             </>
-          ) : null}
-          {skipText !== null ? (
-            <SkipCountDialog
-              value={skipText}
-              onChange={setSkipText}
-              onClose={() => setSkipText(null)}
-              canApply={canApplySkip}
-              onApply={() => {
-                if (!canApplySkip) return;
-                if (skipped && newSkip !== gapCount) change({ wiring: skipped });
-                setSkipText(null);
-              }}
-            />
           ) : null}
         </>
       ) : null}
@@ -459,7 +499,8 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
   );
   return (
     <>
-      <Text>{t('sprayLedSetup.cableEditorHint')}</Text>
+      {/* Lay cable is hidden once every LED is wired, so its hint gives way to how to reroute. */}
+      <Text>{t(cableComplete ? 'sprayLedSetup.cableComplete' : 'sprayLedSetup.cableEditorHint')}</Text>
       {tools}
       <SprayPhotoStage
         width={width}
@@ -494,6 +535,7 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
               holes={layout.holes}
               leds={leds}
               wiring={previewWiring ?? wiring}
+              ledPairs={pairs}
               selected={mode === 'select' ? selected : undefined}
               width={renderWidth}
               height={renderHeight}
@@ -505,6 +547,168 @@ function CableEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
         }}
       />
       {accessoryTools}
+    </>
+  );
+}
+
+/** Shortest screen distance from a tap to a cable connection, in render pixels. */
+function distanceToConnection(point: TnutPoint, from: TnutPoint, to: TnutPoint, width: number, height: number): number {
+  const ax = from.x * width,
+    ay = from.y * height,
+    bx = to.x * width,
+    by = to.y * height,
+    px = point.x * width,
+    py = point.y * height;
+  const lengthSquared = (bx - ax) ** 2 + (by - ay) ** 2;
+  const along = lengthSquared
+    ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / lengthSquared))
+    : 0;
+  return Math.hypot(px - (ax + along * (bx - ax)), py - (ay + along * (by - ay)));
+}
+
+type Connection = { from: string; to: string };
+
+/**
+ * Skipped LEDs (#7355 item 10): after the cable is laid, pick a connection on it
+ * and say how many LEDs the strip has there that are not on the wall. The wall
+ * can light just the two LEDs at the ends of that connection to check the count.
+ */
+function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onInteractionChange }: MapEditorProps) {
+  const { t } = useTranslation('boards');
+  const { spacing, brandColors } = useTheme();
+  const { change, undo, canUndo } = useEditorHistory(layout, onChange);
+  const [connection, setConnection] = useState<Connection | null>(null);
+  const [skipText, setSkipText] = useState<string | null>(null);
+  const [endsLit, setEndsLit] = useState(false);
+  const leds = layout.ledPositions ?? NO_LEDS;
+  const wiring = layout.wiring;
+  const byId = useMemo(() => new Map(leds.map((led) => [led.id, led])), [leds]);
+  const indices = useMemo(
+    () => new Map(wiring ? assignLedIndices(wiring).map(({ id, index }) => [id, index]) : []),
+    [wiring],
+  );
+  const connections = useMemo<Connection[]>(
+    () => (wiring?.paths ?? []).flatMap((path) => path.slice(1).map((to, index) => ({ from: path[index], to }))),
+    [wiring],
+  );
+  // Undo, or a cable changed on the previous step, can remove the selected connection.
+  const selected =
+    connection && connections.some(({ from, to }) => from === connection.from && to === connection.to)
+      ? connection
+      : null;
+  const gapCount = selected
+    ? (wiring?.skips.find(({ from, to }) => from === selected.from && to === selected.to)?.count ?? 0)
+    : 0;
+  const ends = selected ? [indices.get(selected.from), indices.get(selected.to)] : [];
+  const endsKey = endsLit && ends.length === 2 && ends.every((index) => index !== undefined) ? ends.join(',') : '';
+
+  const preview = useSprayLedPreview(wallUuid);
+  const { available, show, stop } = preview;
+  const lastLit = useRef('');
+  useEffect(() => {
+    if (!available || endsKey === lastLit.current) return;
+    lastLit.current = endsKey;
+    if (endsKey) void show(endsKey.split(',').map(Number));
+    else void stop();
+  }, [available, endsKey, show, stop]);
+
+  const newSkip = skipText === null ? NaN : Number(skipText);
+  const validSkip = skipText !== null && /^\d+$/.test(skipText) && newSkip <= MAX_WIRING_SKIP;
+  const skipped = wiring && selected && validSkip ? setWiringSkip(wiring, selected.from, selected.to, newSkip) : wiring;
+  const canApplySkip = Boolean(selected) && validSkip && (newSkip === gapCount || skipped !== wiring);
+
+  function tap(point: TnutPoint, renderWidth: number, renderHeight: number) {
+    let best: Connection | null = null;
+    let bestDistance = 24;
+    for (const candidate of connections) {
+      const from = byId.get(candidate.from),
+        to = byId.get(candidate.to);
+      if (!from || !to) continue;
+      const distance = distanceToConnection(point, from, to, renderWidth, renderHeight);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    setConnection(best);
+  }
+
+  const tools = (
+    <View style={[styles.row, { gap: spacing[2] }]}>
+      <Button
+        title={t('sprayLedSetup.insertSkips')}
+        variant="outlined"
+        disabled={!selected}
+        onPress={() => setSkipText(String(gapCount || 1))}
+      />
+      <Button
+        title={t(endsLit ? 'sprayLedSetup.skipsEndsOff' : 'sprayLedSetup.skipsLightEnds')}
+        variant={endsLit ? 'filled' : 'outlined'}
+        disabled={!available || !selected}
+        onPress={() => setEndsLit((lit) => !lit)}
+      />
+    </View>
+  );
+  return (
+    <>
+      <Text>{t('sprayLedSetup.skipsHint')}</Text>
+      {tools}
+      <SprayPhotoStage
+        width={width}
+        tools={tools}
+        overlayTools={<SprayUndoButton disabled={!canUndo} onPress={undo} />}
+        canvas={{
+          source,
+          photoUri,
+          onInteractionChange,
+          mode: 'tap',
+          onTap: tap,
+          renderOverlay: (renderWidth, renderHeight, zoom, panX, panY) => (
+            <SpraySetupOverlay
+              holes={layout.holes}
+              compactHoles
+              leds={leds}
+              wiring={wiring}
+              selected={selected ? [selected.from, selected.to] : []}
+              width={renderWidth}
+              height={renderHeight}
+              zoom={zoom}
+              panX={panX}
+              panY={panY}
+            />
+          ),
+        }}
+      />
+      <Text accessibilityLiveRegion="polite">
+        {selected
+          ? t('sprayLedSetup.skipsSelected', {
+              from: indices.get(selected.from) ?? '—',
+              to: indices.get(selected.to) ?? '—',
+            })
+          : t('sprayLedSetup.skipsNoConnection')}
+      </Text>
+      {selected ? (
+        <Text>{gapCount ? t('sprayLedSetup.gapLabel', { count: gapCount }) : t('sprayLedSetup.skipsNone')}</Text>
+      ) : null}
+      {!available ? <Text variant="footnote">{t('sprayLedSetup.lightingUnavailable')}</Text> : null}
+      {preview.error ? (
+        <Text variant="footnote" color={brandColors.error} accessibilityLiveRegion="polite">
+          {preview.error === 'invalid-indices' ? t('sprayLedSetup.lightingRangeError') : t('sprayLed.lightFailed')}
+        </Text>
+      ) : null}
+      {skipText !== null ? (
+        <SkipCountDialog
+          value={skipText}
+          onChange={setSkipText}
+          onClose={() => setSkipText(null)}
+          canApply={canApplySkip}
+          onApply={() => {
+            if (!canApplySkip) return;
+            if (skipped && newSkip !== gapCount) change({ wiring: skipped });
+            setSkipText(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }

@@ -151,7 +151,8 @@ export function SprayHoldLedStep({
     const previous = history.at(-1);
     if (!history.length) return;
     setHistory((entries) => entries.slice(0, -1));
-    onChange({ holdLeds: previous });
+    // An empty list, not none: the save must say the links were cleared (see keepHoldLedLinksFromOlderApp).
+    onChange({ holdLeds: previous ?? [] });
   }
 
   const linked = mapping.holds.length - unmappedHoldIds.length;
