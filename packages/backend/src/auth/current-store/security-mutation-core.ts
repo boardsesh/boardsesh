@@ -18,6 +18,8 @@ interface ReceiptBinding {
   readonly userId: string;
   readonly previousGeneration: number;
   readonly generation: number;
+  readonly operationId: string;
+  readonly kind: CurrentSecurityMutationKind;
 }
 const generationReceipts = new WeakMap<IdentityGenerationMutationReceipt, ReceiptBinding>();
 
@@ -27,10 +29,41 @@ function mintGenerationReceipt(
   userId: string,
   previousGeneration: number,
   generation: number,
+  operationId: string,
+  kind: CurrentSecurityMutationKind,
 ): IdentityGenerationMutationReceipt {
   const receipt = Object.freeze({}) as IdentityGenerationMutationReceipt;
-  generationReceipts.set(receipt, Object.freeze({ transaction, userId, previousGeneration, generation }));
+  generationReceipts.set(
+    receipt,
+    Object.freeze({ transaction, userId, previousGeneration, generation, operationId, kind }),
+  );
   return receipt;
+}
+
+export type FirstPartyContinuationMutationKind =
+  | 'password-set'
+  | 'password-change'
+  | 'provider-link'
+  | 'provider-unlink';
+
+/** A reset, deletion, administrative cutoff or signout cannot preserve a
+ * requesting session. The caller's prepared operation must match exactly. */
+export function requireFirstPartyContinuationMutationReceipt(
+  transaction: CurrentStoreTransaction,
+  userId: string,
+  receipt: IdentityGenerationMutationReceipt,
+  expected: { readonly operationId: string; readonly kind: FirstPartyContinuationMutationKind },
+): Readonly<{ previousGeneration: number; generation: number }> {
+  const generations = requireIdentityGenerationMutationReceipt(transaction, userId, receipt);
+  const binding = generationReceipts.get(receipt);
+  if (
+    !binding ||
+    binding.operationId !== expected.operationId ||
+    binding.kind !== expected.kind ||
+    !['password-set', 'password-change', 'provider-link', 'provider-unlink'].includes(binding.kind)
+  )
+    throw new Error('AUTH_IDENTITY_CONTINUATION_RECEIPT_INVALID');
+  return generations;
 }
 
 /** Object identity rejects serialized, copied or forged substitutes. */
@@ -157,7 +190,7 @@ export async function recordCheckedSecurityMutation(
   if (kind === 'account-deletion') await retireDeletedSubjectEmails(transaction, userId);
   const result = { cutoff, event };
   Object.defineProperty(result, 'identityGenerationReceipt', {
-    value: mintGenerationReceipt(transaction, userId, expectedGeneration, cutoff.generation),
+    value: mintGenerationReceipt(transaction, userId, expectedGeneration, cutoff.generation, operationId, kind),
     enumerable: false,
     writable: false,
     configurable: false,
