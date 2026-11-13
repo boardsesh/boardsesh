@@ -321,9 +321,32 @@ export function expandLocaleRedirects(rules) {
   ]);
 }
 
+/** Production can retain hashed build assets independently of the web image. */
+export function resolveNextAssetPrefix(rawBaseUrl, runtimeEnvironment = process.env.NODE_ENV) {
+  if (runtimeEnvironment !== 'production' || !rawBaseUrl?.trim()) return undefined;
+  const prefix = new URL(rawBaseUrl.trim());
+  if (
+    prefix.protocol !== 'https:' ||
+    prefix.username ||
+    prefix.password ||
+    prefix.pathname !== '/' ||
+    prefix.search ||
+    prefix.hash
+  ) {
+    throw new Error(
+      'NEXT_PUBLIC_NEXT_ASSET_BASE_URL must be an HTTPS origin without credentials, path, query or fragment',
+    );
+  }
+  return prefix.origin;
+}
+
+const nextAssetPrefix = resolveNextAssetPrefix(process.env.NEXT_PUBLIC_NEXT_ASSET_BASE_URL);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  assetPrefix: nextAssetPrefix,
+  crossOrigin: nextAssetPrefix ? 'anonymous' : undefined,
   // Pin this explicitly. Next otherwise discovers the tracing root by walking
   // for a lockfile, but the isolated Expo web runtime has its own nested
   // pnpm-lock.yaml. Trace paths and the standalone layout must stay rooted at
@@ -335,6 +358,11 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'assets.boardsesh.com',
         pathname: '/static/v1/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'assets.boardsesh.com',
+        pathname: '/_next/static/media/**',
       },
     ],
   },

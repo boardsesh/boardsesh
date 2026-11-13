@@ -960,12 +960,13 @@ export const ASSETS_CACHE_RULE_DESCRIPTION = 'boardsesh:assets-edge-cache (manag
  * move is for. The publisher's `cf-cache-status` and `cache-control` assertions
  * then mean the same thing on both hosts.
  *
- * The `/static/v1/` literal is repeated rather than imported: infra/cloudflare
+ * Next's hashed build assets are retained alongside catalogued public assets.
+ * The path literals are repeated rather than imported: infra/cloudflare
  * has no workspace dependencies, by design.
  */
 export const ASSETS_CACHE_EXPRESSION =
   `((http.host eq "${ASSETS_HOSTNAME}" or http.host eq "${ASSETS_STAGING_HOSTNAME}") ` +
-  `and starts_with(http.request.uri.path, "/static/v1/"))`;
+  `and (starts_with(http.request.uri.path, "/static/v1/") or starts_with(http.request.uri.path, "/_next/static/")))`;
 
 export const ASSETS_CORS_HEADER_RULE_DESCRIPTION =
   'boardsesh:assets-cors-header (managed by scripts/cloudflare-apply.ts)';

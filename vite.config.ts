@@ -713,6 +713,10 @@ export default defineConfig({
         command: 'tsx scripts/upload-static-assets.ts',
         cache: false,
       },
+      'upload:next-static-assets': {
+        command: 'tsx scripts/upload-next-static-assets.ts',
+        cache: false,
+      },
       'storage:migrate-static-assets': {
         command: 'tsx scripts/migrate-static-assets.ts',
         cache: false,

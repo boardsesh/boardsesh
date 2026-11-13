@@ -85,6 +85,8 @@ ARG NEXT_PUBLIC_POSTHOG_KEY
 # it does not degrade to relative URLs — it fails. Vercel builds pass it at
 # `vercel build`; this is the same value for the container build.
 ARG NEXT_PUBLIC_STATIC_ASSET_BASE_URL
+# Only production enables this. Preview/local builds keep serving their own chunks.
+ARG NEXT_PUBLIC_NEXT_ASSET_BASE_URL
 # App Store provider id (digits) for the `pt` param on App Store campaign links.
 # Optional: empty or non-numeric is ignored by store-links.ts, which then emits
 # `ct` and `mt` with no `pt`. Build-time like every NEXT_PUBLIC_ value.
@@ -105,6 +107,7 @@ ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_PUBLIC_STATIC_ASSET_BASE_URL=$NEXT_PUBLIC_STATIC_ASSET_BASE_URL
+ENV NEXT_PUBLIC_NEXT_ASSET_BASE_URL=$NEXT_PUBLIC_NEXT_ASSET_BASE_URL
 ENV NEXT_PUBLIC_META_PIXEL_ID=$NEXT_PUBLIC_META_PIXEL_ID
 ENV NEXT_PUBLIC_REDDIT_PIXEL_ID=$NEXT_PUBLIC_REDDIT_PIXEL_ID
 ENV SENTRY_RELEASE=$SENTRY_RELEASE

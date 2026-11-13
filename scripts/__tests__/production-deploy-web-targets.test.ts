@@ -91,6 +91,7 @@ function runBlock(stepSource: string): string {
 describe('production-deploy web deploy targets', () => {
   const resolverJob = withoutComments(mappingEntry(workflowSource, 'resolve-web-targets', 2));
   const buildWebJob = withoutComments(mappingEntry(workflowSource, 'build-web', 2));
+  const publishNextAssetsJob = withoutComments(mappingEntry(workflowSource, 'publish-next-assets', 2));
   const migrateJob = withoutComments(mappingEntry(workflowSource, 'migrate', 2));
   const deployWebRailwayJob = withoutComments(mappingEntry(workflowSource, 'deploy-web-railway', 2));
   const deployBackendJob = withoutComments(mappingEntry(workflowSource, 'deploy-production-backend', 2));
@@ -220,6 +221,7 @@ describe('production-deploy web deploy targets', () => {
       'BOARDSESH_WEB=1',
       'NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}',
       'NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com',
+      'NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com',
       'NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}',
       'NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}',
       'NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}',
@@ -277,7 +279,38 @@ describe('production-deploy web deploy targets', () => {
     expect(deployWebRailwayJob).toContain('migrate');
     expect(deployWebRailwayJob).toContain("needs.migrate.result == 'success'");
     expect(deployWebRailwayJob).toContain("needs.build-web.result == 'success'");
+    expect(mappingEntry(deployWebRailwayJob, 'needs', 4)).toContain('publish-next-assets');
+    expect(deployWebRailwayJob).toContain("needs.publish-next-assets.result == 'success'");
     expect(deployWebRailwayJob).toContain('environment: Production');
+  });
+
+  it('publishes only static files from the exact built image, including held images', () => {
+    expect(mappingEntry(publishNextAssetsJob, 'if', 4)).toContain("needs.build-web.result == 'success'");
+    expect(publishNextAssetsJob).not.toContain('web_targets');
+    expect(publishNextAssetsJob).toContain('WEB_DIGEST: ${{ needs.build-web.outputs.digest }}');
+    const extract = runBlock(stepNamed(publishNextAssetsJob, 'Extract immutable Next assets from the built image'));
+    expect(extract).toContain('docker create "$WEB_IMAGE@$WEB_DIGEST"');
+    expect(extract).toContain(':/app/packages/web/.next/static/.');
+    expect(extract).not.toContain('docker run');
+    expect(extract).not.toContain('.next/server');
+    expect(extract).not.toContain('.next/standalone');
+    expect(publishNextAssetsJob).toContain('vp run upload:next-static-assets -- --directory');
+    expect(publishNextAssetsJob).toContain("needs.deploy-cloudflare.result == 'success'");
+  });
+
+  it('promotes ready image tags only after assets validate and verifies the digest', () => {
+    expect(buildWebJob).not.toContain('type=raw,value=production');
+    expect(buildWebJob).not.toContain('type=raw,value=latest');
+    const uploadIndex = publishNextAssetsJob.indexOf('vp run upload:next-static-assets');
+    const promoteIndex = publishNextAssetsJob.indexOf('- name: Promote the verified web image');
+    expect(uploadIndex).toBeGreaterThan(-1);
+    expect(promoteIndex).toBeGreaterThan(uploadIndex);
+    const promote = runBlock(stepNamed(publishNextAssetsJob, 'Promote the verified web image'));
+    expect(promote).toContain('imagetools create --prefer-index=false');
+    expect(promote).toContain('--tag "$WEB_IMAGE:production" --tag "$WEB_IMAGE:latest" "$WEB_IMAGE@$WEB_DIGEST"');
+    expect(promote).toContain('"$ready_digest" != "$WEB_DIGEST"');
+    expect(promote).toContain('--format \'{{printf "%s" .Manifest.Digest}}\'');
+    expect(publishNextAssetsJob).toContain('packages: write');
   });
 
   it('redeploys the Railway web service through the shared composite action', () => {
@@ -391,6 +424,7 @@ describe('production-deploy web deploy targets', () => {
     const heldJob = withoutComments(mappingEntry(workflowSource, 'notify-web-held', 2));
     expect(heldJob).toContain("needs.resolve-web-targets.outputs.web_targets == 'none'");
     expect(heldJob).toContain("needs.build-web.result == 'success'");
+    expect(heldJob).toContain("needs.publish-next-assets.result == 'success'");
     expect(heldJob).toContain('DISCORD_DEPLOY_WEBHOOK');
     expect(heldJob).toContain('WEB_DEPLOY_TARGETS=none');
   });
@@ -406,6 +440,7 @@ describe('production-deploy web deploy targets', () => {
       // its result.
       const notifyNeeds = mappingEntry(withoutComments(mappingEntry(workflowSource, jobName, 2)), 'needs', 4);
       expect(notifyNeeds, jobName).toContain('deploy-web-railway');
+      expect(notifyNeeds, jobName).toContain('publish-next-assets');
       expect(notifyNeeds, jobName).toContain('resolve-web-targets');
     }
     const successJob = withoutComments(mappingEntry(workflowSource, 'notify-success', 2));
