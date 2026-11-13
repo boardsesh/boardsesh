@@ -39,6 +39,8 @@ const rootSource = readFileSync('vite.config.ts', 'utf8');
 const proofConfigPath = 'packages/backend/vite.credential-writer-proof.config.ts';
 const proofConfiguration = readFileSync(proofConfigPath, 'utf8');
 const providerConfigPath = 'packages/backend/vite.provider-credential-writer-proof.config.ts';
+const firstPasswordConfigPath = 'packages/backend/vite.first-password-proof.config.ts';
+const firstPasswordConfiguration = readFileSync(firstPasswordConfigPath, 'utf8');
 const providerConfiguration = readFileSync(providerConfigPath, 'utf8');
 const bootstrapPath = 'packages/backend/scripts/bootstrap-credential-writer-proof-database.sh';
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
@@ -81,17 +83,21 @@ describe('owned credential writer CI boundary', () => {
     expect(proof.env).not.toHaveProperty('DATABASE_URL');
   });
 
-  it('runs pinned historical0312 and current canonical0313 fixtures as separate full uncached tasks', () => {
+  it('runs pinned historical0312 and current provider/first-password fixtures as full serial uncached tasks', () => {
     const historicalBootstrapIndex = proof.steps.findIndex(
       (step) => step.run === `bash ${bootstrapPath} --historical-private-browser-v1`,
     );
     const historicalTaskIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:credential-writer'));
     const bootstrapIndex = proof.steps.findIndex((step) => step.run === `bash ${bootstrapPath}`);
     const taskIndex = proof.steps.findIndex((step) => step.run?.includes('vp run test:provider-credential-writer'));
+    const firstPasswordTaskIndex = proof.steps.findIndex((step) =>
+      step.run?.includes('vp run test:first-password-credential-writer'),
+    );
     expect(historicalBootstrapIndex).toBeGreaterThan(-1);
     expect(historicalTaskIndex).toBeGreaterThan(historicalBootstrapIndex);
     expect(bootstrapIndex).toBeGreaterThan(historicalTaskIndex);
     expect(taskIndex).toBeGreaterThan(bootstrapIndex);
+    expect(firstPasswordTaskIndex).toBeGreaterThan(taskIndex);
     const historicalEnvironment = {
       PGDATABASE: 'epic6975_credential_historical_ci',
       CREDENTIAL_WRITER_PROOF_DATABASE_URL:
@@ -101,13 +107,26 @@ describe('owned credential writer CI boundary', () => {
     expect(proof.steps[historicalTaskIndex].env).toEqual(historicalEnvironment);
     expect(proof.steps[bootstrapIndex].env).toBeUndefined();
     expect(proof.steps[taskIndex].env).toBeUndefined();
-    for (const index of [historicalBootstrapIndex, historicalTaskIndex, bootstrapIndex, taskIndex]) {
+    expect(proof.steps[firstPasswordTaskIndex].env).toBeUndefined();
+    for (const index of [
+      historicalBootstrapIndex,
+      historicalTaskIndex,
+      bootstrapIndex,
+      taskIndex,
+      firstPasswordTaskIndex,
+    ]) {
       expect(proof.steps[index].if).toBeUndefined();
       expect(proof.steps[index]['continue-on-error']).toBeUndefined();
     }
     for (const [index, taskName, config, artifact] of [
       [historicalTaskIndex, 'test:credential-writer', proofConfigPath, 'junit-credential-writer.xml'],
       [taskIndex, 'test:provider-credential-writer', providerConfigPath, 'junit-provider-credential-writer.xml'],
+      [
+        firstPasswordTaskIndex,
+        'test:first-password-credential-writer',
+        firstPasswordConfigPath,
+        'junit-first-password-credential-writer.xml',
+      ],
     ] as const) {
       expect(proof.steps[index].run).toContain('--reporter=junit');
       expect(proof.steps[index].run).toContain(`--outputFile.junit=./test-results/${artifact}`);
@@ -121,21 +140,31 @@ describe('owned credential writer CI boundary', () => {
       expect(task).toContain('cache: false');
       expect(task).not.toMatch(/--changed|--shard|dependsOn/);
     }
-    for (const configuration of [proofConfiguration, providerConfiguration]) {
+    for (const configuration of [proofConfiguration, providerConfiguration, firstPasswordConfiguration]) {
       expect(configuration).toContain('maxWorkers: 1');
       expect(configuration).toContain('fileParallelism: false');
     }
     expect(proofConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: ''");
     expect(providerConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-provider-v1'");
+    expect(firstPasswordConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-first-password-v1'");
     for (const file of ['credential-writer-http.proof.ts', 'browser-credential-writer-http.proof.ts']) {
       expect(proofConfiguration).toContain(file);
       expect(providerConfiguration).toContain(file);
+      expect(firstPasswordConfiguration).toContain(file);
     }
     expect(proofConfiguration).toContain('credential-writer-acl.proof.ts');
     expect(proofConfiguration).toContain('browser-credential-writer.proof.ts');
     expect(proofConfiguration).not.toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-security-http.proof.ts');
+    for (const file of [
+      'provider-security-http.proof.ts',
+      'first-password-credential-writer.proof.ts',
+      'first-password-http.proof.ts',
+    ]) {
+      expect(firstPasswordConfiguration).toContain(file);
+      expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(true);
+    }
     for (const file of ['provider-credential-writer.proof.ts', 'provider-security-http.proof.ts'])
       expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(true);
     expect(bootstrap).toContain('packages/db/docker/apply-drizzle-migrations.sh');
@@ -165,11 +194,11 @@ describe('owned credential writer CI boundary', () => {
   });
 
   it('keeps the explicit proof outside service-free default projects and runs this guard unconditionally', () => {
-    for (const configuration of [proofConfigPath, providerConfigPath])
+    for (const configuration of [proofConfigPath, providerConfigPath, firstPasswordConfigPath])
       expect(rootSource.slice(rootSource.indexOf('projects:'), rootSource.indexOf('projects:') + 10_000)).not.toContain(
         `'./${configuration}'`,
       );
-    for (const project of ['credential-writer-proof', 'provider-credential-writer-proof'])
+    for (const project of ['credential-writer-proof', 'provider-credential-writer-proof', 'first-password-proof'])
       expect(selectTestDefaultProjects(rootSource, (path) => readFileSync(path, 'utf8'))).not.toContain(project);
     const guard = workflow.jobs.guards.steps.find((step) =>
       step.run?.includes('scripts/__tests__/ci-credential-writer-workflow.test.ts'),
@@ -184,6 +213,7 @@ describe('owned credential writer CI boundary', () => {
     expect(String(upload?.with?.path).trim().split('\n')).toEqual([
       'packages/backend/test-results/junit-credential-writer.xml',
       'packages/backend/test-results/junit-provider-credential-writer.xml',
+      'packages/backend/test-results/junit-first-password-credential-writer.xml',
     ]);
   });
 

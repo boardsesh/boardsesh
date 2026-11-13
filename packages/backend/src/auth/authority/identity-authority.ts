@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { accounts, authAccount, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { createAuthorityAdapter, type AuthorityTransaction } from './adapter';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 
@@ -24,7 +24,7 @@ export type NewIdentityUser = Pick<
 export interface IdentityAuthority {
   readonly receipt: IdentityAuthorityReceipt;
   readPassword(userId: string, lock?: 'update'): Promise<IdentityPasswordSnapshot | null>;
-  listProviders(userId: string): Promise<readonly ProviderIdentitySnapshot[]>;
+  listProviders(userId: string, lock?: 'update'): Promise<readonly ProviderIdentitySnapshot[]>;
   /** Ownership evidence only; callers still enforce the user's deletion/cutoff state. */
   findProvider(provider: string, subject: string, lock?: 'update'): Promise<ProviderIdentitySnapshot | null>;
   createUser(input: NewIdentityUser): Promise<typeof users.$inferSelect>;
@@ -165,9 +165,22 @@ export function bindIdentityAuthority(
       const [found] = await (lock === 'update' ? query.for('update', { of: accounts }) : query);
       return found ? { userId: found.userId, provider, subject, generation: found.generation } : null;
     },
-    async listProviders(userId) {
+    async listProviders(userId, lock) {
       await revalidateIdentityAuthority(transaction, receipt);
       if (betterAuth) {
+        // Callers already hold the user row. Lock the primary inventory before
+        // a fresh adapter read so a pending owner/provider change cannot hide
+        // behind the snapshot taken before a row-lock wait.
+        if (lock === 'update') {
+          const locked = await transaction
+            .select({ id: authAccount.id })
+            .from(authAccount)
+            .where(and(eq(authAccount.userId, userId), ne(authAccount.providerId, 'credential')))
+            .orderBy(authAccount.id)
+            .limit(MAX_PROVIDER_INVENTORY_ROWS + 1)
+            .for('update');
+          if (locked.length > MAX_PROVIDER_INVENTORY_ROWS) throw new Error('IDENTITY_PROVIDER_INVENTORY_UNAVAILABLE');
+        }
         const linked = await betterAuth.findMany<CanonicalAccount>({
           model: 'account',
           where: [
@@ -193,7 +206,7 @@ export function bindIdentityAuthority(
             };
           });
       }
-      const linked = await transaction
+      const query = transaction
         .select({
           userId: accounts.userId,
           provider: accounts.provider,
@@ -204,6 +217,9 @@ export function bindIdentityAuthority(
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, accounts.userId))
         .where(eq(accounts.userId, userId))
         .limit(MAX_PROVIDER_INVENTORY_ROWS + 1);
+      const linked = await (lock === 'update'
+        ? query.orderBy(accounts.provider, accounts.providerAccountId).for('update', { of: accounts })
+        : query);
       if (linked.length > MAX_PROVIDER_INVENTORY_ROWS) throw new Error('IDENTITY_PROVIDER_INVENTORY_UNAVAILABLE');
       return linked;
     },

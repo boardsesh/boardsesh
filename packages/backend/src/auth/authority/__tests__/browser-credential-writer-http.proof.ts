@@ -47,9 +47,18 @@ const jwt = requireWeb('next-auth/jwt') as {
 const rpcSecret = 'owned-browser-http-rpc-service-secret-6975';
 const sessionSecret = 'owned-browser-http-session-source-secret-6975';
 const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
-if (selectedHttpContract && selectedHttpContract !== 'private-provider-v1')
+if (
+  selectedHttpContract &&
+  selectedHttpContract !== 'private-provider-v1' &&
+  selectedHttpContract !== 'private-first-password-v1'
+)
   throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
-const httpContract = selectedHttpContract === 'private-provider-v1' ? 'private-provider-v1' : 'private-browser-v1';
+const httpContract =
+  selectedHttpContract === 'private-first-password-v1'
+    ? 'private-first-password-v1'
+    : selectedHttpContract === 'private-provider-v1'
+      ? 'private-provider-v1'
+      : 'private-browser-v1';
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin: string;

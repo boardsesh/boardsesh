@@ -12,3 +12,4 @@ export * from './email-resolution';
 export * from './authority';
 export * from './browser-bindings';
 export * from './provider-security';
+export * from './first-password';
