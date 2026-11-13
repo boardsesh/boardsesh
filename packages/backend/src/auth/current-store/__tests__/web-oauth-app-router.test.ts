@@ -338,7 +338,7 @@ describe('shipping App Router identity delegation over actual provider and backe
     if (failures.length) throw new AggregateError(failures, 'Owned web OAuth identity cleanup failed');
   }, 30000);
 
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'creates %s through actual configured callbacks and backend writes while the web role cannot write',
     async (provider) => {
       const current = await fixture();
@@ -379,7 +379,7 @@ describe('shipping App Router identity delegation over actual provider and backe
     },
     30000,
   );
-  for (const provider of ['google', 'apple', 'facebook'] as const)
+  for (const provider of ['google', 'apple'] as const)
     it.each(['missing', 'changed'] as const)(
       `keeps linked ${provider} owner/profile/verification with %s upstream email`,
       async (change) => {
@@ -446,7 +446,7 @@ describe('shipping App Router identity delegation over actual provider and backe
     const owner = await seedOwner(local, 'google');
     const current = await fixture();
     const incumbent = await setActor(current, owner);
-    const result = await current.browser.complete('facebook', identity());
+    const result = await current.browser.complete('apple', identity());
     expectUnavailable(current, result.response);
     expect(current.browser.session() === incumbent).toBe(true);
     expect(await db.select().from(users)).toHaveLength(1);
@@ -454,20 +454,23 @@ describe('shipping App Router identity delegation over actual provider and backe
     expect(current.requests.at(-1)).toEqual({ operation: 'resolve', status: 503 });
     await expectConsumedIntent();
   }, 30000);
-  it('never attaches a new Facebook subject to an occupied matching email', async () => {
+  it('rejects Facebook product requests without identity RPC or cookie publication', async () => {
     const profile = identity();
-    const owner = await seedOwner(profile, 'google');
+    const owner = await seedOwner(profile, 'facebook');
     const current = await fixture();
-    const result = await current.browser.complete('facebook', { ...profile, subject: randomUUID() });
-    expectNoAuthCookie(result.response);
-    expect(current.browser.session().length).toBe(0);
-    expect(new URL(result.response.location!, current.harness.origin).searchParams.get('error')).toBe(
-      'OAuthAccountNotLinked',
-    );
+    const incumbent = await setActor(current, owner);
+    for (const method of ['GET', 'POST']) {
+      for (const action of ['signin', 'callback']) {
+        const response = await current.browser.request(`/api/auth/${action}/facebook`, { method });
+        expect(response.status).toBe(404);
+        expectNoAuthCookie(response);
+        expect(current.browser.session()).toBe(incumbent);
+      }
+    }
+    expect(current.requests).toEqual([]);
     expect(await db.select({ id: users.id }).from(users)).toEqual([{ id: owner }]);
-    expect(await db.select().from(accounts)).toHaveLength(1);
-    expect(current.requests.at(-1)).toEqual({ operation: 'resolve', status: 409 });
-    await expectConsumedIntent();
+    expect(await db.select({ provider: accounts.provider }).from(accounts)).toEqual([{ provider: 'facebook' }]);
+    expect(await db.select().from(authWebOAuthIntents)).toEqual([]);
   }, 30000);
   it.each(['different-owner', 'same-owner-new-SID'] as const)(
     'rejects callback actor change: %s',

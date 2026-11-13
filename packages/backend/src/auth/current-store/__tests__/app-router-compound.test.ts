@@ -26,7 +26,7 @@ import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } 
 import { recordSecurityMutation } from '../security-mutations';
 import { startAppRouterCompound } from './fixtures/app-router-compound';
 
-type Provider = 'google' | 'apple' | 'facebook';
+type Provider = 'google' | 'apple';
 interface Outcome {
   user: {
     id: string;
@@ -264,7 +264,7 @@ describe('synthetic App Router compound source/intent authority', () => {
     expect(await terminal(command.flow)).toHaveLength(1);
     expect(JSON.stringify(await db.select().from(verificationTokens)).includes(result.sourceProof)).toBe(false);
   });
-  it.each(['google', 'apple', 'facebook'] as const)(
+  it.each(['google', 'apple'] as const)(
     'retains existing %s subject owner and profile when claims are changed or missing',
     async (provider) => {
       const user = await seed();

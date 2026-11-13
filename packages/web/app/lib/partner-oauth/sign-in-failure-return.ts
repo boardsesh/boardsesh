@@ -9,7 +9,7 @@ import {
 } from './authorization-query';
 
 /**
- * Keeps a failed Google, Apple or Facebook sign-in on `/oauth/sign-in`.
+ * Keeps a failed Google or Apple sign-in on `/oauth/sign-in`.
  *
  * NextAuth sends a failed social sign-in through `/api/auth/error` and
  * `/api/auth/signin` to `pages.signIn` (`/auth/login?error=…`), or to

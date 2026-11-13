@@ -46,7 +46,7 @@ centralizing these responsibilities would leave the debt in place.
 
 | Surface | Current behavior that matters |
 | --- | --- |
-| Web | NextAuth v4 JWT sessions in potentially chunked cookies; shared production cookie domain; Google/Apple/Facebook links; credentials login; stale-tab sign-out guarded by user ID and `authSessionId` |
+| Web | NextAuth v4 JWT sessions in potentially chunked cookies; shared production cookie domain; Google/Apple sign-in and preserved stored Facebook links; credentials login; stale-tab sign-out guarded by user ID and `authSessionId` |
 | Native | Email registration/login and Google/Apple ID-token login in `handlers/native-auth.ts`; browser fallback transfer-token exchange; `{ jwt, refreshToken, expiresAt, userId }` responses and optional account-creation receipt |
 | Access credentials | Seven-day HS256 JWT, issuer `boardsesh`, audience `boardsesh-mobile`, `sub = users.id`; backend also accepts NextAuth JWE cookies |
 | Refresh credentials | Opaque random token stored as a SHA-256 hash; each successful rotation issues another 90-day token; active old clients never naturally stop using this protocol |
@@ -59,7 +59,8 @@ Inventory actual callers, domains, redirect URIs, response fields, error/status
 semantics, headers, cookie variants, account-deletion paths, export jobs, widgets,
 and HTTP/WebSocket authentication before adding a new handler. The table is a
 starting point, not permission to remove an unlisted consumer. Keep current
-Google/Apple/Facebook application registrations and subject mappings.
+Google/Apple application registrations and all existing subject mappings. Facebook
+registrations do not enable a product sign-in or link path.
 
 The code supports duplicate-by-case credential lookup. That is evidence of a
 compatibility requirement, not a current production count. A read-only audit
@@ -183,9 +184,14 @@ import strategy. Retain established links even if a provider changes its email
 claim. Configure account linking deliberately; do not weaken verification rules
 to imitate `allowDangerousEmailAccountLinking`.
 
-Test Google, Apple, and Facebook on the surfaces where they are currently
-supported, including cancellation, native nonce/audience checks, existing links,
-and browser fallback. Better Auth's ID-token sign-in rejects a missing email
+Owner policy supports Google, Apple, and password sign-in. New Facebook
+sign-in and linking are refused, including old callback URLs; stored Facebook
+identities, account data, and valid existing sessions remain intact. See the
+[Facebook product retirement boundary](./better-auth-facebook-retirement.md),
+including the unresolved support path for signed-out Facebook-only accounts.
+
+Test Google and Apple on their supported surfaces, including cancellation,
+native nonce/audience checks, existing links, and browser fallback. Better Auth's ID-token sign-in rejects a missing email
 before resolving a linked account in the reviewed version. Prove a supported
 persisted-email mapping for that case. Apple's own documentation says email
 normally remains in later identity tokens, so this is an edge-case test rather

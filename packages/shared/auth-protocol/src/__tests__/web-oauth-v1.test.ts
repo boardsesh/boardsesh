@@ -84,7 +84,7 @@ describe('independent web OAuth identity v1 contract', () => {
     ).toBe(false);
   });
 
-  it.each(['google', 'apple', 'facebook'])('admits only the configured provider family: %s', (provider) => {
+  it.each(['google', 'apple'])('admits only the configured provider family: %s', (provider) => {
     expect(
       webOAuthIntentCommandSchema.parse({ ...intent, payload: { ...intent.payload, provider } }).payload.provider,
     ).toBe(provider);
@@ -93,10 +93,16 @@ describe('independent web OAuth identity v1 contract', () => {
     ).toBe(true);
   });
 
-  it.each(['credentials', 'native-oauth', 'Google', 'unknown'])(
+  it.each(['facebook', 'credentials', 'native-oauth', 'Google', 'unknown'])(
     'rejects another provider identifier: %s',
     (provider) => {
       expect(webOAuthCommandSchema.safeParse({ ...intent, payload: { ...intent.payload, provider } }).success).toBe(
+        false,
+      );
+      expect(webOAuthCommandSchema.safeParse({ ...resolve, payload: { ...resolve.payload, provider } }).success).toBe(
+        false,
+      );
+      expect(webOAuthReplySchema.safeParse({ ...resolved, account: { ...resolved.account, provider } }).success).toBe(
         false,
       );
     },

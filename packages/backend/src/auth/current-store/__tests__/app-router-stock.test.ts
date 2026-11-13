@@ -92,7 +92,7 @@ describe('actual App Router and configured providers: stock characterization', (
     if (failures.length) throw new AggregateError(failures, 'Owned stock proof cleanup failed');
   });
 
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'runs actual configured %s code exchange and profile/account creation through the actual route export',
     async (provider) => {
       const current = browser();
@@ -121,7 +121,7 @@ describe('actual App Router and configured providers: stock characterization', (
       const authorization = new URL(result.authorization);
       expect(Boolean(authorization.searchParams.get('state'))).toBe(true);
       expect(authorization.searchParams.has('nonce')).toBe(false);
-      expect(authorization.searchParams.has('code_challenge')).toBe(provider !== 'facebook');
+      expect(authorization.searchParams.has('code_challenge')).toBe(true);
       if (provider === 'apple') {
         expect(result.callback.method).toBe('POST');
         expect(authorization.searchParams.get('response_mode')).toBe('form_post');
@@ -136,31 +136,35 @@ describe('actual App Router and configured providers: stock characterization', (
     },
   );
 
-  it('refuses automatic Facebook email linking to an existing owner', async () => {
+  it('refuses Facebook starts and callbacks while retaining stored identities and verification', async () => {
     const profile = identity();
     const owner = randomUUID();
-    await db.insert(users).values({ id: owner, email: profile.email!, name: 'Existing Owner' });
+    await db
+      .insert(users)
+      .values({ id: owner, email: profile.email!, name: 'Stored Facebook Owner', emailVerified: null });
+    await db
+      .insert(accounts)
+      .values({ userId: owner, provider: 'facebook', providerAccountId: profile.subject, type: 'oauth' });
     const current = browser();
-    const result = await current.complete('facebook', profile);
-    expect(result.response.status).toBe(302);
+    for (const method of ['GET', 'POST']) {
+      for (const action of ['signin', 'callback']) {
+        const result = await current.request(`/api/auth/${action}/facebook`, { method });
+        expect(result.status).toBe(404);
+        expect(result.cookies).toEqual([]);
+      }
+    }
     expect(await current.claims()).toBeNull();
-    expect(await db.select({ owner: accounts.userId }).from(accounts)).toEqual([]);
-    expect((await db.select().from(users)).length).toBe(1);
+    expect(
+      await db
+        .select({ owner: accounts.userId, provider: accounts.provider, subject: accounts.providerAccountId })
+        .from(accounts),
+    ).toEqual([{ owner, provider: 'facebook', subject: profile.subject }]);
+    expect(await db.select({ id: users.id, verified: users.emailVerified }).from(users)).toEqual([
+      { id: owner, verified: null },
+    ]);
   });
 
-  it('characterizes verification mutation: a second linked Facebook login marks the local address verified without a provider verification claim', async () => {
-    const current = browser();
-    const profile = identity();
-    delete profile.emailVerified;
-    await current.complete('facebook', profile);
-    const [first] = await db.select().from(users);
-    expect(first.emailVerified).toBeNull();
-    await current.complete('facebook', profile);
-    const [second] = await db.select().from(users);
-    expect(second.emailVerified instanceof Date).toBe(true);
-  });
-
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'retains linked owner when returning %s profile omits email',
     async (provider) => {
       const current = browser();
@@ -174,7 +178,7 @@ describe('actual App Router and configured providers: stock characterization', (
     },
   );
 
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'does not create identity on configured %s provider cancellation',
     async (provider) => {
       const current = browser();
@@ -188,7 +192,7 @@ describe('actual App Router and configured providers: stock characterization', (
     },
   );
 
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'does not publish a session when configured %s token exchange fails',
     async (provider) => {
       const current = browser();

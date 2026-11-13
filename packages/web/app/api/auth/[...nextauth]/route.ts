@@ -290,6 +290,24 @@ async function getAuth(
 }
 
 async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  // Check both route authorities before a delegate can exchange a code or write a cookie.
+  // The stored Facebook identity and an existing session remain readable.
+  const { nextauth } = await context.params;
+  let pathname = request.nextUrl.pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // An undecodable URL cannot name a configured provider.
+  }
+  if (
+    ((nextauth[0] === 'signin' || nextauth[0] === 'callback') && nextauth[1] === 'facebook') ||
+    /\/api\/auth\/(?:signin|callback)\/facebook(?:\/|$)/.test(pathname)
+  ) {
+    return NextResponse.json(
+      { error: 'unsupported_provider' },
+      { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
+    );
+  }
   return withAuthResponseAdmission(request, context, (completeSignOut) =>
     withWebOAuthIdentity(request, context, authOptions, (current, options) =>
       current.method === 'POST'

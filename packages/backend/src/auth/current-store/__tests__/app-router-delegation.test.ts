@@ -213,7 +213,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
     if (failures.length) throw new AggregateError(failures, 'Owned delegate teardown failed');
   });
 
-  it.each<ConfiguredProvider>(['google', 'apple', 'facebook'])(
+  it.each<ConfiguredProvider>(['google', 'apple'])(
     'creates exact %s identity through real callback and backend transaction, with adapter writes denied',
     async (provider) => {
       const current = await fixture();
@@ -258,11 +258,11 @@ describe('actual App Router providers with explicitly fixture-only compound dele
     ).toBe(true);
   }, 30000);
 
-  it('denies an unknown Facebook subject matching an occupied normalized email without auto-link or cookie', async () => {
+  it('denies an unknown Apple subject matching an occupied normalized email without auto-link or cookie', async () => {
     const existing = identity();
     await seedOwner(existing, 'google');
     const current = await fixture();
-    const result = await current.browser.complete('facebook', { ...identity(), email: existing.email!.toUpperCase() });
+    const result = await current.browser.complete('apple', { ...identity(), email: existing.email!.toUpperCase() });
     expect(result.response.status).toBe(503);
     expect(result.response.cookies).toEqual([]);
     expect((await db.select().from(users)).length).toBe(1);

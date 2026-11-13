@@ -13,7 +13,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { logbookChanges, users } from '@boardsesh/db/schema';
+import { authEmailProjection, logbookChanges, users } from '@boardsesh/db/schema';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { userMutations } from '../graphql/resolvers/users/mutations';
 import { userQueries } from '../graphql/resolvers/users/queries';
 
@@ -89,25 +91,32 @@ function makeAnonCtx(): ConnectionContext {
 function setupTransactionMock(options?: {
   failOnUserDelete?: boolean;
   draftClimbs?: Array<{ uuid: string; boardType: string }>;
+  manifestRows?: unknown[];
+  isolationRows?: readonly unknown[];
 }) {
   txCalls.length = 0;
 
   mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
     const tx = {
-      execute: vi.fn().mockImplementation((...args: unknown[]) => {
-        txCalls.push({ method: 'execute', args });
+      execute: vi.fn().mockImplementation((statement: SQL) => {
+        txCalls.push({ method: 'execute', args: [statement] });
+        if (new PgDialect().sqlToQuery(statement).sql === 'SHOW transaction_isolation') {
+          return Promise.resolve(options?.isolationRows ?? [{ transaction_isolation: 'read committed' }]);
+        }
         return Promise.resolve([{ present: false }]);
       }),
       select: vi.fn().mockImplementation((columns: unknown) => {
         const call = { method: 'select', columns, args: [] as unknown[] };
         return {
-          from: vi.fn().mockReturnValue({
+          from: vi.fn().mockImplementation((table: unknown) => ({
             where: vi.fn().mockImplementation((...args: unknown[]) => {
               call.args = args;
               txCalls.push(call);
-              return Promise.resolve(options?.draftClimbs ?? []);
+              return Promise.resolve(
+                table === authEmailProjection ? (options?.manifestRows ?? []) : (options?.draftClimbs ?? []),
+              );
             }),
-          }),
+          })),
         };
       }),
       delete: vi.fn().mockImplementation((table: unknown) => {
@@ -206,6 +215,27 @@ describe('deleteAccount mutation', () => {
     expect(result).toBe(true);
   });
 
+  it('refuses legacy deletion when a current projection exists, before content changes', async () => {
+    setupTransactionMock({ manifestRows: [{ phase: 'prepared', writerAuthority: 'current-store' }] });
+
+    await expect(
+      userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+    ).rejects.toThrow('STALE_AUTHORITY');
+    expect(txCalls.some((call) => call.method === 'delete' || call.method === 'update')).toBe(false);
+  });
+
+  it.each([
+    ['missing', []],
+    ['unsupported', [{ transaction_isolation: 'repeatable read' }]],
+  ] as const)('refuses %s isolation evidence before content changes', async (_kind, isolationRows) => {
+    setupTransactionMock({ isolationRows });
+
+    await expect(
+      userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+    ).rejects.toThrow('UNSUPPORTED_ISOLATION');
+    expect(txCalls.some((call) => call.method !== 'execute')).toBe(false);
+  });
+
   it('should propagate transaction errors (rollback)', async () => {
     setupTransactionMock({ failOnUserDelete: true });
 
@@ -217,10 +247,13 @@ describe('deleteAccount mutation', () => {
   it('locks and checks the favorites archive before deleting the user', async () => {
     await userMutations.deleteAccount({}, { input: { removeSetterName: true } }, makeAuthCtx());
 
-    // The three raw statements are transaction isolation, relation lock, and
-    // the fresh optional-archive check, in that order.
+    // Isolation verification and the authority gate/manifest read precede
+    // the relation lock and fresh optional-archive check.
     expect(txCalls.map((call) => call.method)).toEqual([
       'execute',
+      'execute',
+      'execute',
+      'select',
       'execute',
       'execute',
       'select',
@@ -242,6 +275,9 @@ describe('deleteAccount mutation', () => {
     // The dependent-row cleanup (3 deletes) must land between the select and the drafts delete.
     expect(txCalls.map((call) => call.method)).toEqual([
       'execute',
+      'execute',
+      'execute',
+      'select',
       'execute',
       'execute',
       'select',
