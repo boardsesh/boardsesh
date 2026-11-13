@@ -301,12 +301,13 @@ function sameSelection(left: FirstPartySession, right: FirstPartySession): boole
 export async function createUnpublishedBrowserBinding(
   database: AuthorityDatabase,
   qualification: IdentityAuthorityQualification,
-  requestedExpiry: Date,
+  requestedExpiry?: Date,
 ): Promise<{ readonly status: 'created'; readonly token: string; readonly cursor: BrowserBindingCursor } | Refusal> {
-  const expiresAt = new Date(requestedExpiry);
+  const suppliedExpiry = requestedExpiry ? new Date(requestedExpiry) : undefined;
   const token = randomBytes(32).toString('base64url');
   return withAuthority(database, qualification, async (transaction) => {
     const now = await databaseNow(transaction);
+    const expiresAt = suppliedExpiry ?? new Date(now.getTime() + MAX_BINDING_LIFETIME_MS);
     if (
       !Number.isFinite(expiresAt.getTime()) ||
       expiresAt.getTime() <= now.getTime() ||
@@ -318,6 +319,37 @@ export async function createUnpublishedBrowserBinding(
       .values({ id: digest(token), createdAt: now, expiresAt })
       .returning();
     return { status: 'created' as const, token, cursor: cursor(binding) };
+  });
+}
+
+export type BrowserBindingDescriptorResult =
+  | {
+      readonly status: 'known';
+      readonly state: 'anonymous' | 'selected';
+      readonly cursor: BrowserBindingCursor;
+      readonly credentialKind: FirstPartyCredential['kind'] | null;
+    }
+  | Refusal;
+
+/** Correlation metadata is not authenticated identity. It only lets the thin
+ * server adapter choose the exact version-named cookie for actual admission. */
+export async function describeBrowserBinding(
+  database: AuthorityDatabase,
+  qualification: IdentityAuthorityQualification,
+  token: string,
+): Promise<BrowserBindingDescriptorResult> {
+  if (!tokenPattern.test(token)) return { status: 'denied' };
+  return withAuthority(database, qualification, async (transaction) => {
+    const binding = await findBinding(transaction, token);
+    const now = await databaseNow(transaction);
+    if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' as const };
+    const selected = selectedSession(binding);
+    return {
+      status: 'known' as const,
+      state: selected ? ('selected' as const) : ('anonymous' as const),
+      cursor: cursor(binding),
+      credentialKind: selected ? (binding.credentialKind as FirstPartyCredential['kind']) : null,
+    };
   });
 }
 

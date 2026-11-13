@@ -2,6 +2,7 @@ import {
   AUTH_BACKEND_UNAVAILABLE,
   AUTH_COMMAND_REQUEST_BYTES,
   AUTH_COMMAND_RESPONSE_BYTES,
+  AUTH_COMMAND_MAX_BODY_BYTES,
   AUTH_COMMAND_TIMEOUT_MS,
 } from './index';
 
@@ -12,6 +13,14 @@ export class AuthBackendUnavailableError extends Error {
     super(AUTH_BACKEND_UNAVAILABLE);
     this.name = 'AuthBackendUnavailableError';
   }
+}
+
+/** Only server-owned facade configuration may choose a budget, never an HTTP field. */
+export function resolvePrivateAuthByteBudget(requested: number | undefined, fallback: number): number {
+  const bytes = requested === undefined ? fallback : requested;
+  if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > AUTH_COMMAND_MAX_BODY_BYTES)
+    throw new AuthBackendUnavailableError();
+  return bytes;
 }
 
 export function trustedAuthOrigin(configured: string, environment: AuthServiceEnvironment): string {
@@ -46,6 +55,8 @@ export function createPrivateAuthCommandTransport(options: {
 }) {
   const environment = options.environment;
   const paths = new Set(options.paths);
+  const requestBytes = resolvePrivateAuthByteBudget(options.requestBytes, AUTH_COMMAND_REQUEST_BYTES);
+  const responseBytes = resolvePrivateAuthByteBudget(options.responseBytes, AUTH_COMMAND_RESPONSE_BYTES);
   let origin: string;
   let secret: string;
   try {
@@ -62,10 +73,6 @@ export function createPrivateAuthCommandTransport(options: {
   }
   const send = options.fetch;
   const timeoutMs = options.timeoutMs ?? AUTH_COMMAND_TIMEOUT_MS;
-  const requestBytes = options.requestBytes ?? AUTH_COMMAND_REQUEST_BYTES;
-  const responseBytes = options.responseBytes ?? AUTH_COMMAND_RESPONSE_BYTES;
-  if (![requestBytes, responseBytes].every((limit) => Number.isSafeInteger(limit) && limit > 0 && limit <= 1024 * 1024))
-    throw new AuthBackendUnavailableError();
 
   return {
     async post(path: string, command: unknown): Promise<{ status: number; body: unknown }> {

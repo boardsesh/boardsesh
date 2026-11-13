@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { AUTH_COMMAND_REQUEST_BYTES } from '@boardsesh/auth-protocol';
+import { resolvePrivateAuthByteBudget } from '@boardsesh/auth-protocol/transport';
 
 export function authenticatesPrivateAuth(presented: string | undefined, secret: string) {
   const actual = Buffer.from(presented ?? '');
@@ -8,10 +9,8 @@ export function authenticatesPrivateAuth(presented: string | undefined, secret: 
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export async function readPrivateAuthCommand(
-  request: IncomingMessage,
-  requestBytes = AUTH_COMMAND_REQUEST_BYTES,
-): Promise<unknown> {
+export async function readPrivateAuthCommand(request: IncomingMessage, requestedBytes?: number): Promise<unknown> {
+  const requestBytes = resolvePrivateAuthByteBudget(requestedBytes, AUTH_COMMAND_REQUEST_BYTES);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onData = (_chunk: Buffer) => {};
   let onEnd = () => {};
