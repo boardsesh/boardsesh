@@ -1527,6 +1527,12 @@ export default defineConfig({
         command: 'tsx scripts/mobile-dev-start.ts',
         cache: false,
       },
+      // A fake WLED controller on this machine, for testing spray-wall LEDs
+      // without hardware. Pass `-- --leds 120 --port 8090` to change the strip.
+      'dev:wled-sim': {
+        command: 'tsx scripts/wled-simulator.ts',
+        cache: false,
+      },
       'dev:mobile:web': {
         command: 'tsx scripts/dev-orchestrator.ts --expo-web',
         dependsOn: ['db:up', 'mobile:web-runtime:install'],

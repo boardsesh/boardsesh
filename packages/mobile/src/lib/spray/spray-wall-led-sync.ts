@@ -118,7 +118,20 @@ function settingsFromServer(setup: SprayWallLedSetupData): SprayWallLedSettings 
     version: 1,
     enabled: setup.controllerType === 'wled' && setup.enabled,
     controller: { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
+    // A server from before these settings sends neither; read them with the defaults.
+    ...readSprayWallLedLighting(setup),
   };
+}
+
+function readSprayWallLedLighting(setup: SprayWallLedSetupData) {
+  const { brightness, autoOffMinutes } = readSprayWallLedSettings({
+    version: 1,
+    enabled: false,
+    controller: { type: 'wled', url: '' },
+    brightness: setup.brightness ?? undefined,
+    autoOffMinutes: setup.autoOffMinutes ?? undefined,
+  });
+  return { brightness, autoOffMinutes };
 }
 
 function isUnsent(field: SprayWallLedField, wallUuid: string): Promise<boolean> {
@@ -152,7 +165,12 @@ function sameLayout(left: TnutLayout | null, right: TnutLayout | null): boolean 
 }
 
 function sameSettings(left: SprayWallLedSettings, right: SprayWallLedSettings): boolean {
-  return left.enabled === right.enabled && left.controller.url === right.controller.url;
+  return (
+    left.enabled === right.enabled &&
+    left.controller.url === right.controller.url &&
+    left.brightness === right.brightness &&
+    left.autoOffMinutes === right.autoOffMinutes
+  );
 }
 
 async function applyServerSettings(wallUuid: string, server: SprayWallLedSettings | null): Promise<boolean> {
@@ -363,6 +381,8 @@ async function buildUploadInput(
     input.controllerUrl = url;
     // Sent as stored: the switch can be on before an address exists.
     input.enabled = settings.enabled;
+    input.brightness = settings.brightness;
+    input.autoOffMinutes = settings.autoOffMinutes;
   }
   if (fields.includes('layout')) {
     const stored = await getPreference<unknown>(sprayWallLedLayoutKey(wallUuid), { strictParsing: true });

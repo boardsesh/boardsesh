@@ -12,6 +12,12 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 ## Using it
 
 1. Enable LEDs and enter the controller's base address, such as `http://wled.local`.
+   Or tap **Find on my Wi-Fi**: the phone asks each address of its own Wi-Fi
+   network (a private /24 only, 32 at a time, 1.5 s each, never its own address)
+   for WLED's `/json/info`, and lists the controllers that answer by name and
+   address. Tapping one checks and saves it as below. On mobile data it asks for
+   Wi-Fi instead of scanning. It needs no new native module: the subnet comes
+   from NetInfo.
 2. Tap **OK** to check the connection. A successful check saves the address to
    the wall and shows the device name and LED count. It does not change the
    lighting.
@@ -19,7 +25,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    **Keep address anyway** to save it. Invalid URL syntax, or an address that is
    not on a local network, must be corrected.
 4. After a successful check, **Light all LEDs** sets the entire configured strip
-   to solid white at 25% brightness. **Turn LEDs off** ends the test.
+   to solid white at the wall's brightness. **Turn LEDs off** ends the test.
+   **Brightness** (5–100 %, stored as WLED's 1–255, 25 % by default) and **Turn
+   off automatically** (never, 15, 30, 60 or 120 minutes) save to the wall with
+   the rest of the setup (`brightness`, `autoOffMinutes` on
+   `spray_wall_led_setups`), so every phone lights it the same way. A change
+   applies from the next lighting. Auto-off uses WLED's nightlight in instant
+   mode, so the controller switches the wall off by itself even when the phone
+   is asleep or gone, and each new route or test restarts the countdown.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
    For offset grids choose whether the top row starts inset. Match four rings to
    the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50 rows and up to 99 offset columns). The preview updates as the rings move. Count every distinct vertical position for offset columns: 8 + 7 holes means
@@ -42,6 +55,14 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    hole layouts estimate spacing from the median nearest-neighbor distance
    (single-hole fallback: 10% of the normalized frame). Generated
    positions outside the image are omitted. Manual edits stay within the image.
+   With LEDs on both sides of the hold ("sides"), the two LEDs behind each
+   hole are a **pair**: they are drawn as interlocking rings, move together,
+   are removed together, and laying the cable through one adds the other
+   straight after it. **Pair LEDs** separates a pair with one tap (each LED can
+   then be moved or deleted on its own) or groups two single LEDs with two taps.
+   Pairs are stored as `ledGroups` (`[id, id][]`); with no list, a "sides"
+   placement pairs the LEDs it generated per hole, and an explicit empty list
+   keeps every pair separated. Rebuilding the LEDs returns to those defaults.
 8. Next opens **Holds and LEDs**, which checks and fixes which LEDs belong to
    each hold before the cable is laid: the links depend on where the LEDs are,
    not on how the strip runs. Tapping a hold selects it and rings its LEDs on
@@ -74,8 +95,8 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    New LEDs append to the existing cable end in stroke order. Revisiting a wired
    LED does not branch, reverse or create another start. After an explicit cut,
    drawing extends the last cable section. Choose **Select two LEDs** to cut a
-   connection, reconnect free endpoints or edit the skipped LED count between
-   adjacent positions. Set that count to zero to remove the gap. Lay cable and
+   connection or reconnect free endpoints; skipped LEDs have their own next
+   step. Lay cable and
    Light and tap only extend the cable's end, so they are hidden while every
    LED is already on the cable (a generated horizontal or vertical run, or a
    finished custom one). In Light and tap, a marker is assigned only after the
@@ -93,7 +114,15 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    restores edits. **Light selected LEDs** is an
    optional physical preview of the selected positions using their assigned
    WLED indices, including initial and intermediate skips.
-11. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
+11. Next opens **Skipped LEDs**, with the cable drawn over the photo. Tap a
+    connection (the line between two LEDs) to select it; its two end LEDs get the
+    selection ring and the page names their positions and its skipped count.
+    **Insert skipped LEDs** sets how many LEDs the strip has there that are not
+    on the wall (type it or use − and +); zero removes the gap. **Light the ends**
+    lights only the two LEDs at the ends of the selected connection, never the
+    skipped ones, so the count can be checked on the wall: with the right count,
+    both lit LEDs sit on the photo's two markers. Undo restores edits.
+12. Next opens **Test LEDs**. Switch between **Holes** and **Holds**, then tap the
     photo to select positions. **Light selection** tests their assigned LEDs.
     Tap a selected position again to remove it. The page reports holds linked
     to wired LEDs and selected positions with no LED assignment. These controls
@@ -105,7 +134,7 @@ every signed-in climber who can open the wall lights it from their own phone. Se
     the LED the row test has reached. **Stop lighting** ends the test. These controls require
     enabled LEDs and a saved WLED address. Indices outside the controller's LED
     count produce an error rather than addressing a different LED.
-12. Done saves positions and wiring to the wall. Partial wiring can be saved.
+13. Done saves positions and wiring to the wall. Partial wiring can be saved.
     Its status reports connected LEDs and separate cable sections. The assigned
     zero-based indices include skipped LEDs. The normal wall controls use the
     saved setup to illuminate routes after you deliberately take the wall.
@@ -121,7 +150,9 @@ ID. A large hold can own several holes. Holes outside a hold remain unassigned.
 Generated LEDs retain their hole association when moved. Older generated IDs
 recover their original positions. Manual LEDs bind to nearby placement slots
 within a bounded distance. Complementary positions use the nearest opposite-phase
-slots and retain their original positions after movement. Physical indices use
+slots at or below the hole, never one above it: a hole with no slot below stays
+unlit (and red in Holds and LEDs) rather than borrowing the slot above. They
+retain their original positions after movement. Physical indices use
 the saved cable order, initial skips and gaps. Unwired positions have no index.
 
 Where the geometry gets a hold wrong, **Holds and LEDs** stores a hand-made link
@@ -132,6 +163,14 @@ by hand leaves the hold the geometry gave it. Holes keep their geometric LEDs.
 `readTnutLayout`, which both the phone and the server's save validation use,
 drops LED ids that no longer exist and repeated holds, and rejects malformed
 links. Links to holds the wall no longer has are ignored.
+
+An app from before these links saves a layout with no `holdLeds` at all, which
+would erase a newer phone's links. `saveSprayWallLedSetup` therefore keeps the
+stored links when the incoming layout has no `holdLeds` field
+(`keepHoldLedLinksFromOlderApp`), minus LEDs it no longer has; a link whose LEDs
+are all gone returns that hold to the automatic mapping. A current app always
+sends the list, and an explicit `[]` (after the last link is cleared or the LEDs
+are rebuilt) clears them.
 
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
@@ -356,3 +395,14 @@ photo renderer follows the stored photo-to-canonical homography; Android uses an
 affine mesh with a 0.5 fitted-pixel error target and a bounded subdivision count.
 Higher magnification can expose that existing approximation. No unverified photo
 warp correction was introduced.
+
+## Testing without a controller
+
+`vp run dev:wled-sim` starts a fake WLED controller on your computer
+(`scripts/wled-simulator.ts`). It answers the parts of WLED's JSON API the app's
+driver uses (info, state, individual LED colours) and prints every command as a
+coloured strip with the lit LED indices. Options go after `--`: `--leds 120`
+sets the strip length (300 by default), `--port 8090` the port (8080 by default)
+and `--row 50` the LEDs per printed row; `--verbose` also prints each request.
+Enter one of the addresses it prints as the WLED address on a phone on the same
+network. On Windows the firewall may need to allow Node.js on that port.

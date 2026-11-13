@@ -2143,6 +2143,13 @@
       "when": 1794394633644,
       "tag": "0305_auth_email_resolution_log",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1794505543619,
+      "tag": "0306_spray_wall_led_brightness",
+      "breakpoints": true
     }
   ]
 }

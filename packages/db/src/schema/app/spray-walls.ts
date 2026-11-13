@@ -794,6 +794,10 @@ export const sprayWallLedSetups = pgTable('spray_wall_led_setups', {
   /** Empty until an address is confirmed: the row can start from a layout-only save. */
   controllerUrl: text('controller_url').notNull().default(''),
   enabled: boolean('enabled').notNull().default(false),
+  /** WLED master brightness, 1–255, shared by every phone that lights the wall. */
+  brightness: integer('brightness').notNull().default(64),
+  /** Minutes after the last lighting before the controller turns the wall off; 0 never does. */
+  autoOffMinutes: integer('auto_off_minutes').notNull().default(0),
   /** A `TnutLayout`, always written through `readTnutLayout`. Null until the setup screen saves one. */
   layout: jsonb('layout').$type<Record<string, unknown>>(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

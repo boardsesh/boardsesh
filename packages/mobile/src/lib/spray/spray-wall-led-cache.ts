@@ -1,9 +1,14 @@
+import { DEFAULT_LED_BRIGHTNESS, resolveLedLightingOptions } from '@boardsesh/led-controller';
 import { removePreference, removePreferencesMatching } from '../preference-store';
 
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
   controller: { type: 'wled'; url: string };
+  /** WLED master brightness, 1–255, shared by every phone at the wall. */
+  brightness: number;
+  /** Minutes after the last lighting before the controller turns the wall off; 0 never does. */
+  autoOffMinutes: number;
 };
 
 export type SprayWallLedField = 'settings' | 'layout';
@@ -28,21 +33,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Fail closed on future versions or corruption; never replace them with defaults. */
 export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings {
-  if (stored === null) return { version: 1, enabled: false, controller: { type: 'wled', url: '' } };
+  if (stored === null)
+    return {
+      version: 1,
+      enabled: false,
+      controller: { type: 'wled', url: '' },
+      brightness: DEFAULT_LED_BRIGHTNESS,
+      autoOffMinutes: 0,
+    };
   if (
     !isRecord(stored) ||
     stored.version !== 1 ||
     typeof stored.enabled !== 'boolean' ||
     !isRecord(stored.controller) ||
     stored.controller.type !== 'wled' ||
-    typeof stored.controller.url !== 'string'
+    typeof stored.controller.url !== 'string' ||
+    (stored.brightness !== undefined && typeof stored.brightness !== 'number') ||
+    (stored.autoOffMinutes !== undefined && typeof stored.autoOffMinutes !== 'number')
   ) {
     throw new Error('Invalid spray wall LED settings');
   }
+  // A copy saved before brightness and auto-off existed reads with the defaults.
+  const lighting = resolveLedLightingOptions({
+    brightness: stored.brightness as number | undefined,
+    autoOffMinutes: stored.autoOffMinutes as number | undefined,
+  });
   return {
     version: 1,
     enabled: stored.enabled,
     controller: { type: 'wled', url: stored.controller.url },
+    brightness: lighting.brightness,
+    autoOffMinutes: lighting.autoOffMinutes,
   };
 }
 

@@ -104,10 +104,20 @@ export {
   MAX_HOLD_LED_LINKS,
   MAX_LEDS_PER_HOLD_LINK,
   clearHoldLedLink,
+  keepHoldLedLinksFromOlderApp,
   readHoldLedLinks,
   setHoldLedLink,
   type SprayHoldLedLink,
 } from './hold-led-links';
+export {
+  groupLedPair,
+  ledPairs,
+  ledPartner,
+  readLedPairs,
+  separateLedPair,
+  withLedPartners,
+  type SprayLedPair,
+} from './led-pairs';
 export {
   bindLedPositionsToHoles,
   buildSprayLedMapping,

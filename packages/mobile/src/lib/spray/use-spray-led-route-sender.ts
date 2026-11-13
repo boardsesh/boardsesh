@@ -17,7 +17,7 @@ import { lookPreviewSourceFromRenderData } from './spray-look-preview';
 import { getSprayWall, sprayWallRemovalGeneration, subscribeToSprayWallWithdrawals } from './spray-wall-registry';
 import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
-type RouteRuntime = { wallUuid: string; url: string; session: LedPreviewSession };
+type RouteRuntime = { wallUuid: string; url: string; lightingKey: string; session: LedPreviewSession };
 
 /**
  * LAN writes share the normal wall commit path and require a deliberate wall
@@ -166,12 +166,25 @@ export function useSprayLedRouteSender({
         enabled = true;
         if (!settings.controller.url || mirrored) return fail();
         let current = runtime.current;
-        if (!current || current.url !== settings.controller.url || current.wallUuid !== wallUuid) {
+        // A changed brightness or auto-off needs a fresh session: its first write applies them.
+        const lighting = { brightness: settings.brightness, autoOffMinutes: settings.autoOffMinutes };
+        const lightingKey = `${lighting.brightness}:${lighting.autoOffMinutes}`;
+        if (
+          !current ||
+          current.url !== settings.controller.url ||
+          current.wallUuid !== wallUuid ||
+          current.lightingKey !== lightingKey
+        ) {
           if (current) void current.session.close().catch(() => undefined);
           current = {
             wallUuid,
             url: settings.controller.url,
-            session: createLedPreviewSession(getLedControllerDriver(settings.controller.type), settings.controller.url),
+            lightingKey,
+            session: createLedPreviewSession(
+              getLedControllerDriver(settings.controller.type),
+              settings.controller.url,
+              lighting,
+            ),
           };
           runtime.current = current;
         }

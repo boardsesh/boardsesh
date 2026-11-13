@@ -18,7 +18,9 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ brandColors: {} }) }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ brandColors: {}, spacing: [0, 4, 8, 12, 16] }),
+}));
 vi.mock('../../../lib/spray/use-spray-led-preview', () => ({ useSprayLedPreview: vi.fn() }));
 vi.mock('../SprayPhotoStage', () => ({
   SprayPhotoStage: ({ canvas }: { canvas: typeof controls.canvas }) => {
@@ -29,7 +31,10 @@ vi.mock('../SprayPhotoStage', () => ({
 vi.mock('../SpraySetupOverlay', () => ({ SpraySetupOverlay: () => null, SPRAY_CABLE_COLOR: '' }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../PressableSurface', () => ({ PressableSurface: () => null }));
-vi.mock('../../Button', () => ({ Button: () => null }));
+vi.mock('../../Button', () => ({
+  Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
+    createElement('button', { onClick: onPress }, title),
+}));
 vi.mock('../../board-discovery/BoardMetaFields', () => ({ BuilderTextInput: () => null }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -158,5 +163,44 @@ describe('LED position edits with cable work', () => {
     act(() => controls.canvas?.onTap?.({ x: 0.5, y: 0.5 }, 400, 400));
     expect(controls.alert).not.toHaveBeenCalled();
     expect(controls.changed).toHaveBeenCalledOnce();
+  });
+});
+
+describe('LED pairs behind a hold', () => {
+  const paired: TnutLayout = {
+    ...original,
+    wiring: undefined,
+    ledPositions: [
+      { id: 'a', x: 0.2, y: 0.2 },
+      { id: 'b', x: 0.24, y: 0.2 },
+      { id: 'c', x: 0.8, y: 0.8 },
+    ],
+    ledGroups: [['a', 'b']],
+  };
+  const latest = () => controls.changed.mock.calls.at(-1)?.[0] as Partial<TnutLayout>;
+
+  it('moves and removes both LEDs of a pair as one unit', () => {
+    render(<Editor initial={paired} />);
+    fireEvent.click(screen.getByText('move'));
+    act(() => controls.canvas?.onMove?.({ x: 0.2, y: 0.2 }, { x: 0.3, y: 0.4 }, 1000, 1000));
+    expect(latest().ledPositions?.slice(0, 2)).toEqual([
+      { id: 'a', x: 0.3, y: 0.4 },
+      { id: 'b', x: expect.closeTo(0.34), y: expect.closeTo(0.4) },
+    ]);
+    fireEvent.click(screen.getByText('remove'));
+    act(() => controls.canvas?.onTap?.({ x: 0.3, y: 0.4 }, 1000, 1000));
+    expect(latest().ledPositions?.map((led) => led.id)).toEqual(['c']);
+  });
+
+  it('separates a pair with one tap and groups two single LEDs with two', () => {
+    render(<Editor initial={paired} />);
+    fireEvent.click(screen.getByText('sprayLedSetup.pairLeds'));
+    expect(screen.getByText('sprayLedSetup.pairLedsHint')).toBeTruthy();
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.2 }, 1000, 1000));
+    expect(latest()).toEqual({ ledGroups: [] });
+    act(() => controls.canvas?.onTap?.({ x: 0.24, y: 0.2 }, 1000, 1000));
+    expect(screen.getByText('sprayLedSetup.pairLedsSecond')).toBeTruthy();
+    act(() => controls.canvas?.onTap?.({ x: 0.8, y: 0.8 }, 1000, 1000));
+    expect(latest()).toEqual({ ledGroups: [['b', 'c']] });
   });
 });

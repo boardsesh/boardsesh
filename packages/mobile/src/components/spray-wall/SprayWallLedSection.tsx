@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
 import { sprayLedSetupHref } from '../../lib/spray/spray-routes';
-import { getLedControllerDriver, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  createWledDriver,
+  DEFAULT_LED_BRIGHTNESS,
+  discoverLedControllers,
+  getLedControllerDriver,
+  LedControllerError,
+  normalizeLocalControllerUrl,
+  wledScanHosts,
+  type DiscoveredLedController,
+} from '@boardsesh/led-controller';
 import { useSprayLedPreviewForSettings } from '../../lib/spray/use-spray-led-preview';
 import { useSprayWallLedSettings } from '../../lib/spray/use-spray-wall-led-settings';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,7 +22,42 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
+import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
+import { ValueSlider } from '../ValueSlider';
+
+// A short timeout per address: an empty address never answers, a WLED on the
+// same Wi-Fi answers in well under a second. 254 addresses, 32 at a time.
+const scanDriver = createWledDriver({ timeoutMs: 1500 });
+
+type ScanState =
+  | { kind: 'idle' }
+  | { kind: 'noWifi' }
+  | { kind: 'scanning'; checked: number; total: number; found: DiscoveredLedController[] }
+  | { kind: 'done'; found: DiscoveredLedController[] };
+
+const AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
+const MIN_BRIGHTNESS_PERCENT = 5;
+// The slider shows a percentage; WLED stores brightness as 1–255.
+function brightnessPercent(brightness: number): number {
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round((brightness * 100) / 255 / 5) * 5));
+}
+function brightnessFromPercent(percent: number): number {
+  return Math.max(1, Math.min(255, Math.round((percent * 255) / 100)));
+}
+// The three below run inside the slider's gesture, so they must be worklets.
+function roundBrightnessPercent(raw: number): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, Math.round(raw / 5) * 5));
+}
+function brightnessNotch(percent: number): number {
+  'worklet';
+  return Math.round(percent / 25);
+}
+function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
+  'worklet';
+  return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, percent + direction * 5));
+}
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
@@ -44,10 +89,26 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     setPending(null);
     void stop();
   }, [stop]);
-  useEffect(() => () => request.current?.abort(), [wallUuid]);
+  const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
+  const scanRequest = useRef<AbortController | null>(null);
+  const cancelScan = useCallback(() => {
+    scanRequest.current?.abort();
+    scanRequest.current = null;
+    setScan((current) => (current.kind === 'scanning' ? { kind: 'idle' } : current));
+  }, []);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      scanRequest.current?.abort();
+    },
+    [wallUuid],
+  );
   useEffect(() => {
-    if (disabled) cancelRequest();
-  }, [disabled, cancelRequest]);
+    if (disabled) {
+      cancelRequest();
+      cancelScan();
+    }
+  }, [disabled, cancelRequest, cancelScan]);
 
   const url = draftUrl ?? settings?.controller.url ?? '';
   const locked = disabled || loading || saving || savingRef.current || !settings;
@@ -75,11 +136,54 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
     }
   }
 
-  async function confirmUrl() {
+  /** Brightness and auto-off save to the wall, so every phone lights it the same way. */
+  async function saveLighting(update: { brightness?: number; autoOffMinutes?: number }) {
+    if (locked || !settings || savingRef.current) return;
+    savingRef.current = true;
+    try {
+      await save({ ...settings, ...update });
+    } finally {
+      savingRef.current = false;
+    }
+  }
+
+  /** Probe every address on the phone's Wi-Fi (a private /24 only) and list the WLED controllers that answer. */
+  async function findOnWifi() {
+    if (locked || scanRequest.current) return;
+    const network = await NetInfo.fetch();
+    const details = network.type === 'wifi' ? network.details : null;
+    const hosts = details?.ipAddress ? wledScanHosts(details.ipAddress, details.subnet) : [];
+    if (!hosts.length) {
+      setScan({ kind: 'noWifi' });
+      return;
+    }
+    const controller = new AbortController();
+    scanRequest.current = controller;
+    setScan({ kind: 'scanning', checked: 0, total: hosts.length, found: [] });
+    try {
+      const found = await discoverLedControllers(hosts, {
+        probe: (candidate, signal) => scanDriver.probe(candidate, signal),
+        signal: controller.signal,
+        onProgress: (checked, total) =>
+          setScan((current) => (current.kind === 'scanning' ? { ...current, checked, total } : current)),
+        onFound: (entry) =>
+          setScan((current) =>
+            current.kind === 'scanning' ? { ...current, found: [...current.found, entry] } : current,
+          ),
+      });
+      if (scanRequest.current === controller) setScan({ kind: 'done', found });
+    } catch {
+      // Cancelled: the climber typed, left or turned LEDs off.
+    } finally {
+      if (scanRequest.current === controller) scanRequest.current = null;
+    }
+  }
+
+  async function confirmUrl(candidate = url) {
     if (locked || !settings?.enabled || request.current) return;
     let normalized: string;
     try {
-      normalized = normalizeLocalControllerUrl(url);
+      normalized = normalizeLocalControllerUrl(candidate);
     } catch (urlError) {
       const notLocal = urlError instanceof LedControllerError && urlError.code === 'not-local';
       setResult({ kind: notLocal ? 'notLocal' : 'invalidUrl', url: null });
@@ -198,6 +302,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                     value={url}
                     onChangeText={(next) => {
                       cancelRequest();
+                      cancelScan();
                       setDraftUrl(next);
                       setResult(null);
                       setLighting(null);
@@ -220,6 +325,43 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                   onPress={() => void confirmUrl()}
                 />
               </View>
+              <Button
+                title={scan.kind === 'scanning' ? t('sprayLed.findStop') : t('sprayLed.find')}
+                variant="text"
+                disabled={locked || pending !== null}
+                onPress={() => (scan.kind === 'scanning' ? cancelScan() : void findOnWifi())}
+              />
+              {scan.kind === 'noWifi' ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.findNoWifi')}
+                </Text>
+              ) : null}
+              {scan.kind === 'scanning' ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.finding', { checked: scan.checked, total: scan.total })}
+                </Text>
+              ) : null}
+              {scan.kind === 'done' && !scan.found.length ? (
+                <Text variant="footnote" accessibilityLiveRegion="polite">
+                  {t('sprayLed.findNone')}
+                </Text>
+              ) : null}
+              {scan.kind === 'scanning' || scan.kind === 'done'
+                ? scan.found.map((found) => (
+                    <Button
+                      key={found.url}
+                      title={t('sprayLed.findResult', { name: found.name, address: found.url.replace('http://', '') })}
+                      variant="outlined"
+                      disabled={locked || pending !== null}
+                      onPress={() => {
+                        cancelScan();
+                        setScan({ kind: 'idle' });
+                        setDraftUrl(found.url);
+                        void confirmUrl(found.url);
+                      }}
+                    />
+                  ))
+                : null}
               {message ? (
                 <Text variant="footnote" accessibilityLiveRegion="polite">
                   {message}
@@ -270,6 +412,36 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
                         : t('sprayLed.lightFailed')}
                 </Text>
               ) : null}
+              <SectionLabel>{t('sprayLed.brightness')}</SectionLabel>
+              <ValueSlider
+                value={brightnessPercent(settings.brightness ?? DEFAULT_LED_BRIGHTNESS)}
+                min={MIN_BRIGHTNESS_PERCENT}
+                max={100}
+                round={roundBrightnessPercent}
+                notch={brightnessNotch}
+                format={(percent) => t('sprayLed.brightnessValue', { percent })}
+                accessibilityLabel={t('sprayLed.brightness')}
+                adjust={adjustBrightnessPercent}
+                disabled={locked}
+                onLiveChange={() => undefined}
+                onCommit={(percent) => void saveLighting({ brightness: brightnessFromPercent(percent) })}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.brightnessHint')}
+              </Text>
+              <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
+              <SegmentedControl
+                options={AUTO_OFF_CHOICES.map((minutes) => ({
+                  key: String(minutes),
+                  label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
+                }))}
+                selectedKey={String(settings.autoOffMinutes)}
+                onSelect={(key) => void saveLighting({ autoOffMinutes: Number(key) })}
+                accessibilityLabel={t('sprayLed.autoOff')}
+              />
+              <Text variant="caption1" color={systemColors.secondaryLabel}>
+                {t('sprayLed.autoOffHint')}
+              </Text>
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

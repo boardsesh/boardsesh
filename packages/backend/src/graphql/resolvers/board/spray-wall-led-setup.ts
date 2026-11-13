@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as dbSchema from '@boardsesh/db/schema';
+import { keepHoldLedLinksFromOlderApp, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { SaveSprayWallLedSetupInputSchema } from '../../../validation/schemas/spray-walls';
@@ -48,6 +49,8 @@ function toGraphQLSetup(row: LedSetupRow, boardUuid: string) {
     controllerType: row.controllerType,
     controllerUrl: row.controllerUrl,
     enabled: row.enabled,
+    brightness: row.brightness,
+    autoOffMinutes: row.autoOffMinutes,
     layout: row.layout,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -81,7 +84,7 @@ export const sprayWallLedSetupMutations = {
   saveSprayWallLedSetup: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, SAVE_RATE_LIMIT, 'saveSprayWallLedSetup');
-    const { boardUuid, controllerType, controllerUrl, enabled, layout } = validateInput(
+    const { boardUuid, controllerType, controllerUrl, enabled, brightness, autoOffMinutes, layout } = validateInput(
       SaveSprayWallLedSetupInputSchema,
       input,
       'input',
@@ -99,13 +102,33 @@ export const sprayWallLedSetupMutations = {
     }
     if (wall.archivedAt != null) throw sprayWallArchivedError();
 
+    // An app from before hand-made hold links sends a layout without `holdLeds`.
+    // Saving that as is would erase the links a newer phone made, so keep them.
+    const sentLinks =
+      typeof input === 'object' &&
+      input !== null &&
+      typeof (input as { layout?: unknown }).layout === 'object' &&
+      (input as { layout?: object | null }).layout !== null &&
+      'holdLeds' in (input as { layout: object }).layout;
+    let savedLayout: TnutLayout | null | undefined = layout;
+    if (layout != null && !sentLinks) {
+      const [stored] = await db
+        .select({ layout: dbSchema.sprayWallLedSetups.layout })
+        .from(dbSchema.sprayWallLedSetups)
+        .where(eq(dbSchema.sprayWallLedSetups.boardId, board.id))
+        .limit(1);
+      savedLayout = keepHoldLedLinksFromOlderApp(layout, false, stored?.layout ? readTnutLayout(stored.layout) : null);
+    }
+
     const now = new Date();
     const fields = {
       updatedAt: now,
       ...(controllerType != null ? { controllerType } : {}),
       ...(controllerUrl != null ? { controllerUrl } : {}),
       ...(enabled != null ? { enabled } : {}),
-      ...(layout != null ? { layout: layout as Record<string, unknown> } : {}),
+      ...(brightness != null ? { brightness } : {}),
+      ...(autoOffMinutes != null ? { autoOffMinutes } : {}),
+      ...(savedLayout != null ? { layout: savedLayout as unknown as Record<string, unknown> } : {}),
     };
     const [row] = await db
       .insert(dbSchema.sprayWallLedSetups)

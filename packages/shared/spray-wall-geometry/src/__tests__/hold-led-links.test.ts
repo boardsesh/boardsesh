@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSprayLedMapping,
   clearHoldLedLink,
+  keepHoldLedLinksFromOlderApp,
   createWiring,
   DEFAULT_TNUT_CORNERS,
   generateLedPositions,
@@ -61,7 +62,8 @@ describe('hand-made hold to LED links', () => {
     const none = setHoldLedLink(configured, 1, []);
     expect(buildSprayLedMapping(none, frame, holds).holds[0].indices).toEqual([]);
     const restored = clearHoldLedLink(none, 1);
-    expect(restored.holdLeds).toBeUndefined();
+    // The list stays, empty: a save then says the links were cleared on purpose.
+    expect(restored.holdLeds).toEqual([]);
     expect(buildSprayLedMapping(restored, frame, holds).holds[0].indices).toEqual([4]);
   });
 
@@ -91,6 +93,29 @@ describe('hand-made hold to LED links', () => {
     expect(readTnutLayout({ ...stored, holdLeds: [{ holdId: 'one', ledIds: [] }] })).toBeNull();
     expect(readTnutLayout({ ...stored, holdLeds: [{ holdId: 1, ledIds: [7] }] })).toBeNull();
     expect(readTnutLayout({ ...stored, holdLeds: {} })).toBeNull();
-    expect(readTnutLayout({ ...stored, holdLeds: [] })?.holdLeds).toBeUndefined();
+    expect(readTnutLayout({ ...stored, holdLeds: [] })?.holdLeds).toEqual([]);
+    const { holdLeds: _links, ...withoutLinks } = stored;
+    expect(readTnutLayout(withoutLinks)).not.toHaveProperty('holdLeds');
+  });
+
+  it('keeps the stored links when an app without them saves, and trusts an explicit list', () => {
+    const configured = layout();
+    const stored = setHoldLedLink(configured, 1, [ledAt(configured, 3)]);
+    const { holdLeds: _links, ...older } = stored;
+    // An older app sends no list: the stored links survive.
+    expect(keepHoldLedLinksFromOlderApp(older, false, stored).holdLeds).toEqual([
+      { holdId: 1, ledIds: [ledAt(configured, 3)] },
+    ]);
+    // A current app sends its list, even an empty one: that wins.
+    expect(keepHoldLedLinksFromOlderApp({ ...older, holdLeds: [] }, true, stored).holdLeds).toEqual([]);
+    // Links to LEDs the older app's layout no longer has are dropped.
+    const rebuilt = { ...older, ledPositions: older.ledPositions!.filter((led) => led.id !== ledAt(configured, 3)) };
+    // Its LED is gone, so hold 1 goes back to automatic rather than going dark.
+    expect(keepHoldLedLinksFromOlderApp(rebuilt, false, stored)).not.toHaveProperty('holdLeds');
+    // A deliberate "no LED" link has nothing to lose, so it stays.
+    const dark = setHoldLedLink(configured, 2, []);
+    const { holdLeds: _dark, ...olderDark } = dark;
+    expect(keepHoldLedLinksFromOlderApp(olderDark, false, dark).holdLeds).toEqual([{ holdId: 2, ledIds: [] }]);
+    expect(keepHoldLedLinksFromOlderApp(older, false, null)).toBe(older);
   });
 });
