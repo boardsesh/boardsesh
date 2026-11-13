@@ -163,7 +163,7 @@ describe('useCncFinalise', () => {
   });
 });
 
-it('restores the finalise button after credentials refresh during a pending request', async () => {
+it('preserves pending checkout and its successful response across same-login credentials refresh', async () => {
   let finish: ((response: ReturnType<typeof checkoutUrlResponse>) => void) | undefined;
   graphqlRequest.mockImplementation(
     () =>
@@ -178,9 +178,32 @@ it('restores the finalise button after credentials refresh during a pending requ
   });
   expect(mounted.result.current.isFinalising).toBe(true);
   mounted.rerender({ token: 'new-token' });
-  expect(mounted.result.current.isFinalising).toBe(false);
+  expect(mounted.result.current.isFinalising).toBe(true);
   await act(async () => {
     finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/old'));
+    await pending;
+  });
+  expect(locationAssign).toHaveBeenCalledWith('https://checkout.stripe.com/c/pay/old');
+  expect(removePreference).toHaveBeenCalledWith(CNC_CONFIGURATOR_DRAFT_KEY);
+  expect(mounted.result.current.isFinalising).toBe(true);
+});
+
+it('ignores a checkout response after its owned component unmounts', async () => {
+  let finish: ((response: ReturnType<typeof checkoutUrlResponse>) => void) | undefined;
+  graphqlRequest.mockImplementation(
+    () =>
+      new Promise<ReturnType<typeof checkoutUrlResponse>>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const mounted = renderHook(() => useCncFinalise('ws-token'));
+  let pending: Promise<void> | undefined;
+  act(() => {
+    pending = mounted.result.current.finalise(FINALISE_INPUT);
+  });
+  mounted.unmount();
+  await act(async () => {
+    finish?.(checkoutUrlResponse('https://checkout.stripe.com/c/pay/previous-login'));
     await pending;
   });
   expect(locationAssign).not.toHaveBeenCalled();

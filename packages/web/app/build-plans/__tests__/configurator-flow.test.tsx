@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CncCatalog, CncOrder } from '@boardsesh/shared-schema';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -29,9 +29,10 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children }: { href: string; children?: React.ReactNode }) => <a href={href}>{children}</a>,
 }));
 
-vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: { user: { id: 'buyer-a' } }, status: 'authenticated' }),
-}));
+const useSession = vi.hoisted(() =>
+  vi.fn<() => { data: { user: { id: string }; authSessionId: string }; status: string }>(),
+);
+vi.mock('next-auth/react', () => ({ useSession }));
 
 const openAuthModal = vi.hoisted(() => vi.fn());
 vi.mock('@/app/components/providers/auth-modal-provider', () => ({
@@ -200,6 +201,9 @@ async function previewThisWall() {
 }
 
 beforeEach(() => {
+  useSession
+    .mockReset()
+    .mockReturnValue({ data: { user: { id: 'buyer-a' }, authSessionId: 'login-a' }, status: 'authenticated' });
   openAuthModal.mockReset();
   graphqlRequest.mockReset().mockImplementation((document: string) => respond(document));
   locationAssign.mockReset();
@@ -338,4 +342,55 @@ describe('the finalise step', () => {
     });
     await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(STRIPE_URL));
   });
+});
+
+describe('checkout session lifetime', () => {
+  it.each(['token refresh', 'account switch', 'new login'] as const)(
+    'handles a pending checkout during %s',
+    async (transition) => {
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const selectedCatalog = catalog();
+      const view = () => (
+        <QueryClientProvider client={queryClient}>
+          <Configurator catalog={selectedCatalog} locale="en-US" />
+        </QueryClientProvider>
+      );
+      const mounted = render(view());
+      await previewThisWall();
+      fireEvent.change(screen.getByLabelText(/Name on the licence/), { target: { value: 'Sam Bouldering' } });
+      fireEvent.change(screen.getByLabelText(/Email/), { target: { value: 'sam@example.com' } });
+      fireEvent.click(screen.getByRole('checkbox', { name: 'I accept the manufacturing licence' }));
+
+      type CheckoutReply = { finaliseCncOrder: { orderId: string; licenceId: string; checkoutUrl: string } };
+      let finish: ((response: CheckoutReply) => void) | undefined;
+      const pending = new Promise<CheckoutReply>((resolve) => {
+        finish = resolve;
+      });
+      graphqlRequest.mockImplementation((document: string) =>
+        document.includes('mutation FinaliseCncOrder') ? pending : respond(document),
+      );
+      await waitFor(() => expect(primaryAction().disabled).toBe(false));
+      fireEvent.click(primaryAction());
+      await screen.findByRole('button', { name: 'Opening checkout…' });
+
+      useWsAuthToken.mockReturnValue({ token: 'rotated-token', isAuthenticated: true });
+      if (transition !== 'token refresh') {
+        useSession.mockReturnValue({
+          data: { user: { id: transition === 'account switch' ? 'buyer-b' : 'buyer-a' }, authSessionId: 'new-login' },
+          status: 'authenticated',
+        });
+      }
+      mounted.rerender(view());
+      if (transition === 'token refresh')
+        expect((screen.getByRole('button', { name: 'Opening checkout…' }) as HTMLButtonElement).disabled).toBe(true);
+      else expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull();
+
+      await act(async () => {
+        finish?.({ finaliseCncOrder: { orderId: '41', licenceId: 'BS-CNC-K7QM3T', checkoutUrl: STRIPE_URL } });
+        await pending;
+      });
+      if (transition === 'token refresh') await waitFor(() => expect(locationAssign).toHaveBeenCalledWith(STRIPE_URL));
+      else expect(locationAssign).not.toHaveBeenCalled();
+    },
+  );
 });

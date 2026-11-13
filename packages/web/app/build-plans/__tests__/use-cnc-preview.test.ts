@@ -153,7 +153,7 @@ describe('useCncPreview', () => {
   });
 });
 
-it('restores preview controls when credentials refresh while drawing', async () => {
+it('preserves the pending preview and successful response when same-login credentials refresh', async () => {
   let finish: ((response: { createCncPreview: CncOrder }) => void) | undefined;
   graphqlRequest.mockImplementation(
     () =>
@@ -168,9 +168,56 @@ it('restores preview controls when credentials refresh while drawing', async () 
   });
   expect(mounted.result.current.isRequesting).toBe(true);
   mounted.rerender({ token: 'new-token' });
+  expect(mounted.result.current.isRequesting).toBe(true);
+  await act(async () => {
+    finish?.({ createCncPreview: previewOrder() });
+    expect(await pending).toEqual(previewOrder());
+  });
   expect(mounted.result.current.isRequesting).toBe(false);
+});
+
+it('ignores a preview response after its owned component unmounts', async () => {
+  let finish: ((response: { createCncPreview: CncOrder }) => void) | undefined;
+  graphqlRequest.mockImplementation(
+    () =>
+      new Promise<{ createCncPreview: CncOrder }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const mounted = renderHook(() => useCncPreview('ws-token'));
+  let pending: Promise<CncOrder | null> | undefined;
+  act(() => {
+    pending = mounted.result.current.requestPreview(CONFIG);
+  });
+  mounted.unmount();
   await act(async () => {
     finish?.({ createCncPreview: previewOrder() });
     expect(await pending).toBeNull();
   });
+});
+
+it('preserves a pending download grant across same-login credentials refresh', async () => {
+  type GrantReply = { createCncDownloadGrant: { url: string; expiresAt: string } };
+  let finish: ((response: GrantReply) => void) | undefined;
+  graphqlRequest.mockImplementation(
+    () =>
+      new Promise<GrantReply>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const mounted = renderHook(({ token }) => useCncPreview(token), { initialProps: { token: 'old-token' } });
+  let pending: Promise<void> | undefined;
+  act(() => {
+    pending = mounted.result.current.downloadPreview('BS-CNC-K7QM3T');
+  });
+  expect(mounted.result.current.isDownloading).toBe(true);
+  mounted.rerender({ token: 'rotated-token' });
+  expect(mounted.result.current.isDownloading).toBe(true);
+  const url = 'https://api.boardsesh.test/api/cnc/packs/BS-CNC-K7QM3T/download?kind=preview';
+  await act(async () => {
+    finish?.({ createCncDownloadGrant: { url, expiresAt: '2026-11-13T12:00:00Z' } });
+    await pending;
+  });
+  expect(windowOpen).toHaveBeenCalledWith(url, '_blank', 'noopener,noreferrer');
+  expect(mounted.result.current.isDownloading).toBe(false);
 });

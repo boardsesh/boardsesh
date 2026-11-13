@@ -128,15 +128,11 @@ function OwnedOrderStatus({
 }: OrderStatusProps & { ownerId: string; authSessionId: string | null }) {
   const { t } = useTranslation('cnc');
   const { token } = useWsAuthToken();
-  const beginRequest = useCncRequestScope(token);
+  const beginRequest = useCncRequestScope();
   const router = useLocaleRouter();
   const pathnameWithoutLocale = usePathnameWithoutLocale();
   const [downloadErrorKey, setDownloadErrorKey] = useState<CncErrorKey | null>(null);
   const [pendingKind, setPendingKind] = useState<CncDownloadKind | null>(null);
-  useEffect(() => {
-    setPendingKind(null);
-    setDownloadErrorKey(null);
-  }, [token]);
 
   const licenceId = initialOrder.licenceId;
   const { order: polledOrder, isError } = useCncOrderPoll({

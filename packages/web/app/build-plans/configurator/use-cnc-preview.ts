@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { CncBoardConfigInput, CncOrder } from '@boardsesh/shared-schema';
 import {
   CREATE_CNC_DOWNLOAD_GRANT,
@@ -63,15 +63,10 @@ export function isBackendDownloadUrl(url: string): boolean {
 }
 
 export function useCncPreview(authToken: string | null): CncPreviewResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const [isRequesting, setIsRequesting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
-  useEffect(() => {
-    setIsRequesting(false);
-    setIsDownloading(false);
-    setErrorKey(null);
-  }, [authToken]);
 
   const requestPreview = useCallback(
     async (config: CncBoardConfigInput): Promise<CncOrder | null> => {

@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 
-/** In-flight mutations must not update a new session or redirect after unmount. */
-export function useCncRequestScope(authToken: string | null): () => () => boolean {
-  const scope = useRef({ authToken, version: 0, mounted: true });
-  if (scope.current.authToken !== authToken) {
-    scope.current.authToken = authToken;
-    scope.current.version += 1;
-  }
+/**
+ * OwnedConfigurator and OwnedOrderStatus remount for every owner/login change.
+ * Fence requests to that lifetime, allowing credentials to rotate within one login.
+ */
+export function useCncRequestScope(): () => () => boolean {
+  const scope = useRef({ version: 0, mounted: true });
   useEffect(() => {
     scope.current.mounted = true;
     return () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FinaliseCncOrderInput } from '@boardsesh/shared-schema';
 import {
   FINALISE_CNC_ORDER,
@@ -78,13 +78,9 @@ function currentSiteOrigin(): string | null {
 }
 
 export function useCncFinalise(authToken: string | null): CncFinaliseResult {
-  const beginRequest = useCncRequestScope(authToken);
+  const beginRequest = useCncRequestScope();
   const [isFinalising, setIsFinalising] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
-  useEffect(() => {
-    setIsFinalising(false);
-    setErrorKey(null);
-  }, [authToken]);
 
   const finalise = useCallback(
     async (input: FinaliseCncOrderInput) => {
