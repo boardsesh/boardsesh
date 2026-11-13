@@ -7,6 +7,7 @@ import {
   validateApkIdentity,
   validateRecoveryRun,
   validateRecoveryGateLog,
+  recoveryCommandFailure,
 } from '../mobile-recover-android-candidate';
 
 const SOURCE = 'd'.repeat(40);
@@ -37,6 +38,45 @@ const releases = (state: string, code = 2001682) => ({
 });
 
 describe('uploaded Android candidate recovery', () => {
+  it('reports the exact failed operation and only whitelisted process diagnostics', () => {
+    const error = recoveryCommandFailure('read original native gate logs', {
+      status: 1,
+      stderr: Buffer.from('gh: private response with Bearer secret-token (HTTP 403)'),
+      stdout: 'private response',
+      message: 'credential-bearing command arguments',
+      code: 'EPIPE',
+      signal: 'SIGTERM',
+    });
+    expect(error.message).toBe(
+      'Android recovery command failed (read original native gate logs; exit 1; HTTP 403; EPIPE; SIGTERM).',
+    );
+    expect(error.cause).toBeUndefined();
+  });
+
+  it('distinguishes missing commands, timeouts and output-buffer failures without raw error text', () => {
+    for (const code of ['ENOENT', 'ENOBUFS', 'ETIMEDOUT'])
+      expect(
+        recoveryCommandFailure('read original native jobs', { code, message: 'private credentials' }).message,
+      ).toBe(`Android recovery command failed (read original native jobs; ${code}).`);
+    expect(
+      recoveryCommandFailure('read original native run', {
+        code: 'private token',
+        signal: 'private signal',
+        stderr: 'private body',
+      }).message,
+    ).toBe('Android recovery command failed (read original native run).');
+  });
+
+  it.each([
+    ['gh: API rate limit exceeded for private-account (HTTP 403)', 'HTTP 403; reason rate-limit'],
+    ['gh: Resource not accessible by integration (HTTP 403)', 'HTTP 403; reason access-denied'],
+    ['gh: Not Found (HTTP 404)', 'HTTP 404; reason not-found'],
+    ['unknown flag: --private-argument', 'reason unsupported-option'],
+  ])('classifies a known CLI failure without copying its details: %s', (stderr, expected) => {
+    expect(recoveryCommandFailure('read original native jobs', { stderr }).message).toBe(
+      `Android recovery command failed (read original native jobs; ${expected}).`,
+    );
+  });
   it('binds the APK to the actual resolved source and runtime in the trusted native gate', () => {
     const gate = `2026-11-13T19:01:27Z source_sha=${SOURCE}\n2026-11-13T19:01:58Z source_sha=${SOURCE}\n2026-11-13T19:01:58Z fingerprint=${RUNTIME}\n2026-11-13T19:01:58Z should_build=true\n`;
     expect(validateRecoveryGateLog(gate, SOURCE)).toBe(RUNTIME);

@@ -120,7 +120,49 @@ export function missingRecoveryTags(tags: Readonly<Record<string, string | null>
   return Object.keys(tags).filter((tag) => tags[tag] === null);
 }
 
-function execute(binary: string, args: string[], environment = process.env): string {
+export function recoveryCommandFailure(operation: string, error: unknown): Error {
+  const details: string[] = [];
+  if (typeof error === 'object' && error !== null) {
+    const failure = error as Record<string, unknown>;
+    if (
+      typeof failure.status === 'number' &&
+      Number.isInteger(failure.status) &&
+      failure.status >= 0 &&
+      failure.status <= 255
+    )
+      details.push(`exit ${failure.status}`);
+    const stderr =
+      typeof failure.stderr === 'string'
+        ? failure.stderr
+        : Buffer.isBuffer(failure.stderr)
+          ? failure.stderr.toString('utf8')
+          : '';
+    const http = stderr.match(/\bHTTP[ :]+([1-5]\d{2})\b/i)?.[1];
+    if (http) details.push(`HTTP ${http}`);
+    if (/^gh:\s*(?:API rate limit exceeded|You have exceeded a secondary rate limit)\b/im.test(stderr))
+      details.push('reason rate-limit');
+    else if (/^gh:\s*Resource not accessible by (?:integration|personal access token)\b/im.test(stderr))
+      details.push('reason access-denied');
+    else if (/^gh:\s*Not Found\b/im.test(stderr)) details.push('reason not-found');
+    else if (/^(?:unknown flag:|the `--slurp` option is not supported\b)/im.test(stderr))
+      details.push('reason unsupported-option');
+    if (
+      typeof failure.code === 'string' &&
+      ['ENOENT', 'ENOBUFS', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'EPIPE'].includes(failure.code)
+    )
+      details.push(failure.code);
+    if (typeof failure.signal === 'string' && ['SIGTERM', 'SIGKILL', 'SIGABRT'].includes(failure.signal))
+      details.push(failure.signal);
+  }
+  return new Error(`Android recovery command failed (${operation}${details.length ? `; ${details.join('; ')}` : ''}).`);
+}
+
+function execute(
+  binary: string,
+  args: string[],
+  environment = process.env,
+  operation = `${binary} ${args[0]}`,
+): string {
   try {
     return execFileSync(binary, args, {
       encoding: 'utf8',
@@ -129,8 +171,8 @@ function execute(binary: string, args: string[], environment = process.env): str
       timeout: 120_000,
       maxBuffer: 32 * 1024 * 1024,
     }).trim();
-  } catch {
-    throw new Error(`Android recovery command failed (${binary} ${args[0]}).`);
+  } catch (error: unknown) {
+    throw recoveryCommandFailure(operation, error);
   }
 }
 const required = (name: string) => {
@@ -158,14 +200,16 @@ async function main(): Promise<void> {
     const runId = required('SOURCE_RUN_ID');
     const sourceSha = required('EXPECTED_SOURCE_SHA');
     if (!/^[1-9]\d*$/.test(runId) || !FULL_SHA.test(sourceSha)) throw new Error('Invalid recovery run or source SHA.');
-    const run = JSON.parse(execute('gh', ['api', `repos/${repository}/actions/runs/${runId}`])) as unknown;
+    const run = JSON.parse(
+      execute('gh', ['api', `repos/${repository}/actions/runs/${runId}`], process.env, 'read original native run'),
+    ) as unknown;
     const pages = JSON.parse(
-      execute('gh', [
-        'api',
-        '--paginate',
-        '--slurp',
-        `repos/${repository}/actions/runs/${runId}/jobs?filter=all&per_page=100`,
-      ]),
+      execute(
+        'gh',
+        ['api', '--paginate', '--slurp', `repos/${repository}/actions/runs/${runId}/jobs?filter=all&per_page=100`],
+        process.env,
+        'read original native jobs',
+      ),
     ) as Array<{ jobs: unknown[] }>;
     const source = validateRecoveryRun(
       run,
@@ -180,7 +224,12 @@ async function main(): Promise<void> {
       .find((job) => job.name === 'gate' && job.conclusion === 'success');
     if (!gate || !Number.isSafeInteger(gate.id)) throw new Error('Missing original successful native gate.');
     const expectedRuntime = validateRecoveryGateLog(
-      execute('gh', ['api', `repos/${repository}/actions/jobs/${String(gate.id)}/logs`]),
+      execute(
+        'gh',
+        ['api', `repos/${repository}/actions/jobs/${String(gate.id)}/logs`],
+        process.env,
+        'read original native gate logs',
+      ),
       sourceSha,
     );
     execute('git', ['fetch', '--quiet', '--no-tags', 'origin', 'main:refs/remotes/origin/main']);
