@@ -195,6 +195,26 @@ describe('owned full-schema dedicated credential LOGIN qualification', () => {
       'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
     );
   });
+  it('refuses PUBLIC table grants that preserve existing writer SELECT', async () => {
+    const [effective] = await environment.writer<{ allowed: boolean }[]>`
+      SELECT has_table_privilege(current_user,'public.auth_session','SELECT') AS allowed`;
+    expect(effective.allowed).toBe(true);
+    await drift(
+      'GRANT SELECT ON public.auth_session TO PUBLIC',
+      'REVOKE SELECT ON public.auth_session FROM PUBLIC',
+      'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
+    );
+  });
+  it('refuses PUBLIC column grants that preserve existing writer SELECT', async () => {
+    const [effective] = await environment.writer<{ allowed: boolean }[]>`
+      SELECT has_column_privilege(current_user,'public.auth_session','token','SELECT') AS allowed`;
+    expect(effective.allowed).toBe(true);
+    await drift(
+      'GRANT SELECT (token) ON public.auth_session TO PUBLIC',
+      'REVOKE SELECT (token) ON public.auth_session FROM PUBLIC',
+      'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT',
+    );
+  });
   it('refuses executable routines and future implicit/PUBLIC/writer grants', async () => {
     await drift(
       'GRANT EXECUTE ON FUNCTION public.partner_revoke_on_credential_change() TO boardsesh_identity_writer',

@@ -147,6 +147,7 @@ export async function qualifyCredentialWriter(
       privileges: string[];
       columnPrivileges: { name: string; privileges: string[] }[];
       grantOption: boolean;
+      publicGrant: boolean;
     }[]
   >`
     SELECT namespace.nspname AS schema, relation.relname AS name, relation.relkind AS kind,
@@ -158,7 +159,10 @@ export async function qualifyCredentialWriter(
         FROM pg_attribute attribute WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped),'[]'::json) AS "columnPrivileges",
       EXISTS (SELECT 1 FROM aclexplode(relation.relacl) acl WHERE acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user)) AND acl.is_grantable)
       OR EXISTS (SELECT 1 FROM pg_attribute attribute CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
-        WHERE attribute.attrelid=relation.oid AND acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user)) AND acl.is_grantable) AS "grantOption"
+        WHERE attribute.attrelid=relation.oid AND acl.grantee IN (0,(SELECT oid FROM pg_roles WHERE rolname=current_user)) AND acl.is_grantable) AS "grantOption",
+      EXISTS (SELECT 1 FROM aclexplode(relation.relacl) acl WHERE acl.grantee=0)
+      OR EXISTS (SELECT 1 FROM pg_attribute attribute CROSS JOIN LATERAL aclexplode(attribute.attacl) acl
+        WHERE attribute.attrelid=relation.oid AND acl.grantee=0) AS "publicGrant"
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema' AND relation.relkind IN ('r','p','v','m','f') ORDER BY 1,2`;
   const required = new Set([
@@ -185,6 +189,7 @@ export async function qualifyCredentialWriter(
     }
     if (
       relation.grantOption ||
+      (relation.publicGrant && relation.schema === 'public' && closureRelations.includes(relation.name)) ||
       relation.privileges.some((privilege) => !allowed?.includes(privilege as CredentialPrivilege)) ||
       relation.columnPrivileges.some((column) =>
         column.privileges.some(
