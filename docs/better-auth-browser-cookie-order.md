@@ -70,8 +70,9 @@ cannot be downgraded to a legacy JWE. Legacy selections also check primary
 subject generation and SID denials.
 No raw source credential or canonical token is persisted in the binding.
 
-Generated migration `0312_browser_selection_possession` adds a format version,
-actor-credential hash and exact result-credential hash to intents. New operations
+Generated migration `0312_browser_binding_selection` creates the final browser
+schema after main's independent CNC migration0311. It includes the format
+version, actor-credential hash and exact result-credential hash on intents. New operations
 use format 2; old format-1 intents fail closed. The original actor bytes must be
 retained by a sealed flow carrier until completion, because ordinary renewal
 may change the browser's current JWE. A consumed retry must present the original
@@ -97,8 +98,10 @@ forged/copied/cross-transaction and wrong-operation receipt refusal, original
 SID/age/ancestry/expiry preservation, and real password/mirror/cutoff rollback.
 Two final-write deadline cases observe an actual PostgreSQL advisory-lock wait
 and the database clock crossing the deadline before release; they do not infer
-rollback from a test or SQL timeout. Both 0311 and 0312 were generated through
-Drizzle from their current compiled schemas.
+rollback from a test or SQL timeout. The original unpublished browser0311/0312
+steps were regenerated through Drizzle as one0312 migration after CNC. Its
+physical column order, defaults and constraints match the reviewed two-step
+schema; existing format-1 intents retain their fail-closed behavior.
 
 ```sh
 AUTH_PROTOTYPE_DATABASE_URL='<owned localhost admin URL accepted by the proof>' \
