@@ -70,11 +70,42 @@ export function createBrowserBackendClient(options: {
     },
   });
   const consumer = createBrowserBackendLeaseConsumer(manager);
+  // A public tuple is a cache label, not evidence that this document accepted
+  // that session. Keep that evidence private and retire it with the manager.
+  const acceptedSessions = new WeakMap<object, { readonly key: string; readonly revision: number }>();
+  let anonymousRevision: number | null = null;
+  const listeners = new Set<() => void>();
+  let snapshot: Readonly<ReturnType<typeof manager.getSnapshot> & { selected: boolean; anonymous: boolean }> =
+    Object.freeze({ ...manager.getSnapshot(), selected, anonymous: confirmedAnonymous });
+  function publishSnapshot(): void {
+    const current = manager.getSnapshot();
+    if (
+      current.owner === snapshot.owner &&
+      current.revision === snapshot.revision &&
+      current.refreshing === snapshot.refreshing &&
+      current.closed === snapshot.closed &&
+      selected === snapshot.selected &&
+      confirmedAnonymous === snapshot.anonymous
+    )
+      return;
+    snapshot = Object.freeze({ ...current, selected, anonymous: confirmedAnonymous });
+    const pendingListeners = Array.from(listeners);
+    for (const listener of pendingListeners) {
+      try {
+        listener();
+      } catch {
+        // An observer cannot prevent another private view from retiring.
+      }
+    }
+  }
+  const unsubscribeManager = manager.subscribe(publishSnapshot);
   return {
     /** Call only after an owned successful session request, before publishing
      * the new SessionContext. Missing selected metadata never restores legacy. */
     acceptSession(session: unknown): string | null {
+      if (manager.getSnapshot().closed) throw new BrowserBackendConsumerError('unavailable');
       confirmedAnonymous = false;
+      anonymousRevision = null;
       // A malformed reserved marker also retires legacy dispatch. It cannot
       // be treated as evidence that this browser has no selected credential.
       if (session !== null && typeof session === 'object' && 'browserSelection' in session) selected = true;
@@ -83,18 +114,44 @@ export function createBrowserBackendClient(options: {
         selected = true;
         if (options.ready()) {
           manager.setOwner(observed.owner);
-          return browserBackendSessionKey(observed.owner);
+          const key = browserBackendSessionKey(observed.owner);
+          acceptedSessions.set(session as object, { key, revision: manager.getSnapshot().revision });
+          publishSnapshot();
+          return key;
         }
       } else if (observed.status === 'anonymous') {
         confirmedAnonymous = true;
         manager.setOwner(null);
+        anonymousRevision = manager.getSnapshot().revision;
+        publishSnapshot();
         return selected ? 'selected-anonymous' : null;
       } else if (observed.status === 'legacy' && !selected) {
         manager.setOwner(null);
+        publishSnapshot();
         return null;
       }
       manager.setOwner(null);
+      publishSnapshot();
       throw new BrowserBackendConsumerError('unavailable');
+    },
+    /** Only an actual accepted SessionContext object at the current local
+     * revision may reveal viewer-bound server props. Copies/ABA are refused. */
+    isSessionCurrent(session: unknown): boolean {
+      const current = manager.getSnapshot();
+      if (current.closed) return false;
+      if (session === null)
+        return confirmedAnonymous && current.owner === null && anonymousRevision === current.revision;
+      if (!selected || !options.ready() || typeof session !== 'object') return false;
+      const receipt = acceptedSessions.get(session);
+      const observed = readBrowserBackendSessionScope(session);
+      return (
+        receipt !== undefined &&
+        receipt.revision === current.revision &&
+        current.owner !== null &&
+        observed.status === 'selected' &&
+        browserBackendSessionKey(observed.owner) === receipt.key &&
+        browserBackendSessionKey(current.owner) === receipt.key
+      );
     },
     async acquire(owner: BrowserBackendLeaseOwner) {
       if (!selected || !options.ready()) throw new BrowserBackendConsumerError('unavailable');
@@ -122,15 +179,25 @@ export function createBrowserBackendClient(options: {
      * It also retires a first in-flight lease before any receipt exists. */
     retire(): void {
       confirmedAnonymous = false;
+      anonymousRevision = null;
       manager.setOwner(null);
+      publishSnapshot();
     },
-    getSnapshot: manager.getSnapshot,
-    subscribe: (listener: () => void) => manager.subscribe(listener),
+    getSnapshot: () => snapshot,
+    subscribe(this: void, listener: () => void) {
+      if (manager.getSnapshot().closed) return () => {};
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
     isSelected: () => selected,
     isAnonymous: () => confirmedAnonymous,
     dispose() {
+      confirmedAnonymous = false;
+      anonymousRevision = null;
       consumer.dispose();
       manager.dispose();
+      unsubscribeManager();
+      listeners.clear();
     },
   };
 }
