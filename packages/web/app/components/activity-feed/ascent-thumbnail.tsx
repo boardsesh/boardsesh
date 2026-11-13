@@ -4,8 +4,6 @@ import React, { useMemo } from 'react';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
-import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-renderer';
-import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import type { RenderBoardConfig } from '@boardsesh/shared-schema';
@@ -42,7 +40,6 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   renderBoard,
   onClick,
 }) => {
-  const canvasReady = useCanvasRendererReady();
   // Memoize board details to avoid recomputing on every render
   const boardDetails = useMemo<BoardDetails | null>(() => {
     if (!layoutId) return null;
@@ -127,32 +124,15 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     height: '100%',
   };
 
-  let thumbnailContent: React.ReactNode;
-  if (canvasReady && frames) {
-    thumbnailContent = (
-      <BoardCanvasRenderer
-        boardDetails={boardDetails}
-        frames={frames}
-        mirrored={isMirror}
-        thumbnail
-        style={thumbnailStyle}
-      />
-    );
-  } else if (frames) {
-    thumbnailContent = (
-      <BoardImageLayers
-        boardDetails={boardDetails}
-        frames={frames}
-        mirrored={isMirror}
-        thumbnail
-        style={thumbnailStyle}
-      />
-    );
-  } else {
-    thumbnailContent = (
-      <BoardImageLayers boardDetails={boardDetails} mirrored={isMirror} thumbnail style={thumbnailStyle} />
-    );
-  }
+  const thumbnailContent = (
+    <BoardImageLayers
+      boardDetails={boardDetails}
+      frames={frames ?? undefined}
+      mirrored={isMirror}
+      thumbnail
+      style={thumbnailStyle}
+    />
+  );
 
   if (onClick) {
     return (

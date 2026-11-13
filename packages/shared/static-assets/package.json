@@ -16,11 +16,6 @@
       "import": "./src/generated/shell.ts",
       "default": "./src/generated/shell.ts"
     },
-    "./renderer": {
-      "types": "./src/generated/renderer.ts",
-      "import": "./src/generated/renderer.ts",
-      "default": "./src/generated/renderer.ts"
-    },
     "./catalog.json": "./src/generated/catalog.json"
   },
   "scripts": {

@@ -8,9 +8,9 @@ set -euo pipefail
 #     base path for the web board renderer
 #     (packages/mobile/modules/board-renderer/src/index.web.ts, which loads the
 #     glue at runtime by URL).
-#   packages/web/public/wasm     — the Next.js board-render worker
-#     (packages/web/app/lib/board-render-worker/board-render.worker.ts) loads the
-#     same glue from the site root.
+#   packages/web/public/wasm     — compatibility files for older Next.js tabs
+#     and the existing byte-parity contract. Current Next.js pages request
+#     backend-rendered images instead of loading this glue.
 #
 # These MUST be real files under public/ — Metro cannot bundle them and Expo's
 # static middleware / `expo export` only see real files.

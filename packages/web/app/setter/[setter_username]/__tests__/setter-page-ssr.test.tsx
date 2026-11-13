@@ -137,8 +137,6 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en-US' } }),
 }));
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 
 const pageModule = await import('../page');
 const SetterProfilePage = pageModule.default;

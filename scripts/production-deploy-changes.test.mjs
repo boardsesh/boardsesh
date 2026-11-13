@@ -347,8 +347,6 @@ void test('publishes cataloged static images but excludes retained board PNG sou
   assert.equal(classifyChangedFiles(['packages/web/public/videos/help/swipe.mp4']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/public/videos/help/swipe.webm']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/public/videos/help/raw.mov']).staticAssets, false);
-  assert.equal(classifyChangedFiles(['packages/web/public/wasm/board_renderer_wasm.js']).staticAssets, true);
-  assert.equal(classifyChangedFiles(['packages/web/public/wasm/board_renderer_wasm_bg.wasm']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/public/brand/boardsesh-mark.webp']).staticAssets, true);
   assert.equal(classifyChangedFiles(['packages/web/app/favicon.ico']).staticAssets, true);
   assert.equal(classifyChangedFiles(['scripts/upload-static-assets.ts']).staticAssets, true);

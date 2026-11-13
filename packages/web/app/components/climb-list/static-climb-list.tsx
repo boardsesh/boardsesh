@@ -89,8 +89,6 @@ export type StaticClimbListProps = {
   emptyState?: React.ReactNode;
   hideEndMessage?: boolean;
   showBottomSpacer?: boolean;
-  /** How many leading rows render from image layers rather than the canvas (LCP). */
-  initialImageCount?: number;
   /** Extra content under a row, inside the measured wrapper but outside the link. */
   renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
 };
@@ -115,7 +113,6 @@ type SharedRowProps = {
   dimmedRowKeys?: ReadonlySet<string>;
   pathname: string;
   logbook?: readonly LogbookEntry[];
-  initialImageCount: number;
   renderItemExtra?: (climb: Climb, rowKey: string) => React.ReactNode;
 };
 
@@ -136,7 +133,6 @@ export default function StaticClimbList({
   emptyState,
   hideEndMessage = false,
   showBottomSpacer = false,
-  initialImageCount = 0,
   renderItemExtra,
 }: StaticClimbListProps) {
   // Read once at list level: ClimbThumbnail takes the pathname as a prop
@@ -157,7 +153,6 @@ export default function StaticClimbList({
     dimmedRowKeys,
     pathname,
     logbook,
-    initialImageCount,
     renderItemExtra,
   };
 
@@ -213,7 +208,6 @@ function PlainRows({
   dimmedRowKeys,
   pathname,
   logbook,
-  initialImageCount,
   renderItemExtra,
 }: SharedRowProps) {
   return (
@@ -237,7 +231,6 @@ function PlainRows({
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
               pathname={pathname}
               logbook={logbook}
-              preferImageLayers={index < initialImageCount}
               fetchPriority={index === 0 ? 'high' : undefined}
             />
             {renderItemExtra?.(climb, rowKey)}
@@ -280,7 +273,6 @@ function VirtualizedRows({
   dimmedRowKeys,
   pathname,
   logbook,
-  initialImageCount,
   renderItemExtra,
   hasMore,
   isFetching,
@@ -372,7 +364,6 @@ function VirtualizedRows({
               unlinked={unlinkedClimbUuids?.has(climb.uuid)}
               pathname={pathname}
               logbook={logbook}
-              preferImageLayers={virtualItem.index < initialImageCount}
               fetchPriority={virtualItem.index === 0 ? 'high' : undefined}
             />
             {renderItemExtra?.(climb, rowKey)}

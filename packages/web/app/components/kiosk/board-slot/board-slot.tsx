@@ -4,23 +4,14 @@
 // the identity strip below it.
 //
 // Art source, in order:
-//  - Live feed published data → the WASM canvas renderer (BoardCanvasRenderer)
-//    with the lit climb's frames (or bare when the wall is clear). It used to be
-//    the inline-SVG renderer, which can only draw circles — so a gym TV showed a
-//    different, older picture of the same climb than every phone in the room
-//    (issue #5103). The canvas path is the same renderer the app and the share
-//    cards use, and it falls back to the server raster on a browser without
-//    OffscreenCanvas.
-//  - No live data yet (SSR + pre-subscription) → the server-rendered raster
-//    from the Railway /render/board endpoint, seeded from boardRecentClimbs at request
-//    time. One cached webp paints far faster on a TV than a cold WASM boot,
-//    and it keeps the server-rendered HTML meaningful.
+//  - Live feed data → a backend-rendered raster for the current climb.
+//  - Before live data → the server-seeded raster from /render/board.
+// Both use the same versioned, CDN-cacheable renderer without downloading WASM.
 
 import React, { useMemo } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import type { BoardDetails } from '@/app/lib/types';
-import BoardCanvasRenderer from '../../board-renderer/board-canvas-renderer';
-import { toFlatFrames } from '../../board-renderer/util';
+import { buildBoardRenderUrl, toFlatFrames } from '../../board-renderer/util';
 import { useKioskBoardPresence } from '../presence/use-kiosk-board-presence';
 import BoardIdentity from './board-identity';
 import BoardInstallQr from './board-install-qr';
@@ -48,10 +39,6 @@ export type BoardSlotProps = {
   /** Whether this kiosk shows the per-board install QR (kiosk layout toggle). */
   showInstallQr: boolean;
 };
-
-// The canvas fills the slot the way the SVG did: contain-fit inside the art
-// area, height driven by the row rather than the board's own aspect ratio.
-const kioskArtStyle: React.CSSProperties = { width: '100%', height: '100%' };
 
 export default function BoardSlot({
   boardId,
@@ -81,29 +68,18 @@ export default function BoardSlot({
     [hasLiveData, displayClimb?.frames, boardDetails.board_name],
   );
 
+  const liveImageUrl = useMemo(
+    () => (hasLiveData ? buildBoardRenderUrl(boardDetails, liveFrames, { includeBackground: true }) : null),
+    [hasLiveData, boardDetails, liveFrames],
+  );
+  const imageUrl =
+    liveImageUrl ?? (displayClimb !== null && initialClimbImageUrl !== null ? initialClimbImageUrl : bareBoardImageUrl);
+
   return (
     <section className={styles.slot}>
       <div className={styles.art}>
         {showInstallQr && slug ? <BoardInstallQr slug={slug} /> : null}
-        {hasLiveData ? (
-          <BoardCanvasRenderer
-            boardDetails={boardDetails}
-            frames={liveFrames}
-            mirrored={false}
-            contain
-            // Uncropped, to match the raster this replaces: the slot swaps from
-            // the server-rendered image to the canvas the moment the live feed
-            // answers, and a cropped board would jump on the wall.
-            cropTop={0}
-            style={kioskArtStyle}
-          />
-        ) : (
-          <img
-            className={styles.raster}
-            src={displayClimb !== null && initialClimbImageUrl !== null ? initialClimbImageUrl : bareBoardImageUrl}
-            alt=""
-          />
-        )}
+        <img className={styles.raster} src={imageUrl} alt="" />
       </div>
       <BoardIdentity boardName={boardName} boardAngle={angle} climb={displayClimb} lastLitClimb={lastLitClimb} />
     </section>

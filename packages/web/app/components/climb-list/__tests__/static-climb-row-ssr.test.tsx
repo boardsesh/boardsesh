@@ -21,8 +21,6 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 
 function makeClimb(overrides: Partial<Climb> = {}): Climb {
   return {

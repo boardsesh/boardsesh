@@ -1,6 +1,6 @@
-# Static asset CDN
+# Static image CDN
 
-Boardsesh publishes repo-owned runtime images and the web board renderer to the dedicated Cloudflare R2 bucket
+Boardsesh publishes repo-owned runtime images to the dedicated Cloudflare R2 bucket
 `boardsesh-static-assets` and serves them through
 `https://assets.boardsesh.com`. The immutable catalog lives in `@boardsesh/static-assets` and is shared by the
 Next.js and Expo web builds.
@@ -12,8 +12,7 @@ Next.js and Expo web builds.
 - every WebP under `packages/web/public/images` (including full, thumbnail, and dark board layers);
 - the Boardsesh brand mark and public PWA icons;
 - the Next.js favicon and app icon;
-- help recordings under `packages/web/public/videos` (`.mp4` and `.webm`);
-- the Next.js worker's JavaScript glue and WASM binary under `packages/web/public/wasm`.
+- help recordings under `packages/web/public/videos` (`.mp4` and `.webm`).
 
 The original board PNG files remain local build inputs for server-side board and Open Graph rendering. They are
 deliberately excluded from the CDN catalog. Dynamic/user images, generated Open Graph cards, gym media, avatars,
@@ -25,9 +24,8 @@ native-bundle flags: the publisher derives that rich metadata directly from the 
 only what URL resolution needs. Board art is exactly the `/images/**/*.webp` portion of the map, so native packaging
 can derive its inputs without a separate flag. A tiny generated shell catalog duplicates only the seven logo and app
 icon keys so global chrome does not pull the complete board-image map into every browser route.
-A separate tiny renderer catalog holds only the matching glue and binary keys for the web worker.
 
-Changing bytes in place creates a new URL; old objects remain valid for old deployments. Objects use their real content type and
+Changing bytes in place creates a new URL; old objects remain valid for old deployments. Objects use their real image content type and
 `Cache-Control: public, max-age=31536000, immutable`.
 
 After adding or changing an image, run:
@@ -37,27 +35,11 @@ vp run generate:static-assets
 vp run check:static-assets
 ```
 
-Commit all three generated catalog files. CI regenerates the compact map, shell keys and renderer pair and fails when an input or a
+Commit both generated catalog files. CI regenerates the compact map and shell keys and fails when an input or either
 generated artifact is stale.
 Checked-in Expo public files retain their existing URLs for local and PR exports. The Expo export patcher switches
 its shell and PWA manifest icons to cataloged CDN URLs only when `EXPO_PUBLIC_STATIC_ASSET_BASE_URL` is set, as it
 is in the production workflow.
-
-## Web renderer delivery
-
-Production Next.js workers resolve both files from the same generated renderer catalog, using
-`NEXT_PUBLIC_STATIC_ASSET_BASE_URL`. The glue is served as `text/javascript` and the binary as
-`application/wasm`. The worker passes the binary's hashed URL explicitly to the glue initializer;
-it does not rely on the glue's relative `board_renderer_wasm_bg.wasm` default.
-
-`sync-static-assets` uploads and validates the pair before the production web build can run. Renderer source
-changes trigger that job, as do catalog changes. The existing `/static/v1/` Cloudflare rule makes `.wasm`
-eligible for edge caching, and the unconditional `Access-Control-Allow-Origin: *` rule permits cross-origin
-module loading and WASM fetches. The publisher checks bytes, MIME types, immutable headers and CORS before
-allowing the build. No historical object is overwritten or deleted, so an old browser tab keeps its original pair.
-
-Development and branch previews leave the CDN base unset and load the current files from their own `/wasm/`
-directory. After rebuilding or synchronizing the renderer, regenerate the static catalog before committing.
 
 ## R2 cutover — accepted October 4, 2026
 
@@ -95,8 +77,8 @@ assets.boardsesh.com (Tigris)  access-control-allow-origin: *      # on EVERY re
 media.boardsesh.com  (R2)      (no ACAO header at all)             # R2 answers CORS only when the request has Origin
 ```
 
-The catalogue is read both ways. A plain `<img src>` sends no `Origin`; `ensureImagesPreloaded` in
-`packages/web/app/lib/board-render-worker/worker-manager.ts` does a real `fetch()` for every board background. Those
+The catalogue is read both ways. A plain `<img src>` sends no `Origin`; the Expo browser worker in
+`packages/mobile/public/wasm/board-render.worker.js` fetches board backgrounds. Those
 share one cache key, and Cloudflare does not key its cache on `Vary` below Enterprise — so the `<img>` response, with
 no ACAO, can be the copy served to the `fetch()`. That fails CORS, the failure is swallowed
 (`console.warn('Failed to preload background image')`), and the board renders with no background for as long as the

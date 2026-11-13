@@ -1158,7 +1158,26 @@ straight through to Railway.
 `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice — the second response
 shows `cf-cache-status: HIT`.
 
-For the www rules:
+The current web renderer uses the backend endpoint directly. Use the existing
+production-smoke identity when probing it: plain `curl` identifies itself as
+automation and is intentionally blocked by the crawler rule. No API token is
+needed for these public GETs.
+
+```bash
+B='https://ws.boardsesh.com/render/board?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1085r15p1128r12&include_background=1&render_mode=aura'
+V=$(sed -n "s/.*BOARD_RENDER_VERSION = '\(.*\)';/\1/p" packages/shared/board-render/src/generated/render-version.ts)
+curl --fail --silent --show-error -A 'boardsesh-production-smoke/1.0' -D - -o /dev/null "$B&v=$V"
+curl --fail --silent --show-error -A 'boardsesh-production-smoke/1.0' -D - -o /dev/null "$B&v=$V"
+```
+
+Expect `200`, an image content type, `Access-Control-Allow-Origin: *`, and
+`public`/`immutable` cache headers with a one-year lifetime. The first GET may
+be a `MISS` or an existing `HIT`; the repeated GET should be a `HIT`. Test the
+same complete URL: frames, board configuration, render mode and `v` must all
+remain in the cache key. Errors must not gain a cacheable lifetime. The
+backend handler tests and declared cache-rule tests cover those policies.
+
+For the legacy www rules:
 
 ```bash
 # Board-render becomes cacheable: DYNAMIC -> MISS -> HIT.

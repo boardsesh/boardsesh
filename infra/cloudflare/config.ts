@@ -229,7 +229,7 @@ export const DYNAMIC_REDIRECT_RULE_PHASE = 'http_request_dynamic_redirect';
  * R2 emits CORS headers only in response to a request that carries `Origin`
  * (Cloudflare's R2 CORS docs are explicit about this). The same objects are
  * loaded both ways: `<img src>` sends no `Origin`, while
- * `ensureImagesPreloaded` in packages/web/app/lib/board-render-worker/worker-manager.ts
+ * the Expo browser worker in packages/mobile/public/wasm/board-render.worker.js
  * does a real `fetch()` for every board background. One cache key, two possible
  * bodies-with-different-headers, and the `<img>` one wins the race as often as
  * not — after which the `fetch()` fails CORS against a response with no ACAO.

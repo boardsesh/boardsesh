@@ -12,8 +12,6 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 
 // The rendered board is irrelevant here — only the href the row wraps is.
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 
 /**
  * Kilter layout 1 carries two "12 x 12" squares — id 10 ("with kickboard") and

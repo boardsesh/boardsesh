@@ -8,8 +8,6 @@ import {
   renderStaticAssetJson,
   renderStaticAssetObjectKeyCatalogJson,
   renderStaticAssetShellTypeScript,
-  buildStaticAssetManifest,
-  renderBoardRendererAssetTypeScript,
 } from './static-asset-catalog';
 
 describe('static asset catalog generation', () => {
@@ -117,28 +115,6 @@ describe('static asset catalog generation', () => {
       boardRecord.logicalPath,
     );
   });
-
-  it('hashes both renderer files, serves their real MIME types, and keeps them out of shell chrome', () => {
-    const repoRoot = createFixtureRepo([]);
-    const before = buildStaticAssetManifest(repoRoot);
-    const gluePath = '/wasm/board_renderer_wasm.js';
-    const wasmPath = '/wasm/board_renderer_wasm_bg.wasm';
-
-    expect(before[gluePath]?.contentType).toBe('text/javascript');
-    expect(before[wasmPath]?.contentType).toBe('application/wasm');
-    expect(renderStaticAssetShellTypeScript(before)).not.toContain('/wasm/');
-    const rendererCatalog = renderBoardRendererAssetTypeScript(before);
-    expect(rendererCatalog).toContain(before[gluePath]!.objectKey);
-    expect(rendererCatalog).toContain(before[wasmPath]!.objectKey);
-    expect(rendererCatalog).not.toContain('/images/');
-
-    writeFileSync(join(repoRoot, 'packages/web/public/wasm/board_renderer_wasm_bg.wasm'), 'changed binary');
-    const after = buildStaticAssetManifest(repoRoot);
-    expect(after[wasmPath]?.objectKey).not.toBe(before[wasmPath]?.objectKey);
-    expect(after[gluePath]?.objectKey).toBe(before[gluePath]?.objectKey);
-    expect(renderBoardRendererAssetTypeScript(after)).not.toBe(rendererCatalog);
-    expect(() => renderBoardRendererAssetTypeScript({})).toThrow('Missing board renderer asset');
-  });
 });
 
 /**
@@ -153,8 +129,6 @@ const RUNTIME_IMAGE_PATHS = [
   'packages/web/public/icons/icon-maskable-512.png',
   'packages/web/app/favicon.ico',
   'packages/web/app/icon.png',
-  'packages/web/public/wasm/board_renderer_wasm.js',
-  'packages/web/public/wasm/board_renderer_wasm_bg.wasm',
 ];
 
 function createFixtureRepo(files: readonly string[]): string {

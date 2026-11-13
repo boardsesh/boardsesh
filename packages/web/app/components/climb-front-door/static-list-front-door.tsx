@@ -170,7 +170,6 @@ export default async function StaticListFrontDoor({
         // Keep the leading rows on plain image layers rather than the canvas
         // renderer: this page paints 50 rows at once, and the first screenful
         // is what LCP measures.
-        initialImageCount={6}
         emptyState={
           <Typography variant="body1" component="p" sx={emptyStateSx}>
             {t('list.frontDoor.empty')}

@@ -10,8 +10,6 @@ vi.mock('@/app/components/i18n/locale-link', () => ({
 
 // The thumbnail itself is irrelevant here — only the href it wraps is.
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 vi.mock('../ascents-feed.module.css', () => ({
   default: new Proxy({}, { get: (_target, prop) => String(prop) }),
 }));
