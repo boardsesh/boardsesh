@@ -1,4 +1,4 @@
-import type { BoardName } from '@boardsesh/shared-schema';
+import { tb2LayoutIdForEngraving, type BoardName } from '@boardsesh/shared-schema';
 import {
   getSetsForLayoutAndSize,
   KILTER_HOMEWALL_LAYOUT_ID,
@@ -19,7 +19,7 @@ import type { CncOrderOptions } from '@boardsesh/db/schema';
  * stores the version it was priced and configured under, so a regenerate months
  * later rebuilds the pack the buyer paid for rather than today's defaults.
  */
-export const CNC_CATALOG_VERSION = '2026-09-07.4';
+export const CNC_CATALOG_VERSION = '2026-09-07.5';
 
 /**
  * sha256 of `JSON.stringify(CNC_CATALOG)`, pinned so the version above cannot
@@ -36,7 +36,7 @@ export const CNC_CATALOG_VERSION = '2026-09-07.4';
  * Never paste the new hash on its own — a hash change with an unchanged version
  * is exactly the bug this pair exists to catch.
  */
-export const CNC_CATALOG_CONTENT_HASH = 'c95193951e15e5b8008a81946471585370ff01acb9297e35fc43feb012901ba1';
+export const CNC_CATALOG_CONTENT_HASH = '91fe71348a2f41045abdc41a668a664146494fbfc806247c30e81845b8993eb3';
 
 export type CncLicenceTier = 'personal' | 'commercial_single';
 
@@ -169,6 +169,45 @@ const KILTER_ORIGINAL_SIZES: readonly KilterSize[] = [
   { sizeId: 28, label: '16x12', sizeAliases: [], kickerOptional: true },
 ];
 
+/** TB2 sizes are named height × width by Tension. Never infer axes from Kilter labels. */
+const TENSION_BOARD_2_SIZES = [
+  { sizeId: 9, label: '10 × 8' },
+  { sizeId: 8, label: '12 × 8' },
+  { sizeId: 7, label: '10 × 12' },
+  { sizeId: 6, label: '12 × 12' },
+  { sizeId: 10, label: '12 × 16' },
+] as const;
+
+const TENSION_BOARD_2_OPTIONS: readonly CncManufacturingOption[] = [
+  ...KILTER_HOMEWALL_MANUFACTURING_OPTIONS.filter((option) =>
+    ['sheetStock', 'dxfFlavour', 'paper', 'supportStrips'].includes(option.key),
+  ),
+  { key: 'tb2DimensionStandard', values: ['metric', 'imperial'], defaultValue: 'metric', kickerOnly: false },
+  { key: 'tb2Engraving', values: ['none', 'mirror', 'spray', 'both'], defaultValue: 'both', kickerOnly: false },
+];
+
+export function isTensionBoard2(entry: { boardName: string; layoutId: number }): boolean {
+  return entry.boardName === 'tension' && (entry.layoutId === 10 || entry.layoutId === 11);
+}
+
+const TENSION_BOARD_2_CATALOG: readonly CncCatalogEntry[] = [10, 11].flatMap((layoutId) =>
+  TENSION_BOARD_2_SIZES.map((size) => ({
+    boardName: 'tension' as const,
+    layoutId,
+    sizeId: size.sizeId,
+    setIds: getSetsForLayoutAndSize('tension', layoutId, size.sizeId)
+      .map((set) => set.id)
+      .join(','),
+    label: size.label,
+    sizeAliases: [],
+    kickerOptional: false,
+    manufacturingOptions: TENSION_BOARD_2_OPTIONS.map((option) =>
+      option.key === 'tb2Engraving' && layoutId === 11 ? { ...option, defaultValue: 'spray' } : option,
+    ),
+    tiers: KILTER_HOMEWALL_TIERS,
+  })),
+);
+
 export const CNC_CATALOG: readonly CncCatalogEntry[] = [
   ...KILTER_HOMEWALL_SIZES.map((size) => ({
     boardName: 'kilter' as BoardName,
@@ -196,6 +235,7 @@ export const CNC_CATALOG: readonly CncCatalogEntry[] = [
     ],
     tiers: KILTER_HOMEWALL_TIERS,
   })),
+  ...TENSION_BOARD_2_CATALOG,
 ];
 
 /**
@@ -384,6 +424,16 @@ export function validateCatalogOptions(entry: CncCatalogEntry, options: unknown)
     normalisedOptions[option.key] = matched;
   }
 
+  if (isTensionBoard2(entry)) {
+    const expectedLayoutId = tb2LayoutIdForEngraving(String(normalisedOptions.tb2Engraving));
+    if (entry.layoutId !== expectedLayoutId) {
+      errors.push({
+        key: 'tb2Engraving',
+        code: 'invalid_value',
+        message: `This engraving selection requires TB2 layout ${expectedLayoutId}.`,
+      });
+    }
+  }
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, options: normalisedOptions };
 }

@@ -2,7 +2,7 @@
   "metadata": {
     "buildPlans": {
       "title": "Progetti di costruzione per un pannello domestico",
-      "description": "File CNC pronti per il taglio di una parete di arrampicata domestica: pannelli e fori per dadi a ragno e LED, disposti sui fogli disponibili nella tua officina."
+      "description": "File CNC per un pannello da arrampicata domestico: pannelli e posizioni di foratura disposti sulle lastre usate dal tuo laboratorio."
     },
     "orders": {
       "title": "I tuoi progetti di costruzione",
@@ -15,8 +15,8 @@
   },
   "hero": {
     "title": "Progetti per costruire il tuo pannello domestico",
-    "subtitle": "File DXF utilizzabili direttamente da un'officina CNC. Tutti i pannelli, la griglia dei dadi a ragno, i fori LED e il kicker, disposti sui fogli già disponibili nella tua officina.",
-    "firstBoard": "Progetti compatibili con Kilter Homewall e Kilter Original (OG).",
+    "subtitle": "File DXF per il tuo laboratorio CNC. Pannelli e posizioni di foratura disposti sulle lastre già usate dal laboratorio.",
+    "firstBoard": "Compatibile con Kilter Homewall, Kilter Original (OG) e Tension Board 2, incluse le disposizioni Mirror e Spray.",
     "included": {
       "heading": "Cosa ricevi",
       "dxf": "Sono inclusi anche i disegni di assemblaggio, per allineare i pannelli senza andare a tentativi.",
@@ -61,10 +61,11 @@
     },
     "board": {
       "label": "Pannello",
-      "help": "Scegli la disposizione delle prese del tuo pannello.",
+      "help": "Scegli il pannello per cui vuoi costruire i pannelli in legno.",
       "original": "Kilter Original (OG)",
       "homewall": "Kilter Homewall",
-      "unknownLayout": "{{board}} · disposizione {{layoutId}}"
+      "unknownLayout": "{{board}} · disposizione {{layoutId}}",
+      "kilterHomewall": "Kilter Homewall"
     },
     "size": {
       "label": "Dimensioni della parete",
@@ -80,7 +81,7 @@
       "help": "Le impostazioni predefinite sono quelle che usiamo noi. Adattale alla tua officina.",
       "sheetStock": {
         "label": "Dimensioni del foglio",
-        "help": "Il compensato da cui taglia la tua officina. Con un foglio da 3,6 m puoi ricavare una fila della parete senza giunzioni.",
+        "help": "Scegli la lastra di compensato usata dal laboratorio. I pannelli vengono suddivisi in base alle sue dimensioni.",
         "values": {
           "2440x1220": "2440 × 1220 mm",
           "3600x1220": "3600 × 1220 mm"
@@ -152,7 +153,7 @@
       },
       "supportStrips": {
         "label": "Listelli di rinforzo delle giunzioni",
-        "help": "Listelli di compensato da 150 mm, con asole per i dadi a ragno, da posizionare dietro ogni giunzione orizzontale. Lasciali attivi, a meno che la struttura sostenga già le giunzioni.",
+        "help": "Strisce di compensato da 150 mm sostengono le giunzioni orizzontali e lasciano accessibili i fori.",
         "values": {
           "false": "Disattivati",
           "true": "Attivati"
@@ -172,6 +173,24 @@
         "values": {
           "false": "Disattivato",
           "true": "Attivato"
+        }
+      },
+      "tb2DimensionStandard": {
+        "label": "Dimensioni TB2",
+        "help": "Metriche: griglia principale da 200 mm e fori LED da 12 mm. Imperiali: griglia da 7⅞ pollici e fori da ½ pollice. Cambiare dimensioni rimuove gli elementi grafici posizionati.",
+        "values": {
+          "metric": "Metriche",
+          "imperial": "Imperiali"
+        }
+      },
+      "tb2Engraving": {
+        "label": "Incisione TB2",
+        "help": "Identificativi delle prese e segni di orientamento dai disegni di montaggio Tension.",
+        "values": {
+          "none": "Nessuna incisione",
+          "mirror": "Mirror",
+          "spray": "Spray",
+          "both": "Mirror + Spray"
         }
       }
     },
@@ -335,6 +354,13 @@
       "angleHelp": "Usa il Number Angle OG per indicare come orientare il numero stampato sulla presa. Gli angoli mancanti non vengono segnati.",
       "engraveHelp": "Numeri delle prese e segni di orientamento, incisi durante il taglio del pannello. Entrambi sono attivi per impostazione predefinita.",
       "engraveNote": "I segni di orientamento OG seguono il numero della presa, non la vite di fissaggio. Questi segni non vengono usati per praticare i fori delle viti."
+    },
+    "tb2": {
+      "boardName": "Tension Board 2",
+      "savedConfigurationUnavailable": "Configurazione salvata non disponibile",
+      "sizeHelp": "Altezza × larghezza in piedi. Tension indica prima l’altezza.",
+      "engraveHelp": "Incidi Mirror, Spray o entrambi sugli stessi pannelli. Entrambe le disposizioni sono selezionate per impostazione predefinita.",
+      "engraveNote": "Le etichette Mirror si trovano a sinistra di ogni foro con un segno di orientamento. Le etichette Spray si trovano a destra con due segni. Ogni pannello inciso include una legenda."
     }
   },
   "cta": {

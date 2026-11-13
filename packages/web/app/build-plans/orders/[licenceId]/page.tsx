@@ -128,7 +128,7 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
       <OrderStatus
         initialOrder={order}
         initialOwnerId={session.user.id}
-        wallLabel={wallLabel(catalog, order)}
+        wallLabel={wallLabel(catalog, order, t)}
         checkoutOutcome={checkoutOutcome}
         locale={locale}
       />

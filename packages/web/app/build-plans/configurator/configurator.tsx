@@ -44,6 +44,7 @@ import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
+import { boardDisplayLabel, tb2ConfigurationLabel } from '../order-display';
 import {
   FieldGrid,
   KeyValueList,
@@ -63,6 +64,8 @@ import {
   configKey,
   configuratorReducer,
   engraveOptions,
+  boardFamilyKey,
+  catalogEntryKey,
   finaliseBlockers,
   findEntry,
   formatPrice,
@@ -82,7 +85,6 @@ import {
   type CncArtworkDraft,
   type CncConfiguratorState,
 } from './configurator-state';
-import { boardLayoutLabel } from '../order-display';
 import type { CncErrorKey } from '../cnc-error';
 import type { CncLayoutPanel, CncLayoutSummary } from './layout-summary';
 import ArtworkStep from './artwork-step';
@@ -228,7 +230,7 @@ function OwnedConfigurator({
   const { toggles: machiningToggles, choices: machiningChoices } = partitionByControl(
     visibleMachiningOptions(entry, state.includeKicker),
   );
-  const engraveToggles = engraveOptions(entry);
+  const { toggles: engraveToggles, choices: engraveChoices } = partitionByControl(engraveOptions(entry));
 
   // Which labels the placement editor can already see are in trouble. Reported
   // by id rather than counted, so removing an item takes its verdict with it.
@@ -357,23 +359,12 @@ function OwnedConfigurator({
   }, [session, isDraftRestored, isLicenseeEmailEmpty, isLicenseeNameEmpty]);
 
   // ------------------------------------------------------------------- actions
-  const handleSizeChange = (sizeId: number) => {
-    const next = entries.find(
-      (candidate) =>
-        candidate.boardName === state.boardName && candidate.layoutId === state.layoutId && candidate.sizeId === sizeId,
-    );
+  const handleEntryChange = (entryKey: string) => {
+    const next = entries.find((candidate) => catalogEntryKey(candidate) === entryKey);
     if (!next) return;
     dispatch({ type: 'selectEntry', entry: next });
+    if (boardFamilyKey(next) !== boardFamilyKey(entry)) reportStep('board');
     reportStep('size');
-  };
-
-  const handleLayoutChange = (layoutId: number) => {
-    const next = entries.find(
-      (candidate) => candidate.boardName === state.boardName && candidate.layoutId === layoutId,
-    );
-    if (!next) return;
-    dispatch({ type: 'selectEntry', entry: next });
-    reportStep('board');
   };
 
   const handleAddArtwork = () => {
@@ -493,6 +484,7 @@ function OwnedConfigurator({
           rail={
             <SummaryRail
               summary={summary}
+              configurationLabel={entry.boardName === 'tension' ? tb2ConfigurationLabel(state.options, t) : null}
               isLoading={isLayoutLoading}
               hasError={layoutErrorKey !== null}
               price={price ? formatPrice(price.amountCents, price.currency, locale) : null}
@@ -526,12 +518,7 @@ function OwnedConfigurator({
                 description={t('configurator.wall.help')}
               />
               <Box className={styles.stepBody}>
-                <WallStep
-                  entries={entries}
-                  state={state}
-                  onSizeChange={handleSizeChange}
-                  onLayoutChange={handleLayoutChange}
-                />
+                <WallStep entries={entries} state={state} onEntryChange={handleEntryChange} />
                 {isOriginal && (
                   <Typography variant="body2" component="p" className={styles.stepNote}>
                     {t('configurator.original.drilling')} {t('configurator.original.compatibility')}
@@ -614,15 +601,44 @@ function OwnedConfigurator({
               </Box>
             </SectionCard>
 
-            {engraveToggles.length > 0 && (
+            {(engraveToggles.length > 0 || engraveChoices.length > 0) && (
               <SectionCard>
                 <StepHeading
                   step={3}
                   done
                   title={t('configurator.engrave.heading')}
-                  description={isOriginal ? t('configurator.original.engraveHelp') : t('configurator.engrave.help')}
+                  description={
+                    entry.boardName === 'tension'
+                      ? t('configurator.tb2.engraveHelp')
+                      : isOriginal
+                        ? t('configurator.original.engraveHelp')
+                        : t('configurator.engrave.help')
+                  }
                 />
                 <Box className={styles.stepBody}>
+                  {engraveChoices.map((option) => (
+                    <FormControl key={option.key} fullWidth size="small">
+                      <InputLabel id={`cnc-engrave-${option.key}`}>
+                        {t(`configurator.options.${option.key}.label`)}
+                      </InputLabel>
+                      <Select
+                        labelId={`cnc-engrave-${option.key}`}
+                        label={t(`configurator.options.${option.key}.label`)}
+                        value={state.options[option.key] ?? option.defaultValue}
+                        onChange={(event) => {
+                          dispatch({ type: 'setOption', key: option.key, value: event.target.value });
+                          reportStep('engrave');
+                        }}
+                      >
+                        {option.values.map((optionValue) => (
+                          <MenuItem key={optionValue} value={optionValue}>
+                            {t(`configurator.options.${option.key}.values.${optionValueKey(optionValue)}`)}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                      <FormHelperText>{t(`configurator.options.${option.key}.help`)}</FormHelperText>
+                    </FormControl>
+                  ))}
                   {engraveToggles.map((option) => (
                     <Box key={option.key} className={styles.switchRow}>
                       <FormControlLabel
@@ -653,7 +669,11 @@ function OwnedConfigurator({
                     </Box>
                   ))}
                   <Typography variant="body2" component="p" className={styles.stepNote}>
-                    {isOriginal ? t('configurator.original.engraveNote') : t('configurator.engrave.note')}
+                    {entry.boardName === 'tension'
+                      ? t('configurator.tb2.engraveNote')
+                      : isOriginal
+                        ? t('configurator.original.engraveNote')
+                        : t('configurator.engrave.note')}
                   </Typography>
                 </Box>
               </SectionCard>
@@ -968,22 +988,17 @@ function PreviewStep({
 function WallStep({
   entries,
   state,
-  onSizeChange,
-  onLayoutChange,
+  onEntryChange,
 }: {
   entries: readonly CncCatalogEntry[];
   state: CncConfiguratorState;
-  onSizeChange: (sizeId: number) => void;
-  onLayoutChange: (layoutId: number) => void;
+  onEntryChange: (entryKey: string) => void;
 }) {
   const { t } = useTranslation('cnc');
-  const layoutIds = [
-    ...new Set(
-      entries.filter((candidate) => candidate.boardName === state.boardName).map((candidate) => candidate.layoutId),
-    ),
-  ];
-  const sizeEntries = entries.filter(
-    (candidate) => candidate.boardName === state.boardName && candidate.layoutId === state.layoutId,
+  const families = [...new Map(entries.map((candidate) => [boardFamilyKey(candidate), candidate])).values()];
+  const selectedFamily = boardFamilyKey(state);
+  const sizes = entries.filter(
+    (candidate) => boardFamilyKey(candidate) === selectedFamily && candidate.layoutId === state.layoutId,
   );
 
   return (
@@ -993,12 +1008,15 @@ function WallStep({
         <Select
           labelId="cnc-board"
           label={t('configurator.board.label')}
-          value={String(state.layoutId)}
-          onChange={(event) => onLayoutChange(Number(event.target.value))}
+          value={selectedFamily}
+          onChange={(event) => {
+            const next = entries.find((candidate) => boardFamilyKey(candidate) === event.target.value);
+            if (next) onEntryChange(catalogEntryKey(next));
+          }}
         >
-          {layoutIds.map((layoutId) => (
-            <MenuItem key={layoutId} value={String(layoutId)}>
-              {boardLayoutLabel({ boardName: state.boardName, layoutId }, t)}
+          {families.map((candidate) => (
+            <MenuItem key={boardFamilyKey(candidate)} value={boardFamilyKey(candidate)}>
+              {boardDisplayLabel(candidate, t)}
             </MenuItem>
           ))}
         </Select>
@@ -1010,16 +1028,18 @@ function WallStep({
         <Select
           labelId="cnc-size"
           label={t('configurator.size.label')}
-          value={String(state.sizeId)}
-          onChange={(event) => onSizeChange(Number(event.target.value))}
+          value={catalogEntryKey(state)}
+          onChange={(event) => onEntryChange(event.target.value)}
         >
-          {sizeEntries.map((candidate) => (
-            <MenuItem key={candidate.sizeId} value={String(candidate.sizeId)}>
+          {sizes.map((candidate) => (
+            <MenuItem key={catalogEntryKey(candidate)} value={catalogEntryKey(candidate)}>
               {candidate.label}
             </MenuItem>
           ))}
         </Select>
-        <FormHelperText>{t('configurator.size.help')}</FormHelperText>
+        <FormHelperText>
+          {state.boardName === 'tension' ? t('configurator.tb2.sizeHelp') : t('configurator.size.help')}
+        </FormHelperText>
       </FormControl>
     </FieldGrid>
   );
@@ -1036,6 +1056,7 @@ function WallStep({
  */
 function SummaryRail({
   summary,
+  configurationLabel,
   isLoading,
   hasError,
   price,
@@ -1053,6 +1074,7 @@ function SummaryRail({
   onFinalise,
 }: {
   summary: CncLayoutSummary | null;
+  configurationLabel: string | null;
   isLoading: boolean;
   hasError: boolean;
   /** Already formatted for the request's locale, or null when the tier has no price. */
@@ -1170,6 +1192,7 @@ function SummaryRail({
 
   return (
     <SectionCard tone="raised" title={t('configurator.summary.heading')}>
+      {configurationLabel && <Typography variant="body2">{configurationLabel}</Typography>}
       {hasError ? (
         // An outage does not blank the rail: the error above already says what
         // happened, and a card full of dashes says nothing.

@@ -158,11 +158,11 @@ function respond(document: string) {
   return Promise.resolve({});
 }
 
-function renderConfigurator(catalogOverride = catalog()) {
+function renderConfigurator(selectedCatalog: CncCatalog = catalog()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <Configurator catalog={catalogOverride} locale="en-US" />
+      <Configurator catalog={selectedCatalog} locale="en-US" />
     </QueryClientProvider>,
   );
 }
@@ -453,4 +453,79 @@ it('shows the layout number when the catalog introduces an unknown layout', asyn
   expect(screen.getByRole('option', { name: 'Kilter · layout 99' })).toBeDefined();
   fireEvent.click(screen.getByRole('option', { name: 'Kilter · layout 99' }));
   expect(lastLayoutConfig()).toMatchObject({ layoutId: 99 });
+});
+
+it('selects TB2 dimensions and engraving and submits the matching tuple', async () => {
+  const supported = catalog();
+  for (const layoutId of [10, 11]) {
+    for (const sizeId of [9, 8, 7, 6, 10]) {
+      supported.entries.push({
+        ...supported.entries[0]!,
+        boardName: 'tension',
+        layoutId,
+        sizeId,
+        label: `TB2 size ${sizeId}`,
+        setIds: '12,13',
+        manufacturingOptions: [
+          {
+            key: 'tb2DimensionStandard',
+            values: ['metric', 'imperial'],
+            defaultValue: 'metric',
+            valueType: 'string',
+            kickerOnly: false,
+          },
+          {
+            key: 'tb2Engraving',
+            values: ['none', 'mirror', 'spray', 'both'],
+            defaultValue: layoutId === 11 ? 'spray' : 'both',
+            valueType: 'string',
+            kickerOnly: false,
+          },
+        ],
+      });
+    }
+  }
+  renderConfigurator(supported);
+  await previewThisWall();
+  fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Board' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Tension Board 2' }));
+  // Switching board families retires the old wall's preview; option changes
+  // within one wall retain their stale preview until the buyer updates it.
+  expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
+  expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
+  expect(lastLayoutConfig()).toMatchObject({
+    boardName: 'tension',
+    sizeId: 9,
+    layoutId: 10,
+    options: { tb2DimensionStandard: 'metric', tb2Engraving: 'both' },
+  });
+  expect(screen.queryByRole('switch', { name: 'Engrave hold numbers' })).toBeNull();
+
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Wall size' }));
+  expect(await screen.findAllByRole('option')).toHaveLength(5);
+  fireEvent.click(screen.getByRole('option', { name: 'TB2 size 10' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'TB2 dimensions' }));
+  fireEvent.click(await screen.findByRole('option', { name: /Imperial/ }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: 'TB2 engraving' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Spray' }));
+  expect(lastLayoutConfig()).toMatchObject({
+    boardName: 'tension',
+    layoutId: 11,
+    sizeId: 10,
+    options: { tb2DimensionStandard: 'imperial', tb2Engraving: 'spray' },
+  });
+  fireEvent.click(primaryAction());
+  await waitFor(() =>
+    expect(
+      graphqlRequest.mock.calls.filter((args) => String(args[0]).includes('mutation CreateCncPreview')).at(-1)?.[1],
+    ).toMatchObject({
+      config: {
+        boardName: 'tension',
+        layoutId: 11,
+        sizeId: 10,
+        options: { tb2DimensionStandard: 'imperial', tb2Engraving: 'spray' },
+      },
+    }),
+  );
 });

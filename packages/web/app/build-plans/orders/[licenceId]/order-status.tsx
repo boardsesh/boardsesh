@@ -22,7 +22,7 @@ import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-lo
 import { useCncRequestScope } from '../../use-cnc-request-scope';
 import { cncErrorKey, type CncErrorKey } from '../../cnc-error';
 import { createOrderDateFormatter } from '../../format-date';
-import { boardLayoutLabel, finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
+import { boardDisplayLabel, finaliseHref, previewImageLabel, tierLabel } from '../../order-display';
 import { KeyValueList, PageFrame, PreviewGallery, SectionCard, StatusChip, type KeyValueItem } from '../../ui';
 import { orderRefetchInterval, useCncOrderPoll } from '../../use-cnc-order-poll';
 import styles from '../orders.module.css';
@@ -209,7 +209,11 @@ function OwnedOrderStatus({
   const previewFailedSubject = encodeURIComponent(t('order.previewFailed.subject', { licenceId }));
 
   const facts: KeyValueItem[] = [
-    { key: 'board', label: t('order.board'), value: `${boardLayoutLabel(order, t)} ${wallLabel}` },
+    {
+      key: 'board',
+      label: t('order.board'),
+      value: `${boardDisplayLabel(order, t)} ${wallLabel}`,
+    },
     { key: 'tier', label: t('order.tier'), value: tierLabel(order.tier, t) },
   ];
   // Chronological, because these are two moments in one order's life and a

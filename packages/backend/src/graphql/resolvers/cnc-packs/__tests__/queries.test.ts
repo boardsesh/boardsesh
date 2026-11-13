@@ -148,12 +148,13 @@ beforeEach(() => {
 });
 
 describe('cncCatalog', () => {
-  it('publishes the Homewall and Original walls', async () => {
+  it('publishes Homewall, Original and both TB2 layouts', async () => {
     const catalog = await cncPackQueries.cncCatalog(undefined, undefined, anonCtx());
 
     expect(catalog.version).toBe(CNC_CATALOG_VERSION);
-    expect(catalog.entries).toHaveLength(8);
-    expect(catalog.entries.map((entry) => entry.label)).toEqual([
+    expect(catalog.entries).toHaveLength(18);
+    const kilterEntries = catalog.entries.filter((entry) => entry.boardName === 'kilter');
+    expect(kilterEntries.map((entry) => entry.label)).toEqual([
       '7x10',
       '10x10',
       '8x12',
@@ -163,7 +164,13 @@ describe('cncCatalog', () => {
       '12x12',
       '16x12',
     ]);
-    expect(catalog.entries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25, 14, 8, 10, 28]);
+    expect(kilterEntries.map((entry) => entry.sizeId)).toEqual([17, 21, 23, 25, 14, 8, 10, 28]);
+    for (const layoutId of [10, 11]) {
+      const tensionEntries = catalog.entries.filter(
+        (entry) => entry.boardName === 'tension' && entry.layoutId === layoutId,
+      );
+      expect(tensionEntries.map((entry) => entry.sizeId)).toEqual([9, 8, 7, 6, 10]);
+    }
   });
 
   it('does not publish the LED-kit size aliases', async () => {
