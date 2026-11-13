@@ -108,6 +108,8 @@ import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatchField } from './climbs/climb-no-match-field';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 import { resolveClimbAuthorId } from './climbs/climb-author';
+import { cncPackQueries } from './cnc-packs/queries';
+import { cncPackMutations } from './cnc-packs/mutations';
 
 export const resolvers = {
   // Scalar types
@@ -178,6 +180,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...cncPackQueries,
   },
 
   Mutation: {
@@ -232,6 +235,7 @@ export const resolvers = {
     ...integrationMutations,
     ...oauthClientMutations,
     ...connectedAppsMutations,
+    ...cncPackMutations,
   },
 
   Subscription: {

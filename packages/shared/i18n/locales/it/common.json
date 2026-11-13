@@ -1251,7 +1251,8 @@
       "gymsKilter": "Palestre con un Kilter Board",
       "gymsTension": "Palestre con un Tension Board",
       "gymsMoonboard": "Palestre con una MoonBoard",
-      "gyms": "Tutte le palestre e pareti"
+      "gyms": "Tutte le palestre e pareti",
+      "buildPlans": "Progetti di costruzione"
     },
     "groups": {
       "findAGym": "Trova una palestra",

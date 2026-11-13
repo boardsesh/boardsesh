@@ -2178,6 +2178,13 @@
       "when": 1794409701387,
       "tag": "0310_identity_writer_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 311,
+      "version": "7",
+      "when": 1794572096228,
+      "tag": "0311_cnc_packs",
+      "breakpoints": true
     }
   ]
 }

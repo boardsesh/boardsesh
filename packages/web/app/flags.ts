@@ -35,8 +35,21 @@ export const FEATURE_FLAG_KEYS = [GYM_KIOSK_FLAG, MOONBOARD_WIDE_ANGLES_FLAG] as
 // its developer allowlist, so this flag only decides who sees the page.
 export const DEVELOPER_CONSOLE_FLAG = 'developer-console';
 
+// Gates `/build-plans` — the paid CNC build-pack configurator, the orders
+// pages, and the footer link into them. Server-resolved rather than client,
+// because this gate has to make an unreachable surface 404 rather than hide a
+// button: the manufacturing licence ships marked DRAFT until an Australian IP
+// lawyer has reviewed it and the Kilter-derived engrave layer, so the pages
+// must not be reachable — or indexable — before then.
+//
+// Resolved with `allowAnonymous: true`. Build plans are bought by people who
+// have never signed in, so a gate that only evaluates for a session would keep
+// the page signed-in-only however the dashboard is configured.
+// `FEATURE_FLAG_OVERRIDES=cnc-packs` is how you reach it locally.
+export const CNC_PACKS_FLAG = 'cnc-packs';
+
 // Keys resolved server-side by `getServerFeatureFlag`, which gate whether a
 // route renders at all — a different gate from the client keys above (see
 // docs/feature-flags.md). Deliberately kept out of FEATURE_FLAG_KEYS: the
 // browser provider would fetch a flag no client component reads.
-export const SERVER_FEATURE_FLAG_KEYS = [DEVELOPER_CONSOLE_FLAG] as const;
+export const SERVER_FEATURE_FLAG_KEYS = [DEVELOPER_CONSOLE_FLAG, CNC_PACKS_FLAG] as const;

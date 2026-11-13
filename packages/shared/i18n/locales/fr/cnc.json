@@ -1,0 +1,448 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Plans de construction pour une board maison",
+      "description": "Des fichiers CNC prêts à découper pour un mur d'escalade maison : chaque panneau, chaque écrou à griffes et chaque perçage LED placé, répartis sur les plaques que ton atelier a en stock."
+    },
+    "orders": {
+      "title": "Tes plans de construction",
+      "description": "Tous les packs que tu as achetés et où chacun en est."
+    },
+    "order": {
+      "title": "Plan de construction {{licenceId}}",
+      "description": "Statut et téléchargement d'un pack de construction Boardsesh."
+    }
+  },
+  "hero": {
+    "title": "Plans de construction pour ta board maison",
+    "subtitle": "Des fichiers DXF qu'un atelier CNC découpe tels quels. Chaque panneau, la trame d'écrous à griffes, les perçages LED et le kicker, répartis sur les plaques que ton atelier a déjà en stock.",
+    "firstBoard": "Le Kilter Homewall est la première board prise en charge. D'autres suivront.",
+    "included": {
+      "heading": "Ce que tu reçois",
+      "dxf": "Les plans de montage du mur complet sont inclus, pour que les panneaux s'alignent sans deviner.",
+      "pdf": "Des pages imprimables en A3 ou Tabloid, avec la disposition prête avant la première découpe.",
+      "bom": "Nombre de plaques, dimensions de chaque panneau et chaque perçage, comptés avant de commander la matière.",
+      "licence": "À ton nom et valable pour un mur, à toi pour de bon.",
+      "dxfLabel": "Un DXF par panneau",
+      "pdfLabel": "Planches de contrôle",
+      "bomLabel": "Une liste de débit",
+      "licenceLabel": "Ta licence"
+    },
+    "trademarkNote": "Boardsesh n'est affilié ni à Aurora Climbing, ni à Kilter, ni à aucun fabricant de boards. Ce sont des plans pour construire un mur qui fonctionne avec des prises et des LED que tu achètes toi-même.",
+    "cta": "Configure ton mur"
+  },
+  "tiers": {
+    "heading": "Choisis une licence",
+    "intro": "Une licence, un mur. Un deuxième mur demande une deuxième licence.",
+    "personal": {
+      "name": "Personnelle",
+      "blurb": "Construis un mur pour toi. Ton garage, ton abri, la pièce en trop."
+    },
+    "commercial": {
+      "name": "Commerciale, une construction",
+      "blurb": "Construis un mur pour un client ou une salle. L'installation est nommée sur la licence."
+    },
+    "contact": {
+      "heading": "Tu en construis plusieurs ?",
+      "body": "Les packs dix constructions et les conditions OEM, ça se discute, ça ne se clique pas. Dis-nous ce que tu construis et on revient vers toi avec un prix.",
+      "cta": "Écris-nous",
+      "subject": "Plans de construction : licence multi-constructions"
+    },
+    "licenceLink": "Lis la licence",
+    "ordersLink": "Tes plans de construction",
+    "perWall": "par mur"
+  },
+  "configurator": {
+    "heading": "Configure ton mur",
+    "intro": "Tout ce qui suit change ce qui sera découpé. Prends les valeurs avec lesquelles ton atelier travaille.",
+    "wall": {
+      "heading": "Ton mur",
+      "help": "La board et la taille que tu construis. Tout le reste en découle."
+    },
+    "board": {
+      "label": "Board",
+      "help": "Le Kilter Homewall est la seule board en vente aujourd'hui."
+    },
+    "size": {
+      "label": "Taille du mur",
+      "help": "La taille Kilter que tu construis. Elle fixe la trame de prises et les dimensions du mur."
+    },
+    "kicker": {
+      "help": "Le panneau incliné du bas. Seuls les murs de 12 ft en ont un.",
+      "include": "Inclure le kicker",
+      "exclude": "Sans kicker"
+    },
+    "options": {
+      "heading": "Fabrication",
+      "help": "Les valeurs par défaut sont celles avec lesquelles on construit. Change-les pour coller à ton atelier.",
+      "sheetStock": {
+        "label": "Format de plaque",
+        "help": "Le contreplaqué dans lequel ton atelier découpe. Une plaque de 3,6 m permet de sortir une rangée du mur sans raccord.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "Perçage écrou à griffes",
+        "help": "À ajuster au fût des écrous à griffes que tu as achetés. 12,5 mm convient aux M10 courants.",
+        "values": {
+          "11_1": "11,1 mm",
+          "12": "12 mm",
+          "12_5": "12,5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "Perçage LED",
+        "help": "À ajuster au kit LED que tu fais passer derrière le mur.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12,5 mm",
+          "12_7": "12,7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Garde du kicker au-dessus du tapis",
+        "help": "L'espace que le kicker laisse au-dessus de ton tapis.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Dégagement des montants",
+        "help": "Décale la trame de prises latéralement pour qu'aucun perçage ne tombe sur un montant. À 0 mm, le motif reste centré sur le mur.",
+        "values": {
+          "0": "Aucun",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Entraxe des prises",
+        "help": "100 mm pour une construction métrique, 101,6 mm si tu veux exactement 4 pouces.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101,6 mm (4 pouces)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "Format DXF",
+        "help": "Le R12 écrit de vrais cercles, que davantage de commandes numériques lisent comme des points de perçage.",
+        "values": {
+          "R12_circles": "R12, cercles",
+          "R2010_polylines": "R2010, polylignes"
+        }
+      },
+      "paper": {
+        "label": "Planches imprimées",
+        "help": "Le format papier des tirages de contrôle.",
+        "values": {
+          "A3": "A3",
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 x 17 po)",
+          "LETTER": "Letter (8,5 x 11 po)"
+        }
+      },
+      "supportStrips": {
+        "label": "Lattes de renfort des joints",
+        "help": "Lattes de contreplaqué de 150 mm, rainurées pour les écrous à griffes, qui se placent derrière chaque joint horizontal. Laissez-les activées sauf si votre ossature soutient déjà les joints.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Graver les numéros de prise",
+        "help": "Usine le numéro de prise Kilter à côté de chaque écrou à griffes.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Graver l'angle des vis de blocage",
+        "help": "Usine un repère qui montre dans quel sens pointe chaque vis de blocage.",
+        "values": {
+          "false": "Désactivé",
+          "true": "Activé"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Gravure",
+      "help": "Numéros de prise et angles de vis, gravés dans le panneau pendant la découpe. Les deux sont activés par défaut.",
+      "note": "Ils viennent du plan de Kilter et servent le jour où tu montes les prises : le numéro à côté de chaque écrou dit quelle prise va là, et le repère montre où pointe la vis."
+    },
+    "artwork": {
+      "heading": "Texte et logos personnalisés",
+      "help": "Grave tes propres mots dans un panneau, ou importe un logo. Jusqu’à {{count}} éléments, et on vérifie chacun contre la grille de trous avant l’achat.",
+      "add": "Ajouter une étiquette",
+      "remove": "Supprimer",
+      "itemLabel": "Étiquette {{number}}",
+      "full": "Ce pack ne peut pas porter plus de {{count}} étiquettes.",
+      "remaining_one": "Encore {{count}} étiquette possible.",
+      "remaining_other": "Encore {{count}} étiquettes possibles.",
+      "text": "Ce qui est écrit",
+      "textHelp": "Jusqu'à {{max}} caractères. Découpé en contours, donc identique sur n'importe quelle machine.",
+      "font": "Police",
+      "fontHelp": "Les polices que porte notre fraiseuse.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "Mode de découpe",
+      "modes": {
+        "engrave": {
+          "label": "Gravure",
+          "help": "Marque la surface. Peu profond, le panneau garde toute sa solidité."
+        },
+        "pocket": {
+          "label": "Poche",
+          "help": "Creuse les lettres à une profondeur, pour qu'elles accrochent la lumière."
+        },
+        "cut_through": {
+          "label": "Découpe traversante",
+          "help": "Traverse le panneau. Demande plus de place autour des trous et retire de la matière."
+        }
+      },
+      "panel": "Panneau",
+      "panelHelp": "Dans quel panneau elle est fraisée.",
+      "panelLoading": "Calcul des panneaux…",
+      "kickerPanel": "kicker",
+      "checking": "Vérification de la place…",
+      "fits": "Ça passe. Loin de tous les trous et de toutes les jonctions.",
+      "doesNotFit": "Impossible de découper là. Déplace-la et on revérifie.",
+      "signInToCheck": "Connecte-toi et on vérifie tes étiquettes contre la grille de trous.",
+      "issues": {
+        "text": "Écris ce que doit dire cette étiquette.",
+        "textTooLong": "C'est plus long que {{chars}} caractères.",
+        "width": "La largeur doit être entre {{min}} et {{max}} mm.",
+        "rotation": "La rotation doit être entre -180° et 180°."
+      },
+      "collisions": {
+        "off_panel": "Celle-ci dépasse du panneau, ou colle trop au bord.",
+        "keepout": "Celle-ci tombe sur un trou de griffe ou de LED.",
+        "cut_through_keepout": "Une découpe traversante demande plus de place autour des trous que celle-ci n'en a.",
+        "crosses_seam": "Celle-ci passe d'un panneau à l'autre, elle serait coupée en deux.",
+        "unknown": "Celle-ci ne peut pas être fraisée là où elle est."
+      },
+      "upload": {
+        "button": "Importer un logo",
+        "busy": "Import en cours…",
+        "help": "SVG, jusqu’à 5 Mo. Convertis d’abord les traits en contours : on découpe le tracé lui-même, pas autour.",
+        "signIn": "Connecte-toi pour importer un logo.",
+        "previewAlt": "Ton logo importé",
+        "stored": "Ton logo importé",
+        "errors": {
+          "tooLarge": "Ce fichier est trop lourd. 5 Mo au maximum.",
+          "noFile": "Aucun fichier n’est arrivé. Choisis ton logo et relance l’import.",
+          "unsupportedType": "On n’a pas pu le lire comme un dessin. Réexporte-le en SVG simple.",
+          "unsafeDrawing": "Ce dessin fait quelque chose qu’on ne découpera pas : un script, une police liée, une image externe. Réexporte-le en SVG simple.",
+          "noViewBox": "Ce dessin n’a pas de viewBox, donc rien pour le dimensionner. Réexporte-le depuis ton éditeur.",
+          "tooComplex": "Ce dessin a plus de détail qu’une fraise ne peut suivre. Simplifie les tracés et réessaie.",
+          "imageTooSmall": "Cette image est trop petite à vectoriser. 64 pixels de côté au minimum.",
+          "imageTooLarge": "Cette image est trop grande à vectoriser. 4096 pixels de côté au maximum.",
+          "unreadableImage": "On n’a pas pu ouvrir cette image. Réexporte-la en PNG.",
+          "rateLimited": "Ça fait beaucoup d’imports. Attends quelques minutes et réessaie.",
+          "unavailable": "Les imports ne fonctionnent pas pour le moment. Rien n’a été débité. Réessaie sous peu.",
+          "generic": "Cet import n’est pas passé. Réessaie."
+        }
+      },
+      "editor": {
+        "canvasLabel": "Ton mur. Fais glisser l'étiquette où tu la veux.",
+        "placeholder": "Ton texte",
+        "keyboardHelp": "Les flèches la déplacent de 10 mm, de 1 mm avec majuscule. [ et ] la tournent de 5°. Plus et moins changent la largeur.",
+        "resizeHandle": "Fais glisser pour redimensionner",
+        "rotateHandle": "Fais glisser pour tourner",
+        "width": "Largeur (mm)",
+        "rotation": "Rotation (degrés)",
+        "holesUnavailable": "Connecte-toi pour voir la trame de trous de ton mur.",
+        "offPanel": "Elle dépasse du panneau, ou colle trop au bord.",
+        "holesInTheWay_one": "Elle tombe sur {{count}} trou. Déplace-la.",
+        "holesInTheWay_other": "Elle tombe sur {{count}} trous. Déplace-la.",
+        "crossesSeam": "Elle traverse une jonction, elle serait coupée en deux.",
+        "clear": "Loin de tous les trous et de toutes les jonctions de ce panneau."
+      },
+      "blocksPreview": "Déplace tes étiquettes là où elles passent avant de demander l'aperçu."
+    },
+    "summary": {
+      "heading": "Ce qui sera découpé",
+      "wall": "Mur",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Hauteur du kicker",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Panneaux",
+      "panelsValue_one": "{{count}} panneau",
+      "panelsValue_other": "{{count}} panneaux",
+      "sheets": "Plaques",
+      "sheetsValue_one": "{{count}} plaque",
+      "sheetsValue_other": "{{count}} plaques",
+      "tnuts": "Perçages d'écrous à griffes",
+      "leds": "Perçages LED",
+      "seamNotches": "Perçages LED sur un raccord",
+      "seamNotchesHelp": "Ces perçages LED tombent sur un raccord entre panneaux. Chacun est découpé en encoche dans les deux panneaux, et la LED se loge dans l’encoche une fois les panneaux assemblés.",
+      "warningsHeading": "Bon à savoir",
+      "unavailable": "La liste de découpe ne charge pas pour l’instant. Tout ce que tu as choisi est toujours là."
+    },
+    "licensee": {
+      "name": "Nom sur la licence",
+      "email": "E-mail",
+      "emailHelp": "Là où le pack arrive une fois prêt.",
+      "siteName": "Nom du client ou de la salle",
+      "siteHelp": "L'unique installation que couvre cette licence commerciale.",
+      "required": "À remplir avant d'acheter."
+    },
+    "licence": {
+      "accept": "J'accepte la licence de fabrication",
+      "link": "Lis-la d'abord"
+    },
+    "preview": {
+      "heading": "Ton aperçu",
+      "signedOut": "Connecte-toi et on trace ton mur. Les aperçus sont gratuits, sans carte bancaire.",
+      "idle": "On répartit toutes les planches et on te renvoie des plans filigranés. Change quelque chose et redemande.",
+      "working": "On trace tes planches. Ça prend une quinzaine de secondes.",
+      "ready": "Dessins de contrôle filigranés. Valide pour récupérer les fichiers DXF que ton atelier découpe.",
+      "stale": "Tu as changé le mur depuis ces planches. Mets l'aperçu à jour pour voir les nouvelles.",
+      "failed": "Cet aperçu n'a pas été généré. Rien n'a été débité : réessaie.",
+      "rateLimited": "C'est tous les aperçus gratuits de cette heure. Ceux que tu as sont dans tes plans ; le prochain, à l'heure pile.",
+      "download": "Télécharger l'aperçu",
+      "downloading": "Récupération du lien…",
+      "galleryLabel": "Planches de l'aperçu",
+      "bomLabel": "Ce que ces planches découpent",
+      "panel": "Panneau {{number}}",
+      "assembly": "Assemblage",
+      "generated": "Aperçu du"
+    },
+    "finalise": {
+      "heading": "Au nom de qui est la licence",
+      "help": "La licence figure sur chaque fichier du pack : une copie qui fuite y remonte.",
+      "stale": "Mets d'abord ton aperçu à jour — le mur a changé depuis ces planches."
+    }
+  },
+  "cta": {
+    "preview": "Demander un aperçu gratuit",
+    "previewSignedOut": "Se connecter pour l'aperçu gratuit",
+    "previewUpdate": "Mettre l'aperçu à jour",
+    "previewing": "Tracé de ton aperçu…",
+    "previewRetry": "Réessayer",
+    "finalise": "Valider et acheter",
+    "finalising": "Ouverture du paiement…",
+    "free": "Les aperçus sont gratuits. Sans carte.",
+    "signInTitle": "Connecte-toi pour ton aperçu gratuit",
+    "signInBody": "Ton aperçu a besoin d'un compte où vivre. On te ramène directement à ta configuration."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "Cette combinaison ne se découpe pas. Change quelque chose au-dessus et on revérifie.",
+    "CNC_WORKER_UNAVAILABLE": "Le générateur de plans ne répond pas pour l'instant. Rien n'a été débité. Réessaie dans une minute.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Les paiements ne sont pas disponibles pour l'instant. Rien n'a été débité. Réessaie un peu plus tard.",
+    "generic": "Ça n'est pas passé. Rien n'a été débité.",
+    "RATE_LIMITED": "Ça fait beaucoup d'aperçus pour une heure. Rien n'a été débité : le prochain, à l'heure pile."
+  },
+  "status": {
+    "pending_payment": "En attente de paiement",
+    "queued": "Dans la file",
+    "generating": "Découpe des fichiers",
+    "ready": "Prêt à télécharger",
+    "failed": "Pas généré",
+    "cancelled": "Paiement expiré",
+    "refunded": "Remboursé",
+    "preview_queued": "Aperçu dans la file",
+    "preview_generating": "Tracé de l'aperçu",
+    "preview_ready": "Aperçu prêt",
+    "preview_failed": "Aperçu pas généré"
+  },
+  "orders": {
+    "heading": "Tes plans de construction",
+    "intro": "Tous les murs que tu as prévisualisés ou achetés, du plus récent au plus ancien. Une licence reste la tienne quoi qu'il arrive à cette page.",
+    "configureAnother": "Configurer un autre mur",
+    "empty": "Aucun mur ici pour l'instant.",
+    "emptyBody": "Configure un mur et on te trace gratuitement un aperçu de chaque panneau. Rien n'est débité tant que tu ne finalises pas.",
+    "emptyCta": "Configurer un mur",
+    "previewTier": "Aperçu",
+    "orderedOn": "Commandé le {{date}}",
+    "previewedOn": "Aperçu du {{date}}",
+    "view": "Ouvrir",
+    "viewOne": "Ouvrir le plan de construction {{licenceId}}",
+    "finalise": "Finaliser",
+    "loadError": "On n'a pas pu charger tes plans de construction. Recharge la page."
+  },
+  "order": {
+    "back": "Tous tes plans de construction",
+    "board": "Mur",
+    "tier": "Licence",
+    "placed": "Commencé",
+    "previewed": "Aperçu tracé",
+    "size": "Taille du pack",
+    "sizeValue": "{{megabytes}} Mo",
+    "downloads": "Téléchargements",
+    "facts": {
+      "heading": "Ce que c'est"
+    },
+    "timeline": {
+      "heading": "Où ça en est",
+      "preview": "Aperçu gratuit tracé",
+      "finalised": "Licence nommée et payée",
+      "building": "Découpe des fichiers",
+      "ready": "Prêt à télécharger"
+    },
+    "waiting": "Un pack prend deux ou trois minutes. Cette page se met à jour toute seule.",
+    "previewWaiting": "Un aperçu prend une quinzaine de secondes. Cette page se met à jour toute seule.",
+    "preview": {
+      "heading": "Ton aperçu gratuit",
+      "note": "Dessins de contrôle filigranés. Finalise pour avoir les fichiers DXF que ton atelier découpe.",
+      "drawing": "On trace tes panneaux. Ils arrivent ici dès qu'ils sont prêts.",
+      "panel": "Panneau {{number}}",
+      "assembly": "Montage"
+    },
+    "finalise": "Finaliser et acheter",
+    "downloadPreview": "Télécharger l'aperçu",
+    "download": "Télécharger le pack",
+    "downloading": "Récupération de ton lien…",
+    "downloadError": "Ce lien n'est pas passé. Réessaie.",
+    "checkoutSuccess": "Le paiement est passé. Ton pack est en cours de découpe.",
+    "checkoutCancelled": "Le paiement a été annulé. Rien n'a été débité.",
+    "previewFailed": {
+      "heading": "Cet aperçu n'a pas été tracé",
+      "body": "Rien n'a été débité. Change quelque chose sur ton mur et redemande un aperçu, ou dis-le-nous et on regarde.",
+      "contact": "Écris-nous, on règle ça",
+      "subject": "L'aperçu du plan de construction {{licenceId}} n'a pas été tracé"
+    },
+    "failed": {
+      "heading": "Celui-ci n'a pas été généré",
+      "contact": "Écris-nous, on règle ça",
+      "subject": "Le plan de construction {{licenceId}} n'a pas été généré"
+    },
+    "refunded": {
+      "heading": "Remboursé",
+      "body": "Cette commande a été remboursée, le téléchargement est donc coupé. Rachète-la quand tu seras prêt à construire."
+    },
+    "notFound": {
+      "heading": "Pas de plan de construction ici",
+      "body": "Soit cette licence n'existe pas, soit elle appartient à un autre compte."
+    },
+    "loadError": "On n'a pas pu charger ce plan de construction. Recharge la page.",
+    "downloadCard": {
+      "heading": "Ton pack de construction",
+      "note": "Un DXF par panneau, les plans de montage, les feuilles à imprimer et ta licence, dans un seul zip."
+    }
+  },
+  "flow": {
+    "heading": "Comment ça marche",
+    "intro": "Les aperçus sont gratuits. Rien n'est débité tant que tu ne valides pas.",
+    "configure": {
+      "title": "Configure ton mur",
+      "body": "Choisis la taille, les plaques que ton atelier découpe, les diamètres de perçage et ce que tu veux graver dans un panneau."
+    },
+    "preview": {
+      "title": "Demande un aperçu gratuit",
+      "body": "On répartit toutes les planches et on te renvoie les plans filigranés. Change quelque chose et redemande, autant de fois que tu veux."
+    },
+    "finalise": {
+      "title": "Valide et construis",
+      "body": "Mets ton nom sur la licence, paie, et les DXF prêts à découper et les planches à imprimer arrivent dans ton compte."
+    }
+  }
+}

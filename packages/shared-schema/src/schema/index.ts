@@ -43,6 +43,7 @@ import { oauthClientsTypeDefs } from './oauth-clients';
 import { connectedAppsTypeDefs } from './connected-apps';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
+import { cncPacksTypeDefs } from './cnc-packs';
 
 export const typeDefs = [
   adminBoardsTypeDefs,
@@ -80,6 +81,7 @@ export const typeDefs = [
   sessionWorkoutsTypeDefs,
   sprayWallResetTypeDefs,
   sprayWallModerationTypeDefs,
+  cncPacksTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

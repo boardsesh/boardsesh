@@ -322,8 +322,8 @@ describe('selected location owner plus complete-gym data under actual HTTP/PostG
       expect(snapshot.gyms).toHaveLength(1);
       expect(snapshot.aliases).toHaveLength(1);
       expect(snapshot.nonces).toHaveLength(1);
-      const [geography] = await ownerPool`SELECT ST_Y(location::geometry) AS latitude FROM gyms`;
-      expect(geography.latitude).toBe(45);
+      const [geography] = await ownerPool`SELECT ST_AsText(location::geometry) AS location FROM gyms`;
+      expect(geography.location).toBe('POINT(-1 45)');
       for (const key of [
         'credentials',
         'accounts',

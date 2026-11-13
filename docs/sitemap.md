@@ -16,7 +16,7 @@ Two kinds of shard:
 
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
-| members           | `static`, `boards`, `gyms`, `playlists`            | `setters`, and `climbs` when enabled             |
+| members           | `static`, `boards`, `gyms`, `playlists`, `build-plans`            | `setters`, and `climbs` when enabled             |
 | file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml … N.xml`                   |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
@@ -28,6 +28,16 @@ count into the directory tree.
 `setters` is paged for volume, not for locale expansion: ~108,000 distinct
 `(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 9,000, so
 one file cannot hold them at any expansion.
+
+## The build-plans shard
+
+`/sitemaps/build-plans.xml` remains empty while the Build plans pages carry
+`noindex`, including when local or staged access enables the `cnc-packs` flag.
+The shard is declared `expectsUrls: false`, so an empty pre-launch answer is valid.
+
+A launch follow-up must change page indexability and sitemap publication together,
+after licence approval. Public marketing and licence pages can then join the
+all-locales hreflang expansion. Per-buyer order pages remain excluded permanently.
 
 ## The climb sitemap switch
 

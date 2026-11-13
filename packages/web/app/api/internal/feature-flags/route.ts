@@ -15,9 +15,8 @@ import {
 
 /**
  * Admin-only diagnostics for the SERVER-side feature flags — the ones that gate
- * whether a route renders at all. With no key it covers every flag in
- * `SERVER_FEATURE_FLAG_KEYS` (today `developer-console`); `?key=` asks about any
- * other key.
+ * whether a route renders at all. Every key in `SERVER_FEATURE_FLAG_KEYS` is
+ * reported automatically; anything else is asked for ad hoc through `?key=`.
  *
  * It exists because "the dashboard says 100% and the page still 404s" has half a
  * dozen causes that look identical from outside: no project key in the runtime

@@ -1,0 +1,448 @@
+{
+  "metadata": {
+    "buildPlans": {
+      "title": "Build plans for a home board",
+      "description": "Cut-ready CNC files for a home climbing wall: every panel, T-nut and LED hole placed, laid out on the sheets your shop stocks."
+    },
+    "orders": {
+      "title": "Your build plans",
+      "description": "Every build pack you have bought and where each one is up to."
+    },
+    "order": {
+      "title": "Build plan {{licenceId}}",
+      "description": "Status and download for one Boardsesh build pack."
+    }
+  },
+  "hero": {
+    "title": "Build plans for your home board",
+    "subtitle": "DXF files a CNC shop cuts straight from. Every panel, the T-nut grid, the LED holes and the kicker, laid out on the sheets your shop already stocks.",
+    "firstBoard": "Kilter Homewall is the first supported board. More boards follow.",
+    "included": {
+      "heading": "What you get",
+      "dxf": "Assembly drawings included too, so panels line up without any guesswork.",
+      "pdf": "Printable A3 or Tabloid pages, laid out before a single sheet gets cut.",
+      "bom": "Sheet count, panel sizes, and every hole, counted before you order material.",
+      "licence": "Named to you and good for one wall, yours to keep.",
+      "dxfLabel": "One DXF per panel",
+      "pdfLabel": "Check sheets",
+      "bomLabel": "A cut list",
+      "licenceLabel": "Your licence"
+    },
+    "trademarkNote": "Boardsesh is not affiliated with Aurora Climbing, Kilter or any board maker. These are plans for building a wall that works with holds and LEDs you buy yourself.",
+    "cta": "Configure your wall"
+  },
+  "tiers": {
+    "heading": "Pick a licence",
+    "intro": "One licence, one wall. A second wall needs a second licence.",
+    "personal": {
+      "name": "Personal",
+      "blurb": "Build one wall for yourself. Your garage, your shed, your spare room."
+    },
+    "commercial": {
+      "name": "Commercial, single build",
+      "blurb": "Build one wall for one customer or one gym. The installation is named on the licence."
+    },
+    "contact": {
+      "heading": "Building more than one?",
+      "body": "Ten-build packs and OEM terms are a conversation, not a checkout button. Tell us what you are building and we will come back with a price.",
+      "cta": "Email us",
+      "subject": "Build plans: multi-build licence"
+    },
+    "licenceLink": "Read the licence",
+    "ordersLink": "Your build plans",
+    "perWall": "per wall"
+  },
+  "configurator": {
+    "heading": "Configure your wall",
+    "intro": "Everything below changes what gets cut. Pick the numbers your shop works to.",
+    "wall": {
+      "heading": "Your wall",
+      "help": "The board and the size you are building. Everything after this follows from it."
+    },
+    "board": {
+      "label": "Board",
+      "help": "Kilter Homewall is the only board on sale today."
+    },
+    "size": {
+      "label": "Wall size",
+      "help": "The Kilter size you are building. It sets the hold grid and the wall dimensions."
+    },
+    "kicker": {
+      "help": "The angled panel at the bottom. Only the 12 ft walls have one.",
+      "include": "Include the kicker",
+      "exclude": "No kicker"
+    },
+    "options": {
+      "heading": "Manufacturing",
+      "help": "Defaults are what we build to. Change them to match your shop.",
+      "sheetStock": {
+        "label": "Sheet size",
+        "help": "The plywood your shop cuts from. A 3.6 m sheet lets a wall row be cut without a seam.",
+        "values": {
+          "2440x1220": "2440 × 1220 mm",
+          "3600x1220": "3600 × 1220 mm"
+        }
+      },
+      "tnutHoleDiameterMm": {
+        "label": "T-nut hole",
+        "help": "Match the barrel on the T-nuts you bought. 12.5 mm suits the common M10.",
+        "values": {
+          "11_1": "11.1 mm",
+          "12": "12 mm",
+          "12_5": "12.5 mm",
+          "13": "13 mm"
+        }
+      },
+      "ledHoleDiameterMm": {
+        "label": "LED hole",
+        "help": "Match the LED kit you are running behind the wall.",
+        "values": {
+          "8": "8 mm",
+          "10": "10 mm",
+          "12_5": "12.5 mm",
+          "12_7": "12.7 mm"
+        }
+      },
+      "kickerMatClearanceMm": {
+        "label": "Kicker clearance above the mat",
+        "help": "How much space the kicker leaves above your mat.",
+        "values": {
+          "50": "50 mm",
+          "75": "75 mm",
+          "100": "100 mm"
+        }
+      },
+      "studClearanceOffsetMm": {
+        "label": "Stud clearance",
+        "help": "Shifts the hold grid sideways so no hole lands on a stud. 0 mm keeps the pattern centred on the wall.",
+        "values": {
+          "0": "None",
+          "30": "30 mm",
+          "60": "60 mm"
+        }
+      },
+      "gridPitchMm": {
+        "label": "Hold spacing",
+        "help": "100 mm for a metric build, 101.6 mm if you want exactly 4 inches.",
+        "values": {
+          "100": "100 mm",
+          "101_6": "101.6 mm (4 in)"
+        }
+      },
+      "dxfFlavour": {
+        "label": "DXF format",
+        "help": "R12 writes real circles, which more machine controllers read as drill points.",
+        "values": {
+          "R12_circles": "R12, circles",
+          "R2010_polylines": "R2010, polylines"
+        }
+      },
+      "paper": {
+        "label": "Printed sheets",
+        "help": "The paper size the check prints come on.",
+        "values": {
+          "A3": "A3",
+          "A4": "A4",
+          "TABLOID": "Tabloid (11 x 17 in)",
+          "LETTER": "Letter (8.5 x 11 in)"
+        }
+      },
+      "supportStrips": {
+        "label": "Seam backing strips",
+        "help": "150 mm plywood strips, slotted for the T-nuts, that sit behind each horizontal seam. Leave on unless your framing already supports the seams.",
+        "values": {
+          "false": "Off",
+          "true": "On"
+        }
+      },
+      "engraveHoldIds": {
+        "label": "Engrave hold numbers",
+        "help": "Routes the Kilter hold number next to every T-nut.",
+        "values": {
+          "false": "Off",
+          "true": "On"
+        }
+      },
+      "engraveAngleTicks": {
+        "label": "Engrave set-screw angles",
+        "help": "Routes a tick showing which way each set screw points.",
+        "values": {
+          "false": "Off",
+          "true": "On"
+        }
+      }
+    },
+    "engrave": {
+      "heading": "Engraving",
+      "help": "Hold numbers and set-screw angles, routed into the panel while it is cut. Both are on by default.",
+      "note": "They come from the Kilter layout, and they earn their keep the day you fit the holds: the number beside every T-nut says which hold goes there, and the tick shows which way the set screw points."
+    },
+    "artwork": {
+      "heading": "Custom text and logos",
+      "help": "Route your own words into a panel, or upload a logo. Up to {{count}} items, and we check every one against the hole grid before you buy.",
+      "add": "Add a label",
+      "remove": "Remove",
+      "itemLabel": "Label {{number}}",
+      "full": "That is all {{count}} labels this pack can carry.",
+      "remaining_one": "Room for {{count}} more label.",
+      "remaining_other": "Room for {{count}} more labels.",
+      "text": "What it says",
+      "textHelp": "Up to {{max}} characters. Cut as outlines, so it looks the same on any machine.",
+      "font": "Typeface",
+      "fontHelp": "The faces our cutter carries.",
+      "fonts": {
+        "liberation-sans": "Liberation Sans"
+      },
+      "mode": "How it is cut",
+      "modes": {
+        "engrave": {
+          "label": "Engrave",
+          "help": "Scores the surface. Shallow, and the panel keeps all its strength."
+        },
+        "pocket": {
+          "label": "Pocket",
+          "help": "Clears the letters to a depth, so they catch the light."
+        },
+        "cut_through": {
+          "label": "Cut through",
+          "help": "Goes all the way through. Needs more room around the holes, and takes material out of the panel."
+        }
+      },
+      "panel": "Panel",
+      "panelHelp": "Which sheet it gets routed into.",
+      "panelLoading": "Working out the panels…",
+      "kickerPanel": "kicker",
+      "checking": "Checking it fits…",
+      "fits": "Fits. Clear of every hole and seam.",
+      "doesNotFit": "That will not cut where it is. Move it and we will re-check.",
+      "signInToCheck": "Sign in and we will check your labels against the hole grid.",
+      "issues": {
+        "text": "Type what this label should say.",
+        "textTooLong": "That is longer than {{chars}} characters.",
+        "width": "Width has to be between {{min}} and {{max}} mm.",
+        "rotation": "Rotation has to be between -180° and 180°."
+      },
+      "collisions": {
+        "off_panel": "This one runs off the panel, or sits too close to its edge.",
+        "keepout": "This one lands on a T-nut or LED hole.",
+        "cut_through_keepout": "A cut-through needs more room around the holes than this one has.",
+        "crosses_seam": "This one spans two panels, so it would be cut in half.",
+        "unknown": "This one cannot be routed where it is."
+      },
+      "upload": {
+        "button": "Upload a logo",
+        "busy": "Uploading…",
+        "help": "SVG, up to 5 MB. Convert strokes to outlines first — we cut the path itself, not around it.",
+        "signIn": "Sign in to upload a logo.",
+        "previewAlt": "Your uploaded logo",
+        "stored": "Your uploaded logo",
+        "errors": {
+          "tooLarge": "That file is too big. 5 MB is the most we can take.",
+          "noFile": "No file came through. Pick your logo again and upload it.",
+          "unsupportedType": "We could not read that as a drawing. Export it again as a plain SVG.",
+          "unsafeDrawing": "That drawing does something we will not cut — a script, a linked font, an outside image. Export it again as a plain SVG.",
+          "noViewBox": "That drawing has no viewBox, so there is nothing to size it against. Export it again from your editor.",
+          "tooComplex": "That drawing has more detail than a router can follow. Simplify the paths and try again.",
+          "imageTooSmall": "That image is too small to trace. 64 pixels a side is the minimum.",
+          "imageTooLarge": "That image is too big to trace. 4096 pixels a side is the maximum.",
+          "unreadableImage": "We could not open that image. Export it again as a PNG.",
+          "rateLimited": "That is a lot of uploads. Give it a few minutes and try again.",
+          "unavailable": "Uploads are not working right now. Nothing was charged. Try again shortly.",
+          "generic": "That upload did not go through. Try again."
+        }
+      },
+      "editor": {
+        "canvasLabel": "Your wall. Drag the label where you want it.",
+        "placeholder": "Your text",
+        "keyboardHelp": "Arrows move it 10 mm, hold shift for 1 mm. [ and ] turn it 5°. Plus and minus change the width.",
+        "resizeHandle": "Drag to resize",
+        "rotateHandle": "Drag to turn",
+        "width": "Width (mm)",
+        "rotation": "Rotation (degrees)",
+        "holesUnavailable": "Sign in to see the hole grid on your wall.",
+        "offPanel": "It hangs off the panel, or sits too close to the edge.",
+        "holesInTheWay_one": "It lands on {{count}} hole. Move it clear.",
+        "holesInTheWay_other": "It lands on {{count}} holes. Move it clear.",
+        "crossesSeam": "It runs across a seam, so it would be cut in half.",
+        "clear": "Clear of every hole and seam on this panel."
+      },
+      "blocksPreview": "Move your labels somewhere they fit before you preview."
+    },
+    "summary": {
+      "heading": "What gets cut",
+      "wall": "Wall",
+      "wallValue": "{{width}} × {{height}} mm",
+      "kickerHeight": "Kicker height",
+      "kickerHeightValue": "{{height}} mm",
+      "panels": "Panels",
+      "panelsValue_one": "{{count}} panel",
+      "panelsValue_other": "{{count}} panels",
+      "sheets": "Sheets",
+      "sheetsValue_one": "{{count}} sheet",
+      "sheetsValue_other": "{{count}} sheets",
+      "tnuts": "T-nut holes",
+      "leds": "LED holes",
+      "seamNotches": "LED holes on a seam",
+      "seamNotchesHelp": "These LED holes sit on a panel seam. Each one is cut as a notch in both panels, and the LED sits in the notch once the panels are joined.",
+      "warningsHeading": "Worth knowing",
+      "unavailable": "The cut list is not loading right now. Everything you picked is still here."
+    },
+    "licensee": {
+      "name": "Name on the licence",
+      "email": "Email",
+      "emailHelp": "Where the pack lands when it is ready.",
+      "siteName": "Customer or gym name",
+      "siteHelp": "The one installation this commercial licence covers.",
+      "required": "Fill this in before you buy."
+    },
+    "licence": {
+      "accept": "I accept the manufacturing licence",
+      "link": "Read it first"
+    },
+    "preview": {
+      "heading": "Your preview",
+      "signedOut": "Sign in and we will draw your wall. Previews are free, and there is no card to enter.",
+      "idle": "We lay out every sheet and send back watermarked drawings. Change anything and preview again.",
+      "working": "Drawing your sheets. This takes about fifteen seconds.",
+      "ready": "Watermarked check drawings. Finalise to get the DXF files your shop cuts from.",
+      "stale": "You have changed the wall since these sheets. Update the preview to see the new ones.",
+      "failed": "That preview did not build. Nothing was charged — try again.",
+      "rateLimited": "That is every free preview for this hour. The ones you have are on your build plans page; the next one is on the hour.",
+      "download": "Download the preview",
+      "downloading": "Getting your link…",
+      "galleryLabel": "Preview sheets",
+      "bomLabel": "What these sheets cut",
+      "panel": "Panel {{number}}",
+      "assembly": "Assembly",
+      "generated": "Previewed"
+    },
+    "finalise": {
+      "heading": "Who the licence names",
+      "help": "The licence goes on every file in the pack, so a leaked copy traces back to it.",
+      "stale": "Update your preview first — the wall has changed since these sheets."
+    }
+  },
+  "cta": {
+    "preview": "Get a free preview",
+    "previewSignedOut": "Sign in for a free preview",
+    "previewUpdate": "Update preview",
+    "previewing": "Drawing your preview…",
+    "previewRetry": "Try again",
+    "finalise": "Finalise and buy",
+    "finalising": "Opening checkout…",
+    "free": "Previews are free. No card needed.",
+    "signInTitle": "Sign in for your free preview",
+    "signInBody": "Your preview needs an account to live on. We will bring you straight back to your configuration."
+  },
+  "errors": {
+    "CNC_INVALID_CONFIG": "That combination will not cut. Change something above and we will re-check it.",
+    "CNC_WORKER_UNAVAILABLE": "The plan generator is not answering right now. Nothing was charged. Try again in a minute.",
+    "CNC_CHECKOUT_UNAVAILABLE": "Payments are not available right now. Nothing was charged. Try again shortly.",
+    "generic": "That did not go through. Nothing was charged.",
+    "RATE_LIMITED": "That is a lot of previews for one hour. Nothing was charged — the next one is on the hour."
+  },
+  "status": {
+    "pending_payment": "Waiting on payment",
+    "queued": "In the queue",
+    "generating": "Cutting the files",
+    "ready": "Ready to download",
+    "failed": "Did not build",
+    "cancelled": "Checkout expired",
+    "refunded": "Refunded",
+    "preview_queued": "Preview queued",
+    "preview_generating": "Drawing the preview",
+    "preview_ready": "Preview ready",
+    "preview_failed": "Preview did not build"
+  },
+  "orders": {
+    "heading": "Your build plans",
+    "intro": "Every wall you have previewed or bought, newest first. A licence stays yours whatever happens to this page.",
+    "configureAnother": "Configure another wall",
+    "empty": "No walls here yet.",
+    "emptyBody": "Configure a wall and we will draw you a free preview of every sheet. Nothing is charged until you finalise.",
+    "emptyCta": "Configure a wall",
+    "previewTier": "Preview",
+    "orderedOn": "Ordered {{date}}",
+    "previewedOn": "Previewed {{date}}",
+    "view": "Open",
+    "viewOne": "Open build plan {{licenceId}}",
+    "finalise": "Finalise",
+    "loadError": "We could not load your build plans. Reload the page."
+  },
+  "order": {
+    "back": "All your build plans",
+    "board": "Wall",
+    "tier": "Licence",
+    "placed": "Started",
+    "previewed": "Preview drawn",
+    "size": "Pack size",
+    "sizeValue": "{{megabytes}} MB",
+    "downloads": "Downloads",
+    "facts": {
+      "heading": "What this is"
+    },
+    "timeline": {
+      "heading": "Where it is up to",
+      "preview": "Free preview drawn",
+      "finalised": "Licence named and paid",
+      "building": "Cutting the files",
+      "ready": "Ready to download"
+    },
+    "waiting": "Packs take a couple of minutes. This page updates itself.",
+    "previewWaiting": "Previews take about fifteen seconds. This page updates itself.",
+    "preview": {
+      "heading": "Your free preview",
+      "note": "Watermarked check drawings. Finalise to get the DXF files your shop cuts from.",
+      "drawing": "We are drawing your sheets. They land here as soon as they are done.",
+      "panel": "Panel {{number}}",
+      "assembly": "Assembly"
+    },
+    "finalise": "Finalise and buy",
+    "downloadPreview": "Download the preview",
+    "download": "Download the pack",
+    "downloading": "Getting your link…",
+    "downloadError": "That link did not come through. Try again.",
+    "checkoutSuccess": "Payment went through. Your pack is being cut now.",
+    "checkoutCancelled": "Checkout was cancelled. Nothing was charged.",
+    "previewFailed": {
+      "heading": "This preview did not draw",
+      "body": "Nothing was charged. Change something on your wall and preview it again, or tell us and we will look at it.",
+      "contact": "Email us and we will sort it out",
+      "subject": "Build plan {{licenceId}} preview did not draw"
+    },
+    "failed": {
+      "heading": "This one did not build",
+      "contact": "Email us and we will sort it out",
+      "subject": "Build plan {{licenceId}} did not build"
+    },
+    "refunded": {
+      "heading": "Refunded",
+      "body": "This order was refunded, so the download is switched off. Buy again whenever you are ready to build."
+    },
+    "notFound": {
+      "heading": "No such build plan",
+      "body": "Either that licence does not exist or it belongs to another account."
+    },
+    "loadError": "We could not load this build plan. Reload the page.",
+    "downloadCard": {
+      "heading": "Your build pack",
+      "note": "One DXF per panel, the assembly drawings, the print sheets and your licence, in one zip."
+    }
+  },
+  "flow": {
+    "heading": "How it works",
+    "intro": "Previews are free. Nothing is charged until you finalise.",
+    "configure": {
+      "title": "Configure your wall",
+      "body": "Pick the size, the sheets your shop cuts from, the hole diameters, and anything you want routed into a panel."
+    },
+    "preview": {
+      "title": "Get a free preview",
+      "body": "We lay out every sheet and send back watermarked drawings. Change something and preview again, as often as you like."
+    },
+    "finalise": {
+      "title": "Finalise and build",
+      "body": "Name the licence, pay, and the cut-ready DXF files and print sheets land in your account."
+    }
+  }
+}
