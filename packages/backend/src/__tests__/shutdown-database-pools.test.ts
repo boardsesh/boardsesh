@@ -40,4 +40,32 @@ describe('database pool shutdown ownership', () => {
     expect(await pending).toBe(true);
     expect(admission).toHaveBeenCalledOnce();
   });
+
+  it('starts other owners while the read pool is still closing', async () => {
+    let releaseRead: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let markRead: () => void = () => {};
+    const started = new Promise<void>((resolve) => {
+      markRead = resolve;
+    });
+    const primary = vi.fn(async () => {});
+    const admission = vi.fn(async () => {});
+    const pending = closeDatabasePools({
+      credential: async () => {},
+      read: () => {
+        markRead();
+        return held;
+      },
+      primary,
+      admission,
+    });
+    await started;
+    expect(primary).toHaveBeenCalledOnce();
+    expect(admission).not.toHaveBeenCalled();
+    releaseRead();
+    expect(await pending).toBe(true);
+    expect(admission).toHaveBeenCalledOnce();
+  });
 });
