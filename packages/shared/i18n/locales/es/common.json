@@ -11,7 +11,6 @@
     "cancel": "Cancelar",
     "clear": "Borrar",
     "delete": "Eliminar",
-    "edit": "Editar",
     "close": "Cerrar",
     "back": "Atrás",
     "done": "Listo",
@@ -270,9 +269,6 @@
   },
   "betaVideos": {
     "empty": "Sin vídeos de beta todavía"
-  },
-  "moonboardImport": {
-    "removeConfirmTitle": "¿Quitar este bloque?"
   },
   "board": {
     "resetZoom": "Restablecer zoom"

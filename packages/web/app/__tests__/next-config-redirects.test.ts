@@ -13,8 +13,6 @@
  *     cross-origin redirect is cached by the browser indefinitely, and there is
  *     no server-side hatch to take it back. Until the app route is proven in
  *     production, every hop to `app.boardsesh.com` must stay recoverable.
- *  3. **Order.** Next matches these in array order, so the MoonBoard-specific
- *     `/import` rule has to come before the `/:board/…` catch-all.
  */
 import { describe, expect, it } from 'vite-plus/test';
 import { existsSync } from 'node:fs';
@@ -242,28 +240,36 @@ describe('next.config redirects', () => {
     ]);
   });
 
-  it('re-homes the MoonBoard import routes onto the board-agnostic importer', () => {
-    const importRules = baseRedirects.filter((redirect) => redirect.source.endsWith('/import'));
+  it('hands retired import URLs to the app integrations screen', () => {
+    const importRules = baseRedirects.filter(
+      (redirect) => redirect.source === '/moonboard-import' || redirect.source.endsWith('/import'),
+    );
 
-    // Order is the whole point: the MoonBoard rule has to be matched before the
-    // `/:board/…` catch-all, or `/kilter/1/…/import` renders the importer for
-    // MoonBoard layout 1 (`MOONBOARD_LAYOUTS` ids 1–7 collide with Aurora's).
-    expect(importRules.map((rule) => `${rule.source} -> ${rule.destination}`)).toEqual([
-      '/moonboard/:layout/:size/:set/:angle/import -> /moonboard-import?layout=:layout&sets=:set&angle=:angle',
-      '/:board/:layout/:size/:set/:angle/import -> /:board/:layout/:size/:set/:angle/list',
-      '/b/:board_slug/:angle/import -> /moonboard-import?angle=:angle',
+    expect(importRules.map((rule) => rule.source)).toEqual([
+      '/moonboard-import',
+      '/:board/:layout/:size/:set/:angle/import',
+      '/b/:board_slug/:angle/import',
     ]);
     for (const rule of importRules) {
-      expect(rule.permanent).toBe(true);
+      expect(rule.destination).toBe(`${configuredAppOrigin}/settings/integrations`);
+      expect(rule.permanent).toBe(false);
     }
+
+    const appPath = new URL(importRules[0].destination).pathname;
+    const routeFile = resolve(dirname(fileURLToPath(import.meta.url)), '../../../mobile/app', `.${appPath}.tsx`);
+    expect(existsSync(routeFile), routeFile).toBe(true);
   });
 
-  it('carries the hold sets a MoonBoard import URL named', () => {
-    // The deleted page drew only the sets the URL listed. Without `sets` the
-    // importer stacks every set for the layout — six overlays on a 2024 wall.
-    const moonBoardImportRule = baseRedirects.find((redirect) => redirect.source.startsWith('/moonboard/'));
-
-    expect(moonBoardImportRule?.destination).toContain('sets=:set');
+  it('does not retain the Next MoonBoard importer or hold editor', () => {
+    const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+    for (const deletedPath of [
+      'app/moonboard-import/page.tsx',
+      'app/components/moonboard-import/moonboard-bulk-import.tsx',
+      'app/components/moonboard-import/moonboard-edit-modal.tsx',
+      'app/components/moonboard-renderer/moonboard-renderer.tsx',
+    ]) {
+      expect(existsSync(resolve(webRoot, deletedPath)), deletedPath).toBe(false);
+    }
   });
 
   it('folds the merged help pages into their parent guides, fragment included', () => {

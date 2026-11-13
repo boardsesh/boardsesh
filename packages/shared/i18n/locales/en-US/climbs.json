@@ -43,10 +43,6 @@
       "seoSummary": "{{boardName}} {{layoutName}} climb",
       "seoSetterSuffix": " set by {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} ascents logged"
-    },
-    "import": {
-      "title": "Import climbs",
-      "description": "Import MoonBoard climbs from screenshots"
     }
   },
   "list": {
@@ -82,10 +78,6 @@
       "routesOnly": "Routes only",
       "bouldersOnly": "Boulders only",
       "bouldersAndRoutes": "Boulders & routes"
-    },
-    "holds": {
-      "include": "Include",
-      "exclude": "Exclude"
     }
   },
   "actions": {
@@ -214,7 +206,6 @@
   },
   "createClimbForm": {
     "draftBadge": "Draft",
-    "namePlaceholder": "Climb name",
     "descriptionPlaceholder": "Add beta or notes about your climb...",
     "dismiss": "Dismiss",
     "cannotOpen": {
@@ -237,15 +228,6 @@
     },
     "fields": {
       "description": "Description (optional)"
-    },
-    "holds": {
-      "start": "Start",
-      "hand": "Hand",
-      "finish": "Finish",
-      "total": "Total"
-    },
-    "validation": {
-      "needsStartFinish": "A valid climb needs at least 1 start hold and 1 finish hold"
     }
   },
   "draftsDrawer": {
@@ -263,62 +245,6 @@
       "success": "Draft deleted.",
       "error": "Couldn't delete that draft. Try again."
     }
-  },
-  "holdTypePicker": {
-    "toolbarAriaLabel": "Hold type",
-    "applyModeAriaLabel": "Apply as include or exclude",
-    "clear": "Clear",
-    "searchHelp": "Select 1 or more hold types, then press anywhere else to close the picker",
-    "includeAriaSuffix": "include",
-    "excludeAriaSuffix": "exclude",
-    "states": {
-      "starting": "Start",
-      "hand": "Mid",
-      "finish": "Finish",
-      "foot": "Foot",
-      "any": "Any"
-    }
-  },
-  "moonboardImport": {
-    "picker": {
-      "title": "Pick your MoonBoard",
-      "hint": "Choose the board and angle you're importing from, then drop in your screenshots.",
-      "angleOption": "{{angle}}°"
-    },
-    "card": {
-      "skipping": "Skipping",
-      "duplicate": "Skipping: Already Exists",
-      "duplicateNamed": "Skipping: Already Exists as \"{{name}}\"",
-      "removeAction": "Remove",
-      "removeDescription": "This climb will not be imported."
-    },
-    "bulk": {
-      "title": "Import MoonBoard Climbs - {{layoutName}} @ {{angle}}°",
-      "loginRequired": "Please log in to save climbs",
-      "loginRequiredTitle": "Login Required",
-      "loginRequiredBody": "Please log in to save climbs to the database.",
-      "logIn": "Log in",
-      "uploadPrompt": "Click or drag screenshot files to this area",
-      "uploadHelp": "Support for MoonBoard app screenshots. Drop multiple files to bulk import.",
-      "processing": "Processing Screenshots...",
-      "checkingDuplicates": "Checking imported climbs against existing MoonBoard problems...",
-      "reviewBeforeSaving": "Review the climbs below. You can edit or remove any before saving.",
-      "saveAll": "Save All ({{count}})",
-      "clearAndRestart": "Clear & Start Over",
-      "contributeImages": "Contribute images to improve OCR accuracy",
-      "tryAgain": "Try Again",
-      "saveFailed": "Failed to save climbs. Please try again."
-    }
-  },
-  "moonboardEditModal": {
-    "title": "Edit Climb",
-    "nameLabel": "Climb Name",
-    "nameRequired": "Please enter a name",
-    "save": "Save Changes",
-    "setter": "Setter: {{setter}}",
-    "grade": "Grade: {{grade}}",
-    "angle": "Angle: {{angle}}°",
-    "unknown": "Unknown"
   },
   "mobile": {
     "listOptions": {

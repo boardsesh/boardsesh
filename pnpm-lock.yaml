@@ -1902,9 +1902,6 @@ importers:
       '@boardsesh/logbook':
         specifier: workspace:*
         version: link:../shared/logbook
-      '@boardsesh/moonboard-ocr':
-        specifier: workspace:*
-        version: link:../moonboard-ocr
       '@boardsesh/party-profile':
         specifier: workspace:*
         version: link:../shared/party-profile

@@ -949,7 +949,6 @@
     "cancel": "Annuler",
     "clear": "Effacer",
     "delete": "Supprimer",
-    "edit": "Modifier",
     "close": "Fermer",
     "back": "Retour",
     "done": "Terminé",
@@ -1208,9 +1207,6 @@
   },
   "betaVideos": {
     "empty": "Pas encore de vidéo de beta"
-  },
-  "moonboardImport": {
-    "removeConfirmTitle": "Retirer ce bloc ?"
   },
   "ascents": {
     "deleteTitle": "Supprimer l'ascension",

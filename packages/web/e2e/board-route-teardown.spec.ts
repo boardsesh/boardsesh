@@ -21,12 +21,11 @@ const BOARD_PATH = '/kilter/original/12x12-square/screw_bolt/40';
 /** The same board in canonical numeric form — the only form the app can parse. */
 const NUMERIC_BOARD_PATH = '/kilter/1/10/1,2/40';
 /**
- * MoonBoard 2024 (layout 3) running Hold Set D + Wooden Holds (5,8) — two of the
- * layout's six sets, which is what makes the `sets` param observable.
+ * A legacy MoonBoard import bookmark, before import moved out of Next.
  */
 const MOONBOARD_PATH = '/moonboard/3/17/5,8/40';
 const SLUG_BOARD_PATH = '/b/test-board/40';
-const LOCALE_PREFIXES = ['', '/es', '/fr', '/de'] as const;
+const LOCALE_PREFIXES = ['', '/es', '/fr', '/de', '/it'] as const;
 
 /** Deleted paths whose destination stays on www, and where each one lands. */
 const SAME_ORIGIN_REDIRECTS = [
@@ -43,12 +42,13 @@ const SAME_ORIGIN_REDIRECTS = [
 /** Deleted paths that hand off to the app. */
 const APP_HANDOFF_PATHS = [`${BOARD_PATH}/create`, `${SLUG_BOARD_PATH}/create`] as const;
 
-/**
- * Deleted paths re-homed onto the board-agnostic importer. Bulk import is
- * MoonBoard-only, so the Aurora board's `…/import` is NOT one of them — it goes
- * to that board's own list, asserted separately below.
- */
-const IMPORTER_PATHS = [`${MOONBOARD_PATH}/import`, `${SLUG_BOARD_PATH}/import`] as const;
+/** Import bookmarks now lead to the app's board-account integrations. */
+const IMPORTER_PATHS = [
+  '/moonboard-import',
+  `${MOONBOARD_PATH}/import`,
+  `${SLUG_BOARD_PATH}/import`,
+  `${NUMERIC_BOARD_PATH}/import`,
+] as const;
 
 test.describe('deleted board-route siblings redirect in every locale', () => {
   for (const prefix of LOCALE_PREFIXES) {
@@ -92,31 +92,14 @@ test.describe('deleted board-route siblings redirect in every locale', () => {
       });
     });
 
-    test(`${localeLabel}: a MoonBoard import URL carries the hold sets it named`, async ({ request }) => {
-      const response = await request.get(`${prefix}${MOONBOARD_PATH}/import`, { maxRedirects: 0 });
-
-      expect(response.status()).toBe(308);
-      const location = new URL(response.headers()['location'], 'http://localhost');
-      expect(location.pathname).toBe(`${prefix}/moonboard-import`);
-      expect(location.searchParams.get('sets')).toBe('5,8');
-    });
-
-    test(`${localeLabel}: a non-MoonBoard import URL lands on that board's own list`, async ({ request }) => {
-      // Bulk import is MoonBoard-only, and MoonBoard layout ids collide with
-      // Aurora's — without its own rule this would open the importer for the
-      // wrong board.
-      const response = await request.get(`${prefix}${NUMERIC_BOARD_PATH}/import`, { maxRedirects: 0 });
-
-      expect(response.status()).toBe(308);
-      expect(response.headers()['location']).toBe(`${prefix}${NUMERIC_BOARD_PATH}/list`);
-    });
-
     for (const from of IMPORTER_PATHS) {
-      test(`${localeLabel}: ${from} 308s to the MoonBoard importer`, async ({ request }) => {
+      test(`${localeLabel}: ${from} hands off to app integrations`, async ({ request }) => {
         const response = await request.get(`${prefix}${from}`, { maxRedirects: 0 });
 
-        expect(response.status()).toBe(308);
-        expect(response.headers()['location'].startsWith(`${prefix}/moonboard-import`)).toBe(true);
+        expect(response.status()).toBe(307);
+        const location = new URL(response.headers()['location']);
+        expect(location.origin).not.toBe(new URL(response.url()).origin);
+        expect(location.pathname).toBe('/settings/integrations');
       });
     }
   }
@@ -135,12 +118,6 @@ test.describe('the surviving board routes', () => {
 
     expect([301, 308]).toContain(response.status());
     expect(response.headers()['location']).toContain(`${BOARD_PATH}/view/`);
-  });
-
-  test('the MoonBoard importer answers on its own route', async ({ request }) => {
-    const response = await request.get('/moonboard-import');
-
-    expect(response.status()).toBe(200);
   });
 });
 

@@ -1,5 +1,9 @@
 ## Create Climb
 
+> Historical reference for the retired Next.js climbing UI. Climb authoring now
+> lives in the app. The web MoonBoard screenshot importer and its editor are also
+> removed; legacy import URLs lead to the app's integrations screen.
+
 ### Create Climb Form
 
 **Web component:** `packages/web/app/components/create-climb/create-climb-form.tsx`

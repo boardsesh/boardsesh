@@ -949,7 +949,6 @@
     "cancel": "Abbrechen",
     "clear": "Zurücksetzen",
     "delete": "Löschen",
-    "edit": "Bearbeiten",
     "close": "Schließen",
     "back": "Zurück",
     "done": "Fertig",
@@ -1208,9 +1207,6 @@
   },
   "betaVideos": {
     "empty": "Noch keine Beta-Videos"
-  },
-  "moonboardImport": {
-    "removeConfirmTitle": "Diesen Boulder entfernen?"
   },
   "ascents": {
     "deleteTitle": "Begehung löschen",

@@ -40,10 +40,11 @@ of serializing `holdsData` and `images_to_holds` into HTML and React Flight payl
 Discovery previews request the same cached backend images rather than emitting SVG
 hold circles. The old generic SVG display components have been removed.
 
-Full geometry remains available to native/backend consumers and to web tools that
-need more than an image. MoonBoard import editing and spray-wall editing need hold
-positions; custom spray-wall public artwork still uses its existing server-side
-SVG overlay. Selected-board playlist compatibility also retains the existing full
+Full geometry remains available to native/backend consumers. The Next MoonBoard
+screenshot importer, hold editor and SVG renderer have been removed; their old URLs
+redirect to the app's integrations screen. Custom spray-wall public artwork still
+uses its existing server-side SVG overlay, and spray admin overlays are read-only.
+Selected-board playlist compatibility also retains the existing full
 hold-containment check so a climb cannot silently appear compatible with a wall
 missing its holds. These exceptions are separate from catalog page image props.
 Removing the compatibility check's geometry dependency requires a dedicated

@@ -8,9 +8,8 @@ const PROXY_ROOT = 'app/api/v1/[board_name]/proxy';
 
 const DELETED_PATHS = [`${PROXY_ROOT}/getLogbook`, `${PROXY_ROOT}/saveClimb`, `${PROXY_ROOT}/user-sync`];
 
-// `climb-search-cache` survives: the kept MoonBoard bulk importer imports it
-// (components/moonboard-import/moonboard-bulk-import.tsx), and the kept
-// /api/internal/climb-search-cache/revalidate route imports the .server half.
+// `climb-search-cache` survives: search queries and the kept
+// /api/internal/climb-search-cache/revalidate route share its cache tags.
 // `analytics.server.ts` does not: it was a passthrough to Vercel server
 // analytics, which was never enabled on the project, so the one event it
 // carried went nowhere. Deleted with the rest of the Vercel telemetry.
@@ -18,7 +17,6 @@ const KEPT_PATHS = [
   'app/lib/climb-search-cache.ts',
   'app/lib/climb-search-cache.server.ts',
   'app/api/internal/climb-search-cache/revalidate/route.ts',
-  'app/components/moonboard-import/moonboard-bulk-import.tsx',
 ];
 
 describe('W-25a + W-25b: the Aurora proxies', () => {
