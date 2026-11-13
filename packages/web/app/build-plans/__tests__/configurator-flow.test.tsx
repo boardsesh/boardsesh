@@ -489,10 +489,10 @@ it('selects TB2 dimensions and engraving and submits the matching tuple', async 
   await previewThisWall();
   fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Board' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Tension Board 2' }));
-  expect(
-    screen.getByText('You have changed the wall since these sheets. Update the preview to see the new ones.'),
-  ).toBeDefined();
-  expect(screen.getByRole('button', { name: 'Update preview' })).toBeDefined();
+  // Switching board families retires the old wall's preview; option changes
+  // within one wall retain their stale preview until the buyer updates it.
+  expect(screen.queryByRole('img', { name: 'Panel 1' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Get a free preview' })).toBeDefined();
   expect(screen.queryByRole('button', { name: 'Finalise and buy' })).toBeNull();
   expect(lastLayoutConfig()).toMatchObject({
     boardName: 'tension',

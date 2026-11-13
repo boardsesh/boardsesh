@@ -186,7 +186,8 @@ export function boardLayoutLabel(
   order: { boardName: string; layoutId: number },
   translate: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  if (order.boardName === 'tension' && (order.layoutId === 10 || order.layoutId === 11)) return translate('configurator.tb2.boardName');
+  if (order.boardName === 'tension' && (order.layoutId === 10 || order.layoutId === 11))
+    return translate('configurator.tb2.boardName');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_ORIGINAL_LAYOUT_ID)
     return translate('configurator.board.original');
   if (order.boardName === 'kilter' && order.layoutId === KILTER_HOMEWALL_LAYOUT_ID)

@@ -126,6 +126,11 @@ paid queue with all three attempts.
 
 ## Stripe
 
+Out-of-order refunds resolve ownership through canonical PaymentIntent metadata.
+That lookup has a 10-second timeout and no SDK retries; a lookup outage leaves the
+webhook unprocessed so Stripe can redeliver it.
+
+
 Hosted Stripe Checkout, AUD, Stripe Tax for GST. Two tiers in v1: Personal
 (one wall, own non-commercial use) and Commercial single-build (one identified
 customer installation, which is why those orders carry a site name).
@@ -219,8 +224,8 @@ Status codes are a contract with Stripe's retry machinery:
 
 - **400** only for a body that did not come from Stripe (bad or missing
   signature, oversized payload).
-- **500** only when the database would not answer — the one failure worth a
-  redelivery.
+- **500** when the database or canonical payment lookup temporarily fails;
+  Stripe can redeliver the unprocessed event.
 - **200** for everything else, including ignored event types, unpaid sessions,
   unresolvable orders and redeliveries. An event we decided not to act on is
   handled, not failed.
