@@ -29,6 +29,7 @@ jobs:
       anyJs: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.anyJs }}
       web: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.web }}
       backend: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.backend }}
+      authCompatibility: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.authCompatibility }}
       mobile: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobile }}
       mobileDeps: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileDeps }}
       ocr: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.ocr }}
@@ -97,7 +98,7 @@ jobs:
       # union of every downstream gate, and scripts/__tests__/
       # ci-location-sync-workflow.test.ts asserts on its terms; keep it in sync
       # with the job `if:`s below so a future job can gate on it again.
-      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.auroraCircuitArbitration == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
+      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.authCompatibility == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.auroraCircuitArbitration == 'true' || steps.filter.outputs.rootCi == 'true' || steps.filter.outputs.staticAssets == 'true' }}
       # NOTE: deployConfig, storeMetadata, mobileLocales, restSurface,
       # pg18Artifacts and boardRenderer are deliberately NOT part of runAny —
       # the deploy-config, listing-guards, rest-surface and pg18-artifacts steps
@@ -138,6 +139,21 @@ jobs:
               # The HTTPS auth proof runs with the backend's disposable Postgres.
               - 'packages/web/auth-prototype/**'
               - 'packages/web/playwright.auth-prototype.config.ts'
+            # Web-only auth changes need the owned auth/browser proofs without
+            # selecting the full baseline backend suite for unrelated pages.
+            authCompatibility:
+              - 'packages/web/auth-prototype/**'
+              - 'packages/web/playwright.auth-prototype.config.ts'
+              - 'packages/web/app/lib/auth/**'
+              - 'packages/web/app/lib/partner-oauth/**'
+              - 'packages/web/app/api/auth/**'
+              - 'packages/web/app/api/internal/auth/**'
+              - 'packages/web/app/api/internal/ws-auth/**'
+              - 'packages/web/app/lib/seo/base-url.ts'
+              - 'packages/web/vite.config.ts'
+              - 'packages/web/tsconfig.json'
+              - 'packages/web/next.config.ts'
+              - 'packages/web/middleware.ts'
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
@@ -1496,7 +1512,7 @@ jobs:
   # in serial tests, then hit the old 30-minute limit during auth proofs.
   test-auth-compatibility:
     needs: [changes]
-    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.authCompatibility == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -1573,6 +1589,12 @@ jobs:
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
         run: vp run test:auth-prototype:browser
+      - name: Run versioned proof cookies and result recovery
+        if: ${{ !cancelled() }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
+        run: vp run test:auth-browser-proof-cookies
 
   # Mirror-on qualification repeats the complete current-store suite. It owns
   # service containers so its budget is independent of baseline tests and HTTPS.

@@ -17,6 +17,7 @@ interface Job {
 const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as { jobs: Record<string, Job> };
 const proofFile = 'web-credential-proof.integration.proof.ts';
 const providerProofFiles = ['provider-security-auth.proof.ts', 'provider-security-publication.proof.ts'];
+const cookieProofFiles = ['browser-proof-cookies.proof.ts', 'provider-security-cookie-recovery.proof.ts'];
 const task = 'vp run test:auth-web-credential-proof';
 
 describe('database-backed backend/web credential proof placement', () => {
@@ -83,5 +84,25 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(step).toBeDefined();
     expect(step?.if).not.toContain('needs.changes');
     expect(step?.['continue-on-error']).toBeUndefined();
+  });
+  it('runs both actual-cookie proofs explicitly in the required post-install task', () => {
+    const configuration = readFileSync('packages/web/auth-prototype/browser-proof-cookies.vite.config.ts', 'utf8');
+    const types = JSON.parse(readFileSync('packages/web/auth-prototype/tsconfig.json', 'utf8')) as {
+      include: string[];
+    };
+    for (const file of cookieProofFiles) {
+      expect(existsSync(`packages/web/auth-prototype/${file}`)).toBe(true);
+      expect(configuration).toContain(`'auth-prototype/${file}'`);
+      expect(types.include).toContain(file);
+    }
+    const tasks = readFileSync('vite.config.ts', 'utf8');
+    const start = tasks.indexOf("'test:auth-browser-proof-cookies':");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const task = tasks.slice(start, tasks.indexOf("'test:offline-sync':", start));
+    expect(task).toContain('browser-proof-cookies.vite.config.ts');
+    expect(task).toContain("dependsOn: ['typecheck:auth-prototype-browser']");
+    expect(task).toContain('--maxWorkers=1');
+    expect(task).toContain('cache: false');
+    expect(task).not.toContain('--changed');
   });
 });

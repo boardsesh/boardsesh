@@ -1240,6 +1240,12 @@ export default defineConfig({
         dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },
+      'test:auth-browser-proof-cookies': {
+        command:
+          'vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-prototype-browser'],
+        cache: false,
+      },
       // The offline-sync engine suites live in their own Vitest project
       // (packages/shared/offline-sync/vite.config.ts, name: 'offline-sync').
       // Neither `test:mobile` nor the backend project pulls them in, so a

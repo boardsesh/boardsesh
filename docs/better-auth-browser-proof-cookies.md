@@ -34,6 +34,15 @@ is bounded to 16 headers; leftover older names remain ineligible for selection.
 Same-version chunk-layout changes fail before publication rather than deleting
 current names. Their working renewal protocol remains to be qualified.
 
+The trusted server-only `retainObservedProofCookies` option defaults to false.
+A provider result planner may pass literal true to retain the exact old actor
+proof needed for a bounded ACK. This emits no older-proof cleanup and counts
+every actual old proof and operation carrier toward projected capacity; it does
+not filter or hide observed headers. Malformed option values fail closed.
+Initial provider finalization must retain both actor possession and recovery
+capabilities until next-request ACK is qualified. Complete reply/header loss
+without the exact candidate still needs separate fresh same-owner recovery.
+
 `buildBrowserProofCookieCandidate` is synchronous and immutable. Call it before
 a credential/selection mutation, then retain the backend transaction/receipt
 and publication fences. It bounds each cookie header, aggregate Set-Cookie
@@ -75,6 +84,24 @@ browser loses admission although the later source is still valid. This passing
 characterization is evidence AGAINST claiming rolling renewal fixed. Credential
 revision names or canonical publication serialization must resolve it; binding
 metadata must never substitute for the missing/expired actual proof.
+
+The joined result-recovery fixture adds the shipping central reader and private
+browser/provider HTTP clients and handlers over an explicit disposable database.
+It uses the actual provider finalizer and ACK transaction for both selected
+authorities and source kinds. Chromium installs the real host-only proof and
+sealed operation cookies. A deliberately truncated body preserves the old actor
+and exact new candidate for the next request; dropped complete headers or an
+unknown finalizer reply cannot reconstruct the absent candidate. Delayed original
+headers remain inert after a later actual coordinator login. Header planning
+uses the complete actual incoming cookie header before the first mutation;
+oversized unrelated cookies or a missing actual actor leave credentials intact.
+Only owned accounts, loopback listeners and synthetic provider ownership are
+used. The private handlers receive the explicit fixture database; restricted
+LOGIN qualification remains separately proved by the credential-writer suite.
+This does not mount the application catch-all, prove real provider consoles,
+qualify whole-application browser publication, or close the complete-header-loss
+fresh-proof recovery gate. The required compatibility CI task runs after its
+existing Chromium installation, with a targeted web-auth source filter.
 
 ```sh
 vp test run --project web packages/web/app/lib/auth/__tests__/browser-proof-cookies.test.ts --reporter=agent

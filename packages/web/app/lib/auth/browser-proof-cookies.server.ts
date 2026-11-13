@@ -296,8 +296,13 @@ export function buildBrowserProofCookieCandidate(input: {
   readonly observedCookieHeader: string | null;
   readonly responseHeaderBudgetBytes?: number;
   readonly requestCookieHeaderBudgetBytes?: number;
+  /** Trusted server planning only. Keep exact old actor possession available
+   * for bounded result ACK; no HTTP input may select this behavior. */
+  readonly retainObservedProofCookies?: boolean;
 }): BrowserProofCookieCandidate {
   const selected = cursor(input.cursor);
+  if (input.retainObservedProofCookies !== undefined && typeof input.retainObservedProofCookies !== 'boolean')
+    throw new BrowserProofCookieError('INVALID_SOURCE');
   if (
     !Number.isSafeInteger(input.proofMaxAgeSeconds) ||
     input.proofMaxAgeSeconds < 1 ||
@@ -328,7 +333,7 @@ export function buildBrowserProofCookieCandidate(input: {
   const names = proofHeaders.map((header) => header.slice(0, header.indexOf('=')));
   if (existing.length && (existing.length !== names.length || existing.some((cookie) => !names.includes(cookie.name))))
     throw new BrowserProofCookieError('INVALID_FAMILY');
-  const garbageCollectionHeaders = olderClears(observed, selected);
+  const garbageCollectionHeaders = input.retainObservedProofCookies === true ? [] : olderClears(observed, selected);
   const headers = [...proofHeaders, ...garbageCollectionHeaders];
   const headerBytes = headers.reduce((size, header) => size + bytes(`Set-Cookie: ${header}\r\n`), 0);
   if (headers.length > BROWSER_PROOF_COOKIE_LIMITS.responseHeaders || headerBytes > budget)
