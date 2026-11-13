@@ -78,6 +78,13 @@ deferred newest builds can be recovered from the same stamp without another vers
 An upload that may have reached a store but lacks its immutable tag requires readback
 before a rebuild; the coordinator does not guess that it failed.
 
+If a stamp push fails and the refreshed main SHA has not moved, the coordinator stops
+instead of resolving the same fingerprints three times and reporting concurrent main
+changes. Check the repository App credentials and every applicable main ruleset: the
+App needs bypass permission for update restrictions, required pull requests, and
+required checks. A check bypass alone does not permit a direct stamp push. Keep those
+permissions an explicit repository policy choice; the coordinator does not change rules.
+
 All coordinator requests queue, including manual baseline and recovery dispatches,
 so automatic workflow completions cannot replace a pending operator request. Each
 run reads the newest main snapshot; queued events do not open duplicate versions.
@@ -609,6 +616,14 @@ after QA of the main-built candidates so daily production soaks can resume.
 Main's validated unreleased native line receives per-merge OTAs after backend and schema readiness,
 without waiting for public store releases. This immediate route excludes public and historical
 store runtimes; older installed binaries retain their last compatible update.
+
+If store reads report a missing or expired Apple agreement, the Apple account holder
+must accept it in [App Store Connect → Business](https://appstoreconnect.apple.com/business).
+Apple returns HTTP 403 with `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`;
+changing API credentials or retrying cannot resolve that agreement. Store tooling
+reports this exact condition without including Apple's response body and skips its
+transient-read retries. After acceptance, rerun the failed production deployment
+and **Mobile Release Anchor**. OTA admission still requires fresh store evidence.
 
 Before submission, dispatch **Mobile Store Audit** (`mobile-store-audit.yml`) on
 `main` with the exact marketing version and iOS build number. It reads App Store

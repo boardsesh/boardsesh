@@ -592,8 +592,9 @@ function coordinate(dryRun: boolean): void {
       push(stampSha) {
         authenticatedPush(`${stampSha}:refs/heads/main`);
       },
-      committed(stampSha) {
-        return ancestor(stampSha, refresh());
+      currentMain: refresh,
+      committed(stampSha, mainSha) {
+        return ancestor(stampSha, mainSha);
       },
       recover: recoverLatest,
     },

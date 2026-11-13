@@ -1,15 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  AppStoreAgreementRequiredError,
   getAcceptedVersions,
   mapAcceptedGoogleProductionReleases,
   mapAcceptedVersions,
   parseGoogleProductionReleasesResponse,
   parseGoogleServiceAccount,
+  resolveAppId,
 } from '../mobile-auto-version-bump';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('App Store agreement failures', () => {
+  it('turns the exact Apple agreement code into a fixed account-holder action', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            errors: [
+              {
+                code: 'FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED',
+                detail: 'private response detail and Bearer secret-token',
+              },
+            ],
+          }),
+          { status: 403 },
+        ),
+      ),
+    );
+
+    const read = resolveAppId('token');
+    await expect(read).rejects.toBeInstanceOf(AppStoreAgreementRequiredError);
+    await expect(read).rejects.toThrow('https://appstoreconnect.apple.com/business');
+    await expect(read).rejects.not.toThrow('secret-token');
+  });
+
+  it.each([
+    [403, '{invalid json'],
+    [403, JSON.stringify({ errors: [{ code: 'FORBIDDEN.OTHER' }] })],
+    [503, JSON.stringify({ errors: [{ code: 'FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED' }] })],
+  ])('preserves other failures (HTTP %s, %s)', async (status, body) => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(body, { status })));
+    const read = resolveAppId('token');
+    await expect(read).rejects.not.toBeInstanceOf(AppStoreAgreementRequiredError);
+    await expect(read).rejects.toThrow(`ASC /v1/apps → ${status}`);
+  });
 });
 
 describe('mapAcceptedVersions', () => {

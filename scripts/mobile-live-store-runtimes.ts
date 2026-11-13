@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
+  AppStoreAgreementRequiredError,
   createAppStoreConnectJwt,
   decodePrivateKey,
   getAcceptedGoogleProductionBuilds,
@@ -140,7 +141,8 @@ export const STORE_READ_RETRY_DELAYS_MS = [10_000, 30_000] as const;
  * deploys (runs 41628271781 and 41641393063, 2026-11-03) and passed on the next
  * push, so a single blip turned the whole deploy red. Retry the reads, never the
  * credential parse: a bad key fails the same way every time. Store errors and
- * response bodies are never copied into Actions logs, so only the attempt count is.
+ * response bodies are never copied into Actions logs. A missing Apple agreement
+ * has a fixed, actionable error and cannot recover through retries.
  */
 export async function readStoreWithRetries<T>(
   read: () => Promise<T>,
@@ -158,7 +160,8 @@ export async function readStoreWithRetries<T>(
   for (let attempt = 1; ; attempt += 1) {
     try {
       return await read();
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof AppStoreAgreementRequiredError) throw error;
       if (attempt >= attempts) throw new Error(STORE_READ_FAILURE);
       const delayMs = delaysMs[attempt - 1]!;
       log(`Public store read attempt ${attempt} of ${attempts} failed; retrying in ${delayMs / 1000}s.`);

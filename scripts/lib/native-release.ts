@@ -253,7 +253,8 @@ export type PreparedNativeSnapshot = {
 export type NativeCoordinatorRuntime = {
   prepare: () => PreparedNativeSnapshot;
   push: (stampSha: string) => void;
-  committed: (stampSha: string) => boolean;
+  currentMain: () => string;
+  committed: (stampSha: string, mainSha: string) => boolean;
   recover: (stamp: NativeStamp, dryRun: boolean) => void;
 };
 
@@ -274,7 +275,14 @@ export function coordinateNativeSnapshots(
       try {
         runtime.push(prepared.stampSha);
       } catch {
-        if (!runtime.committed(prepared.stampSha)) continue;
+        const currentMain = runtime.currentMain();
+        if (!runtime.committed(prepared.stampSha, currentMain)) {
+          if (currentMain === prepared.mainSha)
+            throw new Error(
+              'Native stamp push failed while main was unchanged. Check repository App credentials and its bypass permissions for every main branch rule. No stamp publication was confirmed.',
+            );
+          continue;
+        }
       }
       if (prepared.immediateRecoveryStamp) {
         runtime.recover(prepared.immediateRecoveryStamp, false);
