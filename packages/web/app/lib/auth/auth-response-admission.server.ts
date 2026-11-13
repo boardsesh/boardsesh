@@ -5,8 +5,12 @@ import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './c
 import { capturePresentedWebCredential } from './admitted-session.server';
 import { CREDENTIAL_AUTHORITY_HEADER, unavailableCredentialResponse } from './credential-admission-response.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
+import { responseClearsNextAuthSession } from './web-signout-command.server';
 
 type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
+
+/** Trusted request-local acknowledgment; never supplied through an HTTP header. */
+export type SignOutCompletion = (response: Response, credential: string) => void;
 
 function deniedAuthResponse(action: string): Response {
   return NextResponse.json(action === 'session' ? {} : { error: 'Authentication required' }, {
@@ -58,7 +62,7 @@ async function emittedCredentials(response: Response, requestUrl: string): Promi
 export async function withAuthResponseAdmission(
   request: NextRequest,
   context: AuthRouteContext,
-  invoke: () => Promise<Response>,
+  invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
   // Clearing a cookie needs no proof the account still exists, so an outage must
@@ -77,7 +81,17 @@ export async function withAuthResponseAdmission(
       if (await isDenied(captured.credential)) return deniedAuthResponse(action);
     }
 
-    const response = await invoke();
+    let acknowledgedSignOutResponse: Response | undefined;
+    const response = await invoke((completedResponse, credential) => {
+      if (
+        action !== 'signout' ||
+        !captured ||
+        credential !== captured.credential ||
+        !responseClearsNextAuthSession(completedResponse)
+      )
+        throw new CredentialAuthorityUnavailable();
+      acknowledgedSignOutResponse = completedResponse;
+    });
     const produced = await emittedCredentials(response, request.url);
     if (produced.length > 0) {
       let admittedUserId: string | undefined;
@@ -88,9 +102,12 @@ export async function withAuthResponseAdmission(
         admittedUserId = userId;
       }
     } else if (captured && action !== 'signin' && action !== 'csrf' && action !== 'providers') {
-      // Sign-out and negative renewal must recheck at the publication boundary,
-      // including deletion committed while the real handler was running.
-      if (await isDenied(captured.credential)) return deniedAuthResponse(action);
+      // An acknowledged denial necessarily makes this same credential fail its
+      // next admission read. Publish that exact sign-out's clears after ACK;
+      // every unacknowledged response retains the final deletion/revocation guard.
+      const completedOwnSignOut =
+        action === 'signout' && acknowledgedSignOutResponse === response && responseClearsNextAuthSession(response);
+      if (!completedOwnSignOut && (await isDenied(captured.credential))) return deniedAuthResponse(action);
     }
     response.headers.set('Cache-Control', 'private, no-store');
     return response;

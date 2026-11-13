@@ -52,7 +52,7 @@ const resolved = {
 };
 
 describe('independent web OAuth identity v1 contract', () => {
-  it('uses a distinct namespace and leaves all six V2 paths and version unchanged', () => {
+  it('uses a distinct namespace and preserves V2 paths and version in a distinct namespace', () => {
     expect(WEB_OAUTH_PROTOCOL_VERSION).toBe(1);
     expect(WEB_OAUTH_PATH_PREFIX).toBe('/api/internal/auth/current-store/web-oauth/v1');
     expect(WEB_OAUTH_COMMAND_PATHS).toEqual({
@@ -67,6 +67,8 @@ describe('independent web OAuth identity v1 contract', () => {
       'resend-verification',
       'forgot-password',
       'reset-password',
+      'set-password',
+      'signout',
     ]);
     expect(authCommandSchema.safeParse(intent).success).toBe(false);
     expect(authCommandSchema.safeParse(resolve).success).toBe(false);

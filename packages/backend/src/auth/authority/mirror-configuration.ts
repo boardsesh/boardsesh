@@ -1,3 +1,5 @@
+import { setPasswordMode } from '@boardsesh/auth-protocol';
+
 type Environment = Readonly<Record<string, string | undefined>>;
 
 export const IDENTITY_MIRROR_ENV = 'AUTH_IDENTITY_MIRROR';
@@ -17,13 +19,13 @@ export function assertMirroredNativeWriterMode(mode: 'legacy' | 'reserved-stagin
 }
 
 /**
- * Dark deployment only. PR9 must delegate web set-password with fresh-auth proof,
- * prove every staged writer mode, and verify the database writer fence before
- * this gate can be removed. Never disable the live web flow to claim coverage.
+ * Dark deployment only. Delegated set-password is required, but complete writer,
+ * fence, and remaining activation proofs still block production activation.
  */
 export function assertIdentityMirrorActivationConfiguration(environment: Environment = process.env): void {
   if (identityMirrorMode(environment) === 'off') return;
+  setPasswordMode(environment);
   throw new Error(
-    'AUTH_IDENTITY_MIRROR activation blocked: backend-owned fresh-auth set-password and complete writer/fence proof required',
+    'AUTH_IDENTITY_MIRROR activation blocked: complete writer/fence proof and remaining activation gates required',
   );
 }

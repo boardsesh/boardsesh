@@ -51,7 +51,15 @@ describe('post-mutation canonical replacement and event constraints', () => {
         .values({ userId, generation: 1, revokedThrough: new Date(), lastOperationId: randomUUID() });
       return replaceCanonicalAfterSecurityMutation(
         transaction,
-        { userId, authSessionId, generation: 0, requiresAccountCutoff: false, authenticatedAt: age, expiresAt },
+        {
+          userId,
+          authSessionId,
+          generation: 0,
+          requiresAccountCutoff: false,
+          authenticatedAt: age,
+          linkGuarded: true,
+          expiresAt,
+        },
         1,
       );
     });

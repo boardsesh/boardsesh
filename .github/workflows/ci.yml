@@ -946,7 +946,7 @@ jobs:
       - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
         id: better-auth-boundary
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts --maxWorkers=2 --reporter=agent
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts --maxWorkers=2 --reporter=agent
 
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
@@ -1494,6 +1494,11 @@ jobs:
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
         run: vp run test:auth-identities
+      - name: Run backend and web credential proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-web-credential-proof
       - name: Install Chromium for auth compatibility proof
         if: ${{ !cancelled() && matrix.shard == 1 }}
         working-directory: packages/web

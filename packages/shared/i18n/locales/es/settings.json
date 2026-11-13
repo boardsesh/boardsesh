@@ -122,7 +122,10 @@
       "mismatch": "Las contraseñas no coinciden",
       "saveError": "No se pudo guardar la contraseña",
       "retryError": "No se pudo guardar la contraseña. Inténtalo de nuevo."
-    }
+    },
+    "reauthenticationRequired": "Vuelve a iniciar sesión para establecer una contraseña.",
+    "reauthenticate": "Volver a iniciar sesión",
+    "accountChanged": "Tu cuenta ha cambiado. Comprueba la cuenta que se muestra e inténtalo de nuevo."
   },
   "controllers": {
     "title": "Controladores ESP32",

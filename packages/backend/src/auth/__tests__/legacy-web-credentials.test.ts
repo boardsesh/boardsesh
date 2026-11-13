@@ -164,6 +164,24 @@ describe('legacy NextAuth v4 cryptographic credential proof', () => {
     });
   });
 
+  it('retains account-cutoff provenance on renewed children with public SIDs', async () => {
+    const credential = await installedSession({ legacy_no_sid: true });
+    const renewed = await installedSession({ legacy_no_sid: true });
+    const proof = await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW);
+    expect(proof).toMatchObject({
+      authSessionId: 'same-established-login',
+      requiresAccountCutoff: true,
+      originalAuthenticatedAt: null,
+    });
+    expect(proof?.lineageId).toMatch(/^credential:/);
+    expect((await verifyLegacyNextAuthJwe(renewed, LEGACY_SECRET, NOW))?.lineageId).toBe(proof?.lineageId);
+  });
+
+  it.each([false, null, 1, 'true'])('rejects malformed unknown-lineage provenance %s', async (claim) => {
+    const credential = await installedSession({ legacy_no_sid: claim });
+    expect(await verifyLegacyNextAuthJwe(credential, LEGACY_SECRET, NOW)).toBeNull();
+  });
+
   it('has no sign-in time for a cookie from before the claim, and never takes the attribution timestamp as one', async () => {
     const credential = await installedSession({
       nativeOAuthCreationProof: { signedInAt: NOW.getTime(), authSessionId: 'same-established-login' },

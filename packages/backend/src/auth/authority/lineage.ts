@@ -36,6 +36,7 @@ function captureSessionDenial(
     authSessionId: presentedSession.authSessionId,
     generation: presentedSession.generation,
     requiresAccountCutoff: presentedSession.requiresAccountCutoff,
+    linkGuarded: presentedSession.linkGuarded,
     authenticatedAt: presentedSession.authenticatedAt ? new Date(presentedSession.authenticatedAt.getTime()) : null,
     expiresAt: new Date(presentedSession.expiresAt.getTime()),
   };

@@ -1,4 +1,6 @@
 import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
+import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
+import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -140,6 +142,7 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
   assertNativeRevocationActivationConfiguration();
+  assertWebSessionWriterActivationConfiguration();
   // A typo in this mode would otherwise turn every adopted writer (account
   // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
   // request at a time. Refuse to serve instead, so the deploy fails visibly.
@@ -733,6 +736,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         await handleCurrentStoreBatchSystemUsers(req, res);
         return;
       }
+      if (pathname === '/api/internal/auth/current-store/signout') {
+        await handleCurrentStoreWebSignOut(req, res);
+        return;
+      }
       if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
         await handleCurrentStoreWebOAuth(req, res);
         return;
@@ -743,7 +750,8 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         pathname === '/api/internal/auth/current-store/verify-email' ||
         pathname === '/api/internal/auth/current-store/resend-verification' ||
         pathname === '/api/internal/auth/current-store/forgot-password' ||
-        pathname === '/api/internal/auth/current-store/reset-password'
+        pathname === '/api/internal/auth/current-store/reset-password' ||
+        pathname === '/api/internal/auth/current-store/set-password'
       ) {
         await handleCurrentStoreWebAuth(req, res);
         return;

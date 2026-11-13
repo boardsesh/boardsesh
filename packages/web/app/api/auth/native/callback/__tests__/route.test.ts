@@ -1,8 +1,13 @@
+// @vitest-environment node
 vi.mock('server-only', () => ({}));
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
+import { encode } from 'next-auth/jwt';
 import { GET } from '../route';
-import { getAdmittedServerSession as getServerSession } from '@/app/lib/auth/admitted-session.server';
+import {
+  getAdmittedServerSession as getServerSession,
+  getAdmittedRawServerToken,
+} from '@/app/lib/auth/admitted-session.server';
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import {
   issueNativeOAuthTransferToken,
@@ -13,6 +18,7 @@ import {
 // Mock dependencies before importing the route handler
 vi.mock('@/app/lib/auth/admitted-session.server', () => ({
   getAdmittedServerSession: vi.fn(),
+  getAdmittedRawServerToken: vi.fn(),
 }));
 
 vi.mock('@/app/lib/auth/auth-options', () => ({
@@ -24,6 +30,7 @@ vi.mock('@/app/lib/auth/native-oauth-transfer', async (importOriginal) => ({
   issueNativeOAuthTransferToken: vi.fn(),
 }));
 
+const mockedGetRawToken = vi.mocked(getAdmittedRawServerToken);
 const mockedGetServerSession = vi.mocked(getServerSession);
 const mockedIssueToken = vi.mocked(issueNativeOAuthTransferToken);
 
@@ -52,6 +59,68 @@ describe('GET /api/auth/native/callback', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it('derives required proof from exact admitted raw claims ahead of displayed generation', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+    mockedGetServerSession.mockResolvedValue({
+      user: { id: 'raw-source' },
+      authSessionId: 'raw-source-login',
+      authGeneration: 99,
+      expires: '2026-10-11',
+    });
+    mockedIssueToken.mockReturnValue('raw-proof-transfer');
+    const authenticatedAt = Math.floor(Date.now() / 1000) - 3600;
+    mockedGetRawToken.mockResolvedValue(
+      await encode({
+        secret: 'native-attempt-test-secret',
+        token: {
+          sub: 'raw-source',
+          authSessionId: 'raw-source-login',
+          gen: 3,
+          auth_time: authenticatedAt,
+          link_guarded: true,
+        },
+      }),
+    );
+    const response = await GET(createRequest('/api/auth/native/callback'));
+    expect(await extractDeepLink(response)).toContain('transferToken=');
+    expect(mockedIssueToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generation: 99,
+        authSessionId: 'raw-source-login',
+        credentialProof: {
+          version: 1,
+          userId: 'raw-source',
+          authSessionId: 'raw-source-login',
+          generation: 3,
+          authenticatedAt: new Date(authenticatedAt * 1000).toISOString(),
+          linkGuarded: true,
+        },
+      }),
+    );
+  });
+
+  it.each(['subject', 'sid'])('refuses raw source %s that differs from the admitted session', async (mismatch) => {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+    mockedGetServerSession.mockResolvedValue({
+      user: { id: 'raw-source' },
+      authSessionId: 'raw-source-login',
+      expires: '2026-10-11',
+    });
+    mockedGetRawToken.mockResolvedValue(
+      await encode({
+        secret: 'native-attempt-test-secret',
+        token: {
+          sub: mismatch === 'subject' ? 'different-source' : 'raw-source',
+          authSessionId: mismatch === 'sid' ? 'different-login' : 'raw-source-login',
+          gen: 3,
+        },
+      }),
+    );
+    const response = await GET(createRequest('/api/auth/native/callback'));
+    expect(await extractDeepLink(response)).toContain('error=token_issue_failed');
+    expect(mockedIssueToken).not.toHaveBeenCalled();
   });
 
   it('signs the exact receipt only for a matching fresh browser attempt and auth session', async () => {

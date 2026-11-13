@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
 
 /** Independent identity-only protocol; it never issues a continuing credential. */
 export const WEB_OAUTH_PROTOCOL_VERSION = 1;
@@ -42,6 +43,7 @@ export const webOAuthResolveCommandSchema = z
   .object({
     ...metadata,
     operation: z.literal('resolve'),
+    credentialProofVersion: z.literal(WEB_CREDENTIAL_PROOF_VERSION).optional(),
     issuedAt: timestamp,
     payload: z.object({ ...intentPayload, subject, email: email.nullable(), name, image }).strict(),
   })
@@ -92,6 +94,7 @@ export const webOAuthResolveReplySchema = z.union([
       ...metadata,
       operation: z.literal('resolve'),
       outcome: z.literal('resolved'),
+      credentialProof: webCredentialProofSchema.optional(),
       user: webOAuthUserSchema,
       createdUser: z.boolean(),
       account: webOAuthAccountSchema,

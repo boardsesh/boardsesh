@@ -134,6 +134,8 @@ export async function verifyLegacyNextAuthJwe(
     )
       return null;
     const authSessionId = typeof claimedSessionId === 'string' ? claimedSessionId : null;
+    if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
+    const requiresAccountCutoff = authSessionId === null || payload.legacy_no_sid === true;
     const credentialFingerprint = fingerprint(credential);
     return {
       kind: 'nextauth-v4-jwe',
@@ -151,11 +153,11 @@ export async function verifyLegacyNextAuthJwe(
       originalAuthenticatedAt: signedInAt(payload.auth_time, issuedAt, currentTime),
       linkGuarded: isLinkGuardedSignIn(payload),
       authSessionId,
-      lineageId: `${authSessionId ? 'session' : 'credential'}:${fingerprint(
+      lineageId: `${requiresAccountCutoff ? 'credential' : 'session'}:${fingerprint(
         JSON.stringify(['nextauth-v4', userId, authSessionId ?? credentialFingerprint]),
       )}`,
       credentialFingerprint,
-      requiresAccountCutoff: authSessionId === null,
+      requiresAccountCutoff,
       cookieNames: [],
     };
   } catch {

@@ -13,6 +13,9 @@ import Alert from '@mui/material/Alert';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutlined';
 import { useTranslation } from 'react-i18next';
+import LocaleLink from '@/app/components/i18n/locale-link';
+import { applyLocale } from '@/app/lib/i18n/locale-href';
+import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 
 type SetPasswordSectionProps = {
@@ -20,6 +23,8 @@ type SetPasswordSectionProps = {
   userEmail: string;
   linkedProviders: string[];
   onPasswordSet: () => void;
+  expectedSession?: { userId: string; authSessionId: string };
+  onAccountChanged?: () => void;
 };
 
 function formatProviderName(provider: string): string {
@@ -36,8 +41,17 @@ export default function SetPasswordSection({
   userEmail,
   linkedProviders,
   onPasswordSet,
+  expectedSession,
+  onAccountChanged,
 }: SetPasswordSectionProps) {
-  const { t } = useTranslation('settings');
+  const { t, i18n } = useTranslation('settings');
+  const activeLocale = isSupportedLocale(i18n?.language) ? i18n.language : DEFAULT_LOCALE;
+  const loginPath = applyLocale(
+    `/auth/login?callbackUrl=${encodeURIComponent(applyLocale('/settings', activeLocale))}`,
+    activeLocale,
+  );
+  const reauthenticationHref = `/auth/signout?callbackUrl=${encodeURIComponent(loginPath)}`;
+  const [reauthenticationRequired, setReauthenticationRequired] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
@@ -81,11 +95,32 @@ export default function SetPasswordSection({
       const response = await fetch('/api/internal/set-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, confirmPassword }),
+        body: JSON.stringify({
+          password,
+          confirmPassword,
+          ...(expectedSession?.userId && expectedSession.authSessionId
+            ? { expectedUserId: expectedSession.userId, expectedAuthSessionId: expectedSession.authSessionId }
+            : {}),
+        }),
       });
 
       const data = await response.json();
 
+      if (response.status === 401 || (response.status === 403 && data.error === 'reauthentication_required')) {
+        setReauthenticationRequired(true);
+        return;
+      }
+      if (response.status === 409 && data.error === 'identity_changed') {
+        setPassword('');
+        setConfirmPassword('');
+        await onAccountChanged?.();
+        showMessage(t('password.accountChanged'), 'error');
+        return;
+      }
+      if (response.status === 503) {
+        showMessage(t('password.validation.retryError'), 'error');
+        return;
+      }
       if (!response.ok) {
         showMessage(data.error || t('password.validation.saveError'), 'error');
         return;
@@ -139,6 +174,14 @@ export default function SetPasswordSection({
           </Alert>
         )}
 
+        {reauthenticationRequired && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            {t('password.reauthenticationRequired')}
+            <Button component={LocaleLink} href={reauthenticationHref}>
+              {t('password.reauthenticate')}
+            </Button>
+          </Alert>
+        )}
         <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
             label={t('password.passwordLabel')}

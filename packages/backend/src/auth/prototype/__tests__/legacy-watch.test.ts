@@ -163,15 +163,30 @@ describe('pre-cutover raw user-ID Garmin pairing over real Redis', () => {
     expect(stored.refreshes[0].expiresAt.getTime() - stored.refreshes[0].createdAt.getTime()).toBe(90 * 86_400_000);
   });
 
-  it('retains only the actual remaining TTL instead of renewing a pending code for five minutes', async () => {
+  it('retains the remaining TTL without adding Redis reply latency or renewing five minutes', async () => {
     const user = await fixture();
     const code = await pending(user.userId, 10_000);
     const before = Date.now();
-    await first.consumePairingCode(code);
-    const stored = await storedFor(user.userId);
-    expect(stored.lineages[0].originalExpiresAt.getTime()).toBeGreaterThan(before + 9000);
-    expect(stored.lineages[0].originalExpiresAt.getTime()).toBeLessThanOrEqual(before + 10_000);
-    expect(await firstRedis.exists(`${namespace}${code}`)).toBe(0);
+    const evaluate = firstRedis.eval.bind(firstRedis);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(before);
+    const reply = vi.spyOn(firstRedis, 'eval').mockImplementationOnce(async (...parameters) => {
+      const consumed = await evaluate(...parameters);
+      // The actual Redis observation precedes delivery of its reply. The
+      // caller must retain that deadline even if its own clock advances.
+      vi.setSystemTime(before + 1500);
+      return consumed;
+    });
+    try {
+      await first.consumePairingCode(code);
+      const stored = await storedFor(user.userId);
+      expect(stored.lineages[0].originalExpiresAt.getTime()).toBeGreaterThan(before + 9000);
+      expect(stored.lineages[0].originalExpiresAt.getTime()).toBeLessThanOrEqual(before + 10_000);
+      expect(await firstRedis.exists(`${namespace}${code}`)).toBe(0);
+    } finally {
+      reply.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('preserves released lowercase/separator normalization', async () => {

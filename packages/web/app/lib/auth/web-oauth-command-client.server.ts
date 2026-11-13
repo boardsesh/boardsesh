@@ -1,6 +1,8 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import {
+  WEB_CREDENTIAL_PROOF_VERSION,
+  webCredentialProofMode,
   WEB_OAUTH_COMMAND_PATHS,
   WEB_OAUTH_PROTOCOL_VERSION,
   parseWebAuthMode,
@@ -37,6 +39,7 @@ export function createWebOAuthCommandClient(
   options: { environment?: AuthServiceEnvironment; fetch?: typeof fetch; timeoutMs?: number } = {},
 ): WebOAuthCommandClient {
   const environment = options.environment ?? process.env;
+  if (webCredentialProofMode(environment) === 'compatible') throw new AuthBackendUnavailableError();
   if (webOAuthMode(environment) !== 'backend-staging') throw new AuthBackendUnavailableError();
   const transport = createAuthCommandTransport({
     ...options,
@@ -66,6 +69,13 @@ export function createWebOAuthCommandClient(
           reply.account.providerAccountId !== request.payload.subject)
       )
         throw new AuthBackendUnavailableError();
+      if (
+        request.operation === 'resolve' &&
+        request.credentialProofVersion &&
+        reply.outcome === 'resolved' &&
+        (!reply.credentialProof || reply.credentialProof.userId !== reply.user.id)
+      )
+        throw new AuthBackendUnavailableError();
       return reply;
     } catch {
       throw new AuthBackendUnavailableError();
@@ -86,6 +96,9 @@ export function createWebOAuthCommandClient(
       return (await command({
         webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
         operation: 'resolve',
+        ...(webCredentialProofMode(environment) === 'required'
+          ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
+          : {}),
         requestId: randomUUID(),
         issuedAt: new Date().toISOString(),
         payload,

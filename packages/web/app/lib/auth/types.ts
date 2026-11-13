@@ -1,3 +1,4 @@
+import type { WebCredentialProof } from '@boardsesh/auth-protocol';
 import type { DefaultSession } from 'next-auth';
 import type { AccountCreationReceipt } from '@boardsesh/analytics';
 
@@ -9,6 +10,11 @@ export type NativeOAuthCreationProof = {
 };
 
 declare module 'next-auth' {
+  interface User {
+    webCredentialProof?: WebCredentialProof;
+    /** Signed legacy transfer generation; unknown authentication age stays unknown. */
+    nativeOAuthSourceGeneration?: number;
+  }
   // eslint-disable-next-line typescript/consistent-type-definitions
   interface Session {
     /** Signed login generation; renewal never substitutes the primary generation. */
@@ -25,6 +31,8 @@ declare module 'next-auth/jwt' {
   // eslint-disable-next-line typescript/consistent-type-definitions
   interface JWT {
     authSessionId?: string;
+    /** Renewal assigned a SID to a historical cookie with unknown login ancestry. */
+    legacy_no_sid?: true;
     nativeOAuthCreationProof?: NativeOAuthCreationProof;
     // Epoch seconds of the sign-in that produced this cookie. Absent on cookies
     // from before the claim and on native transfer sign-ins: age unknown.

@@ -1,3 +1,4 @@
+import { issueWebCredentialProof } from './web-credential-proof';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
   AUTH_PROTOCOL_VERSION,
@@ -202,7 +203,7 @@ export async function authenticateWebPassword(
   input: PasswordCommand,
 ): Promise<PasswordReply> {
   const authority = captureAuthority(authorityInput);
-  const { requestId, issuedAt } = input;
+  const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
   await preflight(database, authority);
   const snapshot = await addressSnapshot(database, email);
@@ -299,11 +300,18 @@ export async function authenticateWebPassword(
         requestId,
         outcome: 'invalid_credentials',
       };
+    const credentialProof = await issueWebCredentialProof(
+      transaction,
+      selected.userId,
+      credentialProofVersion,
+      selected.generation,
+    );
     return {
       protocolVersion: AUTH_PROTOCOL_VERSION,
       operation: 'password',
       requestId,
       outcome: 'authenticated',
+      ...(credentialProof ? { credentialProof } : {}),
       user: { id: selected.userId, email: selected.email, name: selected.name, image: selected.image },
       verification: {
         userId: selected.userId,

@@ -1,3 +1,4 @@
+import { webCredentialProofSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
 import crypto from 'crypto';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 
@@ -14,6 +15,9 @@ type NativeOAuthTransferPayload = {
   authSessionId?: string;
   attemptId?: string;
   provider?: 'apple' | 'google';
+  auth_time?: number;
+  link_guarded?: true;
+  legacy_no_sid?: true;
 };
 
 const base64UrlEncode = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
@@ -38,6 +42,7 @@ export const issueNativeOAuthTransferToken = ({
   authSessionId,
   attemptId,
   provider,
+  credentialProof,
 }: {
   userId: string;
   nextPath: string;
@@ -46,18 +51,30 @@ export const issueNativeOAuthTransferToken = ({
   authSessionId?: string;
   attemptId?: string;
   provider?: 'apple' | 'google';
+  credentialProof?: WebCredentialProof;
 }): string => {
   if (!Number.isSafeInteger(generation) || generation < 0) {
     throw new Error('Invalid native OAuth transfer generation');
   }
   const now = Math.floor(Date.now() / 1000);
+  const proof = credentialProof ? webCredentialProofSchema.parse(credentialProof) : undefined;
+  if (proof && (proof.userId !== userId || (authSessionId !== undefined && authSessionId !== proof.authSessionId)))
+    throw new Error('Transfer proof identity mismatch');
   const payload: NativeOAuthTransferPayload = {
     userId,
     nextPath: sanitizeNextPath(nextPath),
     iat: now,
     exp: now + NATIVE_OAUTH_TRANSFER_TTL_SECONDS,
-    gen: generation,
+    gen: proof?.generation ?? generation,
     ...(authSessionId ? { authSessionId } : {}),
+    ...(proof
+      ? {
+          authSessionId: proof.authSessionId,
+          ...(proof.authenticatedAt ? { auth_time: Math.floor(Date.parse(proof.authenticatedAt) / 1000) } : {}),
+          ...(proof.linkGuarded ? { link_guarded: true as const } : {}),
+          ...(proof.requiresAccountCutoff ? { legacy_no_sid: true as const } : {}),
+        }
+      : {}),
     ...(accountCreation && authSessionId && attemptId && provider
       ? { accountCreation, authSessionId, attemptId, provider }
       : {}),
@@ -71,7 +88,13 @@ export const issueNativeOAuthTransferToken = ({
 
 export const verifyNativeOAuthTransferToken = (
   token: string,
-): { userId: string; nextPath: string; accountCreation?: AccountCreationReceipt } | null => {
+): {
+  userId: string;
+  nextPath: string;
+  accountCreation?: AccountCreationReceipt;
+  generation: number;
+  credentialProof?: WebCredentialProof;
+} | null => {
   let secret: string;
   try {
     secret = getNativeOAuthSecret();
@@ -122,6 +145,35 @@ export const verifyNativeOAuthTransferToken = (
     return null;
   }
 
+  if (payload.gen !== undefined && (!Number.isSafeInteger(payload.gen) || payload.gen < 0)) return null;
+  let credentialProof: WebCredentialProof | undefined;
+  // Generation-only legacy transfers remain readable. A complete signed source
+  // identity inherits its generation and unknown age without a primary restamp.
+  if (
+    (payload.gen !== undefined && payload.authSessionId !== undefined) ||
+    payload.auth_time !== undefined ||
+    payload.link_guarded !== undefined ||
+    payload.legacy_no_sid !== undefined
+  ) {
+    if (
+      payload.auth_time !== undefined &&
+      (!Number.isSafeInteger(payload.auth_time) ||
+        payload.auth_time <= 0 ||
+        payload.auth_time > now + CLOCK_SKEW_TOLERANCE_SECONDS)
+    )
+      return null;
+    const parsed = webCredentialProofSchema.safeParse({
+      version: 1,
+      userId: payload.userId,
+      authSessionId: payload.authSessionId,
+      generation: payload.gen,
+      authenticatedAt: payload.auth_time === undefined ? null : new Date(payload.auth_time * 1000).toISOString(),
+      linkGuarded: payload.link_guarded === true,
+      ...(payload.legacy_no_sid !== undefined ? { requiresAccountCutoff: payload.legacy_no_sid } : {}),
+    });
+    if (!parsed.success) return null;
+    credentialProof = parsed.data;
+  }
   const receipt = parseAccountCreationReceipt(payload.accountCreation);
   const verifiedReceipt =
     receipt?.userId === payload.userId &&
@@ -135,7 +187,9 @@ export const verifyNativeOAuthTransferToken = (
   return {
     userId: payload.userId,
     nextPath: sanitizeNextPath(payload.nextPath),
+    generation: payload.gen ?? 0,
     ...(verifiedReceipt ? { accountCreation: verifiedReceipt } : {}),
+    ...(credentialProof ? { credentialProof } : {}),
   };
 };
 

@@ -1,3 +1,4 @@
+import { webCredentialProofMode } from '@boardsesh/auth-protocol';
 import 'server-only';
 import type { NextAuthOptions } from 'next-auth';
 import type { NextRequest } from 'next/server';
@@ -205,6 +206,7 @@ export async function withWebOAuthIdentity(
     return unavailableResponse(request, false, provider ?? 'google');
   }
   if (mode === 'legacy') {
+    if (webCredentialProofMode(process.env) !== 'off') return unavailableResponse(request, false, provider ?? 'google');
     // Only a callback can link an account; a sign-in start never reaches the adapter.
     return invoke(request, action === 'callback' ? await withSessionLinkGuard(base, request) : base);
   }

@@ -9,6 +9,7 @@ const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.s
 const NEXTAUTH_SESSION_PATH = '/api/auth/session';
 const NEXTAUTH_CSRF_PATH = '/api/auth/csrf';
 const NEXTAUTH_SIGNOUT_PATH = '/api/auth/signout';
+const SET_PASSWORD_COOKIE_PATH = '/api/internal/set-password';
 const NEXTAUTH_CALLBACK_PATH_PREFIX = '/api/auth/callback/';
 const NEXTAUTH_SIGNIN_PATH_PREFIX = '/api/auth/signin/';
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
@@ -81,6 +82,7 @@ function isNextAuthCookieRequest(input: RequestInfo | URL, init?: RequestInit): 
   return (
     isMutation &&
     (pathname === NEXTAUTH_SIGNOUT_PATH ||
+      pathname === SET_PASSWORD_COOKIE_PATH ||
       pathname.startsWith(NEXTAUTH_CALLBACK_PATH_PREFIX) ||
       pathname.startsWith(NEXTAUTH_SIGNIN_PATH_PREFIX))
   );

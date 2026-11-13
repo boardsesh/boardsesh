@@ -11,6 +11,7 @@ export interface FirstPartySession {
   readonly generation: number;
   readonly requiresAccountCutoff: boolean;
   readonly authenticatedAt: Date | null;
+  readonly linkGuarded: boolean;
   readonly expiresAt: Date;
 }
 export type FirstPartySessionResult =
@@ -42,6 +43,7 @@ export async function readFirstPartySession(
         generation: proof.generation,
         requiresAccountCutoff: proof.requiresAccountCutoff,
         authenticatedAt: proof.linkGuarded ? proof.originalAuthenticatedAt : null,
+        linkGuarded: proof.linkGuarded,
         expiresAt: proof.expiresAt,
       };
     } else {
@@ -63,6 +65,7 @@ export async function readFirstPartySession(
         requiresAccountCutoff: canonical.legacyLineageId?.startsWith('credential:') ?? false,
         // createdAt may be an epoch sentinel; it never proves authentication.
         authenticatedAt: canonical.originalAuthenticatedAt,
+        linkGuarded: canonical.originalAuthenticatedAt !== null,
         expiresAt: canonical.expiresAt,
       };
     }
@@ -87,6 +90,7 @@ export async function readFirstPartySession(
 export function requireFreshAuthentication(session: FirstPartySession, now = new Date(), maxAgeSeconds = 300): boolean {
   const authenticatedAt = session.authenticatedAt?.getTime();
   return (
+    session.linkGuarded === true &&
     authenticatedAt !== undefined &&
     authenticatedAt > 0 &&
     authenticatedAt <= now.getTime() &&

@@ -57,7 +57,13 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.stubEnv('NEXTAUTH_SECRET', 'test-nextauth-secret');
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'legacy');
-    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+    nextAuthHandlerMock.mockImplementation(async (_request: NextRequest, context: ReturnType<typeof routeContext>) => {
+      const [action] = (await context.params).nextauth;
+      return new Response(null, {
+        status: 200,
+        headers: action === 'signout' ? { 'Set-Cookie': '__Secure-next-auth.session-token=; Path=/; Max-Age=0' } : {},
+      });
+    });
   });
 
   afterEach(() => {
@@ -113,15 +119,19 @@ describe('POST /api/auth/[...nextauth]', () => {
       expectedAuthSessionId: 'login-1',
     });
 
+    signOutRequest.headers.set('Cookie', '__Secure-next-auth.session-token=synthetic-cookie');
+    signOutRequest.headers.set('Authorization', 'Bearer must-not-select-the-cookie');
+
     await expect(POST(signOutRequest, routeContext(signOutRequest))).resolves.toMatchObject({ status: 200 });
 
-    expect(getTokenMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        req: signOutRequest,
-        secureCookie: true,
-        cookieName: '__Secure-next-auth.session-token',
-      }),
-    );
+    const decodedRead = getTokenMock.mock.calls.find(([settings]) => settings.raw !== true)?.[0];
+    expect(decodedRead).toMatchObject({
+      secureCookie: true,
+      cookieName: '__Secure-next-auth.session-token',
+    });
+    expect(decodedRead.req.url).toBe(signOutRequest.url);
+    expect(decodedRead.req.headers.get('cookie')).toBe(signOutRequest.headers.get('cookie'));
+    expect(decodedRead.req.headers.get('authorization')).toBeNull();
     expect(nextAuthHandlerMock).toHaveBeenCalledOnce();
   });
 
@@ -232,7 +242,6 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.stubEnv('VERCEL_URL', '');
     vi.stubEnv('NEXTAUTH_URL', 'https://42.preview.boardsesh.com');
     getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
-    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
     const signOutRequest = request('/api/auth/signout', {
       csrfToken: 'csrf-token',
       expectedUserId: 'user-1',
