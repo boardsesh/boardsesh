@@ -160,11 +160,7 @@ async function receipts(owner: Awaited<ReturnType<typeof actorFixture>>) {
 describe('operation-bound selected-authority actual password reauthentication', () => {
   beforeAll(async () => {
     environment = await createEnvironment();
-    for (const filename of [
-      '0311_browser_binding_selection.sql',
-      '0312_browser_selection_possession.sql',
-      '0313_provider_security_receipts.sql',
-    ])
+    for (const filename of ['0312_browser_binding_selection.sql', '0313_provider_security_receipts.sql'])
       await environment.client.unsafe(
         readFileSync(new URL(`../../../../../db/drizzle/${filename}`, import.meta.url), 'utf8'),
       );

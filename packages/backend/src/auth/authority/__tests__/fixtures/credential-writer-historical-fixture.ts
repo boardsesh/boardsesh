@@ -14,36 +14,37 @@ export const HISTORICAL_CREDENTIAL_FIXTURE = Object.freeze({
   migrationSetSha256: '0e32ca2c7e0071b5404fbca9ae5e852d5a0af3a1c9a03019268595032007ae06',
 });
 const canonicalDirectory = fileURLToPath(new URL('../../../../../../db/drizzle/', import.meta.url));
+const historicalDirectory = fileURLToPath(new URL('./historical-private-browser-v1/', import.meta.url));
 const sha256 = (source: string | Buffer) => createHash('sha256').update(source).digest('hex');
 interface HistoricalEntry {
   readonly tag: string;
   readonly when: number;
 }
-export async function readHistoricalCredentialWriterMigrations(directory = canonicalDirectory) {
-  const parsed: unknown = JSON.parse(await readFile(join(directory, 'meta', '_journal.json'), 'utf8'));
+export async function readHistoricalCredentialWriterMigrations(directory?: string) {
+  // Current canonical numbering may change independently. The default journal
+  // and final two SQL files are fixed published artifacts, never a sliced prefix.
+  const journalPath = directory ? join(directory, 'meta', '_journal.json') : join(historicalDirectory, '_journal.json');
+  const parsed: unknown = JSON.parse(await readFile(journalPath, 'utf8'));
   if (
     !parsed ||
     typeof parsed !== 'object' ||
     !('entries' in parsed) ||
     !Array.isArray(parsed.entries) ||
-    parsed.entries.length < HISTORICAL_CREDENTIAL_FIXTURE.count
+    parsed.entries.length !== HISTORICAL_CREDENTIAL_FIXTURE.count
   )
     throw new Error('HISTORICAL_CREDENTIAL_JOURNAL_PROVENANCE_MISMATCH');
-  const journal = JSON.stringify(
-    { ...parsed, entries: parsed.entries.slice(0, HISTORICAL_CREDENTIAL_FIXTURE.count) },
-    null,
-    2,
-  );
+  const journal = JSON.stringify(parsed, null, 2);
   if (sha256(journal) !== HISTORICAL_CREDENTIAL_FIXTURE.journalSha256)
     throw new Error('HISTORICAL_CREDENTIAL_JOURNAL_PROVENANCE_MISMATCH');
   // The fixed digest authenticates the complete structure before paths are read.
-  const entries = parsed.entries.slice(0, HISTORICAL_CREDENTIAL_FIXTURE.count) as HistoricalEntry[];
+  const entries = parsed.entries as HistoricalEntry[];
   const last = entries.at(-1);
   if (last?.tag !== HISTORICAL_CREDENTIAL_FIXTURE.lastTag || last.when !== HISTORICAL_CREDENTIAL_FIXTURE.lastWhen)
     throw new Error('HISTORICAL_CREDENTIAL_JOURNAL_PROVENANCE_MISMATCH');
   const migrations = await Promise.all(
-    entries.map(async (entry) => {
-      const bytes = await readFile(join(directory, `${entry.tag}.sql`));
+    entries.map(async (entry, index) => {
+      const sourceDirectory = directory ?? (index >= 311 ? historicalDirectory : canonicalDirectory);
+      const bytes = await readFile(join(sourceDirectory, `${entry.tag}.sql`));
       const contents = bytes.toString('utf8');
       if (!Buffer.from(contents, 'utf8').equals(bytes))
         throw new Error('HISTORICAL_CREDENTIAL_MIGRATION_PROVENANCE_MISMATCH');
@@ -64,7 +65,7 @@ export async function readHistoricalCredentialWriterMigrations(directory = canon
  * temporary directory. There is no configurable migration number or cutoff. */
 export async function materializeHistoricalCredentialWriterMigrations(
   outputDirectory: string,
-  sourceDirectory = canonicalDirectory,
+  sourceDirectory?: string,
 ) {
   const source = await readHistoricalCredentialWriterMigrations(sourceDirectory);
   const output = await lstat(outputDirectory);

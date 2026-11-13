@@ -51,6 +51,10 @@ test('materializes only313 original migrations and leaves the current appended c
   assert.deepEqual(await readFile(join(canonicalDirectory, 'meta', '_journal.json')), canonicalBefore);
 });
 
+test('refuses the independently renumbered canonical journal as historical provenance', async () => {
+  await assert.rejects(readHistoricalCredentialWriterMigrations(canonicalDirectory), /JOURNAL_PROVENANCE_MISMATCH/);
+});
+
 test('refuses a changed historical SQL file even with the original journal and names', async () => {
   const directory = await materializedDirectory();
   await writeFile(join(directory, '0312_browser_selection_possession.sql'), '-- altered historical source\n');

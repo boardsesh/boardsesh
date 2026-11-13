@@ -79,11 +79,16 @@ minutes and the original proof/intent/source deadlines.
 
 ## Evidence and remaining gates
 
-This draft checkpoint uses its reviewed pre-CNC parent and original 314-entry
-canonical / 313-entry historical fixtures. Main subsequently added a different
-0311 migration for CNC packs. Drizzle migration reconciliation is required before
-merge; the original historical SQL/journal provenance must remain immutable.
-These checkpoint results do not qualify the newer main migration sequence.
+The current generated sequence is CNC0311 → browser0312 → provider0313.
+Drizzle regenerated the browser schema with its reviewed physical column order
+and the provider snapshot with the correct ancestry; provider SQL is unchanged.
+The fresh314-entry canonical journal bootstraps successfully. Independent
+protected-catalog equality and immutable historical provenance checks pass.
+The historical fixture retains the original313-entry journal and both original
+browser SQL artifacts, authenticated by their existing full-source digests.
+Its reader rejects the newer canonical journal rather than slicing it into old
+evidence. Complete current restricted-LOGIN and historical tasks remain the
+qualification gates; no production schema or mode is changed here.
 
 The restricted-LOGIN catalog proof covers actual revocation, provider/browser
 receipt writes, forbidden token/owner writes, strict old-profile refusal,
