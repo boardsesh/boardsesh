@@ -46,11 +46,11 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(definition).not.toContain('--changed');
   });
 
-  it('runs every proof case in the required backend job with PostgreSQL', () => {
-    const backend = workflow.jobs['test-backend'];
+  it('runs every proof case in the required compatibility job with PostgreSQL', () => {
+    const backend = workflow.jobs['test-auth-compatibility'];
     const steps = backend.steps.filter((step) => step.run === task);
     expect(steps).toHaveLength(1);
-    expect(steps[0].if).toBe('${{ !cancelled() && matrix.shard == 1 }}');
+    expect(steps[0].if).toBe('${{ !cancelled() }}');
     expect(steps[0].env?.AUTH_PROTOTYPE_DATABASE_URL).toBe('postgresql://postgres:postgres@localhost:5433/postgres');
     expect(backend.services?.postgres.ports).toContain('5433:5432');
     expect(steps[0]['continue-on-error']).toBeUndefined();
