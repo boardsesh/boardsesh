@@ -1,6 +1,55 @@
 {
-  "generatedAt": "2026-11-13T06:44:20.178Z",
+  "generatedAt": "2026-11-13T18:33:13.114Z",
   "entries": [
+    {
+      "prNumber": 7353,
+      "category": "fixed",
+      "title": "Change your board angle from a larger, easier-to-read button in the Climbs toolbar on Android and browser.",
+      "mergedAt": "2026-11-13T16:21:44Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7353"
+    },
+    {
+      "prNumber": 7352,
+      "category": "new",
+      "title": "Your Android lock screen card now glows with your climb's colours.",
+      "mergedAt": "2026-11-13T16:19:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7352"
+    },
+    {
+      "prNumber": 5236,
+      "category": "new",
+      "title": "Preview a home-wall panel layout before buying its CNC build pack.",
+      "mergedAt": "2026-11-13T15:08:53Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/5236"
+    },
+    {
+      "prNumber": 7347,
+      "category": "fixed",
+      "title": "A calmer tick sheet on Android: angle and date tuck away until you need them",
+      "mergedAt": "2026-11-13T14:49:42Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7347"
+    },
+    {
+      "prNumber": 7479,
+      "category": "improved",
+      "title": "Climb pages use less data when you open a shared link.",
+      "mergedAt": "2026-11-13T14:30:06Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7479"
+    },
+    {
+      "prNumber": 7472,
+      "category": "new",
+      "title": "Try Bluetooth setup with clearly labeled beta firmware on a compatible WLED controller.",
+      "mergedAt": "2026-11-13T13:54:39Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7472"
+    },
+    {
+      "prNumber": 7468,
+      "category": "new",
+      "title": "Choose Bluetooth for a Spraywall with a compatible WLED controller.",
+      "mergedAt": "2026-11-13T11:54:48Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7468"
+    },
     {
       "prNumber": 7269,
       "category": "improved",

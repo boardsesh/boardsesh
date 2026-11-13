@@ -6,9 +6,22 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-13
 
+### New
+
+- Your Android lock screen card now glows with your climb's colours. ([#7352](https://github.com/boardsesh/boardsesh/pull/7352))
+- Preview a home-wall panel layout before buying its CNC build pack. ([#5236](https://github.com/boardsesh/boardsesh/pull/5236))
+- Try Bluetooth setup with clearly labeled beta firmware on a compatible WLED controller. ([#7472](https://github.com/boardsesh/boardsesh/pull/7472))
+- Choose Bluetooth for a Spraywall with a compatible WLED controller. ([#7468](https://github.com/boardsesh/boardsesh/pull/7468))
+
 ### Improved
 
+- Climb pages use less data when you open a shared link. ([#7479](https://github.com/boardsesh/boardsesh/pull/7479))
 - The help pages are easier to read, with big app screenshots beside each step ([#7269](https://github.com/boardsesh/boardsesh/pull/7269))
+
+### Fixed
+
+- Change your board angle from a larger, easier-to-read button in the Climbs toolbar on Android and browser. ([#7353](https://github.com/boardsesh/boardsesh/pull/7353))
+- A calmer tick sheet on Android: angle and date tuck away until you need them ([#7347](https://github.com/boardsesh/boardsesh/pull/7347))
 
 ## 2026-11-12
 
