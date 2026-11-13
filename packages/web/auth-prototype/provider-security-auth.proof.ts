@@ -10,8 +10,8 @@ import GoogleProvider from 'next-auth/providers/google';
 import { decode, encode } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startConfiguredProviderTransport } from '../../../../../backend/src/auth/current-store/__tests__/fixtures/app-router-providers';
-import { verifyLegacyNextAuthJwe } from '../../../../../backend/src/auth/legacy-web-credentials';
+import { startConfiguredProviderTransport } from '../../backend/src/auth/current-store/__tests__/fixtures/app-router-providers';
+import { verifyLegacyNextAuthJwe } from '../../backend/src/auth/legacy-web-credentials';
 import type { ProviderSecurityReply, WebCredentialProof } from '@boardsesh/auth-protocol';
 
 const fixture = vi.hoisted(() => {
@@ -49,19 +49,19 @@ vi.mock('@/app/lib/auth/credential-admission.server', async (importOriginal) => 
   };
 });
 
-import { authOptions } from '../auth-options';
-import { withAuthResponseAdmission } from '../auth-response-admission.server';
-import { withPartnerSignInFailureReturn } from '../../partner-oauth/sign-in-failure-return';
-import { webOAuthFlowHash } from '../web-oauth-continuation.server';
+import { authOptions } from '@/app/lib/auth/auth-options';
+import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
+import { withPartnerSignInFailureReturn } from '@/app/lib/partner-oauth/sign-in-failure-return';
+import { webOAuthFlowHash } from '@/app/lib/auth/web-oauth-continuation.server';
 import {
   createProviderSecurityAuthPublication,
   type ProviderSecurityExplicitBoundFlow,
-} from '../provider-security-auth.server';
+} from '@/app/lib/auth/provider-security-auth.server';
 import {
   providerCandidateCredentialHash,
   type ProviderSecurityCommandClient,
   type ProviderSecurityOperationReply,
-} from '../provider-security-command-client.server';
+} from '@/app/lib/auth/provider-security-command-client.server';
 
 type Handler = (request: NextRequest, context: { params: Promise<{ nextauth: string[] }> }) => Promise<Response>;
 const requestStorage = new AsyncLocalStorage<NextRequest>();

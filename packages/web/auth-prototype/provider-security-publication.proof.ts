@@ -3,14 +3,14 @@ import { decode, encode, type JWT } from 'next-auth/jwt';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 import type { WebCredentialProof } from '@boardsesh/auth-protocol';
-import { verifyLegacyNextAuthJwe } from '../../../../../backend/src/auth/legacy-web-credentials';
+import { verifyLegacyNextAuthJwe } from '../../backend/src/auth/legacy-web-credentials';
 vi.mock('server-only', () => ({}));
 import {
   issuePreparedProviderSecurityCredential,
   prepareProviderSecurityPublicationResponse,
   type PrepareProviderSecurityCookies,
-} from '../provider-security-publication.server';
-import { providerCandidateCredentialHash } from '../provider-security-command-client.server';
+} from '@/app/lib/auth/provider-security-publication.server';
+import { providerCandidateCredentialHash } from '@/app/lib/auth/provider-security-command-client.server';
 
 const clock = Date.UTC(2026, 10, 13, 10, 0, 0, 500);
 const secret = 'owned-provider-direct-unlink-actual-jwe-secret';

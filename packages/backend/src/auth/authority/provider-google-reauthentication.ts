@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { verifyGoogleIdToken } from 'better-auth/social-providers';
+import { verifyAuthorityGoogleIdToken } from './authority';
 import type { ProviderSecurityMethodsConfiguration } from './provider-security-policy';
 
 export interface VerifiedGoogleAuthenticationAssertion {
@@ -18,7 +18,7 @@ export async function verifyProviderGoogleAuthenticationAssertion(
   const enabled = configuration.googleReauthenticationEnabled;
   const { idToken, nonce } = input;
   if (!enabled || !audience || !nonce || nonce.length > 1024 || !idToken || idToken.length > 16_384) return null;
-  const claims = await verifyGoogleIdToken({ token: idToken, audience, nonce });
+  const claims = await verifyAuthorityGoogleIdToken({ token: idToken, audience, nonce });
   if (
     !claims ||
     typeof claims.sub !== 'string' ||
