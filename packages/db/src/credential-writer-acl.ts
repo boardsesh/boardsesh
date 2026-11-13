@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import type postgres from 'postgres';
-import reviewedRelationShapes from './credential-writer-private-web-v1';
+import reviewedPrivateWebRelationShapes from './credential-writer-private-web-v1';
+import reviewedBrowserRelationShapes from './credential-writer-private-browser-v1';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
+export type CredentialWriterContract = 'private-web-v1' | 'private-browser-v1';
 export type CredentialPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 export type CredentialColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 
@@ -33,6 +35,15 @@ export const PRIVATE_WEB_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readon
   });
 for (const privileges of Object.values(PRIVATE_WEB_CREDENTIAL_CAPABILITIES)) Object.freeze(privileges);
 
+/** Browser correlation/intent commands share the credential LOGIN. Expiry
+ * maintenance is a separate principal: no browser table DELETE is granted. */
+export const PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_WEB_CREDENTIAL_CAPABILITIES,
+    auth_browser_bindings: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+    auth_browser_intents: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+  });
+
 /** PostgreSQL row locks require UPDATE on at least one column. Keep member
  * identity keys immutable: only its observation timestamp gets that capability. */
 export const PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES: Readonly<
@@ -54,25 +65,8 @@ const partnerRevocationRelations = [
   'oauth_consent_interactions',
   'oauth_session',
 ] as const;
-const closureRelations = [...Object.keys(PRIVATE_WEB_CREDENTIAL_CAPABILITIES), ...partnerRevocationRelations];
-const deleteSources = [
-  ...Object.entries(PRIVATE_WEB_CREDENTIAL_CAPABILITIES)
-    .filter(([, privileges]) => privileges.includes('DELETE'))
-    .map(([table]) => table),
-  ...partnerRevocationRelations.filter((table) => table !== 'oauth_connections'),
-];
-const updateSources = [
-  ...Object.entries(PRIVATE_WEB_CREDENTIAL_CAPABILITIES)
-    .filter(([, privileges]) => privileges.includes('UPDATE'))
-    .map(([table]) => table),
-  ...Object.entries(PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES)
-    .filter(([, columns]) => Object.values(columns).some((privileges) => privileges.includes('UPDATE')))
-    .map(([table]) => table),
-  'oauth_connections',
-];
-
 export interface CredentialWriterReceipt {
-  readonly contract: 'private-web-v1';
+  readonly contract: CredentialWriterContract;
   readonly role: typeof CREDENTIAL_WRITER_ROLE;
   readonly sessionRole: typeof CREDENTIAL_WRITER_ROLE;
   readonly database: string;
@@ -97,15 +91,46 @@ function refuse(code: string): never {
  */
 export async function qualifyCredentialWriter(
   client: postgres.Sql | postgres.TransactionSql,
-  options: { readonly expectedRole: string; readonly expectedDatabase: string; readonly contract: 'private-web-v1' },
+  options: {
+    readonly expectedRole: string;
+    readonly expectedDatabase: string;
+    readonly contract: CredentialWriterContract;
+  },
 ): Promise<CredentialWriterReceipt> {
   const requested = { ...options };
   if (
     requested.expectedRole !== CREDENTIAL_WRITER_ROLE ||
-    requested.contract !== 'private-web-v1' ||
+    !['private-web-v1', 'private-browser-v1'].includes(requested.contract) ||
     !requested.expectedDatabase
   )
     refuse('CREDENTIAL_WRITER_CONTRACT_REQUIRED');
+  const capabilities =
+    requested.contract === 'private-browser-v1'
+      ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+      : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const columnCapabilities = PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
+  const closureRelations = [...Object.keys(capabilities), ...partnerRevocationRelations];
+  const deleteSources = [
+    ...Object.entries(capabilities)
+      .filter(([, privileges]) => privileges.includes('DELETE'))
+      .map(([table]) => table),
+    ...partnerRevocationRelations.filter((table) => table !== 'oauth_connections'),
+  ];
+  const updateSources = [
+    ...Object.entries(capabilities)
+      .filter(([, privileges]) => privileges.includes('UPDATE'))
+      .map(([table]) => table),
+    ...Object.entries(columnCapabilities)
+      .filter(([, columns]) => Object.values(columns).some((privileges) => privileges.includes('UPDATE')))
+      .map(([table]) => table),
+    'oauth_connections',
+  ];
+  const reviewedRelationShapes =
+    requested.contract === 'private-browser-v1'
+      ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>
+          left.name.localeCompare(right.name),
+        )
+      : reviewedPrivateWebRelationShapes;
   const [identity] = await client<
     {
       role: string;
@@ -165,14 +190,10 @@ export async function qualifyCredentialWriter(
         WHERE attribute.attrelid=relation.oid AND acl.grantee=0) AS "publicGrant"
     FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema' AND relation.relkind IN ('r','p','v','m','f') ORDER BY 1,2`;
-  const required = new Set([
-    ...Object.keys(PRIVATE_WEB_CREDENTIAL_CAPABILITIES),
-    ...Object.keys(PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES),
-  ]);
+  const required = new Set([...Object.keys(capabilities), ...Object.keys(columnCapabilities)]);
   for (const relation of relations) {
-    const allowed = relation.schema === 'public' ? PRIVATE_WEB_CREDENTIAL_CAPABILITIES[relation.name] : undefined;
-    const allowedColumns =
-      relation.schema === 'public' ? PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES[relation.name] : undefined;
+    const allowed = relation.schema === 'public' ? capabilities[relation.name] : undefined;
+    const allowedColumns = relation.schema === 'public' ? columnCapabilities[relation.name] : undefined;
     if (allowed || allowedColumns) {
       required.delete(relation.name);
       if (relation.kind !== 'r' || allowed?.some((privilege) => !relation.privileges.includes(privilege)))
@@ -348,7 +369,7 @@ export async function qualifyCredentialWriter(
   if (JSON.stringify([...triggers]) !== JSON.stringify(expectedTriggers))
     refuse('CREDENTIAL_WRITER_UNREVIEWED_TRIGGER_PATH');
   return Object.freeze({
-    contract: 'private-web-v1',
+    contract: requested.contract,
     role: CREDENTIAL_WRITER_ROLE,
     sessionRole: CREDENTIAL_WRITER_ROLE,
     database: identity.database,
