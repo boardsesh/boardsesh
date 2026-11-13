@@ -273,7 +273,9 @@ describe('owned full-schema dedicated credential LOGIN qualification', () => {
   });
   it('refuses builtin expression side effects that pg_depend does not record', async () => {
     await drift(
-      "ALTER TABLE public.auth_session ADD CONSTRAINT credential_builtin_probe CHECK (pg_notify('owned_credential_probe',token) IS NULL)",
+      // Existing HTTP fixtures may already have sessions. Keep the hostile
+      // CHECK active for future writes without evaluating existing rows.
+      "ALTER TABLE public.auth_session ADD CONSTRAINT credential_builtin_probe CHECK (pg_notify('owned_credential_probe',token) IS NULL) NOT VALID",
       'ALTER TABLE public.auth_session DROP CONSTRAINT credential_builtin_probe',
       'CREDENTIAL_WRITER_UNREVIEWED_RELATION_SHAPE',
     );
