@@ -1,4 +1,4 @@
-# Current-store account deletion
+# Account deletion and identity authority
 
 This is [PR #7307](https://github.com/boardsesh/boardsesh/pull/7307), an implementation slice of [BA-03 #6977](https://github.com/boardsesh/boardsesh/issues/6977) in [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). It adds independently selected security bookkeeping to the existing backend GraphQL account-deletion transaction. It does not activate an authority, migrate identities, change production privileges or delete a real account.
 
@@ -6,7 +6,7 @@ This is [PR #7307](https://github.com/boardsesh/boardsesh/pull/7307), an impleme
 
 The existing Expo flow is `DeleteAccountScreen` → `useDeleteAccount` → the shared `DELETE_ACCOUNT` GraphQL operation → `userMutations.deleteAccount`. Its input, Boolean response, confirmation UI and local sign-out behavior stay the same. No new web-to-backend credential command is needed: the mutation already belongs to the backend. The surviving web profile endpoint is read-only, and the profile mutation accepts cosmetic display-name/avatar fields rather than email changes.
 
-`CURRENT_STORE_ACCOUNT_DELETION_MODE` defaults independently to `legacy`. The `reserved-staging` mode requires the exact configured current-store projection and writer epoch. Missing or malformed configuration must fail without falling back to legacy deletion. A normal legacy request must not read a projection or require current-store authority secrets.
+`CURRENT_STORE_ACCOUNT_DELETION_MODE` defaults independently to `legacy`. The `reserved-staging` transport qualifies the configured projection and normalizer, then captures the current writer and epoch under the shared authority gate for each transaction attempt. The original explicit-epoch core helpers retain their exact-epoch contract. Missing or malformed configuration fails without falling back to legacy deletion. A normal legacy request needs no projection configuration or current-store secrets, but now reads the manifest under the shared gate and refuses if any current projection exists: projected addresses require transactional retirement even before Better Auth becomes the selected writer.
 
 The existing authenticated GraphQL principal supplies a server-established user ID. It does not prove recent authentication, a requesting-device session, or original authentication age. This slice preserves the existing deletion authorization rather than inventing any of those assurances. Production activation still needs an accepted sensitive-operation authentication contract.
 
@@ -24,7 +24,7 @@ A request for an account whose deletion already committed reports success and wr
 
 A deleted account keeps only a keyed digest of each address it held (decision 1 on epic #6975). Every key it alone held, including aliases, is replaced by a `blocked_deleted` reservation whose key is `deleted-v1:` plus the HMAC-SHA256 of the normalized address under `CURRENT_STORE_DELETED_EMAIL_KEY`; the plaintext reservation and the account's memberships are deleted. Registration, provider sign-in and system identities look up that digest when the address has no reservation of its own, so the address stays blocked and still answers as taken. A collision group the account shared keeps its other members and stays `blocked_ambiguous`: deleting one member never elects a surviving owner, and the last member's deletion turns the key into a digest. The empty key holds no address and is left alone. The account's password-recovery and email-verification receipts are deleted; their purpose generations stay, so no old receipt snapshot can come back. The backend maintenance job removes digests 90 days after deletion, far past the one-hour and 24-hour lives of any link sent to the address. Legacy `verificationTokens` rows keyed by the address are not touched, as legacy deletion leaves them.
 
-Turn the staged deletion mode on before `auth-authority prepare` runs. A legacy deletion after `prepare` deletes the user but leaves its `owned` plaintext reservation, holding the address, forever.
+Turn the staged deletion mode on before `auth-authority prepare` runs. The legacy route now refuses any current projection before walls or account content are touched, so it cannot bypass plaintext-address retirement after preparation.
 
 `CURRENT_STORE_DELETED_EMAIL_KEY` is required by every staged mode, checked when the mode's configuration is read: at least 32 bytes, no surrounding whitespace, and different from `NEXTAUTH_SECRET`, `CRON_SECRET` and the RPC secrets. Without it every staged command fails the same way at configuration, logging a line that names the variable, so a missing key cannot tell a known address from an unknown one; the staged deletion fails before any content runs. Changing it frees every address deleted in the last 90 days early, so it stays fixed once set.
 
@@ -57,3 +57,25 @@ The main-based source commit is `d32ac04872bb207dfe3f3e8cab888b6779a333a2`; its 
 The fresh preview used one new synthetic account and database, with every auth selector on legacy. Its startup watcher rejected the orchestrator's ordinary Tailscale cache check: the orchestrator selects its own certificate bundle according to file age, whereas the launcher's precheck used X509 validity. The dev processes nevertheless finished starting. The original startup remains **rejected**. A separate append-only, read-only runtime attestation verified the owned process identities and listener sockets, inherited fixture configuration, database OID/cluster and actual read-only transaction, authorized matching TLS leaves on both ports, source snapshot, and exact branch/QA metadata. It also checked process, listener, inherited-configuration and source/fixture-file bindings before and after those bounded probes. This attested a recovered live runtime; it did not rewrite the startup result or reset the fixture.
 
 An independent Chromium run against that recovered runtime passed five bounded baseline flows: sign-in/profile/settings, sign-out, wrong password, invalid forgot-password input and an invalid reset link. It observed eight AST-checked GraphQL query requests and five owned HMR connections, with zero external requests, unexpected mutations, unexpected console errors or page errors. The expected wrong-password 401 and reset 400 each appeared once. The browser and context closed successfully, and the helper finished with exit zero. These results establish a recovered legacy-auth baseline, not clean startup, staged deletion UI, valid recovery, real providers/devices or the production gates above.
+
+## Selected authority adoption, 2026-11-13
+
+The mounted GraphQL flow now captures its transaction-bound writer receipt before
+wall locks, invokes the selected identity adapter at the existing final user-delete
+seam, and revalidates the same receipt around post-cascade bookkeeping. Both stores
+share the users table, so the existing cascades remain authoritative; this change
+also executes the actual Better Auth adapter when that writer is selected. The
+wall-before-user order, partner locks, original request UID, privacy digest, security
+tombstone, retry policy, and post-commit effects remain unchanged.
+
+Nine owned PostgreSQL cases cover both stores, canonical/legacy/session/partner
+cascades, real adapter use, complete post-cascade rollback, manifest drift,
+idempotent retries and epoch 3 after writer rollback. Independent mounted cases
+cover prepared/current-store/canonical refusal of legacy deletion, unchanged
+no-projection legacy behavior, and canonical deletion through the existing resolver.
+The legacy SQL-fault fixture explicitly removes its projection so it still tests
+the original driver-error contract.
+
+No production account was deleted and no activation gate was removed. These source
+proofs do not qualify deployed grants, installed devices, original-authentication
+policy, or a full restored-copy rehearsal.
