@@ -120,6 +120,114 @@ export function missingRecoveryTags(tags: Readonly<Record<string, string | null>
   return Object.keys(tags).filter((tag) => tags[tag] === null);
 }
 
+const GATE_LOG_MAX_BYTES = 32 * 1024 * 1024;
+const GATE_LOG_TIMEOUT_MS = 120_000;
+
+/** GitHub authenticates only the redirect lookup; signed log storage receives no repository credentials. */
+export async function readOriginalNativeGateLog(options: {
+  jobId: string;
+  token: string;
+  fetchImpl?: typeof fetch;
+  maxBytes?: number;
+  timeoutMs?: number;
+}): Promise<string> {
+  const { jobId, token, fetchImpl = fetch, maxBytes = GATE_LOG_MAX_BYTES, timeoutMs = GATE_LOG_TIMEOUT_MS } = options;
+  if (!/^[1-9]\d*$/.test(jobId) || !Number.isSafeInteger(Number(jobId)) || !token.trim())
+    throw new Error('Original native gate logs require a valid job ID and repository token.');
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 1 ||
+    maxBytes > GATE_LOG_MAX_BYTES ||
+    !Number.isSafeInteger(timeoutMs) ||
+    timeoutMs < 1 ||
+    timeoutMs > GATE_LOG_TIMEOUT_MS
+  )
+    throw new Error('Original native gate log bounds are invalid.');
+  const signal = AbortSignal.timeout(timeoutMs);
+  const discard = async (response: Response) => {
+    try {
+      await response.body?.cancel();
+    } catch {
+      /* Response errors may contain signed URLs; cleanup must not expose them. */
+    }
+  };
+  const request = async (url: string | URL, init: RequestInit, phase: 'API' | 'storage') => {
+    try {
+      return await fetchImpl(url, { ...init, signal });
+    } catch {
+      throw new Error(`Original native gate log ${phase} ${signal.aborted ? 'timed out' : 'network request failed'}.`);
+    }
+  };
+  const api = await request(
+    `https://api.github.com/repos/boardsesh/boardsesh/actions/jobs/${jobId}/logs`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'boardsesh-native-recovery',
+      },
+      redirect: 'manual',
+    },
+    'API',
+  );
+  if (api.status !== 302) {
+    await discard(api);
+    throw new Error(`Original native gate log API returned HTTP ${api.status}; expected a signed redirect.`);
+  }
+  const location = api.headers.get('location');
+  await discard(api);
+  if (!location) throw new Error('Original native gate log API redirect has no location.');
+  let destination: URL;
+  try {
+    destination = new URL(location);
+  } catch {
+    throw new Error('Original native gate log API redirect is unsafe.');
+  }
+  if (destination.protocol !== 'https:' || destination.username !== '' || destination.password !== '')
+    throw new Error('Original native gate log API redirect is unsafe.');
+  const storage = await request(destination, { redirect: 'error' }, 'storage');
+  if (storage.status !== 200) {
+    await discard(storage);
+    throw new Error(`Original native gate log storage returned HTTP ${storage.status}.`);
+  }
+  const declaredLength = storage.headers.get('content-length');
+  if (declaredLength !== null && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > maxBytes)) {
+    await discard(storage);
+    throw new Error('Original native gate log exceeds its size bound.');
+  }
+  if (!storage.body) throw new Error('Original native gate log storage returned no body.');
+  const reader = storage.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch {
+        throw new Error(`Original native gate log body ${signal.aborted ? 'timed out' : 'read failed'}.`);
+      }
+      if (chunk.done) break;
+      total += chunk.value.byteLength;
+      if (total > maxBytes) throw new Error('Original native gate log exceeds its size bound.');
+      chunks.push(chunk.value);
+    }
+    if (total === 0) throw new Error('Original native gate log storage returned an empty body.');
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks, total));
+    } catch {
+      throw new Error('Original native gate log body is not valid UTF-8.');
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      /* Never copy storage URL or response errors into logs. */
+    }
+  }
+}
+
 export function recoveryCommandFailure(operation: string, error: unknown): Error {
   const details: string[] = [];
   if (typeof error === 'object' && error !== null) {
@@ -224,12 +332,7 @@ async function main(): Promise<void> {
       .find((job) => job.name === 'gate' && job.conclusion === 'success');
     if (!gate || !Number.isSafeInteger(gate.id)) throw new Error('Missing original successful native gate.');
     const expectedRuntime = validateRecoveryGateLog(
-      execute(
-        'gh',
-        ['api', `repos/${repository}/actions/jobs/${String(gate.id)}/logs`],
-        process.env,
-        'read original native gate logs',
-      ),
+      await readOriginalNativeGateLog({ jobId: String(gate.id), token: required('GH_TOKEN') }),
       sourceSha,
     );
     execute('git', ['fetch', '--quiet', '--no-tags', 'origin', 'main:refs/remotes/origin/main']);
