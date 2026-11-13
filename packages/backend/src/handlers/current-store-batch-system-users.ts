@@ -9,7 +9,7 @@ import {
 } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
 import { currentStoreBatchSystemUsersConfiguration } from '../auth/current-store/authority-configuration';
-import { BatchSystemUserError, executeBatchSystemUserCommand } from '../auth/current-store/batch-system-user';
+import { BatchSystemUserError, executeSelectedBatchSystemUserCommand } from '../auth/current-store/batch-system-user';
 import { checkRateLimit } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
@@ -80,7 +80,7 @@ export async function handleCurrentStoreBatchSystemUsers(
   let reply: BatchSystemUserReply;
   try {
     checkRateLimit('current-store-batch-system-users:ensure', 180, 60_000);
-    await executeBatchSystemUserCommand(database, configuration.authority, command, deadlineAt);
+    await executeSelectedBatchSystemUserCommand(database, configuration.authority, command, deadlineAt);
     reply = { ...metadata, outcome: 'ensured' };
   } catch (error) {
     if (error instanceof BatchSystemUserError) {

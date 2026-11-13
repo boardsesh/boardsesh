@@ -87,6 +87,7 @@ import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
 import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
 import { handleCurrentStoreBatchSystemUsers } from './handlers/current-store-batch-system-users';
+import { handleCurrentStoreLocationSync } from './handlers/current-store-location-sync';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -732,6 +733,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
 
       // Default-off service commands. Browser cookies do not authorize them.
+      if (pathname.startsWith('/api/internal/auth/current-store/location-sync/v1/')) {
+        await handleCurrentStoreLocationSync(req, res);
+        return;
+      }
       if (pathname.startsWith('/api/internal/auth/current-store/batch-system-users/v1/')) {
         await handleCurrentStoreBatchSystemUsers(req, res);
         return;

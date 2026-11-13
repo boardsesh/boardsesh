@@ -42,6 +42,13 @@ export async function createEnvironment() {
       database,
       client,
       close,
+      async hasWaitingUserKeyShare(): Promise<boolean> {
+        const [state] = await admin<{ waiting: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE datname = ${databaseName}
+            AND wait_event_type = 'Lock' AND query ILIKE '%for key share%'
+        ) AS waiting`;
+        return state.waiting;
+      },
       withAuthority: <T>(callback: (auth: ReturnType<typeof createAuthority>) => Promise<T>) =>
         database.transaction(async (transaction) => callback(createAuthority(transaction, configuration))),
     };

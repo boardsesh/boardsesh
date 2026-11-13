@@ -1,3 +1,4 @@
+import { currentStoreLocationSyncMode } from '@boardsesh/auth-protocol';
 import { and, eq, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
@@ -29,6 +30,7 @@ export type LocationSyncAssertActive = () => void;
 export type LocationWriteOptions = {
   logger?: LocationSyncLogger;
   assertActive?: LocationSyncAssertActive;
+  batchWriter?: LocationBatchWriter;
 };
 
 async function checkedSql<Result>(
@@ -872,6 +874,8 @@ export async function upsertPublicBoardLocations(
   records: PublicBoardLocationInput[],
   options: LocationWriteOptions = {},
 ): Promise<LocationSyncSummary> {
+  if (assertLocationBatchWriter(options.batchWriter) === 'backend-staging')
+    return writeLocationBatches(options.batchWriter!, records, options);
   const logger = options.logger ?? noopLocationSyncLogger;
   const assertActive = options.assertActive;
   await ensureSystemUser(db, assertActive);
@@ -1063,6 +1067,42 @@ export async function upsertPublicBoardLocationsInBatches(
   records: PublicBoardLocationInput[],
   options: LocationWriteOptions & { gymsPerBatch?: number; signal?: AbortSignal } = {},
 ): Promise<LocationSyncSummary> {
+  const mode = assertLocationBatchWriter(options.batchWriter);
+  const writer: LocationBatchWriter =
+    mode === 'backend-staging'
+      ? options.batchWriter!
+      : async (batch) =>
+          runBatch(async (transaction) => {
+            const result = await upsertPublicBoardLocations(transaction, batch, {
+              logger: options.logger,
+              assertActive: options.assertActive,
+            });
+            options.assertActive?.();
+            return result;
+          });
+  return writeLocationBatches(writer, records, options);
+}
+
+/** Runs outside the worker's SQL transaction; the delegate owns the compound commit. */
+export type LocationBatchWriter = {
+  (records: PublicBoardLocationInput[]): Promise<LocationSyncSummary>;
+  /** Validate captured private transport before provider/catalog writes; no I/O. */
+  prepare?: () => void;
+};
+
+export function assertLocationBatchWriter(writer?: LocationBatchWriter): 'legacy' | 'backend-staging' {
+  // A dispatcher-bound delegate stays selected even if the process mode changes.
+  if (writer) return 'backend-staging';
+  const mode = currentStoreLocationSyncMode(process.env);
+  if (mode === 'backend-staging' && !writer) throw new Error('Staged location sync requires a backend batch writer');
+  return mode;
+}
+
+async function writeLocationBatches(
+  writer: LocationBatchWriter,
+  records: PublicBoardLocationInput[],
+  options: LocationWriteOptions & { gymsPerBatch?: number; signal?: AbortSignal },
+): Promise<LocationSyncSummary> {
   const batches = planLocationWriteBatches(records, options.gymsPerBatch ?? LOCATION_UPSERT_GYMS_PER_BATCH);
   const total: LocationSyncSummary = {
     boardsSeen: 0,
@@ -1076,11 +1116,7 @@ export async function upsertPublicBoardLocationsInBatches(
     options.signal?.throwIfAborted();
     const assertActive = options.assertActive;
     assertActive?.();
-    const summary = await runBatch(async (transaction) => {
-      const result = await upsertPublicBoardLocations(transaction, batch, { logger: options.logger, assertActive });
-      assertActive?.();
-      return result;
-    });
+    const summary = await writer(batch);
     total.boardsSeen += summary.boardsSeen;
     total.boardsUpserted += summary.boardsUpserted;
     total.boardsSkipped += summary.boardsSkipped;

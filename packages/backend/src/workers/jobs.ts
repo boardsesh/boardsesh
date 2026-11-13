@@ -1,3 +1,4 @@
+import { createLocationBatchWriter } from '../auth/current-store/location-sync-client';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PgBoss, JobWithMetadata } from 'pg-boss';
@@ -368,6 +369,14 @@ export async function executeBackgroundJob(
         expiresAt: job.startedOn.getTime() + job.expireInSeconds * 1000,
         database,
         systemUserAuthority,
+        locationBatchWriter:
+          workerRole === 'routine-provider' &&
+          (familyName === 'aurora-shared-sync' ||
+            (familyName === 'moonboard-locations-sync' &&
+              Boolean(systemUserEnvironment.MOONBOARD_USERNAME?.trim()) &&
+              Boolean(systemUserEnvironment.MOONBOARD_PASSWORD)))
+            ? createLocationBatchWriter({ runId, attemptToken: token, signal, environment: systemUserEnvironment })
+            : undefined,
         enqueue: (transaction, input) => enqueueBackgroundJobOn(transaction, boss, input),
         transaction: (callback) =>
           withBackgroundJobAttempt(database, runId, token, async (transaction) => {

@@ -75,10 +75,7 @@ export const AUTHORITY_GATE_EXCLUSIVE_LOCK_TIMEOUT = '2000ms';
  * This marker is a fail-closed software prerequisite, never proof of a role
  * fence. No production API in this slice can set the enforced phase.
  */
-export async function lockEnforcedProjection(
-  transaction: CurrentStoreTransaction,
-  expected: ExpectedCurrentStoreAuthority,
-) {
+export async function lockIdentityManifest(transaction: CurrentStoreTransaction) {
   await requireReadCommitted(transaction);
   await transaction.execute(
     sql`SELECT pg_catalog.pg_advisory_xact_lock_shared(${AUTHORITY_GATE_NAMESPACE}, ${AUTHORITY_GATE_KEY})`,
@@ -91,7 +88,21 @@ export async function lockEnforcedProjection(
     .select()
     .from(authEmailProjection)
     .where(eq(authEmailProjection.isCurrent, true));
+  return manifest;
+}
+
+export async function lockEnforcedIdentityManifest(transaction: CurrentStoreTransaction) {
+  const manifest = await lockIdentityManifest(transaction);
   if (!manifest || manifest.phase !== 'enforced') throw new CurrentStoreFoundationError('AUTHORITY_NOT_ENFORCED');
+  return manifest;
+}
+
+/** Existing explicit-epoch callers retain their fencing contract during adoption. */
+export async function lockEnforcedProjection(
+  transaction: CurrentStoreTransaction,
+  expected: ExpectedCurrentStoreAuthority,
+) {
+  const manifest = await lockEnforcedIdentityManifest(transaction);
   if (
     manifest.projectionId !== expected.expectedProjectionId ||
     manifest.normalizerVersion !== CURRENT_EMAIL_NORMALIZER_VERSION ||

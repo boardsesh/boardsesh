@@ -1,3 +1,4 @@
+import type { LocationBatchWriter } from '@boardsesh/location-sync';
 import type { ZodType } from 'zod';
 import type { DbInstance } from '@boardsesh/db/client';
 import type { JobSystemUserAuthority } from '@boardsesh/db/jobs';
@@ -30,6 +31,8 @@ export type BackgroundJobContext = {
   database: DbInstance;
   /** Bound by actual worker dispatch; never supplied through the queue payload. */
   systemUserAuthority?: JobSystemUserAuthority;
+  /** Whole-gym compound writer, bound to this attempt by actual dispatch. */
+  locationBatchWriter?: LocationBatchWriter;
   transaction<T>(callback: (transaction: BackgroundJobTransaction) => Promise<T>): Promise<T>;
   /**
    * The same attempt fence as `transaction`, without its abort checks. Only

@@ -3,7 +3,9 @@ import { users, authSubjectCutoffs, userCredentials, authSessionDenials } from '
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
-import { requireReadCommitted } from './current-store/foundation-context';
+import { requireReadCommitted, lockIdentityManifest } from './current-store/foundation-context';
+import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './authority/router';
+import { bindIdentityAuthority } from './authority/identity-authority';
 import {
   cutoffEnforcement,
   isCredentialAdmitted,
@@ -169,6 +171,7 @@ export function admitsCredential(decision: CredentialDecision, reader: Credentia
  * its user lock and issues only if nothing moved (BA-04 section 4).
  */
 export interface PasswordProof {
+  readonly authorityReceipt?: IdentityAuthorityReceipt;
   readonly passwordHash: string;
   readonly generation: number;
 }
@@ -182,6 +185,24 @@ export class PasswordProofStaleError extends Error {
   constructor() {
     super('The verified password no longer matches the account');
     this.name = 'PasswordProofStaleError';
+  }
+}
+
+/** Gate before the user lock; a legacy proof cannot issue under a new writer. */
+export async function lockPasswordProofAuthority(
+  transaction: AdmissionTransaction,
+  proof: PasswordProof,
+): Promise<void> {
+  try {
+    if (proof.authorityReceipt) {
+      await revalidateIdentityAuthority(transaction, proof.authorityReceipt);
+      return;
+    }
+    const manifest = await lockIdentityManifest(transaction);
+    if (manifest?.writerAuthority === 'better-auth') throw new PasswordProofStaleError();
+  } catch (error) {
+    if (error instanceof PasswordProofStaleError) throw error;
+    throw new AuthAdmissionUnavailableError();
   }
 }
 
@@ -210,6 +231,7 @@ export async function requireHumanSubjectForIssuance(
 ): Promise<SubjectCutoffState> {
   try {
     await requireReadCommitted(transaction);
+    if (passwordProof) await lockPasswordProofAuthority(transaction, passwordProof);
     const [subject] = await transaction
       .select({ id: users.id, deletedAt: authSubjectCutoffs.deletedAt })
       .from(users)
@@ -218,6 +240,23 @@ export async function requireHumanSubjectForIssuance(
       .limit(1)
       .for('key share', { of: users });
     if (!subject || subject.deletedAt !== null) throw new AuthSubjectDeniedError();
+    if (passwordProof?.authorityReceipt?.authority === 'better-auth') {
+      const current = await bindIdentityAuthority(transaction, passwordProof.authorityReceipt).readPassword(userId);
+      const [cutoff] = await transaction
+        .select()
+        .from(authSubjectCutoffs)
+        .where(eq(authSubjectCutoffs.userId, userId))
+        .limit(1);
+      if (cutoff?.deletedAt) throw new AuthSubjectDeniedError();
+      if (
+        !current ||
+        current.passwordHash !== passwordProof.passwordHash ||
+        current.generation !== passwordProof.generation ||
+        (cutoff?.generation ?? 0) !== passwordProof.generation
+      )
+        throw new PasswordProofStaleError();
+      return cutoffState(cutoff?.generation ?? null, cutoff?.nativeGeneration ?? null);
+    }
     if (passwordProof) {
       const [current] = await transaction
         .select({

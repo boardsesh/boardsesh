@@ -79,6 +79,13 @@ export function createAuthorityAdapter(database: AuthorityTransaction) {
     // Without this, its required/default-false handling would replace NULL on insert.
     const delegate = factory({
       ...options,
+      account: {
+        ...options.account,
+        additionalFields: {
+          ...options.account?.additionalFields,
+          sourceGeneration: { type: 'number', required: false, input: false },
+        },
+      },
       user: {
         ...options.user,
         additionalFields: {

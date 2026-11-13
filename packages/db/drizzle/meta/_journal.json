@@ -2171,6 +2171,13 @@
       "when": 1794407446865,
       "tag": "0309_native_denial_index",
       "breakpoints": true
+    },
+    {
+      "idx": 310,
+      "version": "7",
+      "when": 1794409701387,
+      "tag": "0310_identity_writer_authority",
+      "breakpoints": true
     }
   ]
 }

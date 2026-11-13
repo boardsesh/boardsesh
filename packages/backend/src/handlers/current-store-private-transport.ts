@@ -8,7 +8,10 @@ export function authenticatesPrivateAuth(presented: string | undefined, secret: 
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-export async function readPrivateAuthCommand(request: IncomingMessage): Promise<unknown> {
+export async function readPrivateAuthCommand(
+  request: IncomingMessage,
+  requestBytes = AUTH_COMMAND_REQUEST_BYTES,
+): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onData = (_chunk: Buffer) => {};
   let onEnd = () => {};
@@ -17,7 +20,7 @@ export async function readPrivateAuthCommand(request: IncomingMessage): Promise<
     const chunks: Buffer[] = [];
     let total = 0;
     onData = (chunk) => {
-      if (!Buffer.isBuffer(chunk) || (total += chunk.length) > AUTH_COMMAND_REQUEST_BYTES) {
+      if (!Buffer.isBuffer(chunk) || (total += chunk.length) > requestBytes) {
         reject(new Error('Private auth body rejected'));
         request.destroy();
         return;

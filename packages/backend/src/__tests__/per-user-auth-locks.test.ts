@@ -474,8 +474,10 @@ describe('per-user sign-in locks against the owned primary database', () => {
         switching.release();
         await switching.held;
       }
-      // Validated after the wait, so the switch is never missed.
-      await expect(bounded(command)).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
+      // The updated writer captures the live epoch after the gate wait rather
+      // than pinning the deployment's old epoch. A receipt captured before the
+      // switch would be rejected by the later revalidation.
+      expect(await bounded(command)).toMatchObject({ outcome: 'authenticated', user: { id: otherId } });
     });
 
     it('lets a switch give up after 2 s while a command holds it, and the command finishes', async () => {

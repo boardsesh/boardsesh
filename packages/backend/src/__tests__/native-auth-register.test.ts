@@ -6,7 +6,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { compare } from 'bcryptjs';
-import { users, userCredentials, userProfiles, mobileRefreshTokens } from '@boardsesh/db/schema/auth';
+import {
+  authEmailProjection,
+  users,
+  userCredentials,
+  userProfiles,
+  mobileRefreshTokens,
+} from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what generateTokenPair reads from env
@@ -25,6 +31,7 @@ process.env.NEXTAUTH_SECRET = 'test-secret-for-native-auth-register-tests';
 
 const mockDbSelectQueue: unknown[][] = [];
 const insertCalls: { table: unknown; values: unknown }[] = [];
+let manifestRows: unknown[] = [];
 // When set, the NEXT insert(...).values(...) rejects with this error (and then
 // clears) — lets tests drive the transaction's catch path (23505 race → 409,
 // any other throw → 500).
@@ -38,7 +45,16 @@ function makeAwaitableInsert(): Promise<unknown[]> & { onConflictDoNothing: () =
 
 function makeChain() {
   let admissionProjection = false;
+  let selectedTable: unknown;
+  function selectedRows(): unknown[] {
+    if (selectedTable === authEmailProjection) return manifestRows;
+    return admissionProjection ? [{ id: 'unit-subject', deletedAt: null }] : (mockDbSelectQueue.shift() ?? []);
+  }
   const chain = {
+    // oxlint-disable-next-line unicorn/no-thenable -- Drizzle reads can be awaited without limit().
+    then(resolve: (rows: unknown[]) => unknown, reject?: (reason: unknown) => unknown) {
+      return Promise.resolve(selectedRows()).then(resolve, reject);
+    },
     execute: async () => [{ transaction_isolation: 'read committed' }],
     select(projection?: Record<string, unknown>) {
       // Model a live subject for these legacy issuer unit tests. The separate
@@ -49,14 +65,15 @@ function makeChain() {
     leftJoin() {
       return chain;
     },
-    from() {
+    from(table: unknown) {
+      selectedTable = table;
       return chain;
     },
     where() {
       return chain;
     },
     limit() {
-      const rows = admissionProjection ? [{ id: 'unit-subject', deletedAt: null }] : (mockDbSelectQueue.shift() ?? []);
+      const rows = selectedRows();
       return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
     },
     insert(table: unknown) {
@@ -191,6 +208,16 @@ describe('handleNativeAuthRegister', () => {
     mockDbSelectQueue.length = 0;
     insertCalls.length = 0;
     nextInsertError = null;
+    manifestRows = [];
+  });
+
+  it('refuses a legacy registration when the canonical writer owns the manifest', async () => {
+    manifestRows = [{ phase: 'enforced', writerAuthority: 'better-auth' }];
+    const request = makeRequest({ method: 'POST', body: { email: 'blocked@example.com', password: 'longenough' } });
+    const response = makeResponse();
+    await callHandler(request, response);
+    expect(response.statusCode).toBe(503);
+    expect(insertCalls).toEqual([]);
   });
 
   it('creates the account and returns a JWT + refresh token (auto-login)', async () => {

@@ -10,6 +10,10 @@ export const authEmailProjection = pgTable(
     normalizerVersion: text('normalizer_version').notNull(),
     phase: text('phase').$type<'preparing' | 'prepared' | 'enforced'>().notNull(),
     writerEpoch: integer('writer_epoch').notNull(),
+    writerAuthority: text('writer_authority')
+      .$type<'current-store' | 'better-auth'>()
+      .notNull()
+      .default('current-store'),
     sourceUserCount: integer('source_user_count').notNull().default(0),
     keyCount: integer('key_count').notNull().default(0),
     ambiguousKeyCount: integer('ambiguous_key_count').notNull().default(0),
@@ -22,6 +26,7 @@ export const authEmailProjection = pgTable(
       .where(sql`${table.isCurrent} = true`),
     check('auth_email_projection_phase', sql`${table.phase} IN ('preparing', 'prepared', 'enforced')`),
     check('auth_email_projection_epoch', sql`${table.writerEpoch} > 0`),
+    check('auth_email_projection_writer_authority', sql`${table.writerAuthority} IN ('current-store', 'better-auth')`),
     check(
       'auth_email_projection_counts',
       sql`${table.sourceUserCount} >= 0 AND ${table.keyCount} >= 0 AND ${table.ambiguousKeyCount} >= 0 AND ${table.ambiguousKeyCount} <= ${table.keyCount}`,

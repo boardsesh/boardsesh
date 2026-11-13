@@ -1,6 +1,14 @@
+import { mirrorAuthorityToCurrentStore } from './reverse-identity';
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { accounts, authAccount, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
+import {
+  accounts,
+  authAccount,
+  authEmailProjection,
+  authSubjectCutoffs,
+  userCredentials,
+  users,
+} from '@boardsesh/db/schema';
 import type { AuthorityTransaction } from './adapter';
 import { identityMirrorMode } from './mirror-configuration';
 import {
@@ -10,7 +18,7 @@ import {
 } from '../current-store/foundation-context';
 import { sql } from 'drizzle-orm';
 
-export type IdentitySyncDirection = 'current-store-to-authority';
+export type IdentitySyncDirection = 'current-store-to-authority' | 'authority-to-current-store';
 
 /** Start before creation writes too: acquiring the gate after a user write reverses switch lock order. */
 export async function lockIdentityMirrorGate(transaction: AuthorityTransaction): Promise<void> {
@@ -31,8 +39,17 @@ export async function syncIdentity(
   direction: IdentitySyncDirection,
 ): Promise<void> {
   if (process.env.DEBUG_SQL === 'true') throw new Error('Unsafe identity mirror SQL logging');
+  if (direction === 'authority-to-current-store') {
+    await mirrorAuthorityToCurrentStore(transaction, userId);
+    return;
+  }
   if (direction !== 'current-store-to-authority') throw new Error('AUTH_IDENTITY_DIRECTION_UNSUPPORTED');
   await lockIdentityMirrorGate(transaction);
+  const [manifest] = await transaction
+    .select({ authority: authEmailProjection.writerAuthority })
+    .from(authEmailProjection)
+    .where(eq(authEmailProjection.isCurrent, true));
+  if (manifest?.authority === 'better-auth') throw new Error('AUTH_IDENTITY_SOURCE_AUTHORITY_REQUIRED');
   const [user] = await transaction.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
   if (!user) return;
   const [cutoff] = await transaction

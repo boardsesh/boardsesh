@@ -283,3 +283,9 @@ additional path after the earlier historical 39-file source qualification.
 Passing these implementation checks does not
 complete BA-03, collision cleanup, source/validator migration, production
 rollout, restored-database rollback or the separate partner OAuth launch.
+
+## BA-04 selected writer adoption
+
+The mounted backend batch command selects the current identity authority inside its existing job-attempt fence. Caller-provided family, identity or writer selection is not accepted. Its existing nonce, lease, deadline, fixed-key and ownership checks remain in the caller transaction. Explicit legacy entry points retain their epoch checks and refuse an enforced Better Auth writer with mirroring off. Canonical creation and reverse mirroring commit with reservation and nonce state.
+
+This remains staged code work. Production activation and full rehearsal gates remain open; [#7430](https://github.com/boardsesh/boardsesh/issues/7430) remains the only owner checklist.

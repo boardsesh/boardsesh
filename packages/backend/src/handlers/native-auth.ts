@@ -1,3 +1,6 @@
+import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
+import { captureIdentityAuthority, revalidateIdentityAuthority } from '../auth/authority/router';
+import { authenticateIdentityPassword } from '../auth/authority/password-verification';
 import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
 import { legacyBridgeMode } from '../auth/authority/bridge';
 import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
@@ -26,6 +29,7 @@ import {
   isHumanSubjectActive,
   PasswordProofStaleError,
   requireHumanSubjectForIssuance,
+  lockPasswordProofAuthority,
   type PasswordProof,
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
@@ -37,7 +41,7 @@ import {
 } from '../auth/current-store/authority-configuration';
 import {
   preflight,
-  signInTransactionSettings,
+  boundSignInLockWaits,
   transactionSettings,
   type WebPasswordAuthority,
 } from '../auth/current-store/command-context';
@@ -50,7 +54,6 @@ import {
   type VerifiedNativeOAuthIdentity as VerifiedOAuthIdentity,
 } from '../auth/current-store/native-oauth-identity';
 import {
-  authenticateCurrentStorePassword,
   parseCurrentStorePasswordRegistration,
   prepareCurrentStorePasswordRegistration,
   insertCurrentStorePasswordIdentity,
@@ -544,8 +547,11 @@ async function generateTokenPair(
     const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
     // A password sign-in gives up on a held user row after 250 ms and answers
     // 503, which the app retries; issuance that must win keeps 4 s.
-    if (passwordProof) await signInTransactionSettings(transaction);
-    else await transactionSettings(transaction);
+    await transactionSettings(transaction);
+    if (passwordProof) {
+      await lockPasswordProofAuthority(transaction, passwordProof);
+      await boundSignInLockWaits(transaction);
+    }
     generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
   }
   if (origin.kind === 'transfer') {
@@ -815,7 +821,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
   }
 
   try {
-    const authenticatedUser = await authenticateCurrentStorePassword(db, email, password);
+    const authenticatedUser = await authenticateIdentityPassword(db, email, password);
     if (!authenticatedUser) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
@@ -831,6 +837,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       passwordProof: {
         passwordHash: authenticatedUser.passwordHash,
         generation: authenticatedUser.generation,
+        ...(authenticatedUser.authorityReceipt ? { authorityReceipt: authenticatedUser.authorityReceipt } : {}),
       },
     });
     logger.info('[NativeAuth] Credentials sign-in successful');
@@ -926,6 +933,7 @@ export async function handleNativeAuthRegister(
   }
 
   try {
+    await database.transaction(assertLegacyIdentityWriterAllowed);
     const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
     if (!prepared) {
       sendJson(res, 409, {
@@ -941,6 +949,7 @@ export async function handleNativeAuthRegister(
     const result = await database.transaction(async (tx) => {
       const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
       const tokenPair = await generateTokenPair(identity.userId, tx, origin);
+      await assertLegacyIdentityWriterAllowed(tx);
       return {
         userId: identity.userId,
         tokenPair,
@@ -993,26 +1002,38 @@ function isNativeAuthInfrastructureFailure(error: unknown): boolean {
 async function handleReservedNativeRegistration(
   response: ServerResponse,
   database: DbInstance,
-  authority: WebPasswordAuthority,
+  authorityInput: WebPasswordAuthority,
   registration: Parameters<typeof prepareCurrentStorePasswordRegistration>[1],
 ) {
+  const configuredAuthority = { ...authorityInput };
+  const capturedRegistration = { ...registration };
   try {
     // Validate authority before even an exact-email precheck can report409.
     // Bcrypt remains outside the global manifest's locked transaction.
-    await preflight(database, authority);
-    const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const receipt = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      return captureIdentityAuthority(transaction, configuredAuthority);
+    });
+    const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
+    const prepared = await prepareCurrentStorePasswordRegistration(database, capturedRegistration);
     const origin = signedInNow();
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
-      const inserted = await insertReservedPasswordIdentity(transaction, authority, {
-        email: registration.email,
-        prepared,
-        emailVerificationEnabled: authority.emailVerificationEnabled,
-      });
+      const inserted = await insertReservedPasswordIdentity(
+        transaction,
+        authority,
+        {
+          email: capturedRegistration.email,
+          prepared,
+          emailVerificationEnabled: authority.emailVerificationEnabled,
+        },
+        receipt,
+      );
       if (inserted.outcome === 'exists') return inserted;
       const { identity } = inserted;
       // This remains the installed native issuer, bound to the identity's tx.
       const tokenPair = await generateTokenPair(identity.userId, transaction, origin);
+      await revalidateIdentityAuthority(transaction, receipt);
       return {
         outcome: 'created' as const,
         tokenPair,
