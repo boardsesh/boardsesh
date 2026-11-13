@@ -1513,7 +1513,7 @@
     "holdLedsHint": "Prüfe vor dem Verlegen des Kabels, welche LEDs zu jedem Griff gehören. Tippe auf einen Griff, um seine LEDs zu sehen; stimmen sie nicht, tippe auf LEDs, um sie dem Griff hinzuzufügen oder wegzunehmen. Rot umrandete Griffe haben keine LED. LEDs mit rotem Ring haben keinen Griff.",
     "holdLedsSummary": "Griffe mit LEDs {{linked}} / {{total}}",
     "holdLedsLedSummary": "LEDs mit Griff {{linked}} / {{total}}",
-    "holdLedsNotWired": "Die Wand beleuchtet den gewählten Griff, sobald das Kabel verlegt ist. Komm nach dem Kabel zu diesem Schritt zurück, um es an der Wand zu prüfen.",
+    "holdLedsNotWired": "Die Spraywall beleuchtet den gewählten Griff, sobald das Kabel verlegt ist. Komm nach dem Kabel zu diesem Schritt zurück, um es an der Spraywall zu prüfen.",
     "holdLedsPickHolds": "Griffe",
     "holdLedsPickLeds": "LEDs",
     "holdLedsTapTarget": "Was ein Tippen auswählt",
