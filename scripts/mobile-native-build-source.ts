@@ -41,7 +41,9 @@ export function resolveNativeBuildSource(
   const workflowPlatform =
     run.path === '.github/workflows/ios-testflight-rn.yml'
       ? 'ios'
-      : run.path === '.github/workflows/android-apk-rn.yml'
+      : ['.github/workflows/android-apk-rn.yml', '.github/workflows/android-recover-candidate.yml'].includes(
+            String(run.path),
+          )
         ? 'android'
         : null;
   if (

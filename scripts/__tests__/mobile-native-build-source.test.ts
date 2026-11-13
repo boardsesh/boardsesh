@@ -35,6 +35,25 @@ describe('uploaded native binary provenance', () => {
   it('pins a recovered binary independently of newer workflow tooling', () => {
     expect(resolveNativeBuildSource(runtime, '123', 'boardsesh/boardsesh')).toEqual(receipt);
   });
+  it('reads Android provenance retained by a successful artifact-only recovery', () => {
+    const recovered = {
+      ...receipt,
+      platform: 'android',
+      buildTag: 'build-android-v2.7.1-9-abcdef123456',
+      originalSourceRunId: '100',
+    };
+    expect(
+      resolveNativeBuildSource(
+        {
+          ...runtime,
+          readRun: () => ({ ...run, path: '.github/workflows/android-recover-candidate.yml' }),
+          readArtifact: () => recovered,
+        },
+        '123',
+        'boardsesh/boardsesh',
+      ),
+    ).toEqual(recovered);
+  });
   it('does not mistake a green skipped native workflow for an uploaded binary', () => {
     expect(resolveNativeBuildSource({ ...runtime, readArtifact: () => null }, '123', 'boardsesh/boardsesh')).toBeNull();
   });

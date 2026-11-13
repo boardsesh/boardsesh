@@ -257,6 +257,27 @@ Fastlane lane is `android beta version_code:<code>` (plan), with `apply:true`
 for submission. The independent lifecycle readback can still show review or
 publishing delays after a successful commit.
 
+**Recover metadata after an accepted Android upload:** if Play accepted the AAB
+but `record-candidate` failed, do not rebuild or upload that versionCode again.
+Dispatch **Recover Uploaded Android Candidate** (`android-recover-candidate.yml`)
+from `main` with the original native run ID, its exact workflow/source SHA, and
+the uploaded versionCode. This narrow recovery requires the build and Play-upload
+step to have succeeded, the original source to remain in main history, and the
+retained signed APK to identify the same package/versionCode and a full native
+runtime. It independently reads both Play tester tracks; beta must confirm review,
+approval awaiting publication, or publication. It never creates a Play edit.
+
+Recovery publishes only missing immutable build/fingerprint tags, refusing any
+different existing target. It verifies the retained APK's SHA-256 after downloading
+its GitHub prerelease asset and retains a native-source receipt in the recovery
+run. Select that recovery run when a downstream workflow requests a source run ID;
+the original failed run remains an accurate record. Sources pinned to a different
+commit than the original workflow's head SHA are deliberately unsupported.
+
+Native tag publication tokens request both Contents write and Workflows write.
+The latter uses the App's existing permission and allows tags for native sources
+that contain workflow changes; it is minted immediately before publication.
+
 Changing a workflow or lane does not change the native fingerprint. Such a
 merge may skip the native build; use promotion to catch up an existing internal
 build rather than assuming the configuration change delivered it.

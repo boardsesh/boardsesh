@@ -336,6 +336,8 @@
     "lib/native-release.ts",
     "lib/mobile-release-version.ts",
     "mobile-native-build-source.ts",
+    "mobile-recover-android-candidate.ts",
+    "__tests__/mobile-recover-android-candidate.test.ts",
     "__tests__/mobile-native-build-source.test.ts",
     "mobile-native-release.test.ts"
   ]

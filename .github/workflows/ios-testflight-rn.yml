@@ -702,6 +702,8 @@ jobs:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
           permission-contents: write
+          # Pinned native sources can include workflow changes.
+          permission-workflows: write
 
       # Publish the exact build-number lookup and fingerprint gate. A new
       # fingerprint publishes both atomically; a forced rebuild preserves the

@@ -906,6 +906,9 @@ jobs:
           app-id: ${{ vars.OTA_PUSH_APP_ID }}
           private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
           permission-contents: write
+          # A pinned native source can include workflow changes. GitHub requires
+          # this permission to create its immutable tags; the App already has it.
+          permission-workflows: write
 
       # Publish the exact versionCode lookup and fingerprint gate. A new
       # fingerprint publishes both atomically; a forced rebuild preserves the

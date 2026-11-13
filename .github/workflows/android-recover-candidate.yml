@@ -1,0 +1,101 @@
+name: Recover Uploaded Android Candidate
+run-name: Recover Android candidate from ${{ inputs.source_run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Completed Android run whose Play upload succeeded'
+        required: true
+        type: string
+      source_sha:
+        description: 'Exact original main workflow/source SHA'
+        required: true
+        type: string
+      version_code:
+        description: 'Exact versionCode already submitted to Play'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: android-apk-rn
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 15
+    env:
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_VERSION_CODE: ${{ inputs.version_code }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout trusted recovery tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: false
+      - name: Install trusted tooling
+        run: vp install --frozen-lockfile
+      - name: Verify original run and successful Play upload
+        id: source
+        run: vp exec node --import tsx scripts/mobile-recover-android-candidate.ts resolve
+      - name: Download the original signed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.source.outputs.artifact_name }}
+          path: ${{ runner.temp }}/android-recovery-apk
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install trusted APK inspection tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+      - name: Verify APK identity and read both Play tester tracks
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: vp exec node --import tsx scripts/mobile-recover-android-candidate.ts verify
+      - name: Mint short-lived candidate publication token
+        id: candidate_token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Restore immutable tags and verify the original APK prerelease
+        env:
+          GH_APP_TOKEN: ${{ steps.candidate_token.outputs.token }}
+        run: vp exec node --import tsx scripts/mobile-recover-android-candidate.ts publish
+      - name: Retain recovered native source provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-build-source-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-build-source.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain recovery and independent Play evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-candidate-recovery
+          path: ${{ runner.temp }}/android-candidate-recovery.json
+          if-no-files-found: warn
+          retention-days: 90
