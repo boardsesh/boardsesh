@@ -91,43 +91,42 @@ export class Suite {
         PLAY_NEXT_LABEL: 'Play next',
       });
       await this.phones[role].flow('return-current', {
-        CURRENT_CLIMB_UUID: current.uuid,
         CURRENT_CLIMB_LABEL_PATTERN: climbLabelPattern(current),
       });
     });
   }
   private async ensureDriving(role: Role, board: Board, current: CatalogClimb): Promise<void> {
     await this.assertId(role, 'wall-control-.*-self-(idle|driving)');
-    if (!/wall-control-[a-z_]+-self-driving/.test(await this.phones[role].hierarchy())) {
-      await this.assertId(role, 'wall-control-.*-self-idle');
-      const before = await this.fixture.request('status');
-      const previous = this.device(before, board);
-      await this.phones[role].flow('drive');
-      const after = await until(
-        () => this.fixture.request('status'),
-        (snapshot) => {
-          const actual = this.device(snapshot, board);
-          return (
-            actual.sequence > previous.sequence &&
-            actual.updates > previous.updates &&
-            canonical(actual.commands) === canonical(current.commands)
-          );
-        },
-        30_000,
-        'fresh physical Drive setup',
-      );
-      const actual = this.device(after, board);
-      requirePhysicalDelivery(previous, actual, current, false, false);
-      for (const untouched of this.boards.filter((candidate) => candidate.uuid !== board.uuid)) {
-        const initial = this.device(before, untouched),
-          latest = this.device(after, untouched);
-        if (latest.writes !== initial.writes || latest.updates !== initial.updates)
-          throw new QaFailure('Drive setup reached an unrelated board');
-      }
-      // A same-climb reassert can be history-deduplicated for ten seconds.
-      // This proves physical setup; the following Next requires the full chain.
-      this.evidence.event('physical-drive-setup', { role, boardUuid: board.uuid, sequence: actual.sequence });
+    // Start an open-ended drive deliberately. Raw hierarchies can retain a
+    // hidden older player, and a currently visible timed drive may expire
+    // while the native runner is navigating to Next.
+    const before = await this.fixture.request('status');
+    const previous = this.device(before, board);
+    await this.phones[role].flow('drive');
+    const after = await until(
+      () => this.fixture.request('status'),
+      (snapshot) => {
+        const actual = this.device(snapshot, board);
+        return (
+          actual.sequence > previous.sequence &&
+          actual.updates > previous.updates &&
+          canonical(actual.commands) === canonical(current.commands)
+        );
+      },
+      30_000,
+      'fresh physical Drive setup',
+    );
+    const actual = this.device(after, board);
+    requirePhysicalDelivery(previous, actual, current, false, false);
+    for (const untouched of this.boards.filter((candidate) => candidate.uuid !== board.uuid)) {
+      const initial = this.device(before, untouched),
+        latest = this.device(after, untouched);
+      if (latest.writes !== initial.writes || latest.updates !== initial.updates)
+        throw new QaFailure('Drive setup reached an unrelated board');
     }
+    // A same-climb reassert can be history-deduplicated for ten seconds.
+    // This proves physical setup; the following Next requires the full chain.
+    this.evidence.event('physical-drive-setup', { role, boardUuid: board.uuid, sequence: actual.sequence });
     await this.assertId(role, 'wall-control-.*-self-driving');
   }
   private async sessionQueue(): Promise<QaQueueSnapshot> {

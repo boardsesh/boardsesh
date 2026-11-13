@@ -1,8 +1,21 @@
 appId: ${APP_ID}
-name: Start driving through the real board-controls sheet
+name: Establish an open-ended drive through the real board-controls sheet
 ---
 - assertNotVisible:
     id: busy-wall-question
+- runFlow:
+    when:
+      visible:
+        id: wall-control-.*-self-driving
+    commands:
+      - tapOn:
+          id: play-drawer-wall-control
+      - extendedWaitUntil:
+          visible:
+            id: wall-control-.*-self-idle
+          timeout: 10000
+- assertVisible:
+    id: wall-control-.*-self-idle
 - longPressOn:
     id: play-drawer-wall-control
 - extendedWaitUntil:
