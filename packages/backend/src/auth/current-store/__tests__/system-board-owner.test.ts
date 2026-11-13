@@ -5,6 +5,8 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
   accounts,
+  authAccount,
+  authSession,
   authEmailProjection,
   authEmailReservationMembers,
   authEmailReservations,
@@ -101,7 +103,7 @@ describe('fixed shared-board identity authority', () => {
     await db.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(deniedRole)}`);
     // FOR UPDATE needs UPDATE privileges even though this command preserves rows.
     await db.execute(
-      sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userCredentials}, ${sessions}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations}, ${authEmailReservationMembers} TO ${sql.identifier(deniedRole)}`,
+      sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${authAccount}, ${authSession}, ${userCredentials}, ${sessions}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations}, ${authEmailReservationMembers} TO ${sql.identifier(deniedRole)}`,
     );
     await db.execute(
       sql`GRANT UPDATE ON TABLE ${users}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations} TO ${sql.identifier(deniedRole)}`,
@@ -130,7 +132,7 @@ describe('fixed shared-board identity authority', () => {
     await deniedPool?.end({ timeout: 3 });
     if (roleCreated) {
       await db.execute(
-        sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${userCredentials}, ${sessions}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations}, ${authEmailReservationMembers} FROM ${sql.identifier(deniedRole)}`,
+        sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${authAccount}, ${authSession}, ${userCredentials}, ${sessions}, ${mobileRefreshTokens}, ${authEmailProjection}, ${authSubjectCutoffs}, ${authEmailReservations}, ${authEmailReservationMembers} FROM ${sql.identifier(deniedRole)}`,
       );
       await db.execute(sql`REVOKE ALL PRIVILEGES ON SCHEMA public FROM ${sql.identifier(deniedRole)}`);
       await db.execute(sql`DROP ROLE ${sql.identifier(deniedRole)}`);
@@ -499,7 +501,7 @@ describe('fixed shared-board identity authority', () => {
       code: 'RESERVATION_INCONSISTENT',
     });
   });
-  it('rolls back a written reservation after real SQL permission denial on user insert', async () => {
+  it('preserves reservations after real SQL permission denial on user insert', async () => {
     await prepare();
     const before = await snapshot();
     await expect(ensureReservedSystemBoardOwner(drizzle(deniedPool!), authority)).rejects.toMatchObject({
