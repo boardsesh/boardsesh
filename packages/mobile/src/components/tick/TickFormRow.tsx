@@ -11,6 +11,7 @@ import React, { type ReactNode, type RefObject } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ViewInstance } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 import {
   TICK_CONTROL_ORIGIN,
   TICK_GUTTER,
@@ -62,7 +63,6 @@ export const TickFormRow = React.memo(function TickFormRow({
   testID,
 }: TickFormRowProps) {
   const { systemColors, spacing, opacity, variant } = useTheme();
-  const material = variant === 'material';
   // Reactive OS text scale — this re-renders when the user changes their text
   // size, unlike a one-shot JS breakpoint read.
   const { fontScale } = useWindowDimensions();
@@ -77,13 +77,16 @@ export const TickFormRow = React.memo(function TickFormRow({
   // beside them. The seam does not move: see the metrics.
   const labelText = (
     <Text
-      variant={material ? 'subheadline' : 'body'}
+      variant={selectByVariant(variant, { material: 'subheadline', liquidGlass: 'body' } as const)}
       color={systemColors.secondaryLabel}
       numberOfLines={2}
       style={[
         styles.label,
         {
-          minWidth: material ? TICK_MATERIAL_LABEL_MIN_WIDTH : TICK_LABEL_MIN_WIDTH,
+          minWidth: selectByVariant(variant, {
+            material: TICK_MATERIAL_LABEL_MIN_WIDTH,
+            liquidGlass: TICK_LABEL_MIN_WIDTH,
+          }),
           paddingTop: topAligned ? spacing[2] : 0,
         },
         dimmed,
@@ -101,7 +104,9 @@ export const TickFormRow = React.memo(function TickFormRow({
           {
             paddingEnd: bleed ? 0 : TICK_GUTTER,
             minHeight: height ?? TICK_ROW_HEIGHT,
-            gap: stacked ? spacing[2] : material ? TICK_MATERIAL_LABEL_GAP : TICK_LABEL_GAP,
+            gap: stacked
+              ? spacing[2]
+              : selectByVariant(variant, { material: TICK_MATERIAL_LABEL_GAP, liquidGlass: TICK_LABEL_GAP }),
             paddingTop: topAligned ? spacing[1] : 0,
           },
           topAligned ? styles.rowAlignTop : null,

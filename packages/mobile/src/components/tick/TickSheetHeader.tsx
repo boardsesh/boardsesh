@@ -13,6 +13,7 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import { ChromeIconButton } from '../ChromeIconButton';
 import { useTheme } from '../../providers/theme-provider';
+import { selectByVariant } from '../../theme/variants/select-by-variant';
 import { TICK_GUTTER, TICK_HEADER_HEIGHT } from './tick-sheet-metrics';
 
 type TickSheetHeaderProps = {
@@ -43,7 +44,7 @@ export const TickSheetHeader = React.memo(function TickSheetHeader({
           borderBottomColor: systemColors.separator,
           // Material sheets separate by surface and space; the form keeps its
           // one divider under Stars.
-          borderBottomWidth: variant === 'material' ? 0 : StyleSheet.hairlineWidth,
+          borderBottomWidth: selectByVariant(variant, { material: 0, liquidGlass: StyleSheet.hairlineWidth }),
         },
       ]}
     >
