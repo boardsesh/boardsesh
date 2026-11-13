@@ -9,12 +9,11 @@ import {
 } from '@boardsesh/auth-protocol/browser-backend-session';
 import type { BrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
-import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
+import { requestWebSessionRefreshForView } from '@/app/lib/auth/web-session-events';
 
 // One recovery per actual accepted response, shared by every island. Neither
 // this bookkeeping nor React/Flight props contain credentials or receipts.
 const refreshedRoutes = new WeakSet<object>();
-const refreshedSessions = new WeakMap<object, number>();
 const serverSnapshot = () => null;
 
 /** Children must contain no viewer-private server props: even hidden children
@@ -44,7 +43,7 @@ export default function SelectedPrivateView({
     browserBackendSessionKey(current.owner) === browserBackendSessionKey(expectedOwner);
 
   useEffect(() => {
-    if (!snapshot || !session || status !== 'authenticated' || matches) return;
+    if (!snapshot || snapshot.closed || !session || status !== 'authenticated' || matches) return;
     if (accepted) {
       if (refreshedRoutes.has(session)) return;
       refreshedRoutes.add(session);
@@ -55,13 +54,11 @@ export default function SelectedPrivateView({
       snapshot.selected &&
       (snapshot.owner === null ||
         (current.status === 'selected' &&
-          browserBackendSessionKey(snapshot.owner) === browserBackendSessionKey(current.owner))) &&
-      refreshedSessions.get(session) !== snapshot.revision
+          browserBackendSessionKey(snapshot.owner) === browserBackendSessionKey(current.owner)))
     ) {
       // A different owner can already be admitted while SessionProvider awaits
       // ordered cleanup. Do not supersede that pending response with a GET.
-      refreshedSessions.set(session, snapshot.revision);
-      requestWebSessionRefresh();
+      requestWebSessionRefreshForView(session, snapshot.revision);
     }
   }, [accepted, current, matches, router, session, snapshot, status]);
 

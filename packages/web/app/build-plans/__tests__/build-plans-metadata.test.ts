@@ -37,6 +37,7 @@ vi.mock('@/app/lib/graphql/server-graphql', () => ({ executeAuthenticatedGraphQL
 const getServerAuthToken = vi.hoisted(() => vi.fn());
 vi.mock('@/app/lib/auth/admitted-session.server', () => ({
   getAdmittedServerSession: vi.fn(async () => ({ user: { id: 'buyer-a' } })),
+  getServerRenderViewer: vi.fn(async () => ({ kind: 'legacy' })),
 }));
 vi.mock('@/app/lib/auth/server-auth', () => ({ getServerAuthToken }));
 

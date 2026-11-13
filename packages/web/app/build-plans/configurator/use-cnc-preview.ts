@@ -63,7 +63,7 @@ export function isBackendDownloadUrl(url: string): boolean {
 }
 
 export function useCncPreview(authToken: string | null): CncPreviewResult {
-  const beginRequest = useCncRequestScope();
+  const beginRequest = useCncRequestScope(authToken);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [errorKey, setErrorKey] = useState<CncErrorKey | null>(null);
@@ -71,6 +71,7 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
   const requestPreview = useCallback(
     async (config: CncBoardConfigInput): Promise<CncOrder | null> => {
       const isCurrent = beginRequest();
+      if (!isCurrent()) return null;
       setErrorKey(null);
       setIsRequesting(true);
       try {
@@ -79,7 +80,11 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CREATE_CNC_PREVIEW,
           { config },
         );
-        return isCurrent() ? response.createCncPreview : null;
+        if (!isCurrent(response)) {
+          if (isCurrent()) setErrorKey('generic');
+          return null;
+        }
+        return response.createCncPreview;
       } catch (error) {
         if (isCurrent()) setErrorKey(cncErrorKey(error));
         return null;
@@ -93,6 +98,7 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
   const downloadPreview = useCallback(
     async (licenceId: string) => {
       const isCurrent = beginRequest();
+      if (!isCurrent()) return;
       setErrorKey(null);
       setIsDownloading(true);
       try {
@@ -101,7 +107,10 @@ export function useCncPreview(authToken: string | null): CncPreviewResult {
           CreateCncDownloadGrantMutationResponse,
           CreateCncDownloadGrantMutationVariables
         >(CREATE_CNC_DOWNLOAD_GRANT, { licenceId, kind: 'PREVIEW' });
-        if (!isCurrent()) return;
+        if (!isCurrent(response)) {
+          if (isCurrent()) setErrorKey('generic');
+          return;
+        }
         const grantUrl = response.createCncDownloadGrant.url;
         if (!isBackendDownloadUrl(grantUrl)) {
           setErrorKey('generic');
