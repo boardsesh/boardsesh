@@ -70,6 +70,42 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(['GET', 'POST'] as const)(
+    'refuses Facebook %s starts and callbacks without touching the handler or cookies',
+    async (method) => {
+      for (const action of ['signin', 'callback']) {
+        for (const suffix of ['', '/', '/extra']) {
+          const facebookRequest = new NextRequest(`https://www.boardsesh.com/api/auth/${action}/facebook${suffix}`, {
+            method,
+          });
+          const response = await (method === 'GET' ? GET : POST)(facebookRequest, routeContext(facebookRequest));
+          expect(response.status).toBe(404);
+          expect(await response.json()).toEqual({ error: 'unsupported_provider' });
+          expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+          expect(response.headers.get('Set-Cookie')).toBeNull();
+        }
+      }
+      expect(nextAuthHandlerMock).not.toHaveBeenCalled();
+      expect(getTokenMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['url', 'params'] as const)(
+    'refuses Facebook when only the %s names the removed provider',
+    async (authority) => {
+      const facebookRequest = new NextRequest(
+        `https://www.boardsesh.com/api/auth/callback/${authority === 'url' ? '%66acebook' : 'google'}`,
+      );
+      const context = {
+        params: Promise.resolve({ nextauth: ['callback', authority === 'params' ? 'facebook' : 'google'] }),
+      };
+      const response = await GET(facebookRequest, context);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('Set-Cookie')).toBeNull();
+      expect(nextAuthHandlerMock).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects an unscoped legacy NextAuth sign-out', async () => {
     const signOutRequest = request('/api/auth/signout', { csrfToken: 'csrf-token' });
 

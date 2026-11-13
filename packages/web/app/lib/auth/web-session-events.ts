@@ -26,7 +26,7 @@ export function requestWebSessionRefresh(expectedEpoch?: number): void {
 
 /** Own the intent before the public client starts any asynchronous work. */
 export async function signInWithSessionIntent(
-  provider: 'credentials' | 'apple' | 'google' | 'facebook',
+  provider: 'credentials' | 'apple' | 'google',
   options?: SignInOptions,
 ): Promise<SignInResponse | undefined> {
   const epoch = beginWebSessionIntent();

@@ -5,7 +5,6 @@ import * as Sentry from '@sentry/nextjs';
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
-import FacebookProvider from 'next-auth/providers/facebook';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
@@ -67,7 +66,7 @@ async function signInGeneration(userId: string): Promise<number> {
 
 const OAUTH_EMAIL_REQUIRED_ERROR = 'OAuthEmailRequired';
 const OAUTH_EMAIL_REQUIRED_REDIRECT = `/auth/error?error=${OAUTH_EMAIL_REQUIRED_ERROR}`;
-const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple', 'facebook']);
+const OAUTH_TELEMETRY_PROVIDERS = new Set(['google', 'apple']);
 
 function hasUsableEmail(email: string | null | undefined): email is string {
   return typeof email === 'string' && email.trim().length > 0;
@@ -108,19 +107,6 @@ if (process.env.APPLE_ID && process.env.APPLE_SECRET) {
       clientSecret: process.env.APPLE_SECRET,
       checks: ['pkce', 'state'],
       allowDangerousEmailAccountLinking: true,
-    }),
-  );
-}
-
-// Only add Facebook provider if credentials are configured
-if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-  providers.push(
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_CLIENT_ID,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-      // Facebook has no trusted email_verified assertion. A free address may
-      // create an account, but must never automatically link an existing one.
-      allowDangerousEmailAccountLinking: false,
     }),
   );
 }
@@ -372,6 +358,8 @@ export const authOptions: NextAuthOptions = {
       return baseUrl;
     },
     async signIn({ user, account, profile }) {
+      // Retain stored identities and sessions, but accept no new Facebook login or link.
+      if (account?.provider === 'facebook') return false;
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified
       if (account?.provider !== 'credentials' && account?.provider !== 'native-oauth') {
@@ -397,12 +385,7 @@ export const authOptions: NextAuthOptions = {
           (emailVerifiedAssertion === true || emailVerifiedAssertion === 'true');
         // Require stable proof even if the address is currently free: a
         // registration can commit before NextAuth's later adapter lookup.
-        // Facebook cannot automatically link at that boundary (provider config
-        // above), so its existing free-address signup remains safe.
-        if (
-          !verifiedEmailClaim &&
-          (account?.provider !== 'facebook' || (await findAccountsByEmail(getDb(), user.email)).kind !== 'none')
-        ) {
+        if (!verifiedEmailClaim) {
           if (!account?.providerAccountId) return false;
           const [linkedAccount] = await getDb()
             .select({ userId: schema.accounts.userId })
@@ -485,6 +468,7 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async jwt({ token, user, trigger, account, isNewUser }) {
+      if (user && account?.provider === 'facebook') throw new Error('Unsupported OAuth provider');
       // Stable for one NextAuth login across cookie rotations and tabs, but new
       // for a later login even when it belongs to the same user. A historical
       // jti identifies this rolling copy only, so retain that unknown ancestry
@@ -503,7 +487,7 @@ export const authOptions: NextAuthOptions = {
         if (
           !proved &&
           webCredentialProofMode(process.env) === 'required' &&
-          ['credentials', 'google', 'apple', 'facebook', 'native-oauth'].includes(account?.provider ?? '')
+          ['credentials', 'google', 'apple', 'native-oauth'].includes(account?.provider ?? '')
         )
           throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();

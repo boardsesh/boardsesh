@@ -10,6 +10,7 @@ import {
   AUTH_COMMAND_MAX_AGE_MS,
   AUTH_COMMAND_TIMEOUT_MS,
   WEB_OAUTH_PROTOCOL_VERSION,
+  webOAuthProviderSchema,
   webOAuthIntentReplySchema,
   webOAuthResolveReplySchema,
   type WebOAuthCommand,
@@ -118,6 +119,7 @@ export async function recordWebOAuthIntent(
   const configuredAuthority = captureExpectedAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const { provider, flow, actorCookie } = input.payload;
+  if (!webOAuthProviderSchema.safeParse(provider).success) return denied('intent', requestId);
   const receipt = await readIdentityAuthority(database, configuredAuthority);
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);
@@ -177,6 +179,7 @@ export async function resolveWebOAuthIdentity(
   const configuredAuthority = captureExpectedAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { provider, flow, actorCookie, subject, email, name, image } = input.payload;
+  if (!webOAuthProviderSchema.safeParse(provider).success) return denied('resolve', requestId);
   const receipt = await readIdentityAuthority(database, configuredAuthority);
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
   const captured = await captureActor(actorCookie, nextAuthSecret);

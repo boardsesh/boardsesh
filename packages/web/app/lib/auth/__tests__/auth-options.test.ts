@@ -40,7 +40,6 @@ vi.mock('@auth/drizzle-adapter', () => ({
 // Mock OAuth providers — only present in the array; we test callbacks, not provider config
 vi.mock('next-auth/providers/google', () => ({ default: vi.fn(() => ({ id: 'google' })) }));
 vi.mock('next-auth/providers/apple', () => ({ default: vi.fn(() => ({ id: 'apple' })) }));
-vi.mock('next-auth/providers/facebook', () => ({ default: vi.fn(() => ({ id: 'facebook' })) }));
 // Preserve `id` and `authorize` so tests can retrieve them from authOptions.providers
 vi.mock('next-auth/providers/credentials', () => ({
   default: vi.fn((opts: { id?: string; authorize?: unknown }) => ({
@@ -143,31 +142,28 @@ describe('authOptions.callbacks.signIn', () => {
   // -------------------------------------------------------------------------
 
   describe('OAuth profiles without an email', () => {
-    it.each(['google', 'apple', 'facebook'] as const)(
-      'rejects %s before any database create or update',
-      async (provider) => {
-        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it.each(['google', 'apple'] as const)('rejects %s before any database create or update', async (provider) => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        const result = await callSignIn({
-          user: { id: `${provider}-profile-id`, email: null, name: 'No Email' },
-          account: { provider, type: 'oauth', providerAccountId: `${provider}-account-id` },
-        });
+      const result = await callSignIn({
+        user: { id: `${provider}-profile-id`, email: null, name: 'No Email' },
+        account: { provider, type: 'oauth', providerAccountId: `${provider}-account-id` },
+      });
 
-        expect(result).toBe('/auth/error?error=OAuthEmailRequired');
-        expect(mockDbUpdate).not.toHaveBeenCalled();
-        expect(mockDbSelect).not.toHaveBeenCalled();
-        expect(mockAdapterCreateUser).not.toHaveBeenCalled();
-        expect(mockAdapterUpdateUser).not.toHaveBeenCalled();
-        expect(warnSpy).toHaveBeenCalledOnce();
-        expect(JSON.parse(String(warnSpy.mock.calls[0]?.[0]))).toEqual({
-          event: 'oauth_sign_in_rejected',
-          provider,
-          error_code: 'OAuthEmailRequired',
-        });
+      expect(result).toBe('/auth/error?error=OAuthEmailRequired');
+      expect(mockDbUpdate).not.toHaveBeenCalled();
+      expect(mockDbSelect).not.toHaveBeenCalled();
+      expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+      expect(mockAdapterUpdateUser).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(JSON.parse(String(warnSpy.mock.calls[0]?.[0]))).toEqual({
+        event: 'oauth_sign_in_rejected',
+        provider,
+        error_code: 'OAuthEmailRequired',
+      });
 
-        warnSpy.mockRestore();
-      },
-    );
+      warnSpy.mockRestore();
+    });
 
     it.each([undefined, '', '   '])('also rejects a non-usable email value (%s)', async (email) => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -207,7 +203,7 @@ describe('authOptions.callbacks.signIn', () => {
       warnSpy.mockRestore();
     });
 
-    it.each(['google', 'apple', 'facebook'] as const)(
+    it.each(['google', 'apple'] as const)(
       'keeps an existing linked %s account working when the raw provider profile omits email',
       async (provider) => {
         mockDbLimit.mockResolvedValue([{ userId: 'linked-user' }]);
@@ -365,15 +361,32 @@ describe('authOptions.callbacks.signIn', () => {
     });
   });
 
-  describe('OAuth provider (facebook)', () => {
-    it('marks email as verified and returns true', async () => {
-      const result = await callSignIn({
-        user: { id: 'user-3', email: 'fb@example.com' },
-        account: { provider: 'facebook', type: 'oauth', providerAccountId: 'fb-123' },
-      });
+  describe('removed Facebook provider', () => {
+    it.each([null, 'fb@example.com'])(
+      'refuses new or returning Facebook callbacks without any identity writes (%s)',
+      async (email) => {
+        mockDbLimit.mockResolvedValue([{ userId: 'stored-facebook-owner' }]);
+        expect(
+          await callSignIn({
+            user: { id: 'stored-facebook-owner', email },
+            account: { provider: 'facebook', type: 'oauth', providerAccountId: 'stored-facebook-subject' },
+            profile: { email_verified: true },
+          }),
+        ).toBe(false);
+        expect(mockDbSelect).not.toHaveBeenCalled();
+        expect(mockDbUpdate).not.toHaveBeenCalled();
+        expect(mockDbInsertValues).not.toHaveBeenCalled();
+        expect(mockAdapterCreateUser).not.toHaveBeenCalled();
+        expect(mockAdapterUpdateUser).not.toHaveBeenCalled();
+      },
+    );
 
-      expect(result).toBe(true);
-      expect(mockDbUpdate).toHaveBeenCalledTimes(1);
+    it('never configures Facebook even when credentials remain in the environment', async () => {
+      vi.stubEnv('FACEBOOK_CLIENT_ID', 'configured-id');
+      vi.stubEnv('FACEBOOK_CLIENT_SECRET', 'configured-secret');
+      vi.resetModules();
+      const { authOptions: configured } = await import('../auth-options');
+      expect(configured.providers.map((provider) => provider.id)).not.toContain('facebook');
     });
   });
 

@@ -13,7 +13,7 @@ import { track } from '@/app/lib/analytics';
 import { setOAuthPending } from '@/app/lib/oauth-pending-db';
 
 // Note: OAuth provider icons and button colors use brand-specific colors
-// per Google/Apple/Facebook brand guidelines, not design system tokens
+// per Google/Apple brand guidelines, not design system tokens
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="16" height="16">
@@ -42,16 +42,9 @@ const AppleIcon = () => (
   </svg>
 );
 
-const FacebookIcon = () => (
-  <svg viewBox="0 0 24 24" width="16" height="16" fill="#1877F2">
-    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-  </svg>
-);
-
 type ProvidersConfig = {
   google: boolean;
   apple: boolean;
-  facebook: boolean;
 };
 
 type SocialLoginButtonsProps = {
@@ -78,12 +71,12 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
       })
       .catch(() => {
         // On error, don't show any OAuth buttons
-        setProviders({ google: false, apple: false, facebook: false });
+        setProviders({ google: false, apple: false });
         setLoading(false);
       });
   }, []);
 
-  const handleSocialSignIn = (provider: 'apple' | 'google' | 'facebook') => {
+  const handleSocialSignIn = (provider: 'apple' | 'google') => {
     const flow = isCapacitorApp ? 'native' : 'web';
     track('Login Attempted', {
       auth_method: provider,
@@ -114,7 +107,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
   };
 
   // Don't render anything if no providers are configured
-  const hasAnyProvider = providers && (providers.google || providers.apple || providers.facebook);
+  const hasAnyProvider = providers && (providers.google || providers.apple);
 
   // Show single skeleton while loading to minimize layout shift
   // (we don't know how many providers are configured yet)
@@ -159,19 +152,6 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
           sx={appleButtonStyles}
         >
           {t('login.providers.apple')}
-        </Button>
-      )}
-
-      {providers.facebook && (
-        <Button
-          fullWidth
-          size="large"
-          variant="outlined"
-          startIcon={<FacebookIcon />}
-          onClick={() => handleSocialSignIn('facebook')}
-          disabled={disabled}
-        >
-          {t('login.providers.facebook')}
         </Button>
       )}
     </Box>

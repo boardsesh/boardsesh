@@ -383,7 +383,25 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     if (failures.length) throw new AggregateError(failures, 'Owned web OAuth cleanup failed');
   }, 30000);
 
-  it.each(['google', 'apple', 'facebook'] as const)(
+  it.each(['intent', 'resolve'] as const)(
+    'refuses Facebook %s commands before nonce or identity writes',
+    async (operation) => {
+      const payload = { provider: 'google' as const, flow: randomBytes(32).toString('hex'), actorCookie: null };
+      const body = command(
+        operation,
+        operation === 'resolve'
+          ? { ...payload, subject: 'stored-facebook-subject', email: 'stored@example.test', name: null, image: null }
+          : payload,
+      );
+      const response = await post(operation, { ...body, payload: { ...body.payload, provider: 'facebook' } });
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'invalid_request' });
+      expect(await counts()).toMatchObject({ users: 0, accounts: 0, reservations: 0, commands: 0 });
+      expect(await db.select().from(authWebOAuthIntents)).toEqual([]);
+    },
+  );
+
+  it.each(['google', 'apple'] as const)(
     'creates %s user/profile/plain link atomically with the normalized email and NULL verification',
     async (provider) => {
       const binding = await intent(provider);
@@ -403,7 +421,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       expect((await db.select().from(authWebOAuthIntents))[0].consumedAt).not.toBe(null);
     },
   );
-  it.each(['google', 'apple', 'facebook'] as const)(
+  it.each(['google', 'apple'] as const)(
     'returns linked %s owner unchanged despite missing/changed upstream profile',
     async (provider) => {
       const owner = await seedLinked(provider);

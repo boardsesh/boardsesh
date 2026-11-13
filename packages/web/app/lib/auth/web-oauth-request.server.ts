@@ -28,7 +28,7 @@ import { trustedClientRateLimitKey } from './trusted-client-ip.server';
 type RouteContext = { params: Promise<{ nextauth: string[] }> };
 type InvokeAuth = (request: NextRequest, options: NextAuthOptions) => Promise<Response>;
 const CONTINUATION_PARAM = 'boardseshOAuthContinue';
-const providers = new Set<string>(['google', 'apple', 'facebook']);
+const providers = new Set<string>(['google', 'apple']);
 const flowCookieKeys = ['state', 'pkceCodeVerifier', 'nonce', 'callbackUrl'] as const;
 /** Each anonymous start spends one slot of the backend's process-wide `intent` budget. */
 const OAUTH_STARTS_PER_CLIENT = 20;

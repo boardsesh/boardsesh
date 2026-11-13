@@ -7,7 +7,7 @@ describe('GET /api/auth/providers-config', () => {
     vi.unstubAllEnvs();
   });
 
-  it('reports every provider when all required credentials are present', async () => {
+  it('reports only supported providers even when Facebook credentials are present', async () => {
     vi.stubEnv('GOOGLE_CLIENT_ID', 'google-id');
     vi.stubEnv('GOOGLE_CLIENT_SECRET', 'google-secret');
     vi.stubEnv('APPLE_ID', 'apple-id');
@@ -20,7 +20,6 @@ describe('GET /api/auth/providers-config', () => {
     await expect(response.json()).resolves.toEqual({
       google: true,
       apple: true,
-      facebook: true,
     });
   });
 
@@ -37,7 +36,6 @@ describe('GET /api/auth/providers-config', () => {
     await expect(response.json()).resolves.toEqual({
       google: false,
       apple: false,
-      facebook: false,
     });
   });
 
@@ -54,7 +52,6 @@ describe('GET /api/auth/providers-config', () => {
     await expect(response.json()).resolves.toEqual({
       google: true,
       apple: false,
-      facebook: true,
     });
   });
 });
