@@ -24,7 +24,8 @@
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/db": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.2",
+    "@boardsesh/auth-protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",

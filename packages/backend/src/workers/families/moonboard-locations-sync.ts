@@ -53,6 +53,7 @@ export const moonBoardLocationsSyncFamily: BackgroundJobFamilyModule<MoonBoardLo
     const summary = await syncMoonBoardLocations({
       db: context.database,
       transaction: context.transaction,
+      ...(context.locationBatchWriter ? { batchWriter: context.locationBatchWriter } : {}),
       signal: context.signal,
       username,
       password,

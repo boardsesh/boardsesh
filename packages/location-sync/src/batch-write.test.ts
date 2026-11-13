@@ -297,3 +297,97 @@ describe('caller-owned location transaction and synchronous checkpoints', () => 
     });
   });
 });
+
+describe('staged complete-gym delegation', () => {
+  it('uses the delegate outside worker SQL, preserves groups and stops after failure', async () => {
+    const original = process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+    process.env.CURRENT_STORE_LOCATION_SYNC_MODE = 'backend-staging';
+    try {
+      const records = Array.from({ length: 26 }, (_, index) => record(`moonboard:gym-${index}`));
+      // A non-adjacent duplicate belongs to the first complete gym.
+      records.push(record('moonboard:gym-0', { sourceKey: 'moonboard:second-board' }));
+      const received: PublicBoardLocationInput[][] = [];
+      let workerTransactions = 0;
+      await expect(
+        upsertPublicBoardLocationsInBatches(
+          async () => {
+            workerTransactions += 1;
+            throw new Error('Worker SQL must never wrap the private request');
+          },
+          records,
+          {
+            batchWriter: async (batch) => {
+              received.push(batch);
+              if (received.length === 2) throw new Error('Second whole batch failed');
+              return {
+                boardsSeen: batch.length,
+                boardsUpserted: batch.length,
+                boardsSkipped: 0,
+                gymsSeen: 25,
+                gymsUpserted: 25,
+                skipped: [],
+              };
+            },
+          },
+        ),
+      ).rejects.toThrow('Second whole batch failed');
+      expect(workerTransactions).toBe(0);
+      expect(received.map((batch) => batch.length)).toEqual([26, 1]);
+      expect(received[0].filter((entry) => entry.gymSourceKey === 'moonboard:gym-0')).toHaveLength(2);
+    } finally {
+      if (original === undefined) delete process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+      else process.env.CURRENT_STORE_LOCATION_SYNC_MODE = original;
+    }
+  });
+
+  it('refuses staged direct and transaction entrypoints before any SQL without a delegate', async () => {
+    const original = process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+    process.env.CURRENT_STORE_LOCATION_SYNC_MODE = 'backend-staging';
+    try {
+      const fixture = transactionFixture();
+      await expect(upsertPublicBoardLocations(fixture.transaction, [record('moonboard:blocked')])).rejects.toThrow(
+        'requires a backend batch writer',
+      );
+      await expect(
+        upsertPublicBoardLocationsInBatches(async () => {
+          throw new Error('Must not enter');
+        }, []),
+      ).rejects.toThrow('requires a backend batch writer');
+      expect(fixture.statements).toEqual([]);
+    } finally {
+      if (original === undefined) delete process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+      else process.env.CURRENT_STORE_LOCATION_SYNC_MODE = original;
+    }
+  });
+});
+
+it.each(['legacy', 'invalid-after-dispatch'])(
+  'keeps a captured delegate selected after mode changes to %s',
+  async (mode) => {
+    const original = process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+    process.env.CURRENT_STORE_LOCATION_SYNC_MODE = mode;
+    try {
+      const fixture = transactionFixture();
+      let calls = 0;
+      const summary = await upsertPublicBoardLocations(fixture.transaction, [record('moonboard:captured')], {
+        batchWriter: async (batch) => {
+          calls += 1;
+          return {
+            boardsSeen: batch.length,
+            boardsUpserted: batch.length,
+            boardsSkipped: 0,
+            gymsSeen: 1,
+            gymsUpserted: 1,
+            skipped: [],
+          };
+        },
+      });
+      expect(summary.boardsUpserted).toBe(1);
+      expect(calls).toBe(1);
+      expect(fixture.statements).toEqual([]);
+    } finally {
+      if (original === undefined) delete process.env.CURRENT_STORE_LOCATION_SYNC_MODE;
+      else process.env.CURRENT_STORE_LOCATION_SYNC_MODE = original;
+    }
+  },
+);

@@ -1,3 +1,4 @@
+import type { LocationBatchWriter } from '@boardsesh/location-sync';
 import type { ProviderSyncDb, SyncBatchRunner } from '@boardsesh/db/queries';
 
 /**
@@ -74,6 +75,7 @@ export type SyncOutcome = {
 
 /** Options for {@link SyncRunner.runSharedSyncJob}. */
 export type SharedSyncJobOptions = {
+  locationBatchWriter?: LocationBatchWriter;
   /** Runs every board-wide write batch (a background job's attempt fence). */
   transaction?: SyncBatchRunner;
   signal?: AbortSignal;

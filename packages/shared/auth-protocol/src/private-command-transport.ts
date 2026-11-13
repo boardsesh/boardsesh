@@ -41,6 +41,8 @@ export function createPrivateAuthCommandTransport(options: {
   secretKey: string;
   disallowedSecretKeys: readonly string[];
   timeoutMs?: number;
+  requestBytes?: number;
+  responseBytes?: number;
 }) {
   const environment = options.environment;
   const paths = new Set(options.paths);
@@ -60,6 +62,10 @@ export function createPrivateAuthCommandTransport(options: {
   }
   const send = options.fetch;
   const timeoutMs = options.timeoutMs ?? AUTH_COMMAND_TIMEOUT_MS;
+  const requestBytes = options.requestBytes ?? AUTH_COMMAND_REQUEST_BYTES;
+  const responseBytes = options.responseBytes ?? AUTH_COMMAND_RESPONSE_BYTES;
+  if (![requestBytes, responseBytes].every((limit) => Number.isSafeInteger(limit) && limit > 0 && limit <= 1024 * 1024))
+    throw new AuthBackendUnavailableError();
 
   return {
     async post(path: string, command: unknown): Promise<{ status: number; body: unknown }> {
@@ -69,7 +75,7 @@ export function createPrivateAuthCommandTransport(options: {
       try {
         if (!paths.has(path)) throw new AuthBackendUnavailableError();
         const body = JSON.stringify(command);
-        if (typeof body !== 'string' || new TextEncoder().encode(body).byteLength > AUTH_COMMAND_REQUEST_BYTES)
+        if (typeof body !== 'string' || new TextEncoder().encode(body).byteLength > requestBytes)
           throw new AuthBackendUnavailableError();
         const operation = async () => {
           const response = await send(`${origin}${path}`, {
@@ -87,7 +93,7 @@ export function createPrivateAuthCommandTransport(options: {
           )
             throw new AuthBackendUnavailableError();
           const contentLength = response.headers.get('Content-Length');
-          if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > AUTH_COMMAND_RESPONSE_BYTES))
+          if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > responseBytes))
             throw new AuthBackendUnavailableError();
           reader = response.body.getReader();
           const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -97,7 +103,7 @@ export function createPrivateAuthCommandTransport(options: {
             const chunk = await reader.read();
             if (chunk.done) break;
             length += chunk.value.byteLength;
-            if (length > AUTH_COMMAND_RESPONSE_BYTES) throw new AuthBackendUnavailableError();
+            if (length > responseBytes) throw new AuthBackendUnavailableError();
             json += decoder.decode(chunk.value, { stream: true });
           }
           json += decoder.decode();

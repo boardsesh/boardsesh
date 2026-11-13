@@ -143,6 +143,7 @@ export const auroraSharedSyncFamily: BackgroundJobFamilyModule<AuroraSharedSyncP
     try {
       result = await runner.runSharedSyncJob(payload.board, {
         transaction: context.transaction,
+        ...(context.locationBatchWriter ? { locationBatchWriter: context.locationBatchWriter } : {}),
         signal: context.signal,
         cooldownMs: AURORA_SHARED_SYNC_COOLDOWN_MS,
         // A retry of this run re-claims the slot this run left claimed.

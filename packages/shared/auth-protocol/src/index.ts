@@ -393,3 +393,5 @@ export function authCommandReplyStatus(reply: AuthCommandReply): number {
   if (reply.code === 'rate_limited') return 429;
   return 503;
 }
+
+export * from './location-sync-v1';
