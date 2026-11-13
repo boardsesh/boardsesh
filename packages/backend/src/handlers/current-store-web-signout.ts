@@ -3,7 +3,10 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DbInstance } from '@boardsesh/db/client';
 import { AUTH_PROTOCOL_VERSION, webSignOutMode, webSignOutCommandSchema } from '@boardsesh/auth-protocol';
 import { db } from '../db/client';
-import { currentStoreRpcSecret } from '../auth/current-store/authority-configuration';
+import {
+  currentStoreAuthorityConfiguration,
+  currentStoreRpcSecret,
+} from '../auth/current-store/authority-configuration';
 import { isWebPasswordCommandFresh } from '../auth/current-store/web-password';
 import { signOutLegacyWebSession } from '../auth/authority/web-signout';
 import { authenticatesPrivateAuth, readPrivateAuthCommand } from './current-store-private-transport';
@@ -45,9 +48,11 @@ export async function handleCurrentStoreWebSignOut(
   try {
     const sessionSecret = process.env.NEXTAUTH_SECRET;
     if (!sessionSecret) throw new Error('Session authority unavailable');
-    const result = await signOutLegacyWebSession(database, payload.credential, sessionSecret);
+    const result = await signOutLegacyWebSession(database, payload.credential, sessionSecret, new Date(), () =>
+      currentStoreAuthorityConfiguration(process.env),
+    );
     if (result.status !== 'signed-out') throw new Error('Session authority unavailable or lineage unproven');
-    // The service explicitly acknowledges stable already-ended SIDs idempotently.
+    // The service acknowledges already-ended login ancestry idempotently.
     sendJson(response, 200, { ...base, outcome: 'signed_out' });
   } catch {
     sendJson(response, 503, { ...base, outcome: 'error', code: 'unavailable' });

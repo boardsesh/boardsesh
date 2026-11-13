@@ -486,10 +486,12 @@ export const authOptions: NextAuthOptions = {
     },
     async jwt({ token, user, trigger, account, isNewUser }) {
       // Stable for one NextAuth login across cookie rotations and tabs, but new
-      // for a later login even when it belongs to the same user. Existing JWTs
-      // can reuse their standard jti so rollout does not force a sign-out.
+      // for a later login even when it belongs to the same user. A historical
+      // jti identifies this rolling copy only, so retain that unknown ancestry
+      // when assigning its public SID. Renewal cannot prove a stable login.
       if (!token.authSessionId) {
         token.authSessionId = typeof token.jti === 'string' && token.jti ? token.jti : randomUUID();
+        token.legacy_no_sid = true;
       }
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
@@ -505,6 +507,7 @@ export const authOptions: NextAuthOptions = {
         )
           throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();
+        delete token.legacy_no_sid;
         delete token.nativeOAuthCreationProof;
         const nativeSourceGeneration =
           account?.provider === 'native-oauth' ? (user.nativeOAuthSourceGeneration ?? 0) : undefined;

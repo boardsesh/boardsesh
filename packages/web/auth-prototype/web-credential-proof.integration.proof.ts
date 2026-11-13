@@ -7,7 +7,15 @@ import { NextRequest } from 'next/server';
 import { encode, decode, type JWT } from 'next-auth/jwt';
 import type { NextAuthOptions } from 'next-auth';
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
-import { users, accounts, userCredentials, authEmailProjection } from '@boardsesh/db/schema';
+import {
+  users,
+  accounts,
+  userCredentials,
+  authEmailProjection,
+  authCredentialLineage,
+  authSubjectCutoffs,
+  authSecurityMutationEvents,
+} from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
 import { prepareProjectionUnderUsersTableLock } from '../../backend/src/auth/current-store/email-reservations';
 import { handleCurrentStoreWebSignOut } from '../../backend/src/handlers/current-store-web-signout';
@@ -15,6 +23,7 @@ import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-st
 import { recordSecurityMutation } from '../../backend/src/auth/current-store/security-mutations';
 import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
+import { bridgeLegacyCredential } from '../../backend/src/auth/authority/bridge';
 
 const holder = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = 'synthetic-web-backend-proof-secret';
@@ -87,13 +96,15 @@ function credentialsProvider(options: NextAuthOptions) {
   if (!configured || configured.type !== 'credentials') throw new Error('Missing credentials provider');
   return { ...configured, ...configured.options };
 }
-async function signIn() {
-  const id = randomUUID();
-  const email = `web-race-${id}@example.com`;
-  await environment.database.insert(users).values({ id, email, name: 'Climber' });
-  await environment.database
-    .insert(userCredentials)
-    .values({ userId: id, passwordHash: await hash(' exact-password ', 4) });
+async function signIn(existing?: { id: string; email: string }) {
+  const id = existing?.id ?? randomUUID();
+  const email = existing?.email ?? `web-race-${id}@example.com`;
+  if (!existing) {
+    await environment.database.insert(users).values({ id, email, name: 'Climber' });
+    await environment.database
+      .insert(userCredentials)
+      .values({ userId: id, passwordHash: await hash(' exact-password ', 4) });
+  }
   const client = createPasswordCommandClient({
     environment: {
       NODE_ENV: 'test',
@@ -109,7 +120,7 @@ async function signIn() {
     { headers: {} },
   );
   if (!user?.webCredentialProof) throw new Error('Missing real backend proof');
-  return { id, user, proof: user.webCredentialProof };
+  return { id, email, user, proof: user.webCredentialProof };
 }
 
 describe('real backend RPC → real web JWT callback → encrypted cookie admission', () => {
@@ -344,6 +355,9 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
     vi.stubEnv('AUTH_LEGACY_BRIDGE_MODE', 'off');
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
+    vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '');
+    vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
     await forwardWebSignOut(credential);
     await forwardWebSignOut(credential);
     expect((await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status).toBe(
@@ -351,14 +365,110 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     );
   });
 
-  it('does not acknowledge revocation of an unrecoverable no-SID credential', async () => {
+  it('revokes a raw no-SID credential with an authority-fenced account cutoff', async () => {
     const id = randomUUID();
     await environment.database.insert(users).values({ id, email: `no-sid-${id}@example.com` });
     const credential = await encode({ token: { sub: id, gen: 0 }, secret, maxAge: 3600 });
     vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
-    await expect(forwardWebSignOut(credential)).rejects.toThrow();
+    await forwardWebSignOut(credential);
     expect((await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status).toBe(
-      'admitted',
+      'denied',
     );
   });
+
+  it.each([false, true])(
+    'revokes raw copies, renewed children and every canonical alias after child logout (missing lineage: %s)',
+    async (removeOptionalLineage) => {
+      const accepted = await signIn();
+      vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
+      // Two actual historical rolling encodings have distinct JTIs but no SID.
+      const raw = await Promise.all([0, 1].map(() => encode({ token: { sub: accepted.id }, secret, maxAge: 3600 })));
+      const decodedRaw = await Promise.all(raw.map((credential) => decode({ token: credential, secret })));
+      expect(decodedRaw[0]?.jti).not.toBe(decodedRaw[1]?.jti);
+      const canonicalAliases: string[] = [];
+      async function bridge(credential: string) {
+        const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
+        expect(outcome.status).toBe('bridged');
+        if (outcome.status !== 'bridged') throw new Error('Synthetic alias was refused');
+        canonicalAliases.push(outcome.session.token);
+        return outcome.session;
+      }
+      await Promise.all(raw.map(bridge));
+      const children = await Promise.all(
+        decodedRaw.map(async (claims) => {
+          if (!claims) throw new Error('Actual decoder refused historical fixture');
+          const renewed = await callback({ token: claims });
+          expect(renewed.legacy_no_sid).toBe(true);
+          expect(renewed.auth_time).toBeUndefined();
+          return encode({ token: renewed, secret, maxAge: 3600 });
+        }),
+      );
+      const childAliases = await Promise.all(children.map(bridge));
+      expect(childAliases[0].id).not.toBe(childAliases[1].id);
+      if (removeOptionalLineage)
+        await environment.database.delete(authCredentialLineage).where(eq(authCredentialLineage.userId, accepted.id));
+      for (const token of canonicalAliases) {
+        const admitted = await readFirstPartySession(environment.database, { kind: 'canonical-token', token });
+        expect(admitted.status).toBe('admitted');
+        if (admitted.status !== 'admitted') throw new Error('Synthetic canonical alias was refused');
+        expect(admitted.session.requiresAccountCutoff).toBe(true);
+        expect(admitted.session.authenticatedAt).toBeNull();
+      }
+      expect(
+        await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, accepted.id)),
+      ).toHaveLength(0);
+      vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '2');
+      await expect(forwardWebSignOut(children[0])).rejects.toThrow();
+      expect(
+        await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, accepted.id)),
+      ).toHaveLength(0);
+      vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '1');
+      const concurrentChildren: string[] = [];
+      await Promise.all([
+        forwardWebSignOut(children[0]),
+        ...decodedRaw.map(async (claims) => {
+          if (!claims) throw new Error('Missing historical fixture');
+          const renewal = await callback({ token: { ...claims } });
+          const credential = await encode({ token: renewal, secret, maxAge: 3600 });
+          concurrentChildren.push(credential);
+          const outcome = await bridgeLegacyCredential(environment.database, credential, secret, 'on');
+          if (outcome.status === 'bridged') canonicalAliases.push(outcome.session.token);
+          else expect(outcome.status).toBe('denied');
+        }),
+      ]);
+      children.push(...concurrentChildren);
+      for (const credential of [...raw, ...children]) {
+        expect(
+          (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status,
+        ).toBe('denied');
+        expect((await bridgeLegacyCredential(environment.database, credential, secret, 'on')).status).toBe('denied');
+      }
+      for (const token of canonicalAliases)
+        expect((await readFirstPartySession(environment.database, { kind: 'canonical-token', token })).status).toBe(
+          'denied',
+        );
+
+      // Exact unchanged password bytes still authenticate under the new generation.
+      const later = await signIn(accepted);
+      expect(later.proof.generation).toBe(1);
+      const laterClaims = await callback({
+        token: { sub: accepted.id, legacy_no_sid: true },
+        user: later.user,
+        account: { provider: 'credentials', type: 'credentials', providerAccountId: accepted.id },
+      });
+      expect(laterClaims.legacy_no_sid).toBeUndefined();
+      const laterCookie = await encode({ token: laterClaims, secret, maxAge: 3600 });
+      await Promise.all([...raw, ...children].map((credential) => forwardWebSignOut(credential)));
+      expect(
+        (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential: laterCookie, secret }))
+          .status,
+      ).toBe('admitted');
+      expect(
+        await environment.database
+          .select()
+          .from(authSecurityMutationEvents)
+          .where(eq(authSecurityMutationEvents.userId, accepted.id)),
+      ).toHaveLength(1);
+    },
+  );
 });

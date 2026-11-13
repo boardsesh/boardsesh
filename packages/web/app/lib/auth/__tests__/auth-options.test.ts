@@ -660,10 +660,13 @@ describe('authOptions.callbacks.jwt', () => {
     expect(result.authSessionId).not.toBe('old-session');
   });
 
-  it('seeds preexisting JWTs from their standard jti', async () => {
+  it('retains unknown login ancestry when a preexisting JWT takes its rolling jti as a public SID', async () => {
     const result = await callJwt({ token: { sub: 'user-1', jti: 'existing-jti' } });
 
     expect(result.authSessionId).toBe('existing-jti');
+    expect(result.legacy_no_sid).toBe(true);
+    expect((await callJwt({ token: result })).legacy_no_sid).toBe(true);
+    expect(result.auth_time).toBeUndefined();
   });
 
   it('creates a login generation when the JWT has no prior identifier', async () => {
@@ -671,6 +674,33 @@ describe('authOptions.callbacks.jwt', () => {
 
     expect(result.authSessionId).toEqual(expect.any(String));
     expect(result.authSessionId).not.toBe('');
+    expect(result.legacy_no_sid).toBe(true);
+  });
+
+  it('clears unknown historical ancestry only after a new authenticated sign-in', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1', authSessionId: 'historical-child', legacy_no_sid: true },
+      user: { id: 'user-1' },
+      account: { provider: 'credentials', type: 'credentials', providerAccountId: 'user-1' },
+    });
+    expect(result.legacy_no_sid).toBeUndefined();
+    expect(result.authSessionId).not.toBe('historical-child');
+    expect(result.auth_time).toEqual(expect.any(Number));
+  });
+
+  it('ignores hostile client session updates that try to replace historical ancestry and authentication claims', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1', authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 },
+      trigger: 'update',
+      session: {
+        legacy_no_sid: false,
+        authSessionId: 'forged-stable-login',
+        gen: 999,
+        auth_time: Math.floor(Date.now() / 1000),
+      },
+    });
+    expect(result).toMatchObject({ authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 });
+    expect(result.auth_time).toBeUndefined();
   });
 
   // Profile-claim caching (the perf change): the jwt callback fetches

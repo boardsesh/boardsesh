@@ -6,6 +6,11 @@ import { AuthSubjectDeniedError, requireHumanSubjectForIssuance } from '../human
 import { decideCredential } from '../credential-cutoffs';
 import { transactionSettings } from '../current-store/command-context';
 import { denyFirstPartySessionInTransaction } from './lineage';
+import {
+  captureExpectedAuthority,
+  lockEnforcedProjection,
+  type ExpectedCurrentStoreAuthority,
+} from '../current-store/foundation-context';
 
 export type WebSignOutResult = { status: 'signed-out' | 'denied' | 'unavailable' };
 
@@ -15,17 +20,21 @@ export async function signOutLegacyWebSession(
   credential: string,
   secret: string,
   now = new Date(),
+  resolveAuthority?: () => ExpectedCurrentStoreAuthority,
 ): Promise<WebSignOutResult> {
   const proof = await verifyLegacyNextAuthJwe(credential, secret, now);
-  // A fingerprint cannot revoke other rolling copies of an unknown login.
-  // Reading/bridging such a credential remains allowed; only this mutation
-  // waits for the existing web session renewal to establish its public SID.
-  if (!proof || !proof.authSessionId) return { status: 'denied' };
-  const authSessionId = proof.authSessionId;
+  if (!proof) return { status: 'denied' };
+  const authority =
+    proof.requiresAccountCutoff && resolveAuthority ? captureExpectedAuthority(resolveAuthority()) : undefined;
+  if (proof.requiresAccountCutoff && !authority) return { status: 'unavailable' };
+  const authSessionId = proof.authSessionId ?? proof.lineageId;
   try {
     return await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
       await transaction.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
+      // Unknown ancestry needs a generation write. Lock its selected authority
+      // before the user, in the same order as every other security writer.
+      if (proof.requiresAccountCutoff) await lockEnforcedProjection(transaction, authority!);
       const [subject] = await transaction
         .select({ id: users.id })
         .from(users)
@@ -33,6 +42,9 @@ export async function signOutLegacyWebSession(
         .for('update');
       if (!subject) return { status: 'denied' as const };
       const state = await requireHumanSubjectForIssuance(transaction, proof.userId);
+      // This old generation is already revoked. A delayed sibling logout must
+      // neither advance the cutoff again nor end a genuinely later login.
+      if (proof.requiresAccountCutoff && proof.generation < state.generation) return { status: 'signed-out' as const };
       const [denial] = await transaction
         .select()
         .from(authSessionDenials)
@@ -63,6 +75,7 @@ export async function signOutLegacyWebSession(
           expiresAt: proof.expiresAt,
         },
         now,
+        authority,
       );
       return { status: 'signed-out' as const };
     });
