@@ -1,3 +1,4 @@
+import { assertLocationBatchWriter } from '@boardsesh/location-sync';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
@@ -933,14 +934,24 @@ export class SyncRunner {
   private async runBoardSharedWork(
     boardType: AuroraBoardName,
     token: string,
-    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> & { runKey?: string },
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal' | 'locationBatchWriter'> & { runKey?: string },
   ): Promise<void> {
     const { db } = this.getClient();
-    const { runKey, ...fenced } = options;
+    const { runKey, locationBatchWriter, ...fenced } = options;
+    if (this.isLocationBoard(boardType)) {
+      assertLocationBatchWriter(locationBatchWriter);
+      locationBatchWriter?.prepare?.();
+    }
     await syncSharedData(db, boardType, token, this.log.bind(this), { ...fenced, runKey });
     if (this.isLocationBoard(boardType)) {
-      await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this), ...fenced });
-      await this.crawlGymWallSlice(boardType, token, fenced);
+      await syncAuroraBoardLocations({
+        db,
+        board: boardType,
+        log: this.log.bind(this),
+        ...fenced,
+        batchWriter: locationBatchWriter,
+      });
+      await this.crawlGymWallSlice(boardType, token, { ...fenced, locationBatchWriter });
     }
   }
 
@@ -968,6 +979,7 @@ export class SyncRunner {
    */
   async runSharedSyncJob(board: AuroraBoardName, options: SharedSyncJobOptions = {}): Promise<SharedSyncJobResult> {
     if (board === KILTER_BOARD_TYPE) throw new Error('Kilter has its own catalog sync');
+    if (this.isLocationBoard(board)) assertLocationBatchWriter(options.locationBatchWriter);
     const { db } = this.getClient();
     const { signal } = options;
     const donor = await findSharedSyncDonorCredential(db, {
@@ -975,6 +987,7 @@ export class SyncRunner {
       candidateFilter: syncableAuroraCredentialsFilter(),
     });
     if (!donor) return { status: 'no_donor' };
+    options.locationBatchWriter?.prepare?.();
 
     const cooldownMs = Math.max(0, options.cooldownMs ?? this.getSharedSyncCooldownMs());
     const cursor = { boardType: board, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
@@ -994,7 +1007,12 @@ export class SyncRunner {
     let providerHoldMs: number | undefined;
     // The run id keys the pass's setter notifications, so a retry of this run
     // does not notify anyone twice.
-    const work = { transaction: options.transaction, signal, runKey: options.runId };
+    const work = {
+      transaction: options.transaction,
+      signal,
+      runKey: options.runId,
+      locationBatchWriter: options.locationBatchWriter,
+    };
     try {
       let tokenSource: 'stored' | 'login' = 'stored';
       let token = this.storedDonorToken(donor);
@@ -1138,7 +1156,7 @@ export class SyncRunner {
   private async crawlGymWallSlice(
     board: AuroraLocationBoardName,
     token: string,
-    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal'> = {},
+    options: Pick<SharedSyncJobOptions, 'transaction' | 'signal' | 'locationBatchWriter'> = {},
   ): Promise<void> {
     const { db } = this.getClient();
     try {
@@ -1154,6 +1172,7 @@ export class SyncRunner {
         fetchGymUser,
         log: this.log.bind(this),
         transaction: options.transaction,
+        batchWriter: options.locationBatchWriter,
         signal: options.signal,
       });
       this.log(`[SyncRunner] Wall crawl for ${board}: ${crawled}/${dueSourceKeys.length} gym(s) read`);

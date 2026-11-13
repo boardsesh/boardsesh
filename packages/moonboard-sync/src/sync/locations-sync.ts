@@ -6,6 +6,8 @@ import {
   upsertPublicBoardLocationsInBatches,
   type LocationSyncSummary,
   type LocationWriteBatchRunner,
+  type LocationBatchWriter,
+  assertLocationBatchWriter,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
 import { normalizeGymName } from '@boardsesh/db/queries';
@@ -110,9 +112,12 @@ export async function syncMoonBoardLocations(args: {
    * always run before the first batch.
    */
   transaction?: LocationWriteBatchRunner;
+  batchWriter?: LocationBatchWriter;
   /** Ends the MoonBoard requests early and is checked between write batches. */
   signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
+  assertLocationBatchWriter(args.batchWriter);
+  args.batchWriter?.prepare?.();
   const client = new MoonBoardClient();
   await client.authenticate(args.username, args.password, args.signal);
   const markers = await client.getMapMarkers(args.signal);
@@ -124,10 +129,12 @@ export async function syncMoonBoardLocations(args: {
   const summary = args.transaction
     ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
         logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
         signal: args.signal,
       })
     : await upsertPublicBoardLocations(args.db, records, {
         logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
       });
   args.log?.(
     `[moonboard-locations] upserted ${summary.boardsUpserted}/${summary.boardsSeen} board(s), ${summary.gymsUpserted} gym(s), skipped ${summary.boardsSkipped}`,

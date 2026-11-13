@@ -224,3 +224,10 @@ startup receipt; the running preview is retained and must not be restarted
 against that stale receipt. PR #7303 remains an unmerged review candidate.
 These implementation results neither adopt a location authority nor complete
 BA-03 or the epic.
+
+## Selected-authority continuation
+
+The backend-owned compound writer is implemented separately in
+[the selected-authority location adoption](better-auth-location-writer-adoption.md).
+Its new mounted PostGIS/job-fence evidence does not close the mixed-fleet,
+production-grant or activation gates recorded here.

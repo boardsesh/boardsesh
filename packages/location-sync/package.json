@@ -20,6 +20,7 @@
     "lint-fix": "vp lint --fix"
   },
   "dependencies": {
+    "@boardsesh/auth-protocol": "workspace:*",
     "@boardsesh/board-config": "workspace:*",
     "@boardsesh/board-constants": "workspace:*",
     "@boardsesh/db": "workspace:*",

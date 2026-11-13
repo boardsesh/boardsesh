@@ -182,6 +182,16 @@ jobs:
             ocr:
               - 'packages/moonboard-ocr/**'
             locationSync:
+              - 'packages/backend/src/auth/current-store/**'
+              - 'packages/backend/src/auth/authority/**'
+              - 'packages/backend/src/auth/prototype/location-sync.integration.proof.ts'
+              - 'packages/backend/src/handlers/current-store-*'
+              - 'packages/backend/src/workers/**'
+              - 'packages/backend/scripts/bootstrap-location-proof-database.sh'
+              - 'packages/backend/vite.location-sync-proof.config.ts'
+              - 'packages/shared/auth-protocol/**'
+              - 'packages/aurora-sync/**'
+              - 'packages/moonboard-sync/**'
               - 'packages/location-sync/**'
               - 'packages/db/**'
               - 'packages/shared/board-config/**'
@@ -1724,6 +1734,21 @@ jobs:
           vp test run --project location-sync \
             --reporter=verbose --reporter=github-actions \
             --reporter=junit --outputFile.junit=./packages/location-sync/test-results/junit-location-sync.xml
+      - name: Bootstrap the owned compound location proof database
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: password
+          PGDATABASE: epic6975_location_ci
+          LOCATION_SYNC_PROOF_DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/epic6975_location_ci
+        run: |
+          createdb "$PGDATABASE"
+          bash packages/backend/scripts/bootstrap-location-proof-database.sh
+      - name: Run the required selected-authority compound location proof
+        env:
+          LOCATION_SYNC_PROOF_DATABASE_URL: postgres://postgres:password@127.0.0.1:5432/epic6975_location_ci
+        run: vp test run --config packages/backend/vite.location-sync-proof.config.ts --maxWorkers=1 --reporter=agent
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
