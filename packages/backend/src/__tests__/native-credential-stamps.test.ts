@@ -19,6 +19,7 @@ import {
   handleWatchPair,
   handleWatchPairCode,
   __resetNativeAuthStateForTests,
+  __fillInvalidRefreshRateLimitMapForTests,
 } from '../handlers/native-auth';
 // The wire contract released Expo builds and the Garmin PairingView/TokenStore
 // parse, and the app's own unverified `sub` reader, loaded unchanged. The app
@@ -257,6 +258,125 @@ describe('native credential stamps against the owned primary database', () => {
     if (httpServer)
       await new Promise<void>((resolve, reject) => httpServer.close((error) => (error ? reject(error) : resolve())));
     await redisClientManager.disconnect();
+  });
+
+  it('rotates thirty distinct clients behind one proxy through real HTTP and primary transactions', async () => {
+    const clients = Array.from({ length: 30 }, () => ({ userId: randomUUID(), refreshToken: randomUUID() }));
+    for (const client of clients) createdUserIds.add(client.userId);
+    await db.insert(users).values(
+      clients.map((client) => ({
+        id: client.userId,
+        email: `refresh-burst-${client.userId}@example.test`,
+        name: 'Synthetic refresh client',
+      })),
+    );
+    await db.insert(mobileRefreshTokens).values(
+      clients.map((client) => ({
+        userId: client.userId,
+        tokenHash: createHash('sha256').update(client.refreshToken).digest('hex'),
+        expiresAt: new Date(Date.now() + 60_000),
+      })),
+    );
+    const responses = await Promise.all(
+      clients.map((client) => native('/refresh', { refreshToken: client.refreshToken })),
+    );
+    expect(responses.map((response) => response.status)).toEqual(clients.map(() => 200));
+    const children = await Promise.all(responses.map((response) => response.json() as Promise<TokenPair>));
+    for (const [index, client] of clients.entries()) {
+      expect(children[index].userId).toBe(client.userId);
+      expect((await claims(children[index])).sub).toBe(client.userId);
+      expect(children[index].refreshToken).not.toBe(client.refreshToken);
+      expect((await rowFor(client.refreshToken)).revokedAt).toBeInstanceOf(Date);
+      expect((await rowFor(children[index].refreshToken)).revokedAt).toBeNull();
+    }
+  });
+
+  it('keeps unseen valid refreshes available after missing secrets exhaust their separate quota', async () => {
+    const refreshToken = await seedUnstampedRefresh();
+    __fillInvalidRefreshRateLimitMapForTests(49_999);
+    const missing = await native('/refresh', { refreshToken: randomUUID() });
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toEqual({ error: 'Invalid refresh token' });
+    const overflow = await native('/refresh', { refreshToken: randomUUID() });
+    expect(overflow.status).toBe(503);
+    expect(await overflow.json()).toEqual({ error: 'Service temporarily overloaded' });
+    expect((await rowFor(refreshToken)).revokedAt).toBeNull();
+
+    const child = await issued('/refresh', { refreshToken });
+    expect(child.userId).toBe(ownerId);
+    expect((await claims(child)).sub).toBe(ownerId);
+    expect((await rowFor(refreshToken)).revokedAt).toBeInstanceOf(Date);
+    expect((await rowFor(child.refreshToken)).revokedAt).toBeNull();
+    const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId));
+    expect(rows).toHaveLength(2);
+  });
+
+  it('returns 503 for a real user-lock timeout without consuming the refresh secret', async () => {
+    const refreshToken = await seedUnstampedRefresh();
+    const locked = barrier();
+    const release = barrier();
+    let blockingPid = 0;
+    const holder = track(
+      blocker.begin(async (transaction) => {
+        const [backend] = await transaction<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        blockingPid = backend.pid;
+        await transaction`SELECT id FROM users WHERE id=${ownerId} FOR UPDATE`;
+        locked.release();
+        await release.promise;
+      }),
+    );
+    await bounded(locked.promise);
+    try {
+      const refresh = track(native('/refresh', { refreshToken }));
+      await waitForLock(blockingPid, refresh);
+      const response = await refresh;
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'Authentication is temporarily unavailable' });
+      expect((await rowFor(refreshToken)).revokedAt).toBeNull();
+      const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId));
+      expect(rows).toHaveLength(1);
+    } finally {
+      release.release();
+      await bounded(holder);
+    }
+    expect((await native('/refresh', { refreshToken })).status).toBe(200);
+  }, 15_000);
+
+  it('rolls back rotation on signing unavailability and accepts the same secret once restored', async () => {
+    const refreshToken = await seedUnstampedRefresh();
+    vi.stubEnv('NEXTAUTH_SECRET', '');
+    const response = await native('/refresh', { refreshToken });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'Authentication is temporarily unavailable' });
+    expect((await rowFor(refreshToken)).revokedAt).toBeNull();
+    const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId));
+    expect(rows).toHaveLength(1);
+    vi.stubEnv('NEXTAUTH_SECRET', secret);
+    expect((await native('/refresh', { refreshToken })).status).toBe(200);
+  });
+
+  it('keeps an actual committed rotation distinct from definite rollback after lost acknowledgement', async () => {
+    const refreshToken = await seedUnstampedRefresh();
+    const actualTransaction = db.transaction.bind(db);
+    let committed = false;
+    const transaction = vi.spyOn(db, 'transaction').mockImplementationOnce(async (operation, configuration) => {
+      await actualTransaction(operation, configuration);
+      committed = true;
+      throw Object.assign(new Error('synthetic lost acknowledgement'), { code: 'ECONNRESET' });
+    });
+    try {
+      const response = await native('/refresh', { refreshToken });
+      expect(committed).toBe(true);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'Token refresh is temporarily unavailable' });
+      expect((await rowFor(refreshToken)).revokedAt).toBeInstanceOf(Date);
+      const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId));
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.revokedAt === null)).toHaveLength(1);
+      expect((await native('/refresh', { refreshToken })).status).toBe(401);
+    } finally {
+      transaction.mockRestore();
+    }
   });
 
   it('answers every issuer in the shape released apps and the Garmin watch parse, and the app still reads sub', async () => {
