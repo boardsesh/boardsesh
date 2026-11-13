@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-13T18:33:13.114Z",
+  "generatedAt": "2026-11-13T19:13:38.087Z",
   "entries": [
     {
       "prNumber": 7353,
@@ -9592,6 +9592,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-13T18:03:56Z",
+      "sha": "45fffe3b00d95caf28bfd65339f9e2072427402c",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "0b4f9f9651f59d06e5428aba3625b27959cd5ee9"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-11T21:15:34Z",

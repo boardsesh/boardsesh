@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-13
 
+### App update
+
+A new version shipped to the App Store.
+
 ### New
 
 - Your Android lock screen card now glows with your climb's colours. ([#7352](https://github.com/boardsesh/boardsesh/pull/7352))
