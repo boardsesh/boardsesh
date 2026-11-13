@@ -2,6 +2,10 @@
 
 Status: implemented and independently reviewed for default-off staging on 2026-11-05. This follows [native password registration](./better-auth-native-registration.md), the [accepted migration](./better-auth-migration.md) and [BA-03 #6977](https://github.com/boardsesh/boardsesh/issues/6977). Production activation remains **NO-GO**. This is one endpoint adoption, not a claim that every installed-client OAuth path uses the new writer.
 
+The later [selected-authority provider adoption](./better-auth-provider-writer-adoption.md)
+binds staged web/native sign-in to the selected primary identity store while
+retaining these policies and all activation gates.
+
 ## Remaining writer inventory and sequence
 
 | Area | Current source and retained gap |

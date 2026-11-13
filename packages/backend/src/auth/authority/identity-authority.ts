@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { accounts, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
+import { accounts, authAccount, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createAuthorityAdapter, type AuthorityTransaction } from './adapter';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
@@ -24,7 +24,8 @@ export type NewIdentityUser = Pick<
 export interface IdentityAuthority {
   readonly receipt: IdentityAuthorityReceipt;
   readPassword(userId: string): Promise<IdentityPasswordSnapshot | null>;
-  findProvider(provider: string, subject: string): Promise<ProviderIdentitySnapshot | null>;
+  /** Ownership evidence only; callers still enforce the user's deletion/cutoff state. */
+  findProvider(provider: string, subject: string, lock?: 'update'): Promise<ProviderIdentitySnapshot | null>;
   createUser(input: NewIdentityUser): Promise<typeof users.$inferSelect>;
   insertPassword(userId: string, passwordHash: string, generation: number): Promise<void>;
   replacePassword(expected: IdentityPasswordSnapshot, passwordHash: string): Promise<boolean>;
@@ -120,10 +121,19 @@ export function bindIdentityAuthority(
       if (!credential || credential.deletedAt) return null;
       return { userId, passwordHash: credential.passwordHash, generation: credential.generation };
     },
-    async findProvider(provider, subject) {
+    async findProvider(provider, subject, lock) {
       assertProvider(provider, subject);
       await revalidateIdentityAuthority(transaction, receipt);
       if (betterAuth) {
+        // The caller takes the user lock first. Waiting on this primary row
+        // prevents an uncommitted unfenced owner change from hiding behind an
+        // older MVCC snapshot; the adapter then reads the committed owner.
+        if (lock === 'update')
+          await transaction
+            .select({ id: authAccount.id })
+            .from(authAccount)
+            .where(and(eq(authAccount.providerId, provider), eq(authAccount.accountId, subject)))
+            .for('update');
         const found = await betterAuth.findOne<CanonicalAccount>({
           model: 'account',
           where: [
@@ -135,18 +145,16 @@ export function bindIdentityAuthority(
         if (!generationIsValid(found.sourceGeneration)) throw new Error('IDENTITY_PROVIDER_UNQUALIFIED');
         return { userId: found.userId, provider, subject, generation: found.sourceGeneration };
       }
-      const [found] = await transaction
+      const query = transaction
         .select({
           userId: accounts.userId,
           generation: sql<number>`coalesce(${authSubjectCutoffs.generation}, 0)::integer`,
-          deletedAt: authSubjectCutoffs.deletedAt,
         })
         .from(accounts)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, accounts.userId))
         .where(and(eq(accounts.provider, provider), eq(accounts.providerAccountId, subject)));
-      return found && !found.deletedAt
-        ? { userId: found.userId, provider, subject, generation: found.generation }
-        : null;
+      const [found] = await (lock === 'update' ? query.for('update', { of: accounts }) : query);
+      return found ? { userId: found.userId, provider, subject, generation: found.generation } : null;
     },
     async createUser(input) {
       const prepared = {

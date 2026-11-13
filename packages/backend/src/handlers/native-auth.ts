@@ -1,5 +1,9 @@
 import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
-import { captureIdentityAuthority, revalidateIdentityAuthority } from '../auth/authority/router';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+} from '../auth/authority/router';
 import { authenticateIdentityPassword } from '../auth/authority/password-verification';
 import {
   createWatchPairCapability,
@@ -50,7 +54,6 @@ import {
   currentStoreNativeOAuthConfiguration,
 } from '../auth/current-store/authority-configuration';
 import {
-  preflight,
   boundSignInLockWaits,
   transactionSettings,
   type WebPasswordAuthority,
@@ -1339,6 +1342,8 @@ async function findOrCreateOAuthUser(
   // Refuse it even when called directly rather than through the mode parser.
   if (identityMirrorMode() === 'on') throw new Error('AUTH_IDENTITY_MIRROR refuses legacy native OAuth writes');
   return database.transaction(async (tx) => {
+    await transactionSettings(tx);
+    await assertLegacyIdentityWriterAllowed(tx);
     // 1. Link by the provider's stable subject id.
     const linkedRows = await tx
       .select({ userId: accounts.userId, createdAt: users.createdAt })
@@ -1493,9 +1498,13 @@ export async function handleNativeAuthOAuth(
     return;
   }
   const staged = configuration.mode === 'reserved-staging';
+  let receipt: IdentityAuthorityReceipt | undefined;
   if (configuration.mode === 'reserved-staging') {
     try {
-      await preflight(database, configuration.authority);
+      receipt = await database.transaction(async (transaction) => {
+        await transactionSettings(transaction);
+        return captureIdentityAuthority(transaction, configuration.authority);
+      });
     } catch (error) {
       reportReservedNativeOAuthFailure(res, error);
       return;
@@ -1513,6 +1522,10 @@ export async function handleNativeAuthOAuth(
   const { identity } = verified;
   const origin = signedInNow();
   if (configuration.mode === 'reserved-staging') {
+    if (!receipt) {
+      reportReservedNativeOAuthFailure(res, new CurrentStoreFoundationError('STALE_AUTHORITY'));
+      return;
+    }
     await handleReservedNativeOAuth(
       res,
       database,
@@ -1521,6 +1534,7 @@ export async function handleNativeAuthOAuth(
       identity,
       parseForwardedName(name),
       origin,
+      receipt,
     );
     return;
   }
@@ -1565,18 +1579,31 @@ function reportReservedNativeOAuthFailure(response: ServerResponse, error: unkno
 async function handleReservedNativeOAuth(
   response: ServerResponse,
   database: DbInstance,
-  authority: WebPasswordAuthority,
+  authorityInput: WebPasswordAuthority,
   provider: OAuthProvider,
   identity: VerifiedOAuthIdentity,
   name: ForwardedName | undefined,
   origin: NativeCredentialOrigin,
+  receiptInput: IdentityAuthorityReceipt,
 ) {
+  const receipt = Object.freeze({ ...receiptInput });
+  const authority = { ...authorityInput, expectedWriterEpoch: receipt.epoch };
   try {
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
-      const resolved = await resolveReservedNativeOAuthIdentity(transaction, authority, provider, identity, name);
+      await revalidateIdentityAuthority(transaction, receipt);
+      const resolved = await resolveReservedNativeOAuthIdentity(
+        transaction,
+        authority,
+        provider,
+        identity,
+        name,
+        receipt,
+      );
+      await revalidateIdentityAuthority(transaction, receipt);
       if (resolved.outcome !== 'linked' && resolved.outcome !== 'created') return resolved;
       const tokenPair = await generateTokenPair(resolved.userId, transaction, origin);
+      await revalidateIdentityAuthority(transaction, receipt);
       return {
         outcome: 'ok' as const,
         tokenPair,

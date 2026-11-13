@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
-import { users, accounts, userProfiles, mobileRefreshTokens } from '@boardsesh/db/schema/auth';
+import { users, accounts, authEmailProjection, userProfiles, mobileRefreshTokens } from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Env — generateTokenPair signs with NEXTAUTH_SECRET; the Google verifier
@@ -37,6 +37,7 @@ function makeAwaitableInsert(): Promise<unknown[]> & { onConflictDoNothing: () =
 
 function makeChain() {
   let admissionProjection = false;
+  let selectedTable: unknown;
   const chain = {
     execute: async () => [{ transaction_isolation: 'read committed' }],
     select(projection?: Record<string, unknown>) {
@@ -48,13 +49,17 @@ function makeChain() {
     leftJoin() {
       return chain;
     },
-    from() {
+    from(table: unknown) {
+      selectedTable = table;
       return chain;
     },
     innerJoin() {
       return chain;
     },
     where() {
+      // Legacy deployment has no selected-authority manifest. Keep its gate
+      // read separate from the queued identity/admission query responses.
+      if (selectedTable === authEmailProjection) return Promise.resolve([]);
       return chain;
     },
     orderBy() {
