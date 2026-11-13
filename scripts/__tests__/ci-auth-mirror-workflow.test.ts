@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -38,7 +39,7 @@ describe('independent current-store mirror qualification', () => {
     expect(mirror['runs-on']).toBe('ubuntu-latest');
     expect(mirror.strategy).toBeUndefined();
     expect(mirror['timeout-minutes']).toBe(30);
-    expect(backend['timeout-minutes']).toBe(30);
+    expect(backend['timeout-minutes']).toBe(40);
   });
 
   it('owns the baseline PostgreSQL and Redis service configuration', () => {
