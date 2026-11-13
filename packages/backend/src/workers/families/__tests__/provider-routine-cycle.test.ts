@@ -255,12 +255,21 @@ describe('provider-routine-cycle', () => {
   it('claims nothing more once ROUTINE_CYCLE_BUDGET_MS has passed', async () => {
     vi.stubEnv('ROUTINE_CYCLE_BUDGET_MS', '1');
     const synced: string[] = [];
-    adapterOverride.sync = recordingSync(synced, () => new Promise((resolve) => setTimeout(resolve, 20)));
+    // Keep setup and the first real claim inside the budget regardless of CI
+    // database latency, then exhaust it only after that credential synced.
+    let now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    adapterOverride.sync = recordingSync(synced, () => {
+      now += 2;
+    });
+    try {
+      const { result } = await runCycle();
 
-    const { result } = await runCycle();
-
-    expect(result).toBe('succeeded');
-    expect(synced).toEqual(['routine-a']);
+      expect(result).toBe('succeeded');
+      expect(synced).toEqual(['routine-a']);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('does not count a skipped credential toward ROUTINE_CYCLE_MAX_CREDENTIALS', async () => {
