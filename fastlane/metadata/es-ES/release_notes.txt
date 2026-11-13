@@ -1,6 +1,6 @@
 Novedades de 2.8.0
 
-ILUMINA TU SPRAYWALL
+Ilumina tu Spraywall
 
 Conecta tu Spraywall a WLED por Wi-Fi. Marca agujeros en una foto con zoom, dibuja el recorrido de los LED y el cable, y corrige qué LED iluminan cada presa. Prueba presas individuales y ve cómo se ilumina tu Spraywall mientras creas un bloque. Guarda la configuración una vez para que tu crew también pueda iluminar bloques.
 

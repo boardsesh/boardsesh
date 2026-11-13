@@ -1,6 +1,6 @@
 Neu in 2.8.0
 
-BELEUCHTE DEINE SPRAYWALL
+Beleuchte deine Spraywall
 
 Verbinde deine Spraywall über WLAN mit WLED. Markiere Löcher auf einem zoombaren Foto, lege LEDs und Kabelverlauf fest und korrigiere, welche LEDs welchen Griff beleuchten. Teste einzelne Griffe und sieh deine Spraywall beim Erstellen eines Boulders leuchten. Speichere die Einrichtung einmal, damit auch deine Crew Boulder beleuchten kann.
 
