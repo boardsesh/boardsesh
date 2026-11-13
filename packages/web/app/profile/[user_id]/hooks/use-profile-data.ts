@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useSession } from 'next-auth/react';
 import { useIsRestoring, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -27,6 +27,14 @@ import {
 import { getGradeColor, getGradeTextColor } from '@/app/lib/grade-colors';
 import { isAbortError } from '@/app/lib/is-abort-error';
 import { PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
+import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
+import { readSelectedBrowserProfile } from '@/app/lib/auth/browser-profile-client';
+import { BrowserProfileAuthorityError, ProfileNotFoundError } from '@/app/lib/auth/browser-profile-response';
+import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
+import {
+  browserBackendSessionKey,
+  readBrowserBackendSessionScope,
+} from '@boardsesh/auth-protocol/browser-backend-session';
 import {
   filterLogbookByTimeframe,
   buildAggregatedStackedBars,
@@ -37,6 +45,8 @@ import {
 } from '../utils/chart-data-builders';
 
 type InitialData = {
+  /** This server response contains only independently public fallback data. */
+  publicServerView?: boolean;
   initialProfile?: UserProfile;
   initialProfileStats?: GetUserProfileStatsQueryResponse['userProfileStats'];
   initialPercentile?: GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null;
@@ -47,15 +57,6 @@ type InitialData = {
 };
 
 type BoardTicks = Record<string, LogbookEntry[]>;
-
-// 404 from the profile endpoint is meaningful: the user wants the "not found"
-// page. Tag it so the query consumer can branch on it without parsing strings.
-class ProfileNotFoundError extends Error {
-  readonly code = 'PROFILE_NOT_FOUND';
-  constructor() {
-    super('Profile not found');
-  }
-}
 
 // Brief freshness window so consumers with SSR-seeded `initialData` (tagged
 // with `initialDataUpdatedAt: Date.now()`) don't fire a redundant network
@@ -72,6 +73,38 @@ const PROFILE_GC_TIME_MS = PERSIST_MAX_AGE_MS;
 export function useProfileData(userId: string, initialData?: InitialData) {
   const { data: session } = useSession();
   const { token } = useWsAuthToken();
+  const snapshot = useSyncExternalStore(
+    browserBackendClient.subscribe,
+    browserBackendClient.getSnapshot,
+    browserBackendClient.getSnapshot,
+  );
+  const observation = readBrowserBackendSessionScope(session ?? null);
+  const selectedRequired =
+    initialData?.publicServerView === true ||
+    snapshot.selected ||
+    (session !== null && typeof session === 'object' && 'browserSelection' in session);
+  const admissionCurrent = !selectedRequired || browserBackendClient.isSessionCurrent(session ?? null);
+  const scopeKey = selectedRequired
+    ? JSON.stringify([
+        observation.status === 'selected' ? browserBackendSessionKey(observation.owner) : 'anonymous-or-unconfirmed',
+        snapshot.revision,
+      ])
+    : null;
+  const profileKey = useMemo(() => ['userProfile', userId, ...(scopeKey ? [scopeKey] : [])], [scopeKey, userId]);
+  const ticksKey = useMemo(() => ['userTicks', userId, ...(scopeKey ? [scopeKey] : [])], [scopeKey, userId]);
+  const statsKey = useMemo(() => ['userProfileStats', userId, ...(scopeKey ? [scopeKey] : [])], [scopeKey, userId]);
+  const percentileKey = useMemo(
+    () => ['userClimbPercentile', userId, ...(scopeKey ? [scopeKey] : [])],
+    [scopeKey, userId],
+  );
+  const assertCurrent = useCallback(() => {
+    if (
+      selectedRequired &&
+      (!browserBackendClient.isSessionCurrent(session ?? null) ||
+        browserBackendClient.getSnapshot().revision !== snapshot.revision)
+    )
+      throw new BrowserProfileAuthorityError('superseded');
+  }, [selectedRequired, session, snapshot.revision]);
   const { showMessage } = useSnackbar();
   const { gradeFormat } = useGradeFormat();
   const queryClient = useQueryClient();
@@ -95,12 +128,29 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   // picks up the flipped flag on the next persist tick — but make sure any
   // new caller passes `initialIsOwnProfile` to avoid a brief window where
   // the cache wouldn't be persisted.
-  const isOwnProfile = session?.user?.id ? session.user.id === userId : (initialData?.initialIsOwnProfile ?? false);
+  const isOwnProfile = selectedRequired
+    ? admissionCurrent && observation.status === 'selected' && observation.owner.userId === userId
+    : session?.user?.id
+      ? session.user.id === userId
+      : (initialData?.initialIsOwnProfile ?? false);
 
-  const profileInitial = initialData?.initialProfile;
+  const profileInitial = !selectedRequired || initialData?.publicServerView ? initialData?.initialProfile : undefined;
   const profileQuery = useQuery<UserProfile>({
-    queryKey: ['userProfile', userId],
+    queryKey: profileKey,
     queryFn: async ({ signal }) => {
+      if (selectedRequired) {
+        assertCurrent();
+        const profile = await readSelectedBrowserProfile({
+          userId,
+          session: session ?? null,
+          client: browserBackendClient,
+          fetch,
+          signal,
+          onDenied: requestWebSessionRefresh,
+        });
+        assertCurrent();
+        return profile;
+      }
       const response = await fetch(`/api/internal/profile/${userId}`, { signal });
       if (response.status === 404) throw new ProfileNotFoundError();
       if (!response.ok) throw new Error('Failed to fetch profile');
@@ -119,13 +169,16 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         canViewActivity: body.canViewActivity,
       } satisfies UserProfile;
     },
-    enabled: !initialData?.initialNotFound,
+    enabled: !initialData?.initialNotFound && admissionCurrent,
     staleTime: PROFILE_STALE_TIME_MS,
     gcTime: PROFILE_GC_TIME_MS,
-    refetchOnMount: profileInitial ? true : 'always',
-    retry: (failureCount, error) => !(error instanceof ProfileNotFoundError) && failureCount < 3,
+    refetchOnMount: selectedRequired ? 'always' : profileInitial ? true : 'always',
+    retry: (failureCount, error) =>
+      !(error instanceof ProfileNotFoundError) &&
+      !(error instanceof BrowserProfileAuthorityError && error.code === 'superseded') &&
+      failureCount < 3,
     initialData: profileInitial,
-    initialDataUpdatedAt: profileInitial ? Date.now() : undefined,
+    initialDataUpdatedAt: profileInitial ? (selectedRequired ? 0 : Date.now()) : undefined,
     meta: { persist: isOwnProfile },
   });
 
@@ -134,11 +187,12 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   // original SSR snapshot after the revocation bridge has cleared it.
   const previousProfileSeed = useRef(profileInitial);
   useEffect(() => {
+    if (selectedRequired) return;
     if (profileInitial !== previousProfileSeed.current) {
       previousProfileSeed.current = profileInitial;
-      if (profileInitial) queryClient.setQueryData(['userProfile', userId], profileInitial);
+      if (profileInitial) queryClient.setQueryData(profileKey, profileInitial);
     }
-  }, [profileInitial, queryClient, userId]);
+  }, [profileInitial, profileKey, queryClient, selectedRequired]);
 
   const profileError = profileQuery.error;
   const notFound = (initialData?.initialNotFound ?? false) || profileError instanceof ProfileNotFoundError;
@@ -146,6 +200,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   useEffect(() => {
     if (!profileError) return;
     if (profileError instanceof ProfileNotFoundError) return;
+    if (profileError instanceof BrowserProfileAuthorityError && profileError.code === 'superseded') return;
     if (isAbortError(profileError)) return;
     console.error('Failed to fetch profile:', profileError);
     showMessage('Failed to load profile data', 'error');
@@ -154,21 +209,24 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   // The other three queries don't surface a snackbar (the page still renders
   // partial data), but their failures shouldn't be silent in logs/Sentry.
 
-  const ticksInitial = initialData?.initialAllBoardsTicks;
+  const ticksInitial = selectedRequired ? undefined : initialData?.initialAllBoardsTicks;
   const ticksQuery = useQuery<BoardTicks>({
-    queryKey: ['userTicks', userId],
-    enabled: !session?.user?.id || !!token,
+    queryKey: ticksKey,
+    enabled: admissionCurrent && (!session?.user?.id || !!token),
     queryFn: async ({ signal }) => {
+      assertCurrent();
       const client = createGraphQLHttpClient(token);
       const collected: BoardTicks = {};
       await Promise.all(
         BOARD_TYPES.map(async (boardType) => {
+          assertCurrent();
           const variables: GetUserTicksQueryVariables = { userId, boardType };
           const response = await client.request<GetUserTicksQueryResponse>({
             document: GET_USER_TICKS,
             variables,
             signal,
           });
+          assertCurrent();
           collected[boardType] = response.userTicks.map((tick) => ({
             climbed_at: tick.climbedAt,
             difficulty: tick.difficulty,
@@ -182,6 +240,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
           }));
         }),
       );
+      assertCurrent();
       return collected;
     },
     staleTime: PROFILE_STALE_TIME_MS,
@@ -192,11 +251,12 @@ export function useProfileData(userId: string, initialData?: InitialData) {
     meta: { persist: isOwnProfile },
   });
 
-  const profileStatsInitial = initialData?.initialProfileStats;
+  const profileStatsInitial = selectedRequired ? undefined : initialData?.initialProfileStats;
   const profileStatsQuery = useQuery<GetUserProfileStatsQueryResponse['userProfileStats']>({
-    queryKey: ['userProfileStats', userId],
-    enabled: !session?.user?.id || !!token,
+    queryKey: statsKey,
+    enabled: admissionCurrent && (!session?.user?.id || !!token),
     queryFn: async ({ signal }) => {
+      assertCurrent();
       const client = createGraphQLHttpClient(token);
       const variables: GetUserProfileStatsQueryVariables = { userId };
       const response = await client.request<GetUserProfileStatsQueryResponse>({
@@ -204,6 +264,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         variables,
         signal,
       });
+      assertCurrent();
       return response.userProfileStats;
     },
     staleTime: PROFILE_STALE_TIME_MS,
@@ -218,18 +279,20 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   // when SSR explicitly returned no percentile (e.g. user with zero climbs).
   // Treat both presences of a key as "have initial data" so a legitimate null
   // doesn't trigger an unnecessary refetch.
-  const hasPercentileInitial = initialData ? 'initialPercentile' in initialData : false;
-  const percentileInitial = initialData?.initialPercentile;
+  const hasPercentileInitial = !selectedRequired && !!initialData && 'initialPercentile' in initialData;
+  const percentileInitial = selectedRequired ? undefined : initialData?.initialPercentile;
   const percentileQuery = useQuery<GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null>({
-    queryKey: ['userClimbPercentile', userId],
-    enabled: !session?.user?.id || !!token,
+    queryKey: percentileKey,
+    enabled: admissionCurrent && (!session?.user?.id || !!token),
     queryFn: async ({ signal }) => {
+      assertCurrent();
       const client = createGraphQLHttpClient(token);
       const response = await client.request<GetUserClimbPercentileQueryResponse>({
         document: GET_USER_CLIMB_PERCENTILE,
         variables: { userId },
         signal,
       });
+      assertCurrent();
       return response.userClimbPercentile;
     },
     staleTime: PROFILE_STALE_TIME_MS,
@@ -243,31 +306,38 @@ export function useProfileData(userId: string, initialData?: InitialData) {
   useEffect(() => {
     const err = ticksQuery.error;
     if (!err || isAbortError(err)) return;
+    if (err instanceof BrowserProfileAuthorityError && err.code === 'superseded') return;
     console.error('Error fetching all boards ticks:', err);
   }, [ticksQuery.error]);
 
   useEffect(() => {
     const err = profileStatsQuery.error;
     if (!err || isAbortError(err)) return;
+    if (err instanceof BrowserProfileAuthorityError && err.code === 'superseded') return;
     console.error('Error fetching profile stats:', err);
   }, [profileStatsQuery.error]);
 
   useEffect(() => {
     const err = percentileQuery.error;
     if (!err || isAbortError(err)) return;
+    if (err instanceof BrowserProfileAuthorityError && err.code === 'superseded') return;
     console.error('Error fetching climb percentile:', err);
   }, [percentileQuery.error]);
 
-  const profile = profileQuery.data ?? null;
-  const profileStats = profileStatsQuery.data ?? null;
-  const percentile = percentileQuery.data ?? null;
-  const allBoardsTicks = useMemo<BoardTicks>(() => ticksQuery.data ?? {}, [ticksQuery.data]);
+  const profile = admissionCurrent ? (profileQuery.data ?? null) : (profileInitial ?? null);
+  const profileStats = admissionCurrent ? (profileStatsQuery.data ?? null) : null;
+  const percentile = admissionCurrent ? (percentileQuery.data ?? null) : null;
+  const allBoardsTicks = useMemo<BoardTicks>(
+    () => (admissionCurrent ? (ticksQuery.data ?? {}) : {}),
+    [admissionCurrent, ticksQuery.data],
+  );
 
   const setProfile = useCallback(
     (next: UserProfile) => {
-      queryClient.setQueryData<UserProfile>(['userProfile', userId], next);
+      assertCurrent();
+      queryClient.setQueryData<UserProfile>(profileKey, next);
     },
-    [queryClient, userId],
+    [assertCurrent, profileKey, queryClient],
   );
 
   // `loading` is the first-paint gate. Only show it when there's genuinely no

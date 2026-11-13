@@ -181,6 +181,32 @@ the browser contract or authorize a payment/production change.
 
 ## Evidence and remaining work
 
+The selected profile JSON endpoint now buffers a versioned profile plus its
+actual primary-admitted public owner tuple. It forwards only a backend-issued
+lease to the existing profile query and re-admits the same source before any
+profile bytes leave the endpoint. Positive anonymous observations use an
+explicit public-only lookup. Missing, denied and uncertain selected sources
+never delegate to the flat legacy response. Successful responses are bounded to
+64 KiB UTF8 and contain neither the source credential nor the short lease.
+
+The profile client captures the actual accepted Session object and local
+revision before dispatch, checks them after headers and body consumption, and
+requires the response owner to match. Copied metadata, an old body or A-to-B-to-A
+cannot populate a later scope. Known current denial retires only that still
+current request's local scope and requests a fresh central read; it does not
+clear cookies or acknowledge anonymity. A 503 remains uncertainty. The body has
+a 15-second deadline and the same 64 KiB UTF8 bound.
+
+All four profile query keys include the selected owner and local revision.
+Retirement hides their private results while retaining only the independently
+public server seed. Public server seeds do not acquire the legacy 30-second
+freshness window: a qualified accepted source triggers a fresh read immediately,
+and a later public RSC refresh cannot overwrite an admitted private result.
+Legacy profile responses, seed freshness and cache keys retain their existing
+behavior. Other profile interactions and actual application/browser response,
+Flight, prefetch and history qualification remain open; the public readiness
+gate is unchanged.
+
 The memory holder has 29 independently reviewed tests, including cached-positive
 awaits, scope changes, exact expiry, copied results and bounded timeout recovery.
 The server slice has 118 independently reviewed tests across eight affected suites, including

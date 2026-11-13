@@ -30,6 +30,7 @@ export default async function ProfileStatisticsPage({ params }: PageProps) {
     <I18nProvider locale={locale} namespaces={['profile', 'settings']}>
       <AnalyticsContent
         userId={user_id}
+        publicServerView={renderViewer.kind !== 'legacy'}
         initialProfileStats={statsData?.initialProfileStats}
         initialPercentile={statsData?.initialPercentile}
         initialAllBoardsTicks={statsData?.initialAllBoardsTicks}
