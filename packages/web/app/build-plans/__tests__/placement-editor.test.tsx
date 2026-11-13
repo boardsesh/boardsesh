@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import type { CncArtworkRules } from '@boardsesh/shared-schema';
 import type { CncArtworkDraft } from '../configurator/configurator-state';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
@@ -97,17 +97,21 @@ function assetItem(): CncArtworkDraft {
  * fallback exists for.
  */
 function stubImageDecoder(widthPx: number, heightPx: number) {
+  const pendingLoads: Array<() => void> = [];
   class StubImage {
     onload: (() => void) | null = null;
     naturalWidth = widthPx;
     naturalHeight = heightPx;
     set src(_url: string) {
-      // A real decode is async, so firing on a microtask keeps an unmounted
-      // component's cleanup able to win the race the way it would in a browser.
-      queueMicrotask(() => this.onload?.());
+      pendingLoads.push(() => this.onload?.());
     }
   }
   vi.stubGlobal('Image', StubImage);
+  return async () => {
+    // Keep decoding asynchronous so unmount cleanup can still cancel its load.
+    await Promise.resolve();
+    for (const completeLoad of pendingLoads.splice(0)) completeLoad();
+  };
 }
 
 /** The two callbacks the editor reports through, typed so the props still check. */
@@ -280,7 +284,7 @@ describe('collisions across a seam', () => {
 
 describe('an uploaded logo', () => {
   it("draws the buyer's own drawing on the wall, and drags like a label", async () => {
-    stubImageDecoder(400, 200);
+    const decodeImage = stubImageDecoder(400, 200);
     const { container, onChange } = renderEditor({ item: assetItem(), previewUrl: 'blob:logo' });
 
     const image = container.querySelector('image');
@@ -292,9 +296,12 @@ describe('an uploaded logo', () => {
 
     // The natural size lands and the rectangle takes its ratio: 100 mm wide at
     // 2:1 draws 50 mm tall, which is also the height the collision check uses.
-    await waitFor(() => {
-      expect(Number(container.querySelector('image')?.getAttribute('height'))).toBeCloseTo(50);
+    // Await the metrics update and its reducer reset before starting a drag.
+    // The measured DOM height alone can appear before that reset has settled.
+    await act(async () => {
+      await decodeImage();
     });
+    expect(Number(container.querySelector('image')?.getAttribute('height'))).toBeCloseTo(50);
 
     fireEvent.pointerDown(screen.getByTestId('cnc-art'), { pointerId: 1, ...clientFromWall(600, 600) });
     fireEvent.pointerMove(screen.getByRole('application'), { pointerId: 1, ...clientFromWall(803, 600) });
