@@ -40,6 +40,7 @@ import { favoriteClimbsQuery } from './favorites/favorite-climbs-query';
 import { favoriteMutations } from './favorites/mutations';
 import { playlistFieldResolvers, playlistQueries } from './playlists/queries';
 import { playlistMutations } from './playlists/mutations';
+import { moonBoardCollectionQueries, moonBoardCollectionMutations } from './playlists/moonboard-collection';
 import { sessionQueries } from './sessions/queries';
 import { liveSessionQueries } from './sessions/live-sessions';
 import { sessionMutations } from './sessions/mutations';
@@ -136,6 +137,7 @@ export const resolvers = {
     ...favoriteQueries,
     ...favoriteClimbsQuery,
     ...playlistQueries,
+    ...moonBoardCollectionQueries,
     ...controllerQueries,
     ...socialFollowQueries,
     ...socialSearchQueries,
@@ -202,6 +204,7 @@ export const resolvers = {
     ...activeUsersMutations,
     ...favoriteMutations,
     ...playlistMutations,
+    ...moonBoardCollectionMutations,
     ...controllerMutations,
     ...socialFollowMutations,
     ...setterFollowMutations,

@@ -43,10 +43,12 @@ import { oauthClientsTypeDefs } from './oauth-clients';
 import { connectedAppsTypeDefs } from './connected-apps';
 import { appleAdsAttributionTypeDefs } from './apple-ads-attribution';
 import { releaseContextTypeDefs } from './release-context';
+import { moonBoardCollectionTypeDefs } from './moonboard-collection';
 
 export const typeDefs = [
   adminBoardsTypeDefs,
   releaseContextTypeDefs,
+  moonBoardCollectionTypeDefs,
   appleAdsAttributionTypeDefs,
   privacyTypeDefs,
   scalarTypeDefs,

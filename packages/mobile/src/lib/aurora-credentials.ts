@@ -578,10 +578,14 @@ export async function streamMoonBoardImport(
   data: StrippedMoonBoardExportData,
   onEvent: (event: MoonBoardImportProgressEvent) => void,
 ): Promise<void> {
+  const body = JSON.stringify({ data });
+  if (new TextEncoder().encode(body).byteLength > 25 * 1024 * 1024) {
+    throw new Error('moonboard_import_too_large');
+  }
   const response = await authenticatedFetch(endpoint('/api/moonboard-import'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data }),
+    body,
   });
 
   if (!response.ok) {
