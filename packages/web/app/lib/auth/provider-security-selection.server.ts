@@ -115,7 +115,21 @@ export function captureProviderBrowserContext(selection: ProviderAdmittedBrowser
 }
 export type ProviderBrowserContext = ReturnType<typeof captureProviderBrowserContext>;
 
-export function requireProviderSecurityFlowActor(flow: ProviderSecurityFlow, current: ProviderBrowserContext): void {
+export type ProviderSecurityFlowSource = Pick<
+  ProviderSecurityFlow,
+  | 'actorKind'
+  | 'actorCredentialHash'
+  | 'browserBindingHash'
+  | 'browserVersion'
+  | 'browserBindingExpiresAt'
+  | 'sourceCredentialProof'
+  | 'credentialExpiresAt'
+>;
+
+export function requireProviderSecurityFlowActor(
+  flow: ProviderSecurityFlowSource,
+  current: ProviderBrowserContext,
+): void {
   const before = flow.sourceCredentialProof;
   const after = current.sourceCredentialProof;
   if (
