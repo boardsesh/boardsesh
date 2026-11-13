@@ -119,18 +119,28 @@ The backend accepts both NextAuth web tokens and mobile JWTs on the same WebSock
 
 ## Rate limiting
 
-Both `/auth/native/exchange` and `/auth/native/refresh` share an IP-based rate limiter:
+`/auth/native/exchange` uses an IP-based rate limiter. Refresh requests use the
+SHA-256 digest of the presented secret, so unrelated phones and watches sharing
+a proxy address do not exhaust one another's quota:
 
-- **Limit:** 10 requests per minute per IP
-- **Window:** 60 seconds (sliding reset per IP)
+- **Limit:** 10 requests per minute per IP for exchange, or per secret for refresh
+- **Window:** 60 seconds from the first request in each bucket
 - **Response when exceeded:** `429` with `Retry-After` header
-- **Map bounds:** 50,000 entries max. If the map is full after eviction, the endpoint returns `503`.
+- **Map bounds:** 50,000 entries per map. Exchange, existing refresh secrets and
+  missing refresh secrets each have separate capacity. Full capacity returns `503`.
 
-Expired entries are cleaned up every 60 seconds.
+Previously seen refresh digests are throttled before database access. An unseen
+digest first gets a non-locking lookup, then enters the existing-secret or
+missing-secret map. Filling missing-secret capacity cannot reject an unseen
+existing secret before its lookup. This bounds quota memory; it does not prevent
+a flood of distinct invalid inputs from causing database reads. The normal
+transaction still rechecks the user and token before rotation. Expired entries
+are cleaned up every 60 seconds and when a full map needs capacity. Overflow of
+the missing-secret map checks for expired entries at most once per second.
 
 The `/auth/native/revoke` endpoint is exempt from rate limiting because it requires a valid refresh token (a secret) and exempting it prevents aggressive retry loops from locking a user out of sign-out.
 
-> **Note:** Rate limiting is per-instance. With N backend instances behind a load balancer, the effective limit is 10 x N requests per minute per IP. The high-risk replay prevention path uses Redis and is multi-instance safe.
+> **Note:** Rate limiting is per-instance. With N backend instances behind a load balancer, the effective limit is 10 x N requests per minute per bucket. The high-risk replay prevention path uses Redis and is multi-instance safe.
 
 ## Transfer token replay prevention
 

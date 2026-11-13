@@ -190,8 +190,12 @@ type AuthRateLimitEntry = {
 /** IP bucket state for rate-limited non-refresh auth endpoints. */
 const authRateLimitMap = new Map<string, AuthRateLimitEntry>();
 
-/** Refresh secrets have their own bounded buckets; proxy addresses are shared. */
+/** Only secrets found in the refresh table can occupy these bounded buckets. */
 const refreshRateLimitMap = new Map<string, AuthRateLimitEntry>();
+
+/** Missing secrets cannot consume the capacity reserved for existing clients. */
+const invalidRefreshRateLimitMap = new Map<string, AuthRateLimitEntry>();
+let invalidRefreshCapacityRetryAt = 0;
 
 /** Maximum requests per IP or refresh-digest bucket per minute. */
 const AUTH_RATE_LIMIT_MAX = 10;
@@ -201,6 +205,9 @@ const AUTH_RATE_LIMIT_WINDOW_MS = 60_000;
 
 /** Maximum entries in each map before eviction or capacity refusal. */
 const MAX_RATE_LIMIT_ENTRIES = 50_000;
+
+/** A full invalid-input map must not trigger 50,000-entry scans per request. */
+const INVALID_REFRESH_CAPACITY_RECHECK_MS = 1000;
 
 /** Evict expired entries from the rate limit map. */
 function evictExpiredRateLimitEntries(entries: Map<string, AuthRateLimitEntry>): void {
@@ -214,6 +221,7 @@ function evictExpiredRateLimitEntries(entries: Map<string, AuthRateLimitEntry>):
 const rateLimitEvictionHandle = setInterval(() => {
   evictExpiredRateLimitEntries(authRateLimitMap);
   evictExpiredRateLimitEntries(refreshRateLimitMap);
+  evictExpiredRateLimitEntries(invalidRefreshRateLimitMap);
 }, AUTH_RATE_LIMIT_WINDOW_MS);
 if (typeof rateLimitEvictionHandle.unref === 'function') rateLimitEvictionHandle.unref();
 
@@ -229,7 +237,11 @@ function checkAuthRateLimit(bucketKey: string, entries = authRateLimitMap): numb
 
   if (!entry || now >= entry.resetAt) {
     if (!entry && entries.size >= MAX_RATE_LIMIT_ENTRIES) {
+      if (entries === invalidRefreshRateLimitMap && now < invalidRefreshCapacityRetryAt) return -1;
       evictExpiredRateLimitEntries(entries);
+      if (entries === invalidRefreshRateLimitMap) {
+        invalidRefreshCapacityRetryAt = now + INVALID_REFRESH_CAPACITY_RECHECK_MS;
+      }
       if (entries.size >= MAX_RATE_LIMIT_ENTRIES) {
         logger.warn('[NativeAuth] Rate limit capacity reached');
         return -1;
@@ -245,6 +257,17 @@ function checkAuthRateLimit(bucketKey: string, entries = authRateLimitMap): numb
 
   entry.count++;
   return null;
+}
+
+function respondRefreshRateLimit(res: ServerResponse, retryAfter: number | null): boolean {
+  if (retryAfter === null) return false;
+  if (retryAfter === -1) {
+    sendJson(res, 503, { error: 'Service temporarily overloaded' });
+    return true;
+  }
+  res.setHeader('Retry-After', String(retryAfter));
+  sendJson(res, 429, { error: `Rate limit exceeded. Try again in ${retryAfter} seconds.` });
+  return true;
 }
 
 /**
@@ -1448,16 +1471,16 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
 
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
-  // Never charge all devices behind the Railway proxy to one IP bucket. Store
-  // only the SHA-256 digest, in a namespace separate from other auth endpoints.
-  const retryAfter = checkAuthRateLimit(`refresh:${tokenHash}`, refreshRateLimitMap);
-  if (retryAfter === -1) {
-    sendJson(res, 503, { error: 'Service temporarily overloaded' });
-    return;
-  }
-  if (retryAfter !== null) {
-    res.setHeader('Retry-After', String(retryAfter));
-    sendJson(res, 429, { error: `Rate limit exceeded. Try again in ${retryAfter} seconds.` });
+  // Throttle known digests before database work, without charging devices behind
+  // one proxy to a shared IP bucket. A new digest must first be classified by a
+  // non-locking lookup: arbitrary missing secrets cannot fill client capacity.
+  const bucketKey = `refresh:${tokenHash}`;
+  const existingBuckets = refreshRateLimitMap.has(bucketKey)
+    ? refreshRateLimitMap
+    : invalidRefreshRateLimitMap.has(bucketKey)
+      ? invalidRefreshRateLimitMap
+      : undefined;
+  if (existingBuckets && respondRefreshRateLimit(res, checkAuthRateLimit(bucketKey, existingBuckets))) {
     return;
   }
 
@@ -1472,6 +1495,15 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
       .from(mobileRefreshTokens)
       .where(eq(mobileRefreshTokens.tokenHash, tokenHash))
       .limit(1);
+    if (
+      !existingBuckets &&
+      respondRefreshRateLimit(
+        res,
+        checkAuthRateLimit(bucketKey, hint ? refreshRateLimitMap : invalidRefreshRateLimitMap),
+      )
+    ) {
+      return;
+    }
     if (!hint) {
       sendJson(res, 401, { error: 'Invalid refresh token' });
       return;
@@ -1919,6 +1951,8 @@ export function stopRefreshTokenCleanup(): void {
 export function __resetNativeAuthStateForTests(): void {
   authRateLimitMap.clear();
   refreshRateLimitMap.clear();
+  invalidRefreshRateLimitMap.clear();
+  invalidRefreshCapacityRetryAt = 0;
   consumedTransferTokens.clear();
 }
 
@@ -1943,6 +1977,14 @@ export function __fillRefreshRateLimitMapForTests(count: number): void {
   const futureReset = Date.now() + AUTH_RATE_LIMIT_WINDOW_MS;
   for (let index = 0; index < count; index++) {
     refreshRateLimitMap.set(`refresh:test-${String(index)}`, { count: 1, resetAt: futureReset });
+  }
+}
+
+/** Fill only missing-secret capacity with non-expired entries. Test-only. */
+export function __fillInvalidRefreshRateLimitMapForTests(count: number): void {
+  const futureReset = Date.now() + AUTH_RATE_LIMIT_WINDOW_MS;
+  for (let index = 0; index < count; index++) {
+    invalidRefreshRateLimitMap.set(`refresh:invalid-test-${String(index)}`, { count: 1, resetAt: futureReset });
   }
 }
 

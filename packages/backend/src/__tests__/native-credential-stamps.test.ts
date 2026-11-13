@@ -19,6 +19,7 @@ import {
   handleWatchPair,
   handleWatchPairCode,
   __resetNativeAuthStateForTests,
+  __fillInvalidRefreshRateLimitMapForTests,
 } from '../handlers/native-auth';
 // The wire contract released Expo builds and the Garmin PairingView/TokenStore
 // parse, and the app's own unverified `sub` reader, loaded unchanged. The app
@@ -288,6 +289,26 @@ describe('native credential stamps against the owned primary database', () => {
       expect((await rowFor(client.refreshToken)).revokedAt).toBeInstanceOf(Date);
       expect((await rowFor(children[index].refreshToken)).revokedAt).toBeNull();
     }
+  });
+
+  it('keeps unseen valid refreshes available after missing secrets exhaust their separate quota', async () => {
+    const refreshToken = await seedUnstampedRefresh();
+    __fillInvalidRefreshRateLimitMapForTests(49_999);
+    const missing = await native('/refresh', { refreshToken: randomUUID() });
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toEqual({ error: 'Invalid refresh token' });
+    const overflow = await native('/refresh', { refreshToken: randomUUID() });
+    expect(overflow.status).toBe(503);
+    expect(await overflow.json()).toEqual({ error: 'Service temporarily overloaded' });
+    expect((await rowFor(refreshToken)).revokedAt).toBeNull();
+
+    const child = await issued('/refresh', { refreshToken });
+    expect(child.userId).toBe(ownerId);
+    expect((await claims(child)).sub).toBe(ownerId);
+    expect((await rowFor(refreshToken)).revokedAt).toBeInstanceOf(Date);
+    expect((await rowFor(child.refreshToken)).revokedAt).toBeNull();
+    const rows = await db.select().from(mobileRefreshTokens).where(eq(mobileRefreshTokens.userId, ownerId));
+    expect(rows).toHaveLength(2);
   });
 
   it('returns 503 for a real user-lock timeout without consuming the refresh secret', async () => {

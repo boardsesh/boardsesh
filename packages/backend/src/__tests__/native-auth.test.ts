@@ -109,6 +109,7 @@ const {
   __fillConsumedTokenMapForTests,
   __fillRateLimitMapForTests,
   __fillRefreshRateLimitMapForTests,
+  __fillInvalidRefreshRateLimitMapForTests,
 } = await import('../handlers/native-auth');
 
 const { validateMobileJwt, validateToken } = await import('../middleware/auth');
@@ -693,7 +694,7 @@ describe('Rate limiting', () => {
     }
   });
 
-  it('refuses refresh capacity with 503 before database work', async () => {
+  it('refuses existing-client capacity after lookup without consuming the token', async () => {
     __fillRefreshRateLimitMapForTests(50_000);
     const res = makeResponse();
     await handleNativeAuthRefresh(
@@ -702,8 +703,127 @@ describe('Rate limiting', () => {
     );
     expect(res.statusCode).toBe(503);
     expect(parseBody(res)).toEqual({ error: 'Service temporarily overloaded' });
-    expect(mockedDatabase.select).not.toHaveBeenCalled();
+    expect(mockedDatabase.select).toHaveBeenCalledTimes(1);
     expect(mockedDatabase.transaction).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing-token admission separate from full existing-client capacity', async () => {
+    __fillRefreshRateLimitMapForTests(50_000);
+    mockedDatabase.select.mockImplementationOnce(() => ({
+      from: () => ({ where: () => ({ limit: async () => [] }) }),
+    }));
+    const res = makeResponse();
+    await handleNativeAuthRefresh(
+      makeRequest({ method: 'POST', body: { refreshToken: 'missing-secret' } }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+    );
+    expect(res.statusCode).toBe(401);
+    expect(parseBody(res)).toEqual({ error: 'Invalid refresh token' });
+    expect(mockedDatabase.transaction).not.toHaveBeenCalled();
+  });
+
+  it('rotates an unseen existing secret while invalid-secret capacity is exhausted', async () => {
+    __fillInvalidRefreshRateLimitMapForTests(49_999);
+    for (const refreshToken of ['last-invalid-space', 'invalid-capacity-overflow']) {
+      mockedDatabase.select.mockImplementationOnce(() => ({
+        from: () => ({ where: () => ({ limit: async () => [] }) }),
+      }));
+      const res = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({ method: 'POST', body: { refreshToken } }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      expect(res.statusCode).toBe(refreshToken === 'last-invalid-space' ? 401 : 503);
+    }
+    expect(mockedDatabase.transaction).not.toHaveBeenCalled();
+
+    mockDbUpdateReturning.mockResolvedValueOnce([
+      {
+        id: 'existing-refresh-row',
+        userId: 'user-abc',
+        expiresAt: new Date(Date.now() + 90_000),
+        createdAt: new Date(),
+      },
+    ]);
+    const res = makeResponse();
+    await handleNativeAuthRefresh(
+      makeRequest({
+        method: 'POST',
+        body: { refreshToken: 'previously-unseen-valid-secret' },
+      }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(typeof parseBody(res).refreshToken).toBe('string');
+    expect(mockedDatabase.transaction).toHaveBeenCalledTimes(1);
+    expect(mockDbInsertValues).toHaveBeenCalledTimes(1);
+  });
+
+  it('throttles repeated missing secrets before lookup even when client capacity is full', async () => {
+    __fillRefreshRateLimitMapForTests(50_000);
+    for (let requestIndex = 0; requestIndex <= 10; requestIndex++) {
+      if (requestIndex < 10) {
+        mockedDatabase.select.mockImplementationOnce(() => ({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        }));
+      }
+      const res = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({
+          method: 'POST',
+          body: { refreshToken: 'repeated-missing-secret' },
+          remoteAddress: `10.0.0.${requestIndex}`,
+        }) as unknown as IncomingMessage,
+        res as unknown as ServerResponse,
+      );
+      expect(res.statusCode).toBe(requestIndex < 10 ? 401 : 429);
+      if (requestIndex === 10) expect(Number(res.headers['Retry-After'])).toBeGreaterThan(0);
+    }
+    expect(mockedDatabase.select).toHaveBeenCalledTimes(10);
+    expect(mockedDatabase.transaction).not.toHaveBeenCalled();
+  });
+
+  it('bounds invalid-capacity eviction scans and admits missing secrets again after expiry', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(4_000_000);
+    __fillInvalidRefreshRateLimitMapForTests(50_000);
+    const actualIterator = Map.prototype[Symbol.iterator];
+    let invalidCapacityScans = 0;
+    const iterator = vi.spyOn(Map.prototype, Symbol.iterator).mockImplementation(function () {
+      if (this.has('refresh:invalid-test-0')) invalidCapacityScans++;
+      return actualIterator.call(this);
+    });
+    try {
+      for (let requestIndex = 0; requestIndex < 5; requestIndex++) {
+        now.mockReturnValue(4_000_000 + requestIndex * 250);
+        mockedDatabase.select.mockImplementationOnce(() => ({
+          from: () => ({ where: () => ({ limit: async () => [] }) }),
+        }));
+        const res = makeResponse();
+        await handleNativeAuthRefresh(
+          makeRequest({
+            method: 'POST',
+            body: { refreshToken: `overflow-${requestIndex}` },
+          }) as unknown as IncomingMessage,
+          res as unknown as ServerResponse,
+        );
+        expect(res.statusCode).toBe(503);
+        expect(invalidCapacityScans).toBe(requestIndex === 4 ? 2 : 1);
+      }
+      now.mockReturnValue(4_060_000);
+      mockedDatabase.select.mockImplementationOnce(() => ({
+        from: () => ({ where: () => ({ limit: async () => [] }) }),
+      }));
+      const recovered = makeResponse();
+      await handleNativeAuthRefresh(
+        makeRequest({ method: 'POST', body: { refreshToken: 'after-invalid-expiry' } }) as unknown as IncomingMessage,
+        recovered as unknown as ServerResponse,
+      );
+      expect(recovered.statusCode).toBe(401);
+      expect(invalidCapacityScans).toBe(3);
+    } finally {
+      iterator.mockRestore();
+      now.mockRestore();
+    }
   });
 
   it('evicts expired refresh capacity and leaves sign-in capacity independent', async () => {
