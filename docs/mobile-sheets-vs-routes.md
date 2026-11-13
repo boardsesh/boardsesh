@@ -236,6 +236,10 @@ content-fitting would collapse:
 - The scroll body takes **`flexShrink: 1`**, not `flex: 1` — content height at rest (this is what
   closes the void), and it shrinks-and-scrolls once the column hits its ceiling so the footer
   stays pinned above the keyboard instead of the note clipping.
+- The Android tick sheet's Details row (Angle and Date folded into one line) grows this
+  content-fitted sheet in place when tapped or when the form is swiped up. It changes neither
+  the detents nor the `maxHeight`. The swipe is a JS `PanResponder` that fires past a threshold,
+  because the native sheet reports only dismissal, never a drag between its states.
 
 **Keyboard: pad the column, never a `KeyboardAvoidingView`.** RN 0.86's KAV computes its overlap
 from its own `onLayout` frame, which inside a native sheet is relative to the sheet's content
@@ -1241,7 +1245,9 @@ large presets. QR share sheets and forms scroll at medium; large retains the
 keyboard expansion path and pinned footers. The create-tick sheet keeps tries and quality first and measures the entire
 compact form, including grade and audience, plus its header and compact pinned footer.
 Date/time appears only in the expanded form on iOS; Android retains it in its
-single content-fitting state. Expanded body and footer measurements never grow
+single content-fitting state. There the Details row grows the sheet in place, without
+changing detents or `maxHeight`, and the note stays at its 64pt rest height because compact is
+a fixed 44pt with no growth path and Android has no large detent. Expanded body and footer measurements never grow
 the compact detent; returning to compact remeasures without resetting field state. On iOS only, its opening detent
 grows above medium when the compact form needs more space, capped one point below
 large; both detents remain present during measurement updates because changing

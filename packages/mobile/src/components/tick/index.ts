@@ -1,10 +1,12 @@
-// The tick sheet family: one geometry module and the nine components both the
-// create sheet (LogAscentSheet/QuickTickBar) and the edit sheet
-// (LogbookEditSheet) are assembled from.
+// The tick sheet family: one geometry module and the components the create
+// sheet (LogAscentSheet/QuickTickBar) and the edit sheet (LogbookEditSheet) are
+// assembled from. `TickSheetHeader` and `TickDetailsRow` are create-sheet only.
 export * from './tick-sheet-metrics';
 export { TickSheetHeader } from './TickSheetHeader';
 export { TickFormRow } from './TickFormRow';
 export { TickDateRow } from './TickDateRow';
+export { TickDetailsRow } from './TickDetailsRow';
+export { useSwipeUpToOpen } from './use-swipe-up-to-open';
 export { TickAngleControl, shouldShowAngleRow } from './TickAngleControl';
 export { TickChip, type TickChipProps } from './TickChip';
 export { TickCountRail } from './TickCountRail';

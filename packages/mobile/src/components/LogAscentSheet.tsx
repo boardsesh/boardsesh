@@ -18,7 +18,7 @@ import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
 import { ModalSheet } from './ModalSheet';
 import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
-import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS } from './tick';
+import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS, useSwipeUpToOpen } from './tick';
 import type { ManagedSheetHandle, PresenterGroup } from '../providers/sheet-presentation-provider';
 import { QuickTickBar } from './play-drawer/QuickTickBar';
 import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
@@ -98,6 +98,20 @@ function LogAscentSheetContent({
   const sheetRef = useRef<ManagedSheetHandle>(null);
   const [expanded, setExpanded] = useState(false);
   const compactNote = Platform.OS !== 'android' && !expanded;
+  // Android has one content-fitted state and no detent to reveal Angle and Date
+  // with (#7343), so a row folds them away and a swipe up opens them, the nearest
+  // thing to dragging the iOS sheet up. Separate from `expanded`:
+  // Android fires onChange(0) on open, and handleDetentChange would close
+  // anything sharing that state.
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const foldsDetails = Platform.OS === 'android';
+  const showDetails = foldsDetails ? detailsOpen : !compactNote;
+  const openDetails = useCallback(() => setDetailsOpen(true), []);
+  const detailsDisclosure = useMemo(
+    () => (foldsDetails ? { open: detailsOpen, onOpen: openDetails } : undefined),
+    [foldsDetails, detailsOpen, openDetails],
+  );
+  const swipeUpHandlers = useSwipeUpToOpen(foldsDetails && !detailsOpen, openDetails);
   const { snapPoints, onHeaderLayout, onFooterLayout, onBodyLayout } = useCreateTickSnapPoints(
     i18n?.resolvedLanguage,
     compactNote,
@@ -140,6 +154,7 @@ function LogAscentSheetContent({
     if (visible) {
       savedRef.current = false;
       setExpanded(false);
+      setDetailsOpen(false);
     }
   }, [visible]);
 
@@ -223,13 +238,17 @@ function LogAscentSheetContent({
       // `androidContentSized` on `ModalSheet`.
       androidContentSized
       header={
-        <TickSheetHeader
-          title={climbName ?? t('mobile.tick.fallbackTitle')}
-          subtitle={subtitle}
-          gradeColor={gradeColor}
-          onClose={handleClose}
-          closeAccessibilityLabel={t('mobile.tick.closeAria')}
-        />
+        // The header is what a climber grabs to pull a sheet up, so it swipes too.
+        // `collapsable={false}`: a flattened view would not receive the touches.
+        <View collapsable={false} testID="tick-sheet-swipe-header" {...swipeUpHandlers}>
+          <TickSheetHeader
+            title={climbName ?? t('mobile.tick.fallbackTitle')}
+            subtitle={subtitle}
+            gradeColor={gradeColor}
+            onClose={handleClose}
+            closeAccessibilityLabel={t('mobile.tick.closeAria')}
+          />
+        </View>
       }
       footer={
         <TickActionBar
@@ -261,8 +280,20 @@ function LogAscentSheetContent({
         />
       }
     >
-      <View ref={formFieldsRef} onLayout={handleFormFieldsLayout} testID="tick-form-fields">
-        <QuickTickBar form={form} showNote={false} showDate={!compactNote} showAngle={!compactNote} />
+      <View
+        ref={formFieldsRef}
+        onLayout={handleFormFieldsLayout}
+        testID="tick-form-fields"
+        collapsable={false}
+        {...swipeUpHandlers}
+      >
+        <QuickTickBar
+          form={form}
+          showNote={false}
+          showDate={showDetails}
+          showAngle={showDetails}
+          detailsDisclosure={detailsDisclosure}
+        />
         <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
       </View>
     </ModalSheet>

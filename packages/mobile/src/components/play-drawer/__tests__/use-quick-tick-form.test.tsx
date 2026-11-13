@@ -150,6 +150,7 @@ function Harness(props: QuickTickFormInput) {
       'data-testid': 'climbedat-date',
       onClick: () => form.onClimbedAtChange(new Date('2025-03-15T12:00:00.000Z')),
     }),
+    createElement('span', { 'data-testid': 'climbed-at-edited' }, String(form.climbedAtEdited)),
     createElement('button', { 'data-testid': 'future-adjusted', onClick: form.onFutureAdjusted }),
     createElement('span', { 'data-testid': 'ascent-type' }, form.ascentType),
     createElement('span', { 'data-testid': 'last-error' }, form.lastError ?? ''),
@@ -301,6 +302,28 @@ describe('useQuickTickForm hasPriorHistory', () => {
 });
 
 describe('useQuickTickForm climbedAt', () => {
+  it('reports an edited date in render, and forgets it on a new climb', () => {
+    boardState.current = null;
+    const { getByTestId, rerender } = renderForm();
+    expect(getByTestId('climbed-at-edited').textContent).toBe('false');
+
+    fireEvent.click(getByTestId('climbedat-date'));
+    expect(getByTestId('climbed-at-edited').textContent).toBe('true');
+
+    rerender(
+      createElement(Harness, {
+        climbUuid: 'another-climb',
+        boardName: 'kilter',
+        angle: ANGLE,
+        isMirror: false,
+        isBenchmark: false,
+        baseAscensionistCount: 37,
+        onDismiss: vi.fn(),
+      }),
+    );
+    expect(getByTestId('climbed-at-edited').textContent).toBe('false');
+  });
+
   it('threads the picked climb date into saveTick instead of always sending now', () => {
     boardState.current = null;
     const { getByTestId } = renderForm();

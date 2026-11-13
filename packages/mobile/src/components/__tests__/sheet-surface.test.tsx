@@ -128,10 +128,12 @@ vi.mock('../../providers/sheet-presentation-provider', () => ({
 // The real token factory, not a hand-rolled partial: `sheetSurface` has to be
 // the value production resolves, or the `typeof === 'string'` assertion below
 // would be testing the mock rather than the theme.
+const uiVariant = vi.hoisted(() => ({ current: 'liquidGlass' as 'liquidGlass' | 'material' }));
+
 vi.mock('../../providers/theme-provider', async () => {
   const { makeThemeMock } = await import('../../test/theme-mock');
-  const theme = makeThemeMock();
-  return { useTheme: () => theme };
+  const themes = { liquidGlass: makeThemeMock(), material: makeThemeMock({ variant: 'material' }) };
+  return { useTheme: () => themes[uiVariant.current] };
 });
 
 import { Sheet } from '../Sheet';
@@ -164,12 +166,37 @@ function footerBarStyle(): Record<string, unknown> {
 
 beforeEach(() => {
   platform.OS = 'ios';
+  uiVariant.current = 'liquidGlass';
   iosBackground.style = undefined;
   captures.backgroundStyle = undefined;
   captures.columnRendered = false;
   captures.columnStyle = undefined;
   captures.scrollStyle = undefined;
   captures.viewStyles = [];
+});
+
+describe('ModalSheet footer seam on Material', () => {
+  it('drops the hairline on a flush footer', () => {
+    uiVariant.current = 'material';
+    render(
+      <ModalSheet footerSurface="flush" footer={<div>save</div>}>
+        <div>body</div>
+      </ModalSheet>,
+    );
+
+    expect(footerBarStyle().borderTopWidth).toBe(0);
+  });
+
+  it('keeps the hairline on a plate footer', () => {
+    uiVariant.current = 'material';
+    render(
+      <ModalSheet footer={<div>save</div>}>
+        <div>body</div>
+      </ModalSheet>,
+    );
+
+    expect(footerBarStyle().borderTopWidth).toBe(1);
+  });
 });
 
 describe.each(sheetWrappers)('%s surface props', (_name, SheetLike) => {

@@ -29,7 +29,9 @@ export type GradeChipTone = 'neutral' | 'selected' | 'range' | 'consensus';
  * - `selection`: the chip carries SELECTION state instead of grade identity —
  *   violet for "your choice", an amber ring for "the crowd's". Used by the tick
  *   sheets, where the grade ramp lives in the header's identity bar and the rail
- *   only has to answer "which one did I pick?".
+ *   only has to answer "which one did I pick?". On Material the pick is M3's tonal
+ *   container with a 1pt primary ring, so a chip stays quieter than the Flash
+ *   button and its state is not carried by fill alone.
  */
 export type GradeChipColorway = 'grade' | 'selection';
 
@@ -43,8 +45,8 @@ const GLASS_CHIP_HEIGHT = 28;
 const GLASS_CHIP_INSET = (GRADE_CHIP_HEIGHT - GLASS_CHIP_HEIGHT) / 2;
 
 // The chip's border. Every `grade` tone keeps this width, so none of them
-// resizes the box; the `selection` colorway's 2pt consensus ring is the one
-// deliberate exception.
+// resizes the box; the `selection` colorway's 2pt consensus ring on Liquid Glass
+// is the one deliberate exception. Material keeps it at this width too.
 const CHIP_BORDER_WIDTH = 1;
 // The ring round a selected `grade` chip: the label colour at just under half
 // strength, so a dark grade colour still has an edge on a dark background.
@@ -86,7 +88,8 @@ export function GradeChip({
   onLayout,
   style,
 }: GradeChipProps) {
-  const { systemColors, brandColors, chartColors } = useTheme();
+  const { systemColors, brandColors, chartColors, variant, m3 } = useTheme();
+  const material = variant === 'material';
   const accentColor = gradeColor ?? brandColors.primary;
   const selected = tone === 'selected';
   const ranged = tone === 'range';
@@ -102,7 +105,11 @@ export function GradeChip({
 
   if (colorway === 'selection') {
     textColor = systemColors.label;
-    if (selected) {
+    if (selected && material) {
+      backgroundColor = m3.secondaryContainer;
+      borderColor = brandColors.primary;
+      textColor = m3.onSecondaryContainer;
+    } else if (selected) {
       backgroundColor = brandColors.primaryFill;
       // The ring stays 1pt and matches the fill, so it is invisible but keeps the
       // box geometry identical to the neutral tone. React Native is border-box:
@@ -112,7 +119,7 @@ export function GradeChip({
       textColor = brandColors.onPrimary;
     } else if (consensus) {
       borderColor = brandColors.warning;
-      borderWidth = 2;
+      if (!material) borderWidth = 2;
     }
   } else if (selected) {
     // The ring is the border every tone already has, in another colour, so a

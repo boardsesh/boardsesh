@@ -7,8 +7,8 @@
 // into `children` must NOT add horizontal padding of its own; if it needs to
 // bleed to the screen edge (a scroll rail), the row does that for it via
 // `bleed`.
-import React, { type ReactNode } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { type ReactNode, type RefObject } from 'react';
+import { StyleSheet, View, useWindowDimensions, type ViewInstance } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
 import {
@@ -16,6 +16,8 @@ import {
   TICK_GUTTER,
   TICK_LABEL_GAP,
   TICK_LABEL_MIN_WIDTH,
+  TICK_MATERIAL_LABEL_GAP,
+  TICK_MATERIAL_LABEL_MIN_WIDTH,
   TICK_ROW_HEIGHT,
   TICK_STACK_FONT_SCALE,
 } from './tick-sheet-metrics';
@@ -41,6 +43,10 @@ type TickFormRowProps = {
   /** Hairline below the row, inset to the control seam. Rows opt out when they
    *  are the last in a group. */
   showSeparator?: boolean;
+  /** Makes the label a screen-reader stop and hands back its host view, so a
+   *  sheet can move TalkBack here after revealing the row. Android does not
+   *  treat a plain Text as accessible, and a focus event on one goes nowhere. */
+  labelFocusRef?: RefObject<ViewInstance | null>;
   testID?: string;
 };
 
@@ -52,9 +58,11 @@ export const TickFormRow = React.memo(function TickFormRow({
   alignTop = false,
   disabled = false,
   showSeparator = true,
+  labelFocusRef,
   testID,
 }: TickFormRowProps) {
-  const { systemColors, spacing, opacity } = useTheme();
+  const { systemColors, spacing, opacity, variant } = useTheme();
+  const material = variant === 'material';
   // Reactive OS text scale — this re-renders when the user changes their text
   // size, unlike a one-shot JS breakpoint read.
   const { fontScale } = useWindowDimensions();
@@ -65,6 +73,26 @@ export const TickFormRow = React.memo(function TickFormRow({
   // top-alignment is moot there and its insets would just double the gap.
   const topAligned = alignTop && !stacked;
 
+  // Material sets labels at 14/20 so they stop outweighing the 12pt chip text
+  // beside them. The seam does not move: see the metrics.
+  const labelText = (
+    <Text
+      variant={material ? 'subheadline' : 'body'}
+      color={systemColors.secondaryLabel}
+      numberOfLines={2}
+      style={[
+        styles.label,
+        {
+          minWidth: material ? TICK_MATERIAL_LABEL_MIN_WIDTH : TICK_LABEL_MIN_WIDTH,
+          paddingTop: topAligned ? spacing[2] : 0,
+        },
+        dimmed,
+      ]}
+    >
+      {label}
+    </Text>
+  );
+
   return (
     <View testID={testID}>
       <View
@@ -73,21 +101,20 @@ export const TickFormRow = React.memo(function TickFormRow({
           {
             paddingEnd: bleed ? 0 : TICK_GUTTER,
             minHeight: height ?? TICK_ROW_HEIGHT,
-            gap: stacked ? spacing[2] : TICK_LABEL_GAP,
+            gap: stacked ? spacing[2] : material ? TICK_MATERIAL_LABEL_GAP : TICK_LABEL_GAP,
             paddingTop: topAligned ? spacing[1] : 0,
           },
           topAligned ? styles.rowAlignTop : null,
           stacked ? styles.rowStacked : null,
         ]}
       >
-        <Text
-          variant="body"
-          color={systemColors.secondaryLabel}
-          numberOfLines={2}
-          style={[styles.label, { paddingTop: topAligned ? spacing[2] : 0 }, dimmed]}
-        >
-          {label}
-        </Text>
+        {labelFocusRef ? (
+          <View ref={labelFocusRef} accessible>
+            {labelText}
+          </View>
+        ) : (
+          labelText
+        )}
         <View
           pointerEvents={disabled ? 'none' : 'auto'}
           style={[styles.control, stacked ? styles.controlStacked : null, dimmed]}
@@ -130,8 +157,8 @@ const styles = StyleSheet.create({
   },
   label: {
     // A floor, not a fixed width: a longer translation grows the column and the
-    // control seam moves with it rather than clipping the label.
-    minWidth: TICK_LABEL_MIN_WIDTH,
+    // control seam moves with it rather than clipping the label. The floor
+    // itself is inline, because it follows the UI variant.
     flexShrink: 0,
   },
   control: {

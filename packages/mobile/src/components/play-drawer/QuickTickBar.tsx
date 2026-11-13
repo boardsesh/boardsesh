@@ -5,12 +5,13 @@
 // Purely presentational: no state, no save path, no colours of its own. Every
 // row is a `TickFormRow`, so the label seam and the control seam are the same
 // two verticals here as in the edit sheet.
-import React, { useCallback } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { Keyboard, StyleSheet, View, type ViewInstance } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { StarRating } from '../StarRating';
 import { Text } from '../Text';
 import { GradeSingleSelectRail } from '../grade';
+import { useSheetScrollIntoView } from '../sheet-scroll-into-view';
 import { spacing } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useBoardAngleOptions } from '../../hooks/use-board-angle-options';
@@ -19,6 +20,7 @@ import {
   TickAngleControl,
   TickCountRail,
   TickDateRow,
+  TickDetailsRow,
   TickFormRow,
   TickNoteField,
   shouldShowAngleRow,
@@ -26,9 +28,17 @@ import {
   TICK_RAIL_ROW_HEIGHT,
   TICK_RAIL_TRAIL_INSET,
 } from '../tick';
+import { useAnnounceBodyFocus } from './use-announce-body-focus';
 import type { QuickTickForm } from './use-quick-tick-form';
 
 const STAR_GLYPH_SIZE = 24;
+
+/** Folds Angle and Date behind one summary row. One way: `open` only goes back
+ *  to false when the host resets for a fresh present. */
+export type TickDetailsDisclosure = {
+  open: boolean;
+  onOpen: () => void;
+};
 
 export type QuickTickBarProps = {
   form: QuickTickForm;
@@ -39,13 +49,66 @@ export type QuickTickBarProps = {
   /** Compact logging keeps the angle in the expanded form too: most ticks are
    *  at the board's angle, and the medium detent has room for the common rows only. */
   showAngle?: boolean;
+  /** Android's fold (#7343): while closed, one row stands where Angle and Date
+   *  are. Left out, the two rows follow `showAngle` and `showDate` alone. */
+  detailsDisclosure?: TickDetailsDisclosure;
 };
+
+/**
+ * The Angle and Date rows once the climber has unfolded them. Near the sheet's
+ * height ceiling they land below the visible body, so bring them in.
+ *
+ * A frame late because the scroll body reports its new content height in the
+ * same layout pass as these rows, and the scroll is clamped to that height.
+ * `follow` keeps tracking them through the sheet's own resize. It never changes
+ * a detent. The keyboard ends the tracking: the note lives in the pinned footer,
+ * outside this scroll body, so no field would take over, and each keyboard or
+ * note-growth resize would drag the body back to these rows.
+ */
+function RevealedDetails({ children }: { children: ReactNode }) {
+  const scrollIntoView = useSheetScrollIntoView();
+  const rowsRef = useRef<ViewInstance>(null);
+  const pendingFrameRef = useRef<number | null>(null);
+  const keyboardCameUpRef = useRef(false);
+
+  const handleLayout = useCallback(() => {
+    if (keyboardCameUpRef.current) return;
+    if (pendingFrameRef.current != null) cancelAnimationFrame(pendingFrameRef.current);
+    pendingFrameRef.current = requestAnimationFrame(() => {
+      pendingFrameRef.current = null;
+      if (rowsRef.current) scrollIntoView?.follow(rowsRef.current);
+    });
+  }, [scrollIntoView]);
+
+  useEffect(() => {
+    const rows = rowsRef.current;
+    const stopTracking = () => {
+      if (pendingFrameRef.current != null) cancelAnimationFrame(pendingFrameRef.current);
+      if (rows) scrollIntoView?.release(rows);
+    };
+    const keyboardSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardCameUpRef.current = true;
+      stopTracking();
+    });
+    return () => {
+      keyboardSubscription.remove();
+      stopTracking();
+    };
+  }, [scrollIntoView]);
+
+  return (
+    <View ref={rowsRef} onLayout={handleLayout} testID="tick-details-revealed">
+      {children}
+    </View>
+  );
+}
 
 export const QuickTickBar = React.memo(function QuickTickBar({
   form,
   showNote = true,
   showDate = true,
   showAngle = true,
+  detailsDisclosure,
 }: QuickTickBarProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
@@ -61,6 +124,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     tickState,
     comment,
     climbedAt,
+    climbedAtEdited,
     maximumClimbedAtDate,
     grades,
     consensusDifficultyId,
@@ -74,6 +138,13 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     onFutureAdjusted,
   } = form;
   const angles = useBoardAngleOptions(toBoardName(boardName) ?? undefined);
+  const boardHasAngleRow = shouldShowAngleRow(boardName, angles);
+
+  // Unfolding unmounts the row TalkBack was on, so hand focus to the first row
+  // that replaced it. Only ever true after a tap: the fold is closed on present.
+  const detailsOpened = detailsDisclosure?.open === true;
+  const firstRevealedRowRef = useRef<ViewInstance>(null);
+  useAnnounceBodyFocus(firstRevealedRowRef, detailsOpened);
 
   // StarRating speaks `number | undefined` and clears to 0; the tick state
   // stores `null` for "no rating", which is also the only value the save path
@@ -85,6 +156,53 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const starAccessibilityLabel = useCallback(
     (rating: number) => t('playView.tickBar.starRating', { count: rating }),
     [t],
+  );
+
+  const angleRowVisible = showAngle && boardHasAngleRow;
+  const angleAndDateRows = (
+    <>
+      {/* Below the grade rail, so expanding the sheet adds the row under the
+          climber's thumb rather than pushing the rails they were using. */}
+      {angleRowVisible ? (
+        <TickFormRow
+          label={tClimbs('mobile.tick.angleLabel')}
+          height={TICK_ANGLE_ROW_HEIGHT}
+          showSeparator={false}
+          labelFocusRef={detailsOpened ? firstRevealedRowRef : undefined}
+          testID="tick-row-angle"
+        >
+          <TickAngleControl
+            angles={angles}
+            value={angle}
+            openingValue={openingAngle}
+            onChange={onAngleSelect}
+            accessibilityLabel={tClimbs('mobile.tick.angleLabel')}
+          />
+        </TickFormRow>
+      ) : null}
+
+      {/* Date and time on one row — two short, related values that don't each
+          need a row of their own, separated by an `@`. Both fields commit
+          through the same `onClimbedAtChange`, so touching either one pins
+          the timestamp instead of logging a fresh save-time now. */}
+      {showDate ? (
+        <TickFormRow
+          label={tClimbs('mobile.tick.dateLabel')}
+          showSeparator={false}
+          labelFocusRef={detailsOpened && !angleRowVisible ? firstRevealedRowRef : undefined}
+          testID="tick-row-date"
+        >
+          <TickDateRow
+            value={climbedAt}
+            maximumDate={maximumClimbedAtDate}
+            onChange={onClimbedAtChange}
+            onFutureAdjusted={onFutureAdjusted}
+            dateAccessibilityLabel={tClimbs('mobile.tick.dateLabel')}
+            timeAccessibilityLabel={tClimbs('mobile.tick.timeLabel')}
+          />
+        </TickFormRow>
+      ) : null}
+    </>
   );
 
   return (
@@ -158,41 +276,20 @@ export const QuickTickBar = React.memo(function QuickTickBar({
         </Text>
       )}
 
-      {/* Below the grade rail, so expanding the sheet adds the row under the
-          climber's thumb rather than pushing the rails they were using. */}
-      {showAngle && shouldShowAngleRow(boardName, angles) ? (
-        <TickFormRow
-          label={tClimbs('mobile.tick.angleLabel')}
-          height={TICK_ANGLE_ROW_HEIGHT}
-          showSeparator={false}
-          testID="tick-row-angle"
-        >
-          <TickAngleControl
-            angles={angles}
-            value={angle}
-            openingValue={openingAngle}
-            onChange={onAngleSelect}
-            accessibilityLabel={tClimbs('mobile.tick.angleLabel')}
-          />
-        </TickFormRow>
-      ) : null}
-
-      {/* Date and time on one row — two short, related values that don't each
-          need a row of their own, separated by an `@`. Both fields commit
-          through the same `onClimbedAtChange`, so touching either one pins
-          the timestamp instead of logging a fresh save-time now. */}
-      {showDate ? (
-        <TickFormRow label={tClimbs('mobile.tick.dateLabel')} showSeparator={false} testID="tick-row-date">
-          <TickDateRow
-            value={climbedAt}
-            maximumDate={maximumClimbedAtDate}
-            onChange={onClimbedAtChange}
-            onFutureAdjusted={onFutureAdjusted}
-            dateAccessibilityLabel={tClimbs('mobile.tick.dateLabel')}
-            timeAccessibilityLabel={tClimbs('mobile.tick.timeLabel')}
-          />
-        </TickFormRow>
-      ) : null}
+      {detailsDisclosure && !detailsDisclosure.open ? (
+        <TickDetailsRow
+          angle={boardHasAngleRow ? angle : null}
+          openingAngle={openingAngle}
+          climbedAt={climbedAt}
+          now={maximumClimbedAtDate}
+          dateEdited={climbedAtEdited}
+          onPress={detailsDisclosure.onOpen}
+        />
+      ) : detailsOpened ? (
+        <RevealedDetails>{angleAndDateRows}</RevealedDetails>
+      ) : (
+        angleAndDateRows
+      )}
 
       {/* `alignTop`: the note is the one control that grows well past the 56pt
           row beat, and a centred label floats ~31pt below the first line of

@@ -1,10 +1,9 @@
-// One titled header for both tick sheets.
+// The create-tick sheet's titled header.
 //
 // The leading 4x32 bar is where the grade ramp now lives: the climb's colour
 // identity, recoloured live as the climber picks a grade, kept out of the form
 // itself so the rows below only ever speak the sheet's three hues. Replaces the
-// create sheet's empty band with an off-ladder 30pt chevron, and the edit
-// sheet's bare title Text — which had no close affordance at all.
+// create sheet's empty band with an off-ladder 30pt chevron.
 //
 // The close is the shared xmark (ChromeIconButton): closing a tick sheet throws
 // nothing away that the leave guard doesn't already ask about, so it reads as the
@@ -33,10 +32,21 @@ export const TickSheetHeader = React.memo(function TickSheetHeader({
   onClose,
   closeAccessibilityLabel,
 }: TickSheetHeaderProps) {
-  const { systemColors, spacing, borderRadius } = useTheme();
+  const { systemColors, spacing, borderRadius, variant } = useTheme();
 
   return (
-    <View style={[styles.header, { gap: spacing[3], borderBottomColor: systemColors.separator }]}>
+    <View
+      style={[
+        styles.header,
+        {
+          gap: spacing[3],
+          borderBottomColor: systemColors.separator,
+          // Material sheets separate by surface and space; the form keeps its
+          // one divider under Stars.
+          borderBottomWidth: variant === 'material' ? 0 : StyleSheet.hairlineWidth,
+        },
+      ]}
+    >
       <View
         style={[
           styles.gradeBar,
@@ -69,7 +79,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: TICK_GUTTER,
     minHeight: TICK_HEADER_HEIGHT,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   gradeBar: {
     width: 4,
