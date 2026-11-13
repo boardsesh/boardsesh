@@ -1,3 +1,5 @@
+import { promisify } from 'node:util';
+import { gzip } from 'node:zlib';
 import { filterPublicSitemapItems } from './privacy-filter';
 import 'server-only';
 import { absoluteUrl } from '@/app/lib/seo/base-url';
@@ -142,6 +144,7 @@ export const CLIMB_SOURCE_HEADER = 'X-Sitemap-Climbs-Source';
 const CLIMB_CACHE_CONTROL = 'private, no-store';
 const DISABLED_PAGED_SITEMAP_CACHE_CONTROL = 'public, s-maxage=3600, must-revalidate';
 const SETTER_CACHE_CONTROL = 'private, no-store';
+const gzipAsync = promisify(gzip);
 
 function xmlResponse(
   body: string,
@@ -152,6 +155,25 @@ function xmlResponse(
     status: 200,
     headers: {
       'Content-Type': 'application/xml; charset=utf-8',
+      'Cache-Control': cacheControl,
+      ...extraHeaders,
+    },
+  });
+}
+
+/** A gzip sitemap file, rather than HTTP content encoding: even crawlers that
+ * omit Accept-Encoding download the small representation advertised by the index.
+ * Its XML is built and privacy-filtered afresh, just like the legacy .xml URL.
+ */
+async function gzipXmlResponse(
+  body: string,
+  cacheControl: string,
+  extraHeaders: Record<string, string>,
+): Promise<Response> {
+  const compressed = await gzipAsync(body);
+  return new Response(new Uint8Array(compressed), {
+    headers: {
+      'Content-Type': 'application/gzip',
       'Cache-Control': cacheControl,
       ...extraHeaders,
     },
@@ -384,7 +406,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
     id: 'climbs',
     enabled: climbSitemapsEnabled,
     routeDirectory: 'climbs',
-    pagePath: (page: number) => `/sitemaps/climbs/${page}.xml`,
+    pagePath: (page: number) => `/sitemaps/climbs/${page}.xml.gz`,
     expansion: 'default-locale-only',
     urlsPerShard: CLIMB_URLS_PER_SHARD,
     // A climbs page that renders zero URLs is a regressed query, not a state:
@@ -402,7 +424,7 @@ export const PAGED_SHARD_REGISTRY: readonly PagedSitemapShard[] = [
   {
     id: 'setters',
     routeDirectory: 'setters',
-    pagePath: (page: number) => `/sitemaps/setters/${page}.xml`,
+    pagePath: (page: number) => `/sitemaps/setters/${page}.xml.gz`,
     // Paged, and default-locale-only for the same reason the climb shards are:
     // setter pages cross-canonicalise onto the default locale, so listing the
     // twins would advertise URLs whose own canonical points elsewhere.
@@ -482,7 +504,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
   // that each 200 with a six-hour cache header and each look to Search Console
   // like a separate submission of the same URLs. A page number that was never
   // canonical is exactly the "never valid" case this route 404s.
-  const parsed = /^([1-9]\d*)\.xml$/.exec(rawPage);
+  const parsed = /^([1-9]\d*)\.xml(\.gz)?$/.exec(rawPage);
   if (!parsed) {
     return notFoundResponse();
   }
@@ -491,7 +513,6 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     return notFoundResponse();
   }
 
-  let body: string;
   let source: PagedShardSource | undefined;
   try {
     const summary = await shard.summary();
@@ -530,7 +551,7 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
       );
     }
 
-    body = renderUrlset(urls);
+    const body = renderUrlset(urls);
     // The guard runs on the rendered body, not on a row count: a constant that
     // nothing measures is a comment, and the URL count cannot see per-URL size.
     // Sized to THIS shard's page rather than to the protocol backstop, because
@@ -544,6 +565,12 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
         `[sitemap] paged shard "${shard.id}" page ${page} rendered ${bytes} bytes, past its ${byteBudget} page budget — lower urlsPerShard`,
       );
     }
+
+    // Compression changes delivery only: never cache the privacy-filtered XML.
+    const headers = sourceHeaders(shard, source);
+    return parsed[2]
+      ? await gzipXmlResponse(body, shard.cacheControl, headers)
+      : xmlResponse(body, shard.cacheControl, headers);
   } catch (err) {
     console.error(
       `[sitemap] paged shard "${id}" page "${rawPage}" failed to build:`,
@@ -551,10 +578,6 @@ export async function pagedShardRouteHandler(id: PagedShardId, rawPage: string):
     );
     return unavailableResponse();
   }
-
-  // Recheck withdrawal on every request; shared caches cannot observe unlisting,
-  // moderation or spray-wall changes after this response was produced.
-  return xmlResponse(body, shard.cacheControl, sourceHeaders(shard, source));
 }
 
 /** `{ 'X-Sitemap-Climbs-Source': 'live' }`, or nothing when the shard reported none. */

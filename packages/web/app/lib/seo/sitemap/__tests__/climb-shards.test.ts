@@ -1,11 +1,19 @@
+import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { CLIMB_URLS_PER_SHARD, MAX_SHARD_BYTES, pagedShardByteBudget } from '../sitemap-xml';
 import type { SitemapItem } from '../entries';
 
 vi.mock('server-only', () => ({}));
-// Authorization is exercised separately in privacy-filter.test.ts.
-vi.mock('../privacy-filter', () => ({ filterPublicSitemapItems: async <Item>(items: Item[]) => items }));
+// Authorization is exercised separately in privacy-filter.test.ts. This flag
+// models a wall being withdrawn between two requests for the same gzip URL.
+const visibility = vi.hoisted(() => ({ hidden: false, checks: 0 }));
+vi.mock('../privacy-filter', () => ({
+  filterPublicSitemapItems: async <Item>(items: Item[]) => {
+    visibility.checks += 1;
+    return visibility.hidden ? [] : items;
+  },
+}));
 
 const KILTER_CONFIG: PopularBoardConfig = {
   boardType: 'kilter',
@@ -108,6 +116,8 @@ const {
 } = await import('../shard-registry');
 
 beforeEach(() => {
+  visibility.hidden = false;
+  visibility.checks = 0;
   vi.stubEnv('CLIMB_SITEMAPS_ENABLED', 'true');
   climbs.itemCount = 3;
   climbs.builtCount = null;
@@ -140,7 +150,7 @@ describe('the paged climbs shard', () => {
     expect(shard.expansion).toBe('default-locale-only');
     expect(shard.urlsPerShard).toBe(CLIMB_URLS_PER_SHARD);
     expect(shard.expectsUrls).toBe(true);
-    expect(shard.pagePath(2)).toBe('/sitemaps/climbs/2.xml');
+    expect(shard.pagePath(2)).toBe('/sitemaps/climbs/2.xml.gz');
   });
 
   it('returns a cacheable 410 without reading the store when the switch is not exactly true', async () => {
@@ -164,6 +174,32 @@ describe('the paged climbs shard', () => {
     expect(await response.text()).toContain('<urlset');
   });
 
+  it('serves the same XML as a much smaller gzip file without encoding negotiation', async () => {
+    climbs.itemCount = CLIMB_URLS_PER_SHARD;
+    const plain = await (await pagedShardRouteHandler('climbs', '1.xml')).text();
+    const response = await pagedShardRouteHandler('climbs', '1.xml.gz');
+    const compressed = Buffer.from(await response.arrayBuffer());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/gzip');
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get(CLIMB_SOURCE_HEADER)).toBe('store');
+    expect(gunzipSync(compressed).toString('utf8')).toBe(plain);
+    expect(compressed.byteLength).toBeLessThan(Buffer.byteLength(plain) / 5);
+  });
+
+  it('rechecks publication visibility before each gzip response', async () => {
+    const initial = await pagedShardRouteHandler('climbs', '1.xml.gz');
+    expect(gunzipSync(Buffer.from(await initial.arrayBuffer())).toString()).toContain('<url>');
+
+    visibility.hidden = true;
+    const withdrawn = await pagedShardRouteHandler('climbs', '1.xml.gz');
+    expect(withdrawn.headers.get('cache-control')).toBe('private, no-store');
+    expect(gunzipSync(Buffer.from(await withdrawn.arrayBuffer())).toString()).not.toContain('<url>');
+    expect(visibility.checks).toBe(2);
+  });
+
   it('emits one URL per climb with no hreflang block and no xhtml namespace', async () => {
     // The whole reason the climb shards exist in this shape: four locales with a
     // five-entry alternates block each is ~36 MB per 45k-URL shard.
@@ -183,7 +219,20 @@ describe('the paged climbs shard', () => {
     // `\\d+` parser gives every real page an unbounded family of alias URLs that
     // each 200 under the six-hour cache header and each look to Search Console
     // like a separate submission of the same URLs.
-    for (const page of ['0.xml', 'abc.xml', '1.txt', '999.xml', '-1.xml', '01.xml', '007.xml', '0000001.xml']) {
+    for (const page of [
+      '0.xml',
+      'abc.xml',
+      '1.txt',
+      '999.xml',
+      '-1.xml',
+      '01.xml',
+      '007.xml',
+      '0000001.xml',
+      '0.xml.gz',
+      '01.xml.gz',
+      '999.xml.gz',
+      '1.xml.gz.gz',
+    ]) {
       const response = await pagedShardRouteHandler('climbs', page);
       expect(response.status, page).toBe(404);
       expect(response.headers.get('cache-control'), page).toBe('no-store');
@@ -203,7 +252,7 @@ describe('the paged climbs shard', () => {
     expect((await pagedShardRouteHandler('climbs', '3.xml')).status).toBe(404);
   });
 
-  it('503s rather than serving a page past its own byte budget', async () => {
+  it.each(['1.xml', '1.xml.gz'])('503s %s past the uncompressed byte budget', async (page) => {
     // Driven by a fixture of long paths, not by mutating the budget: the guard
     // has to measure the body it is about to serve. The padding is derived from
     // the page size rather than hardcoded, because a hardcoded 500 that used to
@@ -214,7 +263,7 @@ describe('the paged climbs shard', () => {
     climbs.itemCount = CLIMB_URLS_PER_SHARD;
     climbs.pathLength = paddingChars;
 
-    const response = await pagedShardRouteHandler('climbs', '1.xml');
+    const response = await pagedShardRouteHandler('climbs', page);
 
     expect(response.status).toBe(503);
     expect(response.headers.get('cache-control')).toBe('no-store');
@@ -291,9 +340,9 @@ describe('the index and the climbs shard', () => {
 
     const { xml } = await buildSitemapIndexXml();
 
-    expect(xml).toContain('https://www.boardsesh.com/sitemaps/climbs/1.xml');
-    expect(xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml');
-    expect(xml).not.toContain('/sitemaps/climbs/3.xml');
+    expect(xml).toContain('https://www.boardsesh.com/sitemaps/climbs/1.xml.gz');
+    expect(xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml.gz');
+    expect(xml).not.toContain('/sitemaps/climbs/3.xml.gz');
     expect(xml).toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);
   });
 
@@ -327,7 +376,7 @@ describe('the index and the climbs shard', () => {
     const withBrokenAggregate = await buildSitemapIndexXml();
     warnings.mockRestore();
 
-    expect(withBrokenAggregate.xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml');
+    expect(withBrokenAggregate.xml).toContain('https://www.boardsesh.com/sitemaps/climbs/2.xml.gz');
     // Every page falls back to the shard-wide value — the enhancement fails
     // WITHOUT taking the <lastmod> signal down with it.
     expect(withBrokenAggregate.xml).toContain(`<lastmod>${LAST_MODIFIED.toISOString()}</lastmod>`);

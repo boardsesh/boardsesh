@@ -5,6 +5,7 @@ import {
   buildStaticAssetManifest,
   renderStaticAssetObjectKeyCatalogJson,
   renderStaticAssetShellTypeScript,
+  renderBoardRendererAssetTypeScript,
 } from './lib/static-asset-catalog';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,6 +19,10 @@ const outputs = [
   {
     path: resolve(generatedRoot, 'shell.ts'),
     contents: renderStaticAssetShellTypeScript(manifest),
+  },
+  {
+    path: resolve(generatedRoot, 'renderer.ts'),
+    contents: renderBoardRendererAssetTypeScript(manifest),
   },
 ];
 

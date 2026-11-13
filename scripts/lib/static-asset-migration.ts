@@ -27,7 +27,7 @@ export interface AssetStore {
   put(this: void, key: string, contents: Uint8Array, metadata: AssetMetadata, checksum: string): Promise<void>;
 }
 
-const IMMUTABLE_KEY = /^static\/v1\/([a-f0-9]{64})\.(webp|png|ico|mp4|webm)$/;
+const IMMUTABLE_KEY = /^static\/v1\/([a-f0-9]{64})\.(webp|png|ico|mp4|webm|js|wasm)$/;
 const MAX_OBJECT_BYTES = 128 * 1024 * 1024;
 
 export function parseMigrationMode(arguments_: readonly string[]): MigrationMode {

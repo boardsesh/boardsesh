@@ -140,7 +140,10 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       locale,
       imagePath: ogImagePath,
       imageAlt: t('metadata.view.imageAlt', { climbName, grade: climbGrade, boardName: boardDetails.board_name }),
-      robots: shouldNoindex ? { index: false, follow: true } : undefined,
+      // Public catalog aliases keep their canonical and share/handoff URLs,
+      // but must not seed another crawl of every climb for every physical wall.
+      // Spray walls branch above: their /b URL is the only canonical surface.
+      robots: shouldNoindex ? { index: false, follow: true } : { index: true, follow: false },
     });
   } catch {
     return createBoardContentPageMetadata({

@@ -247,6 +247,23 @@ config-tuple URL we do not want dragged down with it. All of it — including th
 (`app/lib/seo/list-page-robots.ts`), called by both trees, and is pinned by
 `list/__tests__/list-front-door.test.tsx` plus the two `page-metadata` suites.
 
+**Public catalog aliases stop recursive crawler discovery.** Indexable
+`/b/{slug}/{angle}/list` and `/b/{slug}/{angle}/view/...` pages retain their
+config-tuple canonical and emit `index, nofollow`. One catalog configuration
+can belong to hundreds of physical boards; following each alias's related
+climbs and angles otherwise recreates the same catalog crawl for every wall.
+[Applebot explicitly supports the robots `nofollow` directive](https://support.apple.com/en-us/119829).
+This reduces discovery through the aliases, not requests for URLs a crawler
+already knows. Existing edge copies also need to expire before the new policy
+is visible; no immediate traffic or billing reduction is assumed.
+
+Human navigation, copied links and installed-app handoff retain the physical
+board's existing `/b` paths. The canonical configuration pages remain normally
+crawlable and the sitemap continues to publish those URLs. Private/unlisted
+boards and other existing noindex variants keep `noindex, follow`; public
+spray-wall climbs keep their current policy because their `/b` route is their
+only canonical public page.
+
 **Both render anonymously, and must.** `middleware.ts` puts a shared
 `Vercel-CDN-Cache-Control: s-maxage` on every climb-view and `/list` URL with no
 session-cookie check, on the documented premise that these pages are

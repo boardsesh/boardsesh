@@ -264,9 +264,13 @@ export function assertPublicStaticAssetHeaders(
     throw new Error(`Public asset ${asset.logicalPath} has Content-Type ${contentType ?? '(missing)'}`);
   }
   const contentLength = headers.get('content-length');
+  const contentEncoding = headers.get('content-encoding')?.trim().toLowerCase();
+  const encodedBody = Boolean(contentEncoding && contentEncoding !== 'identity');
   // HTTP/2 and chunked CDN responses can omit this header. The publisher still
   // bounds the streamed body, checks its exact byte count and verifies SHA-256.
-  if (contentLength !== null && contentLength !== String(asset.bytes)) {
+  // fetch() also decodes gzip/Brotli responses while retaining their headers:
+  // Content-Length describes encoded wire bytes, not the decoded catalog bytes.
+  if (contentLength !== null && !encodedBody && contentLength !== String(asset.bytes)) {
     throw new Error(
       `Public asset ${asset.logicalPath} has Content-Length ${JSON.stringify(contentLength)}; expected ${asset.bytes}`,
     );

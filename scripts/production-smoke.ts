@@ -38,6 +38,8 @@
  */
 
 import { pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
+import { gunzip } from 'node:zlib';
 
 const DEFAULT_BASE_URL = 'https://www.boardsesh.com';
 
@@ -304,7 +306,7 @@ const REQUIRED_SITEMAP_SHARDS = [
   { id: 'static', loc: 'https://www.boardsesh.com/sitemaps/static.xml', degradable: false },
   { id: 'boards', loc: 'https://www.boardsesh.com/sitemaps/boards.xml', degradable: true },
   { id: 'playlists', loc: 'https://www.boardsesh.com/sitemaps/playlists.xml', degradable: true },
-  { id: 'climbs', loc: `https://www.boardsesh.com${CLIMB_SITEMAP_PATH_PREFIX}1.xml`, degradable: true },
+  { id: 'climbs', loc: `https://www.boardsesh.com${CLIMB_SITEMAP_PATH_PREFIX}1.xml.gz`, degradable: true },
 ] as const;
 
 type RequiredSitemapShard = (typeof REQUIRED_SITEMAP_SHARDS)[number];
@@ -473,12 +475,12 @@ export const WWW_CHECKS: SmokeCheck[] = [
     // page a crawler actually fetches, and the one that still costs 51 s when
     // the store is empty — hence the check's own timeout.
     name: 'the climb sitemap shard serves URLs without caching publication consent',
-    path: `${CLIMB_SITEMAP_PATH_PREFIX}1.xml`,
+    path: `${CLIMB_SITEMAP_PATH_PREFIX}1.xml.gz`,
     timeoutMs: CLIMB_SHARD_TIMEOUT_MS,
     assert: (response) =>
       firstFailure(
         expectStatus(response, 200),
-        expectContentType(response, 'xml'),
+        expectContentType(response, 'application/gzip'),
         expectBodyContains(response, '<urlset', '<urlset> root element'),
         expectBodyContains(response, '<loc>', '<loc> entry'),
         expectClimbShardCacheControl(response),
@@ -590,6 +592,19 @@ function resolvePath(check: SmokeCheck, env: NodeJS.ProcessEnv): string | null {
   return buildPath ? buildPath(fixtureValue) : null;
 }
 
+const gunzipAsync = promisify(gunzip);
+
+/** .xml.gz is a gzip file, not Content-Encoding, so fetch leaves it compressed. */
+export async function readSmokeBody(response: Response, requestedUrl: string): Promise<string> {
+  if (response.status === 200 && new URL(requestedUrl).pathname.endsWith('.xml.gz')) {
+    const compressed = Buffer.from(await response.arrayBuffer());
+    // Bound decompression to the sitemap protocol guard used by the publisher.
+    const xml = await gunzipAsync(compressed, { maxOutputLength: 45 * 1024 * 1024 });
+    return xml.toString('utf8');
+  }
+  return response.text();
+}
+
 async function fetchOnce(url: string, timeoutMs: number): Promise<SmokeResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -612,7 +627,7 @@ async function fetchOnce(url: string, timeoutMs: number): Promise<SmokeResponse>
     return {
       status: response.status,
       contentType: response.headers.get('content-type') ?? '',
-      body: await response.text(),
+      body: await readSmokeBody(response, url),
       headers,
       // `redirect: 'follow'` above means this can differ from `url`.
       url: response.url || url,

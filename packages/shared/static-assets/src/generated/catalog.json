@@ -450,5 +450,7 @@
   "/videos/help/zone-filter-drag.mp4": "static/v1/b52fd295a0575e1ba838d4e67824b20dcb49f2b064c41a20e90bbe1a89451d1c.mp4",
   "/videos/help/zone-filter-drag.webm": "static/v1/0f1a0e92774a4531c5c0f7a125b351a825492240c30b497a880dbcef463d4a2f.webm",
   "/videos/home/showcase-9x16-lite.mp4": "static/v1/3b78f008232bced02ab98d1b3fc734a7a86883283d09a07ea40efdfef0dfd831.mp4",
-  "/videos/home/showcase-9x16-lite.webm": "static/v1/f783d02201392748a1fa4e4a8d5e83a14a6a448d27bc6d7ebdc41871ab21df1f.webm"
+  "/videos/home/showcase-9x16-lite.webm": "static/v1/f783d02201392748a1fa4e4a8d5e83a14a6a448d27bc6d7ebdc41871ab21df1f.webm",
+  "/wasm/board_renderer_wasm.js": "static/v1/0769d26dde33cf464ee913689163e74f8dcdcf2ea2e13c408018e8ddee5a6a07.js",
+  "/wasm/board_renderer_wasm_bg.wasm": "static/v1/2695bfce07bf42dde44946354d8f4cfae759bae592f07acbf7009707f699a4d1.wasm"
 }

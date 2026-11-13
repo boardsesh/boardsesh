@@ -148,6 +148,32 @@ function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | unde
 }
 
 describe('board slug climb metadata', () => {
+  it('keeps a public spray climb crawlable on its only canonical /b route', async () => {
+    const { buildSprayViewMetadata } = await import('../spray-view');
+    vi.mocked(buildSprayViewMetadata).mockResolvedValueOnce({ robots: { index: true, follow: true } });
+    resolveBoardBySlug.mockResolvedValueOnce({
+      slug: 'public-wall',
+      boardType: 'spray',
+      layoutId: 900,
+      sizeId: 1,
+      setIds: '',
+      isPublic: true,
+      isUnlisted: false,
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      searchParams: Promise.resolve({}),
+      params: Promise.resolve({ board_slug: 'public-wall', angle: '40', climb_uuid: 'test-climb' }),
+    });
+
+    expect(metadata.robots).toEqual({ index: true, follow: true });
+    expect(buildSprayViewMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        board: expect.objectContaining({ boardType: 'spray' }),
+      }),
+    );
+  });
+
   it('inherits noindex from the unlisted parent gym', async () => {
     resolveBoardBySlug.mockResolvedValueOnce({
       slug: 'qa-board',
@@ -187,7 +213,7 @@ describe('board slug climb metadata', () => {
 
     // Not the noindex fallback: a throw inside generateMetadata would land
     // there and could leave the stats call unmade for the wrong reason.
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toEqual({ index: true, follow: false });
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(getClimbStatsForAllAngles)).toHaveBeenCalledWith('kilter', 'canonical-climb');
     const expectedCanonical = '/kilter/kilter-board-original/12x12/bolt-ons/40/view/canonical-climb';
@@ -329,7 +355,7 @@ describe('board slug climb metadata', () => {
       typeof canonical === 'object' && canonical && 'url' in canonical ? String(canonical.url) : String(canonical);
     expect(canonicalUrl).not.toContain('/b/my-board');
     expect(canonicalUrl).toContain('/40/view/test-climb');
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toEqual({ index: true, follow: false });
   });
 
   it('advertises no locale alternates, so the twins are not four indexable pages', async () => {

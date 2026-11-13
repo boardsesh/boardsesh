@@ -113,6 +113,12 @@ describe('historical immutable assets migration', () => {
     expect(destination.put).toHaveBeenCalledTimes(3);
     await expect(migrateStaticAssets(source, destination, 'verify-only')).resolves.toMatchObject({ copiedObjects: 0 });
   });
+  it('retains historical renderer JavaScript and WASM keys in migration inventories', async () => {
+    const digest = createHash('sha256').update(contents).digest('hex');
+    const rendererKeys = [`static/v1/${digest}.js`, `static/v1/${digest}.wasm`];
+    const source = memoryStore(Object.fromEntries(rendererKeys.map((rendererKey) => [rendererKey, contents])));
+    await expect(inventoryAssets(source)).resolves.toEqual(rendererKeys);
+  });
   it('rejects unknown keys before any writes', async () => {
     const source = memoryStore({ [key]: contents, 'static/v1/unknown.png': contents });
     const destination = memoryStore();

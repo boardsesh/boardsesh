@@ -17,7 +17,7 @@ Two kinds of shard:
 |                   | fixed (`SHARD_REGISTRY`)                           | paged (`PAGED_SHARD_REGISTRY`)                   |
 | ----------------- | -------------------------------------------------- | ------------------------------------------------ |
 | members           | `static`, `boards`, `gyms`, `playlists`, `build-plans`            | `setters`, and `climbs` when enabled             |
-| file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml … N.xml`                   |
+| file              | one `/sitemaps/<id>.xml`                           | `/sitemaps/<id>/1.xml.gz … N.xml.gz`             |
 | index asks it for | the whole item list                                | `summary()` only — count + newest timestamp      |
 | N comes from      | —                                                  | `ceil(itemCount / urlsPerShard)` at request time |
 
@@ -28,6 +28,27 @@ count into the directory tree.
 `setters` is paged for volume, not for locale expansion: ~108,000 distinct
 `(board_type, setter_username)` pairs against `MAX_ITEMS_PER_SHARD`'s 9,000, so
 one file cannot hold them at any expansion.
+
+## Compressed paged files
+
+The index advertises gzip files for the large climb and setter shards, as supported
+by the [sitemap protocol](https://www.sitemaps.org/protocol.html). A request for
+`/sitemaps/climbs/1.xml.gz` builds and privacy-filters the same XML as the existing
+`1.xml` URL, then compresses it asynchronously. Existing `.xml` URLs still work.
+Fixed shards and `/sitemap.xml` keep their current URLs.
+
+These are gzip **files** (`Content-Type: application/gzip`), without HTTP
+`Content-Encoding`. Crawlers receive compressed bytes even when they omit
+`Accept-Encoding`. Do not add a second content encoding or decompress the file in
+a proxy. The production smoke downloads and decompresses the advertised climb
+file, then validates the XML, source header and privacy cache policy.
+
+Both representations retain `Cache-Control: private, no-store`: publication,
+moderation and spray-wall visibility are checked on every request. Nothing stores
+compressed output between requests. Byte and URL budgets still apply to the
+uncompressed XML before compression; the fixture test requires a full climb shard
+to compress to less than one fifth of its original size. This is a transfer-size
+check, not a measured production cost saving.
 
 ## The build-plans shard
 
@@ -407,7 +428,7 @@ paused the smoke required the header to be **absent**, the index to omit climb
 shard URLs, and a direct climb shard request to return the cacheable 410 — so
 re-enabling the surface could not be done by changing an environment variable
 alone. #4648 restored publication together with both source diagnostics. The
-index must carry climb `<loc>` entries, `/sitemaps/climbs/1.xml` must be a 200 XML,
+index must carry climb `<loc>` entries, `/sitemaps/climbs/1.xml.gz` must contain valid XML,
 and both must name a source. #6254 subsequently changed the rendered page
 response to `private, no-store` for publication revocation. The tripwire still
 works in the other direction — an image that lost `CLIMB_SITEMAPS_ENABLED` turns the post-deploy smoke red instead
@@ -481,7 +502,7 @@ Publication is on, so there is no re-enable to run. What follows is the check
 list for a deploy that touches this surface and the way to withdraw it again.
 
 **After a deploy**, `production-smoke.ts` already asserts the shape: the index
-lists `/sitemaps/climbs/1.xml`, the shard answers 200 XML, and both name a
+lists `/sitemaps/climbs/1.xml.gz`, the shard answers 200 with gzip XML, and both name a
 source. Read the source it reports. `store` is healthy; `live` is a WARN that
 means the store is empty or unreadable and every page fetch behind it is
 rebuilding the whole ordered list, so trigger a refresh by hand and confirm it

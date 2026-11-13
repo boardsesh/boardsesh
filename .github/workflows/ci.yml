@@ -494,6 +494,8 @@ jobs:
               - 'packages/db/scripts/load-board-snapshots*'
               - 'packages/db/src/catalog-snapshot.ts'
             staticAssets:
+              - 'packages/web/public/wasm/board_renderer_wasm.js'
+              - 'packages/web/public/wasm/board_renderer_wasm_bg.wasm'
               - 'packages/web/public/images/**/*.webp'
               - 'packages/web/public/videos/**/*.mp4'
               - 'packages/web/public/videos/**/*.webm'

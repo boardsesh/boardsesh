@@ -119,10 +119,10 @@ function canonicalOf(metadata: Awaited<ReturnType<typeof generateMetadata>>) {
 }
 
 describe('board slug list metadata', () => {
-  it('canonicalises the unfiltered list INTO the config-tuple tree (A1), with no robots override', async () => {
+  it('canonicalises a public catalog alias without following its duplicate physical-board links', async () => {
     const metadata = await generateMetadata();
 
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toEqual({ index: true, follow: false });
     // A1: `/b/{slug}` names a board a user owns, not a climb config. Most
     // configs have no `/b` URL and popular ones have many, so the config-tuple
     // tree is the consolidation target.
@@ -134,7 +134,7 @@ describe('board slug list metadata', () => {
   it('keeps pagination-only requests indexable, carrying the page into the cross-tree canonical', async () => {
     const metadata = await generateMetadata({ page: '2' });
 
-    expect(metadata.robots).toBeUndefined();
+    expect(metadata.robots).toEqual({ index: true, follow: false });
     expect(canonicalOf(metadata)).toContain('/40/list?page=2');
   });
 

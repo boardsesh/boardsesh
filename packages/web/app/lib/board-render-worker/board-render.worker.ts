@@ -1,4 +1,5 @@
 import type { WasmRenderConfig } from '@boardsesh/board-render/render-config';
+import { getBoardRendererAssetUrls } from './renderer-asset-urls';
 
 /**
  * Web Worker for board rendering using WASM.
@@ -52,8 +53,7 @@ async function ensureWasmInitialized(): Promise<void> {
       // Resolve absolute URLs for WASM assets — relative paths don't work in Workers
       // because the worker's base URL may be a blob: URL from the bundler.
       const origin = baseOrigin || self.location.origin;
-      const glueUrl = `${origin}/wasm/board_renderer_wasm.js`;
-      const wasmUrl = `${origin}/wasm/board_renderer_wasm_bg.wasm`;
+      const { glueUrl, wasmUrl } = getBoardRendererAssetUrls(origin);
       try {
         // Dynamic import of the wasm-pack glue code
         const wasmModule = await import(/* webpackIgnore: true */ glueUrl);

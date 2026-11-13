@@ -86,7 +86,7 @@ The rollout flags have been removed. The supported behavior is:
 │  │  #1  │  │  #2  │  │  #3  │  │  #4  │                                │
 │  │ WASM │  │ WASM │  │ WASM │  │ WASM │                                │
 │  └──────┘  └──────┘  └──────┘  └──────┘                                │
-│  Each worker loads WASM from /public/wasm/                               │
+│  Each worker loads versioned WASM from the assets CDN                   │
 │  and composites background + overlay on OffscreenCanvas                  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -135,7 +135,12 @@ The `WorkerManager` maintains a pool of Web Workers, each running its own instan
 | Browser           | 3            |
 | Capacitor WebView | 5            |
 
-Workers are allocated by round-robin. Each worker loads the WASM module from `/public/wasm/` on initialization. The pool is created once and reused for the lifetime of the page.
+Workers are allocated by round-robin. Each worker loads the JavaScript glue and WASM binary from matching
+content-addressed assets on `assets.boardsesh.com` in production. Both URLs come from a tiny generated renderer
+catalog and are passed explicitly to the loader. The existing static-asset publication job verifies them before
+the web build, and old objects remain available for old tabs. Local development and previews keep using their
+own `/wasm/` files. See [static asset CDN](static-assets.md#web-renderer-delivery) for publication and CORS checks.
+The pool is created once and reused for the lifetime of the page.
 
 ---
 
