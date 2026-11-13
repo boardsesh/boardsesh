@@ -1489,6 +1489,11 @@ jobs:
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
         run: vp run test:auth-authority
+      - name: Run identity import and read-only reconciliation proof
+        if: ${{ !cancelled() && matrix.shard == 1 }}
+        env:
+          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
+        run: vp run test:auth-identities
       - name: Install Chromium for auth compatibility proof
         if: ${{ !cancelled() && matrix.shard == 1 }}
         working-directory: packages/web
