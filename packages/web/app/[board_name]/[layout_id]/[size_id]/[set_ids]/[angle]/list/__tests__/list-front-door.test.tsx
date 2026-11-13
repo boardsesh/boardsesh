@@ -11,7 +11,7 @@ import {
   parseFrontDoorPage,
 } from '@/app/lib/seo/list-page-robots';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 
 /**
  * The `/list` front door's `?page` contract, which both trees' pages consume.
@@ -95,10 +95,11 @@ const StaticListFrontDoor = (await import('@/app/components/climb-front-door/sta
 
 const boardDetails = {
   board_name: 'kilter',
+  backgroundImagePaths: [],
   layout_id: 1,
   size_id: 10,
   set_ids: [1, 20],
-} as unknown as BoardDetails;
+} as unknown as BoardImageDetails;
 
 // `FrontDoorBreadcrumb` is an async server component nested in the returned
 // tree, and `renderToString` cannot suspend — expand the async layer first.

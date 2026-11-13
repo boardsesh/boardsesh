@@ -2,7 +2,7 @@ import React from 'react';
 import { notFound, permanentRedirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { resolveBoardBySlug, boardToRouteParamsFromAngleSegment } from '@/app/lib/board-slug-utils';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import ClimbFrontDoor from '@/app/components/climb-front-door/climb-front-door';
@@ -73,7 +73,7 @@ export async function generateMetadata(props: BoardSlugViewPageProps): Promise<M
       });
     }
 
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
     // Sequential on purpose: the angle table is keyed on the uuid the climb
     // resolved to, not the URL's (an alias URL names a husk). It costs no page
     // latency, because the body renders concurrently and already waits on the
@@ -194,7 +194,7 @@ export default async function BoardSlugViewPage(props: BoardSlugViewPageProps) {
       permanentRedirect(localeHref(targetUrl, await getLocale()));
     }
 
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
     const [angleStats, similarClimbs, betaLinks] = await Promise.all([
       // Keyed on the climb the URL resolved to: for an alias URL the requested

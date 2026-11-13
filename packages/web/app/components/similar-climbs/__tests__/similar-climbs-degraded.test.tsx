@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import SimilarClimbsList from '../similar-climbs-list';
 
 /**
@@ -45,7 +45,7 @@ vi.mock('@/app/lib/graphql/client', () => ({
 
 const PENDING_MESSAGE = 'frontDoor.similar.unavailable';
 
-function makeBoardDetails(): BoardDetails {
+function makeBoardDetails(): BoardImageDetails {
   return {
     board_name: 'kilter',
     layout_id: 1,
@@ -55,11 +55,11 @@ function makeBoardDetails(): BoardDetails {
     size_name: '12 x 12',
     size_description: 'Commercial',
     set_names: ['Bolt Ons', 'Screw Ons'],
-    images_to_holds: {},
-    holdsData: {},
+    backgroundImagePaths: [],
+
     boardHeight: 100,
     boardWidth: 100,
-  } as unknown as BoardDetails;
+  } as unknown as BoardImageDetails;
 }
 
 function makeSimilarClimb(): SimilarClimb {

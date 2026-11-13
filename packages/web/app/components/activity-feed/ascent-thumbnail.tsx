@@ -2,9 +2,9 @@
 
 import React, { useMemo } from 'react';
 import LocaleLink from '@/app/components/i18n/locale-link';
-import type { BoardDetails, BoardName } from '@/app/lib/types';
+import type { BoardImageDetails, BoardName } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import type { RenderBoardConfig } from '@boardsesh/shared-schema';
 import { constructClimbViewUrlWithSlugs, constructClimbViewUrl, tryConstructSlugViewUrl } from '@/app/lib/url-utils';
@@ -41,7 +41,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
   onClick,
 }) => {
   // Memoize board details to avoid recomputing on every render
-  const boardDetails = useMemo<BoardDetails | null>(() => {
+  const boardDetails = useMemo<BoardImageDetails | null>(() => {
     if (!layoutId) return null;
 
     const boardName = boardType as BoardName;
@@ -52,7 +52,7 @@ const AscentThumbnail: React.FC<AscentThumbnailProps> = ({
     if (!config) return null;
 
     try {
-      return getBoardDetailsForBoard({
+      return getBoardImageDetailsForBoard({
         board_name: boardName,
         layout_id: renderBoard?.layoutId ?? layoutId,
         size_id: config.sizeId,

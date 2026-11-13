@@ -9,8 +9,8 @@ import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 import { SSR_BACKEND_FETCH_TIMEOUT_MS } from '@/app/lib/ssr-fetch-deadline';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import type { BoardDetails } from '@/app/lib/types';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
+import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../board-renderer/util';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 
@@ -27,7 +27,7 @@ export type BoardSlotSource = {
 };
 
 export type BoardSlotData = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Latest climb seen on the wall (boardRecentClimbs[0]) or null. */
   initialClimb: BoardPresenceClimb | null;
   /** Raster URL for the initial climb's frames (null when no initial climb). */
@@ -36,9 +36,9 @@ export type BoardSlotData = {
   bareBoardImageUrl: string;
 };
 
-function resolveBoardDetails(board: BoardSlotSource): BoardDetails | null {
+function resolveBoardDetails(board: BoardSlotSource): BoardImageDetails | null {
   try {
-    return getBoardDetailsForBoard({
+    return getBoardImageDetailsForBoard({
       board_name: board.boardType,
       layout_id: board.layoutId,
       size_id: board.sizeId,

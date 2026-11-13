@@ -82,11 +82,8 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 }));
 
 // The rail is deliberately NOT mocked — its anchors are the point of the page
-// now, and mocking it would make the physical-board identity cases vacuous. Only
-// the board artwork inside it is stubbed out.
-vi.mock('@/app/components/board-renderer/board-renderer', () => ({
-  default: () => <div data-testid="board-thumb" />,
-}));
+// now, and mocking it would make the physical-board identity cases vacuous.
+// Board artwork is an ordinary backend image and needs no browser renderer mock.
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
   default: ({ href, children, className }: { href: string; children?: React.ReactNode; className?: string }) => (

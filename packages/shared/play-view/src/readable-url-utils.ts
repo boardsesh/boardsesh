@@ -4,18 +4,15 @@ import {
   getProductSize,
   getSetsForLayoutAndSize,
   getSizesForLayoutId,
-} from '@boardsesh/board-constants/product-sizes';
+} from '@boardsesh/board-constants/catalog-metadata';
 import {
-  getMoonBoardDetails,
-  getWoodsBoardDetails,
   MOONBOARD_LAYOUTS,
   MOONBOARD_SETS,
   MOONBOARD_SIZE,
-  WOODS_LAYOUTS,
-  WOODS_SETS,
-  WOODS_SIZES,
   type MoonBoardLayoutKey,
-} from '@boardsesh/board-config';
+} from '@boardsesh/board-config/moonboard-metadata';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from '@boardsesh/board-config/woods-metadata';
+import { getBoardImageDetailsForBoard } from '@boardsesh/board-config/image-metadata';
 import { SUPPORTED_BOARDS, type BoardName } from '@boardsesh/shared-schema';
 
 export type BuildReadableClimbViewPathArgs = {
@@ -330,14 +327,19 @@ function resolveReadableBoardSegments({
 
   if (boardType === 'moonboard') {
     try {
-      const moonBoardDetails = getMoonBoardDetails({ layout_id: layoutId, set_ids: setIdValues });
-      if (moonBoardDetails.size_id !== sizeId || moonBoardDetails.set_names.length !== setIdValues.length) return null;
+      const moonBoardDetails = getBoardImageDetailsForBoard({
+        board_name: 'moonboard',
+        layout_id: layoutId,
+        size_id: sizeId,
+        set_ids: setIdValues,
+      });
+      if (moonBoardDetails.size_id !== sizeId || moonBoardDetails.set_names?.length !== setIdValues.length) return null;
 
       return {
         boardName: boardType,
-        layoutSlug: generateLayoutSlug(moonBoardDetails.layout_name),
-        sizeSlug: generateSizeSlug(moonBoardDetails.size_name, moonBoardDetails.size_description),
-        setSlug: generateSetSlug(moonBoardDetails.set_names),
+        layoutSlug: generateLayoutSlug(moonBoardDetails.layout_name ?? ''),
+        sizeSlug: generateSizeSlug(moonBoardDetails.size_name ?? '', moonBoardDetails.size_description),
+        setSlug: generateSetSlug(moonBoardDetails.set_names ?? []),
       };
     } catch {
       return null;
@@ -355,7 +357,12 @@ function resolveReadableBoardSegments({
 
   if (boardType === 'woods') {
     try {
-      const woodsDetails = getWoodsBoardDetails({ size_id: sizeId });
+      const woodsDetails = getBoardImageDetailsForBoard({
+        board_name: 'woods',
+        layout_id: layoutId,
+        size_id: sizeId,
+        set_ids: setIdValues,
+      });
       if (woodsDetails.layout_id !== layoutId) return null;
       // Woods ships one synthetic hold set, so anything but exactly that set
       // names holds the board doesn't have — emit the numeric form instead of a
@@ -367,9 +374,9 @@ function resolveReadableBoardSegments({
 
       return {
         boardName: boardType,
-        layoutSlug: generateLayoutSlug(woodsDetails.layout_name),
-        sizeSlug: generateSizeSlug(woodsDetails.size_name),
-        setSlug: generateSetSlug(woodsDetails.set_names),
+        layoutSlug: generateLayoutSlug(woodsDetails.layout_name ?? ''),
+        sizeSlug: generateSizeSlug(woodsDetails.size_name ?? ''),
+        setSlug: generateSetSlug(woodsDetails.set_names ?? []),
       };
     } catch {
       return null;

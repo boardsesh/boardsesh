@@ -3,7 +3,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import StaticClimbList from '../static-climb-list';
 
@@ -86,21 +86,17 @@ function makeClimb(index: number): Climb {
   } as Climb;
 }
 
-function makeBoardDetails(): BoardDetails {
+function makeBoardDetails(): BoardImageDetails {
   return {
     board_name: 'kilter',
     layout_id: 1,
     size_id: 10,
     set_ids: [1, 20],
-    images_to_holds: {},
-    holdsData: {},
-    edge_left: 0,
-    edge_right: 100,
-    edge_bottom: 0,
-    edge_top: 100,
+    backgroundImagePaths: [],
+
     boardHeight: 100,
     boardWidth: 100,
-  } as BoardDetails;
+  } as BoardImageDetails;
 }
 
 const hundredClimbs = Array.from({ length: 100 }, (_, index) => makeClimb(index));

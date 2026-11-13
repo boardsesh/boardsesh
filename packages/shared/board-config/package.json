@@ -9,6 +9,31 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./image-metadata": {
+      "types": "./src/image-metadata.ts",
+      "import": "./src/image-metadata.ts",
+      "default": "./src/image-metadata.ts"
+    },
+    "./resolve-render-board": {
+      "types": "./src/resolve-render-board.ts",
+      "import": "./src/resolve-render-board.ts",
+      "default": "./src/resolve-render-board.ts"
+    },
+    "./board-image-dimensions": {
+      "types": "./src/board-image-dimensions.ts",
+      "import": "./src/board-image-dimensions.ts",
+      "default": "./src/board-image-dimensions.ts"
+    },
+    "./moonboard-metadata": {
+      "types": "./src/moonboard-metadata.ts",
+      "import": "./src/moonboard-metadata.ts",
+      "default": "./src/moonboard-metadata.ts"
+    },
+    "./woods-metadata": {
+      "types": "./src/woods-metadata.ts",
+      "import": "./src/woods-metadata.ts",
+      "default": "./src/woods-metadata.ts"
     }
   },
   "scripts": {

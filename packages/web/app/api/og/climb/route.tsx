@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getClimb } from '@/app/lib/data/queries';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { parseBoardRouteParamsWithSlugs } from '@/app/lib/url-utils.server';
 import { buildOgBoardRenderUrl } from '@/app/components/board-renderer/util';
 import { createOgImageHeaders } from '@/app/lib/seo/og';
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     });
 
     const dbT0 = performance.now();
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
     const currentClimb = await getClimb(parsedParams);
     const dbMs = performance.now() - dbT0;
 

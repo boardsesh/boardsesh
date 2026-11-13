@@ -316,3 +316,5 @@ export type FetchCurrentProblemResponse = Climb;
 export type ErrorResponse = {
   error: string;
 };
+
+export type { BoardImageDetails } from '@boardsesh/board-config/image-metadata';

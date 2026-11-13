@@ -426,13 +426,6 @@ function generateProductDataFile(boardData: Record<GeneratedBoardName, Generated
 import type { BoardName } from '@boardsesh/shared-schema';
 import type { LayoutData, ProductSizeData, SetData } from '../types';
 
-// Hole placements are sharded per board and loaded lazily so Hermes only ever
-// evaluates the active board's holds. The all-boards \`HOLE_PLACEMENTS\` record is
-// re-exported here for backwards compatibility (Node-side consumers that iterate
-// every board), but it is a lazy proxy — touching a board key requires only that
-// board's shard.
-export { HOLE_PLACEMENTS } from '../hole-placements';
-
 export const AURORA_PRODUCT_SIZES: Record<BoardName, Record<number, ProductSizeData>> = {
 ${generateSizesTypeScript('kilter', boardData.kilter.sizes)},
 ${generateSizesTypeScript('tension', boardData.tension.sizes)},

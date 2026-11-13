@@ -1,9 +1,9 @@
 import { toBoardName } from '@boardsesh/board-config';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
-import { getBoardDetailsForPlaylist } from '@/app/lib/board-config-for-playlist';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { resolveClimbSitemapGroups, type ClimbConfigGroup } from '@/app/lib/seo/sitemap/climb-entries';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import type { SetterClimbRow } from './server-setter-data';
 
 /**
@@ -12,7 +12,7 @@ import type { SetterClimbRow } from './server-setter-data';
  * A setter's climbs span layouts and boards, and `board_climbs` carries no size
  * or set: a climb renders on many configurations, so any link has to *choose*
  * one. The client list used to choose the largest size plus every set
- * (`getBoardDetailsForPlaylist`), while `/sitemaps/climbs/N.xml` chooses the
+ * (`getBoardImageDetailsForPlaylist`), while `/sitemaps/climbs/N.xml` chooses the
  * config with the most physical boards. Those are different tuples, and the
  * climb view page self-canonicalises to whichever one it is served under — so
  * every row was manufacturing a second indexable URL for a climb Google had
@@ -32,7 +32,7 @@ import type { SetterClimbRow } from './server-setter-data';
  */
 export type SetterClimbLinks = {
   /** Per-climb board override for `StaticClimbList`, keyed by climb uuid. */
-  boardDetailsByClimb: Record<string, BoardDetails>;
+  boardDetailsByClimb: Record<string, BoardImageDetails>;
   /** Climbs with no resolvable canonical config — rendered as plain rows. */
   unlinkedClimbUuids: ReadonlySet<string>;
   /** The board config the largest share of the linked climbs sit on, or null. */
@@ -44,7 +44,7 @@ export type SetterClimbLinks = {
    * and it is null only when not one of the setter's climbs resolved to any
    * renderable board at all.
    */
-  fallbackBoardDetails: BoardDetails | null;
+  fallbackBoardDetails: BoardImageDetails | null;
 };
 
 function groupKey(boardType: string, layoutId: number): string {
@@ -79,10 +79,13 @@ function climbFitsGroup(climb: SetterClimbRow, group: ClimbConfigGroup): boolean
 }
 
 /** Board art for a climb we will not link — cached per `(board_type, layout_id)`. */
-function displayDetailsByLayout(climb: SetterClimbRow, cache: Map<string, BoardDetails | null>): BoardDetails | null {
+function displayDetailsByLayout(
+  climb: SetterClimbRow,
+  cache: Map<string, BoardImageDetails | null>,
+): BoardImageDetails | null {
   const key = groupKey(climb.boardType, climb.layoutId);
   if (!cache.has(key)) {
-    cache.set(key, getBoardDetailsForPlaylist(climb.boardType, climb.layoutId));
+    cache.set(key, getBoardImageDetailsForPlaylist(climb.boardType, climb.layoutId));
   }
   return cache.get(key) ?? null;
 }
@@ -96,10 +99,10 @@ export function resolveSetterClimbLinks(
     groups.set(groupKey(group.boardType, group.layoutId), group);
   }
 
-  const boardDetailsByClimb: Record<string, BoardDetails> = {};
+  const boardDetailsByClimb: Record<string, BoardImageDetails> = {};
   const unlinkedClimbUuids = new Set<string>();
-  const detailsByGroup = new Map<string, BoardDetails>();
-  const displayCache = new Map<string, BoardDetails | null>();
+  const detailsByGroup = new Map<string, BoardImageDetails>();
+  const displayCache = new Map<string, BoardImageDetails | null>();
   const linkedPerGroup = new Map<string, number>();
 
   for (const climb of climbs) {
@@ -107,7 +110,7 @@ export function resolveSetterClimbLinks(
     const group = groups.get(key);
 
     if (!group || !climbFitsGroup(climb, group)) {
-      // Unlinked, but still drawn on its own board. `getBoardDetailsForPlaylist`
+      // Unlinked, but still drawn on its own board. `getBoardImageDetailsForPlaylist`
       // (largest size + every set) is a *rendering* choice, never a URL one:
       // the uuid is in `unlinkedClimbUuids`, so `StaticClimbRow` emits no anchor
       // for it. Using it for an href is the wrong-board-URL bug this module
@@ -123,7 +126,7 @@ export function resolveSetterClimbLinks(
     let details = detailsByGroup.get(key);
     if (!details) {
       try {
-        details = getBoardDetailsForBoard({
+        details = getBoardImageDetailsForBoard({
           board_name: group.boardType,
           layout_id: group.layoutId,
           size_id: group.sizeId,

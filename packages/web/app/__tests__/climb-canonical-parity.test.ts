@@ -26,7 +26,7 @@ import { renderToString } from 'react-dom/server';
  * — ONE function per surface, which is why the parity assertions can be
  * equalities rather than shape checks.
  *
- * `getBoardDetailsForBoard` is mocked as a FUNCTION OF ITS ARGUMENT rather than
+ * `getBoardImageDetailsForBoard` is mocked as a FUNCTION OF ITS ARGUMENT rather than
  * a shared constant: with one frozen object both trees would agree no matter
  * how they derived their board details, and the parity assertion would hold by
  * construction. Deriving from the ids each tree actually passes is what makes
@@ -89,8 +89,9 @@ vi.mock('@/app/lib/data/list-page-data.server', () => ({
 // off a board config it didn't resolve. Names are rich enough that the real
 // (unmocked) `tryResolveBoardSlugs` in url-utils produces the production
 // named-slug form.
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn(
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(
     (params: { board_name: string; layout_id: number; size_id: number; set_ids: number[] }) => ({
       board_name: params.board_name,
       layout_id: params.layout_id,

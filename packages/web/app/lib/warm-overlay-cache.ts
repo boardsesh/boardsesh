@@ -1,13 +1,13 @@
 import { headers } from 'next/headers';
 import { buildOgBoardRenderUrl, type OgClimbCardIdentity } from '@/app/components/board-renderer/util';
 import { isCrawlerUserAgent } from '@/app/lib/is-crawler';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 
 /** Ceiling on the one best-effort OG warm. It must never hold the SSR request open. */
 const WARM_FETCH_TIMEOUT_MS = 5000;
 
 type WarmOgImageOptions = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardRouteIdentity;
   climb: Pick<Climb, 'frames'>;
   /**
    * The climb identity the page's `og:image` carries.

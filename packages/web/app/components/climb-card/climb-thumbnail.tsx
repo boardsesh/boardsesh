@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
 
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
 
 type ClimbThumbnailProps = {
   currentClimb: Climb | null;
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Current pathname — passed from parent to avoid per-instance usePathname() context lookups. */
   pathname: string;
   /** Callback for thumbnail presses when an active-climb/play-drawer flow is desired. */

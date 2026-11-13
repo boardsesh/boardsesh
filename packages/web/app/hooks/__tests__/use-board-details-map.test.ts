@@ -1,23 +1,28 @@
+import {
+  getBoardImageDetailsForBoard,
+  getBoardImageDetailsForPlaylist,
+  toBoardImageDetails,
+} from '@/app/lib/board-image-details';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { renderHook } from '@testing-library/react';
 import { useBoardDetailsMap } from '../use-board-details-map';
-import {
-  getUserBoardDetails,
-  getBoardDetailsForPlaylist,
-  resolveBoardDetailsForClimb,
-} from '@/app/lib/board-config-for-playlist';
+import { resolveBoardDetailsForClimb } from '@/app/lib/board-config-for-playlist';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 
 // Mock dependencies
 vi.mock('@/app/lib/board-config-for-playlist', () => ({
-  getUserBoardDetails: vi.fn(),
-  getBoardDetailsForPlaylist: vi.fn(),
   resolveBoardDetailsForClimb: vi.fn(),
 }));
 
-const mockGetUserBoardDetails = vi.mocked(getUserBoardDetails);
-const mockGetBoardDetailsForPlaylist = vi.mocked(getBoardDetailsForPlaylist);
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(),
+  getBoardImageDetailsForPlaylist: vi.fn(),
+}));
+
+const mockGetUserBoardDetails = vi.mocked(getBoardImageDetailsForBoard);
+const mockGetBoardDetailsForPlaylist = vi.mocked(getBoardImageDetailsForPlaylist);
 const mockResolveBoardDetailsForClimb = vi.mocked(resolveBoardDetailsForClimb);
 
 function makeClimb(overrides: Partial<Climb> = {}): Climb {
@@ -60,7 +65,8 @@ function makeBoardDetails(name: string): BoardDetails {
     set_ids: [1, 2, 3],
     boardWidth: 100,
     boardHeight: 150,
-    holdsData: {},
+    holdsData: [],
+    images_to_holds: {},
     litUpHoldsGroupSets: [],
     edgeLeft: 0,
     edgeRight: 100,
@@ -85,11 +91,12 @@ describe('useBoardDetailsMap', () => {
   it('should key boardDetailsByClimb by climb uuid', () => {
     const climb = makeClimb({ uuid: 'c1', boardType: 'kilter', layoutId: 1 });
     const details = makeBoardDetails('kilter');
-    mockResolveBoardDetailsForClimb.mockReturnValue({ details, status: 'exact' });
+    mockGetBoardDetailsForPlaylist.mockReturnValue(toBoardImageDetails(details));
 
     const { result } = renderHook(() => useBoardDetailsMap([climb], []));
+    expect(mockResolveBoardDetailsForClimb).not.toHaveBeenCalled();
 
-    expect(result.current.boardDetailsByClimb['c1']).toBe(details);
+    expect(result.current.boardDetailsByClimb['c1']).toEqual(toBoardImageDetails(details));
   });
 
   it('should populate upsizedClimbs for climbs that only fit on a bigger size', () => {
@@ -98,11 +105,11 @@ describe('useBoardDetailsMap', () => {
     const details = makeBoardDetails('kilter-bigger');
     mockResolveBoardDetailsForClimb.mockReturnValue({ details, status: 'upsized' });
 
-    const { result } = renderHook(() => useBoardDetailsMap([climb], [userBoard]));
+    const { result } = renderHook(() => useBoardDetailsMap([climb], [userBoard], userBoard));
 
     expect(result.current.upsizedClimbs.has('c1')).toBe(true);
     expect(result.current.unsupportedClimbs.has('c1')).toBe(false);
-    expect(result.current.boardDetailsByClimb['c1']).toBe(details);
+    expect(result.current.boardDetailsByClimb['c1']).toEqual(toBoardImageDetails(details));
   });
 
   it('should mark climbs as unsupported when the resolver reports incompatible', () => {
@@ -111,10 +118,10 @@ describe('useBoardDetailsMap', () => {
     const details = makeBoardDetails('fallback');
     mockResolveBoardDetailsForClimb.mockReturnValue({ details, status: 'incompatible' });
 
-    const { result } = renderHook(() => useBoardDetailsMap([climb], [userBoard]));
+    const { result } = renderHook(() => useBoardDetailsMap([climb], [userBoard], userBoard));
 
     expect(result.current.unsupportedClimbs.has('c1')).toBe(true);
-    expect(result.current.boardDetailsByClimb['c1']).toBe(details);
+    expect(result.current.boardDetailsByClimb['c1']).toEqual(toBoardImageDetails(details));
   });
 
   it('should mark climbs unsupported when the user owns none of that board type', () => {
@@ -146,30 +153,30 @@ describe('useBoardDetailsMap', () => {
   it('should return defaultBoardDetails from selectedBoard when provided', () => {
     const selectedBoard = makeUserBoard({ boardType: 'kilter', layoutId: 1 });
     const selectedDetails = makeBoardDetails('kilter-selected');
-    mockGetUserBoardDetails.mockReturnValue(selectedDetails);
+    mockGetUserBoardDetails.mockReturnValue(toBoardImageDetails(selectedDetails));
 
     const { result } = renderHook(() => useBoardDetailsMap([], [], selectedBoard));
 
-    expect(result.current.defaultBoardDetails).toBe(selectedDetails);
+    expect(result.current.defaultBoardDetails).toEqual(toBoardImageDetails(selectedDetails));
   });
 
   it('should return defaultBoardDetails from first myBoard as fallback', () => {
     const myBoard = makeUserBoard({ boardType: 'kilter', layoutId: 1 });
     const myBoardDetails = makeBoardDetails('kilter-mine');
-    mockGetUserBoardDetails.mockReturnValue(myBoardDetails);
+    mockGetUserBoardDetails.mockReturnValue(toBoardImageDetails(myBoardDetails));
 
     const { result } = renderHook(() => useBoardDetailsMap([], [myBoard]));
 
-    expect(result.current.defaultBoardDetails).toBe(myBoardDetails);
+    expect(result.current.defaultBoardDetails).toEqual(toBoardImageDetails(myBoardDetails));
   });
 
   it('should use fallbackBoardTypes for default details when no boards available', () => {
     const genericDetails = makeBoardDetails('tension');
-    mockGetBoardDetailsForPlaylist.mockReturnValue(genericDetails);
+    mockGetBoardDetailsForPlaylist.mockReturnValue(toBoardImageDetails(genericDetails));
 
     const { result } = renderHook(() => useBoardDetailsMap([], [], null, null, ['tension']));
 
-    expect(result.current.defaultBoardDetails).toBe(genericDetails);
+    expect(result.current.defaultBoardDetails).toEqual(toBoardImageDetails(genericDetails));
     expect(mockGetBoardDetailsForPlaylist).toHaveBeenCalledWith('tension', null);
   });
 
@@ -179,20 +186,19 @@ describe('useBoardDetailsMap', () => {
     const kilterDetails = makeBoardDetails('kilter');
     const tensionDetails = makeBoardDetails('tension');
 
-    mockResolveBoardDetailsForClimb.mockImplementation((climb) => {
-      if (climb.uuid === 'c1') return { details: kilterDetails, status: 'exact' };
-      return { details: tensionDetails, status: 'exact' };
-    });
+    mockGetBoardDetailsForPlaylist.mockImplementation((boardType) =>
+      toBoardImageDetails(boardType === 'kilter' ? kilterDetails : tensionDetails),
+    );
 
     const { result } = renderHook(() => useBoardDetailsMap([climb1, climb2], []));
 
-    expect(result.current.boardDetailsByClimb['c1']).toBe(kilterDetails);
-    expect(result.current.boardDetailsByClimb['c2']).toBe(tensionDetails);
+    expect(result.current.boardDetailsByClimb['c1']).toEqual(toBoardImageDetails(kilterDetails));
+    expect(result.current.boardDetailsByClimb['c2']).toEqual(toBoardImageDetails(tensionDetails));
   });
 
   it('should skip climbs when the resolver returns null', () => {
     const climb1 = makeClimb({ uuid: 'c1', boardType: undefined, layoutId: 1 });
-    mockResolveBoardDetailsForClimb.mockReturnValue(null);
+    mockGetBoardDetailsForPlaylist.mockReturnValue(null);
 
     const { result } = renderHook(() => useBoardDetailsMap([climb1], []));
 
@@ -209,7 +215,7 @@ describe('useBoardDetailsMap', () => {
       setIds: '1,2,abc,0',
     });
     const details = makeBoardDetails('kilter-selected');
-    mockGetUserBoardDetails.mockReturnValue(details);
+    mockGetUserBoardDetails.mockReturnValue(toBoardImageDetails(details));
     mockResolveBoardDetailsForClimb.mockReturnValue({ details, status: 'exact' });
 
     renderHook(() => useBoardDetailsMap([climb], [selectedBoard], selectedBoard));

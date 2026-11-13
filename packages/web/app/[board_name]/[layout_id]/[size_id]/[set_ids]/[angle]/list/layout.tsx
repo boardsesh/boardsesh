@@ -3,7 +3,7 @@ import React, { type PropsWithChildren } from 'react';
 import type { BoardRouteParameters } from '@/app/lib/types';
 import { constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { permanentRedirect } from 'next/navigation';
 
 type LayoutProps = {
@@ -24,7 +24,7 @@ export default async function ListLayout(props: PropsWithChildren<LayoutProps>) 
   // a shadowed size (Kilter 12x12 without kickboard) at the wrong board the day
   // a render-order change makes this layer reachable.
   if (isNumericFormat) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
     const idAwareUrl = tryConstructSlugListUrl(
       parsedParams.board_name,

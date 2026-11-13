@@ -1,58 +1,97 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vite-plus/test';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vite-plus/test';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
 import { discoveryBoard } from '@/app/__test-helpers__/board-discovery-fixture';
-import type { BoardProps } from '@/app/components/board-renderer/board-renderer';
 import PhysicalBoardPreview from '../physical-board-preview';
 
-const renderBoard = vi.hoisted(() => vi.fn());
-vi.mock('@/app/components/board-renderer/board-renderer', () => ({
-  default: (props: BoardProps) => {
-    renderBoard(props);
-    return <div data-testid="catalogue-art" />;
-  },
-}));
+const LABEL = 'Northside board preview';
+
+function previewImage(): HTMLImageElement {
+  const image = screen.getByRole('img', { name: LABEL }).querySelector('img');
+  if (!image) throw new Error('Expected a backend-rendered board image');
+  return image;
+}
+
+function imageParameters(): URLSearchParams {
+  return new URL(previewImage().getAttribute('src') ?? '', 'https://www.boardsesh.com').searchParams;
+}
 
 describe('PhysicalBoardPreview', () => {
-  it('shows the actual catalogue board unlit without a verified selected climb', () => {
-    render(<PhysicalBoardPreview board={discoveryBoard()} label="Northside board preview" />);
-    expect(screen.getByTestId('catalogue-art')).toBeTruthy();
-    expect(renderBoard).toHaveBeenLastCalledWith(expect.objectContaining({ litUpHoldsMap: undefined }));
+  it('requests the real bare board from the backend without SVG hold coordinates', () => {
+    const { container } = render(<PhysicalBoardPreview board={discoveryBoard()} label={LABEL} />);
+    const parameters = imageParameters();
+    expect(parameters.get('board_name')).toBe('kilter');
+    expect(parameters.get('frames')).toBe('');
+    expect(parameters.get('include_background')).toBe('1');
+    expect(parameters.get('thumbnail')).toBe('1');
+    expect(parameters.get('v')).toBe(BOARD_RENDER_VERSION);
+    expect(parameters.has('color_scheme')).toBe(false);
+    expect(previewImage().getAttribute('loading')).toBe('lazy');
+    expect(container.querySelector('svg')).toBeNull();
+    expect(container.innerHTML).not.toContain('holdsData');
   });
 
-  it('lights only the holds supplied by the selected climb snapshot', () => {
+  it('sends only flattened selected-climb frames in the image URL', () => {
     render(
       <PhysicalBoardPreview
         board={discoveryBoard({
-          currentClimb: { uuid: 'climb-one', name: 'Night shift', frames: 'p100r42p200r43', angle: 35 },
+          currentClimb: { uuid: 'climb-one', name: 'Night shift', frames: 'p100r42,p200r43', angle: 35 },
         })}
-        label="Northside board preview"
+        label={LABEL}
       />,
     );
-    const props = renderBoard.mock.lastCall?.[0] as BoardProps;
-    expect(Object.keys(props.litUpHoldsMap ?? {})).toEqual(['100', '200']);
+    const frames = imageParameters().get('frames');
+    expect(frames).toContain('p100r42');
+    expect(frames).toContain('p200r43');
+    expect(frames).not.toContain(',');
   });
 
-  it('uses the genuine MoonBoard renderer inputs rather than substituting Kilter art', () => {
+  it('requests genuine MoonBoard art rather than substituting a different board', () => {
     render(
       <PhysicalBoardPreview
-        board={discoveryBoard({
-          boardType: 'moonboard',
-          layoutId: 1,
-          sizeId: 1,
-          setIds: '1',
-        })}
-        label="MoonBoard preview"
+        board={discoveryBoard({ boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' })}
+        label={LABEL}
       />,
     );
-    const props = renderBoard.mock.lastCall?.[0] as BoardProps;
-    expect(props.boardDetails.board_name).toBe('moonboard');
-    expect(props.boardDetails.layoutFolder).toBeTruthy();
+    expect(imageParameters().get('board_name')).toBe('moonboard');
+    expect(imageParameters().get('layout_id')).toBe('1');
+    expect(imageParameters().get('set_ids')).toBe('1');
   });
 
-  it('keeps unsupported artwork honest with a text fallback', () => {
-    render(<PhysicalBoardPreview board={discoveryBoard({ boardType: 'future-board' })} label="New board preview" />);
-    expect(screen.getByRole('img', { name: 'New board preview' })).toBeTruthy();
-    expect(screen.queryByTestId('catalogue-art')).toBeNull();
+  it('keeps Woods artwork dark in the website preview', () => {
+    render(
+      <PhysicalBoardPreview
+        board={discoveryBoard({ boardType: 'woods', layoutId: 1, sizeId: 1, setIds: '1' })}
+        label={LABEL}
+      />,
+    );
+    expect(imageParameters().get('board_name')).toBe('woods');
+    expect(imageParameters().get('color_scheme')).toBe('dark');
+  });
+
+  it.each([{ boardType: 'future-board' }, { layoutId: 99999, sizeId: 99999 }])(
+    'keeps unsupported artwork honest with a named fallback: %j',
+    (overrides) => {
+      render(<PhysicalBoardPreview board={discoveryBoard(overrides)} label={LABEL} />);
+      expect(screen.getByRole('img', { name: LABEL }).querySelector('img')).toBeNull();
+    },
+  );
+
+  it('falls back on image failure and shows a new image when the climb changes', () => {
+    const { rerender } = render(<PhysicalBoardPreview board={discoveryBoard()} label={LABEL} />);
+    fireEvent.error(previewImage());
+    expect(screen.getByRole('img', { name: LABEL }).querySelector('img')).toBeNull();
+    expect(screen.getByText('Kilter')).toBeTruthy();
+
+    rerender(
+      <PhysicalBoardPreview
+        board={discoveryBoard({
+          currentClimb: { uuid: 'climb-two', name: 'Fresh beta', frames: 'p300r42', angle: 40 },
+        })}
+        label={LABEL}
+      />,
+    );
+    expect(imageParameters().get('frames')).toBe('p300r42');
   });
 });

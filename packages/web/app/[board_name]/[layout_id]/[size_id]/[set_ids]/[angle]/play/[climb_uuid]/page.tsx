@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { BoardRouteParametersWithUuid } from '@/app/lib/types';
 import { parseRouteParams, redirectWithQuery } from '@/app/lib/url-utils.server';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getClimb } from '@/app/lib/data/queries';
 import {
   constructClimbViewUrl,
@@ -33,7 +33,7 @@ export default async function PlayRedirectPage(props: {
     notFound();
   }
 
-  const boardDetails = getBoardDetailsForBoard(parsedParams);
+  const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
   // Look up the climb name so the slug-prefixed view URL is preserved.
   // If the climb can't be resolved we still redirect — just without the slug.

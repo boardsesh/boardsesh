@@ -9,7 +9,7 @@ import {
   type ResolvedBoard,
 } from '@/app/lib/board-slug-utils';
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
@@ -30,7 +30,7 @@ import BoardQrLandingTracker from './board-qr-landing-tracker';
 
 /**
  * A wall takes its own branch out of both exports below: it has no catalogue row
- * for `getBoardDetailsForBoard` to resolve, and this path is where its SHARE LINK
+ * for `getBoardImageDetailsForBoard` to resolve, and this path is where its SHARE LINK
  * lands rather than a climb list. `./spray-wall-view` owns the capability rule.
  */
 const SPRAY_BOARD_TYPE = 'spray';
@@ -125,7 +125,7 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
     // slug holder until #4087 masks it — neither belongs in the index. This is
     // indexation only; it is not the access control, which #4087 owns.
     const { path, robots } = resolveListPageIndexation({
-      cleanPath: buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle),
+      cleanPath: buildCanonicalClimbListUrl(getBoardImageDetailsForBoard(parsedParams), angle),
       page,
       searchParams: searchParams as unknown as ListPageSearchParams,
       boardIsHidden: board.isUnlisted || !board.isPublic || board.gymIsListed === false,
@@ -176,7 +176,7 @@ export default async function BoardSlugListPage(props: BoardSlugListPageProps) {
   // Not a climb list for a wall: this is where its share link lands, and the
   // `?wall=` capability is what opens an unlisted one. Taken before the page
   // ceiling and the angle parse below, because neither applies — a wall has one
-  // fixed angle and no pagination — and before `getBoardDetailsForBoard`, which
+  // fixed angle and no pagination — and before `getBoardImageDetailsForBoard`, which
   // has no catalogue row to resolve for a wall and throws.
   //
   // Both branches mount `BoardQrLandingTracker`: this page is where a printed

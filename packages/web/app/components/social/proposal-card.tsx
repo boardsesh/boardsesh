@@ -32,10 +32,10 @@ import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { VOTE_ON_PROPOSAL, RESOLVE_PROPOSAL, DELETE_PROPOSAL } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal } from '@boardsesh/shared-schema';
 import { usePathname } from 'next/navigation';
-import type { Climb, BoardDetails, BoardName } from '@/app/lib/types';
+import type { Climb, BoardImageDetails, BoardName } from '@/app/lib/types';
 import StaticClimbRow from '@/app/components/climb-list/static-climb-row';
 
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import ProposalVoteBar from './proposal-vote-bar';
 import FeedCommentButton from './feed-comment-button';
@@ -134,9 +134,9 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
     const config = getDefaultBoardConfig(boardName, layoutId);
     if (!config) return null;
 
-    let boardDetails: BoardDetails;
+    let boardDetails: BoardImageDetails;
     try {
-      boardDetails = getBoardDetailsForBoard({
+      boardDetails = getBoardImageDetailsForBoard({
         board_name: boardName,
         layout_id: layoutId,
         size_id: config.sizeId,

@@ -3,7 +3,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import StaticClimbRow from '../static-climb-row';
 
 vi.mock('@/app/components/i18n/locale-link', () => ({
@@ -24,14 +24,10 @@ vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: 
  * front door explicitly supplies its slug to preserve the shared physical
  * board when a reader opens a climb and continues into the app.
  */
-function makeBoardDetails(sizeId: number): BoardDetails {
+function makeBoardDetails(sizeId: number): BoardImageDetails {
   return {
-    images_to_holds: {},
-    holdsData: [],
-    edge_left: 0,
-    edge_right: 100,
-    edge_bottom: 0,
-    edge_top: 100,
+    backgroundImagePaths: [],
+
     boardHeight: 100,
     boardWidth: 100,
     board_name: 'kilter',
@@ -58,7 +54,7 @@ function makeClimb(overrides: Partial<Climb> = {}): Climb {
   } as Climb;
 }
 
-function rowHref(boardDetails: BoardDetails, climb: Climb = makeClimb()) {
+function rowHref(boardDetails: BoardImageDetails, climb: Climb = makeClimb()) {
   render(<StaticClimbRow climb={climb} boardDetails={boardDetails} pathname="/playlists/some-uuid" />);
   return screen.getByRole('link').getAttribute('href');
 }

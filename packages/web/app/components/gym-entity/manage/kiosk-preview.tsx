@@ -16,9 +16,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { kioskPresetForBoardCount } from '@boardsesh/kiosk';
 import type { Gym, GymKioskBoard, UserBoard } from '@boardsesh/shared-schema';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl } from '../../board-renderer/util';
 import KioskThemeScope from '../../kiosk/kiosk-theme-scope';
 import KioskHeader from '../../kiosk/kiosk-header';
@@ -40,7 +40,7 @@ type PreviewSlot =
   | {
       kind: 'board';
       board: GymKioskBoard;
-      boardDetails: BoardDetails;
+      boardDetails: BoardImageDetails;
       bareBoardImageUrl: string;
     }
   | {
@@ -79,7 +79,7 @@ function resolvePreviewSlot(boardUuid: string, gymBoards: UserBoard[]): PreviewS
     return { kind: 'missing', boardUuid, name: userBoard.name };
   }
   try {
-    const boardDetails = getBoardDetailsForBoard({
+    const boardDetails = getBoardImageDetailsForBoard({
       board_name: kioskBoard.boardType,
       layout_id: kioskBoard.layoutId,
       size_id: kioskBoard.sizeId,
@@ -118,7 +118,7 @@ export default function KioskPreview({ gym, kioskName, state, gymBoards }: Kiosk
     return () => observer.disconnect();
   }, []);
 
-  // Split memos: slot resolution rebuilds BoardDetails (hundreds of hold
+  // Split memos: slot resolution rebuilds BoardImageDetails (hundreds of hold
   // objects per board) and new bareBoardImageUrl identities, which would
   // defeat React.memo(BoardRenderer) — so it's keyed on the boardUuids array,
   // whose identity survives leaderboard-only edits (the pure state transitions

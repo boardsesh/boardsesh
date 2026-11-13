@@ -63,8 +63,9 @@ vi.mock('@/app/components/board-renderer/util', () => ({
   convertLitUpHoldsStringToMap: () => [{ 123: { state: 1 } }],
 }));
 
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: (params: { board_name: string }) => ({
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: (params: { board_name: string }) => ({
     board_name: params.board_name,
     layout_id: 1,
     size_id: 1,

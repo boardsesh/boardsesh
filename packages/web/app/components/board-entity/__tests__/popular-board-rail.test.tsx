@@ -20,7 +20,6 @@ vi.mock('react-i18next', () => ({
     i18n: { language: 'en-US' },
   }),
 }));
-vi.mock('@/app/components/board-renderer/board-renderer', () => ({ default: () => <div data-testid="board-art" /> }));
 
 const gymAnchors = () =>
   screen.getAllByRole('link').filter((anchor) => anchor.getAttribute('href')?.startsWith('/gym/'));
@@ -59,8 +58,8 @@ describe('PopularBoardRail physical identity', () => {
   it('retains a named board when its artwork is unsupported', () => {
     render(<PopularBoardRail boards={[discoveryBoard({ boardType: 'future-board', layoutId: 99999 })]} />);
     expect(screen.getByRole('link', { name: 'Training room Kilter' })).toBeTruthy();
-    expect(screen.queryByTestId('board-art')).toBeNull();
-    expect(screen.getByRole('img', { name: 'Board preview: Training room Kilter' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Board preview: Training room Kilter' }).querySelector('img')).toBeNull();
+    expect(screen.getByText('future-board')).toBeTruthy();
   });
 
   it('labels the selected snapshot and uses its angle without claiming a live feed', () => {

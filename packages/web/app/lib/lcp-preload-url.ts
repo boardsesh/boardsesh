@@ -1,5 +1,4 @@
-import { getBoardDetailsForPlaylist } from './board-config-for-playlist';
-import { getBoardDetails } from '@/app/lib/board-constants';
+import { getBoardImageDetailsForPlaylist, getBoardImageDetailsForBoard } from './board-image-details';
 import type { BoardName } from '@/app/lib/types';
 import type { SetIdList } from '@/app/lib/board-data';
 import { getImageUrl } from '@/app/components/board-renderer/util';
@@ -29,7 +28,7 @@ export function getPlaylistLcpPreloadUrl(
   let boardDetails;
   if (playlist.layoutId != null && playlist.sizeId != null && playlist.setIds && playlist.setIds.length > 0) {
     try {
-      boardDetails = getBoardDetails({
+      boardDetails = getBoardImageDetailsForBoard({
         board_name: playlist.boardType as BoardName,
         layout_id: playlist.layoutId,
         size_id: playlist.sizeId,
@@ -37,15 +36,15 @@ export function getPlaylistLcpPreloadUrl(
       });
     } catch {
       // Invalid combination — silently fall back to the largest-size lookup.
-      boardDetails = getBoardDetailsForPlaylist(playlist.boardType, playlist.layoutId);
+      boardDetails = getBoardImageDetailsForPlaylist(playlist.boardType, playlist.layoutId);
     }
   } else {
-    boardDetails = getBoardDetailsForPlaylist(playlist.boardType, playlist.layoutId);
+    boardDetails = getBoardImageDetailsForPlaylist(playlist.boardType, playlist.layoutId);
   }
 
   if (!boardDetails) return null;
 
-  const firstImage = Object.keys(boardDetails.images_to_holds)[0];
+  const firstImage = boardDetails.backgroundImagePaths[0];
   if (!firstImage) return null;
 
   return getImageUrl(firstImage, boardDetails.board_name, true);

@@ -6,10 +6,10 @@ import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardRouteIdentity } from '@/app/lib/types';
 
 type AngleCrossLinksProps = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardRouteIdentity;
   boardSlug?: string;
   climbUuid: string;
   climbName: string;

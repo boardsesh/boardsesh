@@ -4,11 +4,11 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 
 type ClimbFactsProps = {
   climb: Climb;
-  boardDetails: BoardDetails;
+  boardDetails: BoardRouteIdentity;
   angle: number;
   /** The row for the angle being viewed, when one exists — carries the FA. */
   currentAngleStats?: ClimbStatsForAngle;

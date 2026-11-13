@@ -2,8 +2,8 @@
 
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { parseBoardRouteParams, isNumericId } from '@/app/lib/url-utils';
-import type { BoardRouteParametersWithUuid, BoardDetails, BoardRouteIdentity } from '@/app/lib/types';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import type { BoardRouteParametersWithUuid, BoardRouteIdentity } from '@/app/lib/types';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 
 /**
  * Resolves board details for URL construction in queue navigation buttons.
@@ -12,7 +12,7 @@ import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
  * route params are numeric IDs (not slugs). Returns the raw route identity
  * when neither source is available.
  */
-export function useResolvedBoardDetails(boardDetails?: BoardDetails) {
+export function useResolvedBoardDetails(boardDetails?: BoardRouteIdentity) {
   const rawParams = useParams<BoardRouteParametersWithUuid>();
   const { board_name, layout_id, size_id, set_ids, angle } = parseBoardRouteParams(rawParams);
   const pathname = usePathname();
@@ -23,7 +23,7 @@ export function useResolvedBoardDetails(boardDetails?: BoardDetails) {
     resolvedDetails = boardDetails;
   } else if (isNumericId(rawParams.layout_id)) {
     try {
-      resolvedDetails = getBoardDetailsForBoard({ board_name, layout_id, size_id, set_ids });
+      resolvedDetails = getBoardImageDetailsForBoard({ board_name, layout_id, size_id, set_ids });
     } catch (error) {
       console.warn('[useResolvedBoardDetails] Failed to resolve board details from static data:', error);
       resolvedDetails = { board_name, layout_id, size_id, set_ids };

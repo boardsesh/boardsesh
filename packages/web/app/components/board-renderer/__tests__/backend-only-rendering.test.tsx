@@ -5,7 +5,7 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import ClimbThumbnail from '@/app/components/climb-card/climb-thumbnail';
 import BoardSlot from '@/app/components/kiosk/board-slot/board-slot';
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
@@ -20,17 +20,13 @@ vi.mock('@/app/components/kiosk/presence/use-kiosk-board-presence', () => ({
 vi.mock('@/app/components/kiosk/board-slot/board-identity', () => ({ default: () => null }));
 vi.mock('@/app/components/kiosk/board-slot/board-install-qr', () => ({ default: () => null }));
 
-const boardDetails: BoardDetails = {
+const boardDetails: BoardImageDetails = {
   board_name: 'kilter',
   layout_id: 1,
   size_id: 10,
   set_ids: [1, 20],
-  images_to_holds: { 'product_sizes_layouts_sets/36-1.png': [] },
-  holdsData: [],
-  edge_left: 0,
-  edge_right: 144,
-  edge_bottom: 0,
-  edge_top: 180,
+  backgroundImagePaths: ['product_sizes_layouts_sets/36-1.png'],
+
   boardWidth: 1080,
   boardHeight: 1350,
 };

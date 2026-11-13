@@ -17,13 +17,13 @@ import {
 } from '@boardsesh/workout-summary';
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { themeTokens } from '@/app/theme/theme-config';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import type { WorkoutClimbEntry, WorkoutClimbGroup } from './session-workout';
 
 type SessionWorkoutClimbsProps = {
   groups: WorkoutClimbGroup[];
-  boardDetails: BoardDetails;
-  boardDetailsByClimb: Record<string, BoardDetails>;
+  boardDetails: BoardImageDetails;
+  boardDetailsByClimb: Record<string, BoardImageDetails>;
   unlinkedClimbUuids: ReadonlySet<string>;
   /** The tick rows under a climb: likes, comments, delete. */
   renderTicks: (ticks: SessionDetailTick[]) => React.ReactNode;
