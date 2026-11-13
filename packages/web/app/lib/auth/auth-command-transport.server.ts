@@ -11,6 +11,8 @@ export function createAuthCommandTransport(options: {
   environment?: AuthServiceEnvironment;
   fetch?: typeof fetch;
   timeoutMs?: number;
+  requestBytes?: number;
+  responseBytes?: number;
 }) {
   return createPrivateAuthCommandTransport({
     ...options,
