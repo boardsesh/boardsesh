@@ -66,6 +66,50 @@ returned result has a manager-owned WeakMap receipt. Consumers must call
 or publishing a response/cache update. Copies and claimed metadata do not carry
 that receipt.
 
+## Dark WWW client adoption
+
+The selected WWW branch uses the same public owner tuple for session context,
+lease acquisition and client intent scopes. An original live manager result is
+registered in a bounded private token registry. A token-taking HTTP or WebSocket
+client captures an opaque WeakMap scope once; ordinary reconnects may acquire a
+new lease only for that same owner and revision. A-to-B-to-A transitions retire
+the original client even if account metadata later matches again. Invented
+metadata, copied results and unregistered bearer strings cannot create scopes.
+
+Selected uncertainty is distinct from positively confirmed anonymity. Invalid
+selection metadata, a missing marker after selection or unavailable readiness
+cannot turn an authenticated null-token dispatch into an anonymous request.
+Only a successful central anonymous session restores that dispatch. Intentionally
+public HTTP reads that omit authentication remain public; recognized selected
+bearers and stale legacy authenticated headers never fall through.
+
+The HTTP adapter checks immediately before sending, after response headers and
+after graphql-request completes its actual body parsing. Each concurrent
+response retains its own original lease receipt. Responses that cross an owner
+change or outlive the presented lease are discarded. An uncertain mutation is
+never automatically replayed.
+
+The WebSocket adapter rechecks queued frames synchronously at `send` and checks
+each subscription delivery. It requests a same-owner renewal before expiry.
+An expired lease's 4401 becomes retryable only after a new actual lease is
+admitted; unavailable recovery remains terminal for that socket. A 4401 against
+a locally live lease retires its scope. The owner hook may separately read the
+current source again. The existing 1013 unavailable close remains unchanged.
+
+The session authority/controller remains above the private client subtree.
+Accepted session identity and the subtree key are one atomic state update.
+UID, SID, generation, binding and version changes retire request receipts before
+publication and remount client state with a matching QueryClient persistence
+buster. Initial unconfirmed admission does not restore or erase a private
+persisted scope. Bearers are excluded from persisted queries and messages.
+
+This client remount does not qualify private server-component props or Next
+Router Cache/prefetch payloads. Viewer-derived SSR islands still need an exact
+server owner tag and mismatch suppression/refetch before public activation.
+Meaningful independently public SSR content must remain available. The dark
+source and injected transport tests do not constitute an actual browser or
+supported-engine qualification.
+
 ## Evidence and remaining work
 
 The memory holder has 29 independently reviewed tests, including cached-positive
@@ -80,7 +124,8 @@ These server composition tests inject controlled central-reader receipts. The
 separate backend PostgreSQL, restricted-role and real HTTP/WebSocket proofs do
 not by themselves establish a joined public consumer qualification.
 
-The WWW and Expo-web transport/state/cache consumers still require complete
+WWW client transport/state/cache adoption remains subject to the private SSR
+and actual-browser gates above. Expo-web consumers still require complete
 adoption of owner-bound results and memory freshness. The actual cross-origin
 bootstrap, authenticated distinct-binding controls, rolling-proof expiry,
 cookie-family GC, supported-engine matrix and recovery protocol also remain
