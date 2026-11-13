@@ -61,7 +61,7 @@ function bytes(encoded: string): Buffer {
   if (decoded.toString('base64url') !== encoded) return refuse();
   return decoded;
 }
-function capture(input: unknown, now: Date): ProviderSecurityFlow {
+export function captureProviderSecurityFlow(input: unknown, now: Date): ProviderSecurityFlow {
   const flow = providerSecurityFlowSchema.parse(input);
   const clock = now.getTime();
   const issuedAt = milliseconds(flow.issuedAt);
@@ -103,7 +103,7 @@ export function providerSecurityFlowCookieName(operationKey: string, secure: boo
 
 export async function sealProviderSecurityFlow(input: unknown, secret: string, now = new Date()): Promise<string> {
   try {
-    const flow = capture(input, now);
+    const flow = captureProviderSecurityFlow(input, now);
     const nonce = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', flowKey(secret), nonce);
     cipher.setAAD(Buffer.from(PURPOSE));
@@ -142,7 +142,7 @@ export async function openProviderSecurityFlow(
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     const decoded: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext));
     const payload = z.object({ flow: providerSecurityFlowSchema }).strict().parse(decoded);
-    const flow = capture(payload.flow, clock);
+    const flow = captureProviderSecurityFlow(payload.flow, clock);
     if (providerSecurityOperationKey(flow.intentToken) !== digest.parse(operationKey)) return refuse();
     return Object.freeze({ ...flow, sourceCredentialProof: Object.freeze({ ...flow.sourceCredentialProof }) });
   } catch {
