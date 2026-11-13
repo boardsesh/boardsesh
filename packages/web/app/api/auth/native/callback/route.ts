@@ -87,6 +87,7 @@ async function nativeCallback(request: NextRequest) {
         generation: claims.gen ?? 0,
         authenticatedAt: claims.auth_time === undefined ? null : new Date(claims.auth_time * 1000).toISOString(),
         linkGuarded: claims.link_guarded === true,
+        ...(claims.legacy_no_sid === true ? { requiresAccountCutoff: true } : {}),
       });
     }
     transferToken = issueNativeOAuthTransferToken({

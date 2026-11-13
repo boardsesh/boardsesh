@@ -101,6 +101,42 @@ describe('GET /api/auth/native/callback', () => {
     );
   });
 
+  it('preserves signed no-SID ancestry when a renewed source has acquired a stable SID', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+    mockedGetServerSession.mockResolvedValue({
+      user: { id: 'historical-source' },
+      authSessionId: 'renewed-child',
+      authGeneration: 99,
+      expires: '2026-10-11',
+    });
+    mockedIssueToken.mockReturnValue('historical-transfer');
+    mockedGetRawToken.mockResolvedValue(
+      await encode({
+        secret: 'native-attempt-test-secret',
+        token: {
+          sub: 'historical-source',
+          authSessionId: 'renewed-child',
+          gen: 0,
+          legacy_no_sid: true,
+        },
+      }),
+    );
+    await GET(createRequest('/api/auth/native/callback'));
+    expect(mockedIssueToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialProof: {
+          version: 1,
+          userId: 'historical-source',
+          authSessionId: 'renewed-child',
+          generation: 0,
+          authenticatedAt: null,
+          linkGuarded: false,
+          requiresAccountCutoff: true,
+        },
+      }),
+    );
+  });
+
   it.each(['subject', 'sid'])('refuses raw source %s that differs from the admitted session', async (mismatch) => {
     vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
     mockedGetServerSession.mockResolvedValue({

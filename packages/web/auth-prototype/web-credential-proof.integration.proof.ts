@@ -32,7 +32,11 @@ import { bridgeLegacyCredential } from '../../backend/src/auth/authority/bridge'
 const holder = vi.hoisted(() => {
   process.env.NEXTAUTH_SECRET = 'synthetic-web-backend-proof-secret';
   process.env.NEXTAUTH_URL = 'http://localhost:3000';
-  return { database: undefined as unknown, beforeEncode: undefined as (() => void) | undefined };
+  return {
+    database: undefined as unknown,
+    beforeEncode: undefined as (() => void) | undefined,
+    routeCredential: undefined as string | undefined,
+  };
 });
 vi.mock('next-auth/jwt', async (original) => {
   const actual = await original<typeof import('next-auth/jwt')>();
@@ -62,6 +66,28 @@ vi.mock('../../backend/src/auth/admission-pool', () => ({
     return read(environment.database);
   },
 }));
+vi.mock('../app/lib/auth/admitted-session.server', async (original) => ({
+  ...(await original<typeof import('../app/lib/auth/admitted-session.server')>()),
+  getAdmittedRawServerToken: async () => {
+    const raw = holder.routeCredential;
+    if (!raw) return null;
+    const admitted = await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential: raw, secret });
+    return admitted.status === 'admitted' ? raw : null;
+  },
+  getAdmittedServerSession: async () => {
+    const raw = holder.routeCredential;
+    if (!raw) return null;
+    const admitted = await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential: raw, secret });
+    if (admitted.status !== 'admitted') return null;
+    return {
+      user: { id: admitted.session.userId },
+      authSessionId: admitted.session.authSessionId,
+      authGeneration: admitted.session.generation,
+      expires: admitted.session.expiresAt.toISOString(),
+    };
+  },
+}));
+import { GET as mountedNativeCallback } from '../app/api/auth/native/callback/route';
 import { authOptions } from '../app/lib/auth/auth-options';
 import {
   createPasswordCommandClient,
@@ -71,7 +97,6 @@ import { createPasswordCommandAuthRequest } from '../app/lib/auth/password-comma
 import { forwardWebSignOut } from '../app/lib/auth/web-signout-command.server';
 import { delegateSetPassword } from '../app/lib/auth/set-password-command.server';
 import { createWebOAuthCommandClient } from '../app/lib/auth/web-oauth-command-client.server';
-import { issueNativeOAuthTransferToken } from '../app/lib/auth/native-oauth-transfer';
 vi.mock('../app/lib/auth/credential-admission.server', async (original) => ({
   ...(await original<typeof import('../app/lib/auth/credential-admission.server')>()),
   admitPresentedWebCredential: async (credential: string) => {
@@ -158,6 +183,7 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     origin = `http://127.0.0.1:${address.port}`;
   });
   beforeEach(() => {
+    holder.routeCredential = undefined;
     vi.stubEnv('NEXTAUTH_SECRET', secret);
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', rpcSecret);
@@ -171,6 +197,7 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     vi.stubEnv('PARTNER_OAUTH_MODE', 'off');
   });
   afterEach(() => {
+    holder.routeCredential = undefined;
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
@@ -445,16 +472,16 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     const nativeProvider = authOptions.providers.find((entry) => (entry.options?.id ?? entry.id) === 'native-oauth');
     if (!nativeProvider || nativeProvider.type !== 'credentials') throw new Error('Missing actual transfer provider');
     const native = { ...nativeProvider, ...nativeProvider.options };
-    const nativeUser = await native.authorize(
-      {
-        transferToken: issueNativeOAuthTransferToken({
-          userId: accepted.id,
-          nextPath: '/',
-          credentialProof: linked.credentialProof,
-        }),
-      },
-      { headers: {} },
+    holder.routeCredential = linkedCookie;
+    const nativeRedirect = await mountedNativeCallback(
+      new NextRequest('http://localhost:3000/api/auth/native/callback?next=%2F'),
     );
+    holder.routeCredential = undefined;
+    const redirectMatch = (await nativeRedirect.text()).match(/window\.location\.href=(".*?")/);
+    if (!redirectMatch) throw new Error('Actual mounted native callback did not redirect');
+    const transferToken = new URL(JSON.parse(redirectMatch[1]) as string).searchParams.get('transferToken');
+    if (!transferToken) throw new Error('Actual mounted native callback did not issue a transfer');
+    const nativeUser = await native.authorize({ transferToken }, { headers: {} });
     if (!nativeUser) throw new Error('Actual transfer verifier refused synthetic proof');
     const transferred = await callback({
       token: { sub: accepted.id },

@@ -61,3 +61,27 @@ The optional ancestry field preserves acceptance of earlier proof shapes, but
 older strict version-1 readers reject a proof containing the new field. Deploy
 compatible proof readers before the backend emits marked proofs. The staged
 modes remain off and activation guards remain enforced during that ordering.
+
+
+## Mounted native callback continuation
+
+The native callback route reconstructs its trusted web proof from the exact
+admitted signed cookie. It now carries `legacy_no_sid: true` into
+`requiresAccountCutoff: true` before the existing transfer serializer runs.
+A renewed historical cookie may already have a SID; that does not remove its
+unknown ancestry. Generation and authentication age still come from the signed
+source, rather than the displayed session.
+
+The joined PostgreSQL proof now executes this actual route before the actual
+signed transfer parser, `native-oauth` authorize callback, JWT callback, cookie
+encoder and mounted backend logout. Its request-context adapter reads the
+fixture's exact cookie through the actual first-party admission reader; the
+serializer and route are not replaced. Logging out through the transferred web
+cookie must deny every historical raw/renewed alias, while the subsequent real
+password login remains usable. The callback route suite includes a separate
+signed no-SID ancestry regression.
+
+This continuation concerns the route that creates a transferred web session.
+The separate backend native exchange and native refresh/canonical lineage
+boundaries require their own composed proof; it does not infer that historical
+ancestry already lost by an older issuer can be reconstructed.
