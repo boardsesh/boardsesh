@@ -24,6 +24,7 @@ export function WledBluetoothInstaller({
   const [snapshot, setSnapshot] = useState<InstallerSnapshot>({ stage: 'idle' });
   const [modelConfirmed, setModelConfirmed] = useState(false);
   const [audioDisabledConfirmed, setAudioDisabledConfirmed] = useState(false);
+  const [betaConfirmed, setBetaConfirmed] = useState(false);
   const installer = useRef<ReturnType<typeof createWledInstaller> | null>(null);
   const active = useRef(true);
   const inspecting = useRef(false);
@@ -37,6 +38,7 @@ export function WledBluetoothInstaller({
     setSnapshot({ stage: 'idle' });
     setModelConfirmed(false);
     setAudioDisabledConfirmed(false);
+    setBetaConfirmed(false);
     installer.current?.cancel();
     installer.current = null;
     const unsubscribe = subscribeToCredentialChanges(() => {
@@ -61,6 +63,9 @@ export function WledBluetoothInstaller({
   async function inspect() {
     if (disabled || busy || inspecting.current || !active.current) return;
     inspecting.current = true;
+    setModelConfirmed(false);
+    setAudioDisabledConfirmed(false);
+    setBetaConfirmed(false);
     const startedAt = generation.current;
     try {
       const { nativeInstallerIO } = await import('../../lib/wled-installer/native');
@@ -90,7 +95,12 @@ export function WledBluetoothInstaller({
     inspecting: t('sprayLed.installer.inspecting'),
     blocked: t('sprayLed.installer.locked'),
     backingUp: t('sprayLed.installer.backingUp'),
-    ready: snapshot.release ? t('sprayLed.installer.ready') : t('sprayLed.installer.unqualified'),
+    ready:
+      snapshot.release?.channel === 'beta'
+        ? t('sprayLed.installer.betaReady')
+        : snapshot.release
+          ? t('sprayLed.installer.ready')
+          : t('sprayLed.installer.unqualified'),
     downloading: t('sprayLed.installer.downloading'),
     uploading:
       snapshot.progress == null
@@ -110,6 +120,9 @@ export function WledBluetoothInstaller({
   return (
     <View style={{ gap: spacing[2] }}>
       <Text variant="headline">{t('sprayLed.installer.title')}</Text>
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
+        {t('sprayLed.installer.betaWarning')}
+      </Text>
       <Text
         variant="footnote"
         color={snapshot.error ? brandColors.error : systemColors.secondaryLabel}
@@ -157,6 +170,14 @@ export function WledBluetoothInstaller({
       {snapshot.stage === 'ready' && snapshot.release ? (
         <>
           <Text variant="footnote">{t('sprayLed.installer.backupHint')}</Text>
+          {snapshot.release.channel === 'beta' ? (
+            <SwitchRow
+              label={t('sprayLed.installer.confirmBeta')}
+              value={betaConfirmed}
+              onValueChange={setBetaConfirmed}
+              disabled={disabled}
+            />
+          ) : null}
           <SwitchRow
             label={t('sprayLed.installer.confirmModel')}
             value={modelConfirmed}
@@ -172,10 +193,19 @@ export function WledBluetoothInstaller({
             />
           ) : null}
           <Button
-            title={t('sprayLed.installer.install')}
-            disabled={disabled || !modelConfirmed || (!snapshot.release.audio && !audioDisabledConfirmed)}
+            title={
+              snapshot.release.channel === 'beta'
+                ? t('sprayLed.installer.installBeta')
+                : t('sprayLed.installer.install')
+            }
+            disabled={
+              disabled ||
+              !modelConfirmed ||
+              (!snapshot.release.audio && !audioDisabledConfirmed) ||
+              (snapshot.release.channel === 'beta' && !betaConfirmed)
+            }
             onPress={() => {
-              void installer.current?.install(modelConfirmed, audioDisabledConfirmed);
+              void installer.current?.install(modelConfirmed, audioDisabledConfirmed, betaConfirmed);
             }}
           />
         </>

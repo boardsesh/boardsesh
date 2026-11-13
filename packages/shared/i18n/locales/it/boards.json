@@ -42,14 +42,14 @@
       "notNow": "Non ora"
     },
     "installer": {
-      "title": "Installa il supporto Bluetooth",
-      "hint": "Salva una copia di WLED, poi installa firmware Bluetooth verificato tramite Wi-Fi locale.",
+      "title": "Installa il supporto Bluetooth (beta)",
+      "hint": "Salva un backup di WLED, poi installa il firmware Bluetooth beta compatibile tramite il Wi-Fi locale.",
       "inspect": "Controlla controller e salva copia",
       "inspecting": "Controllo del controller…",
       "locked": "Sblocca OTA e inserisci il PIN delle impostazioni WLED, poi riprova.",
       "backingUp": "Salvataggio di configurazione e preset su questo telefono…",
       "ready": "Copia salvata. Conferma il modello del controller prima di installare.",
-      "unqualified": "Copia salvata. Non esiste ancora firmware verificato per questo controller.",
+      "unqualified": "Il backup è salvato. Non è disponibile una versione del firmware compatibile con questo controller.",
       "downloading": "Download e verifica del firmware…",
       "uploading": "Caricamento firmware… Lascia WLED acceso.",
       "uploadProgress": "Caricamento {{percent}}%… Lascia WLED acceso.",
@@ -69,7 +69,11 @@
       "confirmNoAudio": "Accetto questa versione senza effetti reattivi all’audio",
       "install": "Installa firmware verificato",
       "verify": "Controlla installazione",
-      "cancel": "Annulla"
+      "cancel": "Annulla",
+      "betaReady": "Il backup è salvato. Conferma il modello del controller e lo stato beta prima dell’installazione.",
+      "betaWarning": "Beta: i test OTA, Android e iOS su dispositivi reali non sono ancora completi. L’installazione potrebbe non riuscire e potresti dover ripristinare le impostazioni di WLED dal backup.",
+      "confirmBeta": "Capisco che questo firmware è in beta e che i test su dispositivi reali non sono ancora completi",
+      "installBeta": "Installa il firmware beta"
     }
   },
   "sprayDetection": {

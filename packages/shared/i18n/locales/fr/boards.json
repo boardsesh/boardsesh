@@ -42,14 +42,14 @@
       "notNow": "Pas maintenant"
     },
     "installer": {
-      "title": "Installer la prise en charge Bluetooth",
-      "hint": "Sauvegarde WLED, puis installe un firmware Bluetooth vérifié via le Wi-Fi local.",
+      "title": "Installer la prise en charge Bluetooth (bêta)",
+      "hint": "Sauvegarde WLED, puis installe un firmware Bluetooth bêta compatible via le Wi-Fi local.",
       "inspect": "Vérifier le contrôleur et sauvegarder",
       "inspecting": "Vérification de ce contrôleur…",
       "locked": "Déverrouille OTA et saisis ton code PIN WLED, puis vérifie à nouveau.",
       "backingUp": "Sauvegarde de la configuration et des préréglages sur ce téléphone…",
       "ready": "Sauvegarde enregistrée. Confirme le modèle du contrôleur avant l’installation.",
-      "unqualified": "Sauvegarde enregistrée. Aucun firmware n’est encore validé pour ce contrôleur.",
+      "unqualified": "Ta sauvegarde est enregistrée. Aucune version compatible du firmware n’est disponible pour ce contrôleur.",
       "downloading": "Téléchargement et vérification du firmware…",
       "uploading": "Transfert du firmware… Laisse WLED allumé.",
       "uploadProgress": "Transfert {{percent}} %… Laisse WLED allumé.",
@@ -69,7 +69,11 @@
       "confirmNoAudio": "J’accepte cette version sans effets réactifs au son",
       "install": "Installer le firmware vérifié",
       "verify": "Vérifier l’installation",
-      "cancel": "Annuler"
+      "cancel": "Annuler",
+      "betaReady": "Ta sauvegarde est enregistrée. Confirme le modèle du contrôleur et le statut bêta avant l’installation.",
+      "betaWarning": "Bêta : les tests OTA, Android et iOS sur appareils réels ne sont pas terminés. L’installation peut échouer et tu devras peut-être restaurer les réglages WLED depuis ta sauvegarde.",
+      "confirmBeta": "Je comprends que ce firmware est en bêta et que les tests sur appareils réels ne sont pas terminés",
+      "installBeta": "Installer le firmware bêta"
     }
   },
   "sprayDetection": {

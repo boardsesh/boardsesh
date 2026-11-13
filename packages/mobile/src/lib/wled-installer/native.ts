@@ -39,6 +39,7 @@ async function request<Result>(
   signal: AbortSignal,
   read: (response: Response) => Promise<Result>,
   timeoutMs = 8000,
+  allowAssetRedirects = false,
 ): Promise<Result> {
   const abortController = new AbortController();
   const cancel = () => abortController.abort();
@@ -49,8 +50,8 @@ async function request<Result>(
     const response = await fetch(url, {
       signal: abortController.signal,
       credentials: 'omit',
-      redirect: 'error',
-      headers: { Accept: 'application/json' },
+      redirect: allowAssetRedirects ? 'follow' : 'error',
+      headers: { Accept: allowAssetRedirects ? 'application/octet-stream' : 'application/json' },
     });
     if (response.status === 401 || response.status === 403) throw new WledInstallerError('locked');
     if (!response.ok) throw new WledInstallerError('unavailable');
@@ -59,6 +60,16 @@ async function request<Result>(
     clearTimeout(timeout);
     signal.removeEventListener('abort', cancel);
   }
+}
+function requireHttpsAssetUrl(url: string): void {
+  let assetUrl: URL;
+  try {
+    assetUrl = new URL(url);
+  } catch {
+    throw new WledInstallerError('incompatible');
+  }
+  if (assetUrl.protocol !== 'https:' || assetUrl.username || assetUrl.password)
+    throw new WledInstallerError('incompatible');
 }
 export const nativeInstallerIO: InstallerIO = {
   async readJson(url, signal) {
@@ -81,19 +92,21 @@ export const nativeInstallerIO: InstallerIO = {
   },
   async download(release, signal) {
     ensureNative();
-    const assetUrl = new URL(release.url);
-    if (assetUrl.protocol !== 'https:' || assetUrl.username || assetUrl.password)
-      throw new WledInstallerError('incompatible');
+    requireHttpsAssetUrl(release.url);
     const bytes = await request(
       release.url,
       signal,
       async (response) => {
+        // Native fetch follows GitHub's release-asset redirect. Validate the final URL
+        // before reading bytes; controller requests retain redirect:error above.
+        requireHttpsAssetUrl(response.url);
         const declaredLength = response.headers.get('content-length');
         if (declaredLength !== null && Number(declaredLength) !== release.imageBytes)
           throw new WledInstallerError('imageSize');
         return response.arrayBuffer();
       },
       30_000,
+      true,
     );
     if (bytes.byteLength !== release.imageBytes) throw new WledInstallerError('imageSize');
     const checksum = [...new Uint8Array(await digest(CryptoDigestAlgorithm.SHA256, bytes))]
@@ -166,8 +179,8 @@ export const nativeInstallerIO: InstallerIO = {
     ) {
       throw new WledInstallerError('verification');
     }
-    readManifest({ manifestVersion: 1, releases: [parsed.release] });
-    return parsed as InstallJournal;
+    const [release] = readManifest({ manifestVersion: 1, releases: [parsed.release] });
+    return { ...parsed, release } as InstallJournal;
   },
   async writeJournal(journal) {
     await writeAsStringAsync(
