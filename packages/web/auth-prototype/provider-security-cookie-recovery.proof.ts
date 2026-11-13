@@ -39,6 +39,7 @@ import {
   providerCandidateCredentialHash,
 } from '../app/lib/auth/provider-security-command-client.server';
 import { readProviderSecurityRecoveryInput } from '../app/lib/auth/provider-security-recovery.server';
+import { createProviderSecurityDirectPublication } from '../app/lib/auth/provider-security-direct.server';
 import {
   captureProviderBrowserContext,
   ProviderSecurityIdentityChangedError,
@@ -68,6 +69,19 @@ let privateOrigin: string;
 let provider: ReturnType<typeof createProviderSecurityCommandClient>;
 let binding: ReturnType<typeof createBrowserBindingCommandClient>;
 let dropFinalizerReply = false;
+let direct: ReturnType<typeof createProviderSecurityDirectPublication>;
+let directScenario:
+  | {
+      readonly operationKey: string;
+      readonly actorContextKey: string;
+      readonly userId: string;
+      readonly authSessionId: string;
+      readonly authenticatedAt: string | null;
+      readonly expiresAt: string;
+      readonly initialHeaders: readonly string[];
+      readonly requests: { readonly path: string; readonly method: string; status?: number; dropped?: boolean }[];
+    }
+  | undefined;
 
 function deferred() {
   let resolve!: () => void;
@@ -258,6 +272,90 @@ async function recover(page: Page, operationKey: string) {
   }, operationKey);
 }
 
+async function setupDirect(selected: 'current-store' | 'better-auth', kind: ProviderSecurityActor['kind']) {
+  const owner = await environment.actor(selected, kind, { provider: 'apple' });
+  const methods = await provider.command('methods', { actor: owner.actor });
+  if (methods.outcome !== 'available') throw new Error('Owned unlink methods unavailable');
+  const method = methods.providers.find((entry) => entry.provider === 'apple');
+  if (!method?.canUnlink) throw new Error('Owned Apple method cannot unlink');
+  const intent = await provider.command('intent', {
+    actor: owner.actor,
+    action: 'unlink',
+    provider: 'apple',
+    methodId: method.methodId,
+  });
+  if (intent.outcome !== 'recorded') throw new Error('Owned unlink intent unavailable');
+  const proof = await provider.command('reauthenticate-password', {
+    actor: owner.actor,
+    intentToken: intent.intentToken,
+    browserIntentToken: intent.browserIntentToken,
+    password: ' exact password ',
+  });
+  if (proof.outcome !== 'proved') throw new Error('Actual owned password comparison refused');
+  const correlation = buildCanonicalCoordinatorCorrelationCookie({
+    servingOrigin: www,
+    canonicalOrigin: www,
+    token: owner.actor.browserBindingToken,
+    bindingId: intent.browserCursor.bindingId,
+  });
+  const original = buildBrowserProofCookieCandidate({
+    cursor: { bindingId: intent.browserCursor.bindingId, version: intent.browserCursor.version },
+    proof: { kind, rawCredential: owner.actor.credential },
+    proofMaxAgeSeconds: 3600,
+    observedCookieHeader: pair(correlation),
+  });
+  const originalHeaders = [correlation, ...original.proofHeaders];
+  const observed = await readSelection(originalHeaders.map(pair).join('; '));
+  if (observed.status !== 'admitted') throw new Error('Owned direct source missing');
+  const current = captureProviderBrowserContext(observed);
+  const issuedAt = new Date();
+  const frame: ProviderSecurityFlow = {
+    version: 1,
+    action: 'unlink',
+    provider: 'apple',
+    methodId: method.methodId,
+    actorKind: kind,
+    actorCredentialHash: current.credentialHash,
+    browserBindingHash: current.browserCursor.bindingId,
+    browserVersion: current.browserCursor.version,
+    browserBindingExpiresAt: current.browserCursor.bindingExpiresAt,
+    sourceCredentialProof: current.sourceCredentialProof,
+    credentialExpiresAt: current.credentialExpiresAt,
+    intentToken: intent.intentToken,
+    browserIntentToken: intent.browserIntentToken,
+    recoveryToken: intent.recoveryToken,
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(Math.min(Date.parse(intent.expiresAt), issuedAt.getTime() + 15 * 60_000)).toISOString(),
+    reauthenticationToken: proof.reauthenticationToken,
+    reauthenticationExpiresAt: proof.expiresAt,
+    providerFlowHash: null,
+    googleFlowHash: null,
+    googleNonce: null,
+  };
+  const operationKey = providerSecurityOperationKey(frame.intentToken);
+  const carrier = `${providerSecurityFlowCookieName(operationKey, true)}=${await sealProviderSecurityFlow(frame, environment.secret)}; Path=/; HttpOnly; Secure; SameSite=Lax; Expires=${new Date(frame.expiresAt).toUTCString()}`;
+  directScenario = {
+    operationKey,
+    actorContextKey: current.actorContextKey,
+    userId: owner.userId,
+    authSessionId: owner.sid,
+    authenticatedAt: current.sourceCredentialProof.authenticatedAt,
+    expiresAt: current.credentialExpiresAt,
+    initialHeaders: [...originalHeaders, carrier],
+    requests: [],
+  };
+  context = await browser.newContext({ ignoreHTTPSErrors: true });
+  await context.route('**/*', (route) =>
+    new URL(route.request().url()).origin === www ? route.continue() : route.abort('blockedbyclient'),
+  );
+  const page = await context.newPage();
+  await page.goto(`${www}/page`);
+  expect(
+    await page.evaluate(async () => (await fetch('/fixture/direct-bootstrap', { credentials: 'include' })).status),
+  ).toBe(200);
+  return { page, current: directScenario };
+}
+
 beforeAll(async () => {
   if (!process.env.AUTH_PROTOTYPE_DATABASE_URL) throw new Error('Explicit owned AUTH_PROTOTYPE_DATABASE_URL required');
   environment = await createProviderSecurityEnvironment();
@@ -301,6 +399,12 @@ beforeAll(async () => {
   const clientEnvironment = { ...process.env, CURRENT_STORE_AUTH_BACKEND_ORIGIN: privateOrigin };
   provider = createProviderSecurityCommandClient({ environment: clientEnvironment });
   binding = createBrowserBindingCommandClient({ environment: clientEnvironment });
+  direct = createProviderSecurityDirectPublication({
+    environment: clientEnvironment,
+    ready: () => true,
+    readSelection,
+    clientFactory: () => provider,
+  });
   certificateDirectory = await mkdtemp(join(tmpdir(), '6975-provider-recovery-'));
   execFileSync(
     'openssl',
@@ -335,6 +439,52 @@ beforeAll(async () => {
         if (path === '/page') {
           response.setHeader('Content-Type', 'text/html');
           response.end('<!doctype html><body>Owned provider cookie recovery fixture</body>');
+          return;
+        }
+        if (path.startsWith('/fixture/direct-')) {
+          const active = directScenario;
+          if (!active) {
+            response.writeHead(503).end();
+            return;
+          }
+          if (path === '/fixture/direct-bootstrap') {
+            response.setHeader('Set-Cookie', [...active.initialHeaders]);
+            response.end();
+            return;
+          }
+          const trace: { path: string; method: string; status?: number; dropped?: boolean } = {
+            path,
+            method: request.method ?? '',
+          };
+          active.requests.push(trace);
+          if (path.endsWith('unknown')) dropFinalizerReply = true;
+          const result =
+            path === '/fixture/direct-ack'
+              ? await direct.acknowledge({
+                  cookieHeader: request.headers.cookie ?? null,
+                  operationKey: active.operationKey,
+                })
+              : await direct.unlink({
+                  cookieHeader: request.headers.cookie ?? null,
+                  operationKey: active.operationKey,
+                  actorContextKey: active.actorContextKey,
+                });
+          trace.status = result.status;
+          if (path.endsWith('headers-lost') && result.status === 200) {
+            trace.dropped = true;
+            response.destroy();
+            return;
+          }
+          response.setHeader('Content-Type', 'application/json');
+          if (result.headers.getSetCookie().length) response.setHeader('Set-Cookie', result.headers.getSetCookie());
+          response.writeHead(result.status);
+          if (path.endsWith('body-lost') && result.status === 200) {
+            response.flushHeaders();
+            response.write('{"body":"unfinished');
+            setTimeout(() => response.destroy(), 50);
+            return;
+          }
+          response.end(await result.text());
           return;
         }
         const current = scenario;
@@ -434,6 +584,7 @@ afterEach(async () => {
   await context?.close();
   context = undefined;
   scenario = undefined;
+  directScenario = undefined;
   dropFinalizerReply = false;
 });
 afterAll(async () => {
@@ -594,6 +745,128 @@ describe('actual next HTTPS request provider result recovery', () => {
         expect((await context!.cookies(www)).find((cookie) => cookie.name === BROWSER_CORRELATION_COOKIE)?.value).toBe(
           before.bindingToken,
         );
+      });
+    }
+});
+
+describe('actual direct unlink server composition', () => {
+  for (const selected of ['current-store', 'better-auth'] as const)
+    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
+      it(`${selected}/${kind}: actual password/prepare/issuer/finalize and next-request ACK preserve original authority`, async () => {
+        const { page, current } = await setupDirect(selected, kind);
+        const before = await cookies();
+        const result = await page.evaluate(async () => {
+          const response = await fetch('/fixture/direct-body-lost', { method: 'POST', credentials: 'include' });
+          try {
+            await response.json();
+            return { status: response.status, lost: false };
+          } catch {
+            return { status: response.status, lost: true };
+          }
+        });
+        expect(result).toEqual({ status: 200, lost: true });
+        const after = await cookies();
+        for (const cookie of before.split('; ')) expect(after).toContain(cookie);
+        const admitted = await readSelection(after);
+        expect(admitted.status).toBe('admitted');
+        if (admitted.status !== 'admitted') throw new Error('Owned direct candidate missing');
+        expect(admitted.session).toMatchObject({
+          userId: current.userId,
+          authSessionId: current.authSessionId,
+          generation: 1,
+          authenticatedAt: current.authenticatedAt,
+          expiresAt: current.expiresAt,
+        });
+        const ack = await page.evaluate(async () => {
+          const response = await fetch('/fixture/direct-ack', { method: 'POST', credentials: 'include' });
+          return { status: response.status, body: await response.json() };
+        });
+        expect(ack).toEqual({ status: 200, body: { outcome: 'completed' } });
+        const methods = await provider.command('methods', { actor: captureProviderBrowserContext(admitted).actor });
+        expect(methods.outcome).toBe('available');
+        if (methods.outcome !== 'available') throw new Error('Owned direct methods missing');
+        expect(methods.providers).toEqual([]);
+        expect(methods.passwordUsable).toBe(true);
+      });
+      for (const failure of ['unknown', 'headers-lost'] as const)
+        it(`${selected}/${kind}: ${failure} emits no candidate and cannot ACK absent actual bytes`, async () => {
+          const { page, current } = await setupDirect(selected, kind);
+          const before = await cookies();
+          const status = await page.evaluate(async (mode) => {
+            try {
+              return (await fetch(`/fixture/direct-${mode}`, { method: 'POST', credentials: 'include' })).status;
+            } catch {
+              return null;
+            }
+          }, failure);
+          if (failure === 'unknown') {
+            expect(status).toBe(503);
+            expect(current.requests).toEqual([{ path: '/fixture/direct-unknown', method: 'POST', status: 503 }]);
+          } else {
+            // Chromium can transparently resend even this empty-body POST
+            // after losing the complete response. Prove the first result was
+            // actually dropped and every resend refuses without another write.
+            expect(current.requests[0]).toEqual({
+              path: '/fixture/direct-headers-lost',
+              method: 'POST',
+              status: 200,
+              dropped: true,
+            });
+            expect([null, 409]).toContain(status);
+            if (status === 409) expect(current.requests.length).toBeGreaterThan(1);
+            for (const retry of current.requests.slice(1))
+              expect(retry).toEqual({ path: '/fixture/direct-headers-lost', method: 'POST', status: 409 });
+          }
+          expect(await cookies()).toBe(before);
+          expect(
+            await page.evaluate(
+              async () => (await fetch('/fixture/direct-ack', { method: 'POST', credentials: 'include' })).status,
+            ),
+          ).toBe(409);
+          const [stored] = await environment.database
+            .select()
+            .from(authProviderSecurityIntents)
+            .where(eq(authProviderSecurityIntents.intentHash, current.operationKey));
+          expect(stored.phase).toBe('committed');
+          expect(
+            await environment.database
+              .select()
+              .from(authSecurityMutationEvents)
+              .where(
+                and(
+                  eq(authSecurityMutationEvents.userId, current.userId),
+                  eq(authSecurityMutationEvents.kind, 'provider-unlink'),
+                ),
+              ),
+          ).toHaveLength(1);
+        });
+      it(`${selected}/${kind}: entire header overcapacity aborts only preparation and preserves credentials`, async () => {
+        const { page, current } = await setupDirect(selected, kind);
+        await context!.addCookies([
+          { name: 'direct-observed-A', value: 'x'.repeat(3500), url: www, secure: true },
+          { name: 'direct-observed-B', value: 'y'.repeat(3500), url: www, secure: true },
+        ]);
+        expect(
+          await page.evaluate(
+            async () => (await fetch('/fixture/direct-unlink', { method: 'POST', credentials: 'include' })).status,
+          ),
+        ).toBe(503);
+        expect(
+          await environment.database
+            .select()
+            .from(authSecurityMutationEvents)
+            .where(eq(authSecurityMutationEvents.userId, current.userId)),
+        ).toHaveLength(0);
+        const selectedAfter = await readSelection(await cookies());
+        expect(selectedAfter.status).toBe('admitted');
+        if (selectedAfter.status !== 'admitted') throw new Error('Owned old source changed');
+        expect(selectedAfter.session.generation).toBe(0);
+        const methods = await provider.command('methods', {
+          actor: captureProviderBrowserContext(selectedAfter).actor,
+        });
+        expect(methods.outcome).toBe('available');
+        if (methods.outcome !== 'available') throw new Error('Owned old methods missing');
+        expect(methods.providers).toHaveLength(1);
       });
     }
 });
