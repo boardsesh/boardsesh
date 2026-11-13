@@ -11,6 +11,7 @@ import React, { type ReactNode, type RefObject } from 'react';
 import { StyleSheet, View, useWindowDimensions, type ViewInstance } from 'react-native';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { selectByVariant } from '../../theme/variants';
 import {
   TICK_CONTROL_ORIGIN,
   TICK_GUTTER,
@@ -62,7 +63,7 @@ export const TickFormRow = React.memo(function TickFormRow({
   testID,
 }: TickFormRowProps) {
   const { systemColors, spacing, opacity, variant } = useTheme();
-  const material = variant === 'material';
+  const material = selectByVariant(variant, { liquidGlass: false, material: true });
   // Reactive OS text scale — this re-renders when the user changes their text
   // size, unlike a one-shot JS breakpoint read.
   const { fontScale } = useWindowDimensions();

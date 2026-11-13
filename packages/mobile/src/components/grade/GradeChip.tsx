@@ -13,6 +13,7 @@ import { GlassSurface } from '../GlassSurface';
 import { useTheme } from '../../providers/theme-provider';
 import { withAlpha } from '../../theme/colors';
 import { spacing } from '../../theme/tokens';
+import { selectByVariant } from '../../theme/variants';
 import { readableTextColor } from './grade-chip-colors';
 
 export type GradeChipTone = 'neutral' | 'selected' | 'range' | 'consensus';
@@ -89,7 +90,7 @@ export function GradeChip({
   style,
 }: GradeChipProps) {
   const { systemColors, brandColors, chartColors, variant, m3 } = useTheme();
-  const material = variant === 'material';
+  const material = selectByVariant(variant, { liquidGlass: false, material: true });
   const accentColor = gradeColor ?? brandColors.primary;
   const selected = tone === 'selected';
   const ranged = tone === 'range';

@@ -229,6 +229,8 @@ vi.mock('../../../lib/haptics', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     colorScheme: 'light',
+    variant: 'liquidGlass',
+    m3: { outline: '#ddd' },
     systemColors: {
       fill: '#eee',
       label: '#111',
