@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { accounts, authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { createAuthorityAdapter, type AuthorityTransaction } from './adapter';
 import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './router';
 
@@ -30,6 +30,7 @@ export interface IdentityAuthority {
   replacePassword(expected: IdentityPasswordSnapshot, passwordHash: string): Promise<boolean>;
   insertProvider(identity: ProviderIdentity, generation: number): Promise<void>;
   removeProvider(identity: ProviderIdentity, generation: number): Promise<boolean>;
+  verifyEmail(userId: string, expectedEmail: string, generation: number, verifiedAt: Date): Promise<void>;
   deleteUser(userId: string): Promise<boolean>;
 }
 interface CanonicalAccount {
@@ -268,6 +269,44 @@ export function bindIdentityAuthority(
         )
         .returning({ userId: accounts.userId });
       return removed.length === 1;
+    },
+    async verifyEmail(userId, expectedEmail, generation, requestedVerifiedAt) {
+      const verifiedAt = new Date(requestedVerifiedAt.getTime());
+      if (!Number.isFinite(verifiedAt.getTime())) throw new Error('IDENTITY_VERIFICATION_TIME_INVALID');
+      if (!(await lockUser(userId, generation))) throw new Error('IDENTITY_SUBJECT_MISSING');
+      const [user] = await transaction.select().from(users).where(eq(users.id, userId));
+      if (!user || user.email !== expectedEmail) throw new Error('IDENTITY_VERIFICATION_ADDRESS_CHANGED');
+      if (user.emailVerified) return;
+      if (betterAuth) {
+        const changed = await betterAuth.update({
+          model: 'user',
+          where: [
+            { field: 'id', value: userId },
+            { field: 'email', value: expectedEmail },
+            { field: 'emailVerified', value: false },
+          ],
+          update: { emailVerified: true },
+        });
+        if (!changed) throw new Error('IDENTITY_VERIFICATION_SOURCE_CHANGED');
+      }
+      // The shared users row stores the exact receipt clock, while Better Auth
+      // exposes a boolean. As on createUser, restore the trusted timestamp after
+      // that adapter conversion in this same transaction; never refresh an
+      // already verified timestamp.
+      const [verified] = await transaction
+        .update(users)
+        .set({ emailVerified: verifiedAt })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.email, expectedEmail),
+            betterAuth ? undefined : isNull(users.emailVerified),
+          ),
+        )
+        .returning({ verifiedAt: users.emailVerified });
+      if (verified?.verifiedAt?.getTime() !== verifiedAt.getTime())
+        throw new Error('IDENTITY_VERIFICATION_SOURCE_CHANGED');
+      await revalidateIdentityAuthority(transaction, receipt);
     },
     async deleteUser(userId) {
       if (!(await lockUser(userId, undefined, true))) return false;

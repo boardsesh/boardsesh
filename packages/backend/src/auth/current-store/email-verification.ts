@@ -1,4 +1,11 @@
 import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
+import { mirrorAuthorityToCurrentStore } from '../authority/reverse-identity';
+import { bindIdentityAuthority } from '../authority/identity-authority';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+} from '../authority/router';
 import { createHash, randomBytes } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
@@ -95,6 +102,19 @@ export async function issueEmailVerification(
   userIdInput: string,
 ): Promise<RegistrationMailPlan | null> {
   const authority = captureAuthority(authorityInput);
+  await lockEnforcedProjection(transaction, authority);
+  const receipt = await captureIdentityAuthority(transaction, authority);
+  const mailPlan = await issueCapturedEmailVerification(transaction, authority, userIdInput);
+  await revalidateIdentityAuthority(transaction, receipt);
+  return mailPlan;
+}
+
+async function issueCapturedEmailVerification(
+  transaction: CurrentStoreTransaction,
+  authorityInput: WebPasswordAuthority,
+  userIdInput: string,
+): Promise<RegistrationMailPlan | null> {
+  const authority = captureAuthority(authorityInput);
   const userId = userIdInput;
   await lockEnforcedProjection(transaction, authority);
   // The climber's row before their reservation, the order account deletion uses too.
@@ -158,7 +178,7 @@ export async function resendEmailVerification(
   authorityInput: WebPasswordAuthority,
   input: ResendVerificationCommand,
 ): Promise<ResendVerificationReply> {
-  const authority = captureAuthority(authorityInput);
+  const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const parsed = resendSchema.safeParse(input.payload);
   const email = parsed.success ? parsed.data.email : undefined;
@@ -167,26 +187,46 @@ export async function resendEmailVerification(
   const base = { protocolVersion: AUTH_PROTOCOL_VERSION, operation: 'resend-verification', requestId } as const;
   return database.transaction(async (transaction): Promise<ResendVerificationReply> => {
     await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
-    const claimed = await claimCommand(transaction, { operation: 'resend-verification', requestId, issuedAt });
+    const receipt = await captureIdentityAuthority(transaction, configuredAuthority);
+    const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
+    const execute = async (): Promise<ResendVerificationReply> => {
+      const claimed = await claimCommand(transaction, { operation: 'resend-verification', requestId, issuedAt });
+      assertFresh(issuedAt);
+      if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
+      if (!email || message)
+        return {
+          ...base,
+          outcome: 'error',
+          code: 'validation_error',
+          message: message as Extract<ResendVerificationReply, { code: 'validation_error' }>['message'],
+        };
+      if (!authority.emailVerificationEnabled) return { ...base, outcome: 'accepted' };
+      // issueEmailVerification locks this climber, then re-reads the owner locked.
+      // Unauthenticated like forgot-password: 250 ms on a held row, then unavailable.
+      const owner = await reservationOwnerHint(transaction, normalizeAccountEmail(email));
+      if (owner) await boundSignInLockWaits(transaction);
+      const mailPlan = owner ? await issueEmailVerification(transaction, authority, owner) : null;
+      assertFresh(issuedAt);
+      return { ...base, outcome: 'accepted', ...(mailPlan ? { mailPlan } : {}) };
+    };
+    const result = await execute();
+    await revalidateIdentityAuthority(transaction, receipt);
     assertFresh(issuedAt);
-    if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
-    if (!email || message)
-      return {
-        ...base,
-        outcome: 'error',
-        code: 'validation_error',
-        message: message as Extract<ResendVerificationReply, { code: 'validation_error' }>['message'],
-      };
-    if (!authority.emailVerificationEnabled) return { ...base, outcome: 'accepted' };
-    // issueEmailVerification locks this climber, then re-reads the owner locked.
-    // Unauthenticated like forgot-password: 250 ms on a held row, then unavailable.
-    const owner = await reservationOwnerHint(transaction, normalizeAccountEmail(email));
-    if (owner) await boundSignInLockWaits(transaction);
-    const mailPlan = owner ? await issueEmailVerification(transaction, authority, owner) : null;
-    assertFresh(issuedAt);
-    return { ...base, outcome: 'accepted', ...(mailPlan ? { mailPlan } : {}) };
+    return result;
   });
+}
+
+async function verifySelectedIdentityEmail(
+  transaction: CurrentStoreTransaction,
+  receipt: IdentityAuthorityReceipt,
+  user: typeof users.$inferSelect,
+  generation: number,
+  verifiedAt: Date,
+): Promise<void> {
+  await bindIdentityAuthority(transaction, receipt).verifyEmail(user.id, user.email, generation, verifiedAt);
+  if (receipt.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, user.id);
+  else await mirrorIdentityIfEnabled(transaction, user.id);
+  await revalidateIdentityAuthority(transaction, receipt);
 }
 
 type Receipt = typeof authEmailVerificationTokens.$inferSelect;
@@ -215,6 +255,7 @@ function sameBinding(first: Receipt, locked: Receipt) {
 async function consumeBoundLegacyVerification(
   transaction: CurrentStoreTransaction,
   authority: WebPasswordAuthority,
+  receipt: IdentityAuthorityReceipt,
   link: { readonly email: string; readonly token: string; readonly deadline: Date; readonly now: number },
 ): Promise<'verified' | 'invalid_token' | 'expired' | 'legacy_unbound'> {
   if (!(await isEmailUniquenessEnforced(transaction))) return 'legacy_unbound';
@@ -249,12 +290,7 @@ async function consumeBoundLegacyVerification(
     expires: link.deadline,
   });
   if (!claimed) return 'invalid_token';
-  if (!user.emailVerified)
-    await transaction
-      .update(users)
-      .set({ emailVerified: verifiedAt })
-      .where(and(eq(users.id, owner), isNull(users.emailVerified)));
-  await mirrorIdentityIfEnabled(transaction, owner);
+  await verifySelectedIdentityEmail(transaction, receipt, user, cutoff?.generation ?? 0, verifiedAt);
   return 'verified';
 }
 
@@ -264,7 +300,7 @@ export async function consumeEmailVerification(
   authorityInput: WebPasswordAuthority,
   input: VerifyEmailCommand,
 ): Promise<VerifyEmailReply> {
-  const authority = captureAuthority(authorityInput);
+  const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt } = input;
   const { token, email } = input.payload;
   const base = { protocolVersion: AUTH_PROTOCOL_VERSION, operation: 'verify-email', requestId } as const;
@@ -284,107 +320,115 @@ export async function consumeEmailVerification(
     : undefined;
   return database.transaction(async (transaction): Promise<VerifyEmailReply> => {
     await transactionSettings(transaction);
-    await lockEnforcedProjection(transaction, authority);
-    const claimed = await claimCommand(transaction, { operation: 'verify-email', requestId, issuedAt });
-    assertFresh(issuedAt);
-    if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
-    // Even a negative authoritative outcome consumes its command ID. This
-    // guard still precedes every lookup of the submitted legacy record.
-    if (reservedIdentifier) return { ...base, outcome: 'invalid_token' };
-    if (!supported) {
-      if (versioned)
-        return /^ev1_/i.test(token)
-          ? { ...base, outcome: 'invalid_token' }
-          : { ...base, outcome: 'error', code: 'unavailable' };
-      if (!email) return { ...base, outcome: 'invalid_token' };
-      // The old row is never changed, removed or given a later deadline. Until
-      // BA-02 makes addresses unique, its original owner cannot be inferred
-      // from today's users, and a live link stays unbound.
-      const [legacy] = await transaction
-        .select({ expires: verificationTokens.expires })
-        .from(verificationTokens)
-        .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, token)));
+    const identityReceipt = await captureIdentityAuthority(transaction, configuredAuthority);
+    const authority = { ...configuredAuthority, expectedWriterEpoch: identityReceipt.epoch };
+    const execute = async (): Promise<VerifyEmailReply> => {
+      const claimed = await claimCommand(transaction, { operation: 'verify-email', requestId, issuedAt });
+      assertFresh(issuedAt);
+      if (!claimed) return { ...base, outcome: 'error', code: 'replayed' };
+      // Even a negative authoritative outcome consumes its command ID. This
+      // guard still precedes every lookup of the submitted legacy record.
+      if (reservedIdentifier) return { ...base, outcome: 'invalid_token' };
+      if (!supported) {
+        if (versioned)
+          return /^ev1_/i.test(token)
+            ? { ...base, outcome: 'invalid_token' }
+            : { ...base, outcome: 'error', code: 'unavailable' };
+        if (!email) return { ...base, outcome: 'invalid_token' };
+        // The old row is never changed, removed or given a later deadline. Until
+        // BA-02 makes addresses unique, its original owner cannot be inferred
+        // from today's users, and a live link stays unbound.
+        const [legacy] = await transaction
+          .select({ expires: verificationTokens.expires })
+          .from(verificationTokens)
+          .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, token)));
+        const now = await clock(transaction);
+        assertFresh(issuedAt);
+        if (!legacy) return { ...base, outcome: 'invalid_token' };
+        if (legacy.expires.getTime() <= now) return { ...base, outcome: 'expired' };
+        const outcome = await consumeBoundLegacyVerification(transaction, authority, identityReceipt, {
+          email,
+          token,
+          deadline: new Date(legacy.expires.getTime()),
+          now,
+        });
+        assertFresh(issuedAt);
+        return { ...base, outcome };
+      }
+      if (!initial || initial.purpose !== purpose) return { ...base, outcome: 'invalid_token' };
+      const user = await lockSubjectRow(transaction, initial.userId);
+      const owner = await reservationOwner(transaction, authority, initial.normalizedEmail);
+      const [cutoff] = await transaction
+        .select()
+        .from(authSubjectCutoffs)
+        .where(eq(authSubjectCutoffs.userId, initial.userId))
+        .for('update');
+      const [state] = await transaction
+        .select()
+        .from(authEmailVerificationState)
+        .where(
+          and(eq(authEmailVerificationState.userId, initial.userId), eq(authEmailVerificationState.purpose, purpose)),
+        )
+        .for('update');
+      const [receipt] = await transaction
+        .select()
+        .from(authEmailVerificationTokens)
+        .where(eq(authEmailVerificationTokens.tokenHash, initial.tokenHash))
+        .for('update');
       const now = await clock(transaction);
       assertFresh(issuedAt);
-      if (!legacy) return { ...base, outcome: 'invalid_token' };
-      if (legacy.expires.getTime() <= now) return { ...base, outcome: 'expired' };
-      const outcome = await consumeBoundLegacyVerification(transaction, authority, {
-        email,
-        token,
-        deadline: new Date(legacy.expires.getTime()),
-        now,
-      });
-      assertFresh(issuedAt);
-      return { ...base, outcome };
-    }
-    if (!initial || initial.purpose !== purpose) return { ...base, outcome: 'invalid_token' };
-    const user = await lockSubjectRow(transaction, initial.userId);
-    const owner = await reservationOwner(transaction, authority, initial.normalizedEmail);
-    const [cutoff] = await transaction
-      .select()
-      .from(authSubjectCutoffs)
-      .where(eq(authSubjectCutoffs.userId, initial.userId))
-      .for('update');
-    const [state] = await transaction
-      .select()
-      .from(authEmailVerificationState)
-      .where(
-        and(eq(authEmailVerificationState.userId, initial.userId), eq(authEmailVerificationState.purpose, purpose)),
+      if (
+        !receipt ||
+        !sameBinding(initial, receipt) ||
+        receipt.consumedAt ||
+        receipt.supersededAt ||
+        !user ||
+        owner !== initial.userId ||
+        !state ||
+        state.generation !== receipt.issuanceGeneration ||
+        cutoff?.deletedAt ||
+        (cutoff?.generation ?? 0) !== receipt.subjectGeneration ||
+        normalizeAccountEmail(receipt.deliveredEmail) !== receipt.normalizedEmail ||
+        normalizeAccountEmail(user.email) !== receipt.normalizedEmail
       )
-      .for('update');
-    const [receipt] = await transaction
-      .select()
-      .from(authEmailVerificationTokens)
-      .where(eq(authEmailVerificationTokens.tokenHash, initial.tokenHash))
-      .for('update');
-    const now = await clock(transaction);
-    assertFresh(issuedAt);
-    if (
-      !receipt ||
-      !sameBinding(initial, receipt) ||
-      receipt.consumedAt ||
-      receipt.supersededAt ||
-      !user ||
-      owner !== initial.userId ||
-      !state ||
-      state.generation !== receipt.issuanceGeneration ||
-      cutoff?.deletedAt ||
-      (cutoff?.generation ?? 0) !== receipt.subjectGeneration ||
-      normalizeAccountEmail(receipt.deliveredEmail) !== receipt.normalizedEmail ||
-      normalizeAccountEmail(user.email) !== receipt.normalizedEmail
-    )
-      return { ...base, outcome: 'invalid_token' };
-    if (receipt.expiresAt.getTime() <= now) return { ...base, outcome: 'expired' };
-    // The conditional DB clock is the redemption linearization point. All
-    // owner/state rows are already locked, so no pre-wait clock grants access.
-    const [consumed] = await transaction
-      .update(authEmailVerificationTokens)
-      .set({ consumedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(authEmailVerificationTokens.tokenHash, receipt.tokenHash),
-          isNull(authEmailVerificationTokens.consumedAt),
-          isNull(authEmailVerificationTokens.supersededAt),
-          sql`${authEmailVerificationTokens.expiresAt} > clock_timestamp()`,
-        ),
-      )
-      .returning({ consumedAt: authEmailVerificationTokens.consumedAt });
-    if (!consumed?.consumedAt) return { ...base, outcome: 'expired' };
-    // Keep a durable terminal generation even after receipt cleanup. Replaying
-    // an old unconsumed snapshot cannot revive this already-used capability.
-    await transaction
-      .update(authEmailVerificationState)
-      .set({ generation: sql`${authEmailVerificationState.generation} + 1`, updatedAt: consumed.consumedAt })
-      .where(
-        and(eq(authEmailVerificationState.userId, receipt.userId), eq(authEmailVerificationState.purpose, purpose)),
-      );
-    if (!user.emailVerified)
+        return { ...base, outcome: 'invalid_token' };
+      if (receipt.expiresAt.getTime() <= now) return { ...base, outcome: 'expired' };
+      // The conditional DB clock is the redemption linearization point. All
+      // owner/state rows are already locked, so no pre-wait clock grants access.
+      const [consumed] = await transaction
+        .update(authEmailVerificationTokens)
+        .set({ consumedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            eq(authEmailVerificationTokens.tokenHash, receipt.tokenHash),
+            isNull(authEmailVerificationTokens.consumedAt),
+            isNull(authEmailVerificationTokens.supersededAt),
+            sql`${authEmailVerificationTokens.expiresAt} > clock_timestamp()`,
+          ),
+        )
+        .returning({ consumedAt: authEmailVerificationTokens.consumedAt });
+      if (!consumed?.consumedAt) return { ...base, outcome: 'expired' };
+      // Keep a durable terminal generation even after receipt cleanup. Replaying
+      // an old unconsumed snapshot cannot revive this already-used capability.
       await transaction
-        .update(users)
-        .set({ emailVerified: consumed.consumedAt })
-        .where(and(eq(users.id, user.id), isNull(users.emailVerified)));
-    await mirrorIdentityIfEnabled(transaction, user.id);
+        .update(authEmailVerificationState)
+        .set({ generation: sql`${authEmailVerificationState.generation} + 1`, updatedAt: consumed.consumedAt })
+        .where(
+          and(eq(authEmailVerificationState.userId, receipt.userId), eq(authEmailVerificationState.purpose, purpose)),
+        );
+      await verifySelectedIdentityEmail(
+        transaction,
+        identityReceipt,
+        user,
+        receipt.subjectGeneration,
+        consumed.consumedAt,
+      );
+      assertFresh(issuedAt);
+      return { ...base, outcome: 'verified' };
+    };
+    const result = await execute();
+    await revalidateIdentityAuthority(transaction, identityReceipt);
     assertFresh(issuedAt);
-    return { ...base, outcome: 'verified' };
+    return result;
   });
 }
