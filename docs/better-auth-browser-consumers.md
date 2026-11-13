@@ -149,6 +149,36 @@ checks and supported-browser history/BFCache races remain rollout gates in
 private response or restored document has been qualified. Public readiness
 remains false.
 
+### Selected build-plan orders
+
+Selected purchase-history and order-detail server responses contain only public
+catalog data, route parameters and owner metadata. Orders, buyer fields and
+preview URLs are loaded by the admitted browser. The same pure order-list view
+serves legacy server rendering and the selected client without duplicating its
+layout. Existing utility metadata and noindex behavior remain unchanged.
+
+The configurator, order views and polls partition state/cache keys by the actual
+accepted browser tuple and its local retirement revision. Invalidated data
+cannot reappear merely because the same tuple is admitted again. Confirmed
+anonymous configuration remains separate from an unavailable selected owner.
+Private islands share one central refresh per actual Session object/revision;
+an already admitted different owner awaiting preference cleanup is preserved.
+
+CNC actions capture the caller's original opaque lease scope before sending.
+After their own awaits, they also check the actual decoded GraphQL result's
+private receipt. That receipt retains the original delivery lease and caller
+abort signal; a renewed same-owner lease cannot extend an older result's
+deadline. Original direct operation objects/arrays are covered for up to 64
+top-level fields, without recursively walking a response. Copies and restored
+objects carry no receipt. Preview seeding, checkout after draft cleanup and
+download navigation all use these guards; uncertainty never replays a mutation.
+
+Source tests use the installed GraphQL client and real memory manager, including
+same-owner renewal, delayed post-body consumption, cancellation, exact-tuple
+re-admission and the retained legacy views. Actual Next Flight/history and
+supported-browser qualification remain required; these tests do not activate
+the browser contract or authorize a payment/production change.
+
 ## Evidence and remaining work
 
 The selected profile JSON endpoint now buffers a versioned profile plus its

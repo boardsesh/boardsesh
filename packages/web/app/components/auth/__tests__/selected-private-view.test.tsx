@@ -11,7 +11,6 @@ const control = vi.hoisted(() => ({
   refreshSession: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: control.refresh }) }));
-vi.mock('@/app/lib/auth/web-session-events', () => ({ requestWebSessionRefresh: control.refreshSession }));
 vi.mock('@/app/lib/auth/browser-backend-client', () => ({
   browserBackendClient: new Proxy(
     {},
@@ -23,6 +22,7 @@ vi.mock('@/app/lib/auth/browser-backend-client', () => ({
   ),
 }));
 import SelectedPrivateView from '../selected-private-view';
+import { WEB_SESSION_REFRESH_EVENT } from '@/app/lib/auth/web-session-events';
 
 function session(userId = 'climber-a', version = 1) {
   const browserSelection = {
@@ -57,6 +57,7 @@ function view(current: Session | null, expected = session().browserSelection) {
 beforeEach(() => {
   control.refresh.mockReset();
   control.refreshSession.mockReset();
+  window.addEventListener(WEB_SESSION_REFRESH_EVENT, control.refreshSession);
   control.client = createBrowserBackendClient({
     ready: () => true,
     fetch: vi.fn<typeof fetch>(async () =>
@@ -74,11 +75,20 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  window.removeEventListener(WEB_SESSION_REFRESH_EVENT, control.refreshSession);
   control.client?.dispose();
   control.client = null;
 });
 
 describe('selected private client islands', () => {
+  it('hides disposed views without starting another primary read', () => {
+    const current = session();
+    control.client!.acceptSession(current);
+    render(view(current));
+    act(() => control.client!.dispose());
+    expect(screen.queryByText('Private client content')).toBeNull();
+    expect(control.refreshSession).not.toHaveBeenCalled();
+  });
   it('renders only public fallback during server HTML rendering, even with an accepted client fixture', () => {
     const current = session();
     control.client!.acceptSession(current);
