@@ -1,10 +1,13 @@
-import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, ne, notExists, notLike, sql } from 'drizzle-orm';
 import { AuroraClimbingClient, assertAuroraBoardName } from '@boardsesh/aurora-sync/api';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
   auroraCredentials,
   boardClimbs,
   boardseshTicks,
+  boardUserSyncs,
+  playlistOwnership,
+  playlists,
   providerSyncControls,
   userBoardMappings,
 } from '@boardsesh/db/schema';
@@ -233,6 +236,96 @@ async function assertNoConflictingKilterOwner(
   }
 }
 
+/**
+ * The Aurora user tables whose rows become one Boardsesh user's own data:
+ * ascents and bids become ticks, circuits become playlists. The other user
+ * tables (users, walls, draft_climbs, tags) land in rows keyed on the Aurora
+ * user id, which any later linker already reads, so they keep their watermark.
+ */
+const PER_LINKER_LOGBOOK_TABLES = ['ascents', 'bids', 'circuits'];
+
+/**
+ * Give a Boardsesh user who has never synced this board the login's whole
+ * logbook (#6692).
+ *
+ * `board_user_syncs` holds one watermark per Aurora login, not per Boardsesh
+ * user, and an unlink or an account deletion leaves it behind. Without this, a
+ * second Boardsesh account linking a login another account synced starts from
+ * that account's watermark, and Aurora never sends it the history again. When
+ * the first account was deleted, its ticks went with it, so those sends were
+ * lost to both accounts.
+ *
+ * "Never synced" is read from what survives an unlink: a tick on this board
+ * with a real Aurora id, or an Aurora circuit playlist the user owns.
+ * `json-import-%` ids are per-user hashes from the export import and say
+ * nothing about the API cursor. With either footprint the watermark stays, so
+ * a climber relinking their own login never re-pulls, and never gets back a
+ * tick they deleted here (`deleteTick` hard-deletes, and Aurora is not told).
+ *
+ * Nothing another account holds moves. The next sync re-reads Aurora, and the
+ * appliers still refuse every tick and playlist another Boardsesh user owns
+ * (`applyLogbookChunk`'s foreign partition, the circuits owner guard); what
+ * nobody here holds any more lands on this linker. So when the first account
+ * only unlinked and still holds the sends, they stay with it; joining two
+ * accounts is the account-merge work in #3278 / #3541, not a sync.
+ *
+ * Runs in the link transaction after the credential write, so it takes the
+ * `board_user_syncs` rows after the control and credential rows, the order a
+ * fenced sync batch locks them in. It relies on the link-generation fence:
+ * `updateUserSyncs` overwrites, so a run of an earlier link between two pages
+ * would write its old watermark back if `assertLinkGenerationCurrent` let its
+ * next page through. Returns how many cursor rows it cleared.
+ *
+ * Known miss (docs/aurora-sync.md): the footprint asks "has this user synced
+ * this board", not "did this user last move this cursor".
+ */
+async function resetLogbookCursorForFirstTimeLinker(
+  tx: CredentialTransaction,
+  input: { userId: string; boardType: AuroraBoardName; auroraUserId: number },
+): Promise<number> {
+  const syncedTick = tx
+    .select({ id: boardseshTicks.id })
+    .from(boardseshTicks)
+    .where(
+      and(
+        eq(boardseshTicks.userId, input.userId),
+        eq(boardseshTicks.boardType, input.boardType),
+        // NOT LIKE is never true for NULL, so a native tick (no aurora_id)
+        // drops out here too.
+        notLike(boardseshTicks.auroraId, 'json-import-%'),
+      ),
+    );
+  const syncedCircuit = tx
+    .select({ id: playlistOwnership.id })
+    .from(playlistOwnership)
+    .innerJoin(playlists, eq(playlists.id, playlistOwnership.playlistId))
+    .where(
+      and(
+        eq(playlistOwnership.userId, input.userId),
+        eq(playlistOwnership.role, 'owner'),
+        eq(playlists.boardType, input.boardType),
+        // Only circuits carry an aurora_id on a playlist (user sync and the
+        // JSON import both write aurora_type 'circuits' with it); a playlist
+        // made here has none, and NOT LIKE drops its NULL.
+        notLike(playlists.auroraId, 'json-import-%'),
+      ),
+    );
+
+  const cleared = await tx
+    .delete(boardUserSyncs)
+    .where(
+      and(
+        eq(boardUserSyncs.boardType, input.boardType),
+        eq(boardUserSyncs.userId, input.auroraUserId),
+        inArray(boardUserSyncs.tableName, PER_LINKER_LOGBOOK_TABLES),
+        notExists(syncedTick),
+        notExists(syncedCircuit),
+      ),
+    )
+    .returning({ tableName: boardUserSyncs.tableName });
+  return cleared.length;
+}
+
 function decryptUsername(boardType: string, encryptedUsername: string | null, mappingUsername?: string | null): string {
   if (!encryptedUsername) return mappingUsername ?? '';
 
@@ -399,13 +492,16 @@ export async function saveAuroraCredential(input: {
   if (!loginResponse.token || !loginResponse.user_id) {
     throw new Error('Invalid login response from Aurora');
   }
+  // Narrowed here, where the check is: a property narrowing does not reach the
+  // transaction callback below.
+  const auroraUserId = loginResponse.user_id;
 
   const now = new Date();
   const encryptedUsername = encrypt(input.username);
   const encryptedPassword = encrypt(input.password);
   const encryptedToken = encrypt(loginResponse.token);
 
-  const syncRunId = await db.transaction(async (tx) => {
+  const { syncRunId, clearedCursorRows } = await db.transaction(async (tx) => {
     // Block the link if another Boardsesh user already actively owns this upstream
     // account. Runs before either the INSERT or UPDATE branch below.
     await assertNoConflictingAuroraOwner(tx, {
@@ -497,13 +593,28 @@ export async function saveAuroraCredential(input: {
       });
     }
 
-    return requestProviderSyncOn(tx, {
+    const cleared = await resetLogbookCursorForFirstTimeLinker(tx, {
+      userId: input.userId,
+      boardType: input.boardType,
+      auroraUserId,
+    });
+
+    const runId = await requestProviderSyncOn(tx, {
       userId: input.userId,
       boardType: input.boardType,
       linkGeneration,
       requestedBy: 'link',
     });
+    return { syncRunId: runId, clearedCursorRows: cleared };
   });
+
+  // After the commit: a link that rolls back (a failed enqueue) restores the
+  // rows, so logging inside the transaction would count resets that never held.
+  if (clearedCursorRows > 0) {
+    logger.info(
+      `[aurora-credentials] user=${input.userId} board=${input.boardType}: no synced sends or circuits from this board yet; cleared ${clearedCursorRows} logbook cursor rows so the first sync reads the whole history (#6692)`,
+    );
+  }
 
   return {
     boardType: input.boardType,
