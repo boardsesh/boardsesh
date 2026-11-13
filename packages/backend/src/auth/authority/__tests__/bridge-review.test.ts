@@ -148,7 +148,7 @@ it('reads a fresh primary SID denial without needing lineage and preserves a dif
     .select()
     .from(authSessionDenials)
     .where(eq(authSessionDenials.sessionId, sessionId));
-  expect(denial.expiresAt.getTime()).toBeGreaterThanOrEqual(now.getTime() + (30 * 86400 + 60) * 1000);
+  expect(denial.expiresAt.getTime()).toBeGreaterThanOrEqual(now.getTime() + (30 * 86400 + 180) * 1000);
 });
 it('serializes simultaneous first bridges even when canonical insertion is delayed', async () => {
   const { userId, sessionId } = await fixture();

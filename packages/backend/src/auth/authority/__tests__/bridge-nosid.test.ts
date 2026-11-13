@@ -17,7 +17,8 @@ import {
 import { createEnvironment } from './environment';
 import { bridgeLegacyCredential } from '../bridge';
 import { readFirstPartySession, requireFreshAuthentication, type FirstPartySession } from '../session-reader';
-import { denyFirstPartySession } from '../lineage';
+import { denyFirstPartySession, denyFirstPartySessionInTransaction } from '../lineage';
+import { LEGACY_WEB_MAX_REMAINING_VALIDITY_MS } from '../../legacy-web-credentials';
 const secret = 'synthetic-no-sid-review-secret';
 const now = new Date(Math.floor(Date.now() / 1000) * 1000);
 const expected = {
@@ -401,7 +402,7 @@ it('captures stable-login identity and expiry dates without following a reused c
     .from(authSessionDenials)
     .where(eq(authSessionDenials.sessionId, firstSid));
   expect(denial.deniedAt.getTime()).toBe(now.getTime());
-  expect(denial.expiresAt.getTime()).toBe(now.getTime() + (30 * 86400 + 60) * 1000);
+  expect(denial.expiresAt.getTime()).toBe(now.getTime() + LEGACY_WEB_MAX_REMAINING_VALIDITY_MS);
 });
 
 it('the declared event-domain predicate agrees with first-party-only logout and existing two-domain mutations', async () => {
@@ -420,5 +421,55 @@ it('the declared event-domain predicate agrees with first-party-only logout and 
       sql`SELECT ${constraint.value} AS accepted FROM (VALUES (${kind}::text, ${domains})) AS "auth_security_mutation_events"("kind", "domains")`,
     );
     expect(result.accepted).toBe(accepted);
+  }
+});
+
+it.each([false, true])('captures caller-transaction logout proof before yielding, fallback=%s', async (fallback) => {
+  const original = await fixture();
+  const other = await fixture();
+  const credential = fallback ? original.first : await cookie(original.userId, 0, randomUUID());
+  const admitted = await session(credential);
+  const originalSid = admitted.authSessionId;
+  const requestedNow = new Date(now.getTime());
+  const authority = { ...expected };
+  await environment.database.transaction(async (transaction) => {
+    const pending = denyFirstPartySessionInTransaction(transaction, admitted, requestedNow, authority);
+    Object.assign(admitted, {
+      userId: other.userId,
+      authSessionId: randomUUID(),
+      generation: 99,
+      requiresAccountCutoff: !fallback,
+    });
+    admitted.expiresAt.setTime(now.getTime() + 100 * 86400000);
+    requestedNow.setTime(now.getTime() + 100 * 86400000);
+    Object.assign(authority, { expectedProjectionId: 'reused-projection', expectedWriterEpoch: 99 });
+    await pending;
+  });
+  expect((await read(credential)).status).toBe('denied');
+  expect((await read(other.first)).status).toBe('admitted');
+  const cutoffs = await environment.database
+    .select()
+    .from(authSubjectCutoffs)
+    .where(eq(authSubjectCutoffs.userId, original.userId));
+  if (fallback) {
+    expect(cutoffs[0]).toMatchObject({ generation: 1, nativeGeneration: 0 });
+    const [event] = await environment.database
+      .select()
+      .from(authSecurityMutationEvents)
+      .where(eq(authSecurityMutationEvents.userId, original.userId));
+    expect(event).toMatchObject({
+      kind: 'legacy-signout',
+      writerEpoch: expected.expectedWriterEpoch,
+      projectionId: expected.expectedProjectionId,
+      domains: ['first-party'],
+    });
+  } else {
+    expect(cutoffs).toHaveLength(0);
+    const [denial] = await environment.database
+      .select()
+      .from(authSessionDenials)
+      .where(eq(authSessionDenials.sessionId, originalSid));
+    expect(denial.deniedAt.getTime()).toBe(now.getTime());
+    expect(denial.expiresAt.getTime()).toBe(now.getTime() + LEGACY_WEB_MAX_REMAINING_VALIDITY_MS);
   }
 });

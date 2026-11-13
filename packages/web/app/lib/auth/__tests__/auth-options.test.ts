@@ -568,6 +568,20 @@ describe('authOptions.callbacks.session', () => {
     expect(result.user?.id).toBe('user-42');
   });
 
+  it('exposes only the signed generation, including zero for historic cookies', async () => {
+    const signed = await callSession({
+      session: { user: { id: 'generation-fixture' }, authGeneration: 99, expires: '2099-01-01' },
+      token: { sub: 'generation-fixture', gen: 5 },
+    });
+    expect(signed.authGeneration).toBe(5);
+    const historic = await callSession({
+      session: { user: { id: 'generation-fixture' }, expires: '2099-01-01' },
+      token: { sub: 'generation-fixture' },
+    });
+    expect(historic.authGeneration).toBe(0);
+    expect(mockDbSelect).not.toHaveBeenCalled();
+  });
+
   it('exposes the stable login generation from the JWT', async () => {
     const result = await callSession({
       session: {

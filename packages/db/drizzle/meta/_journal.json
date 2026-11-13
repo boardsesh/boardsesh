@@ -2157,6 +2157,20 @@
       "when": 1794403570492,
       "tag": "0307_legacy_web_signout",
       "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1794407405045,
+      "tag": "0308_native_revocation_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1794407446865,
+      "tag": "0309_native_denial_index",
+      "breakpoints": true
     }
   ]
 }

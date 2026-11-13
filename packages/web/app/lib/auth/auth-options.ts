@@ -455,6 +455,7 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async session({ session, token }) {
+      session.authGeneration = token.gen ?? 0;
       if (typeof token.authSessionId === 'string' && token.authSessionId) {
         session.authSessionId = token.authSessionId;
       }

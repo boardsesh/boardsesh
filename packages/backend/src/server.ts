@@ -1,3 +1,4 @@
+import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -138,6 +139,7 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 }
 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
+  assertNativeRevocationActivationConfiguration();
   // A typo in this mode would otherwise turn every adopted writer (account
   // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
   // request at a time. Refuse to serve instead, so the deploy fails visibly.

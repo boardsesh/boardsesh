@@ -10,13 +10,19 @@ import {
   type ExpectedCurrentStoreAuthority,
 } from './foundation-context';
 
-export type CurrentSecurityMutationKind = 'password-set' | 'password-change' | 'password-reset' | 'account-deletion';
+export type CurrentSecurityMutationKind =
+  | 'password-set'
+  | 'password-change'
+  | 'password-reset'
+  | 'account-deletion'
+  | 'admin-revocation';
 export type CurrentRevocationDomain = 'first-party' | 'partner';
 const revocationKinds: ReadonlySet<string> = new Set([
   'password-set',
   'password-change',
   'password-reset',
   'account-deletion',
+  'admin-revocation',
 ]);
 
 /**
@@ -106,6 +112,11 @@ export async function recordSecurityMutation(
   if (!event) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   // Keep only a keyed digest of the deleted address (decision 1, epic #6975). A
   // group the account shared stays blocked and never elects a surviving owner.
+  if (kind === 'admin-revocation') {
+    // Partner admission uses its own connection generations, not this cutoff.
+    // Reuse the same transaction-safe primitive the credential trigger calls.
+    await transaction.execute(sql`SELECT public.partner_revoke_user(${userId})`);
+  }
   if (kind === 'account-deletion') await retireDeletedSubjectEmails(transaction, userId);
   else await mirrorIdentityIfEnabled(transaction, userId);
   return { cutoff, event };

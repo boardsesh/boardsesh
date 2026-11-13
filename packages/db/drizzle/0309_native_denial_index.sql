@@ -1,0 +1,1 @@
+CREATE INDEX "auth_session_denials_user_id_idx" ON "auth_session_denials" USING btree ("user_id");
