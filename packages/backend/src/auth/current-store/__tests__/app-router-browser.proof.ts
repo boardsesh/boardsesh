@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
@@ -8,6 +9,7 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
+  authSessionDenials,
   sessions,
   userCredentials,
   userProfiles,
@@ -60,7 +62,7 @@ const { chromium } = webRequire('@playwright/test') as {
 const role = `ba03_router_browser_${randomUUID().replaceAll('-', '')}`;
 const password = randomBytes(32).toString('hex');
 const tables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens];
-const admissionReadTables = [authSubjectCutoffs];
+const admissionReadTables = [authSubjectCutoffs, authSessionDenials];
 const actorId = randomUUID();
 const ownerId = randomUUID();
 const subject = randomUUID();
@@ -177,6 +179,7 @@ describe('real Chromium transport around actual App Router bridge', () => {
         failures.push(new Error('Owned browser schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned browser role cleanup failed'));
@@ -329,7 +332,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
         await transaction.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(roleName)}`);
       }
       await transaction.execute(
-        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs} TO ${sql.identifier(readRole)}`,
+        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs}, ${authSessionDenials} TO ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(mutable, sql`, `)} TO ${sql.identifier(writerRole)}`,
@@ -371,6 +374,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -398,7 +402,9 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
     }
     for (const roleName of trackedRoles) {
       try {
-        await admin(sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join(mutable, sql`, `)} FROM ${sql.identifier(roleName)}`);
+        await admin(
+          sql`REVOKE ALL PRIVILEGES ON TABLE ${sql.join([...new Set([...mutable, ...admissionReadTables])], sql`, `)} FROM ${sql.identifier(roleName)}`,
+        );
       } catch {
         failures.push(new Error('Owned continuation grants cleanup failed'));
       }
@@ -408,6 +414,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
         failures.push(new Error('Owned continuation schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, roleName);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(roleName)}`);
       } catch {
         failures.push(new Error('Owned continuation role cleanup failed'));

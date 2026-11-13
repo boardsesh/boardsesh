@@ -1,3 +1,6 @@
+import { assertNativeRevocationActivationConfiguration } from './auth/authority/native-revocation-configuration';
+import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
+import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -84,6 +87,7 @@ import { handleApnsStats } from './handlers/apns-stats';
 import { handleCurrentStoreWebAuth } from './handlers/current-store-web-auth';
 import { handleCurrentStoreWebOAuth } from './handlers/current-store-web-oauth';
 import { handleCurrentStoreBatchSystemUsers } from './handlers/current-store-batch-system-users';
+import { handleCurrentStoreLocationSync } from './handlers/current-store-location-sync';
 import { handleIntegrationOAuthStart, handleIntegrationOAuthCallback } from './handlers/integrations-oauth';
 import { createYogaInstance } from './graphql/yoga';
 import { setupWebSocketServer } from './websocket/setup';
@@ -138,6 +142,8 @@ async function dispatchLiveActivityForSession(sessionId: string): Promise<void> 
 }
 
 export async function startServer(options: { host?: string } = {}): Promise<ServerResources> {
+  assertNativeRevocationActivationConfiguration();
+  assertWebSessionWriterActivationConfiguration();
   // A typo in this mode would otherwise turn every adopted writer (account
   // deletion, spray publish, gym merge, stray attach) into a quiet 503, one
   // request at a time. Refuse to serve instead, so the deploy fails visibly.
@@ -727,8 +733,16 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
 
       // Default-off service commands. Browser cookies do not authorize them.
+      if (pathname.startsWith('/api/internal/auth/current-store/location-sync/v1/')) {
+        await handleCurrentStoreLocationSync(req, res);
+        return;
+      }
       if (pathname.startsWith('/api/internal/auth/current-store/batch-system-users/v1/')) {
         await handleCurrentStoreBatchSystemUsers(req, res);
+        return;
+      }
+      if (pathname === '/api/internal/auth/current-store/signout') {
+        await handleCurrentStoreWebSignOut(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/web-oauth/v1/')) {
@@ -741,7 +755,8 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
         pathname === '/api/internal/auth/current-store/verify-email' ||
         pathname === '/api/internal/auth/current-store/resend-verification' ||
         pathname === '/api/internal/auth/current-store/forgot-password' ||
-        pathname === '/api/internal/auth/current-store/reset-password'
+        pathname === '/api/internal/auth/current-store/reset-password' ||
+        pathname === '/api/internal/auth/current-store/set-password'
       ) {
         await handleCurrentStoreWebAuth(req, res);
         return;

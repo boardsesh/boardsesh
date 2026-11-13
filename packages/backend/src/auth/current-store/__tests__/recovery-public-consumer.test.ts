@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -311,6 +312,7 @@ describe('real public recovery routes, private HTTP and installed native/Expo co
       await db.delete(table);
     projectionId = randomUUID();
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, role);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -385,6 +387,7 @@ describe('real public recovery routes, private HTTP and installed native/Expo co
         failures.push('schema-grants');
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, name);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(name)}`);
       } catch {
         failures.push('role');

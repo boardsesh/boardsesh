@@ -1073,3 +1073,22 @@ Decision rules and their tests: `scripts/production-deploy-watchdog.mjs`,
 6. If the OTA lane watchdog's re-dispatches are making an incident worse,
    switch them off: `gh variable set OTA_LANE_REDISPATCH --body off`. Re-enable
    with `--body on`, or `gh variable delete OTA_LANE_REDISPATCH`.
+
+### Login-denial rollback floor (BA-04 PR 9a)
+
+Before any web sign-out path writes `auth_session_denials`, deploy PR 9a's
+primary denial reader to every backend instance and surviving web admission
+path. Both backend primary admission roles and any web primary reader role
+must retain SELECT on `auth_session_denials`; the fence verifier checks the web
+role explicitly. Record its eventual merge SHA here and in owner runbook #7430 before
+writing the first denial. Until that record exists, the SID writer stays dark.
+
+Once a denial exists, the minimum backend rollback build must include PR 9a's
+`readHumanSubjectStates` denial query. The older #7420 generation floor does
+not read this table and can resurrect an otherwise valid signed-out JWE.
+`AUTH_LEGACY_BRIDGE_MODE=off` disables bridge issuance only; primary denial
+checks must remain active. Never use a legacy-decoder fallback after an
+admission denial or database unavailability.
+
+PR 9a merge SHA: **pending owner merge; SID-denial writers remain unmounted**.
+The native-generation reader still has the existing #7420 rollback floor.

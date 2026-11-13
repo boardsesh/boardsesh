@@ -33,19 +33,36 @@ const mockProofQueue: { passwordHash: string }[] = [];
 const mockLastCandidates: { passwordHash?: unknown }[] = [];
 const mockDbInsertValues = vi.fn(async () => []);
 
-vi.mock('../db/client', () => {
+vi.mock('../db/client', async () => {
+  const { authEmailProjection } = await import('@boardsesh/db/schema/auth');
   function makeSelectChain(projection?: Record<string, unknown>): unknown {
     const proofProjection = Boolean(projection && 'deletedAt' in projection && 'passwordHash' in projection);
     const admissionProjection = Boolean(projection && 'deletedAt' in projection);
+    let selectedTable: unknown;
     function proofRows() {
       const proof = mockProofQueue.shift() ?? (mockLastCandidates.length === 1 ? mockLastCandidates[0] : undefined);
       return [{ passwordHash: proof?.passwordHash ?? null, generation: null, nativeGeneration: null, deletedAt: null }];
     }
+    function selectedRows(): unknown[] {
+      // This unit fixture models the pre-activation legacy deployment. Actual
+      // current-store/BA manifest selection is covered by owned-PG HTTP tests.
+      if (selectedTable === authEmailProjection) return [];
+      if (proofProjection) return proofRows();
+      if (admissionProjection) return [{ id: 'unit-subject', deletedAt: null }];
+      const rows = mockDbSelectQueue.shift() ?? [];
+      mockLastCandidates.splice(0, mockLastCandidates.length, ...(rows as { passwordHash?: unknown }[]));
+      return rows;
+    }
     const chain = {
+      // oxlint-disable-next-line unicorn/no-thenable -- A Drizzle query builder is intentionally awaitable before limit().
+      then(resolve: (rows: unknown[]) => unknown, reject?: (reason: unknown) => unknown) {
+        return Promise.resolve(selectedRows()).then(resolve, reject);
+      },
       leftJoin() {
         return chain;
       },
-      from() {
+      from(table: unknown) {
+        selectedTable = table;
         return chain;
       },
       innerJoin() {
@@ -55,13 +72,7 @@ vi.mock('../db/client', () => {
         return chain;
       },
       limit() {
-        let rows: unknown[];
-        if (proofProjection) rows = proofRows();
-        else if (admissionProjection) rows = [{ id: 'unit-subject', deletedAt: null }];
-        else {
-          rows = mockDbSelectQueue.shift() ?? [];
-          mockLastCandidates.splice(0, mockLastCandidates.length, ...(rows as { passwordHash?: unknown }[]));
-        }
+        const rows = selectedRows();
         return Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) });
       },
     };

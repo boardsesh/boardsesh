@@ -91,7 +91,7 @@ export function createPasswordCommandAuthRequest(
         if (reply.outcome !== 'authenticated') return rejectUnavailable();
         verdict = reply;
         onPasswordAccepted();
-        return { ...reply.user };
+        return { ...reply.user, ...(reply.credentialProof ? { webCredentialProof: reply.credentialProof } : {}) };
       } catch {
         return rejectUnavailable();
       }

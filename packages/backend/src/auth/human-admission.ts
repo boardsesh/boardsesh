@@ -1,9 +1,11 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { users, authSubjectCutoffs, userCredentials } from '@boardsesh/db/schema/auth';
+import { users, authSubjectCutoffs, userCredentials, authSessionDenials } from '@boardsesh/db/schema/auth';
 import type { Database } from '../db/client';
 import { logger } from '../utils/logger';
 import { readOnAdmissionConnection } from './admission-pool';
-import { requireReadCommitted } from './current-store/foundation-context';
+import { requireReadCommitted, lockIdentityManifest } from './current-store/foundation-context';
+import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from './authority/router';
+import { bindIdentityAuthority } from './authority/identity-authority';
 import {
   cutoffEnforcement,
   isCredentialAdmitted,
@@ -49,14 +51,18 @@ export class AuthCredentialRefusedError extends Error {
 
 type AdmissionTransaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
-/** Nothing writes a per-login denial yet (BA-04 PRs 6 and 9). */
+/** A fresh set is supplied by every admission read. */
 const NO_DENIED_SESSIONS: ReadonlySet<string> = new Set();
 
-function cutoffState(generation: number | null, nativeGeneration: number | null): SubjectCutoffState {
+function cutoffState(
+  generation: number | null,
+  nativeGeneration: number | null,
+  deniedSessionKeys: ReadonlySet<string> = NO_DENIED_SESSIONS,
+): SubjectCutoffState {
   return {
     generation: generation ?? 0,
     nativeGeneration: nativeGeneration ?? 0,
-    deniedSessionKeys: NO_DENIED_SESSIONS,
+    deniedSessionKeys,
   };
 }
 
@@ -93,13 +99,23 @@ export async function readHumanSubjectStates(
           id: users.id,
           generation: authSubjectCutoffs.generation,
           nativeGeneration: authSubjectCutoffs.nativeGeneration,
+          deniedSessionKey: authSessionDenials.sessionId,
         })
         .from(users)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
+        .leftJoin(authSessionDenials, eq(authSessionDenials.userId, users.id))
         .where(and(inArray(users.id, requestedIds), isNull(authSubjectCutoffs.deletedAt)));
-      return new Map(
-        subjects.map((subject) => [subject.id, cutoffState(subject.generation, subject.nativeGeneration)]),
-      );
+      // One primary statement for users, generations and SID tombstones.
+      // Multiple denials produce joined rows, folded into one state per user.
+      const states = new Map<string, SubjectCutoffState>();
+      const denialsBySubject = new Map<string, Set<string>>();
+      for (const subject of subjects) {
+        const deniedSessionKeys = denialsBySubject.get(subject.id) ?? new Set<string>();
+        denialsBySubject.set(subject.id, deniedSessionKeys);
+        if (subject.deniedSessionKey) deniedSessionKeys.add(subject.deniedSessionKey);
+        states.set(subject.id, cutoffState(subject.generation, subject.nativeGeneration, deniedSessionKeys));
+      }
+      return states;
     }),
   );
 }
@@ -155,6 +171,7 @@ export function admitsCredential(decision: CredentialDecision, reader: Credentia
  * its user lock and issues only if nothing moved (BA-04 section 4).
  */
 export interface PasswordProof {
+  readonly authorityReceipt?: IdentityAuthorityReceipt;
   readonly passwordHash: string;
   readonly generation: number;
 }
@@ -168,6 +185,24 @@ export class PasswordProofStaleError extends Error {
   constructor() {
     super('The verified password no longer matches the account');
     this.name = 'PasswordProofStaleError';
+  }
+}
+
+/** Gate before the user lock; a legacy proof cannot issue under a new writer. */
+export async function lockPasswordProofAuthority(
+  transaction: AdmissionTransaction,
+  proof: PasswordProof,
+): Promise<void> {
+  try {
+    if (proof.authorityReceipt) {
+      await revalidateIdentityAuthority(transaction, proof.authorityReceipt);
+      return;
+    }
+    const manifest = await lockIdentityManifest(transaction);
+    if (manifest?.writerAuthority === 'better-auth') throw new PasswordProofStaleError();
+  } catch (error) {
+    if (error instanceof PasswordProofStaleError) throw error;
+    throw new AuthAdmissionUnavailableError();
   }
 }
 
@@ -196,6 +231,7 @@ export async function requireHumanSubjectForIssuance(
 ): Promise<SubjectCutoffState> {
   try {
     await requireReadCommitted(transaction);
+    if (passwordProof) await lockPasswordProofAuthority(transaction, passwordProof);
     const [subject] = await transaction
       .select({ id: users.id, deletedAt: authSubjectCutoffs.deletedAt })
       .from(users)
@@ -204,6 +240,23 @@ export async function requireHumanSubjectForIssuance(
       .limit(1)
       .for('key share', { of: users });
     if (!subject || subject.deletedAt !== null) throw new AuthSubjectDeniedError();
+    if (passwordProof?.authorityReceipt?.authority === 'better-auth') {
+      const current = await bindIdentityAuthority(transaction, passwordProof.authorityReceipt).readPassword(userId);
+      const [cutoff] = await transaction
+        .select()
+        .from(authSubjectCutoffs)
+        .where(eq(authSubjectCutoffs.userId, userId))
+        .limit(1);
+      if (cutoff?.deletedAt) throw new AuthSubjectDeniedError();
+      if (
+        !current ||
+        current.passwordHash !== passwordProof.passwordHash ||
+        current.generation !== passwordProof.generation ||
+        (cutoff?.generation ?? 0) !== passwordProof.generation
+      )
+        throw new PasswordProofStaleError();
+      return cutoffState(cutoff?.generation ?? null, cutoff?.nativeGeneration ?? null);
+    }
     if (passwordProof) {
       const [current] = await transaction
         .select({

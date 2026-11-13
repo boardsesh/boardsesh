@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { webCredentialProofSchema, WEB_CREDENTIAL_PROOF_VERSION } from './web-credential-proof';
+export * from './web-credential-proof';
 
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
@@ -12,6 +14,8 @@ export const AUTH_COMMAND_PATHS = {
   'resend-verification': '/api/internal/auth/current-store/resend-verification',
   'forgot-password': '/api/internal/auth/current-store/forgot-password',
   'reset-password': '/api/internal/auth/current-store/reset-password',
+  'set-password': '/api/internal/auth/current-store/set-password',
+  signout: '/api/internal/auth/current-store/signout',
 } as const;
 export const AUTH_COMMAND_ENV = {
   mode: 'CURRENT_STORE_WEB_AUTH_MODE',
@@ -73,6 +77,7 @@ export const passwordCommandSchema = z
   .object({
     ...commandMetadata,
     operation: z.literal('password'),
+    credentialProofVersion: z.literal(WEB_CREDENTIAL_PROOF_VERSION).optional(),
     payload: z.object({ email: z.string().min(1), password: z.string().min(1) }).strict(),
   })
   .strict();
@@ -99,6 +104,29 @@ export const resetPasswordCommandSchema = z
   .object({ ...commandMetadata, operation: z.literal('reset-password'), payload: z.unknown() })
   .strict()
   .refine((command) => Object.hasOwn(command, 'payload'), { message: 'Missing command payload' });
+export const setPasswordCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('set-password'),
+    payload: z
+      .object({
+        expectedUserId: identityId,
+        expectedAuthSessionId: z.string().min(1).max(1024),
+        credential: z.string().min(1).max(65_536),
+        password: z.string().min(8).max(128),
+        confirmPassword: z.string(),
+      })
+      .strict()
+      .refine((payload) => payload.password === payload.confirmPassword),
+  })
+  .strict();
+export const webSignOutCommandSchema = z
+  .object({
+    ...commandMetadata,
+    operation: z.literal('signout'),
+    payload: z.object({ credential: z.string().min(1).max(65_536) }).strict(),
+  })
+  .strict();
 export const authCommandSchema = z.union([
   registerCommandSchema,
   passwordCommandSchema,
@@ -106,6 +134,8 @@ export const authCommandSchema = z.union([
   resendVerificationCommandSchema,
   forgotPasswordCommandSchema,
   resetPasswordCommandSchema,
+  setPasswordCommandSchema,
+  webSignOutCommandSchema,
 ]);
 
 /** Private RPC data. Public HTTP adapters must project a separate response. */
@@ -208,13 +238,19 @@ export const passwordReplySchema = z.union([
       operation: z.literal('password'),
       requestId,
       outcome: z.literal('authenticated'),
+      credentialProof: webCredentialProofSchema.optional(),
       user: z
         .object({ id: identityId, email: z.string().min(1), name: z.string().nullable(), image: z.string().nullable() })
         .strict(),
       verification: z.object({ userId: identityId, required: z.boolean(), verified: z.boolean() }).strict(),
     })
     .strict()
-    .refine((reply) => reply.user.id === reply.verification.userId, { message: 'Verification identity mismatch' }),
+    .refine(
+      (reply) =>
+        reply.user.id === reply.verification.userId &&
+        (!reply.credentialProof || reply.credentialProof.userId === reply.user.id),
+      { message: 'Verification identity mismatch' },
+    ),
   transportErrorReplySchema('password'),
 ]);
 
@@ -288,6 +324,30 @@ export const resetPasswordReplySchema = z.union([
   recoveryValidationReply('reset-password'),
   transportErrorReplySchema('reset-password'),
 ]);
+export const setPasswordReplySchema = z.union([
+  z
+    .object({
+      protocolVersion,
+      operation: z.literal('set-password'),
+      requestId,
+      outcome: z.literal('set'),
+      credentialProof: webCredentialProofSchema,
+    })
+    .strict(),
+  z
+    .object({
+      protocolVersion,
+      operation: z.literal('set-password'),
+      requestId,
+      outcome: z.enum(['already_set', 'reauthentication_required', 'unauthenticated', 'identity_changed']),
+    })
+    .strict(),
+  transportErrorReplySchema('set-password'),
+]);
+export const webSignOutReplySchema = z.union([
+  z.object({ protocolVersion, operation: z.literal('signout'), requestId, outcome: z.literal('signed_out') }).strict(),
+  transportErrorReplySchema('signout'),
+]);
 export const authCommandReplySchema = z.union([
   registerReplySchema,
   passwordReplySchema,
@@ -295,6 +355,8 @@ export const authCommandReplySchema = z.union([
   resendVerificationReplySchema,
   forgotPasswordReplySchema,
   resetPasswordReplySchema,
+  setPasswordReplySchema,
+  webSignOutReplySchema,
 ]);
 
 export type RegisterCommand = z.infer<typeof registerCommandSchema>;
@@ -303,6 +365,10 @@ export type VerifyEmailCommand = z.infer<typeof verifyEmailCommandSchema>;
 export type ResendVerificationCommand = z.infer<typeof resendVerificationCommandSchema>;
 export type ForgotPasswordCommand = z.infer<typeof forgotPasswordCommandSchema>;
 export type ResetPasswordCommand = z.infer<typeof resetPasswordCommandSchema>;
+export type WebSignOutCommand = z.infer<typeof webSignOutCommandSchema>;
+export type WebSignOutReply = z.infer<typeof webSignOutReplySchema>;
+export type SetPasswordCommand = z.infer<typeof setPasswordCommandSchema>;
+export type SetPasswordReply = z.infer<typeof setPasswordReplySchema>;
 export type AuthCommand = z.infer<typeof authCommandSchema>;
 export type RegistrationMailPlan = z.infer<typeof registrationMailPlanSchema>;
 export type RegisterReply = z.infer<typeof registerReplySchema>;
@@ -315,6 +381,10 @@ export type PasswordRecoveryMailPlan = z.infer<typeof passwordRecoveryMailPlanSc
 export type AuthCommandReply = z.infer<typeof authCommandReplySchema>;
 
 export function authCommandReplyStatus(reply: AuthCommandReply): number {
+  if (reply.outcome === 'unauthenticated') return 401;
+  if (reply.outcome === 'reauthentication_required') return 403;
+  if (reply.outcome === 'identity_changed') return 409;
+  if (reply.outcome === 'already_set') return 409;
   if (reply.outcome === 'legacy_unbound') return 503;
   if (reply.outcome === 'created') return 201;
   if (reply.outcome !== 'error') return 200;
@@ -323,3 +393,5 @@ export function authCommandReplyStatus(reply: AuthCommandReply): number {
   if (reply.code === 'rate_limited') return 429;
   return 503;
 }
+
+export * from './location-sync-v1';

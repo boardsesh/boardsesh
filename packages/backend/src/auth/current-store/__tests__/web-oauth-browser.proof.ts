@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import postgres from 'postgres';
@@ -11,6 +12,7 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
+  authSessionDenials,
   authWebOAuthCommands,
   authWebOAuthIntents,
   sessions,
@@ -64,7 +66,16 @@ const writerRole = `ba03_weboauth_browser_${suffix}`;
 const password = randomBytes(32).toString('hex');
 const trackedRoles: string[] = [];
 const resources: { close(): Promise<void> }[] = [];
-const readTables = [users, accounts, userCredentials, userProfiles, sessions, verificationTokens, authSubjectCutoffs];
+const readTables = [
+  users,
+  accounts,
+  userCredentials,
+  userProfiles,
+  sessions,
+  verificationTokens,
+  authSubjectCutoffs,
+  authSessionDenials,
+];
 const backendTables = [
   users,
   accounts,
@@ -310,6 +321,7 @@ describe('real Chromium Apple continuation with production identity delegation',
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction.update(authEmailProjection).set({ phase: 'enforced' });
     });
@@ -335,6 +347,7 @@ describe('real Chromium Apple continuation with production identity delegation',
     for (const role of trackedRoles) {
       let roleMayExist = true;
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         roleMayExist = (await admin(sql`SELECT 1 FROM pg_roles WHERE rolname=${role}`)).length > 0;
       } catch {
         failures.push(new Error('Owned browser role lookup failed'));

@@ -224,6 +224,30 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'auth:rehearsal': {
+        command: 'tsx scripts/auth-rehearsal/index.ts',
+        cache: false,
+      },
+      'auth:rehearsal:synthetic': {
+        command: 'tsx scripts/auth-rehearsal/index.ts synthetic',
+        cache: false,
+      },
+      'auth:revoke-sessions': {
+        command: 'tsx packages/backend/src/scripts/auth-revoke-sessions.ts',
+        cache: false,
+      },
+      'auth:import-identities': {
+        command: 'tsx packages/backend/src/scripts/auth-import-identities.ts',
+        cache: false,
+      },
+      'auth:reconcile-identities': {
+        command: 'tsx packages/backend/src/scripts/auth-reconcile-identities.ts',
+        cache: false,
+      },
+      'test:auth-identities': {
+        command: 'vp test run --config packages/backend/vite.auth-identities.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
       'qa:boards': {
         command: 'tsx scripts/board-qa.ts',
         cache: false,
@@ -868,6 +892,8 @@ export default defineConfig({
       },
       'typecheck:auth-prototype-browser': {
         command: 'tsc -p packages/web/auth-prototype/tsconfig.json --noEmit',
+        // The proof imports both packages; always verify its explicit TS project.
+        cache: false,
       },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
@@ -1170,8 +1196,23 @@ export default defineConfig({
         command: 'vp test run --config packages/backend/vite.native-contract.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:auth-mirror': {
+        command:
+          'BOARDSESH_MIRROR_PROOF_MODE=on vp test run --config packages/backend/vite.auth-mirror.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
+      'test:auth-authority': {
+        command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
       'test:auth-prototype': {
         command: 'vp test run --config packages/backend/vite.auth-prototype.config.ts --reporter=agent',
+        cache: false,
+      },
+      'test:auth-web-credential-proof': {
+        command:
+          'vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-prototype-browser'],
         cache: false,
       },
       'test:auth-prototype:browser': {

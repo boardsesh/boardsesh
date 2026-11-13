@@ -1,3 +1,14 @@
+import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
+import { assertLegacyIdentityWriterAllowed } from './identity-writer-gate';
+import { bindIdentityAuthority } from '../authority/identity-authority';
+import { mirrorAuthorityToCurrentStore } from '../authority/reverse-identity';
+import {
+  captureIdentityAuthority,
+  revalidateIdentityAuthority,
+  type IdentityAuthorityReceipt,
+  type IdentityAuthorityQualification,
+} from '../authority/router';
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import {
   BATCH_SYSTEM_USERS,
   SYSTEM_BOARD_OWNER_ID,
@@ -6,6 +17,8 @@ import {
 } from '@boardsesh/db/queries/constants';
 import {
   accounts,
+  authAccount,
+  authSession,
   authEmailReservationMembers,
   authEmailReservations,
   authSubjectCutoffs,
@@ -57,7 +70,17 @@ async function assertNoAuthenticationArtifacts(transaction: CurrentStoreTransact
     .from(mobileRefreshTokens)
     .where(eq(mobileRefreshTokens.userId, userId))
     .limit(1);
-  if (credential || providerAccount || session || refresh)
+  const [canonicalAccount] = await transaction
+    .select({ id: authAccount.id })
+    .from(authAccount)
+    .where(eq(authAccount.userId, userId))
+    .limit(1);
+  const [canonicalSession] = await transaction
+    .select({ id: authSession.id })
+    .from(authSession)
+    .where(eq(authSession.userId, userId))
+    .limit(1);
+  if (credential || providerAccount || session || refresh || canonicalAccount || canonicalSession)
     throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
 }
 
@@ -70,8 +93,12 @@ export async function ensureReservedSystemIdentity(
   transaction: CurrentStoreTransaction,
   authorityInput: ExpectedCurrentStoreAuthority,
   kind: SystemIdentityKind,
+  selectedAuthority?: IdentityAuthorityReceipt,
 ): Promise<void> {
   const authority = captureExpectedAuthority(authorityInput);
+  const receipt = selectedAuthority ? Object.freeze({ ...selectedAuthority }) : undefined;
+  if (receipt) await revalidateIdentityAuthority(transaction, receipt);
+  else await assertLegacyIdentityWriterAllowed(transaction);
   if (!Object.hasOwn(identities, kind)) throw new CurrentStoreFoundationError('INVALID_COMMAND');
   const { id: userId, email, name } = identities[kind];
   const key = normalizeAccountEmail(email);
@@ -128,6 +155,7 @@ export async function ensureReservedSystemIdentity(
       .limit(2);
     if (members.length !== 1 || members[0].userId !== userId)
       throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+    if (receipt) await revalidateIdentityAuthority(transaction, receipt);
     return;
   }
 
@@ -136,7 +164,7 @@ export async function ensureReservedSystemIdentity(
   const [existingEmail] = await transaction
     .select({ userId: users.id })
     .from(users)
-    .where(eq(users.email, email))
+    .where(accountEmailCandidates(email))
     .limit(1);
   if (existingEmail) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   await reserveEnforcedEmail(transaction, {
@@ -144,9 +172,37 @@ export async function ensureReservedSystemIdentity(
     rawEmail: email,
     requestedUserId: userId,
   });
-  const [created] = await transaction
-    .insert(users)
-    .values({ id: userId, email: email, name: name })
-    .returning({ userId: users.id });
-  if (created?.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  if (receipt) {
+    const created = await bindIdentityAuthority(transaction, receipt).createUser({ id: userId, email, name });
+    if (created.id !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  } else {
+    const [created] = await transaction
+      .insert(users)
+      .values({ id: userId, email, name })
+      .returning({ userId: users.id });
+    if (created?.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  }
+  if (receipt?.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, userId);
+  else await mirrorIdentityIfEnabled(transaction, userId);
+  if (receipt) await revalidateIdentityAuthority(transaction, receipt);
+}
+
+/** Actual staged commands select a fresh writer receipt inside their existing transaction. */
+export async function ensureSelectedSystemIdentity(
+  transaction: CurrentStoreTransaction,
+  qualificationInput: IdentityAuthorityQualification,
+  kind: SystemIdentityKind,
+): Promise<void> {
+  const qualification = { ...qualificationInput };
+  const receipt = await captureIdentityAuthority(transaction, qualification);
+  await ensureReservedSystemIdentity(
+    transaction,
+    {
+      expectedProjectionId: receipt.projectionId,
+      expectedNormalizerVersion: receipt.normalizerVersion,
+      expectedWriterEpoch: receipt.epoch,
+    },
+    kind,
+    receipt,
+  );
 }

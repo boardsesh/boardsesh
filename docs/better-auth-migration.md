@@ -215,6 +215,16 @@ reauthentication; do not claim device-specific revocation that the old token
 format cannot enforce. Credential `iat` on a renewed token is not proof of
 recent password/provider authentication.
 
+The unmounted BA-04 fallback preserves ordinary no-SID cookie reads and bridges.
+An explicit logout of that unidentifiable login advances the account generation,
+ending all existing first-party sessions, including native credentials; it does
+not revoke partner grants. It requires an enforced projection and the caller’s
+matching positive writer epoch, and records a `legacy-signout` event. Repeating
+a logout from an old generation cannot end a later login. No cutoff is written
+by an ordinary read or bridge, and bridge mode defaults remain off. This is not
+per-device logout for historic cookies. Full activation and frozen-client
+offline-data gates still apply; this fallback does not authorize activation.
+
 | Event | Required behavior during coexistence |
 | --- | --- |
 | Ordinary session migration | Preserve access and normal renewal without granting fresh-login privileges |
@@ -542,3 +552,70 @@ Kratos/Hydra remains a viable service-based alternative with more operational
 components; keeping current auth plus a maintained OAuth server avoids an
 immediate identity migration but leaves ownership split. Neither alternative
 removes the email cleanup, session compatibility, or rollback obligations above.
+
+### BA-04 PR 9 dark lineage and revocation seams
+
+PR 9a adds an unmounted canonical/legacy session reader and bridge. The bridge
+selector is `AUTH_LEGACY_BRIDGE_MODE=off|shadow|on`, default `off`. Primary SID
+denials are independent of that selector and remain enforced when it is off.
+Never mount a SID writer before recording PR 9a's backend rollback floor in
+`docs/production-deploy.md` and owner runbook #7430.
+
+PR 9b keeps the native endpoint response fields unchanged. Default
+`AUTH_NATIVE_REVOCATION_MODE=legacy` keeps existing refresh-row and push-device
+cleanup while taking the shared gate and user lock before refresh rows. It
+does not create cutoffs/events, bump `native_generation`, or delete canonical
+sessions. Generation-wide revocation has an independently qualified core, but
+selecting `generation` hard-refuses startup while the Garmin compatibility gate
+is open. No environment or operator override closes that code gate. Web sessions
+and partner grants remain intact. New native JWTs carry an additive `sid`; old
+consumers continue to read `sub`.
+
+A refresh can bind a canonical session only with bridge mode `on` and a
+qualified generation revocation writer (shadow performs checks without writes).
+Startup refuses canonical issuance while that writer is unavailable. It inherits generation, authentication age, and source
+expiry. Consumed parents with NULL family metadata are retained while any
+unrevoked, unexpired refresh row for that subject can live. This deliberately
+keeps more evidence than a known-family cleanup would.
+Cleanup takes the shared authority gate and the subject lock before refresh-row
+locks, then rechecks live descendants in a new READ COMMITTED statement. A child
+committed while cleanup waits therefore retains its consumed ancestor.
+
+The admin command uses only explicit `AUTH_OPERATOR_DATABASE_URL`, strict remote
+TLS, an exact `--confirm-host`, and private files outside Git (0700 directory,
+0600 files). `plan` is the default; `apply` needs its keyed `planDigest` and
+refuses if generation or manifest epoch changed. The subject file contains one
+account ID; the key file contains 32 random bytes as 64 hexadecimal characters.
+Neither is printed. Read-only planning is available; `apply` currently
+hard-refuses while the Garmin compatibility code gate is open. The qualified
+admin core is exercised only on isolated fixtures. The commands below describe
+the eventual flow after all authority and rehearsal gates, not activation approval:
+
+```sh
+vp run auth:revoke-sessions -- plan --confirm-host <host> \
+  --subject-file <private-subject-file> --key-file <private-key-file>
+vp run auth:revoke-sessions -- apply --confirm-host <host> \
+  --subject-file <private-subject-file> --key-file <private-key-file> \
+  --plan-sha256 <reviewed-planDigest>
+```
+
+No activation code gate is closed by these dark seams. In particular, updating
+Garmin source cannot establish compatibility for already installed, frozen
+watches that clear queued ticks on refresh refusal. That gate stays open until
+recorded frozen-client compatibility evidence or an explicit owner decision.
+
+Unknown-lineage web sign-out remains a compatibility gate. The new SID mutation
+refuses a JWE with no stable `authSessionId` and must not clear its cookies or
+report successful revocation. Ordinary legacy reads and bridging still accept
+valid unknown-lineage credentials. A later cookie renewal does not, by itself,
+prove that independent older no-SID copies have ended. Closing this gate needs
+historical issuer/deployment-window evidence or reviewed lineage binding;
+account-wide fallback has not been approved.
+
+Transfer replay keys last five minutes. The bound includes the accepted
+125-second signed span, both five-second verification tolerances, opposite
+60-second clock offsets in two replicas, and rounding/scheduling margin.
+Administrative approval is bound to normalized database host, port and database
+name as well as subject generation and authority epoch. Administrative
+revocation invokes the existing partner revocation primitive in the same
+transaction; native-only sign-out never does.

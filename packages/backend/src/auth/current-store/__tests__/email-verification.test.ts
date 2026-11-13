@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { Socket } from 'node:net';
@@ -269,6 +270,7 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
       await transaction.execute(
         sql`GRANT SELECT, INSERT ON TABLE ${authSecurityMutationEvents} TO ${sql.identifier(writerRole)}`,
       );
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -330,6 +332,7 @@ describe('UID-bound email verification in the current PostgreSQL store', () => {
         failures.push(new Error('Owned schema grants cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned role cleanup failed'));

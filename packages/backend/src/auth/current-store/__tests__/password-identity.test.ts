@@ -225,7 +225,7 @@ describe('native password service over the current authoritative Postgres store'
     expect(await identityRows(userId)).toEqual({ users: [], credentials: [], profiles: [], refresh: [] });
   });
 
-  it('the real native registration adapter rolls back identity writes when token signing cannot proceed', async () => {
+  it('the real native registration adapter writes no identity when signing or writer configuration is unavailable', async () => {
     const email = `${randomUUID()}@example.test`;
     const previousSecret = process.env.NEXTAUTH_SECRET;
     const request = new IncomingMessage(new Socket());
@@ -251,7 +251,13 @@ describe('native password service over the current authoritative Postgres store'
       request.emit('end');
       await registering;
       expect(captured.statusCode).toBe(503);
-      expect(JSON.parse(captured.body)).toEqual({ error: 'Authentication is temporarily unavailable' });
+      // Mirror-on rejects this legacy writer before signing; off retains the signing-key failure.
+      expect(JSON.parse(captured.body)).toEqual({
+        error:
+          process.env.AUTH_IDENTITY_MIRROR === 'on'
+            ? 'Service temporarily unavailable'
+            : 'Authentication is temporarily unavailable',
+      });
       expect(await db.select({ id: users.id }).from(users).where(eq(users.email, email))).toEqual([]);
     } finally {
       if (previousSecret === undefined) delete process.env.NEXTAUTH_SECRET;

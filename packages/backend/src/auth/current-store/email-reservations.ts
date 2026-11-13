@@ -183,6 +183,22 @@ export async function prepareProjectionUnderUsersTableLock(
   // SQL is necessary for an actual table write lock; an advisory lock would
   // only serialize callers that voluntarily acquire that advisory lock.
   await transaction.execute(sql`LOCK TABLE ${users} IN SHARE ROW EXCLUSIVE MODE`);
+  const counts = await rebuildLiveProjection(transaction, projectionId);
+  const [prepared] = await transaction
+    .update(authEmailProjection)
+    .set({
+      phase: 'prepared',
+      ...counts,
+      preparedAt: sql`clock_timestamp()`,
+    })
+    .where(eq(authEmailProjection.projectionId, projectionId))
+    .returning();
+  if (!prepared) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  return prepared;
+}
+
+/** Caller holds the exclusive authority gate and users table write lock. */
+export async function rebuildLiveProjection(transaction: CurrentStoreTransaction, projectionId: string) {
   const identities = await transaction.select({ userId: users.id, email: users.email }).from(users).orderBy(users.id);
   const groups = new Map<string, string[]>();
   for (const identity of identities) {
@@ -192,31 +208,26 @@ export async function prepareProjectionUnderUsersTableLock(
     groups.set(key, owners);
   }
   let ambiguousKeyCount = 0;
+  const reservations: (typeof authEmailReservations.$inferInsert)[] = [];
+  const memberships: (typeof authEmailReservationMembers.$inferInsert)[] = [];
   for (const [normalizedEmail, owners] of groups) {
     if (owners.length > 1) ambiguousKeyCount += 1;
     const state =
       normalizedEmail.length === 0 ? 'blocked_invalid' : owners.length === 1 ? 'owned' : 'blocked_ambiguous';
-    await transaction.insert(authEmailReservations).values({
+    reservations.push({
       normalizedEmail,
       basisProjectionId: projectionId,
       state,
       ownerUserId: state === 'owned' ? owners[0] : null,
     });
-    await transaction.insert(authEmailReservationMembers).values(owners.map((userId) => ({ normalizedEmail, userId })));
+    memberships.push(...owners.map((userId) => ({ normalizedEmail, userId })));
   }
-  const [prepared] = await transaction
-    .update(authEmailProjection)
-    .set({
-      phase: 'prepared',
-      sourceUserCount: identities.length,
-      keyCount: groups.size,
-      ambiguousKeyCount,
-      preparedAt: sql`clock_timestamp()`,
-    })
-    .where(eq(authEmailProjection.projectionId, projectionId))
-    .returning();
-  if (!prepared) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
-  return prepared;
+  // Bounded parameter batches replace two network round trips per address.
+  for (let offset = 0; offset < reservations.length; offset += 500)
+    await transaction.insert(authEmailReservations).values(reservations.slice(offset, offset + 500));
+  for (let offset = 0; offset < memberships.length; offset += 500)
+    await transaction.insert(authEmailReservationMembers).values(memberships.slice(offset, offset + 500));
+  return { sourceUserCount: identities.length, keyCount: groups.size, ambiguousKeyCount };
 }
 
 /** Only a trusted service may supply the freshly generated or proven owner ID. */

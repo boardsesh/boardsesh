@@ -30,6 +30,26 @@ const legacyWebSessionSchema = readFileSync(
       statement.includes('ALTER TABLE "sessions" ADD CONSTRAINT'),
   )
   .join('\n');
+const authDenialIndexSchema = readFileSync(
+  new URL('../../../db/drizzle/0309_native_denial_index.sql', import.meta.url),
+  'utf8',
+);
+const authNativeRevocationSchema = readFileSync(
+  new URL('../../../db/drizzle/0308_native_revocation_events.sql', import.meta.url),
+  'utf8',
+);
+const authAuthoritySchema = readFileSync(
+  new URL('../../../db/drizzle/0306_yielding_scrambler.sql', import.meta.url),
+  'utf8',
+);
+const legacyWebSignoutSchema = readFileSync(
+  new URL('../../../db/drizzle/0307_legacy_web_signout.sql', import.meta.url),
+  'utf8',
+);
+const authWriterAuthoritySchema = readFileSync(
+  new URL('../../../db/drizzle/0310_identity_writer_authority.sql', import.meta.url),
+  'utf8',
+);
 const authCurrentStoreFoundationSchema = readFileSync(
   new URL('../../../db/drizzle/0291_auth_current_store_foundation.sql', import.meta.url),
   'utf8',
@@ -2336,6 +2356,8 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_security_mutation_events;
   DROP TABLE IF EXISTS auth_subject_cutoffs;
   ${authCurrentStoreFoundationSchema}
+  ${legacyWebSignoutSchema}
+  ${authWriterAuthoritySchema}
   DROP TABLE IF EXISTS auth_email_verification_tokens;
   DROP TABLE IF EXISTS auth_email_verification_state;
   ${authUidVerificationSchema}
@@ -2345,6 +2367,10 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   DROP TABLE IF EXISTS auth_web_oauth_intents;
   DROP TABLE IF EXISTS auth_web_oauth_commands;
   ${authWebOAuthIdentitySchema}
+  DROP TABLE IF EXISTS auth_account, auth_session, auth_verification, auth_credential_lineage, auth_session_denials, auth_migration_epochs CASCADE;
+  ${authAuthoritySchema}
+  ${authNativeRevocationSchema}
+  ${authDenialIndexSchema}
   DROP TABLE IF EXISTS oauth_consent_interactions, oauth_refresh_ancestors, oauth_grants, oauth_subjects, oauth_connections, oauth_app_policy, oauth_consent, oauth_access_token, oauth_refresh_token, oauth_client_assertion, oauth_client_resource, oauth_resource, oauth_client, oauth_verification, oauth_session CASCADE;
   ${partnerOAuthSchema}
   DROP TABLE IF EXISTS logbook_changes;

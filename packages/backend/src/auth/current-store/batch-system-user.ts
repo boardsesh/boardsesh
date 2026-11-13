@@ -1,3 +1,4 @@
+import type { IdentityAuthorityQualification } from '../authority/router';
 import { createHash } from 'node:crypto';
 import {
   BATCH_SYSTEM_USER_COMMAND_FUTURE_SKEW_MS,
@@ -18,7 +19,11 @@ import {
 } from '../../workers/families/batch-system-user-payloads';
 import { transactionSettings } from './command-context';
 import { captureExpectedAuthority, type ExpectedCurrentStoreAuthority } from './foundation-context';
-import { ensureReservedSystemIdentity, type SystemIdentityKind } from './system-identities';
+import {
+  ensureReservedSystemIdentity,
+  ensureSelectedSystemIdentity,
+  type SystemIdentityKind,
+} from './system-identities';
 
 export class BatchSystemUserError extends Error {
   constructor(readonly code: 'request_expired' | 'attempt_lost' | 'replayed_request' | 'unavailable') {
@@ -56,13 +61,45 @@ function identityForRun(run: typeof backgroundJobRuns.$inferSelect): SystemIdent
  * together; no network request or worker database transaction is held here.
  * Existing worker ledger DML is not tamper-proof family provenance.
  */
-export async function executeBatchSystemUserCommand(
+type SystemUserWriterSelection =
+  | { readonly mode: 'legacy'; readonly authority: ExpectedCurrentStoreAuthority }
+  | { readonly mode: 'selected'; readonly qualification: IdentityAuthorityQualification };
+
+export function executeBatchSystemUserCommand(
   database: DbInstance,
   authorityInput: ExpectedCurrentStoreAuthority,
   command: BatchSystemUserCommand,
   deadlineAt: number,
 ): Promise<void> {
-  const authority = captureExpectedAuthority(authorityInput);
+  return executeSystemUserCommand(
+    database,
+    { mode: 'legacy', authority: captureExpectedAuthority(authorityInput) },
+    command,
+    deadlineAt,
+  );
+}
+
+/** Mounted entry follows the manifest writer rather than the process's original epoch. */
+export function executeSelectedBatchSystemUserCommand(
+  database: DbInstance,
+  qualificationInput: IdentityAuthorityQualification,
+  command: BatchSystemUserCommand,
+  deadlineAt: number,
+): Promise<void> {
+  return executeSystemUserCommand(
+    database,
+    { mode: 'selected', qualification: { ...qualificationInput } },
+    command,
+    deadlineAt,
+  );
+}
+
+async function executeSystemUserCommand(
+  database: DbInstance,
+  selection: SystemUserWriterSelection,
+  command: BatchSystemUserCommand,
+  deadlineAt: number,
+): Promise<void> {
   const parsed = batchSystemUserCommandSchema.safeParse(command);
   if (!parsed.success) throw new BatchSystemUserError('unavailable');
   const {
@@ -100,7 +137,9 @@ export async function executeBatchSystemUserCommand(
           .returning({ token: verificationTokens.token });
         assertFresh(issuedAt, deadlineAt);
         if (claimed.length !== 1) throw new BatchSystemUserError('replayed_request');
-        await ensureReservedSystemIdentity(fencedTransaction, authority, kind);
+        if (selection.mode === 'selected')
+          await ensureSelectedSystemIdentity(fencedTransaction, selection.qualification, kind);
+        else await ensureReservedSystemIdentity(fencedTransaction, selection.authority, kind);
         assertFresh(issuedAt, deadlineAt);
       });
       // Lease/deadline rechecks in the fence are asynchronous too.

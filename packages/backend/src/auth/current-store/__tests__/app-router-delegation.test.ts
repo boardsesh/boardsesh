@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
 import {
@@ -7,6 +8,7 @@ import {
   authEmailReservations,
   authSecurityMutationEvents,
   authSubjectCutoffs,
+  authSessionDenials,
   sessions,
   userProfiles,
   users,
@@ -40,7 +42,7 @@ const mutable = [
   authEmailReservationMembers,
   authSubjectCutoffs,
 ];
-const allTables = [...mutable, authSecurityMutationEvents];
+const allTables = [...mutable, authSecurityMutationEvents, authSessionDenials];
 let pool: ReturnType<typeof postgres> | undefined;
 let readUrl: string;
 let authority: ExpectedCurrentStoreAuthority;
@@ -132,7 +134,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
         sql`REVOKE ALL PRIVILEGES ON TABLE ${users}, ${accounts}, ${userProfiles} FROM ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
-        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs} TO ${sql.identifier(readRole)}`,
+        sql`GRANT SELECT ON TABLE ${users}, ${accounts}, ${userProfiles}, ${authSubjectCutoffs}, ${authSessionDenials} TO ${sql.identifier(readRole)}`,
       );
       await transaction.execute(
         sql`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ${sql.join(mutable, sql`, `)} TO ${sql.identifier(writerRole)}`,
@@ -170,6 +172,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -201,6 +204,7 @@ describe('actual App Router providers with explicitly fixture-only compound dele
         failures.push(new Error('Owned delegate schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned delegate role cleanup failed'));

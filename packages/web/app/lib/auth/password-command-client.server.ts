@@ -1,6 +1,8 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import {
+  WEB_CREDENTIAL_PROOF_VERSION,
+  webCredentialProofMode,
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
   AUTH_PROTOCOL_VERSION,
@@ -15,6 +17,7 @@ import {
   type ResendVerificationReply,
   type ForgotPasswordReply,
   type ResetPasswordReply,
+  type SetPasswordReply,
 } from '@boardsesh/auth-protocol';
 
 import {
@@ -60,6 +63,15 @@ export type EmailVerificationCommandClient = {
   verifyEmail(token: string, email?: string): Promise<VerifyEmailReply>;
   resendVerification(payload: unknown): Promise<ResendVerificationReply>;
 };
+export type SetPasswordCommandClient = {
+  setPassword(
+    credential: string,
+    password: string,
+    confirmPassword: string,
+    expectedUserId: string,
+    expectedAuthSessionId: string,
+  ): Promise<SetPasswordReply>;
+};
 export type PasswordRecoveryCommandClient = {
   forgotPassword(payload: unknown): Promise<ForgotPasswordReply>;
   resetPassword(payload: unknown): Promise<ResetPasswordReply>;
@@ -72,8 +84,9 @@ export function createPasswordCommandClient(
     fetch?: typeof fetch;
     timeoutMs?: number;
   } = {},
-): PasswordCommandClient & EmailVerificationCommandClient & PasswordRecoveryCommandClient {
+): PasswordCommandClient & EmailVerificationCommandClient & PasswordRecoveryCommandClient & SetPasswordCommandClient {
   const environment = options.environment ?? process.env;
+  if (webCredentialProofMode(environment) === 'compatible') throw new AuthBackendUnavailableError();
   try {
     if (webPasswordMode(environment) !== 'backend-staging') throw new AuthBackendUnavailableError();
   } catch {
@@ -94,6 +107,14 @@ export function createPasswordCommandClient(
         authCommandReplyStatus(reply) !== response.status
       )
         throw new AuthBackendUnavailableError();
+      if (
+        command.operation === 'password' &&
+        command.credentialProofVersion &&
+        reply.operation === 'password' &&
+        reply.outcome === 'authenticated' &&
+        !reply.credentialProof
+      )
+        throw new AuthBackendUnavailableError();
       return reply;
     } catch {
       throw new AuthBackendUnavailableError();
@@ -101,6 +122,15 @@ export function createPasswordCommandClient(
   }
 
   return {
+    async setPassword(credential, password, confirmPassword, expectedUserId, expectedAuthSessionId) {
+      return (await command({
+        protocolVersion: AUTH_PROTOCOL_VERSION,
+        operation: 'set-password',
+        requestId: randomUUID(),
+        issuedAt: Date.now(),
+        payload: { credential, password, confirmPassword, expectedUserId, expectedAuthSessionId },
+      })) as SetPasswordReply;
+    },
     async register(payload) {
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -114,6 +144,9 @@ export function createPasswordCommandClient(
       return (await command({
         protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'password',
+        ...(webCredentialProofMode(environment) === 'required'
+          ? { credentialProofVersion: WEB_CREDENTIAL_PROOF_VERSION }
+          : {}),
         requestId: randomUUID(),
         issuedAt: Date.now(),
         payload: { email, password },

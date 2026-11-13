@@ -1,7 +1,10 @@
+import { assertMirroredNativeWriterMode } from '../authority/mirror-configuration';
 import { CURRENT_EMAIL_NORMALIZER_VERSION, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import type { WebPasswordAuthority } from './command-context';
 import {
   AUTH_COMMAND_ENV,
+  LOCATION_SYNC_COMMAND_ENV,
+  currentStoreLocationSyncMode,
   BATCH_SYSTEM_USER_COMMAND_ENV,
   currentStoreBatchSystemUsersMode as parseBatchSystemUsersMode,
 } from '@boardsesh/auth-protocol';
@@ -88,7 +91,10 @@ export const STAGED_WRITER_MODE_ENV = [
   'CURRENT_STORE_NATIVE_OAUTH_MODE',
   'CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE',
   'CURRENT_STORE_ACCOUNT_DELETION_MODE',
+  'CURRENT_STORE_SET_PASSWORD_MODE',
+  'CURRENT_STORE_WEB_SIGNOUT_MODE',
   BATCH_SYSTEM_USER_COMMAND_ENV.mode,
+  LOCATION_SYNC_COMMAND_ENV.mode,
 ] as const;
 
 /**
@@ -136,6 +142,7 @@ export function currentStoreNativeRegistrationConfiguration(
   environment: Environment = process.env,
 ): { readonly mode: 'legacy' } | { readonly mode: 'reserved-staging'; readonly authority: WebPasswordAuthority } {
   const mode = environment.CURRENT_STORE_NATIVE_REGISTRATION_MODE;
+  assertMirroredNativeWriterMode(mode === 'reserved-staging' ? mode : 'legacy', environment);
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid native registration mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
@@ -145,6 +152,7 @@ export function currentStoreNativeOAuthConfiguration(
   environment: Environment = process.env,
 ): { readonly mode: 'legacy' } | { readonly mode: 'reserved-staging'; readonly authority: WebPasswordAuthority } {
   const mode = environment.CURRENT_STORE_NATIVE_OAUTH_MODE;
+  assertMirroredNativeWriterMode(mode === 'reserved-staging' ? mode : 'legacy', environment);
   if (mode === undefined || mode === '' || mode === 'legacy') return { mode: 'legacy' };
   if (mode !== 'reserved-staging') throw new Error('Invalid native OAuth mode');
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
@@ -171,4 +179,26 @@ export function currentStoreAccountDeletionConfiguration(
   if (mode !== 'reserved-staging') throw new Error('Invalid account deletion mode');
   // Includes the digest key, so a missing key fails before content runs.
   return { mode, authority: currentStoreAuthorityConfiguration(environment) };
+}
+
+export function currentStoreLocationSyncConfiguration(environment: Environment = process.env) {
+  const mode = currentStoreLocationSyncMode(environment);
+  if (mode === 'legacy') return { mode } as const;
+  if (environment.CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE !== 'cooperative-staging')
+    throw new Error('Compound location sync requires cooperative fixed-owner ordering');
+  const rpcSecret = environment[LOCATION_SYNC_COMMAND_ENV.secret];
+  if (
+    !rpcSecret ||
+    rpcSecret !== rpcSecret.trim() ||
+    Buffer.byteLength(rpcSecret, 'utf8') < 32 ||
+    [
+      'NEXTAUTH_SECRET',
+      'CRON_SECRET',
+      'CURRENT_STORE_AUTH_RPC_SECRET',
+      BATCH_SYSTEM_USER_COMMAND_ENV.secret,
+      DELETED_EMAIL_KEY_ENV,
+    ].some((key) => Boolean(environment[key]) && rpcSecret === environment[key])
+  )
+    throw new Error('Invalid location-sync authority configuration');
+  return { mode, rpcSecret, authority: currentStoreAuthorityConfiguration(environment) } as const;
 }

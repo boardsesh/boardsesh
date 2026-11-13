@@ -2,7 +2,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { hash } from 'bcryptjs';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
-import { authSubjectCutoffs, userCredentials, userProfiles, users } from '@boardsesh/db/schema/auth';
+import {
+  authSessionDenials,
+  authSubjectCutoffs,
+  userCredentials,
+  userProfiles,
+  users,
+} from '@boardsesh/db/schema/auth';
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import { setupWorkerDatabase } from '../../../__tests__/worker-db';
@@ -55,7 +61,7 @@ const credentialPassword = 'Owned-publication-password-123!';
 const accountA = randomUUID();
 const accountB = randomUUID();
 const emailB = `${accountB}@example.test`;
-const readable = [users, userCredentials, userProfiles, authSubjectCutoffs];
+const readable = [users, userCredentials, userProfiles, authSubjectCutoffs, authSessionDenials];
 let roleTracked = false;
 let browser: Browser | undefined;
 let harness: Awaited<ReturnType<typeof startAppRouterHarness>> | undefined;

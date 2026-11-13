@@ -2143,6 +2143,41 @@
       "when": 1794394633644,
       "tag": "0305_auth_email_resolution_log",
       "breakpoints": true
+    },
+    {
+      "idx": 306,
+      "version": "7",
+      "when": 1794395533905,
+      "tag": "0306_yielding_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 307,
+      "version": "7",
+      "when": 1794403570492,
+      "tag": "0307_legacy_web_signout",
+      "breakpoints": true
+    },
+    {
+      "idx": 308,
+      "version": "7",
+      "when": 1794407405045,
+      "tag": "0308_native_revocation_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 309,
+      "version": "7",
+      "when": 1794407446865,
+      "tag": "0309_native_denial_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 310,
+      "version": "7",
+      "when": 1794409701387,
+      "tag": "0310_identity_writer_authority",
+      "breakpoints": true
     }
   ]
 }

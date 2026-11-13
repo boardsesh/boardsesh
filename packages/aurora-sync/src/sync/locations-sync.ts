@@ -8,6 +8,8 @@ import {
   upsertPublicBoardLocationsInBatches,
   type LocationSyncSummary,
   type LocationWriteBatchRunner,
+  type LocationBatchWriter,
+  assertLocationBatchWriter,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
@@ -243,9 +245,12 @@ export async function syncAuroraBoardLocations(args: {
    * they always have. Provider HTTP runs before the first batch either way.
    */
   transaction?: LocationWriteBatchRunner;
+  batchWriter?: LocationBatchWriter;
   /** Ends the pins request, the gym reads (and their pacing sleeps) and the write batches early. */
   signal?: AbortSignal;
 }): Promise<LocationSyncSummary> {
+  assertLocationBatchWriter(args.batchWriter);
+  args.batchWriter?.prepare?.();
   const pins = await fetchAuroraPins(args.board, args.signal);
   const pinsWithUsers: AuroraPinWithUser[] = [];
   if (args.fetchGymUser) {
@@ -296,10 +301,12 @@ export async function syncAuroraBoardLocations(args: {
   const summary = args.transaction
     ? await upsertPublicBoardLocationsInBatches(args.transaction, records, {
         logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
         signal: args.signal,
       })
     : await upsertPublicBoardLocations(args.db, records, {
         logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
       });
 
   // Stamped AFTER the upsert, so a gym is only marked once its data is actually
@@ -401,8 +408,11 @@ export async function crawlGymWallsForSourceKeys(args: {
   log?: (message: string) => void;
   /** As for {@link syncAuroraBoardLocations}: fenced write batches, HTTP between them. */
   transaction?: LocationWriteBatchRunner;
+  batchWriter?: LocationBatchWriter;
   signal?: AbortSignal;
 }): Promise<number> {
+  assertLocationBatchWriter(args.batchWriter);
+  args.batchWriter?.prepare?.();
   if (args.sourceKeys.length === 0) return 0;
 
   // One pins request for the whole slice: the crawl works from source keys, but
@@ -454,10 +464,14 @@ export async function crawlGymWallsForSourceKeys(args: {
     if (args.transaction) {
       await upsertPublicBoardLocationsInBatches(args.transaction, records, {
         logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
         signal: args.signal,
       });
     } else {
-      await upsertPublicBoardLocations(args.db, records, { logger: toLocationSyncLogger(args.log) });
+      await upsertPublicBoardLocations(args.db, records, {
+        logger: toLocationSyncLogger(args.log),
+        batchWriter: args.batchWriter,
+      });
     }
   }
 

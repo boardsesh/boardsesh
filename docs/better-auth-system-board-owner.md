@@ -200,3 +200,9 @@ the PR link; the tested preview source remains `8e8e64c45f`. Its immutable helpe
 receipt intentionally becomes stale after a later documentation commit and is
 not permission to restart or reuse a claimed namespace. PR #7301 stays draft
 while its current-head CI and feedback are monitored. The epic remains open.
+
+## BA-04 selected writer adoption
+
+The mounted staged command now captures the manifest writer and epoch for each command, then creates a missing fixed principal through that transaction-bound authority. Explicit legacy entry points reject an enforced Better Auth writer even with mirroring off. Existing user fields and complete reservation ownership remain unchanged, and canonical accounts or sessions count as forbidden authentication history. Reverse mirroring belongs to the same transaction; it is required for a Better Auth writer independently of the forward-mirror selector.
+
+This remains staged code work. Production activation and full rehearsal gates remain open; [#7430](https://github.com/boardsesh/boardsesh/issues/7430) remains the only owner checklist.

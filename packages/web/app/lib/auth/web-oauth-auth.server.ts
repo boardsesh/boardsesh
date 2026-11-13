@@ -164,7 +164,14 @@ export function createWebOAuthIdentityAuthRequest(
       async jwt(parameters) {
         try {
           if (!outcome || parameters.user?.id !== outcome.user.id) return rejectUnavailable();
-          const token = base.callbacks?.jwt ? await base.callbacks.jwt(parameters) : parameters.token;
+          const proofParameters = {
+            ...parameters,
+            user: {
+              ...parameters.user,
+              ...(outcome.credentialProof ? { webCredentialProof: outcome.credentialProof } : {}),
+            },
+          };
+          const token = base.callbacks?.jwt ? await base.callbacks.jwt(proofParameters) : parameters.token;
           if (token.sub !== outcome.user.id || typeof token.authSessionId !== 'string' || !token.authSessionId)
             return rejectUnavailable();
           // Stock sees the compound-created account as an existing row. Keep

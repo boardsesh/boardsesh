@@ -1,6 +1,8 @@
+import { decode } from 'next-auth/jwt';
+import { webCredentialProofMode, webCredentialProofSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
 import { CredentialAuthorityUnavailable } from '@/app/lib/auth/credential-admission.server';
 import { NextResponse, type NextRequest } from 'next/server';
-import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { getAdmittedRawServerToken, getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import {
   issueNativeOAuthTransferToken,
   NATIVE_OAUTH_ATTEMPT_COOKIE,
@@ -71,9 +73,28 @@ async function nativeCallback(request: NextRequest) {
       : {};
   let transferToken: string;
   try {
+    let credentialProof: WebCredentialProof | undefined;
+    if (webCredentialProofMode(process.env) === 'required') {
+      const raw = await getAdmittedRawServerToken();
+      if (!raw || !process.env.NEXTAUTH_SECRET) throw new Error('Source credential unavailable');
+      const claims = await decode({ token: raw, secret: process.env.NEXTAUTH_SECRET });
+      if (claims?.sub !== session.user.id || claims.authSessionId !== session.authSessionId)
+        throw new Error('Source credential changed');
+      credentialProof = webCredentialProofSchema.parse({
+        version: 1,
+        userId: claims.sub,
+        authSessionId: claims.authSessionId,
+        generation: claims.gen ?? 0,
+        authenticatedAt: claims.auth_time === undefined ? null : new Date(claims.auth_time * 1000).toISOString(),
+        linkGuarded: claims.link_guarded === true,
+      });
+    }
     transferToken = issueNativeOAuthTransferToken({
       userId: session.user.id,
+      generation: session.authGeneration ?? 0,
       nextPath,
+      ...(session.authSessionId ? { authSessionId: session.authSessionId } : {}),
+      ...(credentialProof ? { credentialProof } : {}),
       ...verifiedProof,
     });
   } catch {

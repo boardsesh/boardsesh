@@ -1,6 +1,9 @@
+import { setWebPassword } from '../auth/current-store/set-password';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DbInstance } from '@boardsesh/db/client';
 import {
+  setPasswordMode,
+  setPasswordCommandSchema,
   AUTH_COMMAND_ENV,
   AUTH_COMMAND_PATHS,
   AUTH_PROTOCOL_VERSION,
@@ -94,12 +97,23 @@ export async function handleCurrentStoreWebAuth(
               ? 'forgot-password'
               : path === AUTH_COMMAND_PATHS['reset-password']
                 ? 'reset-password'
-                : undefined;
+                : path === AUTH_COMMAND_PATHS['set-password']
+                  ? 'set-password'
+                  : undefined;
   if (!operation) {
     sendJson(response, 404, { error: 'disabled' });
     return;
   }
-  let command: AuthCommand;
+  try {
+    if (operation === 'set-password' && setPasswordMode(process.env) !== 'backend-staging') {
+      sendJson(response, 404, { error: 'disabled' });
+      return;
+    }
+  } catch {
+    sendJson(response, 503, { error: 'disabled' });
+    return;
+  }
+  let command: Exclude<AuthCommand, { operation: 'signout' }>;
   try {
     const parsed = (
       operation === 'register'
@@ -112,7 +126,9 @@ export async function handleCurrentStoreWebAuth(
               ? resendVerificationCommandSchema
               : operation === 'forgot-password'
                 ? forgotPasswordCommandSchema
-                : resetPasswordCommandSchema
+                : operation === 'set-password'
+                  ? setPasswordCommandSchema
+                  : resetPasswordCommandSchema
     ).safeParse(await readPrivateAuthCommand(request));
     if (!parsed.success) {
       sendJson(response, 400, { error: 'invalid_request' });
@@ -143,7 +159,9 @@ export async function handleCurrentStoreWebAuth(
               ? await resendEmailVerification(database, configuration.authority, command)
               : command.operation === 'forgot-password'
                 ? await requestPasswordRecovery(database, configuration.authority, command)
-                : await consumePasswordRecovery(database, configuration.authority, command),
+                : command.operation === 'set-password'
+                  ? await setWebPassword(database, configuration.authority, command)
+                  : await consumePasswordRecovery(database, configuration.authority, command),
     );
     sendJson(response, authCommandReplyStatus(result), result);
   } catch (error) {

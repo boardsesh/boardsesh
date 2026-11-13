@@ -10,6 +10,10 @@ export const authEmailProjection = pgTable(
     normalizerVersion: text('normalizer_version').notNull(),
     phase: text('phase').$type<'preparing' | 'prepared' | 'enforced'>().notNull(),
     writerEpoch: integer('writer_epoch').notNull(),
+    writerAuthority: text('writer_authority')
+      .$type<'current-store' | 'better-auth'>()
+      .notNull()
+      .default('current-store'),
     sourceUserCount: integer('source_user_count').notNull().default(0),
     keyCount: integer('key_count').notNull().default(0),
     ambiguousKeyCount: integer('ambiguous_key_count').notNull().default(0),
@@ -22,6 +26,7 @@ export const authEmailProjection = pgTable(
       .where(sql`${table.isCurrent} = true`),
     check('auth_email_projection_phase', sql`${table.phase} IN ('preparing', 'prepared', 'enforced')`),
     check('auth_email_projection_epoch', sql`${table.writerEpoch} > 0`),
+    check('auth_email_projection_writer_authority', sql`${table.writerAuthority} IN ('current-store', 'better-auth')`),
     check(
       'auth_email_projection_counts',
       sql`${table.sourceUserCount} >= 0 AND ${table.keyCount} >= 0 AND ${table.ambiguousKeyCount} >= 0 AND ${table.ambiguousKeyCount} <= ${table.keyCount}`,
@@ -104,7 +109,19 @@ export const authSecurityMutationEvents = pgTable(
     userId: text('user_id').notNull(),
     generation: integer('generation').notNull(),
     previousGeneration: integer('previous_generation').notNull(),
-    kind: text('kind').$type<'password-set' | 'password-change' | 'password-reset' | 'account-deletion'>().notNull(),
+    kind: text('kind')
+      .$type<
+        | 'password-set'
+        | 'password-change'
+        | 'password-reset'
+        | 'account-deletion'
+        | 'legacy-signout'
+        | 'native-signout'
+        | 'admin-revocation'
+      >()
+      .notNull(),
+    nativeGeneration: integer('native_generation'),
+    previousNativeGeneration: integer('previous_native_generation'),
     domains: text('domains').array().$type<('first-party' | 'partner')[]>().notNull(),
     revokedThrough: timestamp('revoked_through', { withTimezone: true }).notNull(),
     writerEpoch: integer('writer_epoch').notNull(),
@@ -113,16 +130,27 @@ export const authSecurityMutationEvents = pgTable(
     recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex('auth_security_mutation_events_generation_idx').on(table.userId, table.generation),
+    uniqueIndex('auth_security_mutation_events_generation_idx')
+      .on(table.userId, table.generation)
+      .where(sql`${table.kind} <> 'native-signout'`),
+    uniqueIndex('auth_security_mutation_events_native_generation_idx')
+      .on(table.userId, table.nativeGeneration)
+      .where(sql`${table.kind} = 'native-signout'`),
     check(
       'auth_security_mutation_events_generation',
-      sql`${table.previousGeneration} >= 0 AND ${table.generation} = ${table.previousGeneration} + 1`,
+      sql`${table.previousGeneration} >= 0 AND ((${table.kind} <> 'native-signout' AND ${table.generation} = ${table.previousGeneration} + 1 AND ${table.nativeGeneration} IS NULL AND ${table.previousNativeGeneration} IS NULL) OR (${table.kind} = 'native-signout' AND ${table.generation} = ${table.previousGeneration} AND ${table.previousNativeGeneration} IS NOT NULL AND ${table.nativeGeneration} IS NOT NULL AND ${table.previousNativeGeneration} >= 0 AND ${table.nativeGeneration} = ${table.previousNativeGeneration} + 1))`,
     ),
     check(
       'auth_security_mutation_events_kind',
-      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'account-deletion')`,
+      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'account-deletion', 'legacy-signout', 'native-signout', 'admin-revocation')`,
     ),
-    check('auth_security_mutation_events_domains', sql`${table.domains} = ARRAY['first-party', 'partner']::text[]`),
-    check('auth_security_mutation_events_epoch', sql`${table.writerEpoch} > 0 AND ${table.payloadVersion} = 1`),
+    check(
+      'auth_security_mutation_events_domains',
+      sql`(${table.kind} IN ('legacy-signout', 'native-signout') AND ${table.domains} = ARRAY['first-party']::text[]) OR (${table.kind} NOT IN ('legacy-signout', 'native-signout') AND ${table.domains} = ARRAY['first-party', 'partner']::text[])`,
+    ),
+    check(
+      'auth_security_mutation_events_epoch',
+      sql`(${table.writerEpoch} > 0 OR (${table.kind} = 'native-signout' AND ${table.writerEpoch} = 0 AND ${table.projectionId} = 'legacy-native')) AND ${table.payloadVersion} = 1`,
+    ),
   ],
 );

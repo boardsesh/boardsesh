@@ -1,3 +1,6 @@
+import { readFirstPartySession } from '../authority/session-reader';
+import { readLockedWebSubjectState } from './web-credential-state';
+import { issueWebCredentialProof } from './web-credential-proof';
 import { createHash } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import { authSubjectCutoffs, authWebOAuthCommands, authWebOAuthIntents } from '@boardsesh/db/schema/auth';
@@ -167,7 +170,7 @@ export async function resolveWebOAuthIdentity(
   input: WebOAuthResolveCommand,
 ): Promise<WebOAuthResolveReply | Unavailable> {
   const authority = captureExpectedAuthority(authorityInput);
-  const { requestId, issuedAt } = input;
+  const { requestId, issuedAt, credentialProofVersion } = input;
   const { provider, flow, actorCookie, subject, email, name, image } = input.payload;
   const captured = await captureActor(actorCookie, nextAuthSecret);
   const intentHash = digest(['web-oauth-intent-v1', provider, flow]);
@@ -254,11 +257,34 @@ export async function resolveWebOAuthIdentity(
       if (identity.outcome === 'no_email') return denied('resolve', requestId, 'email_required');
       if (identity.outcome !== 'linked' && identity.outcome !== 'created') return denied('resolve', requestId);
       const user = identity.user;
+      let credentialProof = await issueWebCredentialProof(transaction, user.id, credentialProofVersion);
+      if (credentialProof && actorCookie !== null) {
+        const actorSession = await readFirstPartySession(
+          transaction,
+          { kind: 'legacy-jwe', credential: actorCookie, secret: nextAuthSecret },
+          new Date(),
+          (userId) => readLockedWebSubjectState(transaction, userId),
+        );
+        if (actorSession.status === 'unavailable') throw new Error('Web actor authority unavailable');
+        if (actorSession.status !== 'admitted' || actorSession.session.userId !== user.id)
+          return denied('resolve', requestId);
+        // A provider callback in an existing session is a link/renewal, not a new
+        // authentication of that session's owner. Keep unknown age unknown.
+        credentialProof = {
+          ...credentialProof,
+          authSessionId: actorSession.session.authSessionId,
+          generation: actorSession.session.generation,
+          authenticatedAt: actorSession.session.authenticatedAt?.toISOString() ?? null,
+          linkGuarded: actorSession.session.linkGuarded,
+          ...(actorSession.session.requiresAccountCutoff ? { requiresAccountCutoff: true as const } : {}),
+        };
+      }
       return webOAuthResolveReplySchema.parse({
         webOAuthProtocolVersion: WEB_OAUTH_PROTOCOL_VERSION,
         operation: 'resolve',
         requestId,
         outcome: 'resolved',
+        ...(credentialProof ? { credentialProof } : {}),
         createdUser: identity.outcome === 'created',
         user: {
           id: user.id,

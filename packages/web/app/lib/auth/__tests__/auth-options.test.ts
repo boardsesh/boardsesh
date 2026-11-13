@@ -568,6 +568,20 @@ describe('authOptions.callbacks.session', () => {
     expect(result.user?.id).toBe('user-42');
   });
 
+  it('exposes only the signed generation, including zero for historic cookies', async () => {
+    const signed = await callSession({
+      session: { user: { id: 'generation-fixture' }, authGeneration: 99, expires: '2099-01-01' },
+      token: { sub: 'generation-fixture', gen: 5 },
+    });
+    expect(signed.authGeneration).toBe(5);
+    const historic = await callSession({
+      session: { user: { id: 'generation-fixture' }, expires: '2099-01-01' },
+      token: { sub: 'generation-fixture' },
+    });
+    expect(historic.authGeneration).toBe(0);
+    expect(mockDbSelect).not.toHaveBeenCalled();
+  });
+
   it('exposes the stable login generation from the JWT', async () => {
     const result = await callSession({
       session: {
@@ -646,10 +660,13 @@ describe('authOptions.callbacks.jwt', () => {
     expect(result.authSessionId).not.toBe('old-session');
   });
 
-  it('seeds preexisting JWTs from their standard jti', async () => {
+  it('retains unknown login ancestry when a preexisting JWT takes its rolling jti as a public SID', async () => {
     const result = await callJwt({ token: { sub: 'user-1', jti: 'existing-jti' } });
 
     expect(result.authSessionId).toBe('existing-jti');
+    expect(result.legacy_no_sid).toBe(true);
+    expect((await callJwt({ token: result })).legacy_no_sid).toBe(true);
+    expect(result.auth_time).toBeUndefined();
   });
 
   it('creates a login generation when the JWT has no prior identifier', async () => {
@@ -657,6 +674,54 @@ describe('authOptions.callbacks.jwt', () => {
 
     expect(result.authSessionId).toEqual(expect.any(String));
     expect(result.authSessionId).not.toBe('');
+    expect(result.legacy_no_sid).toBe(true);
+  });
+
+  it('clears unknown historical ancestry only after a new authenticated sign-in', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1', authSessionId: 'historical-child', legacy_no_sid: true },
+      user: { id: 'user-1' },
+      account: { provider: 'credentials', type: 'credentials', providerAccountId: 'user-1' },
+    });
+    expect(result.legacy_no_sid).toBeUndefined();
+    expect(result.authSessionId).not.toBe('historical-child');
+    expect(result.auth_time).toEqual(expect.any(Number));
+  });
+
+  it('ignores hostile client session updates that try to replace historical ancestry and authentication claims', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1', authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 },
+      trigger: 'update',
+      session: {
+        legacy_no_sid: false,
+        authSessionId: 'forged-stable-login',
+        gen: 999,
+        auth_time: Math.floor(Date.now() / 1000),
+      },
+    });
+    expect(result).toMatchObject({ authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 });
+    expect(result.auth_time).toBeUndefined();
+  });
+
+  it('inherits historical ancestry from a trusted backend proof for an existing OAuth actor', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1' },
+      user: {
+        id: 'user-1',
+        webCredentialProof: {
+          version: 1,
+          userId: 'user-1',
+          authSessionId: 'historical-child',
+          generation: 0,
+          authenticatedAt: null,
+          linkGuarded: false,
+          requiresAccountCutoff: true,
+        },
+      },
+      account: { provider: 'google', type: 'oauth', providerAccountId: 'provider-subject' },
+    });
+    expect(result).toMatchObject({ authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 });
+    expect(result.auth_time).toBeUndefined();
   });
 
   // Profile-claim caching (the perf change): the jwt callback fetches
@@ -1007,6 +1072,7 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
       email: 'user@example.com',
       name: 'Test',
       image: '/img.png',
+      nativeOAuthSourceGeneration: 0,
     });
   });
 });

@@ -147,7 +147,7 @@ describe('actual shared-board resolver with independently staged system owner', 
     expect(await resolve(requester)).toEqual(existing);
     expect(await ownerState()).toEqual(before);
   });
-  it.each(['missing-manifest', 'stale-epoch', 'bad-mode', 'unsafe-logging'] as const)(
+  it.each(['missing-manifest', 'unsupported-normalizer', 'bad-mode', 'unsafe-logging'] as const)(
     'fails closed for %s without a legacy write or raw diagnostic',
     async (failure) => {
       await prepare();
@@ -156,7 +156,8 @@ describe('actual shared-board resolver with independently staged system owner', 
         await db.delete(authEmailReservations);
         await db.delete(authEmailProjection);
       }
-      if (failure === 'stale-epoch') vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '2');
+      if (failure === 'unsupported-normalizer')
+        await db.update(authEmailProjection).set({ normalizerVersion: 'unsupported-normalizer' });
       if (failure === 'bad-mode') vi.stubEnv('CURRENT_STORE_SYSTEM_BOARD_OWNER_MODE', 'bad');
       if (failure === 'unsafe-logging') vi.stubEnv('DEBUG_SQL', 'true');
       const warning = vi.spyOn(logger, 'warn').mockImplementation(() => logger);

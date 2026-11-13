@@ -51,6 +51,7 @@
     "@boardsesh/kilter-sync": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/led-controller": "workspace:*",
+    "@boardsesh/location-sync": "workspace:*",
     "@boardsesh/moonboard-sync": "workspace:*",
     "@boardsesh/offline-sync": "workspace:*",
     "@boardsesh/pr-body": "workspace:*",

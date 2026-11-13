@@ -8,7 +8,7 @@ import type { Socket } from 'node:net';
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { decodeJwt, SignJWT } from 'jose';
 import { notificationDevices } from '@boardsesh/db/schema/app';
-import { mobileRefreshTokens } from '@boardsesh/db/schema/auth';
+import { mobileRefreshTokens, authSessionDenials } from '@boardsesh/db/schema/auth';
 
 // ---------------------------------------------------------------------------
 // Test secret — must match what verifyTransferToken reads from env
@@ -38,18 +38,47 @@ vi.mock('../auth/admission-read-coalescer', () => ({
 
 vi.mock('../db/client', () => {
   function selectChain(projection?: Record<string, unknown>) {
-    const rows =
-      projection && 'deletedAt' in projection ? [{ id: 'unit-subject', deletedAt: null }] : [{ userId: 'user-abc' }];
+    let rows =
+      projection && 'deletedAt' in projection
+        ? [{ id: 'unit-subject', deletedAt: null }]
+        : [
+            {
+              userId: 'user-abc',
+              expiresAt: new Date(Date.now() + 86400000),
+              subjectGeneration: null,
+              nativeGeneration: null,
+              authenticatedAt: null,
+            },
+          ];
     const selection = {
-      from: () => selection,
+      from: (table: unknown) => {
+        if (table === authSessionDenials) rows = [];
+        return selection;
+      },
       leftJoin: () => selection,
       where: () => selection,
       limit: () => Object.assign(Promise.resolve(rows), { for: () => Promise.resolve(rows) }),
+      for: () => Promise.resolve([{ id: 'unit-subject' }]),
+      // oxlint-disable-next-line unicorn/no-thenable -- Model Drizzle's awaitable query builder.
+      then: (resolve: (result: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     };
     return selection;
   }
   const insertChain = {
-    values: (...args: unknown[]) => mockDbInsertValues(...args),
+    values: (...args: unknown[]) =>
+      Object.assign(mockDbInsertValues(...args), {
+        onConflictDoUpdate: () => ({
+          returning: async () => [
+            {
+              userId: 'user-abc',
+              generation: 0,
+              nativeGeneration: 1,
+              revokedThrough: new Date(),
+              lastOperationId: crypto.randomUUID(),
+            },
+          ],
+        }),
+      }),
   };
   const updateChain = {
     set: (...args: unknown[]) => {
@@ -265,6 +294,33 @@ describe('handleNativeAuthExchange', () => {
     },
   );
 
+  it('never upgrades a source transfer generation to the current database generation', async () => {
+    const transferToken = createTransferToken('user-abc', { creationProof: { gen: 1, authSessionId: 'source-login' } });
+    const req = makeRequest({ method: 'POST', body: { transferToken } });
+    const res = makeResponse();
+    await handleNativeAuthExchange(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(401);
+    expect(mockDbInsertValues).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('inherits only guarded source proof age (guarded=%s)', async (guarded) => {
+    const authenticationTime = Math.floor(Date.now() / 1000) - 120;
+    const transferToken = createTransferToken('user-abc', {
+      creationProof: {
+        gen: 0,
+        authSessionId: 'source-login',
+        auth_time: authenticationTime,
+        ...(guarded ? { link_guarded: true } : {}),
+      },
+    });
+    const req = makeRequest({ method: 'POST', body: { transferToken } });
+    const res = makeResponse();
+    await handleNativeAuthExchange(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(200);
+    const payload = decodeJwt(parseBody(res).jwt as string);
+    expect(payload.gen).toBe(0);
+    expect(payload.auth_time).toBe(guarded ? authenticationTime : undefined);
+    expect(payload.sid).not.toBe('source-login');
+  });
   it('returns 401 for an expired transfer token', async () => {
     // Token expired 60 seconds ago
     const transferToken = createTransferToken('user-abc', { expiresInSeconds: -60 });
@@ -1038,13 +1094,11 @@ describe('handleNativeAuthRevoke', () => {
     expect(parseBody(res).error).toBe('refreshToken is required');
   });
 
-  it('revokes an expired-but-unrevoked token and cleans up the user session', async () => {
+  it('revokes a live refresh token without requiring a live bearer', async () => {
     const rawRefreshToken = crypto.randomUUID();
 
-    // The token exists in the DB and hasn't been revoked, but it IS expired.
-    // The revoke handler checks `revoked_at IS NULL` but not expiry — this is
-    // intentional: an expired token that was never revoked should still allow
-    // the client to trigger a full sign-out (revoking all of that user's tokens).
+    // JWT expiry does not end the longer-lived refresh proof. A still-live
+    // refresh secret can sign out the native account without a valid bearer.
     mockDbUpdateReturning.mockResolvedValueOnce([
       {
         userId: 'user-expired',
@@ -1060,7 +1114,7 @@ describe('handleNativeAuthRevoke', () => {
     const body = parseBody(res);
     expect(body.revoked).toBe(true);
 
-    // Token expiry does not prevent push cleanup with the refresh secret.
+    // Bearer expiry does not prevent push cleanup with a live refresh secret.
     expect(mockDbUpdateSet).toHaveBeenCalledTimes(3);
     expect(mockDbUpdateWhere).toHaveBeenCalledTimes(3);
     expect(mockDbUpdateSet).toHaveBeenLastCalledWith({ active: false, updatedAt: expect.any(Date) });
@@ -1089,7 +1143,33 @@ describe('handleNativeAuthRevoke', () => {
     const updatedTables: unknown[] = [];
     mockedDatabase.transaction.mockImplementationOnce(async (operation) => {
       let stagedTokenRevocation = false;
+      const selection = {
+        from: () => selection,
+        where: () => selection,
+        for: async () => [{ id: 'user-rollback' }],
+        // oxlint-disable-next-line unicorn/no-thenable -- Model Drizzle's awaitable query builder.
+        then: (resolve: (result: unknown[]) => unknown) =>
+          Promise.resolve([{ userId: 'user-rollback', expiresAt: new Date(Date.now() + 86400000) }]).then(resolve),
+      };
       const transaction = {
+        execute: async () => [{ transaction_isolation: 'read committed' }],
+        delete: () => ({ where: async () => [] }),
+        select: () => selection,
+        insert: () => ({
+          values: () => ({
+            onConflictDoUpdate: () => ({
+              returning: async () => [
+                {
+                  userId: 'user-abc',
+                  generation: 0,
+                  nativeGeneration: 1,
+                  revokedThrough: new Date(),
+                  lastOperationId: crypto.randomUUID(),
+                },
+              ],
+            }),
+          }),
+        }),
         update: (table: unknown) => {
           updatedTables.push(table);
           return {
@@ -1262,4 +1342,88 @@ describe('WebSocket auth path', () => {
     expect(result?.userId).toBe('ws-test-user');
     expect(result?.isAuthenticated).toBe(true);
   });
+});
+it('retains distributed transfer replay evidence through maximum signed lifetime and both clock tolerances', async () => {
+  __resetNativeAuthStateForTests();
+  const { redisClientManager } = await import('../redis/client');
+  const publisher = { exists: vi.fn(async () => 0), set: vi.fn(async () => 'OK') };
+  vi.mocked(redisClientManager.isRedisConnected).mockReturnValue(true);
+  vi.mocked(redisClientManager.getClients).mockReturnValue({ publisher });
+  const milliseconds = Math.floor(Date.now() / 1000) * 1000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(milliseconds);
+  vi.stubEnv('AUTH_LEGACY_BRIDGE_MODE', 'on');
+  try {
+    const transferToken = createTransferToken('user-abc', { issuedAt: milliseconds / 1000 + 5, expiresInSeconds: 125 });
+    const req = makeRequest({ method: 'POST', body: { transferToken } });
+    const res = makeResponse();
+    await handleNativeAuthExchange(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    expect(res.statusCode).toBe(200);
+    expect(publisher.set.mock.calls[0][3]).toBeGreaterThan(125 + 5 + 5);
+  } finally {
+    clock.mockRestore();
+    vi.unstubAllEnvs();
+    vi.mocked(redisClientManager.isRedisConnected).mockReturnValue(false);
+  }
+});
+it('preserves a consumed transfer across separate consumer clocks and independent Redis wall time', async () => {
+  __resetNativeAuthStateForTests();
+  const { redisClientManager } = await import('../redis/client');
+  const base = Math.floor(Date.now() / 1000) * 1000;
+  let redisWall = base;
+  const entries = new Map<string, number>();
+  const publisher = {
+    exists: vi.fn(async (key: string) => ((entries.get(key) ?? 0) > redisWall ? 1 : 0)),
+    set: vi.fn(async (key: string, _contents: string, _expiry: string, seconds: number) => {
+      if ((entries.get(key) ?? 0) > redisWall) return null;
+      entries.set(key, redisWall + seconds * 1000);
+      return 'OK';
+    }),
+  };
+  vi.mocked(redisClientManager.isRedisConnected).mockReturnValue(true);
+  vi.mocked(redisClientManager.getClients).mockReturnValue({ publisher });
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(base + 60000);
+  vi.stubEnv('AUTH_LEGACY_BRIDGE_MODE', 'on');
+  try {
+    const transferToken = createTransferToken('user-abc', { issuedAt: base / 1000 + 65, expiresInSeconds: 125 });
+    const first = makeResponse();
+    await handleNativeAuthExchange(
+      makeRequest({ method: 'POST', body: { transferToken } }) as unknown as IncomingMessage,
+      first as unknown as ServerResponse,
+    );
+    expect(first.statusCode).toBe(200);
+    redisWall = base + 255000;
+    clock.mockReturnValue(base + 195000);
+    const replay = makeResponse();
+    await handleNativeAuthExchange(
+      makeRequest({
+        method: 'POST',
+        body: { transferToken },
+        remoteAddress: '127.0.0.2',
+      }) as unknown as IncomingMessage,
+      replay as unknown as ServerResponse,
+    );
+    expect(replay.statusCode).toBe(409);
+    expect(publisher.set).toHaveBeenCalledTimes(1);
+  } finally {
+    clock.mockRestore();
+    vi.unstubAllEnvs();
+    vi.mocked(redisClientManager.isRedisConnected).mockReturnValue(false);
+  }
+});
+it('refuses transfer exchange when distributed replay protection is unavailable in bridge-on mode', async () => {
+  __resetNativeAuthStateForTests();
+  const { redisClientManager } = await import('../redis/client');
+  vi.mocked(redisClientManager.isRedisConnected).mockReturnValue(false);
+  vi.stubEnv('AUTH_LEGACY_BRIDGE_MODE', 'on');
+  try {
+    const transferToken = createTransferToken('user-abc');
+    const res = makeResponse();
+    await handleNativeAuthExchange(
+      makeRequest({ method: 'POST', body: { transferToken } }) as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+    );
+    expect(res.statusCode).toBe(503);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

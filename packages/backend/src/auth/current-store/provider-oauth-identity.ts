@@ -1,3 +1,4 @@
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import { randomUUID } from 'node:crypto';
 import {
   accounts,
@@ -130,6 +131,7 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
       if (!member) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     } else throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
     // Changed/missing provider email and name never rewrite a returning owner.
+    await mirrorIdentityIfEnabled(transaction, userId);
     return { outcome: 'linked', user };
   }
   if (policy.actorUserId !== null) return { outcome: 'sensitive_link_unavailable' };
@@ -177,5 +179,6 @@ export async function resolveReservedCurrentStoreOAuthIdentity(
     .values({ userId, type: 'oauth', provider, providerAccountId: identity.sub })
     .returning({ userId: accounts.userId });
   if (!inserted || inserted.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  await mirrorIdentityIfEnabled(transaction, userId);
   return { outcome: 'created', user: created };
 }

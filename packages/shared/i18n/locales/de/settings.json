@@ -122,7 +122,10 @@
       "mismatch": "Die Passwörter stimmen nicht überein",
       "saveError": "Passwort konnte nicht gesetzt werden",
       "retryError": "Passwort konnte nicht gesetzt werden. Versuch es nochmal."
-    }
+    },
+    "reauthenticationRequired": "Melde dich erneut an, um ein Passwort festzulegen.",
+    "reauthenticate": "Erneut anmelden",
+    "accountChanged": "Dein Konto hat sich geändert. Prüfe das angezeigte Konto und versuche es erneut."
   },
   "controllers": {
     "title": "ESP32-Controller",

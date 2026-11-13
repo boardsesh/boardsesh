@@ -83,7 +83,8 @@ CREATE TABLE accounts ("userId" text REFERENCES users(id), provider text, "provi
 CREATE TABLE mobile_refresh_tokens (user_id text REFERENCES users(id), token_hash text);
 CREATE TABLE ticks (user_id text REFERENCES users(id));
 CREATE TABLE auth_email_projection (projection_id text PRIMARY KEY, is_current boolean NOT NULL DEFAULT true,
- normalizer_version text NOT NULL, phase text NOT NULL, writer_epoch integer NOT NULL, source_user_count integer NOT NULL DEFAULT 0,
+ normalizer_version text NOT NULL, phase text NOT NULL, writer_epoch integer NOT NULL,
+ writer_authority text NOT NULL DEFAULT 'current-store', source_user_count integer NOT NULL DEFAULT 0,
  key_count integer NOT NULL DEFAULT 0, ambiguous_key_count integer NOT NULL DEFAULT 0,
  created_at timestamptz NOT NULL DEFAULT now(), prepared_at timestamptz);
 CREATE TABLE auth_email_reservations (normalized_email text PRIMARY KEY, basis_projection_id text NOT NULL REFERENCES auth_email_projection(projection_id),

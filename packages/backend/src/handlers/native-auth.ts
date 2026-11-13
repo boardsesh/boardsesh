@@ -1,13 +1,22 @@
+import { assertLegacyIdentityWriterAllowed } from '../auth/current-store/identity-writer-gate';
+import { captureIdentityAuthority, revalidateIdentityAuthority } from '../auth/authority/router';
+import { authenticateIdentityPassword } from '../auth/authority/password-verification';
+import { currentNativeRevocationMode } from '../auth/authority/native-revocation-configuration';
+import { legacyBridgeMode } from '../auth/authority/bridge';
+import { readAuthTimeClaim } from '@boardsesh/auth-protocol/auth-time';
+import { cleanupNativeRefreshRows } from '../auth/authority/native-refresh-retention';
+import { bindNativeRefreshSession } from '../auth/authority/native-session';
+import { revokeNativeCredentials } from '../auth/authority/native-revocation';
+import { identityMirrorMode } from '../auth/authority/mirror-configuration';
 import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
-import { eq, and, isNull, lt, or, isNotNull, DrizzleQueryError } from 'drizzle-orm';
+import { eq, and, isNull, DrizzleQueryError, sql } from 'drizzle-orm';
 import type { DbInstance } from '@boardsesh/db/client';
 import { normalizeAccountEmail, soleAccount } from '@boardsesh/auth-protocol/account-email';
 import { findAccountHoldersByEmail } from '@boardsesh/db/queries/account-email';
-import { mobileRefreshTokens, users, accounts, userProfiles } from '@boardsesh/db/schema/auth';
-import { notificationDevices } from '@boardsesh/db/schema/app';
+import { mobileRefreshTokens, users, accounts, userProfiles, authSessionDenials } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { redisClientManager } from '../redis/client';
 import { applyCorsHeaders } from './cors';
@@ -20,6 +29,7 @@ import {
   isHumanSubjectActive,
   PasswordProofStaleError,
   requireHumanSubjectForIssuance,
+  lockPasswordProofAuthority,
   type PasswordProof,
 } from '../auth/human-admission';
 import { decideCredential, type SubjectCutoffState } from '../auth/credential-cutoffs';
@@ -31,7 +41,7 @@ import {
 } from '../auth/current-store/authority-configuration';
 import {
   preflight,
-  signInTransactionSettings,
+  boundSignInLockWaits,
   transactionSettings,
   type WebPasswordAuthority,
 } from '../auth/current-store/command-context';
@@ -44,7 +54,6 @@ import {
   type VerifiedNativeOAuthIdentity as VerifiedOAuthIdentity,
 } from '../auth/current-store/native-oauth-identity';
 import {
-  authenticateCurrentStorePassword,
   parseCurrentStorePasswordRegistration,
   prepareCurrentStorePasswordRegistration,
   insertCurrentStorePasswordIdentity,
@@ -93,7 +102,10 @@ const JWT_AUDIENCE = 'boardsesh-mobile';
 const consumedTransferTokens = new Map<string, number>();
 
 /** TTL for consumed token entries (125s — slightly longer than the 120s token TTL). */
-const CONSUMED_TOKEN_TTL_SECONDS = 125;
+// At most 125 signed seconds + two 5-second verification tolerances, plus
+// 60 seconds of clock offset in each replica, is 255 seconds. Five minutes
+// also covers whole-second rounding and scheduling margin across replicas.
+const CONSUMED_TOKEN_TTL_SECONDS = 5 * 60;
 const CONSUMED_TOKEN_TTL_MS = CONSUMED_TOKEN_TTL_SECONDS * 1000;
 
 /** Cleanup interval for expired consumed token entries. */
@@ -129,15 +141,16 @@ async function markTokenConsumed(tokenSignature: string): Promise<'consumed' | '
     try {
       const { publisher } = redisClientManager.getClients();
       const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
-      // SET key "1" NX EX 125 — returns "OK" if set, null if key already existed
+      // Keep the replay key beyond the latest accepted signed expiry plus skew.
       const result = await publisher.set(redisKey, '1', 'EX', CONSUMED_TOKEN_TTL_SECONDS, 'NX');
       return result === 'OK' ? 'consumed' : 'replay';
-    } catch (error) {
+    } catch {
       // Redis failure: fall through to in-memory map so the endpoint stays available.
-      logger.warn('[NativeAuth] Redis SET NX failed for consumed token, falling back to in-memory:', error);
+      logger.warn('[NativeAuth] Redis replay store unavailable', { code: 'REDIS_REPLAY_WRITE_UNAVAILABLE' });
     }
   }
 
+  if (legacyBridgeMode(process.env) === 'on') return 'overloaded';
   // In-memory fallback (single-instance only)
   if (consumedTransferTokens.has(tokenSignature)) {
     return 'replay';
@@ -165,8 +178,8 @@ async function isTokenConsumed(tokenSignature: string): Promise<boolean> {
       const redisKey = `${CONSUMED_TOKEN_REDIS_PREFIX}${tokenSignature}`;
       const result = await publisher.exists(redisKey);
       return result === 1;
-    } catch (error) {
-      logger.warn('[NativeAuth] Redis EXISTS failed for consumed token, falling back to in-memory:', error);
+    } catch {
+      logger.warn('[NativeAuth] Redis replay check unavailable', { code: 'REDIS_REPLAY_READ_UNAVAILABLE' });
     }
   }
   return consumedTransferTokens.has(tokenSignature);
@@ -331,12 +344,21 @@ type TransferPayload = {
   iat: number;
   exp: number;
   accountCreation?: unknown;
+  gen?: unknown;
+  auth_time?: unknown;
+  link_guarded?: unknown;
   authSessionId?: unknown;
   attemptId?: unknown;
   provider?: unknown;
 };
 
-function verifyTransferToken(token: string): { userId: string; accountCreation?: AccountCreationReceipt } | null {
+function verifyTransferToken(token: string): {
+  userId: string;
+  generation: number;
+  authSessionId: string | null;
+  authenticatedAt: Date | null;
+  accountCreation?: AccountCreationReceipt;
+} | null {
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new AuthAdmissionUnavailableError();
 
@@ -372,9 +394,13 @@ function verifyTransferToken(token: string): { userId: string; accountCreation?:
 
   const now = Math.floor(Date.now() / 1000);
   if (
+    typeof payload.userId !== 'string' ||
     !payload.userId ||
-    !payload.exp ||
-    !payload.iat ||
+    payload.userId.length > 256 ||
+    !Number.isSafeInteger(payload.exp) ||
+    !Number.isSafeInteger(payload.iat) ||
+    payload.exp <= payload.iat ||
+    payload.iat <= 0 ||
     payload.exp < now - CLOCK_SKEW_TOLERANCE_SECONDS ||
     payload.iat > now + CLOCK_SKEW_TOLERANCE_SECONDS
   ) {
@@ -397,7 +423,25 @@ function verifyTransferToken(token: string): { userId: string; accountCreation?:
     /^[0-9a-f]{32}$/.test(payload.attemptId)
       ? receipt
       : undefined;
-  return { userId: payload.userId, ...(accountCreation ? { accountCreation } : {}) };
+  const generation = payload.gen ?? 0;
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
+  if (
+    payload.authSessionId !== undefined &&
+    (typeof payload.authSessionId !== 'string' || !payload.authSessionId.trim() || payload.authSessionId.length > 256)
+  )
+    return null;
+  const authenticationTime = readAuthTimeClaim(payload.auth_time, Date.now());
+  const authenticatedAt =
+    payload.link_guarded === true && authenticationTime !== null && authenticationTime <= payload.iat
+      ? new Date(authenticationTime * 1000)
+      : null;
+  return {
+    userId: payload.userId,
+    generation,
+    authSessionId: typeof payload.authSessionId === 'string' ? payload.authSessionId : null,
+    authenticatedAt,
+    ...(accountCreation ? { accountCreation } : {}),
+  };
 }
 
 function accountCreationReceipt(
@@ -416,7 +460,7 @@ function accountCreationReceipt(
 
 type RefreshStamps = Pick<
   typeof mobileRefreshTokens.$inferSelect,
-  'subjectGeneration' | 'nativeGeneration' | 'authenticatedAt' | 'sessionId'
+  'subjectGeneration' | 'nativeGeneration' | 'authenticatedAt' | 'sessionId' | 'expiresAt'
 >;
 
 /**
@@ -432,7 +476,13 @@ type NativeCredentialOrigin =
    */
   | { readonly kind: 'sign-in'; readonly authenticatedAt: Date | null; readonly passwordProof?: PasswordProof }
   /** The refresh row this request consumed, under the same user lock. */
-  | { readonly kind: 'refresh'; readonly parent: RefreshStamps };
+  | { readonly kind: 'refresh'; readonly parent: RefreshStamps }
+  | {
+      readonly kind: 'transfer';
+      readonly generation: number;
+      readonly authSessionId: string | null;
+      readonly authenticatedAt: Date | null;
+    };
 
 type CredentialStamps = {
   subjectGeneration: number;
@@ -458,6 +508,13 @@ function credentialStamps(origin: NativeCredentialOrigin, generations: SubjectCu
       sessionId: crypto.randomUUID(),
     };
   }
+  if (origin.kind === 'transfer')
+    return {
+      subjectGeneration: origin.generation,
+      nativeGeneration: generations.nativeGeneration,
+      authenticatedAt: origin.authenticatedAt,
+      sessionId: crypto.randomUUID(),
+    };
   // Copy, never re-read: a child is never newer than its parent. A row from
   // before the stamps stands for generation 0, so its child is stamped 0, and
   // an unknown sign-in time stays unknown.
@@ -490,9 +547,22 @@ async function generateTokenPair(
     const passwordProof = origin.kind === 'sign-in' ? origin.passwordProof : undefined;
     // A password sign-in gives up on a held user row after 250 ms and answers
     // 503, which the app retries; issuance that must win keeps 4 s.
-    if (passwordProof) await signInTransactionSettings(transaction);
-    else await transactionSettings(transaction);
+    await transactionSettings(transaction);
+    if (passwordProof) {
+      await lockPasswordProofAuthority(transaction, passwordProof);
+      await boundSignInLockWaits(transaction);
+    }
     generations = await requireHumanSubjectForIssuance(transaction, userId, passwordProof);
+  }
+  if (origin.kind === 'transfer') {
+    if (origin.generation !== generations.generation) throw new AuthSubjectDeniedError();
+    if (origin.authSessionId) {
+      const [denial] = await transaction
+        .select()
+        .from(authSessionDenials)
+        .where(eq(authSessionDenials.sessionId, origin.authSessionId));
+      if (denial) throw new AuthSubjectDeniedError();
+    }
   }
   if (origin.kind === 'refresh') {
     // A child copies its parent's stamps, so a parent from before a reset or an
@@ -516,6 +586,18 @@ async function generateTokenPair(
   const signingSecret = getSigningSecret();
   if (!signingSecret) throw new AuthAdmissionUnavailableError();
   const stamps = credentialStamps(origin, generations);
+  if (origin.kind === 'refresh') {
+    // The parent stays readable through rollback; the canonical binding is additive.
+    const parentExpiresAt = origin.parent.expiresAt;
+    await bindNativeRefreshSession(
+      transaction,
+      userId,
+      stamps,
+      parentExpiresAt,
+      new Date(),
+      currentNativeRevocationMode(),
+    );
+  }
 
   // Generate JWT. Clients read only `sub`; the stamps are for the server.
   const jwtExpiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
@@ -523,6 +605,7 @@ async function generateTokenPair(
     sub: userId,
     gen: stamps.subjectGeneration,
     ngen: stamps.nativeGeneration,
+    sid: stamps.sessionId,
     ...(stamps.authenticatedAt ? { auth_time: Math.floor(stamps.authenticatedAt.getTime() / 1000) } : {}),
   })
     .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
@@ -674,15 +757,20 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   }
 
   try {
-    const tokenPair = await issueTokenPair(verified.userId, SIGN_IN_OF_UNKNOWN_AGE);
-    logger.info(`[NativeAuth] Token exchange successful for user ${verified.userId}`);
+    const tokenPair = await issueTokenPair(verified.userId, {
+      kind: 'transfer',
+      generation: verified.generation,
+      authSessionId: verified.authSessionId,
+      authenticatedAt: verified.authenticatedAt,
+    });
+    logger.info('[NativeAuth] Token exchange successful');
     sendJson(res, 200, {
       ...tokenPair,
       ...(verified.accountCreation ? { accountCreation: verified.accountCreation } : {}),
     });
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
-    logger.error('[NativeAuth] Token generation failed:', error);
+    logger.error('[NativeAuth] Token generation failed', { code: 'TOKEN_ISSUANCE_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -733,7 +821,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
   }
 
   try {
-    const authenticatedUser = await authenticateCurrentStorePassword(db, email, password);
+    const authenticatedUser = await authenticateIdentityPassword(db, email, password);
     if (!authenticatedUser) {
       sendJson(res, 401, { error: INVALID_CREDENTIALS_ERROR });
       return;
@@ -749,9 +837,10 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       passwordProof: {
         passwordHash: authenticatedUser.passwordHash,
         generation: authenticatedUser.generation,
+        ...(authenticatedUser.authorityReceipt ? { authorityReceipt: authenticatedUser.authorityReceipt } : {}),
       },
     });
-    logger.info(`[NativeAuth] Credentials sign-in successful for user ${authenticatedUserId}`);
+    logger.info('[NativeAuth] Credentials sign-in successful');
     const accountCreation = accountCreationReceipt(authenticatedUserId, false, 'email', authenticatedUser.createdAt);
     sendJson(res, 200, { ...tokenPair, ...(accountCreation ? { accountCreation } : {}) });
   } catch (error) {
@@ -760,7 +849,7 @@ export async function handleNativeAuthCredentials(req: IncomingMessage, res: Ser
       return;
     }
     if (respondNativeAdmissionFailure(res, error)) return;
-    logger.error('[NativeAuth] Credentials sign-in failed:', error);
+    logger.error('[NativeAuth] Credentials sign-in failed', { code: 'PASSWORD_SIGNIN_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -844,6 +933,7 @@ export async function handleNativeAuthRegister(
   }
 
   try {
+    await database.transaction(assertLegacyIdentityWriterAllowed);
     const prepared = await prepareCurrentStorePasswordRegistration(database, validation.registration);
     if (!prepared) {
       sendJson(res, 409, {
@@ -859,6 +949,7 @@ export async function handleNativeAuthRegister(
     const result = await database.transaction(async (tx) => {
       const identity = await insertCurrentStorePasswordIdentity(tx, prepared, emailVerificationEnabled);
       const tokenPair = await generateTokenPair(identity.userId, tx, origin);
+      await assertLegacyIdentityWriterAllowed(tx);
       return {
         userId: identity.userId,
         tokenPair,
@@ -866,7 +957,7 @@ export async function handleNativeAuthRegister(
       };
     });
 
-    logger.info(`[NativeAuth] Registration successful for user ${result.userId}`);
+    logger.info('[NativeAuth] Registration successful');
     sendJson(res, 201, { ...result.tokenPair, accountCreation: result.accountCreation });
   } catch (error) {
     // Race: a concurrent request created this email between the pre-check and
@@ -879,7 +970,7 @@ export async function handleNativeAuthRegister(
       return;
     }
     if (respondNativeAdmissionFailure(res, error)) return;
-    logger.error('[NativeAuth] Registration failed:', error);
+    logger.error('[NativeAuth] Registration failed', { code: 'REGISTRATION_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -911,26 +1002,38 @@ function isNativeAuthInfrastructureFailure(error: unknown): boolean {
 async function handleReservedNativeRegistration(
   response: ServerResponse,
   database: DbInstance,
-  authority: WebPasswordAuthority,
+  authorityInput: WebPasswordAuthority,
   registration: Parameters<typeof prepareCurrentStorePasswordRegistration>[1],
 ) {
+  const configuredAuthority = { ...authorityInput };
+  const capturedRegistration = { ...registration };
   try {
     // Validate authority before even an exact-email precheck can report409.
     // Bcrypt remains outside the global manifest's locked transaction.
-    await preflight(database, authority);
-    const prepared = await prepareCurrentStorePasswordRegistration(database, registration);
+    const receipt = await database.transaction(async (transaction) => {
+      await transactionSettings(transaction);
+      return captureIdentityAuthority(transaction, configuredAuthority);
+    });
+    const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
+    const prepared = await prepareCurrentStorePasswordRegistration(database, capturedRegistration);
     const origin = signedInNow();
     const result = await database.transaction(async (transaction) => {
       await transactionSettings(transaction);
-      const inserted = await insertReservedPasswordIdentity(transaction, authority, {
-        email: registration.email,
-        prepared,
-        emailVerificationEnabled: authority.emailVerificationEnabled,
-      });
+      const inserted = await insertReservedPasswordIdentity(
+        transaction,
+        authority,
+        {
+          email: capturedRegistration.email,
+          prepared,
+          emailVerificationEnabled: authority.emailVerificationEnabled,
+        },
+        receipt,
+      );
       if (inserted.outcome === 'exists') return inserted;
       const { identity } = inserted;
       // This remains the installed native issuer, bound to the identity's tx.
       const tokenPair = await generateTokenPair(identity.userId, transaction, origin);
+      await revalidateIdentityAuthority(transaction, receipt);
       return {
         outcome: 'created' as const,
         tokenPair,
@@ -1122,7 +1225,7 @@ async function verifyProviderIdentityToken(
       });
       return { status };
     }
-    logger.warn('[NativeAuth] OAuth identity token verification failed:', error);
+    logger.warn('[NativeAuth] OAuth identity token verification failed', { code: 'OAUTH_PROOF_REJECTED' });
     return { status: 'invalid' };
   }
 }
@@ -1168,6 +1271,9 @@ async function findOrCreateOAuthUser(
   origin: NativeCredentialOrigin,
   database: DbInstance = db,
 ): Promise<FindOrCreateResult> {
+  // This legacy auto-link writer lacks the staged gate/reservation protocol.
+  // Refuse it even when called directly rather than through the mode parser.
+  if (identityMirrorMode() === 'on') throw new Error('AUTH_IDENTITY_MIRROR refuses legacy native OAuth writes');
   return database.transaction(async (tx) => {
     // 1. Link by the provider's stable subject id.
     const linkedRows = await tx
@@ -1369,14 +1475,14 @@ export async function handleNativeAuthOAuth(
       });
       return;
     }
-    logger.info(`[NativeAuth] ${provider} sign-in successful for user ${result.userId}`);
+    logger.info('[NativeAuth] Provider sign-in successful', { provider });
     sendJson(res, 200, {
       ...result.tokenPair,
       ...(result.accountCreation ? { accountCreation: result.accountCreation } : {}),
     });
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
-    logger.error('[NativeAuth] OAuth sign-in failed:', error);
+    logger.error('[NativeAuth] OAuth sign-in failed', { code: 'OAUTH_SIGNIN_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -1510,6 +1616,7 @@ export async function handleNativeAuthRefresh(req: IncomingMessage, res: ServerR
     }
     result = await db.transaction(async (tx) => {
       await transactionSettings(tx);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock_shared(6975, 2)`);
       // The user lock first, then the generations in a statement of its own. A
       // reset or deletion that committed while this waited is seen here, and none
       // can commit before this does: each takes users FOR UPDATE, which this
@@ -1610,41 +1717,20 @@ export async function handleNativeAuthRevoke(req: IncomingMessage, res: ServerRe
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
 
   try {
-    // Look up the token to find the user. Only non-revoked tokens are valid
-    // for initiating a full sign-out.
-    const matchedToken = await db.transaction(async (transaction) => {
-      const matchingRows = await transaction
-        .update(mobileRefreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(mobileRefreshTokens.tokenHash, tokenHash), isNull(mobileRefreshTokens.revokedAt)))
-        .returning({ userId: mobileRefreshTokens.userId });
-
-      const matchingToken = matchingRows[0];
-      if (!matchingToken) return null;
-
-      // This endpoint signs out the whole account. The refresh secret remains
-      // usable when the JWT has expired, so retire push devices in the same
-      // transaction as token revocation rather than relying on bearer cleanup.
-      await transaction
-        .update(mobileRefreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(and(eq(mobileRefreshTokens.userId, matchingToken.userId), isNull(mobileRefreshTokens.revokedAt)));
-      await transaction
-        .update(notificationDevices)
-        .set({ active: false, updatedAt: new Date() })
-        .where(eq(notificationDevices.userId, matchingToken.userId));
-      return matchingToken;
-    });
-
+    const matchedToken = await revokeNativeCredentials(db, tokenHash, currentNativeRevocationMode());
     if (!matchedToken) {
       sendJson(res, 401, { error: 'Invalid refresh token' });
       return;
     }
 
-    logger.info(`[NativeAuth] All tokens revoked for user ${matchedToken.userId}`);
+    logger.info('[NativeAuth] Native credentials revoked');
     sendJson(res, 200, { revoked: true });
   } catch (error) {
-    logger.error('[NativeAuth] Token revocation failed:', error);
+    if (error instanceof AuthSubjectDeniedError) {
+      sendJson(res, 401, { error: 'Invalid refresh token' });
+      return;
+    }
+    logger.error('[NativeAuth] Token revocation failed', { code: 'NATIVE_REVOCATION_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -1770,10 +1856,10 @@ export async function handleWatchPairCode(req: IncomingMessage, res: ServerRespo
     }
 
     const expiresAt = new Date(Date.now() + WATCH_PAIR_CODE_TTL_SECONDS * 1000).toISOString();
-    logger.info(`[WatchPair] Issued pairing code for user ${auth.userId}`);
+    logger.info('[WatchPair] Issued pairing code');
     sendJson(res, 200, { code, expiresAt });
-  } catch (error) {
-    logger.error('[WatchPair] Failed to issue pairing code:', error);
+  } catch {
+    logger.error('[WatchPair] Failed to issue pairing code', { code: 'WATCH_CODE_ISSUANCE_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -1867,11 +1953,11 @@ export async function handleWatchPair(req: IncomingMessage, res: ServerResponse)
     }
 
     const tokenPair = await issueTokenPair(userId, SIGN_IN_OF_UNKNOWN_AGE);
-    logger.info(`[WatchPair] Pairing successful for user ${userId}`);
+    logger.info('[WatchPair] Pairing successful');
     sendJson(res, 200, tokenPair);
   } catch (error) {
     if (respondNativeAdmissionFailure(res, error)) return;
-    logger.error('[WatchPair] Pairing failed:', error);
+    logger.error('[WatchPair] Pairing failed', { code: 'WATCH_PAIRING_FAILED' });
     sendJson(res, 500, { error: 'Internal server error' });
   }
 }
@@ -1889,25 +1975,13 @@ const REVOKED_TOKEN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let refreshTokenCleanupHandle: ReturnType<typeof setInterval> | null = null;
 
 async function runRefreshTokenCleanup(): Promise<void> {
-  const revokedCutoff = new Date(Date.now() - REVOKED_TOKEN_RETENTION_MS);
-  const now = new Date();
   try {
-    const result = await db
-      .delete(mobileRefreshTokens)
-      .where(
-        or(
-          // Revoked tokens older than 7 days
-          and(isNotNull(mobileRefreshTokens.revokedAt), lt(mobileRefreshTokens.revokedAt, revokedCutoff)),
-          // Expired tokens
-          lt(mobileRefreshTokens.expiresAt, now),
-        ),
-      )
-      .returning({ id: mobileRefreshTokens.id });
-    if (result.length > 0) {
-      logger.info(`[NativeAuth Cleanup] Removed ${String(result.length)} expired/revoked refresh token(s)`);
+    const removedCount = await cleanupNativeRefreshRows(db);
+    if (removedCount > 0) {
+      logger.info(`[NativeAuth Cleanup] Removed ${String(removedCount)} expired/revoked refresh token(s)`);
     }
-  } catch (error) {
-    logger.error('[NativeAuth Cleanup] Failed to remove expired refresh tokens:', error);
+  } catch {
+    logger.error('[NativeAuth Cleanup] Failed to remove expired refresh tokens', { code: 'REFRESH_CLEANUP_FAILED' });
   }
 }
 
@@ -1921,15 +1995,15 @@ export function startRefreshTokenCleanup(): void {
 
   // Run once shortly after startup, then on the regular interval.
   const initialDelay = setTimeout(() => {
-    runRefreshTokenCleanup().catch((error) => {
-      logger.error('[NativeAuth Cleanup] Initial tick failed:', error);
+    runRefreshTokenCleanup().catch(() => {
+      logger.error('[NativeAuth Cleanup] Initial tick failed', { code: 'REFRESH_CLEANUP_INITIAL_FAILED' });
     });
   }, 60 * 1000);
   if (typeof initialDelay.unref === 'function') initialDelay.unref();
 
   refreshTokenCleanupHandle = setInterval(() => {
-    runRefreshTokenCleanup().catch((error) => {
-      logger.error('[NativeAuth Cleanup] Tick failed:', error);
+    runRefreshTokenCleanup().catch(() => {
+      logger.error('[NativeAuth Cleanup] Tick failed', { code: 'REFRESH_CLEANUP_TICK_FAILED' });
     });
   }, REFRESH_TOKEN_CLEANUP_INTERVAL_MS);
 

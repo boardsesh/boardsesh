@@ -18,6 +18,7 @@ const { baseUrl, sessionSecret } = vi.hoisted(() => {
 // Rows each table's `select ... limit` resolves to; an Error makes that read fail.
 // A left join adds the joined table's first row to each row of the first table.
 const databaseRows = vi.hoisted(() => new Map<unknown, unknown[] | Error>());
+const transferAdmission = vi.hoisted(() => ({ enabled: false, generations: [] as number[] }));
 
 vi.mock('server-only', () => ({}));
 vi.mock('@sentry/nextjs', async (importOriginal) => ({
@@ -46,9 +47,28 @@ vi.mock('@/app/lib/db/db', () => {
   }
   return { getDb: () => ({ select: () => ({ from: (table: unknown) => query(table, []) }) }) };
 });
-// Admission is a backend round trip with its own coverage; it reads only `sub`.
-vi.mock('@/app/lib/auth/auth-response-admission.server', () => ({
-  withAuthResponseAdmission: (_request: unknown, _context: unknown, invoke: () => Promise<Response>) => invoke(),
+// Most age tests isolate callbacks; transfer publication cases retain the real
+// response buffer and replace only the primary generation admission RPC.
+vi.mock('@/app/lib/auth/auth-response-admission.server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/app/lib/auth/auth-response-admission.server')>();
+  return {
+    withAuthResponseAdmission: (...parameters: Parameters<typeof actual.withAuthResponseAdmission>) =>
+      transferAdmission.enabled ? actual.withAuthResponseAdmission(...parameters) : parameters[2](() => {}),
+  };
+});
+vi.mock('@/app/lib/auth/credential-admission.server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/app/lib/auth/credential-admission.server')>()),
+  admitPresentedWebCredential: async (credential: string) => {
+    const claims = await decode({ token: credential, secret: sessionSecret });
+    if (!claims?.sub) return null;
+    const generation = claims.gen ?? 0;
+    transferAdmission.generations.push(generation);
+    const rows = databaseRows.get(schema.authSubjectCutoffs);
+    const primaryGeneration = Array.isArray(rows)
+      ? ((rows[0] as { generation?: number } | undefined)?.generation ?? 0)
+      : 0;
+    return generation === primaryGeneration ? claims.sub : null;
+  },
 }));
 
 import * as Sentry from '@sentry/nextjs';
@@ -141,6 +161,8 @@ beforeAll(() => {
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'], now: SIGN_IN_AT_MS });
+  transferAdmission.enabled = false;
+  transferAdmission.generations = [];
   databaseRows.clear();
   databaseRows.set(schema.users, [climber]);
   databaseRows.set(schema.userCredentials, [{ passwordHash: hashSync(PASSWORD, 4) }]);
@@ -426,21 +448,24 @@ describe('gen beside auth_time', () => {
     expect((await currentSessionClaims())?.gen).toBe(3);
   });
 
-  it('stamps a native transfer sign-in, which still claims no sign-in time', async () => {
-    databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
-    remember(
-      await invoke('callback/native-oauth', {
-        transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/' }),
-        csrfToken,
-        json: 'true',
-        callbackUrl: baseUrl,
-      }),
-    );
+  it.each([0, 3])(
+    'inherits native transfer generation %s despite a later primary generation, without claiming authentication age',
+    async (generation) => {
+      databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+      remember(
+        await invoke('callback/native-oauth', {
+          transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation }),
+          csrfToken,
+          json: 'true',
+          callbackUrl: baseUrl,
+        }),
+      );
 
-    const claims = await currentSessionClaims();
-    expect(claims?.gen).toBe(4);
-    expect(claims).not.toHaveProperty('auth_time');
-  });
+      const claims = await currentSessionClaims();
+      expect(claims?.gen).toBe(generation);
+      expect(claims).not.toHaveProperty('auth_time');
+    },
+  );
 
   it('keeps the sign-in generation when the cookie rotates after the generation moved', async () => {
     databaseRows.set(schema.authSubjectCutoffs, [{ generation: 3 }]);
@@ -557,5 +582,150 @@ describe('gen beside auth_time', () => {
     expect(after.length - before.length).toBeLessThan(60);
     expect(Math.ceil(after.length / CHUNK_SIZE)).toBe(Math.ceil(before.length / CHUNK_SIZE));
     expect(Math.ceil(after.length / CHUNK_SIZE)).toBe(1);
+  });
+});
+
+describe('buffered SID sign-out writer through the real public NextAuth handler', () => {
+  function enableWriter() {
+    vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_AUTH_BACKEND_ORIGIN', 'http://127.0.0.1:47991');
+    vi.stubEnv('CURRENT_STORE_AUTH_RPC_SECRET', 'synthetic-independent-web-signout-rpc-secret');
+  }
+  async function signedOutRequest(csrf = csrfToken) {
+    const claims = await currentSessionClaims();
+    return invoke('signout', {
+      csrfToken: csrf,
+      json: 'true',
+      callbackUrl: baseUrl,
+      expectedUserId: climber.id,
+      expectedAuthSessionId: String(claims?.authSessionId),
+    });
+  }
+  it('forwards the exact signed credential and clears cookies only after a correlated SID acknowledgement', async () => {
+    remember(await signInWithPassword());
+    const credential = cookies.get(SESSION_COOKIE);
+    enableWriter();
+    const calls: unknown[] = [];
+    vi.stubGlobal('fetch', async (_destination: unknown, init: RequestInit) => {
+      if (typeof init.body !== 'string') throw new Error('Expected private JSON command');
+      const command = JSON.parse(init.body) as { requestId: string; payload: { credential: string } };
+      calls.push(command.payload.credential);
+      return Response.json({
+        protocolVersion: 2,
+        operation: 'signout',
+        requestId: command.requestId,
+        outcome: 'signed_out',
+      });
+    });
+    const response = await signedOutRequest();
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([credential]);
+    expect(response.headers.get('set-cookie')).toContain(`${SESSION_COOKIE}=;`);
+  });
+  it('keeps every cookie when the required denial authority is unavailable', async () => {
+    remember(await signInWithPassword());
+    enableWriter();
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('synthetic authority outage');
+    });
+    const response = await signedOutRequest();
+    expect(response.status).toBe(503);
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+  it('retains real CSRF rejection without denial RPC or appended session clears', async () => {
+    remember(await signInWithPassword());
+    enableWriter();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const response = await signedOutRequest('invalid-csrf');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(response.headers.get('set-cookie') ?? '').not.toContain(`${SESSION_COOKIE}=;`);
+  });
+});
+
+describe('native transfer source proof at actual cookie publication', () => {
+  it.each([0, 3, 4])(
+    'admits only the unchanged signed legacy generation %s after primary reset',
+    async (generation) => {
+      transferAdmission.enabled = true;
+      databaseRows.set(schema.authSubjectCutoffs, [{ generation: 4 }]);
+      const response = await invoke('callback/native-oauth', {
+        transferToken: issueNativeOAuthTransferToken({ userId: climber.id, nextPath: '/', generation }),
+        csrfToken,
+        json: 'true',
+        callbackUrl: baseUrl,
+      });
+      expect(transferAdmission.generations).toEqual([generation]);
+      expect(response.status).toBe(generation === 4 ? 200 : 401);
+      if (generation !== 4) {
+        expect(response.headers.getSetCookie()).toEqual([]);
+      } else {
+        remember(response);
+        const claims = await currentSessionClaims();
+        expect(claims?.gen).toBe(4);
+        expect(claims).not.toHaveProperty('auth_time');
+        expect(claims).not.toHaveProperty('link_guarded');
+      }
+    },
+  );
+
+  it('keeps full inherited proof ahead of legacy generation and the primary generation', async () => {
+    databaseRows.set(schema.authSubjectCutoffs, new Error('A proved transfer must not read the primary stamp'));
+    const earlierSignIn = SIGN_IN_AT_SECONDS - 3600;
+    const claims = await runJwtCallback({
+      token: { sub: climber.id },
+      user: {
+        id: climber.id,
+        nativeOAuthSourceGeneration: 9,
+        webCredentialProof: {
+          version: 1,
+          userId: climber.id,
+          authSessionId: 'signed-source-login',
+          generation: 3,
+          authenticatedAt: new Date(earlierSignIn * 1000).toISOString(),
+          linkGuarded: true,
+        },
+      },
+      account: accountFor('native-oauth'),
+    });
+    expect(claims).toMatchObject({
+      gen: 3,
+      authSessionId: 'signed-source-login',
+      auth_time: earlierSignIn,
+      link_guarded: true,
+    });
+  });
+
+  it('preserves unknown inherited authentication age and guard state', async () => {
+    const claims = await runJwtCallback({
+      token: { sub: climber.id, auth_time: SIGN_IN_AT_SECONDS, link_guarded: true },
+      user: {
+        id: climber.id,
+        nativeOAuthSourceGeneration: 9,
+        webCredentialProof: {
+          version: 1,
+          userId: climber.id,
+          authSessionId: 'unknown-age-source',
+          generation: 3,
+          authenticatedAt: null,
+          linkGuarded: false,
+        },
+      },
+      account: accountFor('native-oauth'),
+    });
+    expect(claims).toMatchObject({ gen: 3, authSessionId: 'unknown-age-source' });
+    expect(claims).not.toHaveProperty('auth_time');
+    expect(claims).not.toHaveProperty('link_guarded');
+  });
+
+  it('refuses incomplete legacy source proof in required mode', async () => {
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
+    await expect(
+      runJwtCallback({
+        token: { sub: climber.id },
+        user: { id: climber.id, nativeOAuthSourceGeneration: 3 },
+        account: accountFor('native-oauth'),
+      }),
+    ).rejects.toThrow('Backend web credential proof required');
   });
 });

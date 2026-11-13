@@ -10,6 +10,7 @@ import { createPrototypeLegacyHandler } from '../legacy-bridge';
 import { createPrototypeLegacyTransferFacade, verifyPrototypeLegacyTransfer } from '../legacy-transfer';
 import { PROTOTYPE_ISSUER } from '../oauth-options';
 import { assertLegacyNativeTokenPair } from './identity-native-contract';
+import * as releasedIssuer from './fixtures/native-oauth-issuer-main-5440';
 
 const verificationSecret = 'boardsesh-synthetic-transfer-hmac-6975';
 const nativeKey = new TextEncoder().encode('boardsesh-synthetic-transfer-native-6975');
@@ -34,9 +35,15 @@ function sign(payload: unknown, secret = verificationSecret) {
   return `${encoded}.${createHmac('sha256', secret).update(encoded).digest('base64url')}`;
 }
 
-function payload(userId = randomUUID(), additions: Record<string, unknown> = {}) {
+function payload(userId: string = randomUUID(), additions: Record<string, unknown> = {}) {
   const now = Math.floor(Date.now() / 1000);
   return { userId, nextPath: '/settings', iat: now, exp: now + 120, ...additions };
+}
+
+// Historical no-receipt transfers omitted their source SID and authentication
+// age. Sign that exact wire shape instead of asking the corrected live issuer.
+function historicalIdentifierStrippedTransfer(userId: string, nextPath = '/') {
+  return sign(payload(userId, { nextPath }));
 }
 
 function lineageId(userId: string, authSessionId: string) {
@@ -54,14 +61,13 @@ describe('released browser-native transfer transport', () => {
 
   beforeAll(async () => {
     vi.stubEnv('NEXTAUTH_SECRET', verificationSecret);
-    // Load the real web producer only in this disposable test. Runtime backend
-    // code neither imports a web writer nor reads a product signing secret.
-    issuer = await vi.importActual<LegacyIssuer>(issuerPath);
+    // Freeze the released producer; the corrected live issuer is checked below.
+    issuer = releasedIssuer;
   });
 
   afterAll(() => vi.unstubAllEnvs());
 
-  it('accepts the actual current issuer with its two-part format and 120-second lifetime', () => {
+  it('accepts the frozen released issuer with its two-part format and 120-second lifetime', () => {
     const userId = randomUUID();
     const token = issuer.issueNativeOAuthTransferToken({ userId, nextPath: '/settings' });
     expect(token.split('.')).toHaveLength(2);
@@ -71,6 +77,17 @@ describe('released browser-native transfer transport', () => {
     expect(proof!.validUntil.getTime() - proof!.expiresAt.getTime()).toBe(6000);
   });
 
+  it('the corrected live issuer preserves a returning session without creation metadata', async () => {
+    const liveIssuer = await vi.importActual<LegacyIssuer>(issuerPath);
+    const userId = randomUUID();
+    const token = liveIssuer.issueNativeOAuthTransferToken({ userId, nextPath: '/', authSessionId: 'browser' });
+    expect(verifyPrototypeLegacyTransfer(token, verificationSecret)).toMatchObject({
+      userId,
+      authSessionId: 'browser',
+      originalAuthenticatedAt: null,
+    });
+  });
+
   it('records the released issuer dropping a returning browser session identifier without creation proof', () => {
     const token = issuer.issueNativeOAuthTransferToken({
       userId: randomUUID(),
@@ -78,6 +95,13 @@ describe('released browser-native transfer transport', () => {
       authSessionId: 'browser',
     });
     expect(verifyPrototypeLegacyTransfer(token, verificationSecret)?.authSessionId).toBeNull();
+  });
+
+  it('accepts the historical signed identifier-stripped wire shape without inventing age', () => {
+    const userId = randomUUID();
+    const proof = verifyPrototypeLegacyTransfer(historicalIdentifierStrippedTransfer(userId), verificationSecret);
+    expect(proof).toMatchObject({ userId, authSessionId: null, originalAuthenticatedAt: null });
+    expect(proof?.accountCreation).toBeUndefined();
   });
 
   it('accepts signed creation metadata only with its immutable user, provider, session and attempt binding', () => {
@@ -255,7 +279,7 @@ describe('durable transfer redemption and the canonical native authority', () =>
 
   beforeAll(async () => {
     vi.stubEnv('NEXTAUTH_SECRET', verificationSecret);
-    issuer = await vi.importActual<LegacyIssuer>(issuerPath);
+    issuer = releasedIssuer;
     environment = await createPrototypeEnvironment();
     passwordHash = await hash(password, 4);
     first = createPrototypeLegacyTransferFacade(environment.database, verificationSecret, nativeKey);
@@ -467,11 +491,7 @@ describe('durable transfer redemption and the canonical native authority', () =>
           .set({ expiresAt: new Date(0) })
           .where(eq(environment.schema.session.id, user.sessionId));
       }
-      const ambiguousToken = issuer.issueNativeOAuthTransferToken({
-        userId: user.userId,
-        nextPath: '/',
-        authSessionId: user.authSessionId,
-      });
+      const ambiguousToken = historicalIdentifierStrippedTransfer(user.userId);
       expect(verifyPrototypeLegacyTransfer(ambiguousToken, verificationSecret)?.authSessionId).toBeNull();
       await expect(second.exchange(ambiguousToken)).rejects.toMatchObject({ status: 401 });
     },
@@ -496,11 +516,8 @@ describe('durable transfer redemption and the canonical native authority', () =>
       attemptId,
       provider: 'google',
     });
-    const unusedUnknownSource = issuer.issueNativeOAuthTransferToken({
-      userId: user.userId,
-      nextPath: '/different-path',
-      authSessionId: user.authSessionId,
-    });
+    const unusedUnknownSource = historicalIdentifierStrippedTransfer(user.userId, '/different-path');
+    expect(verifyPrototypeLegacyTransfer(unusedUnknownSource, verificationSecret)?.authSessionId).toBeNull();
     await native.revoke(pair.refreshToken);
     await expect(second.exchange(unusedSameSource)).rejects.toMatchObject({ status: 401 });
     await expect(second.exchange(unusedUnknownSource)).rejects.toMatchObject({ status: 401 });

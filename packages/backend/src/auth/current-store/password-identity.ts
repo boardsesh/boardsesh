@@ -1,4 +1,11 @@
 import crypto from 'node:crypto';
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
+import { bindIdentityAuthority } from '../authority/identity-authority';
+import { mirrorAuthorityToCurrentStore } from '../authority/reverse-identity';
+import { revalidateIdentityAuthority, type IdentityAuthorityReceipt } from '../authority/router';
+import { assertLegacyIdentityWriterAllowed } from './identity-writer-gate';
+import { reserveEnforcedEmail } from './email-reservations';
+import { captureExpectedAuthority, type ExpectedCurrentStoreAuthority } from './foundation-context';
 import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
 import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
@@ -42,6 +49,8 @@ export interface CurrentStorePasswordCandidate {
 export async function matchCurrentStorePasswordCandidate(
   candidates: readonly CurrentStorePasswordCandidate[],
   password: string,
+  verify: (passwordHash: string, submittedPassword: string) => Promise<boolean> = (passwordHash, submittedPassword) =>
+    compare(submittedPassword, passwordHash),
 ): Promise<{ userId: string; createdAt: Date } | null> {
   const snapshot = candidates.map((candidate) => ({
     userId: candidate.userId,
@@ -49,18 +58,18 @@ export async function matchCurrentStorePasswordCandidate(
     createdAt: candidate.createdAt instanceof Date ? new Date(candidate.createdAt.getTime()) : candidate.createdAt,
   }));
   if (snapshot.length === 0) {
-    await compare(password, ABSENT_PASSWORD_HASH);
+    await verify(ABSENT_PASSWORD_HASH, password);
     return null;
   }
   if (snapshot.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) {
     await Promise.all(
       snapshot
         .slice(0, MAX_CURRENT_STORE_PASSWORD_CANDIDATES)
-        .map((candidate) => compare(password, candidate.passwordHash)),
+        .map((candidate) => verify(candidate.passwordHash, password)),
     );
     return null;
   }
-  const matches = await Promise.all(snapshot.map((candidate) => compare(password, candidate.passwordHash)));
+  const matches = await Promise.all(snapshot.map((candidate) => verify(candidate.passwordHash, password)));
   const matchingIndexes = matches.reduce<number[]>((indexes, matchesPassword, index) => {
     if (matchesPassword) indexes.push(index);
     return indexes;
@@ -89,6 +98,20 @@ export async function authenticateCurrentStorePassword(
   email: string,
   password: string,
 ): Promise<VerifiedPasswordSnapshot | null> {
+  const candidates = await readCurrentStorePasswordCandidates(database, email);
+  const matched = await matchCurrentStorePasswordCandidate(candidates, password);
+  const proved = matched ? candidates.find((candidate) => candidate.userId === matched.userId) : undefined;
+  if (!matched || !proved) return null;
+  return {
+    userId: matched.userId,
+    createdAt: matched.createdAt,
+    passwordHash: proved.passwordHash,
+    generation: proved.generation ?? 0,
+  };
+}
+
+/** Snapshot read only; callers must release their transaction before bcrypt. */
+export async function readCurrentStorePasswordCandidates(database: PasswordIdentityReader, email: string) {
   const normalizedEmail = normalizeAccountEmail(email);
   // Preserve exact case-insensitive matching, including literal '_' and '%'.
   // Historic duplicate-by-case rows remain independently owned accounts.
@@ -105,15 +128,7 @@ export async function authenticateCurrentStorePassword(
     .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, users.id))
     .where(sql`LOWER(${users.email}) = ${normalizedEmail}`)
     .limit(MAX_CURRENT_STORE_PASSWORD_CANDIDATES + 1);
-  const matched = await matchCurrentStorePasswordCandidate(candidates, password);
-  const proved = matched ? candidates.find((candidate) => candidate.userId === matched.userId) : undefined;
-  if (!matched || !proved) return null;
-  return {
-    userId: matched.userId,
-    createdAt: matched.createdAt,
-    passwordHash: proved.passwordHash,
-    generation: proved.generation ?? 0,
-  };
+  return candidates;
 }
 
 /** Shared native creation email policy; subjects and login passwords are separate. */
@@ -175,20 +190,45 @@ export async function insertCurrentStorePasswordIdentity(
   registration: PreparedPasswordRegistration,
   emailVerificationEnabled: boolean,
   reservedUserId?: string,
+  selected?: {
+    readonly receipt: IdentityAuthorityReceipt;
+    readonly reservationAuthority: ExpectedCurrentStoreAuthority;
+  },
 ): Promise<{ userId: string; createdAt: Date }> {
+  // Snapshot caller-owned prepared credentials, authority and time before a gate
+  // wait. Registration never reruns bcrypt or chooses a newer authority here.
   const { email, name, passwordHash } = registration;
+  const receipt = selected ? Object.freeze({ ...selected.receipt }) : undefined;
+  const reservationAuthority = selected ? captureExpectedAuthority(selected.reservationAuthority) : undefined;
   // Only a trusted backend stage may supply the ID it just reserved. Legacy
   // callers omit it and retain the existing server-generated ID behavior.
   const userId = reservedUserId ?? crypto.randomUUID();
   const createdAt = new Date();
-  await transaction.insert(users).values({
+  const user = {
     id: userId,
     createdAt,
     email,
     name: name ?? email.split('@')[0],
-    emailVerified: emailVerificationEnabled ? null : new Date(),
-  });
-  await transaction.insert(userCredentials).values({ userId, passwordHash });
+    emailVerified: emailVerificationEnabled ? null : new Date(createdAt.getTime()),
+  };
+  if (receipt) {
+    await revalidateIdentityAuthority(transaction, receipt);
+    const identity = bindIdentityAuthority(transaction, receipt);
+    await identity.createUser(user);
+    // Creation owns its new users row before the reservation/cutoff. Any
+    // inconsistent or occupied key aborts this same caller transaction.
+    if (!reservationAuthority) throw new Error('Registration reservation authority missing');
+    await reserveEnforcedEmail(transaction, { ...reservationAuthority, rawEmail: email, requestedUserId: userId });
+    await identity.insertPassword(userId, passwordHash, 0);
+  } else {
+    await assertLegacyIdentityWriterAllowed(transaction);
+    await transaction.insert(users).values(user);
+    await transaction.insert(userCredentials).values({ userId, passwordHash });
+  }
   await transaction.insert(userProfiles).values({ userId }).onConflictDoNothing();
+  if (receipt?.authority === 'better-auth') await mirrorAuthorityToCurrentStore(transaction, userId);
+  else await mirrorIdentityIfEnabled(transaction, userId);
+  if (receipt) await revalidateIdentityAuthority(transaction, receipt);
+  else await assertLegacyIdentityWriterAllowed(transaction);
   return { userId, createdAt };
 }

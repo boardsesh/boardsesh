@@ -1,0 +1,2 @@
+ALTER TABLE "auth_email_projection" ADD COLUMN "writer_authority" text DEFAULT 'current-store' NOT NULL;--> statement-breakpoint
+ALTER TABLE "auth_email_projection" ADD CONSTRAINT "auth_email_projection_writer_authority" CHECK ("auth_email_projection"."writer_authority" IN ('current-store', 'better-auth'));

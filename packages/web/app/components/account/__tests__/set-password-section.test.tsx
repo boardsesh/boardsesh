@@ -308,3 +308,47 @@ describe('SetPasswordSection', () => {
     });
   });
 });
+
+it('offers a translated reauthentication route and never claims the password was saved', async () => {
+  const saved = vi.fn();
+  mockFetch.mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'reauthentication_required' }) });
+  render(
+    <SetPasswordSection
+      hasPassword={false}
+      userEmail="synthetic@example.com"
+      linkedProviders={['google']}
+      onPasswordSet={saved}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'new-password' } });
+  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'new-password' } });
+  fireEvent.click(screen.getByText('Set Password'));
+  const action = await screen.findByRole('link', { name: 'Sign in again' });
+  expect(screen.getByText('Sign in again to set a password.')).toBeTruthy();
+  expect(action.getAttribute('href')).toContain('/auth/signout?callbackUrl=');
+  expect(saved).not.toHaveBeenCalled();
+  expect(mockShowMessage).not.toHaveBeenCalled();
+});
+
+it('clears both secrets and refreshes account identity when a different tab changed accounts', async () => {
+  const saved = vi.fn();
+  const changed = vi.fn().mockResolvedValue(undefined);
+  mockFetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: 'identity_changed' }) });
+  render(
+    <SetPasswordSection
+      hasPassword={false}
+      userEmail="synthetic@example.com"
+      linkedProviders={[]}
+      onPasswordSet={saved}
+      onAccountChanged={changed}
+      expectedSession={{ userId: 'synthetic-owner', authSessionId: 'synthetic-sid' }}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'new-password' } });
+  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'new-password' } });
+  fireEvent.click(screen.getByText('Set Password'));
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Confirm Password') as HTMLInputElement).value).toBe('');
+  expect(saved).not.toHaveBeenCalled();
+});

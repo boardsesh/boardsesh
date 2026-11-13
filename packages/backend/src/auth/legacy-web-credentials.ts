@@ -18,10 +18,14 @@ const ENCODER_CLOCK_READ_ALLOWANCE_SECONDS = 60;
 // Match the backend's installed validateNextAuthToken transport. NextAuth's
 // browser decoder uses 15 seconds instead; this is deliberately explicit.
 export const LEGACY_WEB_CLOCK_TOLERANCE_SECONDS = 60;
+/** Longest accepted concurrent rolling copy after a sign-out read. */
+export const LEGACY_WEB_MAX_REMAINING_VALIDITY_MS =
+  (MAX_SESSION_LIFETIME_SECONDS + ENCODER_CLOCK_READ_ALLOWANCE_SECONDS + 2 * LEGACY_WEB_CLOCK_TOLERANCE_SECONDS) * 1000;
 
 export interface VerifiedLegacyWebCredential {
   readonly kind: 'nextauth-v4-jwe';
   readonly userId: string;
+  readonly generation: number;
   readonly issuedAt: Date;
   readonly expiresAt: Date;
   readonly validUntil: Date;
@@ -121,6 +125,8 @@ export async function verifyLegacyNextAuthJwe(
     )
       return null;
 
+    const generation = payload.gen ?? 0;
+    if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
     const claimedSessionId = payload.authSessionId;
     if (
       claimedSessionId !== undefined &&
@@ -128,10 +134,13 @@ export async function verifyLegacyNextAuthJwe(
     )
       return null;
     const authSessionId = typeof claimedSessionId === 'string' ? claimedSessionId : null;
+    if (payload.legacy_no_sid !== undefined && payload.legacy_no_sid !== true) return null;
+    const requiresAccountCutoff = authSessionId === null || payload.legacy_no_sid === true;
     const credentialFingerprint = fingerprint(credential);
     return {
       kind: 'nextauth-v4-jwe',
       userId,
+      generation,
       issuedAt: new Date(issuedAt * 1000),
       expiresAt: new Date(expiresAt * 1000),
       // Keep the signed expiry distinct from the accepted transport grace.
@@ -144,11 +153,11 @@ export async function verifyLegacyNextAuthJwe(
       originalAuthenticatedAt: signedInAt(payload.auth_time, issuedAt, currentTime),
       linkGuarded: isLinkGuardedSignIn(payload),
       authSessionId,
-      lineageId: `${authSessionId ? 'session' : 'credential'}:${fingerprint(
+      lineageId: `${requiresAccountCutoff ? 'credential' : 'session'}:${fingerprint(
         JSON.stringify(['nextauth-v4', userId, authSessionId ?? credentialFingerprint]),
       )}`,
       credentialFingerprint,
-      requiresAccountCutoff: authSessionId === null,
+      requiresAccountCutoff,
       cookieNames: [],
     };
   } catch {
@@ -241,7 +250,13 @@ export async function verifyLegacyWebCookie(
   const proofs = verified.filter((proof) => proof !== null);
   if (proofs.length === 0) return null;
   const first = proofs[0];
-  if (proofs.some((proof) => proof.userId !== first.userId || proof.lineageId !== first.lineageId)) return null;
+  if (
+    proofs.some(
+      (proof) =>
+        proof.userId !== first.userId || proof.lineageId !== first.lineageId || proof.generation !== first.generation,
+    )
+  )
+    return null;
   const fingerprints = [...new Set(proofs.map((proof) => proof.credentialFingerprint))].sort();
   return {
     ...first,

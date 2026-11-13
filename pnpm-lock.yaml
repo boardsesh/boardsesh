@@ -256,6 +256,9 @@ importers:
       '@boardsesh/led-controller':
         specifier: workspace:*
         version: link:../shared/led-controller
+      '@boardsesh/location-sync':
+        specifier: workspace:*
+        version: link:../location-sync
       '@boardsesh/moonboard-sync':
         specifier: workspace:*
         version: link:../moonboard-sync
@@ -592,6 +595,9 @@ importers:
 
   packages/location-sync:
     dependencies:
+      '@boardsesh/auth-protocol':
+        specifier: workspace:*
+        version: link:../shared/auth-protocol
       '@boardsesh/board-config':
         specifier: workspace:*
         version: link:../shared/board-config
