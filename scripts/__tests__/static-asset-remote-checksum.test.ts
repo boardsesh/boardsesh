@@ -184,6 +184,41 @@ describe('public static asset checksum validation', () => {
     },
   );
 
+  it.each(['gzip', 'br'])(
+    'validates decoded %s bytes when Content-Length describes the encoded response',
+    async (contentEncoding) => {
+      // Native fetch returns the decoded body while preserving the wire headers.
+      const fetchImpl = vi.fn<typeof fetch>(
+        async () =>
+          new Response(contents, {
+            headers: { ...publicHeaders, 'content-encoding': contentEncoding, 'content-length': '12' },
+          }),
+      );
+      await expect(validatePublicAsset(asset, async () => {}, fetchImpl, origin)).resolves.toBeUndefined();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('still rejects corrupt decoded bytes behind a valid compression header', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(Buffer.alloc(asset.bytes), {
+          headers: { ...publicHeaders, 'content-encoding': 'gzip', 'content-length': '12' },
+        }),
+    );
+    await expectFailedPublicValidation(fetchImpl, 'SHA-256 mismatch');
+  });
+
+  it('keeps Content-Length checks for explicitly identity-encoded responses', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async () =>
+        new Response(contents, {
+          headers: { ...publicHeaders, 'content-encoding': 'identity', 'content-length': '12' },
+        }),
+    );
+    await expectFailedPublicValidation(fetchImpl, 'has Content-Length');
+  });
+
   it('rejects a truncated stream without a Content-Length header', async () => {
     const fetchImpl = vi.fn<typeof fetch>(
       async () => new Response(contents.subarray(0, -1), { headers: publicHeaders }),

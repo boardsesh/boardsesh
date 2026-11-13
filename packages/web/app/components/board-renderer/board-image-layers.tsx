@@ -79,18 +79,22 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
   );
   // With no climb to overlay, the photo layers are all there is to draw.
   const backgroundUrls = overlayUrl ? artBackgroundUrls : bareBackgroundUrls;
+  const useContain = contain || thumbnail;
 
   const containerStyle = useMemo<React.CSSProperties>(
     () => ({
       display: 'grid',
       overflow: 'hidden',
+      // Fixed kiosk slots and square thumbnails must size tracks from their
+      // available box, not the image's intrinsic height. Otherwise the implicit
+      // auto track overflows and clips the board before object-fit can contain it.
+      ...(useContain ? { gridTemplateRows: 'minmax(0, 1fr)', gridTemplateColumns: 'minmax(0, 1fr)' } : {}),
       ...style,
       transform: mirrored ? 'scaleX(-1)' : style?.transform,
     }),
-    [style, mirrored],
+    [style, mirrored, useContain],
   );
 
-  const useContain = contain || thumbnail;
   let imgStyle = useContain ? layerContainStyle : layerStyle;
   if (darkArt) imgStyle = useContain ? pairedLayerContainStyle : pairedLayerStyle;
 

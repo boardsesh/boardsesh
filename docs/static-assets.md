@@ -77,8 +77,8 @@ assets.boardsesh.com (Tigris)  access-control-allow-origin: *      # on EVERY re
 media.boardsesh.com  (R2)      (no ACAO header at all)             # R2 answers CORS only when the request has Origin
 ```
 
-The catalogue is read both ways. A plain `<img src>` sends no `Origin`; `ensureImagesPreloaded` in
-`packages/web/app/lib/board-render-worker/worker-manager.ts` does a real `fetch()` for every board background. Those
+The catalogue is read both ways. A plain `<img src>` sends no `Origin`; the Expo browser worker in
+`packages/mobile/public/wasm/board-render.worker.js` fetches board backgrounds. Those
 share one cache key, and Cloudflare does not key its cache on `Vary` below Enterprise — so the `<img>` response, with
 no ACAO, can be the copy served to the `fetch()`. That fails CORS, the failure is swallowed
 (`console.warn('Failed to preload background image')`), and the board renders with no background for as long as the
@@ -173,9 +173,11 @@ downloads; reserve full verification for the pre-cutover gate and integrity chec
 hashes outside the current catalog, so the current catalog size is not a verification cost estimate.
 
 Current-catalog public GET verification accepts CDN responses without `Content-Length`, including chunked or
-HTTP/2 delivery. It still bounds the streamed body to the catalog's byte count, requires that exact count and
-SHA-256, and rejects an incorrect length header when present. Each download keeps its 30-second deadline;
-content type, immutable caching, CORS and declared Cloudflare delivery checks remain required.
+HTTP/2 delivery. It still bounds the streamed body to the catalog's byte count and requires that exact count and
+SHA-256. For compressed CDN responses, `Content-Length` describes wire bytes; validation checks the exact
+decoded body size and SHA-256 that `fetch()` returns. Identity responses reject an incorrect length header when
+one is present. Each download keeps its 30-second deadline; content type, immutable caching, CORS and declared
+Cloudflare delivery checks remain required.
 
 The JSON summary reports `sourceObjects` (historical source inventory), `missingObjects` (destination gaps at the
 start of the run), and `copiedObjects` (successful uploads performed by this run). A concurrent writer returning

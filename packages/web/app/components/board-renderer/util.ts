@@ -68,8 +68,6 @@ const AURA_FIELD_COLOR = BOARD_FIELD_COLORS.dark;
 
 const LEGACY_BOARD_RENDER_PATH = '/api/internal/board-render';
 const BACKEND_BOARD_RENDER_PATH = '/render/board';
-const SAME_ORIGIN_BOARD_GEOMETRY_PATH = '/api/internal/board-geometry';
-const BACKEND_BOARD_GEOMETRY_PATH = '/render/geometry';
 
 function shouldUseCompatibilityPath(): boolean {
   // The dev orchestrator advertises its Tailscale hostname to the browser even
@@ -118,17 +116,6 @@ function getBoardRenderEndpoint(): string {
   if (shouldUseCompatibilityPath()) return LEGACY_BOARD_RENDER_PATH;
   const backendOrigin = getPublicBackendHttpUrl();
   return backendOrigin ? `${backendOrigin}${BACKEND_BOARD_RENDER_PATH}` : LEGACY_BOARD_RENDER_PATH;
-}
-
-/**
- * The traced board art the browser's own WASM renderer needs, resolved the same
- * way as the image endpoint above: straight to Railway in production, the
- * same-origin rewrite in development and on a LAN host.
- */
-export function getBoardGeometryEndpoint(): string {
-  if (shouldUseCompatibilityPath()) return SAME_ORIGIN_BOARD_GEOMETRY_PATH;
-  const backendOrigin = getPublicBackendHttpUrl();
-  return backendOrigin ? `${backendOrigin}${BACKEND_BOARD_GEOMETRY_PATH}` : SAME_ORIGIN_BOARD_GEOMETRY_PATH;
 }
 
 /**

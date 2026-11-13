@@ -200,7 +200,7 @@ const CORS_PROBE_SAMPLE_SIZE = 5;
  * Measured 2026-09-15: Tigris sends `access-control-allow-origin: *` on every
  * response; R2 sends it only in reply to a request that carried `Origin`. The
  * board art is loaded both ways — `<img src>` sends no Origin, while
- * `ensureImagesPreloaded` in packages/web/app/lib/board-render-worker/worker-manager.ts
+ * the Expo worker in packages/mobile/public/wasm/board-render.worker.js
  * does a real `fetch()` — and Cloudflare does not key its cache on `Vary` below
  * Enterprise, so the header-less copy can be served to the `fetch()`. It fails
  * CORS, the failure is swallowed as a `console.warn`, and the board renders with

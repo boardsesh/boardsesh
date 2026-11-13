@@ -143,7 +143,10 @@ export async function generateMetadata(props: BoardSlugListPageProps): Promise<M
       ogDescription: t('metadata.list.ogDescription'),
       path,
       locale,
-      robots,
+      // Keep noindex/private variants' policy intact. Indexable public catalog
+      // aliases do not seed a separate crawl graph for each physical board.
+      // The spray-wall branch above owns its independent visibility policy.
+      robots: robots ?? { index: true, follow: false },
       ...(imageUrl ? { imagePath: imageUrl } : {}),
     });
   } catch {

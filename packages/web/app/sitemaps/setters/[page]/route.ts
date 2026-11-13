@@ -1,7 +1,7 @@
 import { pagedShardRouteHandler } from '@/app/lib/seo/sitemap/shard-registry';
 
 /**
- * `/sitemaps/setters/1.xml … /N.xml`.
+ * `/sitemaps/setters/1.xml.gz … /N.xml.gz`, with legacy `.xml` URLs supported.
  *
  * A dynamic segment rather than one directory per page: Next has no partial
  * dynamic segments, so a `setters-1.xml` shape would hardcode today's page

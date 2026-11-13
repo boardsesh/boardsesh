@@ -282,7 +282,7 @@ describe('buildSitemapIndexXml', () => {
     expect(warnings.join(' ')).toContain('gyms');
     // `setters` is a paged, data-backed shard now, so it IS listed — one entry
     // per page, derived from its summary rather than hardcoded.
-    expect(xml).toContain('https://www.boardsesh.com/sitemaps/setters/1.xml');
+    expect(xml).toContain('https://www.boardsesh.com/sitemaps/setters/1.xml.gz');
     expect(warnings.join(' ')).toContain('build-plans');
     // An empty shard is not a degradation: nothing failed, so the response keeps
     // the full cache window.
@@ -295,7 +295,7 @@ describe('buildSitemapIndexXml', () => {
     const { xml } = await buildSitemapIndexXml();
     const pages = Math.ceil(climbSummary.itemCount / CLIMB_URLS_PER_SHARD);
     for (let page = 1; page <= pages; page += 1) {
-      expect(xml).toContain(`https://www.boardsesh.com/sitemaps/climbs/${page}.xml`);
+      expect(xml).toContain(`https://www.boardsesh.com/sitemaps/climbs/${page}.xml.gz`);
     }
     expect(xml).not.toContain(`/sitemaps/climbs/${pages + 1}.xml`);
   });
@@ -435,7 +435,7 @@ describe('buildSitemapIndexXml', () => {
 
     expect(response.status).toBe(200);
     expect(xml).toContain('/sitemaps/static.xml');
-    expect(xml).toContain('/sitemaps/climbs/1.xml');
+    expect(xml).toContain('/sitemaps/climbs/1.xml.gz');
     expect(xml).not.toContain('/sitemaps/setters/');
     expect(response.headers.get('x-sitemap-degraded')).toBe('setters');
     expect(errors.join(' ')).toContain(`exceeded its ${SHARD_DEADLINE_MS}ms deadline`);

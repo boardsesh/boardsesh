@@ -1,211 +1,62 @@
-# WASM Web Worker Rendering Architecture
+# Web board image rendering
 
-This document describes the board rendering pipeline used in Boardsesh. The system progressively upgrades from server-rendered image layers to a client-side Web Worker pipeline that composites board overlays using WebAssembly on OffscreenCanvas.
+The Next.js website displays board images from the backend WASM renderer. It does
+not initialize browser WASM, create rendering workers or replace images with a
+canvas after hydration. The backend runs the shared Rust renderer and sharp once
+for a cache miss; Cloudflare and the browser reuse the resulting images.
 
-## Table of Contents
+## Rendering flow
 
-1. [Rendering Tiers](#rendering-tiers)
-2. [Renderer Modes](#renderer-modes)
-3. [Architecture Overview](#architecture-overview)
-4. [Rendering Flow](#rendering-flow)
-5. [Worker Pool](#worker-pool)
-6. [Caching and Deduplication](#caching-and-deduplication)
-7. [Background Image Preloading](#background-image-preloading)
-8. [Browser Support](#browser-support)
-9. [Error Handling and Fallbacks](#error-handling-and-fallbacks)
-10. [Key Files](#key-files)
+1. `BoardImageLayers` builds versioned image URLs using the existing board configuration,
+   flattened climb frames, render mode and thumbnail size.
+2. The browser requests the image from `https://ws.boardsesh.com/render/board`.
+   Local development uses the same-origin compatibility rewrite.
+3. Cloudflare serves a cached response or forwards a miss to the backend.
+4. The backend's bounded in-memory cache and in-flight deduplication avoid repeated
+   WASM/sharp work for concurrent misses.
+5. React keeps the same image elements after hydration. A climb change updates the
+   image URL; no renderer binary or JavaScript glue is downloaded by Next.js pages.
 
----
+## Image composition
 
-## Rendering Tiers
+Ordinary catalog boards use one backend-rendered composite image with board art
+and the climb's holds. Boards with light/dark art use static photo layers and one
+transparent backend overlay, so changing theme does not render every climb twice.
+Mirroring is a CSS transform and does not create another render-cache variant.
 
-The board rendering pipeline has two active tiers:
+Thumbnails retain their dimensions, lazy loading and fetch-priority hints. Kiosk
+live presence updates change the same contain-fit raster image URL used by the
+server seed. The bare-board URL also uses the backend, so clearing a wall preserves
+the renderer’s background treatment. The
+browser's native image cache reuses a render when a previously shown climb returns.
 
-| Tier            | Component             | Rendering Method                             | When Used                                        |
-| --------------- | --------------------- | -------------------------------------------- | ------------------------------------------------ |
-| 1 (server WASM) | `BoardImageLayers`    | `<img>` overlay from Railway `/render/board` | SSR fallback before the worker is ready          |
-| 2 (client WASM) | `BoardCanvasRenderer` | OffscreenCanvas in Web Worker                | After hydration, when the canvas worker is ready |
+## Cache contract
 
-`BoardCanvasRenderer` always uses `BoardImageLayers` as its SSR fallback.
+Every URL includes the generated `BOARD_RENDER_VERSION`. Successful versioned
+responses are public and immutable for one year; unversioned responses use the
+existing daily tier. The Cloudflare cache rule explicitly includes `/render/board`
+and honors the origin's cache headers. The full query remains in the cache key:
+board configuration, frames, thumbnail size, render mode and version identify
+separate images. Errors and renderer saturation must not enter the shared cache.
 
----
+A renderer, board-geometry or board-art change regenerates the version rather than
+purging immutable URLs. See [Cloudflare](cloudflare.md) for the edge rule and
+verification, and [Open Graph climb rendering](og-climb.md) for the shared backend.
 
-## Renderer Modes
+## Other clients and compatibility assets
 
-The rollout flags have been removed. The supported behavior is:
+The Expo browser app has its own renderer worker and is outside this Next.js
+change. Mobile/native rendering is unchanged. The legacy files under
+`packages/web/public/wasm/` remain for existing browser tabs and the current
+mobile-web artifact-parity checks, but no Next.js browser module imports them.
+They are not published through the image CDN catalog.
 
-- Server render with `BoardImageLayers`
-- Upgrade to `BoardCanvasRenderer` after hydration when the worker pool is ready
-- Fall back to `BoardImageLayers` on clients that are not ready yet
+## Key files
 
----
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Server (SSR)                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  Page Component                                                          │
-│    └── BoardImageLayers                                                  │
-│          ├── <img> background (static board image)                       │
-│          └── <img> overlay (from ws.boardsesh.com/render/board)          │
-│                                    │                                     │
-│                                    ▼                                     │
-│                     ┌──────────────────────────┐                         │
-│                     │ Railway /render/board     │                         │
-│                     │ WASM + sharp (backend)    │                         │
-│                     │ Generates image bytes     │                         │
-│                     └──────────────────────────┘                         │
-└─────────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   │ HTML sent to client
-                                   ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Client (after hydration)                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  BoardCanvasRenderer                                                     │
-│    ├── <canvas> (visible, receives ImageBitmap from worker)              │
-│    └── useCanvasRendererReady (flips when worker pool is initialized)    │
-│                                                                          │
-│  ┌───────────────────────────────────────────────────┐                   │
-│  │              Main Thread                           │                   │
-│  │  WorkerManager                                     │                   │
-│  │    ├── LRU bitmap cache (50 entries)               │                   │
-│  │    ├── Request deduplication                        │                   │
-│  │    ├── Round-robin worker dispatch                  │                   │
-│  │    └── Background image preloading                  │                   │
-│  └──────────────┬────────────────────────────────────┘                   │
-│                 │ postMessage (render request)                            │
-│                 │ transferable ImageBitmap back                           │
-│    ┌────────────┼────────────┬────────────┐                              │
-│    ▼            ▼            ▼            ▼                               │
-│  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐                                │
-│  │Worker│  │Worker│  │Worker│  │Worker│  ...                            │
-│  │  #1  │  │  #2  │  │  #3  │  │  #4  │                                │
-│  │ WASM │  │ WASM │  │ WASM │  │ WASM │                                │
-│  └──────┘  └──────┘  └──────┘  └──────┘                                │
-│  Each worker loads WASM from /public/wasm/                               │
-│  and composites background + overlay on OffscreenCanvas                  │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Rendering Flow
-
-### 1. Server-Side Render
-
-The page component renders `BoardImageLayers`, which produces two `<img>` tags:
-
-- A background image (the static board photo).
-- An overlay image, with `src` pointing to the backend `/render/board` endpoint. The long-running Railway process runs WASM plus sharp and shares bounded caches with `/og/climb`. The URL carries a `&v=` renderer version (#4773) so a renderer, geometry or board-art change mints new URLs instead of being masked by a year-long Cloudflare entry — the constant is generated by `vp run generate:board-render-version`.
-
-This HTML is sent to the client. The user sees a fully rendered board before any JavaScript executes.
-
-### 2. Client Hydration
-
-React hydrates `BoardImageLayers`. The DOM matches the server-rendered HTML, so no layout shift occurs.
-
-### 3. Worker Takeover
-
-After mount, `useCanvasRendererReady` resolves to `true` once the browser supports `OffscreenCanvas` and the worker pool is initialized. `BoardCanvasRenderer` replaces `BoardImageLayers` in the visible layout.
-
-A module-level `globalCanvasReady` flag ensures that only the first batch of component instances goes through the `false`→`true` transition. Subsequent instances (e.g. from infinite scroll) initialise with `true` immediately, avoiding a one-frame flash of `BoardImageLayers` and the API request it would trigger.
-
-1. `BoardCanvasRenderer` sends a render request to the `WorkerManager`.
-2. The `WorkerManager` checks the LRU cache. On a cache hit, it returns the cached `ImageBitmap` immediately.
-3. On a cache miss, the request is dispatched to the next worker in the round-robin rotation.
-4. The worker receives the request, composites the background image with the WASM-generated overlay on an `OffscreenCanvas`, and transfers the resulting `ImageBitmap` back to the main thread.
-5. The main thread caches the bitmap and draws it on the visible `<canvas>`.
-
-### 4. Subsequent Renders
-
-When the user navigates to a different climb, the same flow repeats from step 1 of the worker takeover. Identical board+frame combinations are deduplicated -- if a request for the same parameters is already in flight, the new caller receives the same promise rather than dispatching a duplicate render.
-
----
-
-## Worker Pool
-
-The `WorkerManager` maintains a pool of Web Workers, each running its own instance of the WASM module.
-
-| Environment       | Worker Count |
-| ----------------- | ------------ |
-| Browser           | 3            |
-| Capacitor WebView | 5            |
-
-Workers are allocated by round-robin. Each worker loads the WASM module from `/public/wasm/` on initialization. The pool is created once and reused for the lifetime of the page.
-
----
-
-## Caching and Deduplication
-
-### LRU Bitmap Cache
-
-The main thread maintains an LRU cache of 50 `ImageBitmap` entries, keyed by the combination of board configuration and frame parameters. Cache hits skip the worker entirely and return the bitmap synchronously.
-
-### Request Deduplication
-
-If a render request arrives for parameters that match an in-flight request, the `WorkerManager` does not dispatch a second job. Instead, the new caller shares the promise of the existing request. This prevents redundant work when multiple components request the same render simultaneously (e.g., during rapid navigation).
-
----
-
-## Background Image Preloading
-
-Board background images (the static board photos) are fetched once on the main thread and transferred to all workers. This avoids each worker independently fetching the same image over the network:
-
-1. The main thread fetches the background image and converts it to an `ImageBitmap`.
-2. The bitmap is transferred to each worker via `postMessage` with transferable objects.
-3. Workers store the bitmap and use it for all subsequent compositing operations.
-
----
-
-## Browser Support
-
-| Feature         | Minimum Version                        |
-| --------------- | -------------------------------------- |
-| OffscreenCanvas | Safari 16.4+, Chrome 69+, Firefox 105+ |
-| Web Workers     | All modern browsers                    |
-| WebAssembly     | All modern browsers                    |
-
-If `OffscreenCanvas` is unavailable, the system stays on `BoardImageLayers` (Tier 2). The `BoardCanvasRenderer` component checks for `OffscreenCanvas` support before attempting to initialize the worker pool.
-
----
-
-## Error Handling and Fallbacks
-
-### Worker Errors
-
-When any worker fires `onerror` (typically a script-load failure such as `NetworkError: Load failed` in WKWebView, but also runtime crashes), the worker-manager:
-
-1. Calls `event.preventDefault()` so the error does not bubble to `window.onerror` / the browser console (prevents repetitive noise in WKWebView sessions).
-2. Sets a session-level `workerPoolDisabled` flag so future `renderBoard` calls reject synchronously with `Worker rendering is disabled`.
-3. Calls `markCanvasNotReady()`, which flips `globalCanvasReady` to `false` and notifies every `useCanvasRendererReady` subscriber. Parents (`ClimbThumbnail`, `ClimbCardCover`, `SwipeBoardCarousel`, `AscentThumbnail`) re-render and swap their active instance from `BoardCanvasRenderer` to `BoardImageLayers` automatically.
-4. Rejects the pending requests tracked against the failing worker so their caller promises settle.
-5. Emits a single `Board Worker Rendering Disabled` analytics event via `trackWorkerRenderingDisabled` (reason `'load-failed'` or `'construct-failed'`) to measure impact in production.
-
-The "disable the whole pool on any worker error" behavior is intentional: script-load failures affect every worker because they all load the same bundle, and leaving a partially broken pool alive is exactly what this fallback is trying to avoid.
-
-### Render Failures
-
-If `BoardCanvasRenderer` fails to produce a frame for an individual request (WASM crash, worker runtime exception, or any unhandled rejection from `renderBoard`), it catches the error in its own `useEffect` and falls back to rendering `BoardImageLayers` for that instance. This per-instance safety net complements the session-level disable above — one bad frame does not disable the pool, but any `onerror` does.
-
-### Image Preload Failures
-
-If a background image fails to load during preloading, the error is logged but does not block the rendering pipeline. Workers that did not receive the background image skip the compositing step for that layer.
-
----
-
-## Key Files
-
-| File                                                                   | Purpose                                                                              |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `packages/web/app/lib/board-render-worker/worker-manager.ts`           | Worker pool lifecycle, LRU cache, request deduplication, background image preloading |
-| `packages/web/app/lib/board-render-worker/board-render.worker.ts`      | Worker code: WASM loading, OffscreenCanvas compositing, message handling             |
-| `packages/web/app/components/board-renderer/board-canvas-renderer.tsx` | Client-side canvas renderer component, error fallback to BoardImageLayers            |
-| `packages/web/app/lib/rendering-metrics.ts`                            | Render analytics, including the once-per-session `trackWorkerRenderingDisabled` ping |
-| `packages/web/app/components/board-renderer/board-image-layers.tsx`    | Server-rendered image layer component (Tier 2)                                       |
-| `packages/backend/src/handlers/board-render.ts`                        | Public HTTP validation, cache headers, CORS, and image response                      |
-| `packages/backend/src/services/board-render.ts`                        | Shared WASM/sharp pipeline, bounded LRUs, in-flight joins, and load shedding         |
-| `packages/web/app/flags.ts`                                            | Empty feature flag placeholder kept for future flags                                 |
+| File | Purpose |
+| --- | --- |
+| `packages/web/app/components/board-renderer/board-image-layers.tsx` | Stable images for SSR and hydrated pages |
+| `packages/web/app/components/board-renderer/util.ts` | Versioned image URLs and composition rules |
+| `packages/web/app/components/kiosk/board-slot/board-slot.tsx` | Live kiosk image updates |
+| `packages/backend/src/handlers/board-render.ts` | Public HTTP validation, cache headers and CORS |
+| `packages/backend/src/services/board-render.ts` | Shared WASM/sharp pipeline, caches and load shedding |

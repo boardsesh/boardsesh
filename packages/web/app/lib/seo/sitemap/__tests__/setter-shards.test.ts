@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
 import { SETTER_URLS_PER_SHARD } from '../sitemap-xml';
@@ -97,7 +98,7 @@ describe('the paged setters shard', () => {
     expect(shard?.expansion).toBe('default-locale-only');
     expect(shard?.urlsPerShard).toBe(SETTER_URLS_PER_SHARD);
     expect(shard?.expectsUrls).toBe(true);
-    expect(shard?.pagePath(2)).toBe('/sitemaps/setters/2.xml');
+    expect(shard?.pagePath(2)).toBe('/sitemaps/setters/2.xml.gz');
   });
 
   it('slices the last page short rather than padding or repeating', async () => {
@@ -139,6 +140,18 @@ describe('the paged setters shard', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
 
+  it('offers a gzip file with the same freshly filtered setter URLs', async () => {
+    setters.itemCount = 2;
+    const plain = await (await pagedShardRouteHandler('setters', '1.xml')).text();
+    const response = await pagedShardRouteHandler('setters', '1.xml.gz');
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/gzip');
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(gunzipSync(Buffer.from(await response.arrayBuffer())).toString('utf8')).toBe(plain);
+  });
+
   it('404s the page past the end rather than serving an empty urlset', async () => {
     // An empty `<urlset>` on a page the index advertises tells Google the
     // surface was deleted; a 404 tells a crawler to stop asking.
@@ -165,7 +178,7 @@ describe('the paged setters shard', () => {
     const pages = Math.ceil(setters.itemCount / SETTER_URLS_PER_SHARD);
 
     for (let page = 1; page <= pages; page += 1) {
-      expect(xml).toContain(`https://www.boardsesh.com/sitemaps/setters/${page}.xml`);
+      expect(xml).toContain(`https://www.boardsesh.com/sitemaps/setters/${page}.xml.gz`);
     }
     expect(xml).not.toContain(`/sitemaps/setters/${pages + 1}.xml`);
     // The old fixed URL is gone; an index still pointing at it would advertise a

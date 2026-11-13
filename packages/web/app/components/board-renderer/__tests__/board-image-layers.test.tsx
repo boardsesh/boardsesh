@@ -148,6 +148,28 @@ describe('BoardImageLayers', () => {
     });
   });
 
+  it('constrains contained image tracks and updates them when sizing mode changes', () => {
+    const { container, rerender } = render(
+      <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored />,
+    );
+    const layers = container.firstElementChild as HTMLElement;
+    expect(layers.style.gridTemplateRows).toBe('');
+
+    rerender(<BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored contain />);
+    expect(layers.style.gridTemplateRows).toBe('minmax(0, 1fr)');
+    expect(layers.style.gridTemplateColumns).toBe('minmax(0, 1fr)');
+    expect(layers.style.transform).toBe('scaleX(-1)');
+    expect(layers.querySelector('img')?.style.objectFit).toBe('contain');
+
+    rerender(<BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored thumbnail />);
+    expect(layers.style.gridTemplateRows).toBe('minmax(0, 1fr)');
+    expect(layers.style.gridTemplateColumns).toBe('minmax(0, 1fr)');
+
+    rerender(<BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored />);
+    expect(layers.style.gridTemplateRows).toBe('');
+    expect(layers.querySelector('img')?.style.objectFit).toBe('fill');
+  });
+
   it('uses thumbnail dimensions for img width/height when thumbnail is set', () => {
     const { container } = render(
       <BoardImageLayers boardDetails={mockBoardDetails} frames="p1r42" mirrored={false} thumbnail />,

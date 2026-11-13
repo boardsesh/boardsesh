@@ -395,7 +395,6 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
             boardDetailsByClimb={links.boardDetailsByClimb}
             unlinkedClimbUuids={links.unlinkedClimbUuids}
             virtualize={false}
-            initialImageCount={6}
             emptyState={<Typography component="p">{t('setter.empty')}</Typography>}
           />
         ) : (

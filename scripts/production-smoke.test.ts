@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   FIXTURE_PATHS,
@@ -7,6 +8,7 @@ import {
   finalVerdict,
   originFailure,
   parseBaseUrl,
+  readSmokeBody,
   shouldStopSmokeSuite,
   type SmokeResponse,
 } from './production-smoke';
@@ -46,7 +48,7 @@ const SHARD_LOCS = {
   static: 'https://www.boardsesh.com/sitemaps/static.xml',
   boards: 'https://www.boardsesh.com/sitemaps/boards.xml',
   playlists: 'https://www.boardsesh.com/sitemaps/playlists.xml',
-  climbs: 'https://www.boardsesh.com/sitemaps/climbs/1.xml',
+  climbs: 'https://www.boardsesh.com/sitemaps/climbs/1.xml.gz',
 } as const;
 
 /** A `<sitemapindex>` listing exactly the shards named, in order. */
@@ -62,6 +64,25 @@ function indexBody(...shards: (keyof typeof SHARD_LOCS)[]): string {
  */
 const CLIMBS_FROM_STORE = { 'x-sitemap-climbs-source': 'store' };
 
+describe('gzip sitemap smoke transport', () => {
+  const compressedUrl = 'https://www.boardsesh.com/sitemaps/climbs/1.xml.gz';
+
+  it('decodes gzip files without relying on HTTP content encoding', async () => {
+    const xml = '<urlset><url><loc>https://www.boardsesh.com/</loc></url></urlset>';
+    const compressed = new Response(new Uint8Array(gzipSync(xml)), {
+      headers: { 'Content-Type': 'application/gzip', 'Cache-Control': 'private, no-store' },
+    });
+    expect(await readSmokeBody(compressed, compressedUrl)).toBe(xml);
+  });
+
+  it('rejects a corrupt gzip download and preserves retryable error responses', async () => {
+    await expect(readSmokeBody(new Response('broken gzip'), compressedUrl)).rejects.toThrow();
+    expect(await readSmokeBody(new Response('temporarily unavailable', { status: 503 }), compressedUrl)).toBe(
+      'temporarily unavailable',
+    );
+  });
+});
+
 describe('www production smoke checks', () => {
   it('covers the surfaces other systems depend on', () => {
     const paths = WWW_CHECKS.filter((check) => !check.fixtureEnvVar).map((check) => check.path);
@@ -70,7 +91,7 @@ describe('www production smoke checks', () => {
         '/',
         '/robots.txt',
         '/sitemap.xml',
-        '/sitemaps/climbs/1.xml',
+        '/sitemaps/climbs/1.xml.gz',
         // Both `expectsUrls` shard routes get a check of their own. `boards.xml`
         // in particular is the only hard signal left on the boards surface once
         // the index check can excuse a declared degradation.
@@ -93,7 +114,7 @@ describe('www production smoke checks', () => {
     // `X-Sitemap-Climbs-Source`, where `live` is a correct answer that costs a
     // full rebuild per request. Both are the server saying so on the response.
     const withDegradation = WWW_CHECKS.filter((check) => check.degradation).map((check) => check.path);
-    expect(withDegradation).toEqual(['/sitemap.xml', '/sitemaps/climbs/1.xml']);
+    expect(withDegradation).toEqual(['/sitemap.xml', '/sitemaps/climbs/1.xml.gz']);
   });
 
   it('buys the climb shard a request budget longer than its 51 s fallback', () => {
@@ -109,7 +130,7 @@ describe('www production smoke checks', () => {
     // a slow answer is a state the check reports on, not a symptom.
     expect(
       WWW_CHECKS.filter((candidate) => candidate.timeoutMs !== undefined).map((candidate) => candidate.path),
-    ).toEqual(['/sitemaps/climbs/1.xml']);
+    ).toEqual(['/sitemaps/climbs/1.xml.gz']);
   });
 
   it('rejects a homepage that 200s with a spinner-only shell', () => {
@@ -368,11 +389,11 @@ describe('www production smoke checks', () => {
     expect(check.degradation?.(fromLiveScan)).toMatch(/refresh-sitemap-climbs/);
   });
 
-  it('requires privacy-filtered XML without cached publication consent at either origin', () => {
+  it('requires a privacy-filtered gzip sitemap without cached publication consent', () => {
     const check = checkNamed('climb sitemap shard');
     const healthy = response({
       status: 200,
-      contentType: 'application/xml',
+      contentType: 'application/gzip',
       body: '<urlset><url><loc>https://www.boardsesh.com/kilter/original/12x12-square/screw_bolt/40/view/x</loc></url></urlset>',
       headers: { ...CLIMBS_FROM_STORE, 'cache-control': 'private, no-store' },
     });
@@ -385,7 +406,7 @@ describe('www production smoke checks', () => {
     for (const status of [404, 410, 503]) {
       expect(check.assert({ ...healthy, status })).toMatch(/200/);
     }
-    expect(check.assert({ ...healthy, contentType: 'text/html' })).toMatch(/xml/);
+    expect(check.assert({ ...healthy, contentType: 'text/html' })).toMatch(/gzip/);
     expect(check.assert({ ...healthy, body: '<urlset></urlset>' })).toMatch(/loc/);
     expect(check.assert({ ...healthy, body: '<loc>wrong root</loc>' })).toMatch(/urlset/);
 

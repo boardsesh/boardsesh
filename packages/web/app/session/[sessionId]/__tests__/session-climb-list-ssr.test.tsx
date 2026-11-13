@@ -81,8 +81,6 @@ vi.mock('@/app/components/social/vote-summary-context', () => ({
 // The board art is irrelevant to the anchors, and the canvas path has no
 // server-side equivalent.
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 
 function makeTick(overrides: Partial<SessionDetailTick> = {}): SessionDetailTick {
   return {

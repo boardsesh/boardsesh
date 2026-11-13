@@ -2,8 +2,6 @@ import React, { useMemo } from 'react';
 
 import type { BoardDetails, Climb } from '@/app/lib/types';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
-import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-renderer';
-import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 
 type ClimbThumbnailProps = {
   currentClimb: Climb | null;
@@ -13,23 +11,12 @@ type ClimbThumbnailProps = {
   /** Callback for thumbnail presses when an active-climb/play-drawer flow is desired. */
   onClick?: () => void;
   maxHeight?: string;
-  preferImageLayers?: boolean;
   /** Set fetchpriority="high" for LCP-critical images */
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
 const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
-  ({
-    boardDetails,
-    currentClimb,
-    pathname: _pathname,
-    onClick,
-    maxHeight,
-    preferImageLayers = false,
-    fetchPriority,
-  }) => {
-    const canvasReady = useCanvasRendererReady();
-
+  ({ boardDetails, currentClimb, pathname: _pathname, onClick, maxHeight, fetchPriority }) => {
     const boardStyle = useMemo<React.CSSProperties>(
       () => ({
         aspectRatio: '5 / 7',
@@ -39,31 +26,16 @@ const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
       [maxHeight],
     );
 
-    let renderContent: React.ReactNode = null;
-    if (currentClimb) {
-      if (!preferImageLayers && canvasReady) {
-        renderContent = (
-          <BoardCanvasRenderer
-            boardDetails={boardDetails}
-            frames={currentClimb.frames}
-            mirrored={!!currentClimb.mirrored}
-            thumbnail
-            style={boardStyle}
-          />
-        );
-      } else {
-        renderContent = (
-          <BoardImageLayers
-            boardDetails={boardDetails}
-            frames={currentClimb.frames}
-            mirrored={!!currentClimb.mirrored}
-            thumbnail
-            style={boardStyle}
-            fetchPriority={fetchPriority}
-          />
-        );
-      }
-    }
+    const renderContent = currentClimb ? (
+      <BoardImageLayers
+        boardDetails={boardDetails}
+        frames={currentClimb.frames}
+        mirrored={!!currentClimb.mirrored}
+        thumbnail
+        style={boardStyle}
+        fetchPriority={fetchPriority}
+      />
+    ) : null;
 
     if (onClick && currentClimb) {
       return (
@@ -109,7 +81,6 @@ const ClimbThumbnail: React.FC<ClimbThumbnailProps> = React.memo(
       prev.pathname === next.pathname &&
       prev.onClick === next.onClick &&
       prev.maxHeight === next.maxHeight &&
-      prev.preferImageLayers === next.preferImageLayers &&
       prev.fetchPriority === next.fetchPriority
     );
   },

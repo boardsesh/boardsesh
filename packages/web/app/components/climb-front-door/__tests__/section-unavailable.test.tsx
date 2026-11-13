@@ -54,8 +54,6 @@ vi.mock('@/app/components/board-renderer/util', () => ({
 // this component does with (and without) a seed, so stubbing it out would leave
 // the assertion checking a prop rather than the rendered section.
 vi.mock('@/app/components/board-renderer/board-image-layers', () => ({ default: () => null }));
-vi.mock('@/app/components/board-renderer/board-canvas-renderer', () => ({ default: () => null }));
-vi.mock('@/app/lib/board-render-worker/worker-manager', () => ({ useCanvasRendererReady: () => false }));
 vi.mock('@/app/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGrade: (grade?: string) => grade, getGradeColor: () => undefined }),
 }));

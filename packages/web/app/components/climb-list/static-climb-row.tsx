@@ -44,7 +44,6 @@ export type StaticClimbRowProps = {
   pathname: string;
   /** Viewer's ticks for the ascent badge. Absent on anonymous/crawler renders. */
   logbook?: readonly LogbookEntry[];
-  preferImageLayers?: boolean;
   fetchPriority?: 'high' | 'low' | 'auto';
 };
 
@@ -86,7 +85,6 @@ const StaticClimbRow = ({
   unlinked,
   pathname,
   logbook,
-  preferImageLayers,
   fetchPriority,
 }: StaticClimbRowProps) => {
   const href = useMemo(
@@ -120,7 +118,6 @@ const StaticClimbRow = ({
           boardDetails={boardDetails}
           currentClimb={climb}
           pathname={pathname}
-          preferImageLayers={preferImageLayers}
           fetchPriority={fetchPriority}
         />
         <AscentStatus

@@ -8,8 +8,6 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import type { SimilarClimb } from '@boardsesh/shared-schema';
 import BoardImageLayers from '@/app/components/board-renderer/board-image-layers';
-import BoardCanvasRenderer from '@/app/components/board-renderer/board-canvas-renderer';
-import { useCanvasRendererReady } from '@/app/lib/board-render-worker/worker-manager';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
@@ -220,7 +218,6 @@ type SimilarClimbCardProps = {
 
 function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, compatible }: SimilarClimbCardProps) {
   const { t } = useTranslation('climbs');
-  const canvasReady = useCanvasRendererReady();
   const { formatGrade, getGradeColor } = useGradeFormat();
   const angle = climb.angle ?? 0;
   // Format and colour the grade using the same hook the main climb-title
@@ -301,23 +298,13 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
   const dimClass = compatible ? '' : ` ${styles.dimmed}`;
   const thumbnail = boardDetails ? (
     <div className={`${styles.boardSquare}${dimClass}`}>
-      {canvasReady && climb.frames ? (
-        <BoardCanvasRenderer
-          boardDetails={boardDetails}
-          frames={climb.frames}
-          mirrored={false}
-          thumbnail
-          style={{ width: '100%', height: '100%' }}
-        />
-      ) : (
-        <BoardImageLayers
-          boardDetails={boardDetails}
-          frames={climb.frames ?? undefined}
-          mirrored={false}
-          thumbnail
-          style={{ width: '100%', height: '100%' }}
-        />
-      )}
+      <BoardImageLayers
+        boardDetails={boardDetails}
+        frames={climb.frames ?? undefined}
+        mirrored={false}
+        thumbnail
+        style={{ width: '100%', height: '100%' }}
+      />
     </div>
   ) : (
     <div className={`${styles.boardSquare}${dimClass}`} />
