@@ -20,6 +20,13 @@ import { prepareProjectionUnderUsersTableLock } from '../../current-store/email-
 import { closeCredentialDatabase, getCredentialDatabase } from '../../credential-database';
 import { switchIdentityAuthority } from '../router';
 import { handleBrowserBinding } from '../../../handlers/browser-binding';
+import { handleBrowserDelegation } from '../../../handlers/browser-delegation';
+import {
+  BROWSER_DELEGATION_COMMAND_PATH,
+  browserDelegationReplySchema,
+} from '@boardsesh/auth-protocol/browser-delegation-v1';
+import { validateToken } from '../../../middleware/auth';
+import { AuthCredentialRefusedError } from '../../human-admission';
 
 vi.mock('../../../db/client', () => ({
   db: new Proxy(
@@ -82,6 +89,23 @@ async function binding() {
   const reply = browserBindingReplySchema.parse(created.body);
   if (reply.operation !== 'bootstrap' || reply.outcome !== 'created') throw new Error('Owned bootstrap refused');
   return reply;
+}
+async function delegate(payload: unknown, options: { authorization?: string; path?: string; issuedAt?: number } = {}) {
+  const response = await fetch(`${origin}${options.path ?? BROWSER_DELEGATION_COMMAND_PATH}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: options.authorization ?? `Bearer ${rpcSecret}` },
+    body: JSON.stringify({
+      browserDelegationProtocolVersion: 1,
+      operation: 'delegate',
+      requestId: randomUUID(),
+      issuedAt: options.issuedAt ?? Date.now(),
+      payload,
+    }),
+  });
+  const body: unknown = await response.json();
+  expect(response.headers.get('set-cookie')).toBeNull();
+  expect(response.headers.get('cache-control')).toBe('no-store');
+  return { status: response.status, body };
 }
 async function issueSource(kind: 'legacy-jwe' | 'canonical-token') {
   const userId = randomUUID();
@@ -163,7 +187,10 @@ describe('private browser HTTP commands on the qualified restricted LOGIN', () =
       }
     });
     server = createServer((request, response) => {
-      void handleBrowserBinding(request, response).catch(() => {
+      const handler = request.url?.startsWith('/api/internal/auth/browser-delegation/')
+        ? handleBrowserDelegation
+        : handleBrowserBinding;
+      void handler(request, response).catch(() => {
         response.writeHead(500);
         response.end();
       });
@@ -181,6 +208,7 @@ describe('private browser HTTP commands on the qualified restricted LOGIN', () =
       CURRENT_STORE_BROWSER_BINDING_MODE: 'backend-staging',
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       NEXTAUTH_SECRET: sessionSecret,
+      BROWSER_DELEGATION_SECRET: 'owned-backend-only-http-delegation-secret-6975',
       CURRENT_STORE_AUTH_PROJECTION_ID: projectionId,
       CURRENT_STORE_AUTH_WRITER_EPOCH: '1',
       CURRENT_STORE_DELETED_EMAIL_KEY: 'owned-browser-http-deleted-email-digest-secret',
@@ -421,5 +449,90 @@ describe('private browser HTTP commands on the qualified restricted LOGIN', () =
       status: 400,
       body: { error: 'invalid_request' },
     });
+  });
+  for (const authority of ['current-store', 'better-auth'] as const) {
+    for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
+      it(`delegates actual ${kind} through restricted ${authority} and refuses it after A to B`, async () => {
+        await environment.ownerDatabase.transaction(async (transaction) => {
+          const [manifest] = await transaction
+            .select()
+            .from(authEmailProjection)
+            .where(eq(authEmailProjection.isCurrent, true));
+          if (manifest.writerAuthority !== authority)
+            await switchIdentityAuthority(transaction, {
+              projectionId,
+              epoch: manifest.writerEpoch,
+              from: manifest.writerAuthority,
+              to: authority,
+            });
+        });
+        const selection = await login(kind);
+        const result = await delegate({ bindingToken: selection.created.token, actor: selection.actor });
+        expect(result.status).toBe(200);
+        const lease = browserDelegationReplySchema.parse(result.body);
+        if (lease.outcome !== 'admitted') throw new Error('Owned lease refused');
+        expect(lease).toMatchObject({
+          userId: selection.source.userId,
+          authSessionId: selection.source.sid,
+          cursor: selection.selected.cursor,
+        });
+        expect(await validateToken(lease.token)).toMatchObject({
+          isAuthenticated: true,
+          userId: selection.source.userId,
+          credential: { kind: 'web-session', sessionKeyClaim: selection.source.sid, generationClaim: 0 },
+        });
+        const actual = selection.source.credential;
+        expect(JSON.stringify(lease)).not.toContain(
+          actual.kind === 'canonical-token' ? actual.token : actual.credential,
+        );
+        const next = await issueSource(kind);
+        const intent = browserBindingReplySchema.parse(
+          (
+            await post('intent', {
+              bindingToken: selection.created.token,
+              actor: selection.actor,
+              transition: 'login',
+              expectedVersion: selection.actor.version,
+            })
+          ).body,
+        );
+        if (intent.operation !== 'intent' || intent.outcome !== 'prepared') throw new Error('Owned switch refused');
+        expect(
+          (
+            await post('login', {
+              bindingToken: selection.created.token,
+              actor: selection.actor,
+              intentToken: intent.intentToken,
+              candidate: next.credential,
+            })
+          ).status,
+        ).toBe(200);
+        await expect(validateToken(lease.token, { throwOnRefusal: true })).rejects.toBeInstanceOf(
+          AuthCredentialRefusedError,
+        );
+      });
+    }
+  }
+  it('rejects delegation auth, freshness and asserted identity before a database', async () => {
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_URL', 'invalid-owned-url');
+    const payload = {
+      bindingToken: 'a'.repeat(43),
+      actor: { version: 0, credential: { kind: 'canonical-token', token: 'owned-source' } },
+    };
+    expect((await delegate(payload, { authorization: 'Bearer owned-browser-source' })).status).toBe(401);
+    expect((await delegate(payload, { issuedAt: Date.now() - 180_000 })).status).toBe(400);
+    expect((await delegate({ ...payload, userId: 'asserted-owner' })).status).toBe(400);
+    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'legacy');
+    expect((await delegate(payload)).status).toBe(404);
+  });
+  it('keeps a missing or reused backend issuer key unavailable without exposing source', async () => {
+    const selection = await login('canonical-token');
+    for (const key of ['', sessionSecret, rpcSecret]) {
+      vi.stubEnv('BROWSER_DELEGATION_SECRET', key);
+      const result = await delegate({ bindingToken: selection.created.token, actor: selection.actor });
+      expect(result.status).toBe(503);
+      expect(browserDelegationReplySchema.parse(result.body).outcome).toBe('unavailable');
+      expect(JSON.stringify(result.body)).not.toContain(selection.source.userId);
+    }
   });
 });
