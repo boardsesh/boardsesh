@@ -1,13 +1,13 @@
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { themeTokens } from '@/app/theme/theme-config';
 
 type ClimbViewSeoFragmentProps = {
   climb: Climb;
-  boardDetails: BoardDetails;
+  boardDetails: BoardRouteIdentity;
 };
 
 const headingSx = { fontWeight: themeTokens.typography.fontWeight.bold, mb: 1 };

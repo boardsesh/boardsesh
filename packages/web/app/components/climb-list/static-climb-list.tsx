@@ -11,7 +11,7 @@ import StaticClimbRow from '@/app/components/climb-list/static-climb-row';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import { LIST_ROW_HEIGHT } from '@/app/lib/climb-list-constants';
 import { themeTokens } from '@/app/theme/theme-config';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 
 /**
  * The crawlable climb list: every row is a real `<a href>` to the canonical
@@ -34,11 +34,11 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
 export type StaticClimbListProps = {
   climbs: Climb[];
   /** Board used for any climb without an entry in `boardDetailsByClimb`. */
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Explicit physical-board identity supplied by a named-board front door. */
   boardSlug?: string;
   /** Per-climb board override, keyed by climb uuid — cross-board lists need it. */
-  boardDetailsByClimb?: Record<string, BoardDetails>;
+  boardDetailsByClimb?: Record<string, BoardImageDetails>;
   /**
    * Climbs with no resolvable canonical URL, keyed by uuid. Their rows render
    * as plain rows instead of anchors. The session page needs it: a tick whose
@@ -107,7 +107,7 @@ const noop = () => {};
 type SharedRowProps = {
   climbs: Climb[];
   boardSlug?: string;
-  resolveBoardDetails: (climb: Climb) => BoardDetails;
+  resolveBoardDetails: (climb: Climb) => BoardImageDetails;
   unlinkedClimbUuids?: ReadonlySet<string>;
   rowKeys?: readonly string[];
   dimmedRowKeys?: ReadonlySet<string>;

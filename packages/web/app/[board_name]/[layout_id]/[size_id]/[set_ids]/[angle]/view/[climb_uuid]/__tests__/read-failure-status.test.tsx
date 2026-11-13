@@ -50,8 +50,9 @@ vi.mock('@/app/lib/url-utils.server', () => ({
   })),
 }));
 
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn(() => ({ board_name: 'kilter' })),
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(() => ({ board_name: 'kilter' })),
 }));
 
 vi.mock('@/app/lib/url-utils', () => ({

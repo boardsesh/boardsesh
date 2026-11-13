@@ -4,11 +4,11 @@ import { absoluteUrl } from '@/app/lib/seo/base-url';
 import { JsonLd } from '@/app/lib/seo/json-ld';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 
 type ClimbListJsonLdProps = {
   climbs: readonly Climb[];
-  boardDetails: BoardDetails;
+  boardDetails: BoardRouteIdentity;
   /** 1-based `?page=N`, already clamped by `parseFrontDoorPage`. */
   page: number;
 };

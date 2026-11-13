@@ -3,7 +3,7 @@
  * size/sets are not known.
  */
 
-import { getDefaultRenderBoard } from '@boardsesh/board-config';
+import { getDefaultRenderBoard } from '@boardsesh/board-config/resolve-render-board';
 import type { BoardName } from '@/app/lib/types';
 import type { SetIdList } from '@/app/lib/board-data';
 import { tryConstructSlugViewUrl } from '@/app/lib/url-utils';

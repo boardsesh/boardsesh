@@ -1,7 +1,8 @@
+import { getBoardImageDetailsForPlaylist } from './board-image-details';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardName, BoardDetails, Climb } from './types';
 import { getSizesForLayoutId, getSetsForLayoutAndSize, getBoardDetails, LAYOUTS } from './board-constants';
-import { type MoonBoardLayoutKey, getMoonBoardDetails, MOONBOARD_LAYOUTS, MOONBOARD_SETS } from './moonboard-config';
+import { getMoonBoardDetails, MOONBOARD_LAYOUTS } from './moonboard-config';
 import { canAddClimbToBoard } from './board-compatibility';
 
 /**
@@ -12,57 +13,12 @@ export function getBoardDetailsForPlaylist(
   boardType: string,
   layoutId: number | null | undefined,
 ): BoardDetails | null {
-  const boardName = boardType as BoardName;
-
-  if (boardName === 'moonboard') {
-    return getMoonBoardDetailsForPlaylist(layoutId);
-  }
-
-  const effectiveLayoutId = layoutId ?? getDefaultLayoutForBoard(boardName);
-  if (!effectiveLayoutId) return null;
-
-  const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
-  if (sizes.length === 0) return null;
-
-  // Pick the size with the largest area
-  const largest = sizes.reduce((best, size) => {
-    const area = (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom);
-    const bestArea = (best.edgeRight - best.edgeLeft) * (best.edgeTop - best.edgeBottom);
-    return area > bestArea ? size : best;
-  });
-
-  const sets = getSetsForLayoutAndSize(boardName, effectiveLayoutId, largest.id);
-  if (sets.length === 0) return null;
-
-  const setIds = sets.map((s) => s.id);
-
+  const imageDetails = getBoardImageDetailsForPlaylist(boardType, layoutId);
+  if (!imageDetails) return null;
   try {
-    return getBoardDetails({
-      board_name: boardName,
-      layout_id: effectiveLayoutId,
-      size_id: largest.id,
-      set_ids: setIds,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function getMoonBoardDetailsForPlaylist(layoutId: number | null | undefined): BoardDetails | null {
-  const effectiveLayoutId = layoutId ?? MOONBOARD_LAYOUTS['moonboard-2024'].id;
-
-  const layoutEntry = Object.entries(MOONBOARD_LAYOUTS).find(([, layout]) => layout.id === effectiveLayoutId);
-  if (!layoutEntry) return null;
-
-  const [layoutKey] = layoutEntry;
-  const sets = MOONBOARD_SETS[layoutKey as MoonBoardLayoutKey] || [];
-  const setIds = sets.map((s) => s.id);
-
-  try {
-    return getMoonBoardDetails({
-      layout_id: effectiveLayoutId,
-      set_ids: setIds,
-    });
+    return imageDetails.board_name === 'moonboard'
+      ? getMoonBoardDetails({ layout_id: imageDetails.layout_id, set_ids: imageDetails.set_ids })
+      : getBoardDetails(imageDetails);
   } catch {
     return null;
   }

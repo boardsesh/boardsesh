@@ -10,7 +10,7 @@ import type {
 } from '@/app/lib/types';
 import { getLayoutBySlug, getSizeBySlug, getSetsBySlug } from './slug-utils';
 import { boardHasDeepConfigRoute } from './board-route-paths';
-import { getBoardDetailsForBoard } from './board-utils';
+import { getBoardImageDetailsForBoard } from './board-image-details';
 import {
   isNumericId,
   extractUuidFromSlug,
@@ -332,7 +332,7 @@ async function parseRouteParamsImpl<T extends BoardRouteParameters>(
     // Numeric ids are not trusted: the slug branch 404s an id outside the static
     // catalogue (see the Woods comment in `parseBoardRouteParamsWithSlugs`), and
     // this one must too. Otherwise `/woods/1/99/1/40/list` reaches
-    // `getBoardDetailsForBoard` in a layout, throws, and returns a 500.
+    // `getBoardImageDetailsForBoard` in a layout, throws, and returns a 500.
     if (boardName === 'woods') {
       // Its Woods block accepts the numeric ids and 404s anything else.
       return {
@@ -359,7 +359,7 @@ async function parseRouteParamsImpl<T extends BoardRouteParameters>(
 /** True when the static catalogue can build board details for these ids. */
 function boardConfigResolves(parsedParams: ParsedBoardRouteParameters): boolean {
   try {
-    getBoardDetailsForBoard(parsedParams);
+    getBoardImageDetailsForBoard(parsedParams);
     return true;
   } catch {
     return false;

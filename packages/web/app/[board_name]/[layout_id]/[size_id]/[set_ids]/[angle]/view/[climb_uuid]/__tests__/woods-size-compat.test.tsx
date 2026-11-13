@@ -61,8 +61,9 @@ vi.mock('@/app/lib/data/queries', () => ({
   getSets: vi.fn(() => [{ id: 1, name: 'Standard' }]),
 }));
 
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn((params: { board_name: string; layout_id: number; size_id: number }) => ({
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn((params: { board_name: string; layout_id: number; size_id: number }) => ({
     board_name: params.board_name,
     layout_id: params.layout_id,
     size_id: params.size_id,
@@ -86,7 +87,7 @@ vi.mock('@/app/lib/data/front-door-data.server', () => ({
 vi.mock('@/app/components/climb-front-door/climb-front-door', () => ({ default: () => null }));
 
 const pageModule = await import('../page');
-const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
 
 const renderPage = () =>
   pageModule.default({
@@ -105,7 +106,7 @@ beforeEach(() => {
   redirect.mockClear();
   permanentRedirect.mockClear();
   notFound.mockClear();
-  vi.mocked(getBoardDetailsForBoard).mockClear();
+  vi.mocked(getBoardImageDetailsForBoard).mockClear();
   routeBoard = 'woods';
   resolvedClimbUuid = CLIMB_UUID;
   routeSizeId = 2;
@@ -164,14 +165,14 @@ describe('metadata for a Woods climb on a size it does not fit', () => {
 
   it('builds the card and canonical from the size the page redirects to', async () => {
     await generateMetadata();
-    expect(vi.mocked(getBoardDetailsForBoard)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(getBoardDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 1 });
+    expect(vi.mocked(getBoardImageDetailsForBoard)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getBoardImageDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 1 });
   });
 
   it('keeps the URL size when the climb fits it', async () => {
     climbCompatibleSizeIds = [2];
     await generateMetadata();
-    expect(vi.mocked(getBoardDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 2 });
+    expect(vi.mocked(getBoardImageDetailsForBoard).mock.calls[0]![0]).toMatchObject({ size_id: 2 });
   });
 });
 

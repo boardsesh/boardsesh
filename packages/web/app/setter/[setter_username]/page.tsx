@@ -329,7 +329,7 @@ export default async function SetterProfilePage({ params, searchParams }: Setter
   const firstLinkedClimb = setterData.climbs.find((climb) => !links.unlinkedClimbUuids.has(climb.uuid));
   // `fallbackBoardDetails` IS the primary group's board when there is a primary
   // group, so this reuses the resolution the link builder already did rather
-  // than repeating it — and `getBoardDetailsForBoard` throws, which would take
+  // than repeating it — and `getBoardImageDetailsForBoard` throws, which would take
   // the whole page down for a related link.
   const boardListPath =
     primaryGroup && firstLinkedClimb && links.fallbackBoardDetails

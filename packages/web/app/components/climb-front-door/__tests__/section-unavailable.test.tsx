@@ -6,7 +6,7 @@ import type { SimilarClimb } from '@boardsesh/shared-schema';
 import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tree';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 
 /**
  * #4968: the front door has to tell "nobody filmed this" apart from "the
@@ -84,7 +84,7 @@ function makeClimb(): Climb {
   } as unknown as Climb;
 }
 
-function makeBoardDetails(): BoardDetails {
+function makeBoardDetails(): BoardImageDetails {
   return {
     board_name: 'kilter',
     layout_id: 1,
@@ -94,11 +94,11 @@ function makeBoardDetails(): BoardDetails {
     size_name: '12 x 12',
     size_description: 'Commercial',
     set_names: ['Bolt Ons', 'Screw Ons'],
-    images_to_holds: {},
-    holdsData: {},
+    backgroundImagePaths: [],
+
     boardWidth: 1080,
     boardHeight: 1350,
-  } as unknown as BoardDetails;
+  } as unknown as BoardImageDetails;
 }
 
 function makeBetaLink(): BetaLink {

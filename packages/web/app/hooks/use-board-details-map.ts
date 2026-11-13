@@ -1,18 +1,32 @@
+import {
+  getBoardImageDetailsForBoard,
+  getBoardImageDetailsForPlaylist,
+  toBoardImageDetails,
+  type BoardImageDetails,
+} from '@/app/lib/board-image-details';
 import { useMemo } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import type { Climb, BoardDetails, BoardName } from '@/app/lib/types';
-import {
-  getUserBoardDetails,
-  getBoardDetailsForPlaylist,
-  resolveBoardDetailsForClimb,
-  type SessionBoardConfig,
-} from '@/app/lib/board-config-for-playlist';
+import type { Climb, BoardName } from '@/app/lib/types';
+import { resolveBoardDetailsForClimb, type SessionBoardConfig } from '@/app/lib/board-config-for-playlist';
+
+function getUserBoardImageDetails(board: UserBoard): BoardImageDetails | null {
+  try {
+    return getBoardImageDetailsForBoard({
+      board_name: board.boardType,
+      layout_id: board.layoutId,
+      size_id: board.sizeId,
+      set_ids: board.setIds.split(',').map(Number),
+    });
+  } catch {
+    return null;
+  }
+}
 
 type UseBoardDetailsMapResult = {
   /** BoardDetails keyed by climb uuid — resolved per climb. */
-  boardDetailsByClimb: Record<string, BoardDetails>;
+  boardDetailsByClimb: Record<string, BoardImageDetails>;
   /** Fallback BoardDetails for the list as a whole (hydration fallback). */
-  defaultBoardDetails: BoardDetails | null;
+  defaultBoardDetails: BoardImageDetails | null;
   /** Climbs that the user doesn't own a matching board type/layout for. */
   unsupportedClimbs: Set<string>;
   /** Climbs that fit only on a larger size than the user's current session board. */
@@ -38,7 +52,7 @@ export function useBoardDetailsMap(
   fallbackBoardTypes?: string[],
 ): UseBoardDetailsMapResult {
   return useMemo(() => {
-    const byClimb: Record<string, BoardDetails> = {};
+    const byClimb: Record<string, BoardImageDetails> = {};
     const unsupported = new Set<string>();
     const upsized = new Set<string>();
 
@@ -72,9 +86,16 @@ export function useBoardDetailsMap(
         unsupported.add(climb.uuid);
       }
 
+      // Without a selected board there is no containment question: draw the catalog default directly.
+      if (!effectiveSession) {
+        const details = getBoardImageDetailsForPlaylist(climb.boardType ?? '', climb.layoutId ?? null);
+        if (details) byClimb[climb.uuid] = details;
+        continue;
+      }
+
       const resolved = resolveBoardDetailsForClimb(climb, effectiveSession);
       if (!resolved) continue;
-      byClimb[climb.uuid] = resolved.details;
+      byClimb[climb.uuid] = toBoardImageDetails(resolved.details);
       if (resolved.status === 'upsized') {
         upsized.add(climb.uuid);
       } else if (resolved.status === 'incompatible' && userBoardTypes) {
@@ -83,17 +104,17 @@ export function useBoardDetailsMap(
     }
 
     // Determine default board details (used as a hydration fallback by ClimbsList).
-    let defaultDetails: BoardDetails | null = null;
+    let defaultDetails: BoardImageDetails | null = null;
     if (selectedBoard) {
-      defaultDetails = getUserBoardDetails(selectedBoard);
+      defaultDetails = getUserBoardImageDetails(selectedBoard);
     }
     if (!defaultDetails && myBoards.length > 0) {
-      defaultDetails = getUserBoardDetails(myBoards[0]);
+      defaultDetails = getUserBoardImageDetails(myBoards[0]);
     }
     if (!defaultDetails) {
       const fallbackBoardType = fallbackBoardTypes?.[0] || climbs[0]?.boardType || 'kilter';
       const fallbackLayoutId = climbs[0]?.layoutId ?? null;
-      defaultDetails = getBoardDetailsForPlaylist(fallbackBoardType, fallbackLayoutId);
+      defaultDetails = getBoardImageDetailsForPlaylist(fallbackBoardType, fallbackLayoutId);
     }
 
     return {

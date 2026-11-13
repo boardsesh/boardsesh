@@ -10,7 +10,7 @@
 
 import React, { useMemo } from 'react';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardRenderUrl, toFlatFrames } from '../../board-renderer/util';
 import { useKioskBoardPresence } from '../presence/use-kiosk-board-presence';
 import BoardIdentity from './board-identity';
@@ -23,7 +23,7 @@ export type BoardSlotProps = {
   boardName: string;
   /** The board's configured angle — the fallback when a climb carries none. */
   angle: number;
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Server-seeded latest climb (boardRecentClimbs[0]) or null. */
   initialClimb: BoardPresenceClimb | null;
   /** Raster URL for the initial climb's frames (null when no initial climb). */

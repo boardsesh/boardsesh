@@ -7,7 +7,7 @@ import type { SearchRequestPagination } from '@/app/lib/types';
  * `/b/{slug}/{angle}/list` on a spray wall: where its share link lands, and what
  * the `?wall=` capability does and does not open.
  *
- * The route must never reach `getBoardDetailsForBoard` for a wall — there is no
+ * The route must never reach `getBoardImageDetailsForBoard` for a wall — there is no
  * catalogue row to resolve and it throws, which would be a 500 on a URL the gym
  * page links to.
  */
@@ -64,11 +64,12 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
   })),
 }));
 
-const getBoardDetailsForBoard = vi.fn(() => {
+const getBoardImageDetailsForBoard = vi.fn(() => {
   throw new Error('the catalogue has no size row for a spray wall');
 });
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: () => getBoardDetailsForBoard(),
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: () => getBoardImageDetailsForBoard(),
 }));
 
 const fetchFrontDoorListPage = vi.fn();
@@ -172,7 +173,7 @@ describe('the /b/{slug}/{angle}/list route on a spray wall', () => {
     const wallBranch = topLevelElements(element).find((child) => child.type === SprayWallListPage);
 
     expect(wallBranch?.props).toEqual({ board: boardFor('unlisted'), wallParam: WALL_UUID });
-    expect(getBoardDetailsForBoard).not.toHaveBeenCalled();
+    expect(getBoardImageDetailsForBoard).not.toHaveBeenCalled();
     expect(fetchFrontDoorListPage).not.toHaveBeenCalled();
   });
 

@@ -32,14 +32,14 @@ import {
   getLayout,
   getProductSize,
   ORPHANED_KILTER_LAYOUT_DEFAULTS,
-} from '@boardsesh/board-constants/product-sizes';
+} from '@boardsesh/board-constants/catalog-metadata';
 import { getSizeRank } from '@boardsesh/board-constants/size-comparison';
 import type { ProductSizeData } from '@boardsesh/board-constants';
 import type { BoardName, RenderBoardConfig } from '@boardsesh/shared-schema';
 
 import { toBoardName } from './board-name';
-import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-config';
-import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-config';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE, type MoonBoardLayoutKey } from './moonboard-metadata';
+import { WOODS_LAYOUTS, WOODS_SETS, WOODS_SIZES } from './woods-metadata';
 import { SPRAY_SET_IDS, spraySizeIdForLayout } from './spray-config';
 
 /** Woods' one synthetic hold set — every Woods board and climb carries it. */

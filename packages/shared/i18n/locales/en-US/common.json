@@ -949,7 +949,6 @@
     "cancel": "Cancel",
     "clear": "Clear",
     "delete": "Delete",
-    "edit": "Edit",
     "close": "Close",
     "back": "Back",
     "done": "Done",
@@ -1208,9 +1207,6 @@
   },
   "betaVideos": {
     "empty": "No beta videos yet"
-  },
-  "moonboardImport": {
-    "removeConfirmTitle": "Remove this climb?"
   },
   "ascents": {
     "deleteTitle": "Delete ascent",

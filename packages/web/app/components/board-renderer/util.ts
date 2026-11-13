@@ -14,10 +14,10 @@ import {
 // bundle, and the barrel pulls in the render pipeline. The generated constant
 // has no imports at all.
 import { BOARD_RENDER_VERSION } from '@boardsesh/board-render/version';
-import type { BoardDetails, BoardName } from '@/app/lib/types';
+import type { BoardDetails, BoardImageDetails, BoardRouteIdentity, BoardName } from '@/app/lib/types';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveStaticAssetUrl } from '@/app/lib/static-asset-url';
-import { BOARD_IMAGE_DIMENSIONS } from '../../lib/board-data';
+import { BOARD_IMAGE_DIMENSIONS } from '@boardsesh/board-config/board-image-dimensions';
 export { convertLitUpHoldsStringToMap } from './types';
 // Multi-frame playback primitives now live in the shared, renderer-agnostic
 // package so web and mobile share one engine. Re-exported here so existing
@@ -130,7 +130,7 @@ function getBoardRenderEndpoint(): string {
  * `scripts/generate-board-render-version.ts`.
  */
 export const buildBoardRenderUrl = (
-  boardDetails: BoardDetails,
+  boardDetails: BoardRouteIdentity,
   frames: string,
   { thumbnail, includeBackground, variant, format, colorScheme, renderMode = 'aura' }: BuildBoardRenderUrlOptions = {},
 ) => {
@@ -203,7 +203,7 @@ export const toFlatFrames = (frames: string | null | undefined, boardName: Board
   toFlatFramesShared(frames, boardName);
 
 export const buildOverlayUrl = (
-  boardDetails: BoardDetails,
+  boardDetails: BoardRouteIdentity,
   frames: string,
   thumbnail?: boolean,
   colorScheme?: 'light' | 'dark',
@@ -240,7 +240,7 @@ export type BoardArtLayers = {
  * by every card on the page) and the overlay renders once with no background baked in.
  */
 export const buildBoardArtLayers = (
-  boardDetails: BoardDetails,
+  boardDetails: BoardImageDetails | BoardDetails,
   frames: string | null | undefined,
   thumbnail?: boolean,
   renderMode?: RenderMode,
@@ -253,9 +253,10 @@ export const buildBoardArtLayers = (
   }
 
   return {
-    backgroundUrls: Object.keys(boardDetails.images_to_holds).map((image) =>
-      getImageUrl(image, boardDetails.board_name, thumbnail),
-    ),
+    backgroundUrls: ('backgroundImagePaths' in boardDetails
+      ? boardDetails.backgroundImagePaths
+      : Object.keys(boardDetails.images_to_holds)
+    ).map((image) => getImageUrl(image, boardDetails.board_name, thumbnail)),
     overlayUrl: frames
       ? buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), { thumbnail, renderMode })
       : null,
@@ -270,7 +271,7 @@ export const buildBoardArtLayers = (
  * light one leaves a dark-mode reader's actual LCP element unprioritised.
  */
 export const buildOverlayPreloadUrls = (
-  boardDetails: BoardDetails,
+  boardDetails: BoardImageDetails | BoardDetails,
   frames: string | null | undefined,
   thumbnail?: boolean,
   renderMode?: RenderMode,
@@ -315,7 +316,7 @@ const toCardGrade = (grade: string | null | undefined): string | undefined => {
 };
 
 export const buildOgBoardRenderUrl = (
-  boardDetails: BoardDetails,
+  boardDetails: BoardRouteIdentity,
   frames: string,
   identity: OgClimbCardIdentity = {},
 ) => {

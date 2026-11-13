@@ -106,8 +106,9 @@ vi.mock('@/app/lib/data/queries', () => ({
   ]),
 }));
 
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn(
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(
     (params: { board_name: string; layout_id: number; size_id: number; set_ids: number[] }) => ({
       board_name: params.board_name,
       layout_id: params.layout_id,

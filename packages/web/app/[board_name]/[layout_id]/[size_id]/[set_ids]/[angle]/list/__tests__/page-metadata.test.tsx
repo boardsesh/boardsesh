@@ -46,8 +46,9 @@ vi.mock('@/app/lib/url-utils.server', () => ({
 
 // Rich enough for the real (unmocked) `buildCanonicalClimbListUrl` to resolve
 // the production named-slug form.
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: vi.fn(() => ({
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(() => ({
     board_name: 'kilter',
     layout_id: 1,
     size_id: 10,
@@ -74,12 +75,12 @@ vi.mock('@/app/components/climb-front-door/static-list-front-door', () => ({
 
 const pageModule = await import('../page');
 const { buildCanonicalClimbListUrl } = await import('@/app/lib/url-utils');
-const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+const { getBoardImageDetailsForBoard } = await import('@/app/lib/board-image-details');
 const { FRONT_DOOR_MAX_PAGE } = await import('@/app/lib/seo/list-page-robots');
 
 /** What the resolved ids canonically are, straight from the shared builder. */
 const RESOLVED_CANONICAL = buildCanonicalClimbListUrl(
-  getBoardDetailsForBoard({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] }),
+  getBoardImageDetailsForBoard({ board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] }),
   40,
 );
 

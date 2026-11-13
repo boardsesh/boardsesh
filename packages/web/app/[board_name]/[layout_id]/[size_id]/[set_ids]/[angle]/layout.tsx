@@ -10,7 +10,8 @@ import {
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 import { permanentRedirect } from 'next/navigation';
-import { getBoardDetailsForBoard, generateBoardTitle } from '@/app/lib/board-utils';
+import { generateBoardTitle } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import type { Metadata } from 'next';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getLocale } from '@/app/lib/i18n/get-locale';
@@ -21,7 +22,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
 
   try {
     const { parsedParams } = await parseRouteParams(params);
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
     const title = generateBoardTitle(boardDetails);
 
     return {
@@ -58,7 +59,7 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
   // uuid. Redirecting those to the bare list here would drop the climb.
   const pathname = (await headers()).get(PATHNAME_HEADER) ?? '';
   if (isNumericFormat && layoutOwnsNumericSlugRedirect(pathname)) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
       // Id-aware first: the name-based builder only knows the bare size slug, so

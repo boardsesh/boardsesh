@@ -25,11 +25,11 @@ import { VoteSummaryProvider } from '@/app/components/social/vote-summary-contex
 import StaticClimbList from '@/app/components/climb-list/static-climb-list';
 import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useBoardDetailsMap } from '@/app/hooks/use-board-details-map';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 
 import { useSessionDetail } from '@/app/hooks/use-session-detail';
 import { themeTokens } from '@/app/theme/theme-config';
-import type { Climb, BoardDetails } from '@/app/lib/types';
+import type { Climb, BoardImageDetails } from '@/app/lib/types';
 import SessionOverviewPanel from './session-overview-panel';
 import { generateSessionName } from '@/app/lib/session-utils';
 import { ConfirmPopover } from '@/app/components/ui/confirm-popover';
@@ -46,7 +46,7 @@ type SessionDetailContentProps = {
   sessionId?: string;
   /** The server-rendered `sessionWorkouts` answer (#6903). Empty for a session with no workout. */
   workouts?: SessionWorkoutResult[] | null;
-  fallbackBoardDetails?: BoardDetails | null;
+  fallbackBoardDetails?: BoardImageDetails | null;
   afterParticipants?: React.ReactNode;
   /** Current board angle for display in the board preview */
   currentAngle?: number;
@@ -143,7 +143,7 @@ function convertSessionTicksToClimbs(ticks: SessionDetailTick[], unknownClimbLab
 }
 
 /**
- * BoardDetails per climb, built from the board each tick was logged against.
+ * BoardImageDetails per climb, built from the board each tick was logged against.
  * The backend resolves that per tick (`renderBoard` — "each tick is drawn on
  * ITS climber's board, not the session owner's", session-feed.ts), so a sesh
  * two climbers logged on different walls links each row to the wall it was
@@ -156,15 +156,15 @@ function buildLoggedBoardDetails(
     boardType?: string | null;
     renderBoard?: { layoutId: number; sizeId: number; setIds: number[] } | null;
   }>,
-): Record<string, BoardDetails> {
-  const byClimb: Record<string, BoardDetails> = {};
+): Record<string, BoardImageDetails> {
+  const byClimb: Record<string, BoardImageDetails> = {};
 
   for (const tick of ticks) {
     const loggedBoard = tick.renderBoard;
     if (!loggedBoard || !tick.boardType || byClimb[tick.climbUuid]) continue;
 
     try {
-      byClimb[tick.climbUuid] = getBoardDetailsForBoard({
+      byClimb[tick.climbUuid] = getBoardImageDetailsForBoard({
         board_name: tick.boardType,
         layout_id: loggedBoard.layoutId,
         size_id: loggedBoard.sizeId,
@@ -407,7 +407,7 @@ export default function SessionDetailContent({
   // Collect tick UUIDs for batch vote summary fetching
   const tickUuids = useMemo(() => ticks.map((t) => t.uuid), [ticks]);
 
-  // Build per-climb BoardDetails for multi-board support. StaticClimbList has
+  // Build per-climb BoardImageDetails for multi-board support. StaticClimbList has
   // no equivalent for the unsupported/upsized hints, so those are left unread.
   // This pass only knows the climb's board type and layout, so it lands on the
   // layout's largest size with every set — a guess the logged board below

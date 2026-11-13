@@ -5,7 +5,7 @@ import { resolveServerTree } from '@/app/lib/__tests__/helpers/resolve-server-tr
 import { buildStoreUrl } from '@/app/lib/store-links';
 import { classifyMarketingBrowser } from '@/app/lib/marketing-platform';
 import { MarketingPreviewProvider } from '@/app/components/marketing/marketing-preview-provider';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import type { HandoffTree } from '../climb-handoff-cta';
 
 /**
@@ -58,8 +58,9 @@ const BOARD_DETAILS = {
   size_name: '12 x 12',
   set_names: ['Bolt Ons', 'Screw Ons'],
   boardWidth: 1080,
+  backgroundImagePaths: [],
   boardHeight: 1350,
-} as unknown as BoardDetails;
+} as unknown as BoardImageDetails;
 
 const CLIMB = {
   uuid: 'CLIMB-UNDER-TEST',

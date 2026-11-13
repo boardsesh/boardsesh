@@ -3,19 +3,19 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { render } from '@testing-library/react';
 import React from 'react';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import BoardImageLayers from '../board-image-layers';
 
 vi.mock('../util', () => ({
   // Mirrors the real split: an ordinary board gets one composite with the photo baked in,
   // a themed board gets static photo layers plus a background-less overlay.
-  buildBoardArtLayers: (bd: BoardDetails, frames: string | undefined, thumbnail?: boolean) => {
+  buildBoardArtLayers: (bd: BoardImageDetails, frames: string | undefined, thumbnail?: boolean) => {
     const overlay = frames ? `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}` : null;
     if (bd.board_name !== 'woods') {
       return { backgroundUrls: [], overlayUrl: overlay ? `${overlay}&include_background=1` : null };
     }
     return {
-      backgroundUrls: Object.keys(bd.images_to_holds).map((image) =>
+      backgroundUrls: bd.backgroundImagePaths.map((image) =>
         `/images/${bd.board_name}/${image}`.replace(/\.png$/, '.webp'),
       ),
       overlayUrl: overlay,
@@ -26,7 +26,7 @@ vi.mock('../util', () => ({
   // assertions below would pass without exercising anything.
   getImageUrl: (imageUrl: string, board: string) => `/images/${board}/${imageUrl}`.replace(/\.png$/, '.webp'),
   buildOverlayUrl: vi.fn(
-    (_bd: BoardDetails, frames: string, thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
+    (_bd: BoardImageDetails, frames: string, thumbnail?: boolean, colorScheme?: 'light' | 'dark') =>
       `/api/internal/board-render?frames=${frames}${thumbnail ? '&thumbnail=1' : ''}&include_background=1` +
       (colorScheme === 'dark' ? '&color_scheme=dark' : ''),
   ),
@@ -36,17 +36,13 @@ vi.mock('../util', () => ({
   toDarkArtUrl: (url: string) => url.replace(/\.webp$/, '.dark.webp'),
 }));
 
-const mockBoardDetails: BoardDetails = {
+const mockBoardDetails: BoardImageDetails = {
   board_name: 'kilter',
   layout_id: 1,
   size_id: 7,
   set_ids: [1, 20],
-  images_to_holds: { 'product_sizes_layouts_sets/36-1.png': [] },
-  holdsData: [],
-  edge_left: 0,
-  edge_right: 144,
-  edge_bottom: 0,
-  edge_top: 180,
+  backgroundImagePaths: ['product_sizes_layouts_sets/36-1.png'],
+
   boardWidth: 1080,
   boardHeight: 1350,
 };
@@ -72,12 +68,9 @@ describe('BoardImageLayers', () => {
   });
 
   it('renders multiple background images when no frames and board has multiple sets', () => {
-    const multiSetBoard: BoardDetails = {
+    const multiSetBoard: BoardImageDetails = {
       ...mockBoardDetails,
-      images_to_holds: {
-        'product_sizes_layouts_sets/36-1.png': [],
-        'product_sizes_layouts_sets/37-1.png': [],
-      },
+      backgroundImagePaths: ['product_sizes_layouts_sets/36-1.png', 'product_sizes_layouts_sets/37-1.png'],
     };
 
     const { container } = render(<BoardImageLayers boardDetails={multiSetBoard} mirrored={false} />);
@@ -86,12 +79,9 @@ describe('BoardImageLayers', () => {
   });
 
   it('renders single composited image even with multiple background sets', () => {
-    const multiSetBoard: BoardDetails = {
+    const multiSetBoard: BoardImageDetails = {
       ...mockBoardDetails,
-      images_to_holds: {
-        'product_sizes_layouts_sets/36-1.png': [],
-        'product_sizes_layouts_sets/37-1.png': [],
-      },
+      backgroundImagePaths: ['product_sizes_layouts_sets/36-1.png', 'product_sizes_layouts_sets/37-1.png'],
     };
 
     const { container } = render(<BoardImageLayers boardDetails={multiSetBoard} frames="p1r42" mirrored={false} />);
@@ -243,10 +233,10 @@ describe('BoardImageLayers', () => {
     // Woods art is hold sprites on an opaque white ground, so it has a `.dark.webp` sibling
     // and both variants go into the page for CSS to choose between — the server is rendering
     // these pages and cannot know the reader's theme.
-    const woodsBoardDetails: BoardDetails = {
+    const woodsBoardDetails: BoardImageDetails = {
       ...mockBoardDetails,
       board_name: 'woods',
-      images_to_holds: { 'woods-8x10-bg.png': [] },
+      backgroundImagePaths: ['woods-8x10-bg.png'],
     };
 
     const imageSources = (container: HTMLElement) =>

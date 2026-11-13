@@ -43,10 +43,6 @@
       "seoSummary": "Bloc {{boardName}} {{layoutName}}",
       "seoSetterSuffix": " ouvert par {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} enchaînements enregistrés"
-    },
-    "import": {
-      "title": "Importer des blocs",
-      "description": "Importez des blocs MoonBoard depuis des captures d'écran"
     }
   },
   "list": {
@@ -82,10 +78,6 @@
       "routesOnly": "Voies uniquement",
       "bouldersOnly": "Blocs uniquement",
       "bouldersAndRoutes": "Blocs et voies"
-    },
-    "holds": {
-      "include": "Inclure",
-      "exclude": "Exclure"
     }
   },
   "actions": {
@@ -214,7 +206,6 @@
   },
   "createClimbForm": {
     "draftBadge": "Brouillon",
-    "namePlaceholder": "Nom du bloc",
     "descriptionPlaceholder": "Ajoutez du beta ou des notes sur votre bloc...",
     "dismiss": "Ignorer",
     "cannotOpen": {
@@ -237,15 +228,6 @@
     },
     "fields": {
       "description": "Description (optionnelle)"
-    },
-    "holds": {
-      "start": "Départ",
-      "hand": "Main",
-      "finish": "Arrivée",
-      "total": "Total"
-    },
-    "validation": {
-      "needsStartFinish": "Un bloc valide nécessite au moins 1 prise de départ et 1 prise d'arrivée"
     }
   },
   "draftsDrawer": {
@@ -263,62 +245,6 @@
       "success": "Brouillon supprimé.",
       "error": "Impossible de supprimer ce brouillon. Réessayez."
     }
-  },
-  "holdTypePicker": {
-    "toolbarAriaLabel": "Type de prise",
-    "applyModeAriaLabel": "Appliquer comme inclure ou exclure",
-    "clear": "Effacer",
-    "searchHelp": "Sélectionnez un ou plusieurs types de prise, puis touchez ailleurs pour fermer le sélecteur",
-    "includeAriaSuffix": "inclure",
-    "excludeAriaSuffix": "exclure",
-    "states": {
-      "starting": "Départ",
-      "hand": "Milieu",
-      "finish": "Arrivée",
-      "foot": "Pied",
-      "any": "Toutes"
-    }
-  },
-  "moonboardImport": {
-    "picker": {
-      "title": "Choisissez votre MoonBoard",
-      "hint": "Choisissez la board et l'angle depuis lesquels vous importez, puis déposez vos captures d'écran.",
-      "angleOption": "{{angle}}°"
-    },
-    "card": {
-      "skipping": "Ignoré",
-      "duplicate": "Ignoré : existe déjà",
-      "duplicateNamed": "Ignoré : existe déjà sous le nom « {{name}} »",
-      "removeAction": "Retirer",
-      "removeDescription": "Ce bloc ne sera pas importé."
-    },
-    "bulk": {
-      "title": "Importer des blocs MoonBoard - {{layoutName}} @ {{angle}}°",
-      "loginRequired": "Connectez-vous pour enregistrer les blocs",
-      "loginRequiredTitle": "Connexion requise",
-      "loginRequiredBody": "Connectez-vous pour enregistrer les blocs dans la base de données.",
-      "logIn": "Se connecter",
-      "uploadPrompt": "Cliquez ou glissez vos captures d'écran ici",
-      "uploadHelp": "Compatible avec les captures de l'app MoonBoard. Déposez plusieurs fichiers pour un import en masse.",
-      "processing": "Traitement des captures...",
-      "checkingDuplicates": "On compare les blocs importés aux problèmes MoonBoard existants...",
-      "reviewBeforeSaving": "Vérifiez les blocs ci-dessous. Vous pouvez en modifier ou en retirer avant d'enregistrer.",
-      "saveAll": "Tout enregistrer ({{count}})",
-      "clearAndRestart": "Tout effacer et recommencer",
-      "contributeImages": "Partagez des images pour améliorer la précision de l'OCR",
-      "tryAgain": "Réessayer",
-      "saveFailed": "Impossible d'enregistrer les blocs. Réessayez."
-    }
-  },
-  "moonboardEditModal": {
-    "title": "Modifier le bloc",
-    "nameLabel": "Nom du bloc",
-    "nameRequired": "Donnez-lui un nom",
-    "save": "Enregistrer les modifications",
-    "setter": "Ouvreur : {{setter}}",
-    "grade": "Cotation : {{grade}}",
-    "angle": "Inclinaison : {{angle}}°",
-    "unknown": "Inconnu"
   },
   "mobile": {
     "listOptions": {

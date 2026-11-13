@@ -12,7 +12,7 @@ import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl, constructBoardSlugViewUrl } from '@/app/lib/url-utils';
 import { themeTokens } from '@/app/theme/theme-config';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 
 /**
  * One crawlable climb row. Ordinary discovery uses the canonical config-tuple
@@ -30,7 +30,7 @@ import type { BoardDetails, Climb } from '@/app/lib/types';
  */
 export type StaticClimbRowProps = {
   climb: Climb;
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Keep named-wall discovery on that physical board, not a new config. */
   boardSlug?: string;
   /**

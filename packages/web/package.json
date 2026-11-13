@@ -55,7 +55,6 @@
     "@boardsesh/i18n": "workspace:*",
     "@boardsesh/kiosk": "workspace:*",
     "@boardsesh/logbook": "workspace:*",
-    "@boardsesh/moonboard-ocr": "workspace:*",
     "@boardsesh/party-profile": "workspace:*",
     "@boardsesh/play-view": "workspace:*",
     "@boardsesh/playback-react": "workspace:*",

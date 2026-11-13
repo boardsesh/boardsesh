@@ -284,8 +284,8 @@ crawler in a single deploy, irreversibly without another one.
 Twelve sibling routes came out of the two board trees (`create`, `import`,
 `liked`, `logbook`, `playlists`, `playlists/[playlist_uuid]`), plus the session
 providers and `BoardSeshHeader` above them. `next.config.mjs` holds the redirect
-table, every rule with its three locale twins. Three of those rules carry
-context rather than dropping it, and the reasons are worth keeping:
+table, every rule with its locale twins. Creation preserves board context, and
+retired import URLs lead to the app:
 
 - **Create → the app, with the board attached.** A canonical numeric board URL
   hands `boardName`/`layoutId`/`sizeId`/`setIds`/`angle` to the app's create
@@ -296,28 +296,20 @@ context rather than dropping it, and the reasons are worth keeping:
   at `…/create` now links at the app directly** — the Create tab in the bottom
   bar, the remix/edit action — through `buildAppCreateClimbUrl`, so there is no
   redirect hop and no board context lost in it.
-- **Import → `/moonboard-import`, with the hold sets.** Bulk import is
-  MoonBoard-only, so `/moonboard/…/import` goes to the importer carrying
-  `layout`, `sets` and `angle`, and every other board's `…/import` goes to that
-  board's own list — the same split the deleted page made. It needs its own rule
-  because `MOONBOARD_LAYOUTS` ids run 1–7 and collide with Aurora layout ids;
-  without it `/kilter/1/…/import` would render the importer for MoonBoard 2010.
-  The `sets` param matters for the same reason: without it a 2024 wall gets all
-  six of the layout's hold sets stacked on the preview instead of the two it
-  named. The `/b/{slug}` tree can't make that split — the slug names a DB row —
-  so it goes to the importer and an unresolvable one lands on the picker.
+- **Import → the app's integrations screen.** `/moonboard-import` and both
+  board trees' legacy `…/import` URLs redirect to
+  `app.boardsesh.com/settings/integrations`. W-17 originally retained the
+  MoonBoard screenshot bulk importer to preserve its OCR review/edit workflow.
+  It has now been removed with its hold editor, SVG renderer and browser OCR
+  dependency. The app's existing MoonBoard logbook-file import is a different
+  workflow; removing the Next screenshot importer does not add OCR to the app.
 - **Cross-origin rules stay `permanent: false`.** A permanent cross-origin
   redirect is cached by the browser indefinitely with no server-side hatch. They
   go 308 once the app route is proven in production.
 
-**Parked, not forgotten.** `components/create-climb/` (the www climb editor,
-including `drafts-drawer` and `create-climb-form`) lost its last route here and
-is now reachable only through the MoonBoard importer's shared pieces
-(`hold-indicator`, `hold-type-picker`, `use-hold-type-picker`,
-`use-moonboard-create-climb`). Deleting the rest belongs with `teardown:components-create-climb`
-in W-16, not here — it is a large cascade and the importer's edges have to be
-lifted out first. `components/board-page/last-used-board-tracker.tsx` stays for
-the same reason, as the one allowlisted edge W-16 cuts.
+The www climb editor and MoonBoard import editor are both gone. Their former
+hold picker, indicator and creation hooks no longer remain as shared web pieces.
+Climb authoring belongs to the app; www keeps public viewing and handoff links.
 
 ## W-16 (+W-18) — deleting the climbing UI and swapping the root chrome (#4435)
 

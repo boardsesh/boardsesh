@@ -14,10 +14,11 @@ vi.mock('../../board-renderer/board-image-layers', () => ({
   default: () => <div data-testid="board-image-layers" />,
 }));
 
-// Mock getBoardDetailsForPlaylist
+// Mock getBoardImageDetailsForPlaylist
 const mockGetBoardDetailsForPlaylist = vi.fn();
-vi.mock('@/app/lib/board-config-for-playlist', () => ({
-  getBoardDetailsForPlaylist: (...args: unknown[]) => mockGetBoardDetailsForPlaylist(...args),
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForPlaylist: (...args: unknown[]) => mockGetBoardDetailsForPlaylist(...args),
 }));
 
 // Mock theme tokens

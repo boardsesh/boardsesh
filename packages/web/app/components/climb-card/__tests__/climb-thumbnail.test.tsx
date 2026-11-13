@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import ClimbThumbnail from '../climb-thumbnail';
 
 const mockPathname = '/b/moonrise-gym/40/list';
@@ -11,19 +11,15 @@ const boardDetails = {
   layout_id: 1,
   size_id: 2,
   set_ids: [3, 4],
-  images_to_holds: {},
-  holdsData: [],
-  edge_left: 0,
-  edge_right: 100,
-  edge_bottom: 0,
-  edge_top: 100,
+  backgroundImagePaths: [],
+
   boardHeight: 100,
   boardWidth: 100,
   layout_name: 'Homewall',
   size_name: '8x12 Full Ride',
   size_description: 'Main',
   set_names: ['Main Kicker', 'Aux Kicker'],
-} as BoardDetails;
+} as BoardImageDetails;
 
 const climb = {
   uuid: 'ABC123',

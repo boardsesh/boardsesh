@@ -181,32 +181,22 @@ const BASE_REDIRECTS = [
     permanent: false,
   },
 
-  // The MoonBoard bulk importer stays on Next, re-homed to a board-agnostic
-  // route. Layout, hold sets and angle ride along so a bookmarked import URL
-  // opens the wall it named; anything unresolvable lands on the picker.
+  // Importing and climb authoring belong in the app. Keep old bookmarks useful
+  // without retaining the Next screenshot importer or its hold editor.
   {
-    source: '/moonboard/:layout/:size/:set/:angle/import',
-    destination: '/moonboard-import?layout=:layout&sets=:set&angle=:angle',
-    permanent: true,
+    source: '/moonboard-import',
+    destination: `${APP_ORIGIN}/settings/integrations`,
+    permanent: false,
   },
-  // Bulk import is MoonBoard-only — the deleted page sent a Kilter or Tension
-  // import URL to that board's own list instead of rendering the importer. This
-  // rule keeps that, and it has to exist: `MOONBOARD_LAYOUTS` ids run 1–7 and
-  // collide with Aurora layout ids, so without it `/kilter/1/…/import` would
-  // resolve to MoonBoard 2010 and render the importer for the wrong board.
   {
     source: '/:board/:layout/:size/:set/:angle/import',
-    destination: '/:board/:layout/:size/:set/:angle/list',
-    permanent: true,
+    destination: `${APP_ORIGIN}/settings/integrations`,
+    permanent: false,
   },
-  // The `/b` tree can't make that split: the slug names a board row, and only a
-  // DB lookup says whether it's a MoonBoard. It goes to the importer because
-  // that is the only reason to open `/import` at all; a non-MoonBoard slug lands
-  // on the picker, which is a noindex utility page with a way back.
   {
     source: '/b/:board_slug/:angle/import',
-    destination: '/moonboard-import?angle=:angle',
-    permanent: true,
+    destination: `${APP_ORIGIN}/settings/integrations`,
+    permanent: false,
   },
 
   // Liked climbs live in the app; the board's own front door is the closest
@@ -369,7 +359,6 @@ const nextConfig = {
     '@boardsesh/shared-schema',
     '@boardsesh/static-assets',
     '@boardsesh/db',
-    '@boardsesh/moonboard-ocr',
     '@boardsesh/board-config',
     '@boardsesh/board-look',
     '@boardsesh/board-render',

@@ -28,7 +28,10 @@ vi.mock('@/app/lib/i18n/server', () => ({
 }));
 const resolveBoardBySlug = vi.fn();
 vi.mock('@/app/lib/board-slug-utils', () => ({ resolveBoardBySlug, boardToRouteParamsFromAngleSegment: vi.fn() }));
-vi.mock('@/app/lib/board-utils', () => ({ getBoardDetailsForBoard: vi.fn() }));
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: vi.fn(),
+}));
 const fetchFrontDoorListPage = vi.fn();
 vi.mock('@/app/lib/data/list-page-data.server', () => ({ fetchFrontDoorListPage }));
 vi.mock('@/app/lib/spray/spray-wall-render-data.server', () => ({}));

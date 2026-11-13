@@ -22,6 +22,34 @@ vi.mock('@/app/lib/board-compatibility', () => ({
   canAddClimbToBoard: vi.fn(),
 }));
 
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForPlaylist: (boardType: string, layoutId: number | null | undefined) => {
+    const boardName = boardType as import('@/app/lib/types').BoardName;
+    const effectiveLayoutId =
+      layoutId ?? (boardType === 'moonboard' ? 100 : boardType === 'kilter' ? 1 : boardType === 'tension' ? 2 : null);
+    if (!effectiveLayoutId) return null;
+    if (boardType === 'moonboard')
+      return { board_name: boardName, layout_id: effectiveLayoutId, size_id: 1, set_ids: [1] };
+    const sizes = getSizesForLayoutId(boardName, effectiveLayoutId);
+    if (sizes.length === 0) return null;
+    const largest = sizes.reduce((best, size) =>
+      (size.edgeRight - size.edgeLeft) * (size.edgeTop - size.edgeBottom) >
+      (best.edgeRight - best.edgeLeft) * (best.edgeTop - best.edgeBottom)
+        ? size
+        : best,
+    );
+    const sets = getSetsForLayoutAndSize(boardName, effectiveLayoutId, largest.id);
+    if (sets.length === 0) return null;
+    return {
+      board_name: boardName,
+      layout_id: effectiveLayoutId,
+      size_id: largest.id,
+      set_ids: sets.map((set) => set.id),
+    };
+  },
+}));
+
 const mockGetBoardDetails = vi.mocked(getBoardDetails);
 const mockGetSizes = vi.mocked(getSizesForLayoutId);
 const mockGetSets = vi.mocked(getSetsForLayoutAndSize);

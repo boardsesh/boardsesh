@@ -64,6 +64,21 @@
       "types": "./src/woods.ts",
       "import": "./src/woods.ts",
       "default": "./src/woods.ts"
+    },
+    "./catalog-metadata": {
+      "types": "./src/catalog-metadata.ts",
+      "import": "./src/catalog-metadata.ts",
+      "default": "./src/catalog-metadata.ts"
+    },
+    "./board-type-labels": {
+      "types": "./src/board-type-labels.ts",
+      "import": "./src/board-type-labels.ts",
+      "default": "./src/board-type-labels.ts"
+    },
+    "./woods-dimensions": {
+      "types": "./src/woods-dimensions.ts",
+      "import": "./src/woods-dimensions.ts",
+      "default": "./src/woods-dimensions.ts"
     }
   },
   "scripts": {

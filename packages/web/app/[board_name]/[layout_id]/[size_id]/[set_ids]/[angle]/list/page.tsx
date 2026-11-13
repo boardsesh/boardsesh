@@ -6,7 +6,7 @@ import type { BoardRouteParameters, BoardRouteParametersWithUuid, SearchRequestP
 import { buildCanonicalClimbListUrl, constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
 import StaticListFrontDoor from '@/app/components/climb-front-door/static-list-front-door';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { fetchFrontDoorListPage } from '@/app/lib/data/list-page-data.server';
 import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { createBoardContentPageMetadata } from '@/app/lib/seo/metadata';
@@ -42,7 +42,7 @@ export async function generateMetadata(props: {
     // the same request, so this resolution is free.
     const { parsedParams } = await parseRouteParams(params);
     const angle = parsedParams.angle;
-    const cleanPath = buildCanonicalClimbListUrl(getBoardDetailsForBoard(parsedParams), angle);
+    const cleanPath = buildCanonicalClimbListUrl(getBoardImageDetailsForBoard(parsedParams), angle);
 
     // Self-canonical for the unfiltered case. This page used to return a bare
     // `{}` rather than claim one, because `/b/{slug}/{angle}/list` was also
@@ -90,7 +90,7 @@ export default async function DynamicResultsPage(props: {
 
   // Redirect old numeric URLs to new slug format
   if (isNumericFormat) {
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {
       // Id-aware first: the name-based builder can only emit the bare size slug,

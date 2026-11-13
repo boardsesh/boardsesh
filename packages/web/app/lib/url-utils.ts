@@ -26,7 +26,7 @@ import {
 } from '@boardsesh/play-view/readable-url-utils';
 import { isNumericId } from './board-route-paths';
 import type { PopularBoardConfig } from '@boardsesh/shared-schema';
-import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
+import { MOONBOARD_LAYOUTS } from '@boardsesh/board-config/moonboard-metadata';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
 import { PAGE_LIMIT } from './climb-list-constants';

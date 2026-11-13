@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { LabelOutlined, FavoriteOutlined } from '@mui/icons-material';
-import { getBoardDetailsForPlaylist } from '@/app/lib/board-config-for-playlist';
+import { getBoardImageDetailsForPlaylist } from '@/app/lib/board-image-details';
 import { themeTokens } from '@/app/theme/theme-config';
 import BoardImageLayers from '../board-renderer/board-image-layers';
 import styles from './playlist-preview-square.module.css';
@@ -71,7 +71,7 @@ export default function PlaylistPreviewSquare({
   className,
   fetchPriority,
 }: PlaylistPreviewSquareProps) {
-  const boardDetails = useMemo(() => getBoardDetailsForPlaylist(boardType, layoutId), [boardType, layoutId]);
+  const boardDetails = useMemo(() => getBoardImageDetailsForPlaylist(boardType, layoutId), [boardType, layoutId]);
 
   let backgroundColor: string | undefined;
   if (isLikedClimbs) {

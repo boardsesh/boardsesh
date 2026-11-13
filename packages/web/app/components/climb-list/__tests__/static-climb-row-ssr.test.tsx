@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vite-plus/test';
 import { renderToString } from 'react-dom/server';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import StaticClimbRow from '../static-climb-row';
 
 /**
@@ -39,14 +39,10 @@ function makeClimb(overrides: Partial<Climb> = {}): Climb {
   } as Climb;
 }
 
-function makeBoardDetails(): BoardDetails {
+function makeBoardDetails(): BoardImageDetails {
   return {
-    images_to_holds: {},
-    holdsData: [],
-    edge_left: 0,
-    edge_right: 100,
-    edge_bottom: 0,
-    edge_top: 100,
+    backgroundImagePaths: [],
+
     boardHeight: 100,
     boardWidth: 100,
     board_name: 'kilter',

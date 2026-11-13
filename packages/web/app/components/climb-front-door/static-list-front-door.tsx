@@ -1,3 +1,4 @@
+import { toBoardImageDetails } from '@/app/lib/board-image-details';
 import React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -10,14 +11,14 @@ import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbListUrl } from '@/app/lib/url-utils';
 import { frontDoorPagePath, isIndexableFrontDoorPage } from '@/app/lib/seo/list-page-robots';
 import { themeTokens } from '@/app/theme/theme-config';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, Climb } from '@/app/lib/types';
 import ClimbHandoffCta, { type HandoffTree } from './climb-handoff-cta';
 import ClimbListJsonLd from './climb-list-json-ld';
 import FrontDoorBreadcrumb from './front-door-breadcrumb';
 import FrontDoorInstall from './front-door-install';
 
 type StaticListFrontDoorProps = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   /** Navigation identity; metadata continues to canonicalise by configuration. */
   boardSlug?: string;
   angle: number;
@@ -165,7 +166,7 @@ export default async function StaticListFrontDoor({
       <StaticClimbList
         climbs={climbs}
         boardSlug={boardSlug}
-        boardDetails={boardDetails}
+        boardDetails={toBoardImageDetails(boardDetails)}
         virtualize={false}
         // Keep the leading rows on plain image layers rather than the canvas
         // renderer: this page paints 50 rows at once, and the first screenful

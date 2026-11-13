@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vite-plus/test';
 import { render, screen } from '@testing-library/react';
 import React from 'react';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import BoardSlot from '../board-slot';
 
 // Presence is driven per test: null is the SSR/pre-subscription state, where
@@ -19,7 +19,7 @@ vi.mock('@/app/components/kiosk/board-slot/board-install-qr', () => ({
   default: ({ slug }: { slug: string }) => <div data-testid="install-qr" data-slug={slug} />,
 }));
 
-const boardDetails = { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] } as BoardDetails;
+const boardDetails = { board_name: 'kilter', layout_id: 1, size_id: 10, set_ids: [1, 20] } as BoardImageDetails;
 
 beforeEach(() => {
   presenceSnapshot.current = null;

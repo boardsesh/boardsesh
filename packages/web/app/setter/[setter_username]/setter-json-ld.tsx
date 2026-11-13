@@ -4,14 +4,14 @@ import { JsonLd } from '@/app/lib/seo/json-ld';
 import { frontDoorPagePath } from '@/app/lib/seo/list-page-robots';
 import { resolveClimbDisplayName } from '@/app/lib/string-utils';
 import { buildCanonicalClimbViewUrl } from '@/app/lib/url-utils';
-import type { BoardDetails, Climb } from '@/app/lib/types';
+import type { BoardRouteIdentity, Climb } from '@/app/lib/types';
 import { SETTER_PAGE_SIZE } from '@/app/lib/seo/sitemap/setter-page-contract';
 
 type SetterJsonLdProps = {
   username: string;
   displayName: string;
   climbs: readonly Climb[];
-  boardDetailsByClimb: Record<string, BoardDetails>;
+  boardDetailsByClimb: Record<string, BoardRouteIdentity>;
   unlinkedClimbUuids: ReadonlySet<string>;
   /** 1-based `?page=N`, already clamped. */
   page: number;

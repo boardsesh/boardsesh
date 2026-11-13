@@ -13,8 +13,9 @@ vi.mock('server-only', () => ({}));
 vi.mock('@/app/lib/graphql/client', () => ({
   getGraphQLHttpUrl: () => 'http://backend.test/graphql',
 }));
-vi.mock('@/app/lib/board-utils', () => ({
-  getBoardDetailsForBoard: () => ({ board_name: 'kilter' }),
+vi.mock('@/app/lib/board-image-details', async () => ({
+  ...(await vi.importActual<typeof import('@/app/lib/board-image-details')>('@/app/lib/board-image-details')),
+  getBoardImageDetailsForBoard: () => ({ board_name: 'kilter' }),
 }));
 vi.mock('../../board-renderer/util', () => ({
   buildBoardRenderUrl: () => 'http://render.test/board.png',

@@ -12,15 +12,15 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { formatSends, type TranslateSends } from '@/app/lib/format-climb-stats';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
-import { resolveRenderBoard } from '@boardsesh/board-config';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
+import { resolveRenderBoard } from '@boardsesh/board-config/resolve-render-board';
 import { getDefaultBoardConfig, getDefaultClimbViewPath } from '@/app/lib/default-board-configs';
 import {
   SIMILAR_CLIMBS_QUERY,
   type SimilarClimbsResponse,
   type SimilarClimbsVariables,
 } from '@boardsesh/graphql/operations/new-climb-feed';
-import type { BoardDetails, BoardName } from '@/app/lib/types';
+import type { BoardImageDetails, BoardName } from '@/app/lib/types';
 import {
   constructBoardSlugViewUrl,
   constructClimbViewUrlWithSlugs,
@@ -49,7 +49,7 @@ type SimilarClimbsListProps = {
    *     Incompatible climbs fall back to the layout's default config (the
    *     biggest reasonable board for the layout) so the user can still see
    *     where the climb's holds actually are. */
-  viewerBoardDetails?: BoardDetails;
+  viewerBoardDetails?: BoardImageDetails;
   /** When true, the underlying query is run. Defaults to true; the playview
    *  drawer wires this to the collapsible-section's lazy/open state. */
   enabled?: boolean;
@@ -209,7 +209,7 @@ type SimilarClimbCardProps = {
    *  (size + sets) rather than the layout's default. Only passed for
    *  compatible climbs — incompatible climbs need the bigger default
    *  config to show the holds that extend past the viewer's wall. */
-  viewerBoardDetails: BoardDetails | undefined;
+  viewerBoardDetails: BoardImageDetails | undefined;
   /** When false, the card body is greyed out. Driven by the parent's sizeId
    *  vs `climb.compatibleSizeIds` — the climb won't physically fit on the
    *  viewer's wall, but the link still resolves on the layout default. */
@@ -229,7 +229,7 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
   // thumbnail matches what they'll see on their board. Incompatible:
   // fall back to the layout's default (biggest reasonable) config so the
   // climb's full footprint is visible even though the user can't load it.
-  const boardDetails = useMemo<BoardDetails | null>(() => {
+  const boardDetails = useMemo<BoardImageDetails | null>(() => {
     if (viewerBoardDetails && viewerBoardDetails.layout_id === climb.layoutId) {
       return viewerBoardDetails;
     }
@@ -245,7 +245,7 @@ function SimilarClimbCard({ climb, boardType, boardSlug, viewerBoardDetails, com
         : getDefaultBoardConfig(boardType, climb.layoutId);
     if (!config) return null;
     try {
-      return getBoardDetailsForBoard({
+      return getBoardImageDetailsForBoard({
         board_name: boardType,
         layout_id: climb.layoutId,
         size_id: config.sizeId,

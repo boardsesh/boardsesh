@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import type { RenderMode } from '@boardsesh/board-render/render-config';
-import type { BoardDetails } from '@/app/lib/types';
+import type { BoardImageDetails } from '@/app/lib/types';
 import { buildBoardArtLayers, getImageUrl, hasDarkBoardArt, toDarkArtUrl } from './util';
 import styles from './board-art-theme.module.css';
 import { THUMBNAIL_WIDTH } from './types';
@@ -35,7 +35,7 @@ const pairedLayerContainStyle: React.CSSProperties = {
 };
 
 export type BoardImageLayersProps = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   frames?: string;
   mirrored: boolean;
   thumbnail?: boolean;
@@ -74,8 +74,8 @@ const BoardImageLayers = React.memo(function BoardImageLayers({
     [boardDetails, frames, thumbnail, renderMode],
   );
   const bareBackgroundUrls = useMemo(
-    () => Object.keys(boardDetails.images_to_holds).map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),
-    [boardDetails.images_to_holds, boardDetails.board_name, thumbnail],
+    () => boardDetails.backgroundImagePaths.map((img) => getImageUrl(img, boardDetails.board_name, thumbnail)),
+    [boardDetails.backgroundImagePaths, boardDetails.board_name, thumbnail],
   );
   // With no climb to overlay, the photo layers are all there is to draw.
   const backgroundUrls = overlayUrl ? artBackgroundUrls : bareBackgroundUrls;

@@ -43,10 +43,6 @@
       "seoSummary": "Boulder auf {{boardName}} {{layoutName}}",
       "seoSetterSuffix": " gebaut von {{setter}}",
       "seoAscentsSuffix": ". {{ascents}} Begehungen eingetragen"
-    },
-    "import": {
-      "title": "Boulder importieren",
-      "description": "MoonBoard-Boulder aus Screenshots importieren"
     }
   },
   "list": {
@@ -82,10 +78,6 @@
       "routesOnly": "Nur Routen",
       "bouldersOnly": "Nur Boulder",
       "bouldersAndRoutes": "Boulder & Routen"
-    },
-    "holds": {
-      "include": "Einschließen",
-      "exclude": "Ausschließen"
     }
   },
   "actions": {
@@ -214,7 +206,6 @@
   },
   "createClimbForm": {
     "draftBadge": "Entwurf",
-    "namePlaceholder": "Boulder-Name",
     "descriptionPlaceholder": "Beta oder Notizen zu deinem Boulder…",
     "dismiss": "Ausblenden",
     "cannotOpen": {
@@ -237,15 +228,6 @@
     },
     "fields": {
       "description": "Beschreibung (optional)"
-    },
-    "holds": {
-      "start": "Start",
-      "hand": "Hand",
-      "finish": "Top",
-      "total": "Gesamt"
-    },
-    "validation": {
-      "needsStartFinish": "Ein gültiger Boulder braucht mindestens 1 Startgriff und 1 Topgriff"
     }
   },
   "draftsDrawer": {
@@ -263,62 +245,6 @@
       "success": "Entwurf gelöscht.",
       "error": "Der Entwurf konnte nicht gelöscht werden. Versuch es nochmal."
     }
-  },
-  "holdTypePicker": {
-    "toolbarAriaLabel": "Grifftyp",
-    "applyModeAriaLabel": "Als Einschließen oder Ausschließen anwenden",
-    "clear": "Löschen",
-    "searchHelp": "Wähl einen oder mehrere Grifftypen und tipp dann daneben, um die Auswahl zu schließen",
-    "includeAriaSuffix": "einschließen",
-    "excludeAriaSuffix": "ausschließen",
-    "states": {
-      "starting": "Start",
-      "hand": "Mitte",
-      "finish": "Top",
-      "foot": "Fuß",
-      "any": "Beliebig"
-    }
-  },
-  "moonboardImport": {
-    "picker": {
-      "title": "Wähl dein MoonBoard",
-      "hint": "Wähl das Board und den Winkel, aus dem du importierst, und leg dann deine Screenshots ab.",
-      "angleOption": "{{angle}}°"
-    },
-    "card": {
-      "skipping": "Wird übersprungen",
-      "duplicate": "Übersprungen: existiert schon",
-      "duplicateNamed": "Übersprungen: existiert schon als „{{name}}“",
-      "removeAction": "Entfernen",
-      "removeDescription": "Dieser Boulder wird nicht importiert."
-    },
-    "bulk": {
-      "title": "MoonBoard-Boulder importieren - {{layoutName}} @ {{angle}}°",
-      "loginRequired": "Melde dich an, um Boulder zu speichern",
-      "loginRequiredTitle": "Anmeldung nötig",
-      "loginRequiredBody": "Melde dich an, um Boulder in der Datenbank zu speichern.",
-      "logIn": "Anmelden",
-      "uploadPrompt": "Screenshots hierher ziehen oder hier klicken",
-      "uploadHelp": "Screenshots aus der MoonBoard-App werden unterstützt. Zieh mehrere Dateien hierher für einen Sammel-Import.",
-      "processing": "Screenshots werden verarbeitet…",
-      "checkingDuplicates": "Importierte Boulder werden mit bestehenden MoonBoard-Bouldern verglichen…",
-      "reviewBeforeSaving": "Schau die Boulder unten durch. Du kannst sie vor dem Speichern bearbeiten oder entfernen.",
-      "saveAll": "Alle speichern ({{count}})",
-      "clearAndRestart": "Leeren & neu anfangen",
-      "contributeImages": "Bilder beisteuern, um die OCR-Genauigkeit zu verbessern",
-      "tryAgain": "Nochmal versuchen",
-      "saveFailed": "Boulder konnten nicht gespeichert werden. Versuch es nochmal."
-    }
-  },
-  "moonboardEditModal": {
-    "title": "Boulder bearbeiten",
-    "nameLabel": "Boulder-Name",
-    "nameRequired": "Gib einen Namen ein",
-    "save": "Änderungen speichern",
-    "setter": "Routenbauer*in: {{setter}}",
-    "grade": "Grad: {{grade}}",
-    "angle": "Winkel: {{angle}}°",
-    "unknown": "Unbekannt"
   },
   "mobile": {
     "listOptions": {

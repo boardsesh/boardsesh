@@ -30,6 +30,26 @@ server seed. The bare-board URL also uses the backend, so clearing a wall preser
 the renderer’s background treatment. The
 browser's native image cache reuses a render when a previously shown climb returns.
 
+## Page metadata and geometry
+
+Catalog climb, list, setter, kiosk and discovery previews use `BoardImageDetails`:
+board identity, display names, image dimensions, background paths and mirroring
+support. The metadata factory reads catalog metadata without importing hold
+placements. Server components pass this small object to client components instead
+of serializing `holdsData` and `images_to_holds` into HTML and React Flight payloads.
+Discovery previews request the same cached backend images rather than emitting SVG
+hold circles. The old generic SVG display components have been removed.
+
+Full geometry remains available to native/backend consumers. The Next MoonBoard
+screenshot importer, hold editor and SVG renderer have been removed; their old URLs
+redirect to the app's integrations screen. Custom spray-wall public artwork still
+uses its existing server-side SVG overlay, and spray admin overlays are read-only.
+Selected-board playlist compatibility also retains the existing full
+hold-containment check so a climb cannot silently appear compatible with a wall
+missing its holds. These exceptions are separate from catalog page image props.
+Removing the compatibility check's geometry dependency requires a dedicated
+ID-only lookup or backend compatibility response, rather than omitting validation.
+
 ## Cache contract
 
 Every URL includes the generated `BOARD_RENDER_VERSION`. Successful versioned
@@ -57,6 +77,8 @@ They are not published through the image CDN catalog.
 | --- | --- |
 | `packages/web/app/components/board-renderer/board-image-layers.tsx` | Stable images for SSR and hydrated pages |
 | `packages/web/app/components/board-renderer/util.ts` | Versioned image URLs and composition rules |
+| `packages/shared/board-config/src/image-metadata.ts` | Coordinate-free catalog image metadata |
+| `packages/web/app/lib/board-image-details.ts` | Web image metadata and playlist defaults |
 | `packages/web/app/components/kiosk/board-slot/board-slot.tsx` | Live kiosk image updates |
 | `packages/backend/src/handlers/board-render.ts` | Public HTTP validation, cache headers and CORS |
 | `packages/backend/src/services/board-render.ts` | Shared WASM/sharp pipeline, caches and load shedding |

@@ -4,7 +4,7 @@ import type { BoardRouteParametersWithUuid, Climb, ParsedBoardRouteParametersWit
 import { getClimb, getClimbStatsForAllAngles } from '@/app/lib/data/queries';
 import { getFrontDoorBetaLinks, getFrontDoorSimilarClimbs } from '@/app/lib/data/front-door-data.server';
 import { resolveRenderBoard, type RenderBoardConfig } from '@boardsesh/board-config';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import {
   buildCanonicalClimbViewUrl,
   isUuidOnly,
@@ -73,7 +73,7 @@ export async function generateMetadata(props: { params: Promise<BoardRouteParame
     // The body redirects a Woods climb off a size it does not fit; describe the
     // board it lands on, so the card never draws its holds on the wrong size.
     const woodsTarget = woodsSizeRedirectTarget(parsedParams, currentClimb);
-    const boardDetails = getBoardDetailsForBoard(
+    const boardDetails = getBoardImageDetailsForBoard(
       woodsTarget && woodsTarget !== 'none'
         ? {
             ...parsedParams,
@@ -224,7 +224,7 @@ export default async function ClimbViewPage(props: { params: Promise<BoardRouteP
       }
     }
 
-    const boardDetails = getBoardDetailsForBoard(parsedParams);
+    const boardDetails = getBoardImageDetailsForBoard(parsedParams);
 
     const [angleStats, similarClimbs, betaLinks] = await Promise.all([
       // Keyed on the climb the URL resolved to: for an alias URL the requested

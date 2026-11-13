@@ -1,14 +1,14 @@
 import 'server-only';
 
-import type { BoardDetails, Climb, ParsedBoardRouteParameters, SearchRequestPagination } from '@/app/lib/types';
+import type { BoardImageDetails, Climb, ParsedBoardRouteParameters, SearchRequestPagination } from '@/app/lib/types';
 import { cachedSearchClimbs } from '@/app/lib/db/queries/climbs/search-climbs';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
+import { getBoardImageDetailsForBoard } from '@/app/lib/board-image-details';
 import { buildOverlayPreloadUrls } from '@/app/components/board-renderer/util';
 import { DEFAULT_SEARCH_PARAMS } from '@/app/lib/url-utils';
 import { FRONT_DOOR_PAGE_SIZE } from '@/app/lib/seo/list-page-robots';
 
 export type FrontDoorListPage = {
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   climbs: Climb[];
   hasMore: boolean;
   /** Pre-resolved overlay URL for the first climb so the page can `<link rel="preload">` it. */
@@ -31,9 +31,9 @@ export async function fetchFrontDoorListPage(
   parsedParams: ParsedBoardRouteParameters,
   page: number,
 ): Promise<FrontDoorListPage | null> {
-  let boardDetails: BoardDetails;
+  let boardDetails: BoardImageDetails;
   try {
-    boardDetails = getBoardDetailsForBoard(parsedParams);
+    boardDetails = getBoardImageDetailsForBoard(parsedParams);
   } catch (error) {
     console.error('Error resolving board details:', error);
     return null;

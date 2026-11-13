@@ -1,3 +1,4 @@
+import { toBoardImageDetails } from '@/app/lib/board-image-details';
 import React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -16,7 +17,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import type { ClimbStatsForAngle } from '@/app/lib/data/queries';
 import type { FrontDoorSection } from '@/app/lib/data/front-door-data.server';
 import type { BetaLink } from '@/app/lib/beta-video-url';
-import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
+import type { BoardImageDetails, BoardName, Climb } from '@/app/lib/types';
 import AngleCrossLinks from './angle-cross-links';
 import ClimbCreativeWorkJsonLd from './climb-creative-work-json-ld';
 import ClimbFacts from './climb-facts';
@@ -26,7 +27,7 @@ import FrontDoorInstall from './front-door-install';
 
 type ClimbFrontDoorProps = {
   climb: Climb;
-  boardDetails: BoardDetails;
+  boardDetails: BoardImageDetails;
   boardSlug?: string;
   angle: number;
   canonicalAngle: number;
@@ -331,7 +332,7 @@ export default async function ClimbFrontDoor({
           boardType={boardDetails.board_name as BoardName}
           boardSlug={boardSlug}
           layoutId={boardDetails.layout_id}
-          viewerBoardDetails={boardDetails}
+          viewerBoardDetails={toBoardImageDetails(boardDetails)}
           climbUuid={climb.uuid}
           angle={angle}
           threshold={0.5}

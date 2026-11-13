@@ -9,7 +9,7 @@
  * dominant axis (a 10x10 owner loses no height on a 7x10 climb, so those rank
  * just below full-width; a 10x12 owner ranks kickboard-using climbs highest).
  */
-import { PRODUCT_SIZES } from './product-sizes';
+import { PRODUCT_SIZES } from './catalog-metadata';
 import type { BoardName, ProductSizeData } from './types';
 
 const sizeHeight = (size: ProductSizeData): number => size.edgeTop - size.edgeBottom;

@@ -1,4 +1,4 @@
-import type { BoardDetails, ParsedBoardRouteParameters } from './types';
+import type { BoardDetails, BoardRouteIdentity, ParsedBoardRouteParameters } from './types';
 import type { SetIdList } from './board-data';
 import { getBoardDetailsForBoard as computeBoardDetailsForBoard } from '@boardsesh/board-render';
 
@@ -13,7 +13,7 @@ import { getBoardDetailsForBoard as computeBoardDetailsForBoard } from '@boardse
  * Generates a user-friendly page title from board details.
  * Example output: "Kilter Original 12x12 | Boardsesh"
  */
-export function generateBoardTitle(boardDetails: BoardDetails): string {
+export function generateBoardTitle(boardDetails: BoardRouteIdentity): string {
   const parts: string[] = [];
 
   // Capitalize board name
