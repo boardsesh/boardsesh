@@ -39,3 +39,18 @@ translation: refresh completion/policy and PairingView/LoadingView consumers.
 Storage/network/UI inputs remain adapters. This source-only replay is not a
 Connect IQ SDK, simulator, watch or FIT run, and makes no sound/hardware claim.
 No production runtime adopts `@boardsesh/auth-protocol/native-v1` in N1.
+
+## Refresh-capacity fixture compatibility
+
+The mounted overload probe presents a missing refresh secret. Its test-only
+adapter selects the missing-secret capacity helper when the runtime has one,
+then falls back to the earlier refresh-only and shared-auth helpers. Each
+checkpoint still has to return the actual HTTP 503 body; the fixture never
+substitutes a response or edits a frozen source recording.
+
+On 2026-11-13, all 445 cases passed against the revised #7447 runtime
+`4d9552e87a`, using only the native-contract test tree, its Vitest configuration,
+the pure `native-v1` test helper and that helper's package export as an overlay.
+Every other runtime file remains the exact target commit. This source-contract
+execution does not close installed-client, original-key Garmin update,
+hardware, full-rehearsal or activation gates in #7430.

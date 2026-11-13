@@ -303,13 +303,16 @@ describe('released clients against mounted native handlers, primary Postgres and
       error: expect.stringMatching(/^Rate limit exceeded\. Try again in /),
     });
     fixture.native.__resetNativeAuthStateForTests();
-    // N2 separates refresh capacity from other auth requests. The recorded
-    // contracts also run on pre-N2 handlers, which expose only the older helper.
+    // N2 separates missing-secret capacity from existing refresh credentials.
+    // Retain older helpers for source checkpoints from before each separation.
     const versionedFixtures = fixture.native as typeof fixture.native & {
       readonly __fillRefreshRateLimitMapForTests?: typeof fixture.native.__fillRateLimitMapForTests;
+      readonly __fillInvalidRefreshRateLimitMapForTests?: typeof fixture.native.__fillRateLimitMapForTests;
     };
     const fillRefreshCapacity =
-      versionedFixtures.__fillRefreshRateLimitMapForTests ?? versionedFixtures.__fillRateLimitMapForTests;
+      versionedFixtures.__fillInvalidRefreshRateLimitMapForTests ??
+      versionedFixtures.__fillRefreshRateLimitMapForTests ??
+      versionedFixtures.__fillRateLimitMapForTests;
     fillRefreshCapacity(50_000);
     const overloaded = await fixture.post('/auth/native/refresh', { refreshToken: 'synthetic-overloaded-refresh' });
     expect(overloaded.status).toBe(503);
