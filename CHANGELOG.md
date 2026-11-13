@@ -4,6 +4,12 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-13
+
+### Improved
+
+- The help pages are easier to read, with big app screenshots beside each step ([#7269](https://github.com/boardsesh/boardsesh/pull/7269))
+
 ## 2026-11-12
 
 ### Improved
