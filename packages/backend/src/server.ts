@@ -3,6 +3,7 @@ import { assertWebSessionWriterActivationConfiguration } from './auth/current-st
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
 import { handleProviderSecurity } from './handlers/provider-security';
+import { handleBrowserDelegation } from './handlers/browser-delegation';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -794,6 +795,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       // Default-off service commands. Browser cookies do not authorize them.
       if (pathname.startsWith('/api/internal/auth/current-store/location-sync/v1/')) {
         await handleCurrentStoreLocationSync(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/browser-delegation/v1/')) {
+        await handleBrowserDelegation(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {

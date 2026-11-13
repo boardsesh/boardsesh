@@ -6,6 +6,7 @@ import { getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './credential-admission.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
+import { browserConsumerFacade } from './browser-consumers.server';
 
 export type PresentedWebCredential = Readonly<{ credential: string; cookieName: string }>;
 
@@ -33,12 +34,21 @@ export async function capturePresentedWebCredential(request: NextRequest): Promi
   }
 }
 
-async function captureServerCredential(): Promise<PresentedWebCredential | null> {
+const serverCookieHeaderForRender = cache(async (): Promise<string> => {
   const cookieStore = await cookies();
-  const cookieHeader = cookieStore
+  return cookieStore
     .getAll()
     .map((cookie) => `${cookie.name}=${encodeURIComponent(cookie.value)}`)
     .join('; ');
+});
+const selectedBrowserForRender = cache(async () => browserConsumerFacade.observe(await serverCookieHeaderForRender()));
+const selectedBackendLeaseForRender = cache(async () => {
+  const observed = await selectedBrowserForRender();
+  return observed.status === 'admitted' ? browserConsumerFacade.lease(observed) : null;
+});
+
+async function captureServerCredential(): Promise<PresentedWebCredential | null> {
+  const cookieHeader = await serverCookieHeaderForRender();
   return capturePresentedWebCredential(
     new NextRequest('http://session-reader.invalid/api/auth/session', { headers: { cookie: cookieHeader } }),
   );
@@ -57,11 +67,29 @@ const admitServerCredentialForRender = cache(async () => {
 });
 
 export async function getAdmittedRawServerToken(): Promise<string | undefined> {
+  const selected = await selectedBrowserForRender();
+  if (selected.status !== 'legacy') {
+    if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
+    if (selected.status !== 'admitted') return undefined;
+    const lease = await selectedBackendLeaseForRender();
+    if (lease?.status === 'unavailable' || lease?.status === 'conflict') throw new CredentialAuthorityUnavailable();
+    return lease?.status === 'admitted' ? lease.token : undefined;
+  }
   return (await admitServerCredentialForRender())?.presented.credential;
 }
 
 /** Never mint a session or silently turn an authority outage into anonymity. */
 export async function getAdmittedServerSession() {
+  const selected = await selectedBrowserForRender();
+  if (selected.status !== 'legacy') {
+    if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
+    if (selected.status !== 'admitted') return null;
+    try {
+      return browserConsumerFacade.session(selected);
+    } catch {
+      throw new CredentialAuthorityUnavailable();
+    }
+  }
   const admitted = await admitServerCredentialForRender();
   if (!admitted) return null;
   const { presented, userId } = admitted;

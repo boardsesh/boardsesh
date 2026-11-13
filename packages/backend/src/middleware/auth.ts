@@ -12,6 +12,10 @@ import {
   readHumanSubjectState,
 } from '../auth/human-admission';
 import { decideCredential, type PresentedCredential } from '../auth/credential-cutoffs';
+import { admitBrowserDelegation, BROWSER_DELEGATION_PREFIX } from '../auth/authority/browser-delegation';
+import { getCredentialDatabase } from '../auth/credential-database';
+import { currentStoreAuthorityConfiguration } from '../auth/current-store/authority-configuration';
+import { runAuthAdmissionRead } from '../auth/admission-read-runner';
 
 export type AuthResult = {
   userId: string;
@@ -213,6 +217,37 @@ export async function validateMobileJwt(token: string, options: ValidateTokenOpt
  * @returns Auth result with userId if valid, null if invalid
  */
 export async function validateToken(token: string, options: ValidateTokenOptions = {}): Promise<AuthResult | null> {
+  if (token.startsWith(BROWSER_DELEGATION_PREFIX)) {
+    let admission: Awaited<ReturnType<typeof admitBrowserDelegation>>;
+    try {
+      const authority = currentStoreAuthorityConfiguration(process.env);
+      admission = await runAuthAdmissionRead(async (markExecuting) => {
+        const database = await getCredentialDatabase('private-browser-v1');
+        markExecuting();
+        return admitBrowserDelegation(database, authority, token);
+      });
+    } catch {
+      throw new AuthAdmissionUnavailableError();
+    }
+    if (admission.status === 'unavailable') throw new AuthAdmissionUnavailableError();
+    if (admission.status !== 'admitted') {
+      // This is an exclusive new bearer family. A bad or expired lease must
+      // never silently downgrade an optional-auth operation to anonymous.
+      throw new AuthCredentialRefusedError();
+    }
+    const { session } = admission;
+    return {
+      userId: session.userId,
+      isAuthenticated: true,
+      credentialExpiresAt: admission.expiresAt.getTime(),
+      credential: {
+        kind: 'web-session',
+        generationClaim: session.generation,
+        sessionKeyClaim: session.authSessionId,
+        authTimeClaim: session.authenticatedAt ? session.authenticatedAt.getTime() / 1000 : null,
+      },
+    };
+  }
   // JWE tokens (NextAuth) have 5 dot-separated segments,
   // JWS tokens (mobile JWT) have 3 segments.
   const segments = token.split('.').length;

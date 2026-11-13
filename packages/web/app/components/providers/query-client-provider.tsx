@@ -1,13 +1,24 @@
 'use client';
 
 import React, { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { QueryClient, type Query, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientProvider as MemoryQueryClientProvider,
+  type Query,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { useSession } from 'next-auth/react';
 import { revokeWebPrivacySnapshots } from '@/app/lib/privacy-client';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
 import { createIdbPersister, PERSIST_MAX_AGE_MS } from '@/app/lib/react-query-idb-persister';
 import { removePreference } from '@/app/lib/user-preferences-db';
+import {
+  readBrowserBackendSessionScope,
+  browserBackendSessionKey,
+} from '@boardsesh/auth-protocol/browser-backend-session';
+import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
+import { publicBrowserConsumersReady } from '@/app/lib/auth/browser-consumer-readiness';
 
 type QueryClientProviderProps = {
   children: ReactNode;
@@ -29,24 +40,37 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   const [persister] = useState(() => createIdbPersister());
   // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
   // See app/layout.tsx for the nesting order.
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const sessionUserId = session?.user?.id ?? null;
+  const browserScope = readBrowserBackendSessionScope(session ?? null);
+  const persistenceScope =
+    browserScope.status === 'selected'
+      ? browserBackendSessionKey(browserScope.owner)
+      : browserBackendClient.isSelected()
+        ? 'selected-anonymous'
+        : '';
 
-  // No `buster` here: useSession() returns null on the first render of every
-  // page load (status: loading), so any session-derived buster would discard
-  // the persisted cache before the session resolves. Per-user isolation comes
-  // from the query keys themselves (['profile', userId], etc.) — a different
-  // user simply misses the cache because their keys don't exist in it.
+  // Legacy loading retains its empty buster. Selected sessions remount this
+  // tree only after their exact central owner is confirmed, so the matching
+  // buster is installed before persisted queries can hydrate the new cache.
   const persistOptions = useMemo(
     () => ({
       persister,
       maxAge: PERSIST_MAX_AGE_MS,
+      // SessionProvider remounts this private client tree on every selected
+      // owner/cursor change. An older persisted blob cannot hydrate its cache.
+      buster: persistenceScope,
       dehydrateOptions: {
         shouldDehydrateQuery: (query: Query) => query.meta?.persist === true && query.state.status === 'success',
       },
     }),
-    [persister],
+    [persister, persistenceScope],
   );
+
+  // Once selected consumers are qualified, an unconfirmed initial owner cannot
+  // restore or erase another scope's persisted cache during its session read.
+  if (publicBrowserConsumersReady() && sessionStatus === 'loading')
+    return <MemoryQueryClientProvider client={queryClient}>{children}</MemoryQueryClientProvider>;
 
   return (
     <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>

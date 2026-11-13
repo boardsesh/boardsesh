@@ -6,6 +6,9 @@ import { capturePresentedWebCredential } from './admitted-session.server';
 import { CREDENTIAL_AUTHORITY_HEADER, unavailableCredentialResponse } from './credential-admission-response.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
 import { responseClearsNextAuthSession } from './web-signout-command.server';
+import { browserConsumerFacade, publicBrowserLeaseOwner } from './browser-consumers.server';
+import { BROWSER_CORRELATION_COOKIE, BROWSER_PROOF_COOKIE_PREFIX } from './browser-proof-cookies.server';
+import { sameBrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 
 type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
 
@@ -19,6 +22,84 @@ function deniedAuthResponse(action: string): Response {
     status: action === 'session' ? 200 : 401,
     headers: { 'Cache-Control': 'private, no-store', [CREDENTIAL_AUTHORITY_HEADER]: 'denied' },
   });
+}
+
+function selectedRefusal(status: string): Response {
+  const code = status === 'unavailable' ? 503 : status === 'conflict' ? 409 : 401;
+  return NextResponse.json(
+    { error: status },
+    {
+      status: code,
+      headers: {
+        'Cache-Control': 'private, no-store',
+        [CREDENTIAL_AUTHORITY_HEADER]: status === 'unavailable' ? 'unavailable' : 'denied',
+      },
+    },
+  );
+}
+function containsAuthCookieWrite(response: Response): boolean {
+  return response.headers.getSetCookie().some((header) => {
+    const name = header.split(';', 1)[0].split('=', 1)[0].trim();
+    return (
+      name.startsWith(BROWSER_CORRELATION_COOKIE) ||
+      name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) ||
+      sessionCookieNameCandidates().some((base) => name.startsWith(base))
+    );
+  });
+}
+
+/** Public selected readers stay gated. No old cookie, claimed response identity
+ * or skipped legacy read substitutes for actual current central possession. */
+async function selectedResponseAdmission(
+  request: NextRequest,
+  action: string,
+  invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
+  completeAdmission?: AuthResponseAdmissionCompletion,
+): Promise<Response | null> {
+  try {
+    const cookieHeader = request.headers.get('cookie');
+    const before = await browserConsumerFacade.observe(cookieHeader);
+    if (before.status === 'legacy') return null;
+    if (before.status !== 'admitted' && before.status !== 'anonymous') return selectedRefusal(before.status);
+    // A durable selected logout needs its separately qualified exact-response
+    // backend ACK. The legacy sign-out acknowledgment cannot stand in for it.
+    if (action === 'signout' || (before.status === 'anonymous' && !['session', 'csrf', 'providers'].includes(action)))
+      return selectedRefusal('unavailable');
+    const response =
+      action === 'session'
+        ? Response.json(before.status === 'admitted' ? browserConsumerFacade.session(before) : {}, {
+            headers: { 'Cache-Control': 'private, no-store' },
+          })
+        : await invoke(() => {
+            throw new CredentialAuthorityUnavailable();
+          });
+    // Only the outer, prebuilt and ACK-bound publisher may install auth proof.
+    if (containsAuthCookieWrite(response)) return selectedRefusal('unavailable');
+    const after = await browserConsumerFacade.observe(cookieHeader);
+    if (after.status === 'unavailable') return selectedRefusal('unavailable');
+    if (before.status === 'admitted') {
+      if (after.status !== 'admitted') return selectedRefusal(after.status === 'conflict' ? 'conflict' : 'denied');
+      if (
+        !sameBrowserBackendLeaseOwner(publicBrowserLeaseOwner(before), publicBrowserLeaseOwner(after)) ||
+        before.actor.credential.kind !== after.actor.credential.kind
+      )
+        return selectedRefusal('conflict');
+      response.headers.set('Cache-Control', 'private, no-store');
+      completeAdmission?.(response);
+    } else {
+      if (
+        after.status !== 'anonymous' ||
+        before.cursor.bindingId !== after.cursor.bindingId ||
+        before.cursor.version !== after.cursor.version
+      )
+        return selectedRefusal('conflict');
+      response.headers.set('Cache-Control', 'private, no-store');
+      // Anonymous observation is never an authenticated provider actor ACK.
+    }
+    return response;
+  } catch {
+    return selectedRefusal('unavailable');
+  }
 }
 
 /** Reconstruct the handler's fresh cookies with the public NextAuth codec. */
@@ -68,6 +149,8 @@ export async function withAuthResponseAdmission(
   completeAdmission?: AuthResponseAdmissionCompletion,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
+  const selected = await selectedResponseAdmission(request, action, invoke, completeAdmission);
+  if (selected) return selected;
   // Clearing a cookie needs no proof the account still exists, so an outage must
   // not stop a climber signing out. A known denial still answers as before.
   const isDenied = async (credential: string): Promise<boolean> => {

@@ -11,6 +11,7 @@ import { roomManager } from '../services/room-manager';
 import { kilterLiveSync } from '../services/kilter-live-sync';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
+import { BROWSER_DELEGATION_PREFIX } from '../auth/authority/browser-delegation';
 import {
   admitsCredential,
   AUTH_ADMISSION_BATCH_SIZE,
@@ -189,10 +190,8 @@ export function setupWebSocketServer(httpServer: HttpServer): {
       );
     }
   };
-  const checkHumanConnection = async (ctx: ServerContext): Promise<'admitted' | 'denied' | 'unavailable'> => {
-    if (!ctx.extra.context?.isAuthenticated) return 'admitted';
-    const socket = ctx.extra.socket,
-      binding = humanBindings.get(socket);
+  const checkHumanSocket = async (socket: WebSocket): Promise<'admitted' | 'denied' | 'unavailable'> => {
+    const binding = humanBindings.get(socket);
     if (!binding) {
       closeAdmission(socket, true);
       return 'unavailable';
@@ -211,21 +210,46 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         return 'denied';
       }
       return 'admitted';
-    } catch {
+    } catch (error) {
       // graphql-ws treats an operation error as final, so a refused subscription
       // would never come back. Closing lets the client reconnect and resubscribe.
-      if (humanBindings.get(socket) === binding) closeAdmission(socket, true);
-      return 'unavailable';
+      const refused = error instanceof AuthCredentialRefusedError;
+      if (humanBindings.get(socket) === binding) closeAdmission(socket, !refused);
+      return refused ? 'denied' : 'unavailable';
     }
   };
+  const checkHumanConnection = (ctx: ServerContext): Promise<'admitted' | 'denied' | 'unavailable'> =>
+    ctx.extra.context?.isAuthenticated ? checkHumanSocket(ctx.extra.socket) : Promise.resolve('admitted');
   let sweeping = false;
   let sweepOutageLogged = false;
   let sweepBatchOffset = 0;
+  let delegationSweepOffset = 0;
   const admissionSweep = setInterval(() => {
     if (sweeping) return;
     sweeping = true;
     const captured = [...humanBindings.entries()];
-    const userIds = [...new Set(captured.map(([, binding]) => binding.userId))];
+    const delegated = captured.filter(([, binding]) => binding.token.startsWith(BROWSER_DELEGATION_PREFIX));
+    // Lease expiry needs no primary observation. Selection checks rotate over
+    // at most eight idle sockets per round, serially using one writer slot.
+    for (const [socket, binding] of delegated) {
+      if ((binding.context.credentialExpiresAt ?? 0) <= Date.now()) closeAdmission(socket, false);
+    }
+    const delegationRound =
+      delegated.length === 0
+        ? []
+        : Array.from(
+            { length: Math.min(8, delegated.length) },
+            (_, index) => delegated[(delegationSweepOffset + index) % delegated.length],
+          );
+    delegationSweepOffset =
+      delegated.length === 0 ? 0 : (delegationSweepOffset + delegationRound.length) % delegated.length;
+    const userIds = [
+      ...new Set(
+        captured
+          .filter(([, binding]) => !binding.token.startsWith(BROWSER_DELEGATION_PREFIX))
+          .map(([, binding]) => binding.userId),
+      ),
+    ];
     const batches: string[][] = [];
     for (let offset = 0; offset < userIds.length; offset += AUTH_ADMISSION_BATCH_SIZE)
       batches.push(userIds.slice(offset, offset + AUTH_ADMISSION_BATCH_SIZE));
@@ -234,8 +258,18 @@ export function setupWebSocketServer(httpServer: HttpServer): {
     let roundFailed = false;
     // Start batches together: capacity pressure fails unavailable immediately,
     // rather than accumulating one read deadline per sequential batch.
-    void Promise.all(
-      roundBatches.map(async (requestedIds) => {
+    void Promise.all([
+      (async () => {
+        for (const [socket, binding] of delegationRound) {
+          if (humanBindings.get(socket) !== binding || getContext(binding.context.connectionId) !== binding.context)
+            continue;
+          // checkHumanConnection uses the exact original bearer, including
+          // primary binding/version/source/authority, rather than stamp-only admission.
+          const admission = await checkHumanSocket(socket);
+          if (admission === 'unavailable') roundFailed = true;
+        }
+      })(),
+      ...roundBatches.map(async (requestedIds) => {
         const requested = new Set(requestedIds);
         let subjects: ReadonlyMap<string, SubjectCutoffState>;
         try {
@@ -260,7 +294,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           if (!admitsCredential(decision, 'socket-sweep')) closeAdmission(socket, false);
         }
       }),
-    ).finally(() => {
+    ]).finally(() => {
       sweeping = false;
       if (roundFailed && !sweepOutageLogged) {
         logger.warn('[ws] admission sweep could not read the primary; keeping connections open');
@@ -628,11 +662,18 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           }
         }
       },
-      // No admission read per delivery: the sweep closes a deleted account's socket
-      // within a second, and a read here would make every live update wait on the
-      // primary.
-      onNext: (_ctx: ServerContext, _id: string, payload, _executionArgs, result) =>
-        sanitizeBoardShareResult(result, payload.query),
+      onNext: async (ctx: ServerContext, _id: string, payload, _executionArgs, result) => {
+        const binding = humanBindings.get(ctx.extra.socket);
+        if (binding?.token.startsWith(BROWSER_DELEGATION_PREFIX)) {
+          const admission = await checkHumanConnection(ctx);
+          if (admission !== 'admitted')
+            throw new GraphQLError(
+              admission === 'unavailable' ? 'Authentication is temporarily unavailable' : 'Authentication is required',
+              { extensions: { code: admission === 'unavailable' ? 'SERVICE_UNAVAILABLE' : 'UNAUTHENTICATED' } },
+            );
+        }
+        return sanitizeBoardShareResult(result, payload.query);
+      },
       onError: (_ctx: ServerContext, _id: string, payload, errors) => {
         const safeErrors = errors.map((error) =>
           sanitizeBoardShareGraphqlError(sanitizeAppleAdsGraphqlError(error), payload.query),

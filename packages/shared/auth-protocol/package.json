@@ -7,6 +7,36 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./browser-backend-client": {
+      "types": "./src/browser-backend-client.ts",
+      "import": "./src/browser-backend-client.ts",
+      "default": "./src/browser-backend-client.ts"
+    },
+    "./browser-backend-socket": {
+      "types": "./src/browser-backend-socket.ts",
+      "import": "./src/browser-backend-socket.ts",
+      "default": "./src/browser-backend-socket.ts"
+    },
+    "./browser-backend-session": {
+      "types": "./src/browser-backend-session.ts",
+      "import": "./src/browser-backend-session.ts",
+      "default": "./src/browser-backend-session.ts"
+    },
+    "./browser-backend-consumer": {
+      "types": "./src/browser-backend-consumer.ts",
+      "import": "./src/browser-backend-consumer.ts",
+      "default": "./src/browser-backend-consumer.ts"
+    },
+    "./browser-delegation-v1": {
+      "types": "./src/browser-delegation-v1.ts",
+      "import": "./src/browser-delegation-v1.ts",
+      "default": "./src/browser-delegation-v1.ts"
+    },
+    "./browser-backend-lease": {
+      "types": "./src/browser-backend-lease.ts",
+      "import": "./src/browser-backend-lease.ts",
+      "default": "./src/browser-backend-lease.ts"
+    },
     "./browser-binding-v1": {
       "types": "./src/browser-binding-v1.ts",
       "import": "./src/browser-binding-v1.ts",
