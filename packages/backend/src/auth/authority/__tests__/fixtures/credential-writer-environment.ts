@@ -5,7 +5,9 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@boardsesh/db/schema';
 import {
   PRIVATE_WEB_CREDENTIAL_CAPABILITIES,
+  PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES,
   PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES,
+  type CredentialWriterContract,
 } from '@boardsesh/db/credential-writer-acl';
 
 const writerPassword = 'epic6975-owned-credential-writer-only';
@@ -37,7 +39,14 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
 }
 
 /** Test-only grants. Never called by production startup or migration reconciliation. */
-export async function grantOwnedCredentialWriterCapabilities(owner: postgres.Sql) {
+export async function grantOwnedCredentialWriterCapabilities(
+  owner: postgres.Sql,
+  contract: CredentialWriterContract = 'private-web-v1',
+) {
+  if (!['private-web-v1', 'private-browser-v1'].includes(contract))
+    throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
+  const capabilities =
+    contract === 'private-browser-v1' ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
   const relations = await owner<{ schema: string; name: string; kind: string; columns: string[] }[]>`
     SELECT namespace.nspname AS schema, relation.relname AS name, relation.relkind AS kind,
       ARRAY(SELECT attname FROM pg_attribute WHERE attrelid=relation.oid AND attnum>0 AND NOT attisdropped ORDER BY attnum) AS columns
@@ -62,7 +71,7 @@ export async function grantOwnedCredentialWriterCapabilities(owner: postgres.Sql
     for (const column of relation.columns)
       await owner.unsafe(`REVOKE ALL (${identifier(column)}) ON TABLE ${target} FROM PUBLIC,boardsesh_identity_writer`);
   }
-  for (const [table, privileges] of Object.entries(PRIVATE_WEB_CREDENTIAL_CAPABILITIES))
+  for (const [table, privileges] of Object.entries(capabilities))
     await owner.unsafe(
       `GRANT ${privileges.join(',')} ON TABLE public.${identifier(table)} TO boardsesh_identity_writer`,
     );
@@ -89,7 +98,9 @@ export async function grantOwnedCredentialWriterCapabilities(owner: postgres.Sql
         );
 }
 
-export async function createCredentialWriterEnvironment() {
+export async function createCredentialWriterEnvironment(contract: CredentialWriterContract = 'private-web-v1') {
+  if (!['private-web-v1', 'private-browser-v1'].includes(contract))
+    throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const target = ownedCredentialProofUrl();
   const databaseName = target.pathname.slice(1);
   const owner = postgres(target.toString(), { max: 2, onnotice: () => undefined });
@@ -130,7 +141,7 @@ export async function createCredentialWriterEnvironment() {
         );
       await owner.unsafe(`ALTER ROLE ${identifier(role)} SET search_path=pg_catalog,public`);
     }
-    await grantOwnedCredentialWriterCapabilities(owner);
+    await grantOwnedCredentialWriterCapabilities(owner, contract);
     const writerTarget = new URL(target);
     writerTarget.username = 'boardsesh_identity_writer';
     writerTarget.password = writerPassword;
@@ -148,7 +159,7 @@ export async function createCredentialWriterEnvironment() {
       databaseName,
       database: drizzle(writer, { schema, logger: false }),
       ownerDatabase: drizzle(owner, { schema, logger: false }),
-      resetGrants: () => grantOwnedCredentialWriterCapabilities(owner),
+      resetGrants: () => grantOwnedCredentialWriterCapabilities(owner, contract),
       close: async () => {
         await Promise.all([writer.end(), legacy.end()]);
         await owner.end();
