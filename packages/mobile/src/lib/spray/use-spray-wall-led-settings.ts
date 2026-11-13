@@ -42,7 +42,7 @@ function initialState(wallUuid: string): SettingsState {
 
 /** A value that fails the local rule is no address at all, so nothing ever contacts it. */
 function withLocalAddress(settings: SprayWallLedSettings): SprayWallLedSettings {
-  if (!settings.controller.url) return settings;
+  if (settings.controller.type === 'wled-ble' || !settings.controller.url) return settings;
   try {
     normalizeLocalControllerUrl(settings.controller.url);
     return settings;
@@ -146,7 +146,8 @@ export function useSprayWallLedSettings(wallUuid: string) {
       setState((previous) => ({ ...previous, saving: true, error: null }));
       try {
         const settings = readSprayWallLedSettings(next);
-        if (settings.controller.url) normalizeLocalControllerUrl(settings.controller.url);
+        if (settings.controller.type === 'wled' && settings.controller.url)
+          normalizeLocalControllerUrl(settings.controller.url);
         const write = markSprayWallLedSaveStarted(wallUuid, 'settings', () =>
           setPreference(sprayWallLedSettingsKey(wallUuid), settings),
         );

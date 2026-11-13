@@ -3,14 +3,22 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  settings: { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } },
+  settings: { enabled: true, controller: { type: 'wled' as 'wled' | 'wled-ble', url: 'http://wall.local' } },
   show: vi.fn(),
   lightAll: vi.fn(),
   stop: vi.fn(),
   close: vi.fn(),
   isOwner: vi.fn(),
   create: vi.fn(),
+  loadDriver: vi.fn(),
+  detach: vi.fn(),
+  credential: 0,
   background: null as ((next: string) => void) | null,
+}));
+vi.mock('../spray-led-driver', () => ({ loadSprayLedDriver: mocks.loadDriver }));
+vi.mock('../../privacy/privacy-cache', () => ({
+  getCredentialGeneration: () => mocks.credential,
+  subscribeToCredentialChanges: () => () => undefined,
 }));
 vi.mock('react-native', () => ({
   AppState: {
@@ -33,11 +41,15 @@ import { useSprayLedPreview } from '../use-spray-led-preview';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.credential = 0;
+  mocks.detach.mockResolvedValue(undefined);
+  mocks.loadDriver.mockResolvedValue({});
   mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://wall.local' } };
   for (const mock of [mocks.show, mocks.lightAll, mocks.stop, mocks.close]) mock.mockResolvedValue(true);
   mocks.isOwner.mockReturnValue(true);
   mocks.create.mockReturnValue({
     show: mocks.show,
+    detach: mocks.detach,
     lightAll: mocks.lightAll,
     stop: mocks.stop,
     close: mocks.close,
@@ -50,6 +62,24 @@ afterEach(() => {
 });
 
 describe('spray LED preview lifecycle', () => {
+  it('never attaches old settings when credentials change during driver loading', async () => {
+    let finishLoading!: (driver: object) => void;
+    mocks.loadDriver.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      }),
+    );
+    mocks.settings = { enabled: true, controller: { type: 'wled-ble', url: 'wled-ble:wled-aabbccddeeff' } };
+    const { result } = renderHook(() => useSprayLedPreview('wall'));
+    expect(mocks.loadDriver).toHaveBeenCalled();
+    mocks.credential++;
+    await act(async () => {
+      finishLoading({});
+    });
+    expect(result.current.available).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
     const { result, rerender, unmount } = renderHook(() => useSprayLedPreview('wall'));
     expect(result.current.available).toBe(true);

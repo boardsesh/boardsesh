@@ -1,5 +1,5 @@
 import { type LedControllerDriver, type LedControllerPreviewTransport, type LedPixel } from './types';
-import { normalizeLocalControllerUrl } from './url';
+import { normalizeLedControllerTarget } from './url';
 import { snapshotLedPixels } from './led-pixels';
 
 type Lane = {
@@ -12,7 +12,7 @@ const lanes = new Map<string, Lane>();
 
 /** Latest selection wins; HTTP writes never overlap, including across screens. */
 export function createLedPreviewSession(driver: LedControllerDriver, controllerUrl: string) {
-  const url = normalizeLocalControllerUrl(controllerUrl);
+  const url = normalizeLedControllerTarget(controllerUrl);
   const lane = lanes.get(url) ?? { tail: Promise.resolve(), owner: null, users: 0, transport: null };
   lanes.set(url, lane);
   lane.users++;

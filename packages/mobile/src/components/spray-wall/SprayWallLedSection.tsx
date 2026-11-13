@@ -13,6 +13,8 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
+import { WledBluetoothController } from './WledBluetoothController';
+import { WledBluetoothInstaller } from './WledBluetoothInstaller';
 
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
@@ -20,11 +22,27 @@ type ProbeResult =
   | { kind: 'invalidUrl' | 'notLocal'; url: null };
 
 /** One surface and one controller, shared with setup and route lighting. */
-export function SprayWallLedSection({ wallUuid, disabled = false }: { wallUuid: string; disabled?: boolean }) {
-  return <SprayWallLedEditor key={wallUuid} wallUuid={wallUuid} disabled={disabled} />;
+export function SprayWallLedSection({
+  wallUuid,
+  disabled = false,
+  canInstall = false,
+}: {
+  wallUuid: string;
+  disabled?: boolean;
+  canInstall?: boolean;
+}) {
+  return <SprayWallLedEditor key={wallUuid} wallUuid={wallUuid} disabled={disabled} canInstall={canInstall} />;
 }
 
-function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled: boolean }) {
+function SprayWallLedEditor({
+  wallUuid,
+  disabled,
+  canInstall,
+}: {
+  wallUuid: string;
+  disabled: boolean;
+  canInstall: boolean;
+}) {
   const router = useRouter();
   const { t } = useTranslation('boards');
   const { systemColors, brandColors, spacing } = useTheme();
@@ -76,7 +94,7 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
   }
 
   async function confirmUrl() {
-    if (locked || !settings?.enabled || request.current) return;
+    if (locked || !settings?.enabled || request.current || settings.controller.type !== 'wled') return;
     let normalized: string;
     try {
       normalized = normalizeLocalControllerUrl(url);
@@ -188,88 +206,131 @@ function SprayWallLedEditor({ wallUuid, disabled }: { wallUuid: string; disabled
           ) : null}
           {settings?.enabled ? (
             <>
-              <Text variant="footnote" color={systemColors.secondaryLabel}>
-                {t('sprayLed.localHint')}
-              </Text>
-              <SectionLabel>{t('sprayLed.url')}</SectionLabel>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <BuilderTextInput
-                    value={url}
-                    onChangeText={(next) => {
-                      cancelRequest();
-                      setDraftUrl(next);
-                      setResult(null);
-                      setLighting(null);
-                    }}
-                    accessibilityLabel={t('sprayLed.url')}
-                    placeholder={t('sprayLed.urlPlaceholder')}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    maxLength={2048}
-                    editable={!locked && pending !== 'lights'}
-                    onSubmitEditing={() => void confirmUrl()}
-                    returnKeyType="done"
-                  />
-                </View>
+              <View style={{ flexDirection: 'row', gap: spacing[2] }}>
                 <Button
-                  title={t('sprayLed.confirm')}
+                  title={t('sprayLed.bluetooth.wifi')}
                   variant="outlined"
-                  disabled={locked || pending !== null || !url.trim()}
-                  onPress={() => void confirmUrl()}
-                />
-              </View>
-              {message ? (
-                <Text variant="footnote" accessibilityLiveRegion="polite">
-                  {message}
-                </Text>
-              ) : null}
-              {canKeep ? (
-                <Button
-                  title={t('sprayLed.keepUrl')}
-                  variant="text"
-                  disabled={locked || pending !== null}
+                  disabled={locked || pending !== null || settings.controller.type === 'wled'}
                   onPress={() => {
-                    if (result?.url) void persistUrl(result.url);
+                    cancelRequest();
+                    setResult(null);
+                    setDraftUrl(null);
+                    void save({ ...settings, controller: { type: 'wled', url: settings.wifiUrl ?? '' } });
                   }}
                 />
-              ) : null}
-              {settings.controller.url && settings.controller.url === url ? (
-                <Text variant="caption1" color={systemColors.secondaryLabel}>
-                  {t('sprayLed.saved')}
-                </Text>
-              ) : null}
-              {canLight ? (
+                <Button
+                  title={t('sprayLed.bluetooth.title')}
+                  variant="outlined"
+                  disabled={locked || pending !== null || settings.controller.type === 'wled-ble'}
+                  onPress={() => {
+                    cancelRequest();
+                    setResult(null);
+                    setDraftUrl(null);
+                    void save({
+                      ...settings,
+                      wifiUrl: settings.controller.url,
+                      controller: { type: 'wled-ble', url: '' },
+                    });
+                  }}
+                />
+              </View>
+              {settings.controller.type === 'wled-ble' ? (
+                <WledBluetoothController
+                  settings={settings}
+                  disabled={locked}
+                  save={save}
+                  lightAll={lightAll}
+                  clear={clear}
+                />
+              ) : (
                 <>
-                  <Button
-                    title={t('sprayLed.lightAll')}
-                    variant="outlined"
-                    disabled={locked || pending !== null}
-                    onPress={() => void sendLights(true)}
-                  />
-                  <Button
-                    title={t('sprayLed.turnOff')}
-                    variant="text"
-                    disabled={locked || pending !== null}
-                    onPress={() => void sendLights(false)}
-                  />
-                  <Text variant="caption1" color={systemColors.secondaryLabel}>
-                    {t('sprayLed.lightHint')}
+                  <Text variant="footnote" color={systemColors.secondaryLabel}>
+                    {t('sprayLed.localHint')}
                   </Text>
+                  <SectionLabel>{t('sprayLed.url')}</SectionLabel>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <BuilderTextInput
+                        value={url}
+                        onChangeText={(next) => {
+                          cancelRequest();
+                          setDraftUrl(next);
+                          setResult(null);
+                          setLighting(null);
+                        }}
+                        accessibilityLabel={t('sprayLed.url')}
+                        placeholder={t('sprayLed.urlPlaceholder')}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        maxLength={2048}
+                        editable={!locked && pending !== 'lights'}
+                        onSubmitEditing={() => void confirmUrl()}
+                        returnKeyType="done"
+                      />
+                    </View>
+                    <Button
+                      title={t('sprayLed.confirm')}
+                      variant="outlined"
+                      disabled={locked || pending !== null || !url.trim()}
+                      onPress={() => void confirmUrl()}
+                    />
+                  </View>
+                  {message ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {message}
+                    </Text>
+                  ) : null}
+                  {canKeep ? (
+                    <Button
+                      title={t('sprayLed.keepUrl')}
+                      variant="text"
+                      disabled={locked || pending !== null}
+                      onPress={() => {
+                        if (result?.url) void persistUrl(result.url);
+                      }}
+                    />
+                  ) : null}
+                  {settings.controller.url && settings.controller.url === url ? (
+                    <Text variant="caption1" color={systemColors.secondaryLabel}>
+                      {t('sprayLed.saved')}
+                    </Text>
+                  ) : null}
+                  {canLight ? (
+                    <>
+                      <Button
+                        title={t('sprayLed.lightAll')}
+                        variant="outlined"
+                        disabled={locked || pending !== null}
+                        onPress={() => void sendLights(true)}
+                      />
+                      <Button
+                        title={t('sprayLed.turnOff')}
+                        variant="text"
+                        disabled={locked || pending !== null}
+                        onPress={() => void sendLights(false)}
+                      />
+                      <Text variant="caption1" color={systemColors.secondaryLabel}>
+                        {t('sprayLed.lightHint')}
+                      </Text>
+                    </>
+                  ) : null}
+                  {pending === 'lights' || lighting ? (
+                    <Text variant="footnote" accessibilityLiveRegion="polite">
+                      {pending === 'lights'
+                        ? t('sprayLed.sending')
+                        : lighting === 'lit'
+                          ? t('sprayLed.lit')
+                          : lighting === 'off'
+                            ? t('sprayLed.off')
+                            : t('sprayLed.lightFailed')}
+                    </Text>
+                  ) : null}
+                  {canInstall && !disabled && settings.controller.url ? (
+                    <WledBluetoothInstaller url={settings.controller.url} disabled={locked || pending !== null} />
+                  ) : null}
                 </>
-              ) : null}
-              {pending === 'lights' || lighting ? (
-                <Text variant="footnote" accessibilityLiveRegion="polite">
-                  {pending === 'lights'
-                    ? t('sprayLed.sending')
-                    : lighting === 'lit'
-                      ? t('sprayLed.lit')
-                      : lighting === 'off'
-                        ? t('sprayLed.off')
-                        : t('sprayLed.lightFailed')}
-                </Text>
-              ) : null}
+              )}
               <Button
                 title={t('sprayLed.setup')}
                 variant="outlined"

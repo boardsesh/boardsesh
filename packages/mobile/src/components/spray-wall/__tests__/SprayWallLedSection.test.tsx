@@ -14,6 +14,11 @@ const controller = vi.hoisted(() => ({ probe: vi.fn(), lightAll: vi.fn(), turnOf
 const storage = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), records: new Map<string, unknown>() }));
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 
+vi.mock('../WledBluetoothInstaller', () => ({
+  WledBluetoothInstaller: () => createElement('span', null, 'owner-installer'),
+}));
+vi.mock('@shopify/flash-list', () => ({ FlashList: () => null }));
+
 vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
 vi.mock('@boardsesh/led-controller', async (importOriginal) => ({
@@ -165,6 +170,39 @@ afterEach(async () => {
 });
 
 describe('SprayWallLedSection', () => {
+  it('offers firmware installation only to an explicitly identified owner', async () => {
+    storage.records.set('sprayWallLedSettings:wall-1', {
+      version: 1,
+      enabled: true,
+      controller: { type: 'wled', url: 'http://wled.local' },
+    });
+    const { rerender } = render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    expect(screen.queryByText('owner-installer')).toBeNull();
+    rerender(createElement(SprayWallLedSection, { wallUuid: 'wall-1', canInstall: true }));
+    expect(screen.queryByText('owner-installer')).not.toBeNull();
+  });
+
+  it('restores this phone’s Wi-Fi address after selecting Bluetooth', async () => {
+    storage.records.set('sprayWallLedSettings:wall-1', {
+      version: 1,
+      enabled: true,
+      controller: { type: 'wled', url: 'http://wled.local' },
+    });
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('bluetooth.title'));
+    await waitFor(() =>
+      expect(storage.records.get('sprayWallLedSettings:wall-1')).toMatchObject({
+        controller: { type: 'wled-ble', url: '' },
+        wifiUrl: 'http://wled.local',
+      }),
+    );
+    fireEvent.click(button('bluetooth.wifi'));
+    await waitFor(() => expect(urlInput().value).toBe('http://wled.local'));
+    expect(controller.probe).not.toHaveBeenCalled();
+  });
+
   it('starts collapsed and disabled, without contacting or lighting a controller', async () => {
     render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
     expect(button('title').getAttribute('aria-expanded')).toBe('false');

@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { accumulateFramesToMaps, toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { buildSprayLedMapping } from '@boardsesh/spray-wall-geometry';
-import {
-  createLedPreviewSession,
-  getLedControllerDriver,
-  type LedPixel,
-  type LedPreviewSession,
-} from '@boardsesh/led-controller';
+import { createLedPreviewSession, type LedPixel, type LedPreviewSession } from '@boardsesh/led-controller';
+import { loadSprayLedDriver } from './spray-led-driver';
 import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
 import { hexToRgb, type HoldColorOverrides } from '../hold-color-overrides';
 import { subscribeSprayLedConfiguration } from './spray-led-config-events';
@@ -38,6 +35,9 @@ export function useSprayLedRouteSender({
   onFailure?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { t } = useTranslation('boards');
+  const translation = useRef(t);
+  translation.current = t;
   const runtime = useRef<RouteRuntime | null>(null);
   const requestGeneration = useRef(0);
   // `inactive` (Control Center, a call overlay) still has the climber looking at
@@ -85,7 +85,7 @@ export function useSprayLedRouteSender({
       stop();
       invalidate.current(true);
     });
-    const credentials = subscribeToCredentialChanges(stop);
+    const credentials = subscribeToCredentialChanges(() => stop('leave'));
     const withdrawals = subscribeToSprayWallWithdrawals((withdrawnLayout) => {
       if (withdrawnLayout == null || withdrawnLayout === layoutId) stop();
     });
@@ -164,17 +164,35 @@ export function useSprayLedRouteSender({
           return null;
         }
         enabled = true;
+        if (settings.controller.type === 'wled-ble') {
+          const { explainSprayBluetooth } = await import('./spray-led-ble-primer');
+          const accepted = await explainSprayBluetooth(
+            {
+              title: translation.current('sprayLed.bluetooth.title'),
+              body: translation.current('sprayLed.bluetooth.hint'),
+              // i18n-keep boards:sprayLed.bluetooth.allow
+              allow: translation.current('sprayLed.bluetooth.allow'),
+              // i18n-keep boards:sprayLed.bluetooth.notNow
+              notNow: translation.current('sprayLed.bluetooth.notNow'),
+            },
+            signal,
+          );
+          if (!accepted || !isCurrent()) return false;
+        }
         if (!settings.controller.url || mirrored) return fail();
         let current = runtime.current;
         if (!current || current.url !== settings.controller.url || current.wallUuid !== wallUuid) {
+          const driver = await loadSprayLedDriver(settings.controller.type);
+          if (!isCurrent()) return false;
           if (current) void current.session.close().catch(() => undefined);
           current = {
             wallUuid,
             url: settings.controller.url,
-            session: createLedPreviewSession(getLedControllerDriver(settings.controller.type), settings.controller.url),
+            session: createLedPreviewSession(driver, settings.controller.url),
           };
           runtime.current = current;
         }
+        if (!isCurrent()) return false;
         if (!frames) return settled(await current.session.clear());
         const [payload, layout] = await Promise.all([
           fetchSprayWallRenderData(queryClient, wallUuid),

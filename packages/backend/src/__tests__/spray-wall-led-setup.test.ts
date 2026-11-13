@@ -238,6 +238,34 @@ describe('saving a wall’s LED setup', () => {
     await expect(read(uuid, OWNER)).resolves.toEqual({ viewerCanEdit: true, setup: null });
   });
 
+  it('stores a Bluetooth controller by stable identity and preserves it on layout-only saves', async () => {
+    const uuid = await createWall();
+    await save(uuid, OWNER, { controllerType: 'wled-ble', controllerUrl: 'wled-ble:wled-aabbccddeeff', enabled: true });
+    await save(uuid, OWNER, { enabled: false });
+    expect((await read(uuid, OWNER))?.setup).toMatchObject({
+      controllerType: 'wled-ble',
+      controllerUrl: 'wled-ble:wled-aabbccddeeff',
+      enabled: false,
+    });
+    await save(uuid, OWNER, { controllerUrl: 'http://wled.local' });
+    expect((await read(uuid, OWNER))?.setup).toMatchObject({
+      controllerType: 'wled',
+      controllerUrl: 'http://wled.local',
+    });
+  });
+
+  it.each([
+    { controllerType: 'wled-ble', controllerUrl: 'http://wled.local' },
+    { controllerType: 'wled', controllerUrl: 'wled-ble:wled-aabbccddeeff' },
+    { controllerType: 'wled-ble', controllerUrl: 'wled-ble:phone-device-id' },
+    { controllerType: 'wled-ble' },
+    { controllerUrl: 'wled-ble:wled-aabbccddeeff' },
+  ])('rejects incompatible controller type/address pairs: %j', async (input) => {
+    const uuid = await createWall();
+    await expect(save(uuid, OWNER, input)).rejects.toThrow();
+    expect((await read(uuid, OWNER))?.setup).toBeNull();
+  });
+
   it('accepts clearing the address', async () => {
     const uuid = await createWall();
     await save(uuid, OWNER, { controllerUrl: 'http://wled.local' });

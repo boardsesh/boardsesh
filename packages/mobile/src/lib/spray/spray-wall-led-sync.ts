@@ -116,8 +116,12 @@ function localAddressOrEmpty(url: string): string {
 function settingsFromServer(setup: SprayWallLedSetupData): SprayWallLedSettings {
   return {
     version: 1,
-    enabled: setup.controllerType === 'wled' && setup.enabled,
-    controller: { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
+    enabled: (setup.controllerType === 'wled' || setup.controllerType === 'wled-ble') && setup.enabled,
+    controller:
+      setup.controllerType === 'wled-ble' &&
+      (setup.controllerUrl === '' || /^wled-ble:wled-[a-f0-9]{12}$/i.test(setup.controllerUrl))
+        ? { type: 'wled-ble', url: setup.controllerUrl.toLowerCase() }
+        : { type: 'wled', url: setup.controllerType === 'wled' ? localAddressOrEmpty(setup.controllerUrl) : '' },
   };
 }
 
@@ -152,12 +156,19 @@ function sameLayout(left: TnutLayout | null, right: TnutLayout | null): boolean 
 }
 
 function sameSettings(left: SprayWallLedSettings, right: SprayWallLedSettings): boolean {
-  return left.enabled === right.enabled && left.controller.url === right.controller.url;
+  return (
+    left.enabled === right.enabled &&
+    left.controller.type === right.controller.type &&
+    left.controller.url === right.controller.url
+  );
 }
 
 async function applyServerSettings(wallUuid: string, server: SprayWallLedSettings | null): Promise<boolean> {
   const cached = await readCachedSettings(wallUuid);
   const next = server ?? readSprayWallLedSettings(null);
+  if (cached?.wifiUrl) next.wifiUrl = cached.wifiUrl;
+  else if (next.controller.type === 'wled-ble' && cached?.controller.type === 'wled' && cached.controller.url)
+    next.wifiUrl = cached.controller.url;
   if (cached === null ? sameSettings(next, readSprayWallLedSettings(null)) : sameSettings(cached, next)) return false;
   await setPreference(sprayWallLedSettingsKey(wallUuid), next);
   return true;
@@ -358,7 +369,8 @@ async function buildUploadInput(
   if (fields.includes('settings')) {
     const stored = await getPreference<unknown>(sprayWallLedSettingsKey(wallUuid), { strictParsing: true });
     const settings = readSprayWallLedSettings(stored);
-    const url = localAddressOrEmpty(settings.controller.url);
+    const url =
+      settings.controller.type === 'wled-ble' ? settings.controller.url : localAddressOrEmpty(settings.controller.url);
     input.controllerType = settings.controller.type;
     input.controllerUrl = url;
     // Sent as stored: the switch can be on before an address exists.

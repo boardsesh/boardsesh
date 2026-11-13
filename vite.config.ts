@@ -158,6 +158,7 @@ export default defineConfig({
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
       './packages/shared/led-controller/vite.config.ts',
+      './packages/shared/wled-ble-protocol/vite.config.ts',
       './packages/shared/privacy/vite.config.ts',
       './packages/shared/offline-sync/vite.config.ts',
       './packages/shared/logbook/vite.config.ts',
@@ -940,6 +941,10 @@ export default defineConfig({
       'typecheck:key-value-storage': {
         command: 'pnpm --filter @boardsesh/key-value-storage run typecheck',
       },
+      'typecheck:wled-ble-protocol': {
+        command: 'pnpm --filter @boardsesh/wled-ble-protocol run typecheck',
+        cache: false,
+      },
       'typecheck:led-controller': {
         command: 'pnpm --filter @boardsesh/led-controller run typecheck',
       },
@@ -1106,6 +1111,7 @@ export default defineConfig({
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
           'typecheck:led-controller',
+          'typecheck:wled-ble-protocol',
           'typecheck:board-config',
           'typecheck:board-render',
           'typecheck:frosted-bokeh',

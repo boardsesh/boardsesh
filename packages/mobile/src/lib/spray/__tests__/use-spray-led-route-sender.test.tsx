@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   detach: vi.fn(),
   create: vi.fn(),
+  loadDriver: vi.fn(),
   invalidate: vi.fn(),
   failure: vi.fn(),
   credential: 0,
@@ -34,6 +35,7 @@ vi.mock('react-native', () => ({
     },
   },
 }));
+vi.mock('../spray-led-driver', () => ({ loadSprayLedDriver: mocks.loadDriver }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => 'query-client' }));
 vi.mock('@boardsesh/spray-wall-geometry', () => ({ buildSprayLedMapping: mocks.mapping }));
 vi.mock('@boardsesh/led-controller', () => ({
@@ -102,6 +104,7 @@ beforeEach(() => {
   mocks.credential = 0;
   mocks.privacy = 'current';
   mocks.removal = 0;
+  mocks.loadDriver.mockResolvedValue('wled-driver');
   mocks.registered = null;
   mocks.uuid.mockResolvedValue('spray-wall');
   mocks.settings.mockResolvedValue({ enabled: true, controller: { type: 'wled', url: 'http://wall.local' } });
@@ -120,6 +123,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('spray route transport', () => {
+  it('never clears after credentials change while the native driver loads', async () => {
+    let finishLoading!: (driver: string) => void;
+    mocks.loadDriver.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useSender());
+    const pending = result.current.send('');
+    await vi.waitFor(() => expect(mocks.loadDriver).toHaveBeenCalled());
+    act(() => {
+      mocks.credential++;
+      mocks.credentialChanged?.();
+    });
+    finishLoading('wled-driver');
+    expect(await pending).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.clear).not.toHaveBeenCalled();
+  });
+
   it('keeps catalog boards outside LAN setup', async () => {
     const { result } = renderHook(() => useSender('kilter'));
     expect(await result.current.send('p7r1')).toBeNull();
@@ -302,7 +325,7 @@ describe('spray route transport', () => {
     expect(mocks.close).not.toHaveBeenCalled();
   });
 
-  it('aborts in-flight writes and closes on a credential change', async () => {
+  it('aborts in-flight writes and detaches without new writes on a credential change', async () => {
     let complete!: (answer: boolean) => void;
     mocks.show.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -322,7 +345,8 @@ describe('spray route transport', () => {
       mocks.credential++;
       mocks.credentialChanged?.();
     });
-    expect(mocks.close).toHaveBeenCalledTimes(2);
+    expect(mocks.close).toHaveBeenCalledTimes(1);
+    expect(mocks.detach).toHaveBeenCalledTimes(1);
   });
 
   it('invalidates identical route frames when configuration is saved', async () => {

@@ -11,6 +11,7 @@ import {
 } from '@boardsesh/ble-protocol/rogue-timer';
 import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
 import { getBleManager } from './ble-manager';
+import { claimBleScan, releaseBleScan } from './ble-scan-slot';
 import { uint8ArrayToBase64 } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
@@ -90,6 +91,7 @@ export class RogueTimerController {
   // `teardownConnection` stop only a scan we started, so a provider disconnect
   // can't kill an unrelated pairing-sheet scan on another controller instance.
   private scanActive = false;
+  private readonly scanToken = Symbol('rogue-timer-scan');
 
   /**
    * Start a service-filtered scan for Rogue timers. Keeps a de-duped list (by
@@ -122,7 +124,7 @@ export class RogueTimerController {
       // A sheet closed before the gating finished has no scan to stop, and
       // reaching for the ble-plx manager here would create it, which on iOS
       // asks for Bluetooth (see ble-manager.ts).
-      if (scanStarted) void getBleManager().stopDeviceScan();
+      if (scanStarted && releaseBleScan(this.scanToken)) void getBleManager().stopDeviceScan();
     };
 
     void (async () => {
@@ -132,6 +134,11 @@ export class RogueTimerController {
       const poweredOn = await waitForBlePoweredOn();
       if (!poweredOn || stopped) return;
 
+      if (!claimBleScan(this.scanToken)) {
+        stopScan();
+        onScanStopped?.();
+        return;
+      }
       this.scanActive = true;
       scanStarted = true;
       void getBleManager().startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
@@ -273,6 +280,10 @@ export class RogueTimerController {
           resolve(device);
         };
 
+        if (!claimBleScan(this.scanToken)) {
+          reject(new Error('Bluetooth scan is busy'));
+          return;
+        }
         this.scanActive = true;
         void getBleManager().startDeviceScan(
           [ROGUE_TIMER_ADVERTISED_SERVICE_UUID],
@@ -323,13 +334,13 @@ export class RogueTimerController {
       // (up to 12s) connect window degrades Android connection reliability.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
-      void getBleManager().stopDeviceScan();
+      if (releaseBleScan(this.scanToken)) void getBleManager().stopDeviceScan();
       return await this.connectById(found.deviceId);
     } finally {
       // Safety net: idempotent stop for the reject/throw paths too.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       this.scanActive = false;
-      void getBleManager().stopDeviceScan();
+      if (releaseBleScan(this.scanToken)) void getBleManager().stopDeviceScan();
     }
   }
 
@@ -378,7 +389,7 @@ export class RogueTimerController {
     // scan (e.g. an open pairing sheet).
     if (this.scanActive) {
       this.scanActive = false;
-      void getBleManager().stopDeviceScan();
+      if (releaseBleScan(this.scanToken)) void getBleManager().stopDeviceScan();
     }
 
     if (this.disconnectSubscription) {

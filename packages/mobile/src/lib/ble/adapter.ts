@@ -14,6 +14,7 @@ import {
   blePlxErrorCodes,
 } from '@boardsesh/ble-protocol';
 import { getBleManager } from './ble-manager';
+import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
@@ -356,6 +357,7 @@ export class RNBleAdapter implements BluetoothAdapter {
     let cancelScanTimeout: (() => void) | undefined;
     let selectedDeviceId: string;
     let scanStopped: Promise<void>;
+    const scanToken = Symbol('board-picker-scan');
     try {
       // Scan UNFILTERED and filter results in JS (isLikelyBoardDevice below).
       // A hardware service-UUID ScanFilter never matches by name, and on Android
@@ -379,9 +381,10 @@ export class RNBleAdapter implements BluetoothAdapter {
       // actively in the foreground and merges ADV + SCAN_RSP before filtering, so
       // the native iOS path keeps its service filter on purpose.
       // High-power scan options (LowLatency on Android) — see scan-options.ts.
+      noteBleScanStarted(scanToken);
       void getBleManager().startDeviceScan(null, HIGH_POWER_BOARD_SCAN_OPTIONS, (scanError, scannedDevice) => {
         if (scanError) {
-          void getBleManager().stopDeviceScan();
+          if (releaseBleScan(scanToken)) void getBleManager().stopDeviceScan();
           // Surface the failure immediately so the user sees feedback instead
           // of waiting out the 30s scan window (the picker, if open, closes too).
           rejectSelection(new Error(`BLE scan failed: ${scanError.message}`));
@@ -444,7 +447,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       // while the activity is paused, and a background connect would otherwise
       // scan until the app came back (#7038).
       cancelScanTimeout = setBackgroundSafeTimeout(() => {
-        void getBleManager().stopDeviceScan();
+        if (releaseBleScan(scanToken)) void getBleManager().stopDeviceScan();
         // Belt-and-suspenders: end a search still running even if the grace
         // window never fired, so the picker is showing the list.
         endTargetSearch();
@@ -466,7 +469,9 @@ export class RNBleAdapter implements BluetoothAdapter {
       cancelScanTimeout?.();
       // Kept, not voided: on Android the connect below waits for the scan to
       // stop first (connectSelectedDevice). A rejected stop never blocks it.
-      scanStopped = Promise.resolve(getBleManager().stopDeviceScan()).catch(() => {});
+      scanStopped = releaseBleScan(scanToken)
+        ? Promise.resolve(getBleManager().stopDeviceScan()).catch(() => {})
+        : Promise.resolve();
     }
 
     let selectedDeviceName: string | undefined;

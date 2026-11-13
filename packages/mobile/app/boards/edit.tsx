@@ -449,7 +449,9 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       lockedConfigReason={configLock ?? undefined}
       currentBoardUuid={board.uuid}
       sprayLedSection={
-        isSprayWall && !wallArchived ? <SprayWallLedSection wallUuid={board.uuid} disabled={submitting} /> : undefined
+        isSprayWall && !wallArchived ? (
+          <SprayWallLedSection wallUuid={board.uuid} disabled={submitting} canInstall={viewerOwnsWall} />
+        ) : undefined
       }
       sprayTrainingSection={viewerOwnsWall ? <SprayWallTrainingConsentRow wallUuid={board.uuid} isOwner /> : undefined}
       sprayBackgroundSection={
