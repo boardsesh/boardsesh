@@ -3,7 +3,9 @@ import { removePreference, removePreferencesMatching } from '../preference-store
 export type SprayWallLedSettings = {
   version: 1;
   enabled: boolean;
-  controller: { type: 'wled'; url: string };
+  controller: { type: 'wled' | 'wled-ble'; url: string };
+  /** This phone's LAN address survives switching to Bluetooth; never sent with BLE setup. */
+  wifiUrl?: string;
 };
 
 export type SprayWallLedField = 'settings' | 'layout';
@@ -34,7 +36,7 @@ export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings 
     stored.version !== 1 ||
     typeof stored.enabled !== 'boolean' ||
     !isRecord(stored.controller) ||
-    stored.controller.type !== 'wled' ||
+    (stored.controller.type !== 'wled' && stored.controller.type !== 'wled-ble') ||
     typeof stored.controller.url !== 'string'
   ) {
     throw new Error('Invalid spray wall LED settings');
@@ -42,7 +44,8 @@ export function readSprayWallLedSettings(stored: unknown): SprayWallLedSettings 
   return {
     version: 1,
     enabled: stored.enabled,
-    controller: { type: 'wled', url: stored.controller.url },
+    controller: { type: stored.controller.type, url: stored.controller.url },
+    ...(typeof stored.wifiUrl === 'string' ? { wifiUrl: stored.wifiUrl } : {}),
   };
 }
 

@@ -7,6 +7,8 @@ import {
   type LedControllerErrorCode,
   type LedPreviewSession,
 } from '@boardsesh/led-controller';
+import { getCredentialGeneration, subscribeToCredentialChanges } from '../privacy/privacy-cache';
+import { loadSprayLedDriver } from './spray-led-driver';
 import { useSprayWallLedSettings, type SprayWallLedSettings } from './use-spray-wall-led-settings';
 
 export type SprayLedPreviewState = 'idle' | 'sending' | 'lit' | 'chasing' | 'stopping';
@@ -41,38 +43,72 @@ export function useSprayLedPreviewForSettings(
     setAllLit(false);
     setChaseIndex(null);
     if (!enabled || !url) return;
-    let session: LedPreviewSession;
-    try {
-      session = createLedPreviewSession(getLedControllerDriver(controllerType), url);
-    } catch {
-      return;
-    }
-    const current: PreviewRuntime = { session, active: true, generation: 0 };
-    runtime.current = current;
-    setAvailable(true);
-    const subscription = AppState.addEventListener('change', (next) => {
-      if (next === 'active') return;
-      const generation = ++current.generation;
-      setAllLit(false);
-      setChaseIndex(null);
-      void session
-        .stop()
-        .then(() => {
-          if (current.active && current.generation === generation) setState('idle');
+    const credentialGeneration = getCredentialGeneration();
+    let cancelled = false;
+    let dispose: (() => void) | undefined;
+    const attach = (session: LedPreviewSession) => {
+      if (cancelled || credentialGeneration !== getCredentialGeneration()) {
+        void session.detach();
+        return;
+      }
+      const current: PreviewRuntime = { session, active: true, generation: 0 };
+      runtime.current = current;
+      setAvailable(true);
+      const subscription = AppState.addEventListener('change', (next) => {
+        if (next === 'active') return;
+        const generation = ++current.generation;
+        setAllLit(false);
+        setChaseIndex(null);
+        if (controllerType === 'wled-ble') {
+          setState('idle');
+          return;
+        }
+        void session
+          .stop()
+          .then(() => {
+            if (current.active && current.generation === generation) setState('idle');
+          })
+          .catch((failure: unknown) => {
+            if (current.active && current.generation === generation) {
+              setState('idle');
+              setError(failure instanceof LedControllerError ? failure.code : 'unavailable');
+            }
+          });
+      });
+      const credentials = subscribeToCredentialChanges(() => {
+        current.active = false;
+        current.generation++;
+        if (runtime.current === current) runtime.current = null;
+        setAvailable(false);
+        void session.detach().catch(() => undefined);
+      });
+      dispose = () => {
+        credentials();
+        const wasActive = current.active;
+        current.active = false;
+        current.generation++;
+        if (runtime.current === current) runtime.current = null;
+        subscription.remove();
+        void (wasActive ? session.close() : session.detach()).catch(() => undefined);
+      };
+    };
+    if (controllerType === 'wled-ble') {
+      void loadSprayLedDriver(controllerType)
+        .then((driver) => {
+          if (!cancelled && credentialGeneration === getCredentialGeneration())
+            attach(createLedPreviewSession(driver, url));
         })
-        .catch((failure: unknown) => {
-          if (current.active && current.generation === generation) {
-            setState('idle');
-            setError(failure instanceof LedControllerError ? failure.code : 'unavailable');
-          }
-        });
-    });
+        .catch(() => undefined);
+    } else {
+      try {
+        attach(createLedPreviewSession(getLedControllerDriver(controllerType), url));
+      } catch {
+        /* Invalid address stays unavailable. */
+      }
+    }
     return () => {
-      current.active = false;
-      current.generation++;
-      if (runtime.current === current) runtime.current = null;
-      subscription.remove();
-      void session.close().catch(() => undefined);
+      cancelled = true;
+      dispose?.();
     };
   }, [wallUuid, enabled, url, controllerType]);
 

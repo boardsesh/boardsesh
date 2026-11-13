@@ -14,6 +14,7 @@ import { parseApiLevel, parseSerialNumber } from '@boardsesh/ble-protocol';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import { getBleManager } from './ble-manager';
+import { claimBleScan, releaseBleScan } from './ble-scan-slot';
 import { waitForBlePoweredOn } from './availability';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
 import { isLikelyBoardDevice } from './board-device-filter';
@@ -54,6 +55,8 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
     rssi?: number;
   };
   const entries = new Map<string, ReconEntry>();
+  const scanToken = Symbol('board-advertisement-recon');
+  if (!claimBleScan(scanToken)) return 0;
 
   return new Promise<number>((resolve) => {
     let settled = false;
@@ -62,7 +65,7 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
       if (settled) return;
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      void getBleManager().stopDeviceScan();
+      if (releaseBleScan(scanToken)) void getBleManager().stopDeviceScan();
       for (const entry of entries.values()) {
         track(SHARED_EVENTS.BleAdvertisementRecon, {
           reconCorrelationId,

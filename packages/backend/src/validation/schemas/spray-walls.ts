@@ -3,7 +3,7 @@ import { OptionalReleaseContextInputSchema } from './release-context';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { LED_CONTROLLER_TYPES, LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import { LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
 import {
   MAX_TNUT_LAYOUT_BYTES,
   SPRAY_WALL_BACKGROUNDS,
@@ -412,6 +412,7 @@ const SprayWallLedControllerUrlSchema = z
   .transform((url, context) => {
     // Clearing the address is allowed; the owner may not have one yet.
     if (url.trim() === '') return '';
+    if (/^wled-ble:wled-[a-f0-9]{12}$/i.test(url)) return url.toLowerCase();
     try {
       return normalizeLocalControllerUrl(url);
     } catch (urlError) {
@@ -442,12 +443,28 @@ const SprayWallLedLayoutSchema = z.unknown().transform((layout, context) => {
 export const SaveSprayWallLedSetupInputSchema = z
   .object({
     boardUuid: UUIDSchema,
-    controllerType: z.enum(LED_CONTROLLER_TYPES, { error: "controllerType must be 'wled'" }).nullish(),
+    controllerType: z.enum(['wled', 'wled-ble'], { error: 'Unsupported LED controller type' }).nullish(),
     controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
     enabled: z.boolean().nullish(),
     layout: SprayWallLedLayoutSchema.nullish(),
   })
   .strict()
+  .superRefine(({ controllerType, controllerUrl }, context) => {
+    if (controllerType != null && controllerUrl == null) {
+      context.addIssue({ code: 'custom', message: 'Send controllerUrl with controllerType' });
+    }
+    if (controllerType == null && controllerUrl?.startsWith('wled-ble:')) {
+      context.addIssue({ code: 'custom', message: 'Send wled-ble controllerType with controllerUrl' });
+    }
+    if (
+      controllerType != null &&
+      controllerUrl != null &&
+      controllerUrl !== '' &&
+      (controllerType === 'wled-ble') !== controllerUrl.startsWith('wled-ble:')
+    ) {
+      context.addIssue({ code: 'custom', message: 'Controller type and address do not match' });
+    }
+  })
   .refine(
     ({ controllerType, controllerUrl, enabled, layout }) =>
       controllerType != null || controllerUrl != null || enabled != null || layout != null,

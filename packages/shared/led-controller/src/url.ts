@@ -1,5 +1,16 @@
 import { LedControllerError } from './types';
 
+export function normalizeWledBleTarget(input: string): string {
+  const target = input.trim();
+  if (!/^wled-ble:wled-[0-9a-f]{12}$/.test(target)) throw new LedControllerError('invalid-url');
+  return target;
+}
+
+/** BLE targets contain a stable public controller identity, never a phone's radio ID. */
+export function normalizeLedControllerTarget(input: string): string {
+  return input.trim().startsWith('wled-ble:') ? normalizeWledBleTarget(input) : normalizeLocalControllerUrl(input);
+}
+
 /** A controller base URL, including an optional reverse-proxy path. */
 export function normalizeControllerUrl(input: string): string {
   const trimmed = input.trim();

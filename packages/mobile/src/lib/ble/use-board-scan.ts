@@ -19,6 +19,7 @@ import { advertisedBoardTypesBySerial, type AdvertisedBoardTypes } from './adver
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../analytics';
 import { getBleManager } from './ble-manager';
+import { noteBleScanStarted, releaseBleScan } from './ble-scan-slot';
 import { waitForBlePoweredOn } from './availability';
 import {
   classifyQuickstartDevice,
@@ -81,6 +82,7 @@ export function useBoardScan(): BoardScan {
   const [devices, setDevices] = useState<readonly QuickstartScanDevice[]>(EMPTY_DEVICES);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scanningRef = useRef(false);
+  const scanToken = useRef(Symbol('board-quickstart-scan'));
   // What the running scan heard, for Board Quickstart Scan Finished. Serials
   // alone keep `found_count`'s series comparable with scans from before
   // serial-less boards were kept.
@@ -100,7 +102,7 @@ export function useBoardScan(): BoardScan {
       timeoutRef.current = null;
     }
     if (scanningRef.current) {
-      void getBleManager().stopDeviceScan();
+      if (releaseBleScan(scanToken.current)) void getBleManager().stopDeviceScan();
       scanningRef.current = false;
       track(SHARED_EVENTS.BoardQuickstartScanFinished, {
         outcome,
@@ -187,6 +189,7 @@ export function useBoardScan(): BoardScan {
     setUnavailableReason(null);
     setStatus('scanning');
     scanningRef.current = true;
+    noteBleScanStarted(scanToken.current);
 
     // Scan UNFILTERED, then keep only what classifyQuickstartDevice recognises.
     // A hardware service-UUID ScanFilter drops boards on Android when the UUID

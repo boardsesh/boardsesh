@@ -49,6 +49,7 @@
     "@boardsesh/text-redaction": "workspace:*",
     "@boardsesh/velvet-tokens": "workspace:*",
     "@boardsesh/watch-pairing": "workspace:*",
+    "@boardsesh/wled-ble-protocol": "workspace:*",
     "@boardsesh/workout-summary": "workspace:*",
     "@expo/ui": "58.0.23",
     "@expo/vector-icons": "15.1.1",

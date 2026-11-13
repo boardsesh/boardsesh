@@ -1,0 +1,279 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createWledInstaller,
+  readManifest,
+  settingsPreserved,
+  WledInstallerError,
+  WLED_APP_SLOT_BYTES,
+  type FirmwareRelease,
+  type InstallerIO,
+  type InstallJournal,
+} from '../engine';
+
+const original = {
+  mac: '001122aabbcc',
+  name: 'Gym LEDs',
+  ver: '16.0.1',
+  arch: 'esp32',
+  flash: 4,
+  brand: 'WLED',
+  product: 'FOSS',
+  leds: { count: 1000 },
+};
+const release: FirmwareRelease = {
+  id: 'test-qualified',
+  hardwareModel: 'GL-C-015WL-D',
+  architecture: 'esp32',
+  flashBytes: 4_194_304,
+  sourceProfiles: [{ version: '16.0.1', brand: 'WLED', product: 'FOSS', appSlotBytes: WLED_APP_SLOT_BYTES }],
+  wledVersion: '16.0.1',
+  usermodVersion: '0.1.0',
+  protocolVersion: 1,
+  buildId: 'test-audio',
+  audio: true,
+  imageBytes: 1_000_000,
+  appSlotBytes: WLED_APP_SLOT_BYTES,
+  url: 'https://example.com/firmware.bin',
+  sha256: 'a'.repeat(64),
+  qualified: true,
+};
+const config = {
+  hw: { led: { count: 1000, pin: 16 }, relay: { pin: 18 } },
+  nw: { ssid: 'local' },
+  um: { AudioReactive: { enabled: true, pin: [32, 33] } },
+};
+const presets = { '1': { name: 'Audio', fx: 123 } };
+function setup(releases: FirmwareRelease[] = [release]) {
+  let uploaded = false;
+  let pending: InstallJournal | null = null;
+  const io: InstallerIO = {
+    readJson: vi.fn(async (url) => {
+      if (url.endsWith('release-manifest.json')) return { manifestVersion: 1, releases };
+      if (url.endsWith('/cfg.json')) return config;
+      if (url.endsWith('/presets.json')) return presets;
+      return uploaded
+        ? {
+            ...original,
+            bleJson: {
+              controllerId: 'wled-001122aabbcc',
+              protocolVersion: 1,
+              usermodVersion: '0.1.0',
+              buildId: release.buildId,
+              audio: release.audio,
+              ledCount: 1000,
+              maxMessageBytes: 8192,
+            },
+          }
+        : original;
+    }),
+    checkUpdateAccess: vi.fn(async () => undefined),
+    saveBackup: vi.fn(async () => 'file:///backup.json'),
+    exportBackup: vi.fn(async () => undefined),
+    download: vi.fn(async () => ({ uri: 'file:///firmware.bin', bytes: release.imageBytes, sha256: release.sha256 })),
+    upload: vi.fn(async () => {
+      uploaded = true;
+    }),
+    readJournal: vi.fn(async () => pending),
+    writeJournal: vi.fn(async (journal) => {
+      pending = journal;
+    }),
+    clearJournal: vi.fn(async () => {
+      pending = null;
+    }),
+    awake: vi.fn(async () => undefined),
+    wait: vi.fn(async () => undefined),
+  };
+  const installer = createWledInstaller('192.168.1.5', io, vi.fn());
+  return {
+    io,
+    installer,
+    setJournal: (journal: InstallJournal) => {
+      pending = journal;
+    },
+  };
+}
+describe('WLED owner installer', () => {
+  it('backs up locally but cannot install when no hardware is qualified', async () => {
+    const { io, installer } = setup([]);
+    await installer.inspect();
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'ready', backup: { uri: 'file:///backup.json' } });
+    expect(installer.getSnapshot().release).toBeUndefined();
+    await installer.install(true, true);
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('requires owner model confirmation after the backup is durable', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    expect(io.saveBackup).toHaveBeenCalledWith(
+      expect.objectContaining({ controllerId: 'wled-001122aabbcc' }),
+      config,
+      presets,
+    );
+    await installer.install(false, false);
+    expect(io.download).not.toHaveBeenCalled();
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('verifies build, identity, settings and presets before reporting success', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(io.writeJournal).toHaveBeenCalledBefore(vi.mocked(io.upload));
+    expect(io.clearJournal).toHaveBeenCalledOnce();
+  });
+  it('never uploads a checksum mismatch', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.download).mockResolvedValue({
+      uri: 'file:///firmware.bin',
+      bytes: release.imageBytes,
+      sha256: 'b'.repeat(64),
+    });
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'failed', error: 'checksum' });
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('never uploads oversized or truncated images', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.download).mockResolvedValue({
+      uri: 'file:///firmware.bin',
+      bytes: WLED_APP_SLOT_BYTES + 1,
+      sha256: release.sha256,
+    });
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot().error).toBe('imageSize');
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('honors OTA/PIN locks before download or upload', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.checkUpdateAccess).mockRejectedValue(new WledInstallerError('locked'));
+    await installer.inspect();
+    expect(io.download).not.toHaveBeenCalled();
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('does not use a version match as proof of hardware compatibility', async () => {
+    const { io, installer } = setup([
+      { ...release, sourceProfiles: [{ ...release.sourceProfiles[0], brand: 'Other factory' }] },
+    ]);
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('requires explicit approval for an audio-disabled image', async () => {
+    const { io, installer } = setup([{ ...release, audio: false }]);
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('does not claim success from an HTTP upload disconnect', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.upload).mockRejectedValue(new Error('disconnect'));
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'verification' });
+    expect(io.clearJournal).not.toHaveBeenCalled();
+    expect(io.upload).toHaveBeenCalledOnce();
+  });
+  it('rejects changed LED or microphone settings after reboot', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.readJson)
+      .mockReset()
+      .mockImplementation(async (url) => {
+        if (url.endsWith('release-manifest.json')) return { manifestVersion: 1, releases: [release] };
+        if (url.endsWith('/cfg.json'))
+          return vi.mocked(io.upload).mock.calls.length ? { ...config, hw: { led: { pin: 2 } } } : config;
+        if (url.endsWith('/presets.json')) return presets;
+        return vi.mocked(io.upload).mock.calls.length
+          ? {
+              ...original,
+              bleJson: {
+                controllerId: 'wled-001122aabbcc',
+                protocolVersion: 1,
+                usermodVersion: '0.1.0',
+                buildId: release.buildId,
+                audio: true,
+                ledCount: 1000,
+                maxMessageBytes: 8192,
+              },
+            }
+          : original;
+      });
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'preservation' });
+    expect(io.clearJournal).not.toHaveBeenCalled();
+  });
+  it('serializes duplicate install taps', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    await Promise.all([installer.install(true, false), installer.install(true, false)]);
+    expect(io.upload).toHaveBeenCalledOnce();
+  });
+  it('cancels before uploading and never replays a cancelled download', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    vi.mocked(io.download).mockImplementation(async () => {
+      installer.cancel();
+      return { uri: 'file:///firmware.bin', bytes: release.imageBytes, sha256: release.sha256 };
+    });
+    await installer.install(true, false);
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('inspects an interrupted upload before permitting another owner attempt', async () => {
+    const { io, installer } = setup();
+    vi.mocked(io.upload).mockRejectedValue(new Error('lost local Wi-Fi'));
+    await installer.inspect();
+    await installer.install(true, false);
+    expect(installer.getSnapshot().stage).toBe('interrupted');
+    const resumed = createWledInstaller('192.168.1.5', io, vi.fn());
+    await resumed.inspect();
+    expect(resumed.getSnapshot().stage).toBe('interrupted');
+    await resumed.verify();
+    expect(resumed.getSnapshot().stage).toBe('ready');
+    expect(io.upload).toHaveBeenCalledOnce();
+    expect(io.clearJournal).toHaveBeenCalledOnce();
+  });
+  it('rejects a different controller returning at the same local IP', async () => {
+    const { io, installer } = setup();
+    await installer.inspect();
+    const originalRead = vi.mocked(io.readJson).getMockImplementation()!;
+    vi.mocked(io.readJson).mockImplementation(async (url, signal) =>
+      url.endsWith('/json/info') && vi.mocked(io.upload).mock.calls.length
+        ? { ...original, mac: 'aabbccddeeff' }
+        : originalRead(url, signal),
+    );
+    await installer.install(true, false);
+    expect(installer.getSnapshot()).toMatchObject({ stage: 'interrupted', error: 'verification' });
+    expect(io.clearJournal).not.toHaveBeenCalled();
+  });
+  it('only ignores the BLE module defaults when comparing saved settings', () => {
+    const backup = { config, presets, uri: 'file:///backup.json' };
+    expect(settingsPreserved(backup, { ...config, um: { ...config.um, 'BLE JSON': { enabled: true } } }, presets)).toBe(
+      true,
+    );
+    expect(settingsPreserved(backup, { ...config, um: { AudioReactive: { enabled: false } } }, presets)).toBe(false);
+    expect(settingsPreserved(backup, config, {})).toBe(false);
+    for (const enabled of [false, true]) {
+      const savedConfig = { ...config, um: { ...config.um, 'BLE JSON': { enabled } } };
+      const saved = { ...backup, config: savedConfig };
+      expect(settingsPreserved(saved, savedConfig, presets)).toBe(true);
+      expect(
+        settingsPreserved(
+          saved,
+          { ...savedConfig, um: { ...savedConfig.um, 'BLE JSON': { enabled: !enabled } } },
+          presets,
+        ),
+      ).toBe(false);
+    }
+  });
+  it('rejects unqualified releases and external plaintext image URLs', () => {
+    expect(() => readManifest({ manifestVersion: 1, releases: [{ ...release, qualified: false }] })).toThrow();
+    expect(() =>
+      readManifest({ manifestVersion: 1, releases: [{ ...release, url: 'http://example.com/fw.bin' }] }),
+    ).toThrow();
+    expect(() =>
+      readManifest({ manifestVersion: 1, releases: [{ ...release, imageBytes: WLED_APP_SLOT_BYTES + 1 }] }),
+    ).toThrow();
+  });
+});

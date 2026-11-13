@@ -502,9 +502,9 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   """
   type SprayWallLedSetup {
     boardUuid: ID!
-    "The driver for this controller. \`wled\` is the only one today."
+    "The driver for this controller. \`wled\` (local HTTP) or \`wled-ble\` (stable Bluetooth controller ID)."
     controllerType: String!
-    "A local-network base address, or empty until the owner confirms one."
+    "A local HTTP base address or wled-ble:wled-<hardware ID>; empty until selected."
     controllerUrl: String!
     enabled: Boolean!
     "A saved T-nut layout. Null until the setup screen has saved one."
@@ -532,7 +532,7 @@ export const sprayWallsTypeDefs = /* GraphQL */ `
   input SaveSprayWallLedSetupInput {
     boardUuid: ID!
     controllerType: String
-    "Local-network addresses only: the server refuses anything else."
+    "Local HTTP address or stable WLED Bluetooth target matching controllerType."
     controllerUrl: String
     enabled: Boolean
     layout: JSON

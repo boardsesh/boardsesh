@@ -102,7 +102,7 @@ export const sprayWallLedSetupMutations = {
     const now = new Date();
     const fields = {
       updatedAt: now,
-      ...(controllerType != null ? { controllerType } : {}),
+      ...(controllerType != null ? { controllerType } : controllerUrl != null ? { controllerType: 'wled' } : {}),
       ...(controllerUrl != null ? { controllerUrl } : {}),
       ...(enabled != null ? { enabled } : {}),
       ...(layout != null ? { layout: layout as Record<string, unknown> } : {}),

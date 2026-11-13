@@ -188,6 +188,38 @@ describe('reading a wall’s LED setup', () => {
     expect(configurationEvents).toEqual([WALL]);
   });
 
+  it.each(['', 'wled-ble:wled-aabbccddeeff'])(
+    'keeps Bluetooth mode and this phone’s Wi-Fi address for target %s',
+    async (target) => {
+      storage.records.set(SETTINGS_KEY, local);
+      backend.request.mockResolvedValue(
+        answering(false, rowFor({ controllerType: 'wled-ble', controllerUrl: target })),
+      );
+      await prepareSprayWallLedRead(WALL, 'settings');
+      await settle();
+      expect(storage.records.get(SETTINGS_KEY)).toEqual({
+        version: 1,
+        enabled: true,
+        controller: { type: 'wled-ble', url: target },
+        wifiUrl: local.controller.url,
+      });
+    },
+  );
+
+  it('disables an unsupported controller type without contacting that target', async () => {
+    storage.records.set(SETTINGS_KEY, local);
+    backend.request.mockResolvedValue(
+      answering(false, rowFor({ controllerType: 'future-system', controllerUrl: 'future:target' })),
+    );
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await settle();
+    expect(storage.records.get(SETTINGS_KEY)).toEqual({
+      version: 1,
+      enabled: false,
+      controller: { type: 'wled', url: '' },
+    });
+  });
+
   it('keeps a wall already set up working with no internet', async () => {
     storage.records.set(SETTINGS_KEY, local);
     storage.records.set(LAYOUT_KEY, layout());

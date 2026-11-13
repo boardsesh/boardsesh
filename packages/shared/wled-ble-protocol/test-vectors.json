@@ -1,0 +1,63 @@
+{
+  "protocolVersion": 1,
+  "vectors": [
+    {
+      "name": "get-info",
+      "message": {
+        "id": "1",
+        "op": "getInfo"
+      },
+      "frameHex": "190000007b226964223a2231222c226f70223a22676574496e666f227d"
+    },
+    {
+      "name": "get-state",
+      "message": {
+        "id": "2",
+        "op": "getState"
+      },
+      "frameHex": "1a0000007b226964223a2232222c226f70223a226765745374617465227d"
+    },
+    {
+      "name": "turn-off",
+      "message": {
+        "id": "3",
+        "op": "setState",
+        "state": {
+          "on": false,
+          "tt": 0,
+          "live": false,
+          "udpn": {
+            "nn": true
+          }
+        }
+      },
+      "frameHex": "560000007b226964223a2233222c226f70223a227365745374617465222c227374617465223a7b226f6e223a66616c73652c227474223a302c226c697665223a66616c73652c227564706e223a7b226e6e223a747275657d7d7d"
+    },
+    {
+      "name": "individual-colors",
+      "message": {
+        "id": "4",
+        "op": "setState",
+        "state": {
+          "seg": [
+            {
+              "id": 0,
+              "i": [0, 1000, "00000000", 999, "FF00FF00"]
+            }
+          ]
+        }
+      },
+      "frameHex": "5c0000007b226964223a2234222c226f70223a227365745374617465222c227374617465223a7b22736567223a5b7b226964223a302c2269223a5b302c313030302c223030303030303030222c3939392c224646303046463030225d7d5d7d7d"
+    },
+    {
+      "name": "unicode-response",
+      "message": {
+        "id": "5",
+        "result": {
+          "name": "Gym 🧗"
+        }
+      },
+      "frameHex": "270000007b226964223a2235222c22726573756c74223a7b226e616d65223a2247796d20f09fa797227d7d"
+    }
+  ]
+}
