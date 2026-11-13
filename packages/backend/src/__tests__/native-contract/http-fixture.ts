@@ -130,6 +130,10 @@ export async function createNativeHttpFixture() {
       requests,
       network,
       ownership: { databaseName, postgresHost: adminUrl.host, createdFreshByThisInvocation: true as const },
+      mount(path: string, handler: NativeHandler) {
+        if (!path.startsWith('/') || handlers[path]) throw new Error('Owned fixture route already mounted');
+        handlers[path] = handler;
+      },
       async post(path: string, body: unknown, bearer?: string) {
         return network(`${origin}${path}`, {
           method: 'POST',

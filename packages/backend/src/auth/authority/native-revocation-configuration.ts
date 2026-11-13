@@ -1,3 +1,4 @@
+import { watchPairingMode, assertWatchPairingRevocationCompatibility } from '../watch-pairing-configuration';
 import { legacyBridgeMode } from './bridge';
 
 export type NativeRevocationMode = 'legacy' | 'generation';
@@ -32,6 +33,8 @@ export function assertNativeRevocationActivationConfiguration(
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   const mode = currentNativeRevocationMode(environment);
+  watchPairingMode(environment);
+  assertWatchPairingRevocationCompatibility(mode, environment);
   if (legacyBridgeMode(environment) === 'on' && mode !== 'generation')
     throw new Error('NATIVE_CANONICAL_ISSUANCE_REQUIRES_GENERATION_REVOCATION');
 }

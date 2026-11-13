@@ -248,6 +248,7 @@ describe('native credential stamps against the owned primary database', () => {
     if (pending.size) throw new Error('Previous stamp fixture did not settle');
     vi.stubEnv('NEXTAUTH_SECRET', secret);
     vi.stubEnv('CURRENT_STORE_NATIVE_REGISTRATION_MODE', '');
+    vi.stubEnv('AUTH_WATCH_PAIRING_MODE', 'legacy');
     __resetNativeAuthStateForTests();
     await db.delete(authSubjectCutoffs).where(inArray(authSubjectCutoffs.userId, [...createdUserIds]));
     await db.delete(users).where(inArray(users.id, [...createdUserIds]));
@@ -415,11 +416,11 @@ describe('native credential stamps against the owned primary database', () => {
     const registered = await issued('/register', { email: registeredEmail, password, name: 'Registered climber' });
     pairs.push(['registration', registered, registered.userId]);
 
-    for (const [, pair, userId] of pairs) {
+    for (const [issuer, pair, userId] of pairs) {
       const payload = (await assertLegacyNativeTokenPair(pair, signingKey, userId)) as StampedClaims;
       expect(userIdFromJwt(pair.jwt)).toBe(userId);
       expect(payload.sid).toBe((await rowFor(pair.refreshToken)).sessionId);
-      expect(typeof payload.sid === 'string' && /^[0-9a-f-]{36}$/.test(payload.sid)).toBe(true);
+      expect(payload.sid).toMatch(issuer === 'web transfer' ? /^credential-web:v1:[0-9a-f-]{36}$/ : /^[0-9a-f-]{36}$/);
       expect((await validateMobileJwt(pair.jwt))?.userId).toBe(userId);
       expect(Number.isSafeInteger(payload.gen)).toBe(true);
       expect(Number.isSafeInteger(payload.ngen)).toBe(true);
@@ -480,6 +481,12 @@ describe('native credential stamps against the owned primary database', () => {
     'stamps %s with the current generations but never a sign-in time it did not see',
     async (path) => {
       await setCutoff(1, 3);
+      if (path === '/watch') {
+        // A UID-only pending code cannot prove it predates no cutoff. A
+        // deliberate source-bound handoff retains the admitted phone stamps.
+        expect((await native('/watch-code', {}, await phoneBearer(ownerId, { gen: 1, ngen: 3 }))).status).toBe(503);
+        vi.stubEnv('AUTH_WATCH_PAIRING_MODE', 'source-bound-staging');
+      }
       const pair =
         path === '/exchange'
           ? await issued(path, { transferToken: transferToken(ownerId, 1) })
@@ -489,7 +496,9 @@ describe('native credential stamps against the owned primary database', () => {
       expect(await claims(pair)).toMatchObject({ gen: 1, ngen: 3 });
       expect(await claims(pair)).not.toHaveProperty('auth_time');
       expect(row).toMatchObject({ subjectGeneration: 1, nativeGeneration: 3, authenticatedAt: null });
-      expect(row.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      // Neither old-format source has a SID, so the issued family conservatively
+      // retains unknown web/native ancestry in the existing opaque text field.
+      expect(row.sessionId).toMatch(/^credential-web:v1:[0-9a-f-]{36}$/);
     },
   );
 

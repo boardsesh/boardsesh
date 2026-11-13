@@ -10,6 +10,7 @@
  * mocked db), so these also cover the token-pair shape. Redis is mocked so we
  * can drive SET NX collisions and the atomic compare-and-delete consume path deterministically.
  */
+import { authEmailProjection } from '@boardsesh/db/schema/auth';
 import { EventEmitter } from 'node:events';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
@@ -34,7 +35,7 @@ vi.mock('../auth/admission-read-coalescer', () => ({
 vi.mock('../db/client', () => {
   const insertChain = { values: (...args: unknown[]) => mockDbInsertValues(...args) };
   const selection = {
-    from: () => selection,
+    from: (table: unknown) => (table === authEmailProjection ? { where: async () => [] } : selection),
     leftJoin: () => selection,
     where: () => selection,
     limit: () => {
