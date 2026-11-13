@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { Socket } from 'node:net';
@@ -244,6 +245,8 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
         );
         ownedRoles.push(role);
         await transaction.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(role)}`);
+        // Both roles execute backend staged commands; neither is the legacy NextAuth actor.
+        await grantIdentityMirrorBackendTables(transaction, role);
         await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${users} TO ${sql.identifier(role)}`);
         await transaction.execute(sql`GRANT INSERT ON TABLE ${userProfiles} TO ${sql.identifier(role)}`);
         await transaction.execute(
@@ -447,6 +450,7 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
         failures.push(new Error('Owned OAuth schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await administrator(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned OAuth role cleanup failed'));
@@ -942,7 +946,8 @@ describe('reserved native OAuth identity with actual JOSE and PostgreSQL', () =>
     expect(await counts()).toEqual(before);
     vi.stubEnv('CURRENT_STORE_NATIVE_OAUTH_MODE', 'legacy');
     vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
-    expect((await post(await signed('google'))).status).toBe(200);
+    // Mirroring refuses the unsafe legacy writer while preserving the off baseline.
+    expect((await post(await signed('google'))).status).toBe(process.env.AUTH_IDENTITY_MIRROR === 'on' ? 503 : 200);
     expect((await counts()).reservations).toBe(before.reservations);
   });
   it.each([

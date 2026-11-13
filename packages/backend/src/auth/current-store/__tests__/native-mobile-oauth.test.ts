@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -315,6 +316,7 @@ describe('actual mobile OAuth client and auth-store through owned provider verif
       await transaction.execute(
         sql`GRANT SELECT, INSERT ON TABLE ${authEmailReservationMembers} TO ${sql.identifier(writerRole)}`,
       );
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -396,6 +398,7 @@ describe('actual mobile OAuth client and auth-store through owned provider verif
         failures.push(new Error('Owned native schema grants cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned native role cleanup failed'));

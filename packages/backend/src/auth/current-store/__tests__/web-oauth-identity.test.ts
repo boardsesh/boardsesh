@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { Socket } from 'node:net';
@@ -321,6 +322,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, role);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -356,6 +358,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     if (trackedRole) {
       let roleMayExist = true;
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         const exists = await admin(sql`SELECT 1 FROM pg_roles WHERE rolname=${role}`);
         roleMayExist = exists.length > 0;
       } catch {
@@ -433,6 +436,7 @@ describe('backend-owned web OAuth identity over real private HTTP and nonowner P
     ]);
     const projectionId = randomUUID();
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, role);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)

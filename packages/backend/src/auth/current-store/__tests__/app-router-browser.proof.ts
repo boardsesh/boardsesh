@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vite-plus/test';
@@ -177,6 +178,7 @@ describe('real Chromium transport around actual App Router bridge', () => {
         failures.push(new Error('Owned browser schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned browser role cleanup failed'));
@@ -371,6 +373,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
       expectedWriterEpoch: 1,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -408,6 +411,7 @@ describe('real Chromium with an explicitly synthetic actor-bound continuation', 
         failures.push(new Error('Owned continuation schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, roleName);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(roleName)}`);
       } catch {
         failures.push(new Error('Owned continuation role cleanup failed'));

@@ -1,3 +1,4 @@
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import { createHash, randomBytes } from 'node:crypto';
 import { executeFirstRow, type DbInstance } from '@boardsesh/db/client';
 import {
@@ -253,6 +254,7 @@ async function consumeBoundLegacyVerification(
       .update(users)
       .set({ emailVerified: verifiedAt })
       .where(and(eq(users.id, owner), isNull(users.emailVerified)));
+  await mirrorIdentityIfEnabled(transaction, owner);
   return 'verified';
 }
 
@@ -381,6 +383,7 @@ export async function consumeEmailVerification(
         .update(users)
         .set({ emailVerified: consumed.consumedAt })
         .where(and(eq(users.id, user.id), isNull(users.emailVerified)));
+    await mirrorIdentityIfEnabled(transaction, user.id);
     assertFresh(issuedAt);
     return { ...base, outcome: 'verified' };
   });

@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import type { Socket } from 'node:net';
@@ -130,6 +131,8 @@ describe('independently opted-in native registration with reserved current-store
         );
         ownedRoles.push(role);
         await transaction.execute(sql`GRANT USAGE ON SCHEMA public TO ${sql.identifier(role)}`);
+        // Both roles execute backend staged commands; neither is the legacy NextAuth actor.
+        await grantIdentityMirrorBackendTables(transaction, role);
         await transaction.execute(sql`GRANT SELECT, INSERT ON TABLE ${users} TO ${sql.identifier(role)}`);
         await transaction.execute(
           sql`GRANT INSERT ON TABLE ${userCredentials}, ${userProfiles} TO ${sql.identifier(role)}`,
@@ -278,6 +281,7 @@ describe('independently opted-in native registration with reserved current-store
         failures.push(new Error('Owned schema cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await administrator(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned role cleanup failed'));
@@ -557,7 +561,10 @@ describe('independently opted-in native registration with reserved current-store
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', '');
     vi.stubEnv('DEBUG_SQL', 'true');
-    expect((await post({ email: `${randomUUID()}@example.test`, password })).status).toBe(201);
+    // Mirroring refuses this unsafe legacy writer; the default-off baseline stays unchanged.
+    expect((await post({ email: `${randomUUID()}@example.test`, password })).status).toBe(
+      process.env.AUTH_IDENTITY_MIRROR === 'on' ? 503 : 201,
+    );
     expect((await counts()).reservations).toBe(1);
   });
   it.each([

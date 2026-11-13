@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -405,6 +406,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
       emailVerificationEnabled: true,
     };
     await db.transaction(async (transaction) => {
+      await grantIdentityMirrorBackendTables(transaction, role);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId: authority.expectedProjectionId });
       await transaction
         .update(authEmailProjection)
@@ -469,6 +471,7 @@ describe('UID-bound password recovery over the restricted current store', () => 
         failures.push(new Error('Owned recovery schema grant cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, owned);
         await admin(sql`DROP ROLE IF EXISTS ${sql.identifier(owned)}`);
       } catch {
         failures.push(new Error('Owned recovery role cleanup failed'));

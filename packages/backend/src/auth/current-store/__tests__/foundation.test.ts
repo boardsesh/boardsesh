@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomUUID } from 'node:crypto';
 import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
@@ -119,6 +120,7 @@ describe('unmounted current-store reservation and security mutation foundation',
         cleanupFailures.push(new Error('Owned role cleanup schema-grant revocation failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await db.execute(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         cleanupFailures.push(new Error('Owned role cleanup drop failed'));
@@ -149,6 +151,8 @@ describe('unmounted current-store reservation and security mutation foundation',
     await transaction.execute(
       sql`GRANT SELECT, INSERT ON TABLE ${authSecurityMutationEvents} TO ${sql.identifier(writerRole)}`,
     );
+
+    await grantIdentityMirrorBackendTables(transaction, writerRole);
     await transaction.execute(
       sql`REVOKE UPDATE, DELETE, TRUNCATE ON TABLE ${authSecurityMutationEvents} FROM ${sql.identifier(writerRole)}`,
     );

@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables } from './mirror-grants';
 // Establish the owned worker URL before imports can construct backend DB singletons.
 import { getWorkerDatabaseName, getWorkerDatabaseUrl } from '../../../../__tests__/worker-db';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -164,6 +165,7 @@ export class BatchSystemUserProof {
       sql`REVOKE INSERT (id, name, email) ON TABLE ${users} FROM ${sql.identifier(this.workerRole)}`,
     );
     await this.db.execute(sql`GRANT USAGE ON SCHEMA public, pgboss TO ${sql.identifier(this.backendRole)}`);
+    await this.db.transaction((transaction) => grantIdentityMirrorBackendTables(transaction, this.backendRole));
     await this.db.execute(
       sql`GRANT SELECT, INSERT, UPDATE ON TABLE ${users}, ${authEmailReservations} TO ${sql.identifier(this.backendRole)}`,
     );

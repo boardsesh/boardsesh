@@ -1,3 +1,4 @@
+import { identityMirrorMode } from '../auth/authority/mirror-configuration';
 import type { IncomingMessage, ServerResponse } from 'http';
 import crypto from 'crypto';
 import { SignJWT, createRemoteJWKSet, jwtVerify } from 'jose';
@@ -1168,6 +1169,9 @@ async function findOrCreateOAuthUser(
   origin: NativeCredentialOrigin,
   database: DbInstance = db,
 ): Promise<FindOrCreateResult> {
+  // This legacy auto-link writer lacks the staged gate/reservation protocol.
+  // Refuse it even when called directly rather than through the mode parser.
+  if (identityMirrorMode() === 'on') throw new Error('AUTH_IDENTITY_MIRROR refuses legacy native OAuth writes');
   return database.transaction(async (tx) => {
     // 1. Link by the provider's stable subject id.
     const linkedRows = await tx

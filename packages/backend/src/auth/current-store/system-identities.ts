@@ -1,3 +1,4 @@
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import {
   BATCH_SYSTEM_USERS,
   SYSTEM_BOARD_OWNER_ID,
@@ -149,4 +150,5 @@ export async function ensureReservedSystemIdentity(
     .values({ id: userId, email: email, name: name })
     .returning({ userId: users.id });
   if (created?.userId !== userId) throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
+  await mirrorIdentityIfEnabled(transaction, userId);
 }

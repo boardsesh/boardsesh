@@ -219,7 +219,7 @@ describe('CI contribution gates', () => {
     expect(categorize('Fix warm-up length near the lowest grades')).toBe('improved');
   });
 
-  it.each(['test-default', 'test-backend', 'test-ocr', 'test-location-sync-integration'])(
+  it.each(['test-default', 'test-backend', 'test-auth-mirror', 'test-ocr', 'test-location-sync-integration'])(
     'still blocks ci-status when %s fails',
     (failedJob) => {
       const status = ci.jobs['ci-status'];

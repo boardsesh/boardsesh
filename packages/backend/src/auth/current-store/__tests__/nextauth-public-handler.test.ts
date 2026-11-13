@@ -1,3 +1,4 @@
+import { grantIdentityMirrorBackendTables, revokeIdentityMirrorBackendTables } from './fixtures/mirror-grants';
 import { randomUUID } from 'node:crypto';
 import { compare } from 'bcryptjs';
 import { eq, sql, type SQL } from 'drizzle-orm';
@@ -94,6 +95,7 @@ describe('unmounted public NextAuth4 callback with atomic backend compound ident
       await transaction.execute(
         sql`GRANT SELECT, INSERT ON TABLE ${authSecurityMutationEvents} TO ${sql.identifier(writerRole)}`,
       );
+      await grantIdentityMirrorBackendTables(transaction, writerRole);
       await prepareProjectionUnderUsersTableLock(transaction, { projectionId });
       await transaction
         .update(authEmailProjection)
@@ -127,6 +129,7 @@ describe('unmounted public NextAuth4 callback with atomic backend compound ident
         failures.push(new Error('Owned schema grant cleanup failed'));
       }
       try {
+        await revokeIdentityMirrorBackendTables(db, role);
         await boundedAdmin(sql`DROP ROLE IF EXISTS ${sql.identifier(role)}`);
       } catch {
         failures.push(new Error('Owned role cleanup failed'));

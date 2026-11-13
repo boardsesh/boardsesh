@@ -1,3 +1,4 @@
+import { mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import { authSecurityMutationEvents, authSubjectCutoffs, users } from '@boardsesh/db/schema/auth';
 import { and, eq, sql } from 'drizzle-orm';
 import { retireDeletedSubjectEmails } from './email-reservations';
@@ -106,5 +107,6 @@ export async function recordSecurityMutation(
   // Keep only a keyed digest of the deleted address (decision 1, epic #6975). A
   // group the account shared stays blocked and never elects a surviving owner.
   if (kind === 'account-deletion') await retireDeletedSubjectEmails(transaction, userId);
+  else await mirrorIdentityIfEnabled(transaction, userId);
   return { cutoff, event };
 }

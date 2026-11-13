@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { identityMirrorMode } from '../authority/mirror-configuration';
+import { lockIdentityMirrorGate, mirrorIdentityIfEnabled } from '../authority/sync-identity';
 import { compare, hash } from 'bcryptjs';
 import { eq, sql } from 'drizzle-orm';
 import { ABSENT_PASSWORD_HASH, PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
@@ -176,6 +178,7 @@ export async function insertCurrentStorePasswordIdentity(
   emailVerificationEnabled: boolean,
   reservedUserId?: string,
 ): Promise<{ userId: string; createdAt: Date }> {
+  if (identityMirrorMode() === 'on') await lockIdentityMirrorGate(transaction);
   const { email, name, passwordHash } = registration;
   // Only a trusted backend stage may supply the ID it just reserved. Legacy
   // callers omit it and retain the existing server-generated ID behavior.
@@ -190,5 +193,6 @@ export async function insertCurrentStorePasswordIdentity(
   });
   await transaction.insert(userCredentials).values({ userId, passwordHash });
   await transaction.insert(userProfiles).values({ userId }).onConflictDoNothing();
+  await mirrorIdentityIfEnabled(transaction, userId);
   return { userId, createdAt };
 }
