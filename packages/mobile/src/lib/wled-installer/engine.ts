@@ -30,7 +30,8 @@ export type FirmwareRelease = {
   appSlotBytes: number;
   url: string;
   sha256: string;
-  qualified: true;
+  qualified: boolean;
+  channel?: 'stable' | 'beta';
 };
 export type Backup = { uri: string; config: JsonObject; presets: JsonObject };
 export type InstallJournal = {
@@ -147,7 +148,10 @@ export function readManifest(candidate: unknown): FirmwareRelease[] {
       release.hardwareModel !== 'GL-C-015WL-D' ||
       release.architecture !== 'esp32' ||
       release.flashBytes !== 4_194_304 ||
-      release.qualified !== true ||
+      !(
+        (release.qualified === true && (release.channel === undefined || release.channel === 'stable')) ||
+        (release.qualified === false && release.channel === 'beta')
+      ) ||
       release.protocolVersion !== 1 ||
       typeof release.audio !== 'boolean' ||
       typeof release.wledVersion !== 'string' ||
@@ -179,10 +183,10 @@ export function readManifest(candidate: unknown): FirmwareRelease[] {
     const assetUrl = new URL(release.url);
     if (assetUrl.protocol !== 'https:' || assetUrl.username || assetUrl.password)
       throw new WledInstallerError('incompatible');
-    return release as FirmwareRelease;
+    return { ...release, channel: release.channel ?? 'stable' } as FirmwareRelease;
   });
 }
-export function qualifiedReleases(identity: ControllerIdentity, manifest: FirmwareRelease[]): FirmwareRelease[] {
+export function compatibleReleases(identity: ControllerIdentity, manifest: FirmwareRelease[]): FirmwareRelease[] {
   return manifest.filter(
     (release) =>
       release.architecture === identity.architecture &&
@@ -193,6 +197,14 @@ export function qualifiedReleases(identity: ControllerIdentity, manifest: Firmwa
           profile.brand === identity.brand &&
           profile.product === identity.product,
       ),
+  );
+}
+function preferredRelease(releases: FirmwareRelease[]): FirmwareRelease | undefined {
+  return (
+    releases.find((release) => release.audio && release.qualified) ??
+    releases.find((release) => release.audio) ??
+    releases.find((release) => release.qualified) ??
+    releases[0]
   );
 }
 function canonical(candidate: unknown): string {
@@ -324,7 +336,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
         if (!settingsPreserved(pending.backup, requireObject(config), requireObject(presets)))
           throw new WledInstallerError('preservation');
         await io.checkUpdateAccess(url, signal);
-        releases = qualifiedReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
+        releases = compatibleReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
         ensureCurrent(signal);
         await io.clearJournal(url);
         journal = null;
@@ -332,7 +344,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
           stage: 'ready',
           identity,
           backup: pending.backup,
-          release: releases.find((release) => release.audio) ?? releases[0],
+          release: preferredRelease(releases),
         });
         return;
       }
@@ -354,7 +366,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
           return;
         }
         await io.checkUpdateAccess(url, signal);
-        releases = qualifiedReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
+        releases = compatibleReleases(identity, readManifest(await io.readJson(WLED_RELEASE_MANIFEST_URL, signal)));
         ensureCurrent(signal);
         update({ stage: 'backingUp', identity });
         const [config, presets] = await Promise.all([
@@ -365,12 +377,12 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
         const backup = { config: requireObject(config), presets: requireObject(presets), uri: '' };
         backup.uri = await io.saveBackup(identity, backup.config, backup.presets);
         ensureCurrent(signal);
-        update({ stage: 'ready', identity, backup, release: releases.find((release) => release.audio) ?? releases[0] });
+        update({ stage: 'ready', identity, backup, release: preferredRelease(releases) });
       }),
     exportBackup: async () => {
       if (snapshot.backup) await io.exportBackup(snapshot.backup.uri);
     },
-    install: (modelConfirmed: boolean, audioDisabledConfirmed: boolean) =>
+    install: (modelConfirmed: boolean, audioDisabledConfirmed: boolean, betaConfirmed = false) =>
       exclusive(async (signal) => {
         const { identity, backup, release } = snapshot;
         if (
@@ -380,6 +392,7 @@ export function createWledInstaller(rawUrl: string, io: InstallerIO, publish: (s
           !backup ||
           !release ||
           (!release.audio && !audioDisabledConfirmed) ||
+          (release.channel === 'beta' && !betaConfirmed) ||
           !releases.includes(release)
         )
           throw new WledInstallerError('incompatible');

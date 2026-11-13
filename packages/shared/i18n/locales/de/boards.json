@@ -42,14 +42,14 @@
       "notNow": "Jetzt nicht"
     },
     "installer": {
-      "title": "Bluetooth-Unterstützung installieren",
-      "hint": "Sichere WLED und installiere geprüfte Bluetooth-Firmware über das lokale WLAN.",
+      "title": "Bluetooth-Unterstützung installieren (Beta)",
+      "hint": "Sichere WLED und installiere dann kompatible Bluetooth-Beta-Firmware über das lokale WLAN.",
       "inspect": "Controller prüfen und sichern",
       "inspecting": "Controller wird geprüft…",
       "locked": "Entsperre OTA und gib deine WLED-Einstellungs-PIN ein. Prüfe dann erneut.",
       "backingUp": "Konfiguration und Presets werden auf diesem Telefon gesichert…",
       "ready": "Sicherung gespeichert. Bestätige vor der Installation das Controller-Modell.",
-      "unqualified": "Sicherung gespeichert. Für diesen Controller ist noch keine Firmware geprüft.",
+      "unqualified": "Dein Backup ist gespeichert. Für diesen Controller ist keine kompatible Firmware-Version verfügbar.",
       "downloading": "Firmware wird heruntergeladen und geprüft…",
       "uploading": "Firmware wird übertragen… Lass WLED eingeschaltet.",
       "uploadProgress": "Übertragung {{percent}} %… Lass WLED eingeschaltet.",
@@ -69,7 +69,11 @@
       "confirmNoAudio": "Ich stimme der Installation ohne audioreaktive Effekte zu",
       "install": "Geprüfte Firmware installieren",
       "verify": "Installation prüfen",
-      "cancel": "Abbrechen"
+      "cancel": "Abbrechen",
+      "betaReady": "Dein Backup ist gespeichert. Bestätige vor der Installation das Controller-Modell und den Beta-Status.",
+      "betaWarning": "Beta: OTA-, Android- und iOS-Tests auf echten Geräten sind noch nicht abgeschlossen. Die Installation kann fehlschlagen und du musst möglicherweise WLED-Einstellungen aus deinem Backup wiederherstellen.",
+      "confirmBeta": "Ich verstehe, dass dies Beta-Firmware ist und Tests auf echten Geräten noch nicht abgeschlossen sind",
+      "installBeta": "Beta-Firmware installieren"
     }
   },
   "sprayDetection": {

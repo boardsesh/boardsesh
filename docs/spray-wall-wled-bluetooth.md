@@ -3,17 +3,23 @@
 Boardsesh supports the independent BLE JSON WLED usermod from
 [boardsesh/wled-usermod-ble-json](https://github.com/boardsesh/wled-usermod-ble-json).
 The initial target is Gledopto GL-C-015WL-D with classic ESP32 and 4 MB flash.
-Firmware installation remains unavailable until a release manifest qualifies
-that hardware and its source firmware. Source builds and host tests do not
-qualify a controller for installation.
+Firmware installation is available as an explicitly disclosed owner-approved beta.
+A beta manifest entry uses `channel: "beta"` and `qualified: false`; it does not
+claim real-device qualification. Stable entries require `qualified: true`. Source
+builds and host tests alone do not qualify hardware.
 
 ## Owner setup
 
-Open Edit board → LEDs. Wi-Fi remains the default. The Install Bluetooth support
+Open Edit board → LEDs. Wi-Fi remains the default. The Install Bluetooth support (beta)
 flow inspects the controller on its local network, saves configuration and
 presets on the owner's phone, and offers export before an installation can be
-confirmed. An empty qualified manifest permits inspection and backup, and
-keeps installation unavailable. A locked controller links to its own WLED
+confirmed. An empty manifest permits inspection and backup, and keeps installation unavailable.
+A matching beta release requires a separate beta consent before downloading or
+uploading. The warning says real-device OTA, Android and iOS testing is incomplete
+and WLED settings may need restoring from the backup. Model confirmation and
+audio-disabled approval remain separate. The initial beta matches stock WLED
+16.0.1 with brand WLED and product FOSS on classic ESP32, 4 MB; it does not
+automatically match different Gledopto factory versions or architectures. A locked controller links to its own WLED
 security page; Boardsesh does not bypass PIN or OTA locks.
 
 Installation downloads the HTTPS firmware asset and verifies its byte count and
@@ -58,8 +64,8 @@ by Spraywall discovery or lighting.
 
 ## Release evidence
 
-Before adding any installable profile, record all of the following in the
-firmware release's qualification evidence:
+Before changing a beta profile to a qualified stable release, record all of the
+following in the firmware release's qualification evidence:
 
 1. OTA from the actual Gledopto factory image and pinned stock WLED 16.0.1,
    using the existing partition layout, with config and preset preservation.
@@ -72,5 +78,6 @@ firmware release's qualification evidence:
 5. Independent Astra/Fable BLE review and required Boardsesh checks.
 
 No physical controller, Android/iOS radio, firmware OTA, microphone or physical
-LED preservation evidence is established by unit tests. Keep the qualified
-manifest empty until those checks have recorded results.
+LED preservation evidence is established by unit tests. An owner may install a matching beta before those checks are complete, after
+explicitly accepting the disclosed beta status. Keep `qualified: false` until
+those checks have recorded results; never relabel an untested beta as qualified.

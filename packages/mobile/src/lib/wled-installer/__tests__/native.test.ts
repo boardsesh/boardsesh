@@ -113,6 +113,7 @@ describe('native WLED installer IO', () => {
     runtime.fetch.mockResolvedValue({
       ok: true,
       status: 200,
+      url: 'https://example.com/firmware.bin',
       headers: new Headers({ 'content-length': '3' }),
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     });
@@ -121,10 +122,59 @@ describe('native WLED installer IO', () => {
     expect(runtime.digest).toHaveBeenCalledWith('SHA-256', new Uint8Array([1, 2, 3]).buffer);
     expect(runtime.write).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
   });
+  it('follows firmware asset redirects over HTTPS without changing local-controller requests', async () => {
+    runtime.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      redirected: true,
+      url: 'https://release-assets.githubusercontent.com/firmware.bin?signature=asset',
+      headers: new Headers({ 'content-length': '3' }),
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    });
+    await nativeInstallerIO.download(
+      { ...release, url: 'https://github.com/boardsesh/wled-usermod-ble-json/releases/download/beta/firmware.bin' },
+      new AbortController().signal,
+    );
+    expect(runtime.fetch).toHaveBeenCalledWith(
+      'https://github.com/boardsesh/wled-usermod-ble-json/releases/download/beta/firmware.bin',
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'follow',
+        headers: { Accept: 'application/octet-stream' },
+      }),
+    );
+    expect(runtime.write).toHaveBeenCalledWith(new Uint8Array([1, 2, 3]));
+    runtime.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ name: 'WLED' }) });
+    await nativeInstallerIO.readJson('http://192.168.1.5/json/info', new AbortController().signal);
+    expect(runtime.fetch).toHaveBeenLastCalledWith(
+      'http://192.168.1.5/json/info',
+      expect.objectContaining({ credentials: 'omit', redirect: 'error' }),
+    );
+  });
+  it.each(['http://example.com/firmware.bin', 'https://user:secret@example.com/firmware.bin', '', 'not-a-url'])(
+    'rejects unsafe final firmware redirect targets before reading or saving: %s',
+    async (url) => {
+      const readBytes = vi.fn();
+      runtime.fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        redirected: true,
+        url,
+        headers: new Headers(),
+        arrayBuffer: readBytes,
+      });
+      await expect(nativeInstallerIO.download(release, new AbortController().signal)).rejects.toMatchObject({
+        code: 'incompatible',
+      });
+      expect(readBytes).not.toHaveBeenCalled();
+      expect(runtime.write).not.toHaveBeenCalled();
+    },
+  );
   it('does not persist a bad checksum or incorrect image length', async () => {
     runtime.fetch.mockResolvedValue({
       ok: true,
       status: 200,
+      url: 'https://example.com/firmware.bin',
       headers: new Headers(),
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
     });

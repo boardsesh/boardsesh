@@ -46,6 +46,7 @@ const presets = { '1': { name: 'Audio', fx: 123 } };
 function setup(releases: FirmwareRelease[] = [release]) {
   let uploaded = false;
   let pending: InstallJournal | null = null;
+  let downloadedRelease = release;
   const io: InstallerIO = {
     readJson: vi.fn(async (url) => {
       if (url.endsWith('release-manifest.json')) return { manifestVersion: 1, releases };
@@ -58,8 +59,8 @@ function setup(releases: FirmwareRelease[] = [release]) {
               controllerId: 'wled-001122aabbcc',
               protocolVersion: 1,
               usermodVersion: '0.1.0',
-              buildId: release.buildId,
-              audio: release.audio,
+              buildId: downloadedRelease.buildId,
+              audio: downloadedRelease.audio,
               ledCount: 1000,
               maxMessageBytes: 8192,
             },
@@ -69,7 +70,10 @@ function setup(releases: FirmwareRelease[] = [release]) {
     checkUpdateAccess: vi.fn(async () => undefined),
     saveBackup: vi.fn(async () => 'file:///backup.json'),
     exportBackup: vi.fn(async () => undefined),
-    download: vi.fn(async () => ({ uri: 'file:///firmware.bin', bytes: release.imageBytes, sha256: release.sha256 })),
+    download: vi.fn(async (candidate) => {
+      downloadedRelease = candidate;
+      return { uri: 'file:///firmware.bin', bytes: candidate.imageBytes, sha256: candidate.sha256 };
+    }),
     upload: vi.fn(async () => {
       uploaded = true;
     }),
@@ -93,7 +97,100 @@ function setup(releases: FirmwareRelease[] = [release]) {
   };
 }
 describe('WLED owner installer', () => {
-  it('backs up locally but cannot install when no hardware is qualified', async () => {
+  it('normalizes legacy qualified releases and accepts explicit unqualified betas', () => {
+    expect(readManifest({ manifestVersion: 1, releases: [release] })[0]).toMatchObject({
+      channel: 'stable',
+      qualified: true,
+    });
+    expect(
+      readManifest({ manifestVersion: 1, releases: [{ ...release, channel: 'beta', qualified: false }] })[0],
+    ).toMatchObject({ channel: 'beta', qualified: false });
+  });
+  it.each([
+    { qualified: false },
+    { channel: 'stable', qualified: false },
+    { channel: 'beta', qualified: true },
+    { channel: 'alpha', qualified: false },
+    { channel: 'alpha', qualified: true },
+  ])('rejects release status without an explicit valid channel/qualification pair: %j', (status) => {
+    expect(() => readManifest({ manifestVersion: 1, releases: [{ ...release, ...status }] })).toThrow();
+  });
+  it('requires explicit beta consent before downloading or uploading unqualified firmware', async () => {
+    const { io, installer } = setup([{ ...release, channel: 'beta', qualified: false }]);
+    await installer.inspect();
+    expect(installer.getSnapshot().release).toMatchObject({ channel: 'beta', qualified: false });
+    await installer.install(true, false);
+    expect(io.download).not.toHaveBeenCalled();
+    expect(io.upload).not.toHaveBeenCalled();
+    expect(io.writeJournal).not.toHaveBeenCalled();
+  });
+  it('allows a matching beta after model and beta consent and verifies preservation', async () => {
+    const { io, installer } = setup([{ ...release, channel: 'beta', qualified: false }]);
+    await installer.inspect();
+    await installer.install(true, false, true);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(io.upload).toHaveBeenCalledOnce();
+    expect(io.writeJournal).toHaveBeenCalledWith(
+      expect.objectContaining({ release: expect.objectContaining({ channel: 'beta', qualified: false }) }),
+    );
+    expect(io.clearJournal).toHaveBeenCalledOnce();
+  });
+  it.each([
+    [false, true, true],
+    [true, false, true],
+    [true, true, false],
+  ])(
+    'keeps model, no-audio and beta confirmations independent: %j',
+    async (modelConfirmed, noAudioConfirmed, betaConfirmed) => {
+      const { io, installer } = setup([{ ...release, audio: false, channel: 'beta', qualified: false }]);
+      await installer.inspect();
+      await installer.install(modelConfirmed, noAudioConfirmed, betaConfirmed);
+      expect(io.download).not.toHaveBeenCalled();
+      expect(io.upload).not.toHaveBeenCalled();
+    },
+  );
+  it('permits a no-audio beta only when all three confirmations are explicit', async () => {
+    const { io, installer } = setup([{ ...release, audio: false, channel: 'beta', qualified: false }]);
+    await installer.inspect();
+    await installer.install(true, true, true);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(io.upload).toHaveBeenCalledOnce();
+  });
+  it('keeps source firmware matching for a beta image', async () => {
+    const { io, installer } = setup([
+      {
+        ...release,
+        channel: 'beta',
+        qualified: false,
+        sourceProfiles: [{ ...release.sourceProfiles[0], version: '16.0.2' }],
+      },
+    ]);
+    await installer.inspect();
+    expect(installer.getSnapshot().release).toBeUndefined();
+    await installer.install(true, true, true);
+    expect(io.download).not.toHaveBeenCalled();
+    expect(io.upload).not.toHaveBeenCalled();
+  });
+  it('prefers a qualified audio release when an opt-in beta is also compatible', async () => {
+    const stable = { ...release, id: 'stable-audio', buildId: 'stable-audio' };
+    const beta: FirmwareRelease = {
+      ...release,
+      id: 'beta-audio',
+      buildId: 'beta-audio',
+      channel: 'beta',
+      qualified: false,
+    };
+    const { io, installer } = setup([beta, stable]);
+    await installer.inspect();
+    expect(installer.getSnapshot().release?.id).toBe('stable-audio');
+    await installer.install(true, false);
+    expect(installer.getSnapshot().stage).toBe('complete');
+    expect(io.download).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'stable-audio', channel: 'stable' }),
+      expect.any(AbortSignal),
+    );
+  });
+  it('backs up locally but cannot install when no compatible release exists', async () => {
     const { io, installer } = setup([]);
     await installer.inspect();
     expect(installer.getSnapshot()).toMatchObject({ stage: 'ready', backup: { uri: 'file:///backup.json' } });

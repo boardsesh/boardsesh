@@ -42,14 +42,14 @@
       "notNow": "Ahora no"
     },
     "installer": {
-      "title": "Instalar compatibilidad Bluetooth",
-      "hint": "Haz una copia de WLED e instala firmware Bluetooth verificado mediante la Wi-Fi local.",
+      "title": "Instalar compatibilidad Bluetooth (beta)",
+      "hint": "Haz una copia de seguridad de WLED e instala firmware Bluetooth beta compatible por la red Wi-Fi local.",
       "inspect": "Comprobar controlador y guardar copia",
       "inspecting": "Comprobando este controlador…",
       "locked": "Desbloquea OTA e introduce tu PIN de ajustes de WLED; después vuelve a comprobar.",
       "backingUp": "Guardando configuración y preajustes en este teléfono…",
       "ready": "Copia guardada. Confirma el modelo del controlador antes de instalar.",
-      "unqualified": "Copia guardada. Aún no hay firmware verificado para este controlador.",
+      "unqualified": "Tu copia de seguridad está guardada. No hay una versión de firmware compatible disponible para este controlador.",
       "downloading": "Descargando y verificando el firmware…",
       "uploading": "Subiendo firmware… Mantén WLED encendido.",
       "uploadProgress": "Subiendo {{percent}}%… Mantén WLED encendido.",
@@ -69,7 +69,11 @@
       "confirmNoAudio": "Acepto instalar esta versión sin efectos reactivos al sonido",
       "install": "Instalar firmware verificado",
       "verify": "Comprobar instalación",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "betaReady": "Tu copia de seguridad está guardada. Confirma el modelo del controlador y que el firmware es beta antes de instalarlo.",
+      "betaWarning": "Beta: las pruebas de OTA, Android e iOS en dispositivos reales aún no están completas. La instalación puede fallar y quizá tengas que restaurar los ajustes de WLED desde tu copia de seguridad.",
+      "confirmBeta": "Entiendo que este firmware es beta y que las pruebas en dispositivos reales aún no están completas",
+      "installBeta": "Instalar firmware beta"
     }
   },
   "sprayDetection": {

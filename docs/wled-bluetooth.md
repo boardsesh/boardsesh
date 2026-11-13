@@ -9,14 +9,18 @@ and [test vectors](../packages/shared/wled-ble-protocol/test-vectors.json) defin
 ## Owner setup
 
 Open the wall owner's Spraywall LED settings. Wi-Fi control still uses the local
-controller address. **Install Bluetooth support** inspects that local controller,
+controller address. **Install Bluetooth support (beta)** inspects that local controller,
 checks its update/security page, and backs up configuration and presets on the
 phone. The owner can export the backup before confirming any installation.
 No Boardsesh login headers go to controller URLs; backend services never contact
 a controller address.
 
-An installation requires a matching qualified release from the HTTPS manifest,
-owner confirmation of the GL-C-015WL-D model, and a verified firmware download.
+An installation requires a matching release from the HTTPS manifest, owner
+confirmation of the GL-C-015WL-D model, and a verified firmware download. An
+unqualified release is installable only when explicitly marked `channel: "beta"`
+and `qualified: false`, after the owner separately accepts the beta disclosure.
+Stable releases must remain qualified; legacy qualified entries without a channel
+are treated as stable. The beta is not proof of hardware or OTA qualification.
 The audio-enabled image is preferred. An audio-disabled image is separately
 identified and requires the owner's explicit confirmation. Installation uses
 WLED's normal local multipart `/update` upload. Upload, reboot, and verification
@@ -24,11 +28,20 @@ are separate states. A disconnect alone never establishes success. An interrupte
 upload leaves a local journal; inspection and verification must occur before a
 new attempt. WLED's normal update workflow remains available.
 
-**No hardware combinations are qualified in the initial manifest.** Firmware
-artifacts produced by build CI are development candidates only. The installer
-cannot upload one until the required release evidence is recorded and a qualified
-manifest entry is published. This gate is intentional; do not add an entry based
-only on a successful compiler or mocked test result.
+Beta installation is an explicit owner opt-in. The screen says that real-device
+OTA, Android and iOS testing is incomplete and installation may fail or require
+restoring WLED settings from the exported backup. The install action is labeled
+**Install beta firmware**, and the engine rejects it before downloading unless
+beta consent is provided. This consent is separate from model confirmation and
+approval of an audio-disabled image.
+
+The initial beta profile matches stock WLED 16.0.1 (`brand: WLED`, `product: FOSS`)
+on classic ESP32 with 4 MB flash, for the owner-confirmed GL-C-015WL-D. Different
+source versions, brands, products, architectures and flash sizes remain blocked.
+Gledopto factory firmware is not implicitly treated as a matching source profile.
+Empty manifests still allow backup but cannot install any image. CI artifacts
+alone are not a release: the manifest must name the published image and its
+verified HTTPS URL, byte size and SHA-256.
 
 ## Climber control
 
@@ -55,7 +68,7 @@ A nearby unpaired phone can control live lighting while BLE is enabled. Disable
 usermod builds default off; the Boardsesh image defaults on only when this saved
 setting is absent. Output current limits remain WLED's responsibility.
 
-## Qualification record required before installation is enabled
+## Evidence required before a beta is marked qualified
 
 First hardware target: Gledopto GL-C-015WL-D, classic ESP32, 4 MB. Baseline:
 WLED 16.0.1 at `29b389df1c1aaec6ff53aea742d17063b985906c`. Standard application
@@ -65,7 +78,9 @@ microphones, network settings, presets, and any existing BLE enabled setting.
 
 Record exact source firmware brand/product/version and partition evidence for
 both factory Gledopto firmware and stock WLED 16.0.1. Each manifest source profile
-must refer to that measured hardware/source combination. Record the image SHA-256,
+must refer to that measured hardware/source combination before it is marked
+qualified. Beta profiles explicitly retain `qualified: false` while evidence is
+incomplete. Record the image SHA-256,
 size, WLED/usermod/protocol versions, build ID, audio capability, and HTTPS asset.
 Qualify subsequent updates and returning to compatible stock firmware as well.
 A compiled image that fits does not prove installation on factory firmware works.
@@ -81,5 +96,7 @@ application acknowledgement does not provide that observation.
 
 Host protocol, driver and mocked native/installer tests are automated. Real-phone,
 factory OTA and physical LED evidence remains unrun until hardware is available.
-The independent Astra source review complements these gates; it does not replace
-them.
+The independent Astra source review complements this evidence; it does not replace
+it. The owner-approved beta is available before these physical tests are complete,
+with the disclosure and separate consent above. Stable qualification still
+requires the recorded results.
