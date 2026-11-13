@@ -49,13 +49,17 @@ import {
 } from '../../../services/fixed-system-owner-order';
 import { FixedSystemOwnerOrderError } from '@boardsesh/db/fixed-system-owner-order';
 import {
-  beginReservedAccountDeletion,
   captureAccountDeletionCommand,
   lockReservedDeletionSubject,
-  recordReservedAccountDeletion,
   type CapturedAccountDeletionCommand,
   type ReservedDeletionSubject,
 } from '../../../auth/current-store/account-deletion';
+import {
+  assertLegacyAccountDeletionAllowed,
+  beginIdentityAccountDeletion,
+  deleteIdentityAccount,
+  recordIdentityAccountDeletion,
+} from '../../../auth/authority/account-deletion';
 import { CurrentStoreFoundationError } from '../../../auth/current-store/foundation-context';
 
 /** Credential statuses a sync can run from; `expired` needs a relink first. */
@@ -336,13 +340,18 @@ export const userMutations = {
             // Staged: the shared authority gate and a manifest check before any
             // content, so a stale authority fails first. The gate never makes
             // another climber's command wait.
-            if (deletionCommand) await beginReservedAccountDeletion(tx, deletionCommand);
-            else await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
+            const deletionExecution = deletionCommand
+              ? await beginIdentityAccountDeletion(tx, deletionCommand)
+              : undefined;
+            if (!deletionExecution) {
+              await assertLegacyAccountDeletionAllowed(tx);
+              await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
+            }
             const sprayWalls = await deleteAccountSprayWalls(tx, userId);
             deletedWallIds = sprayWalls.wallIds;
             let deletionSubject: ReservedDeletionSubject | undefined;
-            if (deletionCommand) {
-              deletionSubject = await lockReservedDeletionSubject(tx, deletionCommand);
+            if (deletionExecution) {
+              deletionSubject = await lockReservedDeletionSubject(tx, deletionExecution.command);
               if (!deletionSubject) {
                 // Already deleted and committed: report success and write nothing.
                 previewBoardIds = [];
@@ -414,7 +423,8 @@ export const userMutations = {
             // will be cleaned up automatically by the database.
             // boardClimbs.userId has onDelete: 'set null', so published climbs
             // will have their userId set to null (preserved).
-            await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+            if (deletionExecution) await deleteIdentityAccount(tx, deletionExecution);
+            else await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
 
             // logbook_changes has no users FK, so the cascade leaves it alone, and
             // the cascaded tick deletes just wrote one row per tick naming this
@@ -425,8 +435,8 @@ export const userMutations = {
 
             // After the cascade, the longest statement here, so the short limits
             // cover the bookkeeping only.
-            if (deletionCommand && deletionSubject) {
-              await recordReservedAccountDeletion(tx, deletionCommand, deletionSubject);
+            if (deletionExecution && deletionSubject) {
+              await recordIdentityAccountDeletion(tx, deletionExecution, deletionSubject);
             }
           });
         },

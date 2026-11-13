@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import {
   accounts,
+  authAccount,
   authEmailProjection,
   authEmailReservationMembers,
   authEmailReservations,
@@ -63,6 +64,8 @@ import {
   type ReservedDeletionSubject,
 } from '../account-deletion';
 import { recordSecurityMutation } from '../security-mutations';
+import { syncIdentity } from '../../authority/sync-identity';
+import { switchIdentityAuthority } from '../../authority/router';
 import { insertReservedPasswordIdentity } from '../reserved-password-registration';
 import { consumePasswordRecovery, requestPasswordRecovery } from '../password-recovery';
 import { consumeEmailVerification, issueEmailVerification, resendEmailVerification } from '../email-verification';
@@ -608,6 +611,64 @@ describe('mounted account deletion and current-store authority', () => {
       expect(await db.select().from(users).where(eq(users.id, otherId))).toHaveLength(1);
     },
   );
+  it.each(['prepared', 'current-store', 'better-auth'] as const)(
+    'refuses legacy deletion with a %s projection before content changes',
+    async (selection) => {
+      await seedPair();
+      await db
+        .update(users)
+        .set({ email: normalizeAccountEmail(ownerEmail) })
+        .where(eq(users.id, ownerId));
+      await db.transaction(async (transaction) => {
+        await syncIdentity(transaction, ownerId, 'current-store-to-authority');
+        if (selection === 'better-auth')
+          await switchIdentityAuthority(transaction, {
+            projectionId: authority.expectedProjectionId,
+            epoch: 1,
+            from: 'current-store',
+            to: 'better-auth',
+          });
+        if (selection === 'prepared') await transaction.update(authEmailProjection).set({ phase: 'prepared' });
+      });
+      vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
+      vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
+      const before = await snapshot();
+      const canonicalBefore = await db.select().from(authAccount).where(eq(authAccount.userId, ownerId));
+      await expect(remove()).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
+      expect(await snapshot()).toEqual(before);
+      expect(await db.select().from(authAccount).where(eq(authAccount.userId, ownerId))).toEqual(canonicalBefore);
+      expect(effects.publish).not.toHaveBeenCalled();
+      expect(effects.purge).not.toHaveBeenCalled();
+    },
+  );
+  it('deletes through the mounted canonical authority with the current epoch and durable tombstone', async () => {
+    await seedPair();
+    await db
+      .update(users)
+      .set({ email: normalizeAccountEmail(ownerEmail) })
+      .where(eq(users.id, ownerId));
+    await db.transaction(async (transaction) => {
+      await syncIdentity(transaction, ownerId, 'current-store-to-authority');
+      await switchIdentityAuthority(transaction, {
+        projectionId: authority.expectedProjectionId,
+        epoch: 1,
+        from: 'current-store',
+        to: 'better-auth',
+      });
+    });
+    vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
+    expect(await remove()).toBe(true);
+    expect(await db.select().from(users).where(eq(users.id, ownerId))).toEqual([]);
+    expect(await db.select().from(authAccount).where(eq(authAccount.userId, ownerId))).toEqual([]);
+    const [cutoff] = await db.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, ownerId));
+    expect(cutoff.deletedAt).toBeInstanceOf(Date);
+    const [event] = await db
+      .select()
+      .from(authSecurityMutationEvents)
+      .where(eq(authSecurityMutationEvents.userId, ownerId));
+    expect(event).toMatchObject({ kind: 'account-deletion', writerEpoch: 2, domains: ['first-party', 'partner'] });
+    expect(await db.select().from(users).where(eq(users.id, otherId))).toHaveLength(1);
+  });
   it.each(['backend-staging', 'reserved', ' reserved-staging', 'true'])(
     'rejects unknown selector %j before mutation',
     async (mode) => {
@@ -663,6 +724,11 @@ describe('mounted account deletion and current-store authority', () => {
     async (mode) => {
       await seedPair({ system: true });
       await seedBoard();
+      if (mode === 'legacy') {
+        await db.delete(authEmailReservationMembers);
+        await db.delete(authEmailReservations);
+        await db.delete(authEmailProjection);
+      }
       vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', mode);
       // Staged deletion always participates, even with conditional content off.
       vi.stubEnv('CURRENT_STORE_FIXED_SYSTEM_OWNER_ORDER_MODE', mode === 'legacy' ? 'cooperative-staging' : 'legacy');
@@ -707,6 +773,11 @@ describe('mounted account deletion and current-store authority', () => {
     'ends partner connections through the cascade when %s deletion commits, and leaves other climbers',
     async (mode) => {
       await seedPair();
+      if (mode === 'legacy') {
+        await db.delete(authEmailReservationMembers);
+        await db.delete(authEmailReservations);
+        await db.delete(authEmailProjection);
+      }
       vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', mode);
       const clientId = await createApp(otherId);
       const ownerRows = await attachPartnerState(ownerId, clientId);
@@ -912,12 +983,13 @@ describe('mounted account deletion and current-store authority', () => {
     }
     await expectUnavailableUnchanged();
   });
-  it.each(['wrong projection', 'wrong epoch', 'not enforced', 'missing manifest'])(
+  it.each(['wrong projection', 'wrong normalizer', 'not enforced', 'missing manifest'])(
     'rejects %s without altering account/content state',
     async (drift) => {
       await seedPair();
       if (drift === 'wrong projection') vi.stubEnv('CURRENT_STORE_AUTH_PROJECTION_ID', randomUUID());
-      else if (drift === 'wrong epoch') vi.stubEnv('CURRENT_STORE_AUTH_WRITER_EPOCH', '2');
+      else if (drift === 'wrong normalizer')
+        await db.update(authEmailProjection).set({ normalizerVersion: 'unsupported-normalizer' });
       else if (drift === 'not enforced') await db.update(authEmailProjection).set({ phase: 'prepared' });
       else {
         await db.delete(authEmailReservationMembers);
@@ -1595,6 +1667,9 @@ describe('mounted account deletion and current-store authority', () => {
   });
   it('leaves a legacy deletion failure unmasked and unlogged', async () => {
     await seedPair();
+    await db.delete(authEmailReservationMembers);
+    await db.delete(authEmailReservations);
+    await db.delete(authEmailProjection);
     await installFault();
     vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
     let failure: unknown;
