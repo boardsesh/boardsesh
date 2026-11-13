@@ -20,6 +20,8 @@ export const webCredentialProofSchema = z
     generation: z.number().int().nonnegative().max(2_147_483_647),
     authenticatedAt: z.iso.datetime().nullable(),
     linkGuarded: z.boolean(),
+    /** The source login had no stable identifier before renewal assigned one. */
+    requiresAccountCutoff: z.literal(true).optional(),
   })
   .strict();
 export type WebCredentialProof = z.infer<typeof webCredentialProofSchema>;

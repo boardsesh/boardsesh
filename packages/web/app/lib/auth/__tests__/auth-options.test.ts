@@ -703,6 +703,27 @@ describe('authOptions.callbacks.jwt', () => {
     expect(result.auth_time).toBeUndefined();
   });
 
+  it('inherits historical ancestry from a trusted backend proof for an existing OAuth actor', async () => {
+    const result = await callJwt({
+      token: { sub: 'user-1' },
+      user: {
+        id: 'user-1',
+        webCredentialProof: {
+          version: 1,
+          userId: 'user-1',
+          authSessionId: 'historical-child',
+          generation: 0,
+          authenticatedAt: null,
+          linkGuarded: false,
+          requiresAccountCutoff: true,
+        },
+      },
+      account: { provider: 'google', type: 'oauth', providerAccountId: 'provider-subject' },
+    });
+    expect(result).toMatchObject({ authSessionId: 'historical-child', legacy_no_sid: true, gen: 0 });
+    expect(result.auth_time).toBeUndefined();
+  });
+
   // Profile-claim caching (the perf change): the jwt callback fetches
   // avatar/display name and stamps them on the token so the session callback
   // reads them for free.

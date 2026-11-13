@@ -218,7 +218,7 @@ it('rolls back cutoff and event on a semantic secret-disappearance failure after
   }
 });
 
-it('does not acknowledge complete signout for a no-SID login while its other valid rotation survives', async () => {
+it('requires selected authority before no-SID signout and leaves the other valid rotation admitted', async () => {
   const userId = randomUUID();
   await first.database.insert(users).values({ id: userId, email: `synthetic-nosid-${userId}@example.test` });
   const secret = 'synthetic-nosid-review-secret';
@@ -251,8 +251,8 @@ it('does not acknowledge complete signout for a no-SID login while its other val
     new Date(),
     readSubject,
   );
-  if (signedOut.status === 'signed-out') expect(other.status).toBe('denied');
-  else expect(signedOut.status).toBe('denied');
+  expect(signedOut.status).toBe('unavailable');
+  expect(other.status).toBe('admitted');
 });
 it('a live refresh secret from an older native generation cannot end a newer login', async () => {
   const userId = randomUUID();

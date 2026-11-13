@@ -17,6 +17,7 @@ type NativeOAuthTransferPayload = {
   provider?: 'apple' | 'google';
   auth_time?: number;
   link_guarded?: true;
+  legacy_no_sid?: true;
 };
 
 const base64UrlEncode = (value: string): string => Buffer.from(value, 'utf8').toString('base64url');
@@ -71,6 +72,7 @@ export const issueNativeOAuthTransferToken = ({
           authSessionId: proof.authSessionId,
           ...(proof.authenticatedAt ? { auth_time: Math.floor(Date.parse(proof.authenticatedAt) / 1000) } : {}),
           ...(proof.linkGuarded ? { link_guarded: true as const } : {}),
+          ...(proof.requiresAccountCutoff ? { legacy_no_sid: true as const } : {}),
         }
       : {}),
     ...(accountCreation && authSessionId && attemptId && provider
@@ -150,7 +152,8 @@ export const verifyNativeOAuthTransferToken = (
   if (
     (payload.gen !== undefined && payload.authSessionId !== undefined) ||
     payload.auth_time !== undefined ||
-    payload.link_guarded !== undefined
+    payload.link_guarded !== undefined ||
+    payload.legacy_no_sid !== undefined
   ) {
     if (
       payload.auth_time !== undefined &&
@@ -166,6 +169,7 @@ export const verifyNativeOAuthTransferToken = (
       generation: payload.gen,
       authenticatedAt: payload.auth_time === undefined ? null : new Date(payload.auth_time * 1000).toISOString(),
       linkGuarded: payload.link_guarded === true,
+      ...(payload.legacy_no_sid !== undefined ? { requiresAccountCutoff: payload.legacy_no_sid } : {}),
     });
     if (!parsed.success) return null;
     credentialProof = parsed.data;

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
@@ -17,9 +17,13 @@ import {
   authSecurityMutationEvents,
 } from '@boardsesh/db/schema';
 import { createEnvironment } from '../../backend/src/auth/authority/__tests__/environment';
-import { prepareProjectionUnderUsersTableLock } from '../../backend/src/auth/current-store/email-reservations';
+import {
+  prepareProjectionUnderUsersTableLock,
+  reserveEnforcedEmail,
+} from '../../backend/src/auth/current-store/email-reservations';
 import { handleCurrentStoreWebSignOut } from '../../backend/src/handlers/current-store-web-signout';
 import { handleCurrentStoreWebAuth } from '../../backend/src/handlers/current-store-web-auth';
+import { handleCurrentStoreWebOAuth } from '../../backend/src/handlers/current-store-web-oauth';
 import { recordSecurityMutation } from '../../backend/src/auth/current-store/security-mutations';
 import { lockEnforcedProjection } from '../../backend/src/auth/current-store/foundation-context';
 import { readFirstPartySession } from '../../backend/src/auth/authority/session-reader';
@@ -66,6 +70,8 @@ import {
 import { createPasswordCommandAuthRequest } from '../app/lib/auth/password-command-auth.server';
 import { forwardWebSignOut } from '../app/lib/auth/web-signout-command.server';
 import { delegateSetPassword } from '../app/lib/auth/set-password-command.server';
+import { createWebOAuthCommandClient } from '../app/lib/auth/web-oauth-command-client.server';
+import { issueNativeOAuthTransferToken } from '../app/lib/auth/native-oauth-transfer';
 vi.mock('../app/lib/auth/credential-admission.server', async (original) => ({
   ...(await original<typeof import('../app/lib/auth/credential-admission.server')>()),
   admitPresentedWebCredential: async (credential: string) => {
@@ -136,9 +142,11 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     });
     server = createServer((request, response) => {
       void (
-        request.url?.endsWith('/signout')
-          ? handleCurrentStoreWebSignOut(request, response, environment.database)
-          : handleCurrentStoreWebAuth(request, response, environment.database)
+        request.url?.includes('/web-oauth/v1/')
+          ? handleCurrentStoreWebOAuth(request, response, environment.database)
+          : request.url?.endsWith('/signout')
+            ? handleCurrentStoreWebSignOut(request, response, environment.database)
+            : handleCurrentStoreWebAuth(request, response, environment.database)
       ).catch(() => {
         response.writeHead(500);
         response.end();
@@ -374,6 +382,105 @@ describe('real backend RPC → real web JWT callback → encrypted cookie admiss
     expect((await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status).toBe(
       'denied',
     );
+  });
+
+  it('keeps an existing OAuth actor renewal in the historical lineage while fresh authenticated login clears it', async () => {
+    const accepted = await signIn();
+    await environment.database.transaction(async (transaction) => {
+      await reserveEnforcedEmail(transaction, { ...authority, rawEmail: accepted.email, requestedUserId: accepted.id });
+    });
+    const subject = randomUUID();
+    await environment.database.insert(accounts).values({
+      userId: accepted.id,
+      provider: 'google',
+      providerAccountId: subject,
+      type: 'oauth',
+    });
+    vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'backend-staging');
+    vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');
+    const client = createWebOAuthCommandClient();
+    const raw = await encode({ token: { sub: accepted.id }, secret, maxAge: 3600 });
+    const decoded = await decode({ token: raw, secret });
+    if (!decoded) throw new Error('Historical fixture refused');
+    const historical = await callback({ token: decoded });
+    const actorCookie = await encode({ token: historical, secret, maxAge: 3600 });
+    async function resolve(actor: string | null) {
+      const flow = randomBytes(32).toString('hex');
+      expect((await client.intent({ provider: 'google', flow, actorCookie: actor })).outcome).toBe('recorded');
+      const reply = await client.resolve({
+        provider: 'google',
+        flow,
+        actorCookie: actor,
+        subject,
+        email: accepted.email,
+        name: null,
+        image: null,
+      });
+      if (reply.outcome !== 'resolved' || !reply.credentialProof) throw new Error('Mounted OAuth resolution refused');
+      return reply;
+    }
+    const linked = await resolve(actorCookie);
+    expect(linked.credentialProof).toMatchObject({
+      authSessionId: historical.authSessionId,
+      generation: 0,
+      authenticatedAt: null,
+      linkGuarded: false,
+      requiresAccountCutoff: true,
+    });
+    const linkedClaims = await callback({
+      token: { sub: accepted.id },
+      user: { id: linked.user.id, webCredentialProof: linked.credentialProof },
+      account: { provider: 'google', type: 'oauth', providerAccountId: subject },
+    });
+    expect(linkedClaims.legacy_no_sid).toBe(true);
+    expect(linkedClaims.auth_time).toBeUndefined();
+    const updated = await callback({
+      token: linkedClaims,
+      trigger: 'update',
+      session: { legacy_no_sid: false, authSessionId: 'forged', gen: 999, auth_time: Math.floor(Date.now() / 1000) },
+    });
+    expect(updated).toMatchObject({ authSessionId: historical.authSessionId, legacy_no_sid: true, gen: 0 });
+    expect(updated.auth_time).toBeUndefined();
+    const linkedCookie = await encode({ token: updated, secret, maxAge: 3600 });
+    const nativeProvider = authOptions.providers.find((entry) => (entry.options?.id ?? entry.id) === 'native-oauth');
+    if (!nativeProvider || nativeProvider.type !== 'credentials') throw new Error('Missing actual transfer provider');
+    const native = { ...nativeProvider, ...nativeProvider.options };
+    const nativeUser = await native.authorize(
+      {
+        transferToken: issueNativeOAuthTransferToken({
+          userId: accepted.id,
+          nextPath: '/',
+          credentialProof: linked.credentialProof,
+        }),
+      },
+      { headers: {} },
+    );
+    if (!nativeUser) throw new Error('Actual transfer verifier refused synthetic proof');
+    const transferred = await callback({
+      token: { sub: accepted.id },
+      user: nativeUser,
+      account: { provider: 'native-oauth', type: 'credentials', providerAccountId: accepted.id },
+    });
+    expect(transferred).toMatchObject({ authSessionId: historical.authSessionId, legacy_no_sid: true, gen: 0 });
+    expect(transferred.auth_time).toBeUndefined();
+    const transferCookie = await encode({ token: transferred, secret, maxAge: 3600 });
+    await forwardWebSignOut(transferCookie);
+    for (const credential of [raw, actorCookie, linkedCookie, transferCookie])
+      expect(
+        (await readFirstPartySession(environment.database, { kind: 'legacy-jwe', credential, secret })).status,
+      ).toBe('denied');
+    const fresh = await resolve(null);
+    expect(fresh.credentialProof?.requiresAccountCutoff).toBeUndefined();
+    const freshClaims = await callback({
+      token: { sub: accepted.id, legacy_no_sid: true },
+      user: { id: fresh.user.id, webCredentialProof: fresh.credentialProof },
+      account: { provider: 'google', type: 'oauth', providerAccountId: subject },
+    });
+    expect(freshClaims.legacy_no_sid).toBeUndefined();
+    expect(freshClaims.auth_time).toEqual(expect.any(Number));
+    expect(freshClaims.authSessionId).not.toBe(historical.authSessionId);
+    const later = await signIn(accepted);
+    expect(later.proof.generation).toBe(1);
   });
 
   it.each([false, true])(

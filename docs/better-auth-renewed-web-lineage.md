@@ -6,7 +6,10 @@ This change supports BA-04 (#6978), epic #6975, and the renewed-child gate in
 A historical NextAuth cookie can have a rolling `jti` without a stable
 `authSessionId`. The JWT callback may expose that copy's `jti` as its public SID,
 but now also signs `legacy_no_sid: true`. Further renewal retains this marker;
-a completed new sign-in clears it. Neither operation invents authentication age.
+a completed fresh sign-in clears it. An existing-actor OAuth callback is a
+renewal: its trusted backend proof retains `requiresAccountCutoff: true`, and
+the JWT callback inherits that provenance. Signed transfer serialization also
+preserves it through the actual transfer verifier. None invents authentication age.
 
 The backend verifier treats marked descendants as requiring account-wide
 generation revocation. Their canonical session's `legacyLineageId` retains the
@@ -41,9 +44,10 @@ AUTH_PROTOTYPE_DATABASE_URL='<localhost disposable database admin URL ending in 
   --maxWorkers=1 --reporter=agent
 ```
 
-On 2026-11-13, this proof passed 10 tests. The callback suite passed 99 tests and
+On 2026-11-13, this proof passed 11 tests. The callback suite passed 100 tests and
 the cryptographic verifier suite passed 73 tests. The affected web authentication
-suites passed 842 tests; four authority suites passed 44 tests.
+suites passed 844 tests; four authority suites passed 44 tests and the native
+review suite passed six. The shared protocol suites passed 142 tests.
 Scoped `vp exec tsc --noEmit`
 checks passed for web, backend, and the explicit web proof TypeScript project.
 
@@ -52,3 +56,8 @@ recover ancestry already discarded by older callback versions, qualify deployed
 instances or browsers, or authorize production rollout. Existing BA-04 writer,
 fence, rollback-floor, full rehearsal, and BA-05 browser gates remain in #7430.
 The no-SID cutoff's selected-authority writer adoption is reviewed separately.
+
+The optional ancestry field preserves acceptance of earlier proof shapes, but
+older strict version-1 readers reject a proof containing the new field. Deploy
+compatible proof readers before the backend emits marked proofs. The staged
+modes remain off and activation guards remain enforced during that ordering.

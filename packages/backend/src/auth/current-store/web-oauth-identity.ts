@@ -276,6 +276,7 @@ export async function resolveWebOAuthIdentity(
           generation: actorSession.session.generation,
           authenticatedAt: actorSession.session.authenticatedAt?.toISOString() ?? null,
           linkGuarded: actorSession.session.linkGuarded,
+          ...(actorSession.session.requiresAccountCutoff ? { requiresAccountCutoff: true as const } : {}),
         };
       }
       return webOAuthResolveReplySchema.parse({

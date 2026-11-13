@@ -507,7 +507,8 @@ export const authOptions: NextAuthOptions = {
         )
           throw new Error('Backend web credential proof required');
         token.authSessionId = proved?.authSessionId ?? randomUUID();
-        delete token.legacy_no_sid;
+        if (proved?.requiresAccountCutoff) token.legacy_no_sid = true;
+        else delete token.legacy_no_sid;
         delete token.nativeOAuthCreationProof;
         const nativeSourceGeneration =
           account?.provider === 'native-oauth' ? (user.nativeOAuthSourceGeneration ?? 0) : undefined;

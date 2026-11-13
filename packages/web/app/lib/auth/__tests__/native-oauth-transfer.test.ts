@@ -267,6 +267,20 @@ describe('native OAuth transfer token', () => {
       issueNativeOAuthTransferToken({ userId: 'other-owner', nextPath: '/', credentialProof: proof }),
     ).toThrow();
   });
+
+  it('retains unknown login ancestry through signed trusted-proof transfer serialization', () => {
+    const proof = {
+      version: 1 as const,
+      userId: 'historical-owner',
+      authSessionId: 'historical-child',
+      generation: 0,
+      authenticatedAt: null,
+      linkGuarded: false,
+      requiresAccountCutoff: true as const,
+    };
+    const token = issueNativeOAuthTransferToken({ userId: proof.userId, nextPath: '/', credentialProof: proof });
+    expect(verifyNativeOAuthTransferToken(token)?.credentialProof).toEqual(proof);
+  });
 });
 
 describe('signed transfer compatibility and proof completeness', () => {

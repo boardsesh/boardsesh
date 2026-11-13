@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { webCredentialProofSchema } from '../web-credential-proof';
 import {
   authCommandReplyStatus,
   authCommandSchema,
@@ -15,6 +16,27 @@ import {
 
 const requestId = 'e363934b-b7ba-41ba-a279-52185daa100e';
 const user = { id: 'selected-user', email: 'legacy stored address', name: null, image: null };
+
+describe('web credential ancestry proof', () => {
+  const proof = {
+    version: 1,
+    userId: 'owner',
+    authSessionId: 'historical-child',
+    generation: 0,
+    authenticatedAt: null,
+    linkGuarded: false,
+  };
+  it('keeps old proof shapes unchanged and retains explicit unknown ancestry', () => {
+    expect(webCredentialProofSchema.parse(proof)).toEqual(proof);
+    expect(webCredentialProofSchema.parse({ ...proof, requiresAccountCutoff: true })).toEqual({
+      ...proof,
+      requiresAccountCutoff: true,
+    });
+  });
+  it.each([false, null, 1, 'true'])('refuses malformed ancestry %s', (requiresAccountCutoff) => {
+    expect(webCredentialProofSchema.safeParse({ ...proof, requiresAccountCutoff }).success).toBe(false);
+  });
+});
 
 describe('versioned four-command private contract', () => {
   it('keeps disabled mode configuration-free and rejects unknown activation modes', () => {
