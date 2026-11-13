@@ -14,6 +14,27 @@ const PACKAGE = 'com.boardsesh.app';
 const APK_NAME = 'boardsesh-android-beta-arm64-v8a.apk';
 const FULL_SHA = /^[0-9a-f]{40}$/;
 
+/** Read binary manifest metadata directly; decoded XML can contain unescaped Expo signing JSON. */
+export function parseApkBadging(badging: string): { applicationId: string; versionCode: string; version: string } {
+  const lines = badging.split(/\r?\n/);
+  const packageLine = lines[0];
+  if (!packageLine?.startsWith('package: ') || lines.filter((line) => line.startsWith('package:')).length !== 1)
+    throw new Error('APK badging must contain one package identity.');
+  const attributes = new Map<string, string>();
+  let remainder = packageLine.slice('package: '.length);
+  while (remainder) {
+    const attribute = /^([A-Za-z][A-Za-z0-9]*)='([^'\r\n]*)'(?: |$)/.exec(remainder);
+    if (!attribute || attributes.has(attribute[1]!)) throw new Error('APK package badging is malformed or ambiguous.');
+    attributes.set(attribute[1]!, attribute[2]!);
+    remainder = remainder.slice(attribute[0].length);
+  }
+  const applicationId = attributes.get('name');
+  const versionCode = attributes.get('versionCode');
+  const version = attributes.get('versionName');
+  if (!applicationId || !versionCode || !version) throw new Error('APK package badging is missing identity fields.');
+  return { applicationId, versionCode, version };
+}
+
 function record(input: unknown): Record<string, unknown> {
   if (typeof input !== 'object' || input === null || Array.isArray(input))
     throw new Error('Invalid recovery evidence.');
@@ -344,25 +365,31 @@ async function main(): Promise<void> {
   const source = record(json(receiptPath));
   const apk = join(required('RUNNER_TEMP'), 'android-recovery-apk', APK_NAME);
   if (phase === 'verify') {
-    const analyzer = join(required('ANDROID_HOME'), 'cmdline-tools', 'latest', 'bin', 'apkanalyzer');
+    const analyzer = required('APK_ANALYZER_PATH');
+    const manifestIdentity = parseApkBadging(
+      execute(required('AAPT2_PATH'), ['dump', 'badging', apk], process.env, 'read APK binary manifest identity'),
+    );
     const identity = validateApkIdentity(
       {
-        applicationId: execute(analyzer, ['manifest', 'application-id', apk]),
-        versionCode: execute(analyzer, ['manifest', 'version-code', apk]),
-        version: execute(analyzer, ['manifest', 'version-name', apk]),
-        runtime: execute(analyzer, [
-          'resources',
-          'value',
-          '--config',
-          'default',
-          '--name',
-          'expo_runtime_version',
-          '--type',
-          'string',
-          '--package',
-          PACKAGE,
-          apk,
-        ]),
+        ...manifestIdentity,
+        runtime: execute(
+          analyzer,
+          [
+            'resources',
+            'value',
+            '--config',
+            'default',
+            '--name',
+            'expo_runtime_version',
+            '--type',
+            'string',
+            '--package',
+            PACKAGE,
+            apk,
+          ],
+          process.env,
+          'read APK runtime version',
+        ),
       },
       required('EXPECTED_VERSION_CODE'),
     );
