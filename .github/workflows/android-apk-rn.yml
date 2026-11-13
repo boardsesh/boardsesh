@@ -48,6 +48,10 @@ on:
         type: boolean
         required: false
         default: true
+      replace_beta_review_version_code:
+        description: 'Manual only: replace this exact pending beta review with the new build; never a production review'
+        type: string
+        required: false
 
 concurrency:
   # Platform-global so Play versionCode reads/uploads cannot race across refs.
@@ -232,7 +236,7 @@ jobs:
   play-review:
     needs: gate
     if: needs.gate.outputs.should_build == 'true'
-    continue-on-error: true
+    continue-on-error: ${{ inputs.replace_beta_review_version_code == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: Production
@@ -240,11 +244,12 @@ jobs:
       contents: read
     outputs:
       pending: ${{ steps.review.outputs.pending }}
+      replacement_authorized: ${{ steps.review.outputs.replacement_authorized || 'false' }}
     steps:
-      - name: Checkout exact native source
+      - name: Checkout trusted review tooling
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.gate.outputs.source_sha }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - uses: voidzero-dev/setup-vp@v1
         with:
@@ -256,6 +261,7 @@ jobs:
         id: review
         env:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          REPLACE_BETA_REVIEW_VERSION_CODE: ${{ inputs.replace_beta_review_version_code }}
         run: vp exec node --import tsx scripts/mobile-store-android-review-pending.ts
       - name: Report deferred tester build
         if: steps.review.outputs.pending == 'true'
@@ -268,6 +274,7 @@ jobs:
     if: >-
       !cancelled() && needs.gate.result == 'success' && needs.gate.outputs.should_build == 'true'
       && needs.play-review.outputs.pending != 'true'
+      && (inputs.replace_beta_review_version_code == '' || needs.play-review.outputs.replacement_authorized == 'true')
     runs-on: ubuntu-latest
     # 60, not 45: R8 now runs inside both assembleRelease and bundleRelease.
     # A timeout that cancels mid-bundleRelease wastes the whole run after the APK
@@ -723,6 +730,22 @@ jobs:
           git fetch --no-tags origin main
           GITHUB_SHA="$NATIVE_SOURCE_SHA" node scripts/mobile-ota-schema-ready.mjs
 
+      # An older stamped source predates this manual recovery option. Restore only
+      # trusted upload tooling after building; the binary remains at its exact stamp.
+      - name: Restore trusted tooling for manual beta review replacement
+        if: inputs.replace_beta_review_version_code != ''
+        env:
+          TRUSTED_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$TRUSTED_WORKFLOW_SHA"
+          for tooling_path in \
+            fastlane/Fastfile fastlane/lib/android_release.rb \
+            scripts/mobile-store-android-review-pending.ts scripts/lib/google-play-tracks.ts \
+            scripts/mobile-store-android-audit.ts scripts/mobile-auto-version-bump.ts; do
+            git show "$TRUSTED_WORKFLOW_SHA:$tooling_path" > "$tooling_path"
+          done
+
       - name: Upload AAB to Play internal and open beta tracks
         id: play_upload
         working-directory: fastlane
@@ -730,6 +753,7 @@ jobs:
           GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           ANDROID_VERSION_CODE: ${{ steps.version_code.outputs.value }}
           ANDROID_AAB_PATH: ${{ github.workspace }}/packages/mobile/android/app/build/outputs/bundle/release/app-release.aab
+          REPLACE_BETA_REVIEW_VERSION_CODE: ${{ inputs.replace_beta_review_version_code }}
         run: bundle exec fastlane android upload_beta
 
       # The public APK is the exact signed sibling of the AAB Play accepted. Its

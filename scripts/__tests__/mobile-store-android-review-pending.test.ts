@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  authorizeBetaReviewReplacement,
+  betaReviewReplacementBehavior,
   checkReviewPending,
   reviewPendingDecision,
   reviewPendingOrFailOpen,
@@ -11,6 +13,74 @@ const release = (versionCode: number, state: string) => ({
   activeArtifacts: [{ versionCode }],
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe('explicit beta review replacement', () => {
+  const tracks = (betaReleases = [release(2001646, 'IN_REVIEW')]) => [
+    { track: 'production' as const, releases: [release(2001500, 'PUBLISHED')] },
+    { track: 'beta' as const, releases: betaReleases },
+  ];
+
+  it('authorizes only the exact selected beta review', () => {
+    expect(betaReviewReplacementBehavior(tracks(), 2001646)).toBe('CANCEL_IN_REVIEW_AND_SUBMIT');
+    expect(() => betaReviewReplacementBehavior(tracks(), 2001645)).toThrow(/no longer matches/);
+  });
+
+  it('keeps strict review protection if the selected review already finished', () => {
+    expect(betaReviewReplacementBehavior(tracks([release(2001646, 'PUBLISHED')]), 2001646)).toBe('ERROR_IF_IN_REVIEW');
+    expect(betaReviewReplacementBehavior(tracks([]), 2001646)).toBe('ERROR_IF_IN_REVIEW');
+  });
+
+  it('refuses production reviews, incomplete evidence, and ambiguous beta reviews', () => {
+    expect(() =>
+      betaReviewReplacementBehavior(
+        [{ track: 'production', releases: [release(2001500, 'IN_REVIEW')] }, tracks()[1]!],
+        2001646,
+      ),
+    ).toThrow(/production release/);
+    expect(() => betaReviewReplacementBehavior([tracks()[1]!], 2001646)).toThrow(/Both production and beta/);
+    expect(() =>
+      betaReviewReplacementBehavior(tracks([release(2001646, 'IN_REVIEW'), release(2001647, 'IN_REVIEW')]), 2001646),
+    ).toThrow(/no longer matches/);
+    expect(() =>
+      betaReviewReplacementBehavior(
+        tracks([
+          {
+            ...release(2001646, 'IN_REVIEW'),
+            activeArtifacts: [{ versionCode: 2001646 }, { versionCode: 2001647 }],
+          },
+        ]),
+        2001646,
+      ),
+    ).toThrow(/no longer matches/);
+  });
+
+  it('re-reads production and beta using GET-only requests', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ releases: [release(2001500, 'PUBLISHED')] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ releases: [release(2001646, 'IN_REVIEW')] })));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authorizeBetaReviewReplacement({ accessToken: 'secret', expectedVersionCode: 2001646 })).resolves.toBe(
+      'CANCEL_IN_REVIEW_AND_SUBMIT',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]![0]).toMatch(/\/tracks\/production\/releases$/);
+    expect(fetchMock.mock.calls[1]![0]).toMatch(/\/tracks\/beta\/releases$/);
+    expect(fetchMock.mock.calls.every(([, options]) => options?.method === 'GET')).toBe(true);
+  });
+
+  it('fails closed on unreadable review evidence and validates the selected code before reads', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('private response', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(authorizeBetaReviewReplacement({ accessToken: 'secret', expectedVersionCode: 0 })).rejects.toThrow(
+      /positive/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(
+      authorizeBetaReviewReplacement({ accessToken: 'secret', expectedVersionCode: 2001646 }),
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
 
 describe('Play review pre-check', () => {
   it.each(['production', 'beta'] as const)('holds the build while a %s release is in review', (track) => {

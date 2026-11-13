@@ -679,7 +679,15 @@ describe('native release workflow contracts', () => {
 // Execute the shared gate CLI with store evidence stubbed at the process boundary.
 // Exact tag/version checks and approval refusal must survive workflow rewiring.
 
-type ExecutedStep = { id?: string; name?: string; run?: string; env?: Record<string, unknown> };
+type ExecutedStep = {
+  id?: string;
+  name?: string;
+  run?: string;
+  env?: Record<string, unknown>;
+  uses?: string;
+  with?: Record<string, unknown>;
+  if?: string;
+};
 
 function workflowStep(source: string, jobName: string, predicate: (step: ExecutedStep) => boolean): ExecutedStep {
   const job = (parse(source) as { jobs: Record<string, { steps?: ExecutedStep[] }> }).jobs[jobName];
@@ -850,7 +858,7 @@ describe('Play review pre-check before the Android build', () => {
         needs?: string | string[];
         if?: string;
         environment?: string;
-        'continue-on-error'?: boolean;
+        'continue-on-error'?: boolean | string;
         outputs?: Record<string, string>;
         steps?: ExecutedStep[];
       }
@@ -866,7 +874,10 @@ describe('Play review pre-check before the Android build', () => {
     expect(job?.outputs?.['pending']).toBe('${{ steps.review.outputs.pending }}');
     const check = job?.steps?.find((step) => step.id === 'review');
     expect(check?.run).toBe('vp exec node --import tsx scripts/mobile-store-android-review-pending.ts');
-    expect(check?.env).toEqual({ GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}' });
+    expect(check?.env).toEqual({
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: '${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}',
+      REPLACE_BETA_REVIEW_VERSION_CODE: '${{ inputs.replace_beta_review_version_code }}',
+    });
     // The deferral says who picks the build up again.
     const notice = job?.steps?.find((step) => String(step.run).includes('Play review deferred this native stamp'));
     expect(notice?.run).toContain('coordinator retries it without another version bump');
@@ -879,8 +890,10 @@ describe('Play review pre-check before the Android build', () => {
   // only a green run, nor strand an upload that went through: every job after
   // the build decides on the build's own result, never on the implicit
   // success() that also covers play-review.
-  it('never lets a failed pre-check red the run or strand an uploaded build', () => {
-    expect(android.jobs['play-review']?.['continue-on-error']).toBe(true);
+  it('fails manual replacement closed while automatic pre-check failures cannot strand uploads', () => {
+    expect(android.jobs['play-review']?.['continue-on-error']).toBe(
+      "${{ inputs.replace_beta_review_version_code == '' }}",
+    );
     const downstream = Object.entries(android.jobs).filter(([, job]) =>
       [job.needs ?? []].flat().includes('build-and-release'),
     );
@@ -905,7 +918,26 @@ describe('Play review pre-check before the Android build', () => {
     expect(build?.needs).toEqual(['gate', 'play-review']);
     const condition = String(build?.if).replace(/\s+/g, ' ').trim();
     expect(condition).toBe(
-      "!cancelled() && needs.gate.result == 'success' && needs.gate.outputs.should_build == 'true' && needs.play-review.outputs.pending != 'true'",
+      "!cancelled() && needs.gate.result == 'success' && needs.gate.outputs.should_build == 'true' && needs.play-review.outputs.pending != 'true' && (inputs.replace_beta_review_version_code == '' || needs.play-review.outputs.replacement_authorized == 'true')",
     );
+  });
+
+  it('uses trusted tooling and a successful exact-review authorization for manual replacement', () => {
+    const review = android.jobs['play-review'];
+    expect(review?.outputs?.replacement_authorized).toBe(
+      "${{ steps.review.outputs.replacement_authorized || 'false' }}",
+    );
+    const checkout = review?.steps?.find((step) => step.uses?.startsWith('actions/checkout@'));
+    expect(checkout?.with?.ref).toBe('${{ github.workflow_sha }}');
+    const upload = android.jobs['build-and-release']?.steps?.find((step) => step.id === 'play_upload');
+    expect(upload?.env?.REPLACE_BETA_REVIEW_VERSION_CODE).toBe('${{ inputs.replace_beta_review_version_code }}');
+    const restore = android.jobs['build-and-release']?.steps?.find(
+      (step) => step.name === 'Restore trusted tooling for manual beta review replacement',
+    );
+    expect(restore?.if).toBe("inputs.replace_beta_review_version_code != ''");
+    expect(restore?.env?.TRUSTED_WORKFLOW_SHA).toBe('${{ github.workflow_sha }}');
+    expect(restore?.run).toContain('git show "$TRUSTED_WORKFLOW_SHA:$tooling_path"');
+    expect(restore?.run).toContain('fastlane/lib/android_release.rb');
+    expect(restore?.run).toContain('scripts/mobile-store-android-review-pending.ts');
   });
 });

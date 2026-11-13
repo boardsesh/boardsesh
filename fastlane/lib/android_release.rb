@@ -3,12 +3,14 @@
 require "json"
 
 # Owns one edit: upload once, assign both tester tracks, then submit together.
-# Production is read only, and commit refuses to cancel an existing review.
+# Production is read only. Review replacement requires an exact beta build and
+# a fresh preflight before opening the edit and before committing it.
 module BoardseshAndroidRelease
   class Error < StandardError; end
   PACKAGE_NAME = "com.boardsesh.app"
   TESTER_TRACKS = %w[internal beta].freeze
   MAX_VERSION_CODE = 2_100_000_000
+  REVIEW_COMMIT_BEHAVIORS = %w[ERROR_IF_IN_REVIEW CANCEL_IN_REVIEW_AND_SUBMIT].freeze
 
   def self.service(json_key_data:)
     require "supply"
@@ -36,7 +38,8 @@ module BoardseshAndroidRelease
   end
 
   class Runner
-    def initialize(service:, aab:, version_code:, version:, metadata_path:, model_factory: BoardseshAndroidRelease.method(:models))
+    def initialize(service:, aab:, version_code:, version:, metadata_path:, model_factory: BoardseshAndroidRelease.method(:models),
+      replace_beta_review_version_code: nil, review_preflight: nil)
       @service, @aab, @metadata_path, @model_factory = service, File.expand_path(aab), metadata_path, model_factory
       unless version_code.to_s.match?(/\A[1-9]\d*\z/) && version_code.to_i <= MAX_VERSION_CODE
         raise Error, "Expected Android versionCode must be a positive integer within Play's limit"
@@ -45,10 +48,19 @@ module BoardseshAndroidRelease
       raise Error, "Expected one existing AAB file" unless @aab.end_with?(".aab") && File.file?(@aab) && File.size(@aab).positive?
       @version_code, @version = version_code.to_i, version.to_s
       @notes = release_notes
+      @replace_beta_review_version_code = replace_beta_review_version_code.to_s
+      @review_preflight = review_preflight
+      unless @replace_beta_review_version_code.empty?
+        unless @replace_beta_review_version_code.match?(/\A[1-9]\d*\z/) && @replace_beta_review_version_code.to_i < @version_code
+          raise Error, "Replacement beta review versionCode must be a positive integer older than the new build"
+        end
+        raise Error, "Replacement beta review requires a fresh review preflight" unless @review_preflight.respond_to?(:call)
+      end
     end
 
     def run
       # Resolve credentials only after local artifact/label/notes validation.
+      review_commit_behavior
       @service = @service.call if @service.respond_to?(:call)
       unless @service.method(:commit_edit).parameters.include?([:key, :changes_in_review_behavior])
         raise Error, "Google Play API client lacks strict review protection; update the pinned client"
@@ -70,8 +82,9 @@ module BoardseshAndroidRelease
         @service.update_edit_track(PACKAGE_NAME, edit_id, track, track_object)
       end
       @service.validate_edit(PACKAGE_NAME, edit_id)
+      commit_behavior = review_commit_behavior
       @service.commit_edit(PACKAGE_NAME, edit_id,
-        changes_not_sent_for_review: false, changes_in_review_behavior: "ERROR_IF_IN_REVIEW")
+        changes_not_sent_for_review: false, changes_in_review_behavior: commit_behavior)
       {
         "action" => "committed", "packageName" => PACKAGE_NAME, "versionCode" => @version_code,
         "releaseLabel" => @version, "tracks" => TESTER_TRACKS, "publicationVerified" => false,
@@ -90,6 +103,19 @@ module BoardseshAndroidRelease
     end
 
     private
+
+    def review_commit_behavior
+      return "ERROR_IF_IN_REVIEW" if @replace_beta_review_version_code.empty?
+      behavior = @review_preflight.call
+      unless REVIEW_COMMIT_BEHAVIORS.include?(behavior)
+        raise Error, "Replacement beta review preflight returned an invalid commit behavior"
+      end
+      behavior
+    rescue Error
+      raise
+    rescue StandardError
+      raise Error, "Replacement beta review preflight failed; no review replacement was committed"
+    end
 
     def release_notes
       notes = Dir.glob(File.join(@metadata_path, "*", "changelogs", "default.txt")).sort.filter_map do |path|

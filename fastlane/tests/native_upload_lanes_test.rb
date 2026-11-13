@@ -4,6 +4,7 @@ require "minitest/autorun"
 require "tmpdir"
 require "fileutils"
 require "json"
+require "open3"
 require_relative "../lib/app_store_version_states"
 
 # Execute the actual lane blocks without loading Fastlane or contacting stores.
@@ -197,6 +198,7 @@ class NativeUploadLanesTest < Minitest::Test
     BoardseshPlayListing::Runner.staged_files = nil
     # Lanes append to the run summary when one exists; keep test runs out of it.
     ENV.delete("GITHUB_STEP_SUMMARY")
+    ENV.delete("REPLACE_BETA_REVIEW_VERSION_CODE")
   end
 
   def teardown
@@ -317,7 +319,57 @@ class NativeUploadLanesTest < Minitest::Test
     assert_equal "2.6.0", received.fetch(:version)
     assert_equal File.join(@root, "fastlane/metadata/android"), received.fetch(:metadata_path)
     assert_respond_to received.fetch(:service), :call
+    assert_nil received.fetch(:review_preflight)
     assert_nil @dsl.commands
+  end
+
+  def test_android_review_replacement_uses_exact_code_and_fresh_helper_from_repo_root
+    prepare_android_upload
+    ENV["REPLACE_BETA_REVIEW_VERSION_CODE"] = "2001310"
+    Dir.chdir(@fastlane_directory) { @dsl.lanes.fetch([:android, :upload_beta]).call({}) }
+    received = BoardseshAndroidRelease::Runner.received
+    assert_equal "2001310", received.fetch(:replace_beta_review_version_code)
+    calls = []
+    capture = ->(*arguments, **options) do
+      calls << [arguments, options]
+      ["CANCEL_IN_REVIEW_AND_SUBMIT\n", "private diagnostic", Struct.new(:success?).new(true)]
+    end
+    Open3.stub(:capture3, capture) do
+      assert_equal "CANCEL_IN_REVIEW_AND_SUBMIT", received.fetch(:review_preflight).call
+      assert_equal "CANCEL_IN_REVIEW_AND_SUBMIT", received.fetch(:review_preflight).call
+    end
+    assert_equal 2, calls.length
+    arguments, options = calls.first
+    assert_equal({ "REPLACE_BETA_REVIEW_VERSION_CODE" => "2001310",
+      "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" => "unused fake credential" }, arguments.first)
+    assert_equal ["vp", "exec", "node", "--import", "tsx",
+      File.join(@root, "scripts/mobile-store-android-review-pending.ts"), "--commit-behavior"], arguments.drop(1)
+    assert_equal({ chdir: @root }, options)
+  end
+
+  def test_android_review_preflight_failure_hides_child_stdout_and_stderr
+    prepare_android_upload
+    Dir.chdir(@fastlane_directory) do
+      @dsl.lanes.fetch([:android, :upload_beta]).call({ replace_beta_review_version_code: "2001310" })
+    end
+    capture = ->(*_arguments, **_options) { ["private stdout", "private stderr", Struct.new(:success?).new(false)] }
+    error = Open3.stub(:capture3, capture) do
+      assert_raises(BoardseshAndroidRelease::Error) do
+        BoardseshAndroidRelease::Runner.received.fetch(:review_preflight).call
+      end
+    end
+    refute_includes error.message, "private"
+    assert_includes error.message, "preflight failed"
+  end
+
+  def prepare_android_upload
+    aab = File.join(@root, "packages/mobile/android/app/build/outputs/bundle/release/app-release.aab")
+    FileUtils.mkdir_p(File.dirname(aab))
+    File.write(aab, "fake AAB")
+    ENV["ANDROID_AAB_PATH"] = aab
+    ENV["ANDROID_VERSION_CODE"] = "2001311"
+    ENV["BOARDSESH_MOBILE_VERSION"] = "2.6.0"
+    ENV["GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"] = "unused fake credential"
   end
 
   def run_ios_metadata(edit_version, options = {})
