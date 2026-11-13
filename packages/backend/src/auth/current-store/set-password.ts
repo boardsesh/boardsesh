@@ -5,6 +5,7 @@ import { PASSWORD_HASH_COST } from '@boardsesh/auth-protocol/password-hash';
 import {
   AUTH_PROTOCOL_VERSION,
   setPasswordMode,
+  providerSecurityMode,
   type SetPasswordCommand,
   type SetPasswordReply,
 } from '@boardsesh/auth-protocol';
@@ -35,6 +36,11 @@ export async function setWebPassword(
   const { requestId, issuedAt } = input;
   const { credential, password, expectedUserId, expectedAuthSessionId } = input.payload;
   const base = { protocolVersion: AUTH_PROTOCOL_VERSION, operation: 'set-password', requestId } as const;
+  // OAuth callback issuance time is not an actual reauthentication event. The
+  // provider-security rollout cannot use this cookie-only bootstrap to create
+  // a chosen password and then qualify that password as independent proof.
+  // A separately qualified first-password ownership flow remains required.
+  if (providerSecurityMode(process.env) === 'backend-staging') return { ...base, outcome: 'reauthentication_required' };
   const secret = process.env.NEXTAUTH_SECRET;
   if (!secret) throw new Error('Web session authority unavailable');
   const receipt = await database.transaction(async (transaction) => {

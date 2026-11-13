@@ -11,6 +11,8 @@ type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
 
 /** Trusted request-local acknowledgment; never supplied through an HTTP header. */
 export type SignOutCompletion = (response: Response, credential: string) => void;
+/** Trusted request-local receipt after all ordinary admission checks finish. */
+export type AuthResponseAdmissionCompletion = (response: Response) => void;
 
 function deniedAuthResponse(action: string): Response {
   return NextResponse.json(action === 'session' ? {} : { error: 'Authentication required' }, {
@@ -63,6 +65,7 @@ export async function withAuthResponseAdmission(
   request: NextRequest,
   context: AuthRouteContext,
   invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
+  completeAdmission?: AuthResponseAdmissionCompletion,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
   // Clearing a cookie needs no proof the account still exists, so an outage must
@@ -110,6 +113,7 @@ export async function withAuthResponseAdmission(
       if (!completedOwnSignOut && (await isDenied(captured.credential))) return deniedAuthResponse(action);
     }
     response.headers.set('Cache-Control', 'private, no-store');
+    completeAdmission?.(response);
     return response;
   } catch (error) {
     if (error instanceof CredentialAuthorityUnavailable) return unavailableCredentialResponse();

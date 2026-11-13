@@ -2,6 +2,7 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
+import { handleProviderSecurity } from './handlers/provider-security';
 import { handleControllerPreview } from './handlers/controller-preview';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -797,6 +798,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
         await handleBrowserBinding(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {
+        await handleProviderSecurity(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/batch-system-users/v1/')) {

@@ -3,10 +3,13 @@ import { readFile } from 'node:fs/promises';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as schema from '@boardsesh/db/schema';
+import { readHistoricalCredentialWriterMigrations } from './credential-writer-historical-fixture';
 import {
   PRIVATE_WEB_CREDENTIAL_CAPABILITIES,
   PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES,
+  PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES,
   PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES,
+  PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES,
   type CredentialWriterContract,
 } from '@boardsesh/db/credential-writer-acl';
 
@@ -24,7 +27,7 @@ export function ownedCredentialProofUrl(connectionString = process.env.CREDENTIA
     ['1', 'true'].includes(process.env.CI ?? '') &&
     process.env.GITHUB_ACTIONS === 'true' &&
     parsed.port === '5432' &&
-    parsed.pathname === '/epic6975_credential_ci';
+    ['/epic6975_credential_ci', '/epic6975_credential_historical_ci'].includes(parsed.pathname);
   if (
     !['postgres:', 'postgresql:'].includes(parsed.protocol) ||
     !local ||
@@ -43,10 +46,18 @@ export async function grantOwnedCredentialWriterCapabilities(
   owner: postgres.Sql,
   contract: CredentialWriterContract = 'private-web-v1',
 ) {
-  if (!['private-web-v1', 'private-browser-v1'].includes(contract))
+  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(contract))
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const capabilities =
-    contract === 'private-browser-v1' ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+    contract === 'private-provider-v1'
+      ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+      : contract === 'private-browser-v1'
+        ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+        : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const columnCapabilities =
+    contract === 'private-provider-v1'
+      ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
+      : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
   const relations = await owner<{ schema: string; name: string; kind: string; columns: string[] }[]>`
     SELECT namespace.nspname AS schema, relation.relname AS name, relation.relkind AS kind,
       ARRAY(SELECT attname FROM pg_attribute WHERE attrelid=relation.oid AND attnum>0 AND NOT attisdropped ORDER BY attnum) AS columns
@@ -75,7 +86,7 @@ export async function grantOwnedCredentialWriterCapabilities(
     await owner.unsafe(
       `GRANT ${privileges.join(',')} ON TABLE public.${identifier(table)} TO boardsesh_identity_writer`,
     );
-  for (const [table, columns] of Object.entries(PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES))
+  for (const [table, columns] of Object.entries(columnCapabilities))
     for (const [column, privileges] of Object.entries(columns))
       await owner.unsafe(
         `GRANT ${privileges.map((privilege) => `${privilege} (${identifier(column)})`).join(',')} ON TABLE public.${identifier(table)} TO boardsesh_identity_writer`,
@@ -85,6 +96,8 @@ export async function grantOwnedCredentialWriterCapabilities(
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema'`;
   for (const routine of routines)
     await owner.unsafe(`REVOKE ALL ON ROUTINE ${routine.signature} FROM PUBLIC,boardsesh_identity_writer`);
+  if (contract === 'private-provider-v1')
+    await owner`GRANT EXECUTE ON FUNCTION public.partner_revoke_user(text) TO boardsesh_identity_writer`;
   const owners = await owner<{ name: string }[]>`
     SELECT DISTINCT pg_get_userbyid(owner) AS name FROM (
       SELECT relation.relowner AS owner FROM pg_class relation JOIN pg_namespace namespace ON namespace.oid=relation.relnamespace WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema'
@@ -99,9 +112,15 @@ export async function grantOwnedCredentialWriterCapabilities(
 }
 
 export async function createCredentialWriterEnvironment(contract: CredentialWriterContract = 'private-web-v1') {
-  if (!['private-web-v1', 'private-browser-v1'].includes(contract))
+  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(contract))
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const target = ownedCredentialProofUrl();
+  if (
+    target.port === '5432' &&
+    target.pathname !==
+      (contract === 'private-provider-v1' ? '/epic6975_credential_ci' : '/epic6975_credential_historical_ci')
+  )
+    throw new Error('OWNED_CREDENTIAL_PROOF_PROFILE_DATABASE_MISMATCH');
   const databaseName = target.pathname.slice(1);
   const owner = postgres(target.toString(), { max: 2, onnotice: () => undefined });
   try {
@@ -113,7 +132,7 @@ export async function createCredentialWriterEnvironment(contract: CredentialWrit
     const journal = JSON.parse(
       await readFile(new URL('../../../../../../db/drizzle/meta/_journal.json', import.meta.url), 'utf8'),
     ) as { entries: { tag: string; when: number }[] };
-    const expected = await Promise.all(
+    const canonical = await Promise.all(
       journal.entries.map(async (entry) => ({
         hash: createHash('sha256')
           .update(await readFile(new URL(`../../../../../../db/drizzle/${entry.tag}.sql`, import.meta.url)))
@@ -121,6 +140,8 @@ export async function createCredentialWriterEnvironment(contract: CredentialWrit
         created_at: String(entry.when),
       })),
     );
+    const expected =
+      contract === 'private-provider-v1' ? canonical : (await readHistoricalCredentialWriterMigrations()).ledger;
     for (const ledger of ['public', 'drizzle']) {
       const observed = await owner.unsafe<{ hash: string; created_at: string }[]>(
         `SELECT hash,created_at::text FROM ${ledger}.__drizzle_migrations ORDER BY id`,

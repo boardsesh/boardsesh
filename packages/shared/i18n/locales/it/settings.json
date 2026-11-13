@@ -697,5 +697,41 @@
     "publishLinkMessage": "Chiunque abbia il link può aprire questo pannello, anche se resta fuori da ricerca e mappa. Il link è costruito dal nome del pannello, quindi non è segreto. Tieni nascosta la posizione a meno che tu non scelga di condividerla.",
     "publishLink": "Condividi tramite link",
     "publishResourceMessage": "Chiunque può aprire questa session o questo pannello. Le altre tue attività private restano limitate alle persone che approvi."
+  },
+  "providerMethods": {
+    "title": "Metodi di accesso",
+    "description": "Gestisci come accedi a questo account. Gli account non vengono mai uniti.",
+    "providers": {
+      "google": "Google",
+      "apple": "Apple"
+    },
+    "usable": "Disponibile per accedere",
+    "notUsable": "Non disponibile per accedere",
+    "link": "Collega {{provider}}",
+    "unlink": "Scollega {{provider}}",
+    "noProviders": "Al momento non sono disponibili provider supportati.",
+    "confirmTitle": "Conferma la modifica di accesso",
+    "confirmLink": "Collegare {{provider}} a questo account?",
+    "confirmUnlink": "Scollegare {{provider}} da questo account?",
+    "securityEffects": "L’accesso su questo dispositivo resterà attivo. Gli altri dispositivi saranno disconnessi, le app partner saranno scollegate e i precedenti link di recupero e verifica smetteranno di funzionare.",
+    "confirm": "Conferma modifica",
+    "cancel": "Annulla",
+    "reauthenticationTitle": "Conferma l’accesso recente",
+    "reauthenticationDescription": "Verifica un metodo di accesso esistente prima di cambiare i provider collegati.",
+    "password": "Password attuale",
+    "verifyPassword": "Verifica password",
+    "verifyGoogle": "Verifica con Google",
+    "passwordOptions": "Apri le opzioni della password",
+    "recovery": "Recupera account",
+    "recoveryNotProof": "Aprire le opzioni della password o di recupero non conferma un accesso recente.",
+    "reauthenticationRequired": "Conferma l’accesso recente per continuare.",
+    "reauthenticationUnavailable": "La verifica di un accesso recente non è disponibile per questo account.",
+    "identityChanged": "Il tuo accesso è cambiato. Controlla l’account prima di riprovare.",
+    "lastUsableMethod": "Mantieni almeno un metodo di accesso utilizzabile.",
+    "ownershipConflict": "Questo account del provider è già collegato altrove. Il tuo account resta invariato.",
+    "unavailable": "Impossibile completare questa modifica. Riprova.",
+    "linkCompleted": "{{provider}} è collegato.",
+    "unlinkCompleted": "{{provider}} è scollegato.",
+    "redirecting": "Continua nel browser per terminare."
   }
 }

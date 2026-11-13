@@ -39,7 +39,8 @@ export function credentialDatabaseConfiguration(
   try {
     const selectedContract = environment.AUTH_IDENTITY_DATABASE_CONTRACT;
     const contract = selectedContract === undefined || selectedContract === '' ? 'private-web-v1' : selectedContract;
-    if (contract !== 'private-web-v1' && contract !== 'private-browser-v1') throw new Error();
+    if (contract !== 'private-web-v1' && contract !== 'private-browser-v1' && contract !== 'private-provider-v1')
+      throw new Error();
     if (
       decodeURIComponent(writer.username) !== CREDENTIAL_WRITER_ROLE ||
       decodeURIComponent(writer.username) === decodeURIComponent(content.username) ||

@@ -10,6 +10,7 @@ import {
   AUTH_COMMAND_MAX_AGE_MS,
   AUTH_COMMAND_TIMEOUT_MS,
   WEB_OAUTH_PROTOCOL_VERSION,
+  providerSecurityMode,
   webOAuthProviderSchema,
   webOAuthIntentReplySchema,
   webOAuthResolveReplySchema,
@@ -32,6 +33,7 @@ import {
 import { readNegativeWebOAuthActor, webOAuthActorStillValid, type NegativeWebOAuthActor } from './web-oauth-actor';
 import { resolveReservedCurrentStoreOAuthIdentity } from './provider-oauth-identity';
 import { readIdentityAuthority, revalidateIdentityAuthority } from '../authority/router';
+import { bindIdentityAuthority } from '../authority/identity-authority';
 
 export const WEB_OAUTH_INTENT_LIFETIME_MS = 15 * 60_000;
 type Unavailable = { readonly outcome: 'unavailable' };
@@ -176,6 +178,7 @@ export async function resolveWebOAuthIdentity(
   nextAuthSecret: string,
   input: WebOAuthResolveCommand,
 ): Promise<WebOAuthResolveReply | Unavailable> {
+  const ownedActorOnly = providerSecurityMode(process.env) === 'backend-staging';
   const configuredAuthority = captureExpectedAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { provider, flow, actorCookie, subject, email, name, image } = input.payload;
@@ -196,7 +199,7 @@ export async function resolveWebOAuthIdentity(
       await transactionSettings(transaction);
       await lockEnforcedProjection(transaction, authority);
       await revalidateIdentityAuthority(transaction, receipt);
-      if (!(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
+      if (!ownedActorOnly && !(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
         return denied('resolve', requestId, 'replayed');
       assertFresh(Date.parse(issuedAt));
       // The provider subject's lock before the actor's users row (section 4's
@@ -204,6 +207,8 @@ export async function resolveWebOAuthIdentity(
       // the subject first and then its owner's row, so taking the actor's row
       // first here could wait on it in a cycle. Re-entrant when resolved below.
       await lockProviderSubject(transaction, provider, subject);
+      const primary = ownedActorOnly && captured.actor ? bindIdentityAuthority(transaction, receipt) : null;
+      const observedOwner = primary ? await primary.findProvider(provider, subject) : null;
       const [intent] = await transaction
         .select()
         .from(authWebOAuthIntents)
@@ -229,6 +234,38 @@ export async function resolveWebOAuthIdentity(
         !webOAuthActorStillValid(captured.actor)
       )
         return denied('resolve', requestId);
+      if (ownedActorOnly && captured.actor) {
+        // A normal signed-in OAuth callback may renew only an already-owned
+        // selected identity. The explicit provider-security flow is the sole
+        // link writer. Re-read after the actor lock and any primary-row wait
+        // BEFORE consuming the legacy intent, even after a web preflight.
+        const owner = await primary!.findProvider(provider, subject, 'update');
+        if (
+          !observedOwner ||
+          !owner ||
+          observedOwner.userId !== owner.userId ||
+          observedOwner.generation !== owner.generation ||
+          owner.userId !== captured.actor.userId ||
+          owner.generation !== actor.generation ||
+          actorCookie === null
+        )
+          return denied('resolve', requestId);
+        const admitted = await readFirstPartySession(
+          transaction,
+          { kind: 'legacy-jwe', credential: actorCookie, secret: nextAuthSecret },
+          new Date(await nowMilliseconds(transaction)),
+          (userId) => readLockedWebSubjectState(transaction, userId),
+        );
+        if (admitted.status === 'unavailable') throw new Error('Web actor authority unavailable');
+        if (
+          admitted.status !== 'admitted' ||
+          admitted.session.userId !== owner.userId ||
+          admitted.session.generation !== owner.generation
+        )
+          return denied('resolve', requestId);
+      }
+      if (ownedActorOnly && !(await claim(transaction, { requestId, issuedAt, operation: 'resolve' })))
+        return denied('resolve', requestId, 'replayed');
       const consumed = await transaction
         .update(authWebOAuthIntents)
         .set({ consumedAt: sql`clock_timestamp()` })

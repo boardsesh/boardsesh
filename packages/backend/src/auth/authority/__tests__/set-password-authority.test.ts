@@ -132,6 +132,39 @@ describe('selected authority fresh set-password command', () => {
   });
   afterAll(async () => environment?.close());
   for (const selected of ['current-store', 'better-auth'] as const)
+    it(`${selected}: staged provider security refuses cookie-only first-password without mutation`, async () => {
+      vi.stubEnv('NEXTAUTH_SECRET', secret);
+      vi.stubEnv('CURRENT_STORE_SET_PASSWORD_MODE', 'backend-staging');
+      vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
+      vi.stubEnv('AUTH_IDENTITY_MIRROR', 'on');
+      const owner = await fixture();
+      await switchTo(selected);
+      const before = await environment.database.select().from(authAccount).where(eq(authAccount.userId, owner.userId));
+      const request = command(owner);
+      expect((await setWebPassword(environment.database, authority, request)).outcome).toBe(
+        'reauthentication_required',
+      );
+      expect(
+        await environment.database.select().from(userCredentials).where(eq(userCredentials.userId, owner.userId)),
+      ).toHaveLength(0);
+      expect(await environment.database.select().from(authAccount).where(eq(authAccount.userId, owner.userId))).toEqual(
+        before,
+      );
+      expect(
+        await environment.database.select().from(authSubjectCutoffs).where(eq(authSubjectCutoffs.userId, owner.userId)),
+      ).toHaveLength(0);
+      expect(
+        await environment.database
+          .select()
+          .from(authSecurityMutationEvents)
+          .where(eq(authSecurityMutationEvents.userId, owner.userId)),
+      ).toHaveLength(0);
+      // The default path remains available after the staged selector is removed;
+      // the refused operation did not claim the command or create credentials.
+      vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'legacy');
+      expect((await setWebPassword(environment.database, authority, request)).outcome).toBe('set');
+    });
+  for (const selected of ['current-store', 'better-auth'] as const)
     it(`sets through ${selected}, mirrors exact bytes, and survives stale process epoch`, async () => {
       vi.stubEnv('NEXTAUTH_SECRET', secret);
       vi.stubEnv('CURRENT_STORE_SET_PASSWORD_MODE', 'backend-staging');

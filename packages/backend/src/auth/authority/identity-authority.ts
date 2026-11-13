@@ -23,7 +23,8 @@ export type NewIdentityUser = Pick<
 > & { readonly id: string };
 export interface IdentityAuthority {
   readonly receipt: IdentityAuthorityReceipt;
-  readPassword(userId: string): Promise<IdentityPasswordSnapshot | null>;
+  readPassword(userId: string, lock?: 'update'): Promise<IdentityPasswordSnapshot | null>;
+  listProviders(userId: string): Promise<readonly ProviderIdentitySnapshot[]>;
   /** Ownership evidence only; callers still enforce the user's deletion/cutoff state. */
   findProvider(provider: string, subject: string, lock?: 'update'): Promise<ProviderIdentitySnapshot | null>;
   createUser(input: NewIdentityUser): Promise<typeof users.$inferSelect>;
@@ -42,6 +43,7 @@ interface CanonicalAccount {
   password: string | null;
   sourceGeneration: number | null;
 }
+const MAX_PROVIDER_INVENTORY_ROWS = 1000;
 
 function generationIsValid(generation: unknown): generation is number {
   return (
@@ -99,9 +101,15 @@ export function bindIdentityAuthority(
   }
   return {
     receipt,
-    async readPassword(userId) {
+    async readPassword(userId, lock) {
       await revalidateIdentityAuthority(transaction, receipt);
       if (betterAuth) {
+        if (lock === 'update')
+          await transaction
+            .select({ id: authAccount.id })
+            .from(authAccount)
+            .where(and(eq(authAccount.userId, userId), eq(authAccount.providerId, 'credential')))
+            .for('update');
         // Both fields come from ONE adapter SELECT, never a later cutoff read.
         const credential = await canonicalPassword(userId);
         if (!credential) return null;
@@ -109,7 +117,7 @@ export function bindIdentityAuthority(
           throw new Error('IDENTITY_CREDENTIAL_UNQUALIFIED');
         return { userId, passwordHash: credential.password, generation: credential.sourceGeneration };
       }
-      const [credential] = await transaction
+      const query = transaction
         .select({
           passwordHash: userCredentials.passwordHash,
           generation: sql<number>`coalesce(${authSubjectCutoffs.generation}, 0)::integer`,
@@ -118,6 +126,7 @@ export function bindIdentityAuthority(
         .from(userCredentials)
         .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, userCredentials.userId))
         .where(eq(userCredentials.userId, userId));
+      const [credential] = await (lock === 'update' ? query.for('update', { of: userCredentials }) : query);
       if (!credential || credential.deletedAt) return null;
       return { userId, passwordHash: credential.passwordHash, generation: credential.generation };
     },
@@ -155,6 +164,48 @@ export function bindIdentityAuthority(
         .where(and(eq(accounts.provider, provider), eq(accounts.providerAccountId, subject)));
       const [found] = await (lock === 'update' ? query.for('update', { of: accounts }) : query);
       return found ? { userId: found.userId, provider, subject, generation: found.generation } : null;
+    },
+    async listProviders(userId) {
+      await revalidateIdentityAuthority(transaction, receipt);
+      if (betterAuth) {
+        const linked = await betterAuth.findMany<CanonicalAccount>({
+          model: 'account',
+          where: [
+            { field: 'userId', value: userId },
+            { field: 'providerId', operator: 'ne', value: 'credential' },
+          ],
+          // BA defaults to 100. A partial inventory cannot establish that an
+          // unlink leaves a usable method. Oversized inventories refuse.
+          limit: MAX_PROVIDER_INVENTORY_ROWS + 1,
+        });
+        if (linked.length > MAX_PROVIDER_INVENTORY_ROWS) throw new Error('IDENTITY_PROVIDER_INVENTORY_UNAVAILABLE');
+        return linked
+          .filter((account) => account.providerId !== 'credential')
+          .map((account) => {
+            assertProvider(account.providerId, account.accountId);
+            if (account.userId !== userId || !generationIsValid(account.sourceGeneration))
+              throw new Error('IDENTITY_PROVIDER_UNQUALIFIED');
+            return {
+              userId,
+              provider: account.providerId,
+              subject: account.accountId,
+              generation: account.sourceGeneration,
+            };
+          });
+      }
+      const linked = await transaction
+        .select({
+          userId: accounts.userId,
+          provider: accounts.provider,
+          subject: accounts.providerAccountId,
+          generation: sql<number>`coalesce(${authSubjectCutoffs.generation}, 0)::integer`,
+        })
+        .from(accounts)
+        .leftJoin(authSubjectCutoffs, eq(authSubjectCutoffs.userId, accounts.userId))
+        .where(eq(accounts.userId, userId))
+        .limit(MAX_PROVIDER_INVENTORY_ROWS + 1);
+      if (linked.length > MAX_PROVIDER_INVENTORY_ROWS) throw new Error('IDENTITY_PROVIDER_INVENTORY_UNAVAILABLE');
+      return linked;
     },
     async createUser(input) {
       const prepared = {

@@ -11,3 +11,4 @@ export * from './partner-oauth';
 export * from './email-resolution';
 export * from './authority';
 export * from './browser-bindings';
+export * from './provider-security';
