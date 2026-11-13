@@ -1,6 +1,6 @@
-Neu in 2.7:
-- Antippen stöbert ohne Licht. Am Board beleuchten: deine Wahl leuchtet bis zum Timer (45 s). Taste nach links wischen: ohne Ende; antippen stoppt.
-- Jetzt auf Italienisch. Pausen-Countdown und Endton in der Benachrichtigung.
-- Workouts in Blöcken. Wischen bleibt in deiner Liste; als Nächstes oder Letztes spielen.
-- Playlists, Gelikt und Projekte sortieren/filtern.
-- Routenbuch, Likes und Playlists offline. Scans finden MoonBoards.
+Neu in 2.8.0:
+- Beleuchte deine Spraywall mit WLED. Ordne LEDs im Foto zu und teste Griffe. Bluetooth-Installation ist eine freiwillige Beta für passende Controller.
+- Die Sperrbildschirmkarte leuchtet in Boulderfarben: Lampe und Weiter ohne Aufklappen, Zeitring beim Steuern.
+- Filtere verifizierte Kilter-Boulder.
+- Teste Graphite, kompakte Tabs und Filter auf halber Höhe.
+- Teile Playlists und Sessions mit beleuchteten Bouldern in der Linkvorschau.

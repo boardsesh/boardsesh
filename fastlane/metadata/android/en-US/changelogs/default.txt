@@ -1,6 +1,6 @@
-New in 2.7:
-- Tap to browse without lighting. Put on board lights it and you drive the wall: picks light until your timer ends (45 s default). Swipe it left to drive with no end; tap to stop.
-- Now in Italian. Rest countdown and finish tone in the session notification.
-- Workouts in blocks. Swipes stay on your list; play next or last.
-- Sort/filter playlists, Liked and Projects.
-- Logbook, likes and playlists work offline. Scans find MoonBoards.
+New in 2.8.0:
+- Light your Spraywall with WLED. Map LEDs on your photo and test holds. Bluetooth setup is an opt-in beta for matching controllers.
+- Your lock screen card glows with the climb's colours. Use the bulb and Next without expanding; a ring shows timed driving.
+- Find Kilter's Verified climbs with a quick filter.
+- Try the Graphite theme, slimmer tabs and half-height Filters.
+- Share playlists and sessions with lit-climb link previews.

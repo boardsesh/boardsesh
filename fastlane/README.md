@@ -22,6 +22,64 @@ cd fastlane && bundle exec fastlane ios next_build_number
 cd fastlane && bundle exec fastlane android next_version_code
 ```
 
+## Pending release — 2.8.0
+
+The next feature release is **2.8.0**, replacing the unreleased 2.7.1 target.
+`packages/mobile/app.config.ts` is the marketing-version source for both stores;
+build numbers and Android versionCodes still come from the store queries below.
+Do not reuse a 2.7.1 binary for this release: the uploaded binary must report 2.8.0.
+
+The public notes cover Spraywall lighting with WLED, the separately consented
+Bluetooth installation beta for matching controllers, Kilter's Verified filter,
+and lit-climb share previews. Apple notes live in all six
+`metadata/<locale>/release_notes.txt` files. Play notes live in all five
+`metadata/android/<locale>/changelogs/default.txt` files and also cover the
+Graphite theme, compact navigation and half-height Filters.
+
+**Release dependency:** include [#7352](https://github.com/boardsesh/boardsesh/pull/7352)
+before selecting the final Android binary. Its lock-screen card is included in
+the 2.8.0 Play notes: climb-coloured background, bulb and Next in the collapsed
+card, and a ring showing the remaining timed drive. This feature is Android-only
+and is not advertised in Apple's notes. It requires a fresh Android native build.
+
+1. Merge the version and notes, and include #7352 before the final Android build.
+   Check the Main Native Release result for a validated 2.8.0 stamp. A version-only
+   change does not change the fingerprint; if no changed native snapshot is
+   waiting, it alone does not start new binaries. The next native change adopts
+   the raised version. For an immediate version-only rebuild, dispatch the native
+   workflows from `main` with `force_native=true` and leave `source_sha` blank.
+2. Confirm the exact 2.8.0 uploads and build tags before preparing store drafts.
+   If an older iOS version is still open, `ios draft_submission` defers rather
+   than renaming it. Inspect its state in App Store Connect and resolve the old
+   draft before rerunning Mobile Store Draft Submission; never attach a 2.7.1
+   build to the 2.8.0 version.
+3. Once the editable iOS version is 2.8.0, push the localized notes with the
+   guarded command below. This lane skips when there is no editable version and
+   refuses a different editable version. Read its result to confirm an upload.
+4. Audit the selected binary, localized notes and screenshots before the separate
+   manual public submission. Play notes travel with `android upload_beta`;
+   `android metadata` only changes listing text.
+
+```bash
+cd fastlane
+bundle exec fastlane ios metadata expected_version:2.8.0
+cd ..
+```
+
+Apple allows 4,000 characters per release note; Play allows 500. Validate every
+locale before uploading:
+
+```bash
+vp test run --project scripts scripts/store-metadata-limits.test.ts --reporter=agent
+```
+
+The automatic Mobile Store Metadata workflow writes the currently editable iOS
+version. Check its target after merging these notes, especially while an older
+draft remains open. The guarded command above and the 2.8.0 draft's metadata
+follow-up ensure the final notes belong to the intended release.
+See the [store release runbook](../docs/mobile-store-release.md) for exact-build
+selection, draft recovery, audits and manual submission.
+
 ## Native tester updates — `android upload_beta`, `ios testflight`
 
 Pushes to `main` and `release/next` automatically build a replacement when the

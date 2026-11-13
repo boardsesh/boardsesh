@@ -1,6 +1,6 @@
-Nouveautés de 2.7 :
-- Toucher affiche sans allumer. Allumer sur la board : tes choix s’allument jusqu’à la fin du minuteur (45 s). Balaye à gauche : sans limite ; touche pour arrêter.
-- Italien. Compte à rebours et son de repos dans la notification.
-- Entraînements en phases. Balaye dans ta liste ; mets les blocs après ou à la fin.
-- Trie et filtre playlists, Aimées et Projets.
-- Carnet, likes et playlists hors ligne. Les scans trouvent les MoonBoards.
+Nouveautés 2.8.0 :
+- Allume ta Spraywall avec WLED. Place les LED sur la photo et teste les prises. L'installation Bluetooth est une bêta facultative pour contrôleurs compatibles.
+- La carte de verrouillage prend les couleurs du bloc : ampoule et Suivant sans l'ouvrir, anneau de temps de contrôle.
+- Filtre les blocs Vérifiés de Kilter.
+- Essaie Graphite, les onglets compacts et Filtres à mi-hauteur.
+- Partage playlists et sessions avec un aperçu de bloc allumé.

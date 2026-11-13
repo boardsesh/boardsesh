@@ -1,6 +1,6 @@
-Novedades de 2.7:
-- Toca para ver sin encender. Poner en el plafón: tus bloques se encienden hasta que acabe el temporizador (45 s). Desliza a la izquierda: sin fin; toca para parar.
-- Italiano. Cuenta atrás y tono de descanso en la notificación.
-- Entrena por fases. Desliza sin salir de tu lista; pon bloques después o al final.
-- Ordena y filtra playlists, Favoritos y Proyectos.
-- Logbook, favoritos y playlists sin cobertura. Escanea MoonBoards.
+Novedades de 2.8.0:
+- Ilumina tu Spraywall con WLED. Mapea LED en la foto y prueba presas. Instalar Bluetooth es una beta opcional para controladores compatibles.
+- La tarjeta de bloqueo luce los colores del bloque, con bombilla y Siguiente sin desplegarla y un anillo de tiempo de control.
+- Filtra los bloques Verificados de Kilter.
+- Prueba el tema Graphite, pestañas más compactas y Filtros a media altura.
+- Comparte playlists y sesiones con vistas previas de bloques iluminados.
