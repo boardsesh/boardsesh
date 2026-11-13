@@ -1,4 +1,5 @@
-import { DOMParser, XMLSerializer, type Element, type Node } from '@xmldom/xmldom';
+// Keep CNC's XML parser isolated from native config plugins' hoisted dependency.
+import { DOMParser, XMLSerializer, type Element, type Node } from 'cnc-xmldom';
 
 /**
  * A buyer's SVG, audited and rewritten before it is ever stored.

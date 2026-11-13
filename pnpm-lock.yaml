@@ -313,9 +313,6 @@ importers:
       '@whatwg-node/fetch':
         specifier: ^0.10.13
         version: 0.10.13
-      '@xmldom/xmldom':
-        specifier: ^0.9.12
-        version: 0.9.12
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
@@ -325,6 +322,9 @@ importers:
       busboy:
         specifier: ^1.6.0
         version: 1.6.0
+      cnc-xmldom:
+        specifier: npm:@xmldom/xmldom@^0.9.12
+        version: '@xmldom/xmldom@0.9.12'
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
