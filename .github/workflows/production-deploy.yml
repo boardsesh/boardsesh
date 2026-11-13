@@ -338,13 +338,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
           # No `:staging` — unlike the backend, nothing in homelab consumes a
-          # staging web image. Railway pulls the moving `:production` tag;
+          # staging web image. The publisher promotes :production/:latest only
+          # after verifying their CDN assets. Railway pulls :production;
           # `:sha-<short>` is the immutable handle for a manual rollback.
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
-            type=raw,value=production,enable={{is_default_branch}}
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Generate web Docker context
         # Not `vp run docker-context:web`: that vp task is exactly this command
@@ -390,6 +389,7 @@ jobs:
             BOARDSESH_WEB=1
             NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
             NEXT_PUBLIC_STATIC_ASSET_BASE_URL=https://assets.boardsesh.com
+            NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com
             NEXT_PUBLIC_APP_STORE_PROVIDER_ID=${{ vars.NEXT_PUBLIC_APP_STORE_PROVIDER_ID }}
             NEXT_PUBLIC_META_PIXEL_ID=${{ vars.NEXT_PUBLIC_META_PIXEL_ID }}
             NEXT_PUBLIC_REDDIT_PIXEL_ID=${{ vars.NEXT_PUBLIC_REDDIT_PIXEL_ID }}
@@ -447,6 +447,78 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.WEB_IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+
+  # Retain each build's hashed runtime assets before HTML can reference them.
+  # This runs even when web deployment is held: the published image must remain
+  # usable for a later manual redeploy. Older objects are never removed.
+  publish-next-assets:
+    needs: [detect-changes, build-web, deploy-cloudflare]
+    if: >-
+      always()
+      && needs.build-web.result == 'success'
+      && (needs.detect-changes.outputs.cloudflare_changed != 'true' || needs.deploy-cloudflare.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract immutable Next assets from the built image
+        env:
+          WEB_IMAGE: ${{ needs.build-web.outputs.image }}
+          WEB_DIGEST: ${{ needs.build-web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker pull "$WEB_IMAGE@$WEB_DIGEST"
+          next_asset_container=$(docker create "$WEB_IMAGE@$WEB_DIGEST")
+          trap 'docker rm "$next_asset_container" >/dev/null' EXIT
+          next_static_dir="$RUNNER_TEMP/boardsesh-next-static"
+          mkdir -p "$next_static_dir"
+          docker cp "$next_asset_container:/app/packages/web/.next/static/." "$next_static_dir"
+
+      - name: Publish and validate immutable Next assets
+        env:
+          STATIC_ASSETS_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+        run: vp run upload:next-static-assets -- --directory "$RUNNER_TEMP/boardsesh-next-static"
+
+      - name: Promote the verified web image
+        env:
+          WEB_IMAGE: ${{ needs.build-web.outputs.image }}
+          WEB_DIGEST: ${{ needs.build-web.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --prefer-index=false \
+            --tag "$WEB_IMAGE:production" --tag "$WEB_IMAGE:latest" "$WEB_IMAGE@$WEB_DIGEST"
+          for ready_tag in production latest; do
+            ready_digest=$(docker buildx imagetools inspect "$WEB_IMAGE:$ready_tag" --format '{{printf "%s" .Manifest.Digest}}')
+            if [ "$ready_digest" != "$WEB_DIGEST" ]; then
+              echo "::error::Validated web image tag $ready_tag does not resolve to the built digest." >&2
+              exit 1
+            fi
+          done
 
   build-backend:
     needs: [detect-changes]
@@ -1150,12 +1222,22 @@ jobs:
   # by WEB_DEPLOY_TARGETS so `none` remains the deploy hold, and so a second
   # target can be added back without reshaping the job.
   deploy-web-railway:
-    needs: [detect-changes, resolve-web-targets, build-web, migrate, deploy-production-backend, deploy-cloudflare]
+    needs:
+      [
+        detect-changes,
+        resolve-web-targets,
+        build-web,
+        publish-next-assets,
+        migrate,
+        deploy-production-backend,
+        deploy-cloudflare,
+      ]
     if: >-
       always()
       && needs.detect-changes.outputs.web_changed == 'true'
       && needs.resolve-web-targets.outputs.web_railway == 'true'
       && needs.build-web.result == 'success'
+      && needs.publish-next-assets.result == 'success'
       && needs.migrate.result == 'success'
       && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
       && (needs.detect-changes.outputs.cloudflare_changed != 'true' || needs.deploy-cloudflare.result == 'success')
@@ -1710,12 +1792,13 @@ jobs:
   # run summary — so a forgotten hold would silently strand www on an old build
   # while every merge looked fine. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
   notify-web-held:
-    needs: [detect-changes, resolve-web-targets, build-web]
+    needs: [detect-changes, resolve-web-targets, build-web, publish-next-assets]
     if: >-
       always()
       && needs.detect-changes.outputs.web_changed == 'true'
       && needs.resolve-web-targets.outputs.web_targets == 'none'
       && needs.build-web.result == 'success'
+      && needs.publish-next-assets.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: Production
@@ -1756,6 +1839,7 @@ jobs:
         resolve-web-targets,
         sync-static-assets,
         build-web,
+        publish-next-assets,
         build-backend,
         migrate,
         verify-serial-plan,
@@ -1778,6 +1862,7 @@ jobs:
           DETECT_CHANGES: ${{ needs.detect-changes.result }}
           SYNC_STATIC_ASSETS: ${{ needs.sync-static-assets.result }}
           BUILD_WEB: ${{ needs.build-web.result }}
+          PUBLISH_NEXT_ASSETS: ${{ needs.publish-next-assets.result }}
           BUILD_BACKEND: ${{ needs.build-backend.result }}
           MIGRATE: ${{ needs.migrate.result }}
           VERIFY_SERIAL_PLAN: ${{ needs.verify-serial-plan.result }}
@@ -1797,8 +1882,8 @@ jobs:
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• stage-mobile-ota: %s\n• promote-mobile-ota: %s\n• promote-early-mobile-ota: %s\n• verify-mobile-ota: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• verify-serial-plan: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$STAGE_MOBILE_OTA" "$PROMOTE_MOBILE_OTA" "$EARLY_MOBILE_OTA" "$VERIFY_MOBILE_OTA" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$VERIFY_SERIAL_PLAN" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• stage-mobile-ota: %s\n• promote-mobile-ota: %s\n• promote-early-mobile-ota: %s\n• verify-mobile-ota: %s\n• resolve-web-targets: %s\n• sync-static-assets: %s\n• build-web: %s\n• publish-next-assets: %s\n• build-backend: %s\n• migrate: %s\n• verify-serial-plan: %s\n• deploy-web-railway: %s\n• deploy-production-backend: %s\n• deploy-cloudflare: %s\n• deploy-app-web: %s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$STAGE_MOBILE_OTA" "$PROMOTE_MOBILE_OTA" "$EARLY_MOBILE_OTA" "$VERIFY_MOBILE_OTA" "$RESOLVE_WEB_TARGETS" "$SYNC_STATIC_ASSETS" "$BUILD_WEB" "$PUBLISH_NEXT_ASSETS" "$BUILD_BACKEND" "$MIGRATE" "$VERIFY_SERIAL_PLAN" "$DEPLOY_WEB_RAILWAY" "$DEPLOY_BACKEND" "$DEPLOY_CLOUDFLARE" "$DEPLOY_APP_WEB" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -1824,6 +1909,7 @@ jobs:
         resolve-web-targets,
         sync-static-assets,
         build-web,
+        publish-next-assets,
         build-backend,
         migrate,
         verify-serial-plan,

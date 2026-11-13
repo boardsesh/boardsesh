@@ -274,6 +274,40 @@ Those values are public build inputs, not credentials. A CI contract test keeps 
 
 ## Main deployment
 
+### Retained Next.js build assets
+
+Production Next builds use `NEXT_PUBLIC_NEXT_ASSET_BASE_URL=https://assets.boardsesh.com`
+as their `assetPrefix`, with anonymous cross-origin script loading. Local and
+preview builds leave this input unset and serve their own build assets. This
+prefix covers Next's JavaScript, CSS and bundled fonts/media; catalogued images
+continue using the existing `/static/v1/` URLs.
+
+The `publish-next-assets` job copies only `.next/static` from the exact web image
+digest into `/_next/static/` in the existing static-assets bucket. It excludes
+source maps and refuses symlinks or unsafe paths. Objects use a one-year
+immutable policy, conditional creation and SHA-256 verification; a conflicting
+existing object fails publication rather than being overwritten. The publisher
+also verifies public decoded bytes, content type, cache headers and CORS both
+with and without an Origin header. No old objects are deleted.
+
+Railway promotion requires successful publication, including when other jobs
+succeed. A held web build still publishes its assets so its image remains usable
+for a later redeploy. The publisher moves the `production` and `latest` image tags
+only after asset verification and checks that both resolve to the built digest.
+Build SHA/ref tags exist earlier for diagnosis; a failed build's SHA is not a
+ready rollback target. Publication failures participate directly in both deploy
+notification gates.
+
+This protects HTML generated with the new CDN prefix across subsequent deploys.
+Previously cached HTML still names `www/_next/static` paths, and files already
+missing from older images are not recovered by this rollout. Clearing that old
+HTML cache after rollout, or waiting for its existing freshness window, switches
+new requests to the retained asset URLs. Extending HTML cache duration also
+requires invalidation when public content or visibility changes; its TTL remains
+controlled by the page-cache policy rather than the asset policy.
+
+### Catalogued public assets
+
 The serialized `production-deploy.yml` change detector selects `sync-static-assets` only when a catalog input or
 publisher changes. The job lists existing immutable keys, uploads only missing hashes at no more than five request
 starts per second, and validates every unique catalog object through both signed S3 `HEAD` and a public CDN `GET` (including

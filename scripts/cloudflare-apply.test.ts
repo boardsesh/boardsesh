@@ -637,6 +637,7 @@ describe('assets.boardsesh.com routing and historical generic DNS fixture', () =
     // starts resolving to R2.
     const assetsRule = desired.cacheRules.find((rule) => rule.expression.includes(ASSETS_HOSTNAME));
     expect(assetsRule?.action_parameters.cache).toBe(true);
+    expect(assetsRule?.expression).toContain('starts_with(http.request.uri.path, "/_next/static/")');
     expect(assetsRule?.action_parameters.edge_ttl?.mode).toBe('bypass_by_default');
     expect(assetsRule?.action_parameters.browser_ttl?.mode).toBe('respect_origin');
   });
