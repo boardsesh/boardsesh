@@ -223,6 +223,14 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      'auth:rehearsal': {
+        command: 'tsx scripts/auth-rehearsal/index.ts',
+        cache: false,
+      },
+      'auth:rehearsal:synthetic': {
+        command: 'tsx scripts/auth-rehearsal/index.ts synthetic',
+        cache: false,
+      },
       'auth:revoke-sessions': {
         command: 'tsx packages/backend/src/scripts/auth-revoke-sessions.ts',
         cache: false,
