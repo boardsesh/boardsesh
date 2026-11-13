@@ -11,6 +11,10 @@ import { reportMissingI18nKey } from './missing-key-reporter';
 
 const resourceLoader = resourcesToBackend((locale: string, namespace: string) => loadCatalog(locale, namespace));
 
+// These branches serve the native app, not Next's surviving display surfaces.
+// Keep this allowlist explicit: boards.mobile and session.mobile have web users.
+const NAMESPACES_WITH_NATIVE_ONLY_MOBILE_COPY = new Set<SeedNamespace>(['common', 'climbs', 'feed']);
+
 // Per-request memoization. React.cache dedupes calls with the same arguments
 // inside a single render, so generateMetadata + the page body share an
 // instance instead of bootstrapping i18next twice. namespacesKey is a
@@ -66,7 +70,12 @@ export async function loadServerResources(
   const instance = await initI18nForRequest(locale, namespacesToKey(namespaces));
   const resources: Record<string, Record<string, unknown>> = {};
   for (const ns of namespaces) {
-    resources[ns] = (instance.getResourceBundle(locale, ns) ?? {}) as Record<string, unknown>;
+    const catalog = (instance.getResourceBundle(locale, ns) ?? {}) as Record<string, unknown>;
+    // Project the transport object; the cached server instance and shared
+    // catalogs retain their complete resources for server translation/native.
+    resources[ns] = NAMESPACES_WITH_NATIVE_ONLY_MOBILE_COPY.has(ns)
+      ? Object.fromEntries(Object.entries(catalog).filter(([key]) => key !== 'mobile'))
+      : catalog;
   }
   return resources;
 }
