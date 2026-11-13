@@ -57,6 +57,9 @@ signup unknown. Native registration requiring verification emits no login
 success. The 2.6.0 historical success/signup gap is incomplete measurement;
 missing events are not reconstructed from account age or registration intent.
 
+Released-source compatibility checks and their limits are described in
+[released native and Garmin contracts](./better-auth-released-client-contracts.md).
+
 ## Token exchange flow
 
 1. The mobile app first uses the native Google/Apple provider SDK. If that SDK hits a supported presentation/configuration failure, the browser fallback opens the web app's `/auth/native-start` flow with `expo-web-browser`'s `openBrowserAsync` (`packages/mobile/src/lib/auth.ts`).

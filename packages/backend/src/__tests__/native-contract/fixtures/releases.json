@@ -1,0 +1,2328 @@
+{
+  "version": 1,
+  "evidence": "git-source-only; installs and OTA coverage unproven",
+  "releases": [
+    {
+      "tag": "release/android-v2.2.0-dcfaf40631db",
+      "platform": "android",
+      "version": "2.2.0",
+      "commit": "5aae4b7a174d1d2768b886b3d59d9c609e12b0d8",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "ffdda7c268520d3946d0570f817a806a620bd4836edd536827e4db7e9aa7f0d5",
+          "gitBlob": "63beb7eacfab865573903d0c7de6cd46f7fe864a"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 3668,
+          "end": 3946
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.2.1-3cb54065c4b7",
+      "platform": "android",
+      "version": "2.2.1",
+      "commit": "0a98eaf53adc496e7880382efe0257c6d51ac8a7",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "ffdda7c268520d3946d0570f817a806a620bd4836edd536827e4db7e9aa7f0d5",
+          "gitBlob": "63beb7eacfab865573903d0c7de6cd46f7fe864a"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 3668,
+          "end": 3946
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.2.2-5721fdd105bc",
+      "platform": "android",
+      "version": "2.2.2",
+      "commit": "2e19ac597b6ca5ad7d0ef5da451a15b5f299d39b",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "4e87bbfb72007c20d931149f67f9e120c966fb2f2624527ec21eea67b0de6197",
+          "gitBlob": "84071799dd15317c4433e1a0075ec6b2ace183b4"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "57fcef0908fa19af0967496adc07addb9ac3fe6e4792d391b2ad0832922151bf",
+          "gitBlob": "d1bc5a9e8bc0698a8b3a373391ef26101a5eb892"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "d631cab4a9a129c07ef94d800d667f00478725c77caa347064d3e4ead4d83fdd",
+          "gitBlob": "6237575393476f6b70287326151195c13fc8fce5"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "8a3dfec2680497878dd3bd09a1115c45c3c1c31ab1e8b7e86d98df612fa12517",
+          "gitBlob": "501564472dbfc103adc9d8688bd0fd678f718b36"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "22f5d402e9177dfcb2f588ee8cc10cab14ad52f85a2fc6a8fa24adb189b50f44",
+          "gitBlob": "32343164cc2720112a7da980d55d456199ee3ab5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "76ba2043aae54c1734fbbd7f3c5b33946c1d7b57b1527fe741c5e1acba90db9b",
+          "gitBlob": "951cd6345abdb6ff3f7186c398a59a39e0a30e15"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "778cdd59a18029924b212308522c47125c315818c64fbb87d8c36f4748ed202c",
+          "gitBlob": "75f8e40b20362e1024d5836b1970a8352e9087e9"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "aa5c746fe19a2c2c967d63c36b02e606a3e06d1fdb58418a1808eb04b5b97fca",
+          "gitBlob": "c4dfccf6eb2be75739df0f72b4aa9258208acada"
+        },
+        "packages/shared/offline-sync/src/sync/table-config.ts": {
+          "sha256": "5eb4b1021ba8e23014889af22e436abe60da1c96e64cdc5180711e78b67afe54",
+          "gitBlob": "292b2c5d0318122a9e953931dc00247a98ef296c"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 7648,
+          "end": 8090
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.2.2-9c009489dfeb",
+      "platform": "android",
+      "version": "2.2.2",
+      "commit": "1b7e274149077f288d269a6519ee6e4b3cb4c124",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "4e87bbfb72007c20d931149f67f9e120c966fb2f2624527ec21eea67b0de6197",
+          "gitBlob": "84071799dd15317c4433e1a0075ec6b2ace183b4"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "57fcef0908fa19af0967496adc07addb9ac3fe6e4792d391b2ad0832922151bf",
+          "gitBlob": "d1bc5a9e8bc0698a8b3a373391ef26101a5eb892"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "d631cab4a9a129c07ef94d800d667f00478725c77caa347064d3e4ead4d83fdd",
+          "gitBlob": "6237575393476f6b70287326151195c13fc8fce5"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "8a3dfec2680497878dd3bd09a1115c45c3c1c31ab1e8b7e86d98df612fa12517",
+          "gitBlob": "501564472dbfc103adc9d8688bd0fd678f718b36"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "22f5d402e9177dfcb2f588ee8cc10cab14ad52f85a2fc6a8fa24adb189b50f44",
+          "gitBlob": "32343164cc2720112a7da980d55d456199ee3ab5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "76ba2043aae54c1734fbbd7f3c5b33946c1d7b57b1527fe741c5e1acba90db9b",
+          "gitBlob": "951cd6345abdb6ff3f7186c398a59a39e0a30e15"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "778cdd59a18029924b212308522c47125c315818c64fbb87d8c36f4748ed202c",
+          "gitBlob": "75f8e40b20362e1024d5836b1970a8352e9087e9"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "aa5c746fe19a2c2c967d63c36b02e606a3e06d1fdb58418a1808eb04b5b97fca",
+          "gitBlob": "c4dfccf6eb2be75739df0f72b4aa9258208acada"
+        },
+        "packages/shared/offline-sync/src/sync/table-config.ts": {
+          "sha256": "5eb4b1021ba8e23014889af22e436abe60da1c96e64cdc5180711e78b67afe54",
+          "gitBlob": "292b2c5d0318122a9e953931dc00247a98ef296c"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 7648,
+          "end": 8090
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.2.2-9ebca93545e8",
+      "platform": "android",
+      "version": "2.2.2",
+      "commit": "6e5a1d9c158c1cf2afbd7843d7ad7263e2e3c8f7",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "ce5520166181a50537e948a9b537dbc95c33e8eaef29fd4b23d748092b5d45f7",
+          "gitBlob": "22bf2b26b7bfc7124f444d172a577075bc95f5ea"
+        },
+        "packages/shared/offline-sync/src/sync/table-config.ts": {
+          "sha256": "5eb4b1021ba8e23014889af22e436abe60da1c96e64cdc5180711e78b67afe54",
+          "gitBlob": "292b2c5d0318122a9e953931dc00247a98ef296c"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 4483,
+          "end": 4925
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.3.0-125ee4957b7a",
+      "platform": "android",
+      "version": "2.3.0",
+      "commit": "bc0c94c47810101148505d80d67ff362bde636e8",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "cd42869b30fb94aa04d885cf39b7dcfde32238926bfd10838a86e4d9b1b50525",
+          "gitBlob": "5fb7ecf242e90ccffd119ec972fc0dfa7353fd26"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "81b582cb810981fbce694ba62bbb5d5677bd6a5394f738adbb4bac4946e31af9",
+          "gitBlob": "fbaf7898e611943e52da07aaa6aa9664e441ae0c"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "413f1b9b61005ea26fe4966ccea0330fcfd1cfe521847bf95ad6d527f5a7e681",
+          "gitBlob": "2e67320d59638c877cd15ed8ba8bbf24b32909d1"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "07ccf5d49eea17b7fe641ef9af2c95d54a6bc985744dbd1613d0667ac1e1b0c4",
+          "gitBlob": "5fbbd0a2cd6327aec1328ee9889b58c26aa6e064"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 7872,
+            "end": 8080
+          },
+          "clearPersistedUserStores": {
+            "start": 8490,
+            "end": 9145
+          },
+          "clearLocalOfflineUserData": {
+            "start": 10185,
+            "end": 10584
+          },
+          "runSignedOutCleanup": {
+            "start": 11004,
+            "end": 13493
+          },
+          "handleSignedOutTransition": {
+            "start": 14044,
+            "end": 16386
+          },
+          "checkAuth": {
+            "start": 28757,
+            "end": 29017
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 4263,
+          "end": 4750
+        },
+        "clearTables": {
+          "start": 1015,
+          "end": 1222
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.3.1-70c78454348f",
+      "platform": "android",
+      "version": "2.3.1",
+      "commit": "97bfd80290eca9c9849914808bcefee414aa0da5",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "cd42869b30fb94aa04d885cf39b7dcfde32238926bfd10838a86e4d9b1b50525",
+          "gitBlob": "5fb7ecf242e90ccffd119ec972fc0dfa7353fd26"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "81b582cb810981fbce694ba62bbb5d5677bd6a5394f738adbb4bac4946e31af9",
+          "gitBlob": "fbaf7898e611943e52da07aaa6aa9664e441ae0c"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "693def84bfa4886fdc935514deae46ec20f7f4ac70b116a496fa7bb1dd13f630",
+          "gitBlob": "d633a35c92e7a6cebe87714cefed330cbf47a102"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "07ccf5d49eea17b7fe641ef9af2c95d54a6bc985744dbd1613d0667ac1e1b0c4",
+          "gitBlob": "5fbbd0a2cd6327aec1328ee9889b58c26aa6e064"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 7872,
+            "end": 8080
+          },
+          "clearPersistedUserStores": {
+            "start": 8490,
+            "end": 9145
+          },
+          "clearLocalOfflineUserData": {
+            "start": 10185,
+            "end": 10584
+          },
+          "runSignedOutCleanup": {
+            "start": 11004,
+            "end": 13493
+          },
+          "handleSignedOutTransition": {
+            "start": 14044,
+            "end": 16386
+          },
+          "checkAuth": {
+            "start": 28757,
+            "end": 29017
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 4263,
+          "end": 4750
+        },
+        "clearTables": {
+          "start": 1015,
+          "end": 1222
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.4.0-8a93b3d14de7",
+      "platform": "android",
+      "version": "2.4.0",
+      "commit": "1037e046292d26ec8ea4076f6b77a1fda6bb50f0",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "d9d56848939f7b4c30f26dcc4acfd25c0808e2493e648e5ab7552cb58a794917",
+          "gitBlob": "83f90ffa6d754c216dc9c2b7b3473dc25a19bab7"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "6afeddf4625a28b2f3b1433f1cd6ce9a0a6abe350e94042be8254837a6a1e5f5",
+          "gitBlob": "d796ad3b804e696b91e36cc99d3477ec69fb9ffc"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "1ef38362e78f6cbfe75cc7aa6bc132f2e4d6f3c5b3de902dad43d54a234e75ef",
+          "gitBlob": "59f8d2a05d9afa4c306a908edfc26e04393bcbf2"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 8426,
+            "end": 8927
+          },
+          "clearPersistedUserStores": {
+            "start": 9337,
+            "end": 10392
+          },
+          "clearLocalOfflineUserData": {
+            "start": 12620,
+            "end": 13949
+          },
+          "runSignedOutCleanup": {
+            "start": 14591,
+            "end": 19351
+          },
+          "handleSignedOutTransition": {
+            "start": 19902,
+            "end": 22364
+          },
+          "checkAuth": {
+            "start": 34735,
+            "end": 34995
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 18793,
+          "end": 19280
+        },
+        "clearTables": {
+          "start": 1453,
+          "end": 1660
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.5.0-154bc941c504",
+      "platform": "android",
+      "version": "2.5.0",
+      "commit": "e0e18684fc0664eef894dbeccadb08d232469a1f",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "c58de72a68078abe47001aa95d0fbc37c4286b4512d4a80462d15d4d9b54bf7e",
+          "gitBlob": "8898d80e3eee2202ecc93d6adf1af5fea7503d25"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "82238bfb8d61691f4ef7fdc3d1e3f90301f36b9f6d8a024929da4193a0486f20",
+          "gitBlob": "550bc9c307dec14fdb5401f62c6a5db4049027da"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "875a87749e08aa3a431b8445b5a000df028a7fbf2503639752e06d9f7556e326",
+          "gitBlob": "92de1b7ff871a21709ff545f3a6349cb72dc5bd2"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "1ef38362e78f6cbfe75cc7aa6bc132f2e4d6f3c5b3de902dad43d54a234e75ef",
+          "gitBlob": "59f8d2a05d9afa4c306a908edfc26e04393bcbf2"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 8499,
+            "end": 9000
+          },
+          "clearPersistedUserStores": {
+            "start": 9410,
+            "end": 10465
+          },
+          "clearLocalOfflineUserData": {
+            "start": 12693,
+            "end": 14022
+          },
+          "runSignedOutCleanup": {
+            "start": 14664,
+            "end": 20026
+          },
+          "handleSignedOutTransition": {
+            "start": 20577,
+            "end": 23039
+          },
+          "checkAuth": {
+            "start": 35410,
+            "end": 35670
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 18793,
+          "end": 19280
+        },
+        "clearTables": {
+          "start": 1453,
+          "end": 1660
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.6.0-8733a10cad03",
+      "platform": "android",
+      "version": "2.6.0",
+      "commit": "a988d35c03f29b46aba4bd090f7ced4d8af5f055",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "64870692f8032242a80127554d26359ca81bf4343a842bab4e123df16ce5ee7f",
+          "gitBlob": "1570dcb435ba6e669128dfb04b5199313fc1fbfd"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "c2cbab402b0c2401e6dcfeffdc0f33ebecb88071413e36d97ee0f57c45336373",
+          "gitBlob": "01efd3769cf53887f547a3fe226d03d52ab98dcc"
+        },
+        "packages/mobile/src/lib/privacy/privacy-cache.ts": {
+          "sha256": "ce34e62c59ef24d880a148d51f4393f50e6c8da7a79b23f63a880ba2a723a9e6",
+          "gitBlob": "946581273e493137c529eee947a2a38ae7e27d18"
+        },
+        "packages/mobile/src/lib/keychain-namespace-migration.ts": {
+          "sha256": "5b852bdac88d77c7e588a04c41861b799df0cc8667973d8d89575b48bc5613fa",
+          "gitBlob": "1912735a4f68f4e7f19608ae1ea0b4f8c2cedbcf"
+        },
+        "packages/mobile/src/lib/analytics.ts": {
+          "sha256": "638c57850f14843fe717dbaf7156e958be073fe15d342bc7f79ee183e20d7792",
+          "gitBlob": "811d5a4f9889eae7fbdc486045af62a0488a79d1"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "73a12b538794c9fb6bbd3f568f1965cad375e2d71cd8a51082c7ebb7015cec4d",
+          "gitBlob": "e8a285458ba98496987c55bbf261092df4f8f64d"
+        },
+        "packages/mobile/src/lib/secure-store-io.ts": {
+          "sha256": "a512717c2712807927477c6ec4971fcb2aca5f9b6933d32e534c5849ca68473a",
+          "gitBlob": "c3b3cd7a9dc835faab5a5102ed99dc699160d118"
+        },
+        "packages/mobile/src/lib/secure-store-stamp.ts": {
+          "sha256": "0398e77528b190db4f04cf4b616b7166e500c0ab5a4d7081eccf292c5ca5ef5c",
+          "gitBlob": "c5f68e8356170c098bcda2098aed1a76c01617da"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/client-identity.ts": {
+          "sha256": "21b436001f32972247de9ddfb8624ff6874b3869295e303dd2a54581198de68d",
+          "gitBlob": "d4b12f6d94b5d5631c92445f3d37bc83b4b3216d"
+        },
+        "packages/shared-schema/src/client-identity.ts": {
+          "sha256": "b27f855a1d806861432860a034223f47ac06c161a8ec9dfc4d79748126a5ad8f",
+          "gitBlob": "a3e44a6e6dab32f0c30377e6f36af2c1323d7cc4"
+        },
+        "packages/mobile/src/lib/verified-auth-result.ts": {
+          "sha256": "a6e3f2b06af8f4d69520c62422237f43c8f65b7798cb4b55519c290eb36d7b3a",
+          "gitBlob": "ae8feac69f2e9e8165195211e8b32516b80e69fe"
+        },
+        "packages/shared/analytics/src/account-creation.ts": {
+          "sha256": "315e5fd6d8e4bb2b65bf7faae6491fe8ade5d3bde017059c73acd0765e23b69f",
+          "gitBlob": "1e9c1f6d52bf9a33332e42cb5d5f9fe9e05b77d4"
+        },
+        "packages/mobile/src/lib/consent-state.ts": {
+          "sha256": "19a380b1e9b4f7add291130ae5c2d3bb992699d2297f2365a86e664d2763cfc6",
+          "gitBlob": "4638f2938eba0dddd3e89339a179335e7b0f40c9"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "03a0653ffa2bc5e696df0fd5c55a57e431aa6cb4cbf0ad264b9ccd56c1270609",
+          "gitBlob": "9b1c5ee872de497cd227088db9ffb044468796a7"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "2bb3f163392786f5d19a03784e047d5917b3f6ea4bbd6e586a67d707c7567efa",
+          "gitBlob": "cccada6d008fec0fcd680a46cfaec81cd94a017a"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "0b341e37b037c2fc4c689d47aefb1d28886d8dc598f1c8336e5b720a01ff3c7f",
+          "gitBlob": "60cd8041d80b60bbaf12cfea7288232ac0ee2dfc"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "80d44f9b9b920988e37e0725b32e83e49ed99ff4a71840b0d8027e4a1b2f4b7b",
+          "gitBlob": "e610dfec35347c0e2837bd0eff7e2e085574010c"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "4587e004e8c61362f052d7a23a07eb000ea70fa09c85049f651812175cda1b04",
+          "gitBlob": "3e1c4649a18aed7ebd20f899dec594c5e11cbf10"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 13149,
+            "end": 13783
+          },
+          "clearPersistedUserStores": {
+            "start": 14193,
+            "end": 16236
+          },
+          "clearLocalOfflineUserData": {
+            "start": 18464,
+            "end": 20705
+          },
+          "runSignedOutCleanup": {
+            "start": 21347,
+            "end": 28678
+          },
+          "handleSignedOutTransition": {
+            "start": 29229,
+            "end": 32301
+          },
+          "checkAuth": {
+            "start": 46291,
+            "end": 46551
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 48732,
+          "end": 51330
+        },
+        "clearTables": {
+          "start": 3047,
+          "end": 3302
+        }
+      }
+    },
+    {
+      "tag": "release/android-v2.7.0-1e5c2708a946",
+      "platform": "android",
+      "version": "2.7.0",
+      "commit": "38aa9d18976eaa96d98118b2201a9190deab0b14",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "31bdb3ea8823557827ca8bdcf74d3807d40aec443d246d00e956f80c3600465f",
+          "gitBlob": "e081286c7dc22b1279456a16ef94ebe506352197"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "accbb34d139abee3e6d25ba19814db40ada7dbda49e795e45805198f16c5546e",
+          "gitBlob": "568fdda3a1c14a24cec1daed0f6bad94c76107e9"
+        },
+        "packages/mobile/src/lib/privacy/privacy-cache.ts": {
+          "sha256": "fd6ca1fbda29fc201a4b24e9fa0804b4396b495f5bf7b975d4b6362e13889b85",
+          "gitBlob": "b6569bece70ba0b39e246c15eb8bb162a5b11b66"
+        },
+        "packages/mobile/src/lib/keychain-namespace-migration.ts": {
+          "sha256": "5b852bdac88d77c7e588a04c41861b799df0cc8667973d8d89575b48bc5613fa",
+          "gitBlob": "1912735a4f68f4e7f19608ae1ea0b4f8c2cedbcf"
+        },
+        "packages/mobile/src/lib/analytics.ts": {
+          "sha256": "638c57850f14843fe717dbaf7156e958be073fe15d342bc7f79ee183e20d7792",
+          "gitBlob": "811d5a4f9889eae7fbdc486045af62a0488a79d1"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "73a12b538794c9fb6bbd3f568f1965cad375e2d71cd8a51082c7ebb7015cec4d",
+          "gitBlob": "e8a285458ba98496987c55bbf261092df4f8f64d"
+        },
+        "packages/mobile/src/lib/secure-store-io.ts": {
+          "sha256": "a512717c2712807927477c6ec4971fcb2aca5f9b6933d32e534c5849ca68473a",
+          "gitBlob": "c3b3cd7a9dc835faab5a5102ed99dc699160d118"
+        },
+        "packages/mobile/src/lib/secure-store-stamp.ts": {
+          "sha256": "0398e77528b190db4f04cf4b616b7166e500c0ab5a4d7081eccf292c5ca5ef5c",
+          "gitBlob": "c5f68e8356170c098bcda2098aed1a76c01617da"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "c00d7ef1b1be7870a3c298540d23155d48d08a462c7770e13c2a0d463ab85a21",
+          "gitBlob": "d2f3618af9e2c1b2b5686bc095bdd2130d909601"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "4f288b1bb7525f5e4ae7169e1ce5e2038074beda077cde49d15428ae7df92857",
+          "gitBlob": "710a827aeb6d78efe9e388446e0de31e722a2f83"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/client-identity.ts": {
+          "sha256": "21b436001f32972247de9ddfb8624ff6874b3869295e303dd2a54581198de68d",
+          "gitBlob": "d4b12f6d94b5d5631c92445f3d37bc83b4b3216d"
+        },
+        "packages/shared-schema/src/client-identity.ts": {
+          "sha256": "b27f855a1d806861432860a034223f47ac06c161a8ec9dfc4d79748126a5ad8f",
+          "gitBlob": "a3e44a6e6dab32f0c30377e6f36af2c1323d7cc4"
+        },
+        "packages/mobile/src/lib/verified-auth-result.ts": {
+          "sha256": "a6e3f2b06af8f4d69520c62422237f43c8f65b7798cb4b55519c290eb36d7b3a",
+          "gitBlob": "ae8feac69f2e9e8165195211e8b32516b80e69fe"
+        },
+        "packages/shared/analytics/src/account-creation.ts": {
+          "sha256": "315e5fd6d8e4bb2b65bf7faae6491fe8ade5d3bde017059c73acd0765e23b69f",
+          "gitBlob": "1e9c1f6d52bf9a33332e42cb5d5f9fe9e05b77d4"
+        },
+        "packages/mobile/src/lib/consent-state.ts": {
+          "sha256": "19a380b1e9b4f7add291130ae5c2d3bb992699d2297f2365a86e664d2763cfc6",
+          "gitBlob": "4638f2938eba0dddd3e89339a179335e7b0f40c9"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "03a0653ffa2bc5e696df0fd5c55a57e431aa6cb4cbf0ad264b9ccd56c1270609",
+          "gitBlob": "9b1c5ee872de497cd227088db9ffb044468796a7"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "acbf850e2a5cddd11af76b754ebc2d2f9c3cb780dfb95a8975acd61b5219893b",
+          "gitBlob": "c1958f14ca50e3354c72b16ce1b910114565e48b"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "c068fa2762cc80bd0cb3dda4d6e849eb213f6c175da003b83a1e5568e0014eaa",
+          "gitBlob": "29d68a9e13a2e51deb53c315bcbb7a9ab5291ea0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "8942a3afa50861925ede89ccf39c9922e2bc3fb2773456878e60d390b8500ebc",
+          "gitBlob": "22e5d136f12ce4ee3d443f2347802f032763ddca"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "513d2ce14d8c0a66259dddf6bd2595df91694a8a500f48e8144e059d943097d5",
+          "gitBlob": "ba2105c1d1942b7bd536ccf6d689204ba580b189"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 13596,
+            "end": 14230
+          },
+          "clearPersistedUserStores": {
+            "start": 14640,
+            "end": 16985
+          },
+          "clearLocalOfflineUserData": {
+            "start": 19213,
+            "end": 21454
+          },
+          "runSignedOutCleanup": {
+            "start": 22096,
+            "end": 29273
+          },
+          "handleSignedOutTransition": {
+            "start": 29824,
+            "end": 32896
+          },
+          "checkAuth": {
+            "start": 47571,
+            "end": 47831
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 51128,
+          "end": 54086
+        },
+        "clearTables": {
+          "start": 3213,
+          "end": 3468
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.2.0-08f1cf331ae6",
+      "platform": "ios",
+      "version": "2.2.0",
+      "commit": "c9dd56ff93bd8cd6b2b60d8b974bd096b3170f65",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "02ee09918a98256bbe037683645700880b4a452adf70e8e9ab9eeb6880123301",
+          "gitBlob": "3bc3dd2fc7e6a638ec003b7402fa9a11924a94ab"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "5e91100aae8cc01c10df9d830f75f38edaff6e491a4c086357810f2533773aad",
+          "gitBlob": "57e9619177976d6cf2ee2293d14831ef373d7755"
+        },
+        "packages/mobile/src/sync/checkpoints.ts": {
+          "sha256": "87f2a4fd697dcf63302fdc88cb53efd20f449f7569d8d61576fa2de810c3839b",
+          "gitBlob": "5a20bd9c676f661f28547db53abd1010bfbbd721"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3560,
+            "end": 3768
+          },
+          "clearPersistedUserStores": {
+            "start": 4178,
+            "end": 4318
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5358,
+            "end": 5757
+          },
+          "runSignedOutCleanup": {
+            "start": 6177,
+            "end": 7556
+          },
+          "handleSignedOutTransition": {
+            "start": 8107,
+            "end": 8480
+          },
+          "checkAuth": {
+            "start": 8484,
+            "end": 12242
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10291,
+          "end": 10576
+        },
+        "clearTables": {
+          "start": 1401,
+          "end": 1608
+        },
+        "checkpointPath": "packages/mobile/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 3692,
+          "end": 3973
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.2.1-6a98424366be",
+      "platform": "ios",
+      "version": "2.2.1",
+      "commit": "e31fa21eaf9cefdbdeccbd410ce62a39ff29c32d",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "ffdda7c268520d3946d0570f817a806a620bd4836edd536827e4db7e9aa7f0d5",
+          "gitBlob": "63beb7eacfab865573903d0c7de6cd46f7fe864a"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 3668,
+          "end": 3946
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.2.2-49a581a48aae",
+      "platform": "ios",
+      "version": "2.2.2",
+      "commit": "d7e9b853a60583cf464ad5dbc777bddc3955c263",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "678db0c98067c80b00ac3cfbc8b1e06aa65144326fc086ff793c04e724d1aac6",
+          "gitBlob": "8306764687a12a699993abc5d3b46e19cb2b1bb2"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "f8a71acd3e1013e45dd54343c801e44545c5ec6739401aa38e59603bdbac52fc",
+          "gitBlob": "6ef97ed8dd02342623d3445bda32162f27fe8406"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "0163039328c215dbd556efe8a6d0706c3fbd704c6ffafe569403f14cf4b45c8a",
+          "gitBlob": "85ac8cf90e70d1c76d017d873f8a9088d66eedaa"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "5ce3be0e0e0e8666c9b67739fac4cf6092a0f0e072ff5d0eaac076e3e21d6b12",
+          "gitBlob": "13ab36bae07458f0adb966005eeac457a5f65c8d"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "b0bd526b81bb3ae028ffa66a9455db26871305f8303ca6d4041b6fa7731d5508",
+          "gitBlob": "f744412d9443ec239fcb006c5db262ec18bdaab8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
+          "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
+          "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "afceca01dce687a13f61144961d4752d5e75ed2ac43bfcc71f3c3b8c27eabbac",
+          "gitBlob": "03bdb2e14b9afa4f2240e1cc708f4e53d0bd12e4"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "b27d592a2df25b48ac6679983cbf2b4cee58f085078f0ed515d43cf4b38cf075",
+          "gitBlob": "25af13ff1b145bb66b82c7c894a769f9538484a5"
+        },
+        "packages/shared/offline-sync/src/sync/checkpoints.ts": {
+          "sha256": "ce5520166181a50537e948a9b537dbc95c33e8eaef29fd4b23d748092b5d45f7",
+          "gitBlob": "22bf2b26b7bfc7124f444d172a577075bc95f5ea"
+        },
+        "packages/shared/offline-sync/src/sync/table-config.ts": {
+          "sha256": "5eb4b1021ba8e23014889af22e436abe60da1c96e64cdc5180711e78b67afe54",
+          "gitBlob": "292b2c5d0318122a9e953931dc00247a98ef296c"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 3616,
+            "end": 3824
+          },
+          "clearPersistedUserStores": {
+            "start": 4234,
+            "end": 4374
+          },
+          "clearLocalOfflineUserData": {
+            "start": 5414,
+            "end": 5813
+          },
+          "runSignedOutCleanup": {
+            "start": 6233,
+            "end": 7612
+          },
+          "handleSignedOutTransition": {
+            "start": 8163,
+            "end": 8536
+          },
+          "checkAuth": {
+            "start": 8540,
+            "end": 12298
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 10195,
+          "end": 10480
+        },
+        "clearTables": {
+          "start": 1305,
+          "end": 1512
+        },
+        "checkpointPath": "packages/shared/offline-sync/src/sync/checkpoints.ts",
+        "clearCheckpointFunction": {
+          "start": 4483,
+          "end": 4925
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.3.0-ef3763870f81",
+      "platform": "ios",
+      "version": "2.3.0",
+      "commit": "bc0c94c47810101148505d80d67ff362bde636e8",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "cd42869b30fb94aa04d885cf39b7dcfde32238926bfd10838a86e4d9b1b50525",
+          "gitBlob": "5fb7ecf242e90ccffd119ec972fc0dfa7353fd26"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "81b582cb810981fbce694ba62bbb5d5677bd6a5394f738adbb4bac4946e31af9",
+          "gitBlob": "fbaf7898e611943e52da07aaa6aa9664e441ae0c"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "413f1b9b61005ea26fe4966ccea0330fcfd1cfe521847bf95ad6d527f5a7e681",
+          "gitBlob": "2e67320d59638c877cd15ed8ba8bbf24b32909d1"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "07ccf5d49eea17b7fe641ef9af2c95d54a6bc985744dbd1613d0667ac1e1b0c4",
+          "gitBlob": "5fbbd0a2cd6327aec1328ee9889b58c26aa6e064"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 7872,
+            "end": 8080
+          },
+          "clearPersistedUserStores": {
+            "start": 8490,
+            "end": 9145
+          },
+          "clearLocalOfflineUserData": {
+            "start": 10185,
+            "end": 10584
+          },
+          "runSignedOutCleanup": {
+            "start": 11004,
+            "end": 13493
+          },
+          "handleSignedOutTransition": {
+            "start": 14044,
+            "end": 16386
+          },
+          "checkAuth": {
+            "start": 28757,
+            "end": 29017
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 4263,
+          "end": 4750
+        },
+        "clearTables": {
+          "start": 1015,
+          "end": 1222
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.3.1-183bcf484292",
+      "platform": "ios",
+      "version": "2.3.1",
+      "commit": "2b1b460d87be526c1204a50bf1d2264266ca7e09",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "cd42869b30fb94aa04d885cf39b7dcfde32238926bfd10838a86e4d9b1b50525",
+          "gitBlob": "5fb7ecf242e90ccffd119ec972fc0dfa7353fd26"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "81b582cb810981fbce694ba62bbb5d5677bd6a5394f738adbb4bac4946e31af9",
+          "gitBlob": "fbaf7898e611943e52da07aaa6aa9664e441ae0c"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "693def84bfa4886fdc935514deae46ec20f7f4ac70b116a496fa7bb1dd13f630",
+          "gitBlob": "d633a35c92e7a6cebe87714cefed330cbf47a102"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "07ccf5d49eea17b7fe641ef9af2c95d54a6bc985744dbd1613d0667ac1e1b0c4",
+          "gitBlob": "5fbbd0a2cd6327aec1328ee9889b58c26aa6e064"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 7872,
+            "end": 8080
+          },
+          "clearPersistedUserStores": {
+            "start": 8490,
+            "end": 9145
+          },
+          "clearLocalOfflineUserData": {
+            "start": 10185,
+            "end": 10584
+          },
+          "runSignedOutCleanup": {
+            "start": 11004,
+            "end": 13493
+          },
+          "handleSignedOutTransition": {
+            "start": 14044,
+            "end": 16386
+          },
+          "checkAuth": {
+            "start": 28757,
+            "end": 29017
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 4263,
+          "end": 4750
+        },
+        "clearTables": {
+          "start": 1015,
+          "end": 1222
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.4.0-15f9b78d219b",
+      "platform": "ios",
+      "version": "2.4.0",
+      "commit": "1037e046292d26ec8ea4076f6b77a1fda6bb50f0",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "fa65d7e77c370251c29bede523811039c7c8ca49f11b66eea803ec203019414b",
+          "gitBlob": "e12d3dd549a61d7138733d2a42fd9f3ab6fa83a8"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "d9d56848939f7b4c30f26dcc4acfd25c0808e2493e648e5ab7552cb58a794917",
+          "gitBlob": "83f90ffa6d754c216dc9c2b7b3473dc25a19bab7"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
+          "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "6afeddf4625a28b2f3b1433f1cd6ce9a0a6abe350e94042be8254837a6a1e5f5",
+          "gitBlob": "d796ad3b804e696b91e36cc99d3477ec69fb9ffc"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "1ef38362e78f6cbfe75cc7aa6bc132f2e4d6f3c5b3de902dad43d54a234e75ef",
+          "gitBlob": "59f8d2a05d9afa4c306a908edfc26e04393bcbf2"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 8426,
+            "end": 8927
+          },
+          "clearPersistedUserStores": {
+            "start": 9337,
+            "end": 10392
+          },
+          "clearLocalOfflineUserData": {
+            "start": 12620,
+            "end": 13949
+          },
+          "runSignedOutCleanup": {
+            "start": 14591,
+            "end": 19351
+          },
+          "handleSignedOutTransition": {
+            "start": 19902,
+            "end": 22364
+          },
+          "checkAuth": {
+            "start": 34735,
+            "end": 34995
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 18793,
+          "end": 19280
+        },
+        "clearTables": {
+          "start": 1453,
+          "end": 1660
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.5.0-b71bdb600c5a",
+      "platform": "ios",
+      "version": "2.5.0",
+      "commit": "e0e18684fc0664eef894dbeccadb08d232469a1f",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "587225de5bcf0aa6486e5d3dc834be0c066c04162558802268833b6335220351",
+          "gitBlob": "2d4a700ea4b31384657d00a5ab3baad797cb8dbc"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "272f2d70493d4badb562ad9f0ae12b5c893b81127e73ec1977d0bf36a0d89a19",
+          "gitBlob": "b99d3cb8154bebe2c6639103411f5a94ad535d97"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "7cb42556bc236174d89407df05a352fdbb58403565007b51b4a1e1081ae3f9ae",
+          "gitBlob": "02705b6c0a0d33cab67cf92a8837328aece0446f"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "c58de72a68078abe47001aa95d0fbc37c4286b4512d4a80462d15d4d9b54bf7e",
+          "gitBlob": "8898d80e3eee2202ecc93d6adf1af5fea7503d25"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "82238bfb8d61691f4ef7fdc3d1e3f90301f36b9f6d8a024929da4193a0486f20",
+          "gitBlob": "550bc9c307dec14fdb5401f62c6a5db4049027da"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
+          "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "875a87749e08aa3a431b8445b5a000df028a7fbf2503639752e06d9f7556e326",
+          "gitBlob": "92de1b7ff871a21709ff545f3a6349cb72dc5bd2"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "1ef38362e78f6cbfe75cc7aa6bc132f2e4d6f3c5b3de902dad43d54a234e75ef",
+          "gitBlob": "59f8d2a05d9afa4c306a908edfc26e04393bcbf2"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 8499,
+            "end": 9000
+          },
+          "clearPersistedUserStores": {
+            "start": 9410,
+            "end": 10465
+          },
+          "clearLocalOfflineUserData": {
+            "start": 12693,
+            "end": 14022
+          },
+          "runSignedOutCleanup": {
+            "start": 14664,
+            "end": 20026
+          },
+          "handleSignedOutTransition": {
+            "start": 20577,
+            "end": 23039
+          },
+          "checkAuth": {
+            "start": 35410,
+            "end": 35670
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 18793,
+          "end": 19280
+        },
+        "clearTables": {
+          "start": 1453,
+          "end": 1660
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.6.0-84dca13e7422",
+      "platform": "ios",
+      "version": "2.6.0",
+      "commit": "a988d35c03f29b46aba4bd090f7ced4d8af5f055",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "64870692f8032242a80127554d26359ca81bf4343a842bab4e123df16ce5ee7f",
+          "gitBlob": "1570dcb435ba6e669128dfb04b5199313fc1fbfd"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "c2cbab402b0c2401e6dcfeffdc0f33ebecb88071413e36d97ee0f57c45336373",
+          "gitBlob": "01efd3769cf53887f547a3fe226d03d52ab98dcc"
+        },
+        "packages/mobile/src/lib/privacy/privacy-cache.ts": {
+          "sha256": "ce34e62c59ef24d880a148d51f4393f50e6c8da7a79b23f63a880ba2a723a9e6",
+          "gitBlob": "946581273e493137c529eee947a2a38ae7e27d18"
+        },
+        "packages/mobile/src/lib/keychain-namespace-migration.ts": {
+          "sha256": "5b852bdac88d77c7e588a04c41861b799df0cc8667973d8d89575b48bc5613fa",
+          "gitBlob": "1912735a4f68f4e7f19608ae1ea0b4f8c2cedbcf"
+        },
+        "packages/mobile/src/lib/analytics.ts": {
+          "sha256": "638c57850f14843fe717dbaf7156e958be073fe15d342bc7f79ee183e20d7792",
+          "gitBlob": "811d5a4f9889eae7fbdc486045af62a0488a79d1"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "73a12b538794c9fb6bbd3f568f1965cad375e2d71cd8a51082c7ebb7015cec4d",
+          "gitBlob": "e8a285458ba98496987c55bbf261092df4f8f64d"
+        },
+        "packages/mobile/src/lib/secure-store-io.ts": {
+          "sha256": "a512717c2712807927477c6ec4971fcb2aca5f9b6933d32e534c5849ca68473a",
+          "gitBlob": "c3b3cd7a9dc835faab5a5102ed99dc699160d118"
+        },
+        "packages/mobile/src/lib/secure-store-stamp.ts": {
+          "sha256": "0398e77528b190db4f04cf4b616b7166e500c0ab5a4d7081eccf292c5ca5ef5c",
+          "gitBlob": "c5f68e8356170c098bcda2098aed1a76c01617da"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "2808959d5605bdde910fb278caae4f265b3abf00eba2a1225c0c821a2af9e680",
+          "gitBlob": "41a8cd05ff0584758132ddc3fe967627261fb398"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "3daa95490225dc24416c553e6aca25943a9d911d4aafa5cd09224dafb8083c94",
+          "gitBlob": "09cd8f893fb702b321767bdeaa77e2d33394d1f4"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/client-identity.ts": {
+          "sha256": "21b436001f32972247de9ddfb8624ff6874b3869295e303dd2a54581198de68d",
+          "gitBlob": "d4b12f6d94b5d5631c92445f3d37bc83b4b3216d"
+        },
+        "packages/shared-schema/src/client-identity.ts": {
+          "sha256": "b27f855a1d806861432860a034223f47ac06c161a8ec9dfc4d79748126a5ad8f",
+          "gitBlob": "a3e44a6e6dab32f0c30377e6f36af2c1323d7cc4"
+        },
+        "packages/mobile/src/lib/verified-auth-result.ts": {
+          "sha256": "a6e3f2b06af8f4d69520c62422237f43c8f65b7798cb4b55519c290eb36d7b3a",
+          "gitBlob": "ae8feac69f2e9e8165195211e8b32516b80e69fe"
+        },
+        "packages/shared/analytics/src/account-creation.ts": {
+          "sha256": "315e5fd6d8e4bb2b65bf7faae6491fe8ade5d3bde017059c73acd0765e23b69f",
+          "gitBlob": "1e9c1f6d52bf9a33332e42cb5d5f9fe9e05b77d4"
+        },
+        "packages/mobile/src/lib/consent-state.ts": {
+          "sha256": "19a380b1e9b4f7add291130ae5c2d3bb992699d2297f2365a86e664d2763cfc6",
+          "gitBlob": "4638f2938eba0dddd3e89339a179335e7b0f40c9"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "03a0653ffa2bc5e696df0fd5c55a57e431aa6cb4cbf0ad264b9ccd56c1270609",
+          "gitBlob": "9b1c5ee872de497cd227088db9ffb044468796a7"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "2bb3f163392786f5d19a03784e047d5917b3f6ea4bbd6e586a67d707c7567efa",
+          "gitBlob": "cccada6d008fec0fcd680a46cfaec81cd94a017a"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "0b341e37b037c2fc4c689d47aefb1d28886d8dc598f1c8336e5b720a01ff3c7f",
+          "gitBlob": "60cd8041d80b60bbaf12cfea7288232ac0ee2dfc"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "80d44f9b9b920988e37e0725b32e83e49ed99ff4a71840b0d8027e4a1b2f4b7b",
+          "gitBlob": "e610dfec35347c0e2837bd0eff7e2e085574010c"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "4587e004e8c61362f052d7a23a07eb000ea70fa09c85049f651812175cda1b04",
+          "gitBlob": "3e1c4649a18aed7ebd20f899dec594c5e11cbf10"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 13149,
+            "end": 13783
+          },
+          "clearPersistedUserStores": {
+            "start": 14193,
+            "end": 16236
+          },
+          "clearLocalOfflineUserData": {
+            "start": 18464,
+            "end": 20705
+          },
+          "runSignedOutCleanup": {
+            "start": 21347,
+            "end": 28678
+          },
+          "handleSignedOutTransition": {
+            "start": 29229,
+            "end": 32301
+          },
+          "checkAuth": {
+            "start": 46291,
+            "end": 46551
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 48732,
+          "end": 51330
+        },
+        "clearTables": {
+          "start": 3047,
+          "end": 3302
+        }
+      }
+    },
+    {
+      "tag": "release/ios-v2.7.0-e171c5f7e69a",
+      "platform": "ios",
+      "version": "2.7.0",
+      "commit": "7b8b3ffef6cbea8f211b43e5ab768ac4d8dd3ba7",
+      "modules": {
+        "packages/mobile/src/lib/auth.ts": {
+          "sha256": "31bdb3ea8823557827ca8bdcf74d3807d40aec443d246d00e956f80c3600465f",
+          "gitBlob": "e081286c7dc22b1279456a16ef94ebe506352197"
+        },
+        "packages/mobile/src/lib/abort-timeout.ts": {
+          "sha256": "30e6b9d5eb84416c3c8139583475cc7de719a49cf4bb37dd7b52a7f982b61027",
+          "gitBlob": "433769b44b82bcece52ee265ae67bd2c3056f6ea"
+        },
+        "packages/mobile/src/lib/auth-store.ts": {
+          "sha256": "accbb34d139abee3e6d25ba19814db40ada7dbda49e795e45805198f16c5546e",
+          "gitBlob": "568fdda3a1c14a24cec1daed0f6bad94c76107e9"
+        },
+        "packages/mobile/src/lib/privacy/privacy-cache.ts": {
+          "sha256": "fd6ca1fbda29fc201a4b24e9fa0804b4396b495f5bf7b975d4b6362e13889b85",
+          "gitBlob": "b6569bece70ba0b39e246c15eb8bb162a5b11b66"
+        },
+        "packages/mobile/src/lib/keychain-namespace-migration.ts": {
+          "sha256": "5b852bdac88d77c7e588a04c41861b799df0cc8667973d8d89575b48bc5613fa",
+          "gitBlob": "1912735a4f68f4e7f19608ae1ea0b4f8c2cedbcf"
+        },
+        "packages/mobile/src/lib/analytics.ts": {
+          "sha256": "638c57850f14843fe717dbaf7156e958be073fe15d342bc7f79ee183e20d7792",
+          "gitBlob": "811d5a4f9889eae7fbdc486045af62a0488a79d1"
+        },
+        "packages/mobile/src/lib/secure-store-options.ts": {
+          "sha256": "73a12b538794c9fb6bbd3f568f1965cad375e2d71cd8a51082c7ebb7015cec4d",
+          "gitBlob": "e8a285458ba98496987c55bbf261092df4f8f64d"
+        },
+        "packages/mobile/src/lib/secure-store-io.ts": {
+          "sha256": "a512717c2712807927477c6ec4971fcb2aca5f9b6933d32e534c5849ca68473a",
+          "gitBlob": "c3b3cd7a9dc835faab5a5102ed99dc699160d118"
+        },
+        "packages/mobile/src/lib/secure-store-stamp.ts": {
+          "sha256": "0398e77528b190db4f04cf4b616b7166e500c0ab5a4d7081eccf292c5ca5ef5c",
+          "gitBlob": "c5f68e8356170c098bcda2098aed1a76c01617da"
+        },
+        "packages/mobile/src/lib/auth-session-race.ts": {
+          "sha256": "42d74125a8636e2e652c827f5cae4b9fb16979c32aa2dd89f0bfa0303a221f29",
+          "gitBlob": "e8ac3276c571c250118ab08d27cc181828cfb275"
+        },
+        "packages/mobile/src/lib/native-auth-analytics.ts": {
+          "sha256": "c00d7ef1b1be7870a3c298540d23155d48d08a462c7770e13c2a0d463ab85a21",
+          "gitBlob": "d2f3618af9e2c1b2b5686bc095bdd2130d909601"
+        },
+        "packages/mobile/src/lib/deep-link-query.ts": {
+          "sha256": "4f288b1bb7525f5e4ae7169e1ce5e2038074beda077cde49d15428ae7df92857",
+          "gitBlob": "710a827aeb6d78efe9e388446e0de31e722a2f83"
+        },
+        "packages/mobile/src/lib/env.ts": {
+          "sha256": "1b26cbeb71f7c3455dc78cb7794072f6626505437a5df700ebbc11b9cf44377b",
+          "gitBlob": "930f88bbf0955ba630ee51bc9bc479405ef6b7e5"
+        },
+        "packages/mobile/src/lib/client-identity.ts": {
+          "sha256": "21b436001f32972247de9ddfb8624ff6874b3869295e303dd2a54581198de68d",
+          "gitBlob": "d4b12f6d94b5d5631c92445f3d37bc83b4b3216d"
+        },
+        "packages/shared-schema/src/client-identity.ts": {
+          "sha256": "b27f855a1d806861432860a034223f47ac06c161a8ec9dfc4d79748126a5ad8f",
+          "gitBlob": "a3e44a6e6dab32f0c30377e6f36af2c1323d7cc4"
+        },
+        "packages/mobile/src/lib/verified-auth-result.ts": {
+          "sha256": "a6e3f2b06af8f4d69520c62422237f43c8f65b7798cb4b55519c290eb36d7b3a",
+          "gitBlob": "ae8feac69f2e9e8165195211e8b32516b80e69fe"
+        },
+        "packages/shared/analytics/src/account-creation.ts": {
+          "sha256": "315e5fd6d8e4bb2b65bf7faae6491fe8ade5d3bde017059c73acd0765e23b69f",
+          "gitBlob": "1e9c1f6d52bf9a33332e42cb5d5f9fe9e05b77d4"
+        },
+        "packages/mobile/src/lib/consent-state.ts": {
+          "sha256": "19a380b1e9b4f7add291130ae5c2d3bb992699d2297f2365a86e664d2763cfc6",
+          "gitBlob": "4638f2938eba0dddd3e89339a179335e7b0f40c9"
+        },
+        "packages/mobile/src/lib/auth-interceptor.ts": {
+          "sha256": "03a0653ffa2bc5e696df0fd5c55a57e431aa6cb4cbf0ad264b9ccd56c1270609",
+          "gitBlob": "9b1c5ee872de497cd227088db9ffb044468796a7"
+        },
+        "packages/mobile/src/lib/connectivity/connectivity-store.ts": {
+          "sha256": "b6f0fb266ddd4982831107a5626e4966aa4d744c623a7a424593df0512e9eac4",
+          "gitBlob": "7cebb84cacc3904ae82fd8d3c1692e7b2a4f2003"
+        },
+        "packages/mobile/src/lib/error-reporting.ts": {
+          "sha256": "acbf850e2a5cddd11af76b754ebc2d2f9c3cb780dfb95a8975acd61b5219893b",
+          "gitBlob": "c1958f14ca50e3354c72b16ce1b910114565e48b"
+        },
+        "packages/mobile/src/lib/auth-session.ts": {
+          "sha256": "7f49833abe0c28e923dd080bb5c405672ad2220f0bcf42e23ddaccfeeac289bc",
+          "gitBlob": "45178c2a13de13abdb26c8d6ea5d895119a1bbb9"
+        },
+        "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
+          "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
+          "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
+          "sha256": "c068fa2762cc80bd0cb3dda4d6e849eb213f6c175da003b83a1e5568e0014eaa",
+          "gitBlob": "29d68a9e13a2e51deb53c315bcbb7a9ab5291ea0"
+        },
+        "packages/mobile/src/providers/auth-provider.tsx": {
+          "sha256": "9650a7bfbd3ac04b7fdbf8c4b6becda471cb2be9986b5c0e236573dc4e5bc834",
+          "gitBlob": "80d52d6fa916e7b83558e21c6bac5c99ba6f409c"
+        },
+        "packages/mobile/src/db/connection.ts": {
+          "sha256": "513d2ce14d8c0a66259dddf6bd2595df91694a8a500f48e8144e059d943097d5",
+          "gitBlob": "ba2105c1d1942b7bd536ccf6d689204ba580b189"
+        }
+      },
+      "evidence": {
+        "providerPath": "packages/mobile/src/providers/auth-provider.tsx",
+        "callbacks": {
+          "resetAnalyticsForSignedOutTransition": {
+            "start": 13685,
+            "end": 14319
+          },
+          "clearPersistedUserStores": {
+            "start": 14729,
+            "end": 17074
+          },
+          "clearLocalOfflineUserData": {
+            "start": 19302,
+            "end": 21543
+          },
+          "runSignedOutCleanup": {
+            "start": 22185,
+            "end": 29722
+          },
+          "handleSignedOutTransition": {
+            "start": 30273,
+            "end": 33345
+          },
+          "checkAuth": {
+            "start": 48020,
+            "end": 48280
+          }
+        },
+        "connectionPath": "packages/mobile/src/db/connection.ts",
+        "clearFunction": {
+          "start": 51128,
+          "end": 54086
+        },
+        "clearTables": {
+          "start": 3213,
+          "end": 3468
+        }
+      }
+    }
+  ],
+  "garmin": [
+    {
+      "name": "main-before-g2",
+      "commit": "fdb54642eff996c364b43e903488d1578e04174b",
+      "modules": {
+        "garmin/source/net/BsClient.mc": {
+          "sha256": "75a2fb97087ee7e774d4f0d4fb44da1e20d275a3b53f4821a639a3295cc84041",
+          "gitBlob": "be482408a427e4c06af82e5840a36c24f874fe1f"
+        },
+        "garmin/source/net/BsEndpoints.mc": {
+          "sha256": "44d96256b5b42d8299324310e2f1813abbd83442d38fa8b3dd572438ecb32665",
+          "gitBlob": "2c7acd04dab09b471508d7b3acfa3af011eda6af"
+        },
+        "garmin/source/auth/TokenStore.mc": {
+          "sha256": "b84b487f038b7ce14c4b2bd66579ae00c180eb4dbe04646297655bbde296f9e5",
+          "gitBlob": "11128a6e51b221e6b03a1fc1c649cce3dc28a5ec"
+        },
+        "garmin/source/state/TickQueue.mc": {
+          "sha256": "f44594defb223258d7409b7c538645a5c27f5ad85a85bb26e1fed9d3bff560ba",
+          "gitBlob": "6ec55230c5d671363af38d53d067d331e652f377"
+        },
+        "garmin/source/views/PairingView.mc": {
+          "sha256": "f559c91a9b1b9d9afe36a0f4d0cb42ddc074ba0d4d252189433a361eba329719",
+          "gitBlob": "e0767d872846b833bf8d6b873fe1e76061b0fb74"
+        },
+        "garmin/source/views/LoadingView.mc": {
+          "sha256": "27e4cc4a3f6e3b7f46df975ec6f06c5733bd4c36290d3a8f73b541c8776d4c58",
+          "gitBlob": "7dfcb6283a7c7c2199d285f1c1c0adbcdb026381"
+        }
+      }
+    },
+    {
+      "name": "g2-reviewed",
+      "commit": "73e85b88102caeed139f5df8ee0db3517f227cd4",
+      "modules": {
+        "garmin/source/net/BsClient.mc": {
+          "sha256": "b8a5a4180ab5c441703ed0654de1861c2204875a165b6002b20a1180b26667ec",
+          "gitBlob": "2147801e197596952025784de9af7b72c89a2c69"
+        },
+        "garmin/source/net/BsEndpoints.mc": {
+          "sha256": "44d96256b5b42d8299324310e2f1813abbd83442d38fa8b3dd572438ecb32665",
+          "gitBlob": "2c7acd04dab09b471508d7b3acfa3af011eda6af"
+        },
+        "garmin/source/auth/TokenStore.mc": {
+          "sha256": "625c24f1a51b49a95905eca1cd2a8ebcb8a8421ba22b1ceb916a1075d82d5f24",
+          "gitBlob": "21c71ccdcc0515049c710f86c230583ac23faf98"
+        },
+        "garmin/source/auth/AuthState.mc": {
+          "sha256": "b95b19eccc30c87bb2237d91ace9451396c88154956d376c609ca254a27f2719",
+          "gitBlob": "83da26c3a59d9743408eab53b8abdc21a106a2fa"
+        },
+        "garmin/source/state/TickQueue.mc": {
+          "sha256": "23a7090e5c5984f291d0d7388c14418d3444943d90e4a78e0a73ffbf07a7fba0",
+          "gitBlob": "84b74d557242fab3f4d55009ae768785a293e6db"
+        },
+        "garmin/source/views/PairingView.mc": {
+          "sha256": "2fca6b2a3381aba01b9e4ff684193b04b0838ccd9fa399771f68b6a170ac585d",
+          "gitBlob": "1921722e34385da45196a129286b9e90e7dbf971"
+        },
+        "garmin/source/views/LoadingView.mc": {
+          "sha256": "9ee257a163e3effa1fcea6f9ca79316834d1ed43a278e69a275ee6f5dba6330d",
+          "gitBlob": "5453c7aea1534d730e7520741c5a8b6ccca55413"
+        }
+      }
+    }
+  ]
+}
