@@ -32,7 +32,29 @@ ARG HYPOPG_PACKAGE_VERSION=1.4.3-1.pgdg12+2
 
 # The digest pins the exact base artifact. Assert the upstream server version
 # separately; the exact PostGIS/HypoPG Debian packages are pinned below.
-RUN apt-get update && \
+# PGDG moves older extension builds out of its live repository. Trust the same
+# upstream key, and permit only HypoPG from the official historical archive.
+RUN test -r /usr/local/share/keyrings/postgres.gpg.asc && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    printf '%s\n' \
+      'deb [signed-by=/usr/local/share/keyrings/postgres.gpg.asc] https://apt-archive.postgresql.org/pub/repos/apt bookworm-pgdg-archive main' \
+      > /etc/apt/sources.list.d/boardsesh-hypopg-archive.list && \
+    printf '%s\n' \
+      'Package: postgresql-18-hypopg' \
+      'Pin: origin apt-archive.postgresql.org' \
+      'Pin-Priority: 500' \
+      '' \
+      'Package: *' \
+      'Pin: origin apt-archive.postgresql.org' \
+      'Pin-Priority: -1' \
+      > /etc/apt/preferences.d/boardsesh-hypopg-archive && \
+    apt-get update && \
+    # Exercise APT policy during both architecture builds: archived dependencies
+    # stay forbidden, while the exact HypoPG version remains installable.
+    apt-cache policy postgresql-18 postgresql-18-postgis-3 | \
+      awk '/apt-archive[.]postgresql[.]org/ { if ($1 != -1) exit 1; found = 1 } END { if (!found) exit 1 }' && \
+    test "$(apt-cache policy postgresql-18-hypopg | awk -v expected="$HYPOPG_PACKAGE_VERSION" '$1 == expected { print $2 }')" = 500 && \
     apt-get install -y --no-install-recommends \
       "postgresql-18-postgis-3=${POSTGIS_PACKAGE_VERSION}" \
       "postgresql-18-postgis-3-scripts=${POSTGIS_PACKAGE_VERSION}" \
