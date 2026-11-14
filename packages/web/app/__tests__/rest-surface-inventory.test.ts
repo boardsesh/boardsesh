@@ -1,8 +1,9 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 44
+ * The standing inventory oracle for issue #1889 (REST surface audit: 49
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
- * its prewarm cron were retired, plus five staged provider Settings facades).
+ * its prewarm cron were retired, plus five staged provider Settings facades
+ * and five staged first-password browser facades).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -67,7 +68,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (19) ---
+  // --- /api/internal/* (24) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -109,6 +110,13 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/auth/provider-security/reauthenticate-password/route.ts': 'keep-staged',
   'app/api/internal/auth/provider-security/unlink/route.ts': 'keep-staged',
   'app/api/internal/auth/provider-security/acknowledge/route.ts': 'keep-staged',
+  // Account-bound first-password presentation (#6975/#7516). The backend owns
+  // eligibility and password publication; the public readiness gate stays false.
+  'app/api/internal/auth/first-password/context/route.ts': 'keep-staged',
+  'app/api/internal/auth/first-password/request/route.ts': 'keep-staged',
+  'app/api/internal/auth/first-password/read/route.ts': 'keep-staged',
+  'app/api/internal/auth/first-password/submit/route.ts': 'keep-staged',
+  'app/api/internal/auth/first-password/acknowledge/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -267,7 +275,8 @@ describe('REST surface inventory (issue #1889)', () => {
 
   it('counts exactly the audited surface', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
-    // staged provider delta is tracked in #7430; the closed audit stays historical.
-    expect(derived.size).toBe(44);
+    // staged provider/first-password deltas are tracked in #7430; the closed
+    // audit stays historical.
+    expect(derived.size).toBe(49);
   });
 });

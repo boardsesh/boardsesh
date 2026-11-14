@@ -4,15 +4,15 @@
  * on the www sign-in and consent pages (`/oauth/sign-in`, `/oauth/consent`).
  */
 const RECOVERY_PATH =
-  /(?:\/|%(?:25)*2f)(?:auth(?:\/|%(?:25)*2f)(?:reset-password|forgot-password|verify-email)|oauth(?:\/|%(?:25)*2f)(?:sign-in|consent))(?:(?:\/|%(?:25)*2f))?(?=\?|#|%(?:25)*(?:3f|23)|$)/i;
+  /(?:\/|%(?:25)*2f)(?:auth(?:\/|%(?:25)*2f)(?:reset-password|forgot-password|verify-email|confirm-first-password|first-password(?:\/|%(?:25)*2f)(?:context|request|read|submit|acknowledge))|oauth(?:\/|%(?:25)*2f)(?:sign-in|consent))(?:(?:\/|%(?:25)*2f))?(?=\?|#|%(?:25)*(?:3f|23)|$)/i;
 const RECOVERY_URL =
-  /((?:\/|%(?:25)*2f)(?:auth(?:\/|%(?:25)*2f)(?:reset-password|forgot-password|verify-email)|oauth(?:\/|%(?:25)*2f)(?:sign-in|consent))(?:(?:\/|%(?:25)*2f))?)([?#]|%(?:25)*(?:3f|23))([^\s"'<>\\]*)/gi;
+  /((?:\/|%(?:25)*2f)(?:auth(?:\/|%(?:25)*2f)(?:reset-password|forgot-password|verify-email|confirm-first-password|first-password(?:\/|%(?:25)*2f)(?:context|request|read|submit|acknowledge))|oauth(?:\/|%(?:25)*2f)(?:sign-in|consent))(?:(?:\/|%(?:25)*2f))?)([?#]|%(?:25)*(?:3f|23))([^\s"'<>\\]*)/gi;
 const VERSIONED_SECRET = /\b(?:pr|ev)\d+_[A-Za-z0-9_-]+/gi;
 const REDACTED = '[redacted]';
 const QUERY_FIELDS = new Set(['query_string', 'http.query', 'url.query', 'http.fragment', 'url.fragment']);
-const RECOVERY_FIELDS = new Set(['token', 'email', 'password', 'confirmpassword', 'recipient']);
+const RECOVERY_FIELDS = new Set(['token', 'confirmationtoken', 'email', 'password', 'confirmpassword', 'recipient']);
 /** Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request. */
-const SECRET_FIELD = /^(?:token|password|confirmPassword|oauth_query)$/i;
+const SECRET_FIELD = /^(?:token|confirmationToken|password|confirmPassword|oauth_query)$/i;
 
 function decodedName(name: string): string {
   const characters: string[] = [];

@@ -70,7 +70,12 @@ export function isPartnerOAuthAnalyticsUrl(url: string, baseUrl = DEFAULT_ANALYT
  * embeds, kiosk (which has its own transport) and the partner OAuth pages.
  */
 export function isProductAnalyticsFreeUrl(url: string, baseUrl = DEFAULT_ANALYTICS_BASE_URL): boolean {
+  const pathname = stripAnalyticsLocalePrefix(analyticsPathname(url, baseUrl)).toLowerCase();
   return (
-    isEmbedAnalyticsUrl(url, baseUrl) || isKioskAnalyticsUrl(url, baseUrl) || isPartnerOAuthAnalyticsUrl(url, baseUrl)
+    isEmbedAnalyticsUrl(url, baseUrl) ||
+    isKioskAnalyticsUrl(url, baseUrl) ||
+    isPartnerOAuthAnalyticsUrl(url, baseUrl) ||
+    pathname === '/auth/confirm-first-password' ||
+    pathname === '/auth/confirm-first-password/'
   );
 }

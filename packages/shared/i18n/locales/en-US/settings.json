@@ -733,5 +733,21 @@
     "linkCompleted": "{{provider}} is linked.",
     "unlinkCompleted": "{{provider}} is unlinked.",
     "redirecting": "Continue in your browser to finish."
+  },
+  "firstPassword": {
+    "title": "Add a password",
+    "description": "Confirm your current email to add a password to this Apple account. Open the email link in this browser.",
+    "send": "Send confirmation email",
+    "sending": "Sending email…",
+    "sent": "Check your email. Open the link in this browser within five minutes.",
+    "unavailable": "We could not confirm password setup. Check Settings before trying again.",
+    "confirmDescription": "Choose a password for the account that requested this email.",
+    "checking": "Checking your confirmation link…",
+    "completed": "Your password is ready. You can use it next time you sign in.",
+    "invalid": "This link has expired or cannot be used. Request another from Settings.",
+    "changed": "Your account changed. Open Settings for the account that requested this email.",
+    "passwordMismatch": "Use 8–128 characters and enter the same password twice.",
+    "saving": "Saving password…",
+    "settings": "Open Settings"
   }
 }

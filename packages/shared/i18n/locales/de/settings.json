@@ -733,5 +733,21 @@
     "linkCompleted": "{{provider}} ist verknüpft.",
     "unlinkCompleted": "{{provider}} ist getrennt.",
     "redirecting": "Fahre zum Abschließen im Browser fort."
+  },
+  "firstPassword": {
+    "title": "Passwort hinzufügen",
+    "description": "Bestätige deine aktuelle E-Mail-Adresse, um diesem Apple-Konto ein Passwort hinzuzufügen. Öffne den Link aus der E-Mail in diesem Browser.",
+    "send": "Bestätigungs-E-Mail senden",
+    "sending": "E-Mail wird gesendet…",
+    "sent": "Prüfe deine E-Mails. Öffne den Link innerhalb von fünf Minuten in diesem Browser.",
+    "unavailable": "Die Einrichtung des Passworts konnte nicht bestätigt werden. Prüfe die Einstellungen, bevor du es erneut versuchst.",
+    "confirmDescription": "Wähle ein Passwort für das Konto, das diese E-Mail angefordert hat.",
+    "checking": "Bestätigungslink wird geprüft…",
+    "completed": "Dein Passwort ist bereit. Du kannst es bei der nächsten Anmeldung verwenden.",
+    "invalid": "Dieser Link ist abgelaufen oder kann nicht verwendet werden. Fordere in den Einstellungen einen neuen an.",
+    "changed": "Dein Konto hat sich geändert. Öffne die Einstellungen des Kontos, das diese E-Mail angefordert hat.",
+    "passwordMismatch": "Verwende 8–128 Zeichen und gib zweimal dasselbe Passwort ein.",
+    "saving": "Passwort wird gespeichert…",
+    "settings": "Einstellungen öffnen"
   }
 }
