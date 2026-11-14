@@ -278,3 +278,20 @@ success callback. These tests exercise controlled platform I/O; they do not
 qualify a real device image picker, whole-application account retirement or public
 activation. Notifications, the other authenticated callers and offline outboxes
 still need their own captured-operation adoption.
+
+Independent review found that passive unmount cleanup left a removed action
+usable inside its parent's layout effect. The real removal-phase test observed
+`current: true` and `aborted: false`; layout cleanup now produces the required
+opposite result before that effect runs. The corrected 59-case suite and the
+external removal-phase control pass. Removing only the original REST receipt
+guard admitted an expired derived avatar URL; removing only the original-view
+guard allowed a forbidden back navigation after account replacement. All source
+bytes were restored before the final independent 59-case replay passed.
+
+On the reviewed code replayed onto main `14fc54caac`, all 1,938 mobile test files
+passed: 29,165 cases and two skipped. All 64 actual uncached workspace type tasks
+passed. Required local native and browser bundle attempts reached Metro but
+could not resolve the existing Expo Router entry linked outside this worktree's
+watched repository. The browser attempt reused its installed nested runtime;
+no dependency install or Metro configuration change was applied. Normal-install
+CI must pass both bundles before this slice becomes Ready.
