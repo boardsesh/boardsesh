@@ -29,6 +29,12 @@ import { abortProviderSecurityMutation, acknowledgeProviderSecurityResult } from
 import { checkRateLimit } from '../../utils/rate-limiter';
 import { admitOwnedProviderForRenewal } from './provider-security-owned-provider';
 import { isWebPasswordCommandFresh } from '../current-store/command-context';
+import {
+  abortOwnedProviderSignin,
+  beginOwnedProviderSignin,
+  finalizeOwnedProviderSignin,
+  prepareOwnedProviderSignin,
+} from './provider-owned-signin';
 
 /** Per-account work is charged only after actual source possession is admitted. */
 async function boundReauthenticationWork(
@@ -63,6 +69,18 @@ export async function executeProviderSecurityCommand(
   let result: unknown;
   try {
     switch (command.operation) {
+      case 'signin-intent':
+        result = await beginOwnedProviderSignin(database, runtime, command.payload);
+        break;
+      case 'signin-prepare':
+        result = await prepareOwnedProviderSignin(database, runtime, command.payload);
+        break;
+      case 'signin-finalize':
+        result = await finalizeOwnedProviderSignin(database, runtime, command.payload);
+        break;
+      case 'signin-abort':
+        result = await abortOwnedProviderSignin(database, runtime, command.payload);
+        break;
       case 'owned-provider':
         result = await admitOwnedProviderForRenewal(database, runtime, command.payload);
         break;

@@ -61,7 +61,11 @@ function matchesRequest(command: ProviderSecurityCommand, reply: ProviderSecurit
     )
       return false;
   }
-  if (reply.outcome === 'owned' || reply.outcome === 'prepared') {
+  if (
+    reply.outcome === 'owned' ||
+    reply.outcome === 'same-owner' ||
+    (reply.operation === 'prepare' && reply.outcome === 'prepared')
+  ) {
     if (
       reply.user.id !== actor.expectedUserId ||
       reply.credentialProof.userId !== actor.expectedUserId ||
@@ -71,8 +75,28 @@ function matchesRequest(command: ProviderSecurityCommand, reply: ProviderSecurit
     if (reply.outcome === 'prepared' && (reply.proposedCanonicalToken !== null) !== (actor.kind === 'canonical-token'))
       return false;
   }
+  if (command.operation === 'signin-prepare' && reply.operation === 'signin-prepare' && reply.outcome === 'prepared') {
+    const prepared = reply.preparation;
+    if (
+      prepared.provider !== command.payload.providerProof.provider ||
+      prepared.subject !== command.payload.providerProof.subject ||
+      reply.user.id !== prepared.credentialProof.userId ||
+      prepared.credentialProof.userId === actor.expectedUserId ||
+      prepared.credentialProof.authSessionId === actor.expectedAuthSessionId ||
+      (reply.proposedCanonicalToken !== null) !== (actor.kind === 'canonical-token') ||
+      (reply.proposedCanonicalToken === null
+        ? prepared.proposedCanonicalTokenHash !== null
+        : prepared.proposedCanonicalTokenHash !==
+          providerCandidateCredentialHash({ kind: 'canonical-token', credential: reply.proposedCanonicalToken })) ||
+      (prepared.provider !== 'google' &&
+        (prepared.credentialProof.authenticatedAt !== null || prepared.credentialProof.linkGuarded)) ||
+      Date.parse(prepared.credentialExpiresAt) > Date.parse(reply.browserCursor.bindingExpiresAt)
+    )
+      return false;
+  }
   if (reply.outcome === 'committed' || reply.outcome === 'recovered') {
-    if (command.operation !== 'finalize' && command.operation !== 'recover') return false;
+    if (command.operation !== 'finalize' && command.operation !== 'recover' && command.operation !== 'signin-finalize')
+      return false;
     if (reply.candidateCredentialHash !== providerCandidateCredentialHash(command.payload.candidate)) return false;
   }
   return true;

@@ -35,7 +35,7 @@ export type {
   PrepareProviderSecurityCookies,
 } from './provider-security-publication.server';
 
-type Prepared = Extract<ProviderSecurityReply, { outcome: 'prepared' }>;
+type Prepared = Extract<ProviderSecurityReply, { operation: 'prepare'; outcome: 'prepared' }>;
 type Refusal = Extract<ProviderSecurityReply, { code: string }>;
 
 /** Only a qualified server reader may construct this frame from current actual
