@@ -241,7 +241,8 @@ async function start(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'canonic
   return { flow, actor, current };
 }
 async function complete(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'canonical-token', fault?: string) {
-  if (fault === 'observed-capacity') cookies.set('retained-browser-cookie', 'p'.repeat(4300));
+  if (fault && ['observed-capacity', 'wrong-path-capacity', 'wrong-domain-capacity'].includes(fault))
+    cookies.set('retained-browser-cookie', 'p'.repeat(4300));
   if (fault === 'event')
     base.events = {
       signIn: async () => {
@@ -404,6 +405,13 @@ async function complete(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'cano
     );
     const final = await withPartnerSignInFailureReturn(current, admitted);
     fixture.trace.push('partner-finished');
+    if (fault === 'wrong-path-capacity')
+      final.headers.append('Set-Cookie', 'retained-browser-cookie=; Max-Age=0; Path=/another-route; Secure');
+    if (fault === 'wrong-domain-capacity')
+      final.headers.append(
+        'Set-Cookie',
+        'retained-browser-cookie=; Max-Age=0; Path=/; Domain=other.example.test; Secure',
+      );
     if (fault === 'late-cookie')
       final.headers.append('Set-Cookie', '__Host-boardsesh.browser-proof.injected=bad; Path=/; Secure');
     if (fault === 'redirect')
@@ -643,6 +651,8 @@ describe('actual installed NextAuth owned-provider pending publication', () => {
     'token-reject',
     'unknown-owner',
     'observed-capacity',
+    'wrong-path-capacity',
+    'wrong-domain-capacity',
   ])('refuses %s without future or partial proof and before finalization', async (fault) => {
     const result = await complete('google', 'legacy-jwe', fault);
     expect(result.response.status).toBe(503);
@@ -650,7 +660,7 @@ describe('actual installed NextAuth owned-provider pending publication', () => {
     expect(result.commits).toBe(0);
     expect(result.aborts).toBe(1);
     expect(fixture.writes).toBe(0);
-    if (fault === 'observed-capacity') expect(fixture.trace).toContain('proof-plan-fits');
+    if (fault?.endsWith('capacity') && fault !== 'capacity') expect(fixture.trace).toContain('proof-plan-fits');
   });
   it('does not abort or replay after an unknown committed finalizer', async () => {
     const result = await complete('google', 'legacy-jwe', 'lost-finalizer');
