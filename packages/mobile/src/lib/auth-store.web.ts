@@ -10,6 +10,7 @@ import {
 import { readBrowserBackendSessionScope } from '@boardsesh/auth-protocol/browser-backend-session';
 import { expoBrowserBackendClient } from './browser-backend-client.web';
 import { publicExpoBrowserConsumersReady } from './browser-consumer-readiness.web';
+import { coordinateExpoBrowserSession } from './browser-coordinator-client.web';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -331,11 +332,23 @@ function retireUnqualifiedBrowserDispatch(): void {
   expoBrowserBackendClient.retire();
 }
 
-async function fetchWebSession(generation: number, signal: AbortSignal): Promise<AuthSessionResult> {
+async function fetchWebSession(
+  generation: number,
+  signal: AbortSignal,
+  allowCanonicalPreflight = true,
+): Promise<AuthSessionResult> {
   let activeGeneration = generation;
   let lastConfirmedIdentity: WebAuthIdentity | undefined;
   let identityChangedDuringSynchronization = false;
   try {
+    if (isRequiredBrowserDispatch()) {
+      // Selected session reads are read-only. Never acquire the canonical lock
+      // while holding the legacy same-origin cookie lock in the /app target.
+      if (!allowCanonicalPreflight) throw new BrowserBackendConsumerError('unavailable');
+      await coordinateExpoBrowserSession(signal);
+      if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+      if (signal.aborted) throw new BrowserBackendConsumerError('unavailable');
+    }
     for (let attempt = 1; attempt <= MAX_IDENTITY_PAIR_ATTEMPTS; attempt += 1) {
       // Reading the NextAuth session first validates and rotates its HttpOnly
       // cookie, which remains inaccessible to Expo JavaScript. The ws-auth call
@@ -520,10 +533,12 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
     () => controller.abort(new Error('Authentication session synchronization timed out')),
     SESSION_SYNCHRONIZATION_TIMEOUT_MS,
   );
-  const promise = withAuthCookieLock(async (): Promise<AuthSessionResult> => {
+  const read = async (allowCanonicalPreflight: boolean): Promise<AuthSessionResult> => {
     if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
-    return fetchWebSession(generation, controller.signal);
-  }, controller.signal)
+    return fetchWebSession(generation, controller.signal, allowCanonicalPreflight);
+  };
+  const pending = isRequiredBrowserDispatch() ? read(true) : withAuthCookieLock(() => read(false), controller.signal);
+  const promise = pending
     .catch((error: unknown): AuthSessionResult => {
       if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
       return unavailable(error);

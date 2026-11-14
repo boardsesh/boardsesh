@@ -13,6 +13,8 @@ const QUERY_FIELDS = new Set(['query_string', 'http.query', 'url.query', 'http.f
 const RECOVERY_FIELDS = new Set(['token', 'confirmationtoken', 'email', 'password', 'confirmpassword', 'recipient']);
 /** Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request. */
 const SECRET_FIELD = /^(?:token|confirmationToken|password|confirmPassword|oauth_query)$/i;
+const RENEWAL_COOKIE_PREFIX = '__host-boardsesh.browser-renewal';
+const RENEWAL_COOKIE_ASSIGNMENT = /(__Host-boardsesh\.browser-renewal[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
 
 function decodedName(name: string): string {
   const characters: string[] = [];
@@ -36,6 +38,9 @@ function decodedName(name: string): string {
 function isRecoveryField(name: string): boolean {
   return RECOVERY_FIELDS.has(decodedName(name));
 }
+function isRenewalCookieField(name: string): boolean {
+  return decodedName(name).startsWith(RENEWAL_COOKIE_PREFIX);
+}
 
 /**
  * A recognized recovery or verification URL loses its entire query/fragment,
@@ -46,6 +51,7 @@ function isRecoveryField(name: string): boolean {
  */
 export function redactPasswordRecoveryUrls(text: string): string {
   return text
+    .replace(RENEWAL_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
     .replace(RECOVERY_URL, (_match, path: string, marker: string) => `${path}${marker}${REDACTED}`)
     .replace(VERSIONED_SECRET, REDACTED);
 }
@@ -121,7 +127,13 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
     if (Array.isArray(input)) {
       const result: unknown[] = [];
       copies.set(input, result);
-      for (const item of input) result.push(scrub(item, recoveryContext || sensitiveObjects.has(input)));
+      const cookiePair = input.length === 2 && typeof input[0] === 'string' && isRenewalCookieField(input[0]);
+      for (const [index, item] of input.entries()) {
+        if (cookiePair && index === 1 && item !== null && item !== undefined) {
+          result.push(REDACTED);
+          if (item !== REDACTED) changed = true;
+        } else result.push(scrub(item, recoveryContext || sensitiveObjects.has(input)));
+      }
       return result;
     }
     if (!isPlainObject(input)) return input;
@@ -129,7 +141,12 @@ export function scrubPasswordRecoveryEvent<TEvent>(event: TEvent): TEvent {
     const result: Record<string, unknown> = Object.create(Object.getPrototypeOf(input)) as Record<string, unknown>;
     copies.set(input, result);
     for (const [key, item] of Object.entries(input)) {
-      const secretField = SECRET_FIELD.test(key) || (context && isRecoveryField(key));
+      const namedCookie = typeof input.name === 'string' && isRenewalCookieField(input.name);
+      const secretField =
+        SECRET_FIELD.test(key) ||
+        isRenewalCookieField(key) ||
+        (namedCookie && ['value', 'content'].includes(decodedName(key))) ||
+        (context && isRecoveryField(key));
       const next =
         secretField && item !== null && item !== undefined
           ? REDACTED

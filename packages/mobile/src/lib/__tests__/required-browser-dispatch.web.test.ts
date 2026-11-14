@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GraphQLClient } from 'graphql-request';
 import { createBrowserBackendClient } from '@boardsesh/auth-protocol/browser-backend-client';
+vi.mock('../browser-coordinator-client.web', () => ({ coordinateExpoBrowserSession: vi.fn(async () => {}) }));
 
 const fixture = vi.hoisted(() => ({
   required: false,

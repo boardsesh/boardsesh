@@ -276,7 +276,7 @@ describe('shared www/app coordinator MessageChannel transport', () => {
               status: 'ready',
               cursor:
                 mismatch === 'version'
-                  ? { ...cursor, version: 3 }
+                  ? { ...cursor, version: operation === 'renew' ? 4 : 3 }
                   : { bindingId: 'b'.repeat(64), version: cursor.version },
             },
       );
@@ -291,6 +291,19 @@ describe('shared www/app coordinator MessageChannel transport', () => {
       client.close();
     },
   );
+  it.each([0, 1])('accepts only same-binding renewal delta%s from the canonical runner', async (delta) => {
+    let calls = 0;
+    const next = { ...cursor, version: cursor.version + delta };
+    const current = fixture(async () => (++calls === 1 ? ready : { status: 'ready', cursor: next }));
+    const client = await current.connect();
+    await client.request({ operation: 'read' });
+    await expect(client.request({ operation: 'renew', expectedCursor: cursor })).resolves.toEqual({
+      status: 'ready',
+      cursor: next,
+    });
+    expect(client.cursor()).toEqual(next);
+    client.close();
+  });
 
   it('closes at the bounded request lifetime and recovers through a fresh connection/read', async () => {
     const current = fixture();

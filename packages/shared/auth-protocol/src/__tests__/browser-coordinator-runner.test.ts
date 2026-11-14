@@ -129,13 +129,39 @@ describe('canonical lock and network settlement', () => {
     const transport = {
       observe: async () => ready,
       prepare: async () => ({ ...ready, cursor: { ...cursor, version: 3 } }),
-      renew: async () => ({ ...ready, cursor: { ...cursor, bindingId: 'b'.repeat(64) } }),
+      renew: async () => ({ ...ready, renewal: 'renewed', cursor: { ...cursor, bindingId: 'b'.repeat(64) } }),
     };
     const command: BrowserCoordinatorCommand =
       operation === 'prepare'
         ? { operation, transition: 'logout', expectedCursor: cursor }
         : { operation, expectedCursor: cursor };
     await expect(fixture(transport).run(command)).resolves.toEqual({ status: 'conflict' });
+  });
+  it.each(['unchanged', 'renewed'] as const)('projects only an exact typed %s renewal', async (renewal) => {
+    const future = { ...cursor, version: cursor.version + (renewal === 'renewed' ? 1 : 0) };
+    const { run } = fixture({
+      observe: async () => ready,
+      renew: async () => ({ status: 'ready', cursor: future, renewal }),
+    });
+    await expect(run({ operation: 'renew', expectedCursor: cursor })).resolves.toEqual({
+      status: 'ready',
+      cursor: future,
+    });
+  });
+  it.each([
+    ['unchanged', 3],
+    ['renewed', 2],
+    ['renewed', 4],
+  ] as const)('refuses %s renewal at invalid version%s', async (renewal, version) => {
+    const { run } = fixture({
+      observe: async () => ready,
+      renew: async () => ({ status: 'ready', cursor: { ...cursor, version }, renewal }),
+    });
+    await expect(run({ operation: 'renew', expectedCursor: cursor })).resolves.toEqual({ status: 'conflict' });
+  });
+  it('requires typed renewal evidence before projecting a same-version success', async () => {
+    const { run } = fixture({ observe: async () => ready, renew: async () => ready });
+    await expect(run({ operation: 'renew', expectedCursor: cursor })).resolves.toEqual({ status: 'unavailable' });
   });
   it('captures command and transport primitives before lock waits', async () => {
     const prepare = vi.fn(async (_command: BrowserCoordinatorCommand) => ready);

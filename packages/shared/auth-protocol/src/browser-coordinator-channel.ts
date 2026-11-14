@@ -177,7 +177,8 @@ export function connectBrowserCoordinatorClient(options: {
         if (
           request.expectedCursor &&
           (request.expectedCursor.bindingId !== result.cursor.bindingId ||
-            request.expectedCursor.version !== result.cursor.version)
+            (request.expectedCursor.version !== result.cursor.version &&
+              !(request.operation === 'renew' && result.cursor.version === request.expectedCursor.version + 1)))
         ) {
           request.finish({ status: 'conflict' });
           return;
