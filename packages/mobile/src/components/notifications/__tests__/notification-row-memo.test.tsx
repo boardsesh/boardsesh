@@ -105,6 +105,20 @@ function makeNotification(overrides: Partial<GroupedNotification> = {}): Grouped
 
 // The screen passes one useCallback-stable handler and nothing else.
 const onPress = vi.fn();
+function captureAction() {
+  let current = true;
+  const controller = new AbortController();
+  return {
+    signal: controller.signal,
+    assertView() {
+      if (!current) throw new Error('Retired row action');
+    },
+    isCurrent: () => current,
+    finish() {
+      current = false;
+    },
+  };
+}
 
 describe('NotificationRow React.memo', () => {
   beforeEach(() => {
@@ -282,14 +296,24 @@ describe('NotificationRow follow request', () => {
   });
 
   it('offers Approve and Decline and sends the chosen answer', async () => {
-    const onAnswer = vi.fn().mockResolvedValue(true);
+    const onAnswer = vi.fn().mockResolvedValue({ assertCurrent() {} });
     const { container, getByText } = render(
-      <NotificationRow notification={request} onPress={onPress} onAnswerFollowRequest={onAnswer} />,
+      <NotificationRow
+        notification={request}
+        onPress={onPress}
+        onAnswerFollowRequest={onAnswer}
+        captureAction={captureAction}
+      />,
     );
 
     expect(getByText('items.followRequest')).not.toBeNull();
     fireEvent.click(container.querySelector('[data-button="followRequest.approve"]')!);
-    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith({ notification: request, answer: 'approve' }));
+    await waitFor(() =>
+      expect(onAnswer).toHaveBeenCalledWith(
+        { notification: request, answer: 'approve' },
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
 
     fireEvent.click(container.querySelector('[data-button="followRequest.decline"]')!);
     expect(container.querySelector('[data-button="followRequest.decline"]')).not.toBeNull();
@@ -298,7 +322,12 @@ describe('NotificationRow follow request', () => {
   it('says so when the answer fails, and keeps the buttons', async () => {
     const onAnswer = vi.fn().mockRejectedValue(new Error('offline'));
     const { container, findByText } = render(
-      <NotificationRow notification={request} onPress={onPress} onAnswerFollowRequest={onAnswer} />,
+      <NotificationRow
+        notification={request}
+        onPress={onPress}
+        onAnswerFollowRequest={onAnswer}
+        captureAction={captureAction}
+      />,
     );
 
     fireEvent.click(container.querySelector('[data-button="followRequest.decline"]')!);

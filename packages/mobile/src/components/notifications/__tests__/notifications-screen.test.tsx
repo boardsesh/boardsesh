@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { act, render, fireEvent } from '@testing-library/react';
+import { createElement, type ReactElement, type ReactNode, useMemo } from 'react';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
 
 type Query = {
@@ -24,6 +24,22 @@ const markAllMutate = vi.hoisted(() => vi.fn());
 const answerFollowRequest = vi.hoisted(() => vi.fn());
 const openPlayDrawer = vi.hoisted(() => vi.fn());
 const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
+const ownedView = vi.hoisted(() => ({ scoped: false, handle: 'owned-A', revision: 0 }));
+const rowPresses = vi.hoisted(() => new Map<string, () => void>());
+vi.mock('../../../lib/graphql/use-http-query-scope', () => ({
+  useHttpQueryScope: () =>
+    useMemo(() => {
+      const original = { ...ownedView };
+      return {
+        scoped: original.scoped,
+        scope: original.scoped ? `${original.handle}-${original.revision}` : undefined,
+        assertView() {
+          if (original.scoped && (original.handle !== ownedView.handle || original.revision !== ownedView.revision))
+            throw new Error('Original notification view retired');
+        },
+      };
+    }, [ownedView.scoped, ownedView.handle, ownedView.revision]),
+}));
 
 // Mutable slices each test dials in.
 const state = vi.hoisted(() => ({
@@ -110,7 +126,7 @@ vi.mock('../../../lib/graphql/hooks/use-notifications', () => ({
   // it, `renderItem` — which is exactly what the perf test measures.
   useMarkGroupAsRead: () => ({ mutate: markGroupMutate }),
   useMarkAllAsRead: () => ({ mutate: markAllMutate }),
-  useAnswerFollowRequest: () => answerFollowRequest,
+  useAnswerFollowRequestMutation: () => ({ mutateWithReceipt: answerFollowRequest }),
 }));
 
 vi.mock('../../../hooks/use-offline-query-state', () => ({ useOfflineQueryState: () => state.offline }));
@@ -176,8 +192,9 @@ vi.mock('../NotificationRow', () => ({
     notification: GroupedNotification;
     onPress: (notification: GroupedNotification) => void;
     onAnswerFollowRequest?: (input: { notification: GroupedNotification; answer: 'approve' | 'decline' }) => void;
-  }) =>
-    createElement(
+  }) => {
+    rowPresses.set(notification.uuid, () => onPress(notification));
+    return createElement(
       'div',
       null,
       createElement('button', { 'data-row': notification.uuid, onClick: () => onPress(notification) }),
@@ -187,7 +204,8 @@ vi.mock('../NotificationRow', () => ({
             onClick: () => onAnswerFollowRequest({ notification, answer: 'approve' }),
           })
         : null,
-    ),
+    );
+  },
 }));
 
 import NotificationsScreen from '../NotificationsScreen';
@@ -237,6 +255,10 @@ function lastHeaderRight(): unknown {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  ownedView.scoped = false;
+  ownedView.handle = 'owned-A';
+  ownedView.revision = 0;
+  rowPresses.clear();
   state.query = makeQuery();
   state.unreadCount = 0;
   state.offline = { isOffline: false, isBlocked: false, reason: null };
@@ -717,6 +739,73 @@ describe('NotificationsScreen follow request rows', () => {
 
     expect(list.getItemType!(requestRow)).toBe('followRequest');
     expect(list.getItemType!(requestRow)).not.toBe(list.getItemType!(plainRow));
+  });
+});
+
+describe('NotificationsScreen original selected view', () => {
+  it('clears private thread/header state and refuses old list callbacks after an account switch', () => {
+    ownedView.scoped = true;
+    const original = makeNotification({
+      uuid: 'private-A',
+      type: 'comment_on_board',
+      threadEntityType: 'board',
+      threadEntityId: 'private-board-A',
+    });
+    state.query = makeQuery({
+      hasNextPage: true,
+      data: { pages: [{ groups: [original], hasMore: true, unreadCount: 1 }] },
+    });
+    state.unreadCount = 1;
+    const { container, rerender } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="private-A"]')!);
+    expect(commentSheet.entityId).toBe('private-board-A');
+    const oldPress = rowPresses.get('private-A')!;
+    const oldEndReached = list.onEndReached!;
+    const oldHeader = lastHeaderRight() as () => ReactElement<{ onPress: () => void }>;
+    expect(typeof oldHeader).toBe('function');
+    markGroupMutate.mockClear();
+    const fresh = makeNotification({
+      uuid: 'fresh-B',
+      actors: [{ id: 'follower-B', displayName: 'B', avatarUrl: null }],
+    });
+    ownedView.handle = 'owned-B';
+    ownedView.revision += 1;
+    state.query = makeQuery({ data: { pages: [{ groups: [fresh], hasMore: false, unreadCount: 0 }] } });
+    state.unreadCount = 0;
+    rerender(<NotificationsScreen />);
+    expect(commentSheet.entityId).toBeNull();
+    expect(lastHeaderRight()).toBeUndefined();
+    act(() => {
+      oldPress();
+      oldEndReached();
+      oldHeader().props.onPress();
+    });
+    expect(markGroupMutate).not.toHaveBeenCalled();
+    expect(markAllMutate).not.toHaveBeenCalled();
+    expect(fetchNextPage).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(commentSheet.entityId).toBeNull();
+    fireEvent.click(container.querySelector('[data-row="fresh-B"]')!);
+    expect(markGroupMutate).toHaveBeenCalledExactlyOnceWith(fresh);
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/users/[userId]', params: { userId: 'follower-B' } });
+  });
+
+  it('retains native/legacy thread state while the existing list updates', () => {
+    const original = makeNotification({
+      uuid: 'thread',
+      type: 'comment_on_board',
+      threadEntityType: 'board',
+      threadEntityId: 'same-board',
+    });
+    state.query = makeQuery({ data: { pages: [{ groups: [original], hasMore: true, unreadCount: 1 }] } });
+    const { container, rerender } = render(<NotificationsScreen />);
+    fireEvent.click(container.querySelector('[data-row="thread"]')!);
+    expect(commentSheet.entityId).toBe('same-board');
+    state.query = makeQuery({
+      data: { pages: [{ groups: [original, makeNotification({ uuid: 'appended' })], hasMore: false, unreadCount: 1 }] },
+    });
+    rerender(<NotificationsScreen />);
+    expect(commentSheet.entityId).toBe('same-board');
   });
 });
 

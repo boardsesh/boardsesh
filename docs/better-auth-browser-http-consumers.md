@@ -295,3 +295,31 @@ could not resolve the existing Expo Router entry linked outside this worktree's
 watched repository. The browser attempt reused its installed nested runtime;
 no dependency install or Metro configuration change was applied. Normal-install
 CI must pass both bundles before this slice becomes Ready.
+
+The normal-install CI job subsequently passed both native and Expo-web bundle
+checks at `b7c85ad639`
+([job](https://github.com/boardsesh/boardsesh/actions/runs/43613829823/job/132504469935)).
+That is separate from the local borrowed-dependency limitation above.
+
+## Notifications and follow-request UI
+
+Grouped pages, actor pages, unread counts and the three notification mutations
+use captured operations. Derived unread counts, group updates and relationship
+refreshes stay inside the original view's cache. Existing native keys, paging,
+enabled conditions and nonblocking refresh timing remain compatible. The
+receipt-capable follow-answer hook is additive to its existing async wrapper.
+
+The notification screen captures each click's original view and keeps selected
+thread/list state under its opaque view key. Old header, paging and navigation
+callbacks cannot run under a replacement account. Native and legacy screen keys
+remain stable. A follow-request row also fixes its own mounted lifetime and
+notification attempt, because recycled cells may acquire another notification
+without changing the account. Results and failures recheck that exact attempt
+after the await; success also requires the actual original mutation receipt.
+A fresh same-owner lease cannot extend that receipt.
+
+Removing a row after its successful cache update retires local UI effects while
+allowing the authorized cache publication to finish. Leaving the entire screen
+cancels its pending actions through the screen's layout lifetime. No mutation is
+replayed. These controlled caller tests do not qualify every downstream screen,
+offline outbox, shared cache or supported browser. Public readiness stays false.
