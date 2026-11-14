@@ -10,7 +10,8 @@ export type CredentialWriterContract =
   | 'private-web-v1'
   | 'private-browser-v1'
   | 'private-provider-v1'
-  | 'private-first-password-v1';
+  | 'private-first-password-v1'
+  | 'private-native-handoff-v1';
 export type CredentialPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 export type CredentialColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 
@@ -108,6 +109,14 @@ export const PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES: Readonly<Record<str
     auth_first_password_challenges: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
   });
 
+/** Native browser handoff adds native credential creation explicitly. Old
+ * contracts continue to refuse this grant; no native DELETE is permitted. */
+export const PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES,
+    mobile_refresh_tokens: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
+  });
+
 // All profiles review the existing password-trigger closure. The provider
 // profile and its explicit supersets permit the pinned invoker and narrow grants.
 const partnerRevocationRelations = [
@@ -156,21 +165,28 @@ export async function qualifyCredentialWriter(
   const requested = { ...options };
   if (
     requested.expectedRole !== CREDENTIAL_WRITER_ROLE ||
-    !['private-web-v1', 'private-browser-v1', 'private-provider-v1', 'private-first-password-v1'].includes(
-      requested.contract,
-    ) ||
+    ![
+      'private-web-v1',
+      'private-browser-v1',
+      'private-provider-v1',
+      'private-first-password-v1',
+      'private-native-handoff-v1',
+    ].includes(requested.contract) ||
     !requested.expectedDatabase
   )
     refuse('CREDENTIAL_WRITER_CONTRACT_REQUIRED');
-  const firstPassword = requested.contract === 'private-first-password-v1';
+  const nativeHandoff = requested.contract === 'private-native-handoff-v1';
+  const firstPassword = requested.contract === 'private-first-password-v1' || nativeHandoff;
   const directPartnerRevocation = requested.contract === 'private-provider-v1' || firstPassword;
-  const capabilities = firstPassword
-    ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
-    : directPartnerRevocation
-      ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-      : requested.contract === 'private-browser-v1'
-        ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-        : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const capabilities = nativeHandoff
+    ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
+    : firstPassword
+      ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+      : directPartnerRevocation
+        ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+        : requested.contract === 'private-browser-v1'
+          ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+          : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
   const columnCapabilities = directPartnerRevocation
     ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
     : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;

@@ -9,6 +9,7 @@ import {
   verifyNativeOAuthAttempt,
 } from '@/app/lib/auth/native-oauth-transfer';
 import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
+import { selectedNativeBrowserHandoff } from '@/app/lib/auth/native-browser-handoff.server';
 
 const sanitizeNextPath = (nextPath: string | null): string => (nextPath && nextPath.startsWith('/') ? nextPath : '/');
 
@@ -47,6 +48,17 @@ const deepLinkRedirect = (url: string) => {
 };
 
 async function nativeCallback(request: NextRequest) {
+  const selected = await selectedNativeBrowserHandoff(request.headers.get('cookie'));
+  if (selected.status !== 'legacy') {
+    if (selected.status !== 'admitted')
+      return deepLinkRedirect(
+        `${NATIVE_OAUTH_CALLBACK_SCHEME}?error=${selected.status === 'unavailable' ? 'session_unavailable' : 'session_missing'}`,
+      );
+    const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get('next'));
+    return deepLinkRedirect(
+      `${NATIVE_OAUTH_CALLBACK_SCHEME}?transferToken=${encodeURIComponent(selected.transferToken)}&next=${encodeURIComponent(nextPath)}`,
+    );
+  }
   const session = await getAdmittedServerSession();
   if (!session?.user?.id) {
     return deepLinkRedirect(`${NATIVE_OAUTH_CALLBACK_SCHEME}?error=session_missing`);

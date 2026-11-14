@@ -77,6 +77,14 @@ contract changes while the pool is cached refuse without a content-pool fallback
 The connection budget remains two retained writer connections and one transient
 content-target probe per backend process.
 
+The explicit `private-native-handoff-v1` profile extends the reviewed
+first-password profile with native refresh-token insertion. Earlier profiles
+continue to reject that extra permission. Selected browser transfers spend
+their capability and create the native pair in one qualified transaction.
+Receipt cleanup and first-password scrubbing keep using compatible qualified
+profiles after browser features switch off. See
+[selected browser to native sign-in](./better-auth-native-browser-handoff.md).
+
 Bootstrap chooses its 30-day correlation deadline from the database clock; the
 caller cannot select it. Describe returns only the authoritative binding cursor,
 selection state and credential kind. It cannot retrieve identity or raw proof.

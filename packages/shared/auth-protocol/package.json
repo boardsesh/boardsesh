@@ -17,6 +17,11 @@
       "import": "./src/browser-backend-socket-controller.ts",
       "default": "./src/browser-backend-socket-controller.ts"
     },
+    "./native-browser-handoff-v1": {
+      "types": "./src/native-browser-handoff-v1.ts",
+      "import": "./src/native-browser-handoff-v1.ts",
+      "default": "./src/native-browser-handoff-v1.ts"
+    },
     "./browser-backend-client": {
       "types": "./src/browser-backend-client.ts",
       "import": "./src/browser-backend-client.ts",

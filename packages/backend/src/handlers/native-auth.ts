@@ -5,6 +5,9 @@ import {
   type IdentityAuthorityReceipt,
 } from '../auth/authority/router';
 import { authenticateIdentityPassword } from '../auth/authority/password-verification';
+import { browserBindingMode } from '@boardsesh/auth-protocol/browser-binding-v1';
+import { getCredentialDatabase } from '../auth/credential-database';
+import { NATIVE_BROWSER_HANDOFF_PREFIX, redeemNativeBrowserHandoff } from '../auth/authority/native-browser-handoff';
 import {
   createWatchPairCapability,
   parseWatchPairCapability,
@@ -50,6 +53,7 @@ import { decideCredential, type SubjectCutoffState } from '../auth/credential-cu
 import { logger } from '../utils/logger';
 import { getPostgresErrorCode } from '../utils/postgres-errors';
 import {
+  currentStoreAuthorityConfiguration,
   currentStoreNativeRegistrationConfiguration,
   currentStoreNativeOAuthConfiguration,
 } from '../auth/current-store/authority-configuration';
@@ -763,6 +767,45 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
   const { transferToken } = body as Record<string, unknown>;
   if (typeof transferToken !== 'string' || transferToken.length === 0) {
     sendJson(res, 400, { error: 'transferToken is required' });
+    return;
+  }
+
+  // A reserved native capability has its own key, primary source admission,
+  // durable one-shot receipt and qualified issuer transaction. It never enters
+  // the legacy HMAC parser or its process/Redis replay cache.
+  if (transferToken.startsWith(NATIVE_BROWSER_HANDOFF_PREFIX)) {
+    try {
+      const environment = Object.freeze({ ...process.env });
+      if (browserBindingMode(environment) !== 'backend-staging') throw new AuthAdmissionUnavailableError();
+      const qualification = currentStoreAuthorityConfiguration(environment);
+      const result = await redeemNativeBrowserHandoff(
+        () => getCredentialDatabase('private-native-handoff-v1'),
+        qualification,
+        transferToken,
+        (transaction, source, expiresAt) =>
+          generateTokenPair(source.userId, transaction, {
+            kind: 'transfer',
+            generation: source.generation,
+            authSessionId: source.authSessionId,
+            authenticatedAt: source.authenticatedAt,
+            requiresAccountCutoff: source.requiresAccountCutoff,
+            capabilityExpiresAt: expiresAt.getTime(),
+          }),
+        environment,
+      );
+      if (result.status === 'admitted') {
+        sendJson(res, 200, result.result);
+      } else {
+        const status = { denied: 401, conflict: 409, unavailable: 503 }[result.status];
+        sendJson(res, status, {
+          error:
+            result.status === 'unavailable' ? 'Authentication is temporarily unavailable' : 'Invalid transfer token',
+        });
+      }
+    } catch (error) {
+      if (!respondNativeAdmissionFailure(res, error))
+        sendJson(res, 503, { error: 'Authentication is temporarily unavailable' });
+    }
     return;
   }
 

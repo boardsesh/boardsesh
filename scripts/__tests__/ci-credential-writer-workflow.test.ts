@@ -41,6 +41,8 @@ const proofConfiguration = readFileSync(proofConfigPath, 'utf8');
 const providerConfigPath = 'packages/backend/vite.provider-credential-writer-proof.config.ts';
 const firstPasswordConfigPath = 'packages/backend/vite.first-password-proof.config.ts';
 const firstPasswordConfiguration = readFileSync(firstPasswordConfigPath, 'utf8');
+const nativeHandoffConfigPath = 'packages/backend/vite.native-handoff-proof.config.ts';
+const nativeHandoffConfiguration = readFileSync(nativeHandoffConfigPath, 'utf8');
 const providerConfiguration = readFileSync(providerConfigPath, 'utf8');
 const bootstrapPath = 'packages/backend/scripts/bootstrap-credential-writer-proof-database.sh';
 const bootstrap = readFileSync(bootstrapPath, 'utf8');
@@ -93,11 +95,15 @@ describe('owned credential writer CI boundary', () => {
     const firstPasswordTaskIndex = proof.steps.findIndex((step) =>
       step.run?.includes('vp run test:first-password-credential-writer'),
     );
+    const nativeHandoffTaskIndex = proof.steps.findIndex((step) =>
+      step.run?.includes('vp run test:native-handoff-credential-writer'),
+    );
     expect(historicalBootstrapIndex).toBeGreaterThan(-1);
     expect(historicalTaskIndex).toBeGreaterThan(historicalBootstrapIndex);
     expect(bootstrapIndex).toBeGreaterThan(historicalTaskIndex);
     expect(taskIndex).toBeGreaterThan(bootstrapIndex);
     expect(firstPasswordTaskIndex).toBeGreaterThan(taskIndex);
+    expect(nativeHandoffTaskIndex).toBeGreaterThan(firstPasswordTaskIndex);
     const historicalEnvironment = {
       PGDATABASE: 'epic6975_credential_historical_ci',
       CREDENTIAL_WRITER_PROOF_DATABASE_URL:
@@ -108,12 +114,14 @@ describe('owned credential writer CI boundary', () => {
     expect(proof.steps[bootstrapIndex].env).toBeUndefined();
     expect(proof.steps[taskIndex].env).toBeUndefined();
     expect(proof.steps[firstPasswordTaskIndex].env).toBeUndefined();
+    expect(proof.steps[nativeHandoffTaskIndex].env).toBeUndefined();
     for (const index of [
       historicalBootstrapIndex,
       historicalTaskIndex,
       bootstrapIndex,
       taskIndex,
       firstPasswordTaskIndex,
+      nativeHandoffTaskIndex,
     ]) {
       expect(proof.steps[index].if).toBeUndefined();
       expect(proof.steps[index]['continue-on-error']).toBeUndefined();
@@ -126,6 +134,12 @@ describe('owned credential writer CI boundary', () => {
         'test:first-password-credential-writer',
         firstPasswordConfigPath,
         'junit-first-password-credential-writer.xml',
+      ],
+      [
+        nativeHandoffTaskIndex,
+        'test:native-handoff-credential-writer',
+        nativeHandoffConfigPath,
+        'junit-native-handoff-credential-writer.xml',
       ],
     ] as const) {
       expect(proof.steps[index].run).toContain('--reporter=junit');
@@ -140,23 +154,36 @@ describe('owned credential writer CI boundary', () => {
       expect(task).toContain('cache: false');
       expect(task).not.toMatch(/--changed|--shard|dependsOn/);
     }
-    for (const configuration of [proofConfiguration, providerConfiguration, firstPasswordConfiguration]) {
+    for (const configuration of [
+      proofConfiguration,
+      providerConfiguration,
+      firstPasswordConfiguration,
+      nativeHandoffConfiguration,
+    ]) {
       expect(configuration).toContain('maxWorkers: 1');
       expect(configuration).toContain('fileParallelism: false');
     }
     expect(proofConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: ''");
     expect(providerConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-provider-v1'");
     expect(firstPasswordConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-first-password-v1'");
+    expect(nativeHandoffConfiguration).toContain("AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-native-handoff-v1'");
     for (const file of ['credential-writer-http.proof.ts', 'browser-credential-writer-http.proof.ts']) {
       expect(proofConfiguration).toContain(file);
       expect(providerConfiguration).toContain(file);
       expect(firstPasswordConfiguration).toContain(file);
+      expect(nativeHandoffConfiguration).toContain(file);
     }
     expect(proofConfiguration).toContain('credential-writer-acl.proof.ts');
     expect(proofConfiguration).toContain('browser-credential-writer.proof.ts');
     expect(proofConfiguration).not.toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-security-http.proof.ts');
+    for (const file of [
+      'native-handoff-credential-writer.proof.ts',
+      'provider-security-http.proof.ts',
+      'first-password-http.proof.ts',
+    ])
+      expect(nativeHandoffConfiguration).toContain(file);
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-credential-writer.proof.ts',
@@ -214,6 +241,7 @@ describe('owned credential writer CI boundary', () => {
       'packages/backend/test-results/junit-credential-writer.xml',
       'packages/backend/test-results/junit-provider-credential-writer.xml',
       'packages/backend/test-results/junit-first-password-credential-writer.xml',
+      'packages/backend/test-results/junit-native-handoff-credential-writer.xml',
     ]);
   });
 
