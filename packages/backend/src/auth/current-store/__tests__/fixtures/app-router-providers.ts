@@ -15,6 +15,7 @@ export interface ConfiguredIdentity {
   email?: string;
   name?: string;
   emailVerified?: boolean;
+  authenticationTime?: number;
 }
 export interface ConfiguredProviderFaults {
   cancel?: boolean;
@@ -132,6 +133,7 @@ export async function startConfiguredProviderTransport() {
     faults: ConfiguredProviderFaults;
     redirect: string;
     challenge?: string;
+    nonce?: string;
     expires: number;
   }
   const codes = new Map<string, Code>();
@@ -266,6 +268,8 @@ export async function startConfiguredProviderTransport() {
           name: code.identity.name,
           email_verified: code.identity.emailVerified,
           picture: 'https://images.example.test/owned-avatar.png',
+          ...(code.nonce === undefined ? {} : { nonce: code.nonce }),
+          ...(code.identity.authenticationTime === undefined ? {} : { auth_time: code.identity.authenticationTime }),
         })
           .setProtectedHeader({ alg: 'RS256', kid: publicKeys[provider].kid })
           .setIssuer(code.faults.wrongIssuer ? 'https://foreign-provider.example.test' : specification.issuer)
@@ -367,6 +371,7 @@ export async function startConfiguredProviderTransport() {
           faults: { ...faults },
           redirect,
           challenge,
+          nonce: single(authorization.searchParams, 'nonce'),
           expires: Date.now() + 60000,
         });
         form.set('code', code);

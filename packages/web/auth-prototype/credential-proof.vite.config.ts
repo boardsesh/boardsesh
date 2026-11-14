@@ -24,6 +24,7 @@ export default defineConfig(async (environment) => {
         'auth-prototype/web-credential-proof.integration.proof.ts',
         'auth-prototype/provider-security-auth.proof.ts',
         'auth-prototype/provider-security-publication.proof.ts',
+        'auth-prototype/provider-security-google-reauth.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,
