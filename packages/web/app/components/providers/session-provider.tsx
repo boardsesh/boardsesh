@@ -80,11 +80,16 @@ export default function SessionProviderWrapper({
   children,
   enableExpoAuthBridge = false,
 }: SessionProviderWrapperProps) {
-  const [acceptedView, setAcceptedView] = useState<{ session: Session | null; clientScopeKey: string | null }>({
+  const [acceptedView, setAcceptedView] = useState<{
+    session: Session | null;
+    clientScopeKey: string | null;
+    retired: boolean;
+  }>({
     session: null,
     clientScopeKey: null,
+    retired: false,
   });
-  const { session, clientScopeKey } = acceptedView;
+  const { session, clientScopeKey, retired } = acceptedView;
   const [settled, setSettled] = useState(false);
   const clientScopeKeyRef = useRef<string | null>(null);
   const selectedCleanupRef = useRef<Promise<void> | null>(null);
@@ -212,7 +217,7 @@ export default function SessionProviderWrapper({
       }
       // Identity and subtree ownership are one update, independent of React's
       // batching or a synchronous external-store notification during admission.
-      setAcceptedView({ session: acceptedSession, clientScopeKey: acceptedScopeKey });
+      setAcceptedView({ session: acceptedSession, clientScopeKey: acceptedScopeKey, retired: false });
       setSettled(true);
       return acceptedSession;
     } catch {
@@ -254,7 +259,13 @@ export default function SessionProviderWrapper({
       if (browserBackendClient.isSelected()) {
         // The browser can freeze the document as soon as this event returns.
         // Retiring a receipt alone leaves React's pending DOM update batched.
-        flushSync(() => browserBackendClient.retire());
+        flushSync(() => {
+          browserBackendClient.retire();
+          // A committed child can still be waiting for its passive store
+          // subscription. Publish retirement through the provider too, without
+          // discarding the accepted identity or claiming an anonymous read.
+          setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
+        });
       }
     };
     const pageShow = (event: PageTransitionEvent) => {
@@ -310,10 +321,12 @@ export default function SessionProviderWrapper({
 
   const context = useMemo<SessionContextValue>(
     () =>
-      session
-        ? { data: session, status: 'authenticated', update }
-        : { data: null, status: settled ? 'unauthenticated' : 'loading', update },
-    [session, settled, update],
+      retired
+        ? { data: null, status: 'loading', update }
+        : session
+          ? { data: session, status: 'authenticated', update }
+          : { data: null, status: settled ? 'unauthenticated' : 'loading', update },
+    [retired, session, settled, update],
   );
 
   return (

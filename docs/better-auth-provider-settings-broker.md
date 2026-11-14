@@ -44,9 +44,40 @@ provider mutation. Its injected-client tests qualify this HTTP and sealed-flow
 boundary; they do not replace the existing real bcrypt/Postgres proofs.
 
 Public route and card wiring, actual Google reauthentication, complete buffered
-OAuth/unlink publication, ordinary owned-account sign-in, browser transport and
+OAuth publication, ordinary owned-account sign-in, browser transport and
 lost-reply recovery remain separate joined acceptance work. The
 [provider-security adoption record](./better-auth-provider-security-adoption.md)
 and rollout issue [#7430](https://github.com/boardsesh/boardsesh/issues/7430)
 retain those activation gates. Apple-only first-password email setup is a
 separate purpose-bound flow; its email confirmation is never provider freshness.
+
+## Direct unlink publication
+
+The unmounted direct publication factory now composes the selected actor reader,
+sealed operation, actual credential issuer, cookie planner and private
+prepare/finalize commands. Its caller must first apply the Settings route's
+canonical Host/Origin and bounded JSON checks. Default readiness remains false,
+and both provider and browser staging selectors are required.
+
+Before finalization, the factory re-admits the same actual actor and builds the
+entire successful JSON response plus future-version proof cookies. It preserves
+the original credential kind, SID, authentication age and expiry. Cookie expiry
+is capped by the original source and binding deadlines; no rolling Max-Age can
+extend it. The complete observed request header counts toward capacity, and
+literal proof retention preserves the old actor and operation carrier. Failed
+preparation publication aborts only the pending preparation. A lost or uncertain
+finalizer reply never triggers an abort, retry or candidate-cookie publication.
+
+The separate acknowledgment method requires both physically observed source
+versions, current primary candidate admission and the exact backend result. It
+rechecks primary selection after the private acknowledgment. Its public reply
+contains only a completion outcome, with no bearer, cursor, hashes or cleanup
+cookies. Missing candidate bytes cannot be recovered from the sealed carrier.
+
+The required HTTPS Chromium task exercises this factory with actual password
+comparison, provider preparation/finalization, canonical or JWE issuance and a
+next-request acknowledgment across both authorities. Body-loss, unknown-finalizer
+and whole-header capacity controls use the same server seam. These fixtures use
+an explicitly injected owned database; they do not qualify the future public
+JSON mount, restricted LOGIN composition, external proxies or the full browser
+response-order matrix.
