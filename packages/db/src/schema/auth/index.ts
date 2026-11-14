@@ -11,5 +11,6 @@ export * from './partner-oauth';
 export * from './email-resolution';
 export * from './authority';
 export * from './browser-bindings';
+export * from './browser-renewals';
 export * from './provider-security';
 export * from './first-password';

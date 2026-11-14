@@ -136,6 +136,11 @@
       "types": "./src/browser-coordinator-dom.ts",
       "import": "./src/browser-coordinator-dom.ts",
       "default": "./src/browser-coordinator-dom.ts"
+    },
+    "./browser-renewal-v1": {
+      "types": "./src/browser-renewal-v1.ts",
+      "import": "./src/browser-renewal-v1.ts",
+      "default": "./src/browser-renewal-v1.ts"
     }
   },
   "scripts": {
