@@ -344,7 +344,8 @@ export function buildBrowserProofCookieCandidate(input: {
     ...proofHeaders.map((header) => header.split(';', 1)[0]),
   ];
   const projectedCookieHeaderBytes = bytes(projected.join('; '));
-  if (projectedCookieHeaderBytes > requestBudget) throw new BrowserProofCookieError('COOKIE_BUDGET');
+  if (projectedCookieHeaderBytes > requestBudget || projected.length > BROWSER_PROOF_COOKIE_LIMITS.incomingPairs)
+    throw new BrowserProofCookieError('COOKIE_BUDGET');
   return Object.freeze({
     cursor: selected,
     proofHeaders: Object.freeze(proofHeaders),

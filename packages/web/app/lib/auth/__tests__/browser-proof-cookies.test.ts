@@ -264,6 +264,50 @@ describe('unmounted canonical-www proof cookie codec', () => {
       }),
     ).toThrow('INVALID_SOURCE');
   });
+  it.each(['single', 'chunked', 'retained'] as const)(
+    'refuses an unreadable next-request pair count before publishing %s proof',
+    (kind) => {
+      const count = kind === 'chunked' ? 127 : kind === 'retained' ? 127 : 128;
+      const unrelated = Array.from({ length: count }, (_unused, index) => `preference${index}=x`);
+      if (kind === 'retained') unrelated.push(proofHeader(source, { ...cursor, version: 1 }));
+      expect(() =>
+        buildBrowserProofCookieCandidate({
+          cursor,
+          proof: kind === 'chunked' ? { ...source, rawCredential: 'a'.repeat(3_000) } : source,
+          proofMaxAgeSeconds: 3_600,
+          observedCookieHeader: unrelated.join('; '),
+          retainObservedProofCookies: kind === 'retained',
+        }),
+      ).toThrow('COOKIE_BUDGET');
+    },
+  );
+  it('keeps a readable exact-capacity replacement without counting the current family twice', () => {
+    const unrelated = Array.from({ length: 127 }, (_unused, index) => `preference${index}=x`);
+    const observed = [...unrelated, proofHeader()].join('; ');
+    const candidate = buildBrowserProofCookieCandidate({
+      cursor,
+      proof: source,
+      proofMaxAgeSeconds: 3_600,
+      observedCookieHeader: observed,
+    });
+    const projected = [...unrelated, ...candidate.proofHeaders.map(pair)].join('; ');
+    expect(projected.split(';')).toHaveLength(128);
+    expect(readBrowserProofCookie(projected, cursor)).toEqual({ status: 'present', proof: source });
+  });
+  it('counts exact observed older-family clears when checking future readability', () => {
+    const unrelated = Array.from({ length: 127 }, (_unused, index) => `preference${index}=x`);
+    const older = proofHeader(source, { ...cursor, version: 1 });
+    const candidate = buildBrowserProofCookieCandidate({
+      cursor,
+      proof: source,
+      proofMaxAgeSeconds: 3_600,
+      observedCookieHeader: [...unrelated, older].join('; '),
+    });
+    expect(candidate.garbageCollectionHeaders).toHaveLength(1);
+    const projected = [...unrelated, ...candidate.proofHeaders.map(pair)].join('; ');
+    expect(projected.split(';')).toHaveLength(128);
+    expect(readBrowserProofCookie(projected, cursor)).toEqual({ status: 'present', proof: source });
+  });
   it('validates the host-only canonical coordinator scope and uses a relative constant lease', () => {
     const token = randomBytes(32).toString('base64url');
     const bindingId = createHash('sha256').update(token).digest('hex');
