@@ -1,7 +1,10 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vite-plus/test';
+const webRequire = createRequire(new URL('../../../../../web/package.json', import.meta.url));
+vi.doMock(webRequire.resolve('server-only'), () => ({}));
 import { users } from '@boardsesh/db/schema';
 // Load the real web issuer without adding it to the backend rootDir program.
 const { issueNativeOAuthTransferToken } = (await import(

@@ -7,6 +7,7 @@ import type { AuthorityDatabase, AuthorityTransaction } from './adapter';
 import { captureIdentityAuthority, revalidateIdentityAuthority, type IdentityAuthorityQualification } from './router';
 import { readBrowserBindingInTransaction, type BrowserSelectionCredential } from './browser-binding';
 import type { FirstPartySession } from './session-reader';
+import type { WebCredentialProof } from '@boardsesh/auth-protocol';
 import { transactionSettings } from '../current-store/command-context';
 import { readLockedWebSubjectState } from '../current-store/web-credential-state';
 import { decideCredential } from '../credential-cutoffs';
@@ -39,6 +40,33 @@ const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const timestamp = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const identifier = z.string().min(1).max(1024);
 const generation = z.number().int().min(0).max(2_147_483_647);
+const nativeCreationSchema = z
+  .object({
+    userId: identifier,
+    accountCreated: z.boolean(),
+    provider: z.enum(['google', 'apple']),
+    createdAt: z.iso.datetime(),
+    attemptId: z.string().regex(/^[a-f0-9]{32}$/),
+    completedAt: timestamp,
+  })
+  .strict();
+export type NativeBrowserCreationMetadata = z.infer<typeof nativeCreationSchema>;
+/** Trusted backend result from the known completed provider receipt, not a
+ * public request's accountCreated field. Source admission remains independent. */
+export interface NativeBrowserCreationContext {
+  readonly metadata?: NativeBrowserCreationMetadata;
+  readonly proof: WebCredentialProof;
+  readonly cursor: { readonly bindingId: string; readonly version: number; readonly bindingExpiresAt: string };
+  readonly credentialExpiresAt: string;
+  readonly markerExpiresAt?: number;
+  readonly receiptExpiresAt: number;
+  readonly authority: {
+    readonly projectionId: string;
+    readonly normalizerVersion: string;
+    readonly authority: 'current-store' | 'better-auth';
+    readonly epoch: number;
+  };
+}
 const claimsSchema = z
   .object({
     format: z.literal(1),
@@ -62,10 +90,16 @@ const claimsSchema = z
     epoch: generation,
     issuedAt: timestamp,
     expiresAt: timestamp,
+    nativeCreation: nativeCreationSchema.optional(),
   })
   .strict()
   .refine(
     (claims) =>
+      (claims.nativeCreation === undefined ||
+        (claims.audience === 'boardsesh-native-browser-handoff' &&
+          claims.nativeCreation.userId === claims.userId &&
+          claims.nativeCreation.completedAt <= claims.issuedAt &&
+          Date.parse(claims.nativeCreation.createdAt) <= claims.nativeCreation.completedAt)) &&
       (claims.sourceKind === 'legacy-jwe') === (claims.legacyKeyDigest !== null) &&
       claims.linkGuarded === (claims.authenticatedAt !== null) &&
       claims.expiresAt > claims.issuedAt &&
@@ -164,6 +198,7 @@ export async function issueBrowserSourceCapability(
   purpose: BrowserSourceCapabilityPurpose,
   requested: { readonly bindingToken: string; readonly actor: BrowserSelectionCredential },
   environmentInput: Environment = process.env,
+  nativeCreationInput?: NativeBrowserCreationContext,
 ): Promise<
   | Refusal
   | {
@@ -176,6 +211,7 @@ export async function issueBrowserSourceCapability(
     }
 > {
   const environment = Object.freeze({ ...environmentInput });
+  const nativeCreation = nativeCreationInput ? structuredClone(nativeCreationInput) : undefined;
   qualification = Object.freeze({ ...qualification });
   const input = {
     bindingToken: requested.bindingToken,
@@ -193,6 +229,32 @@ export async function issueBrowserSourceCapability(
       if (source.kind === 'legacy-jwe' && source.secret !== environment.NEXTAUTH_SECRET)
         return { status: 'unavailable' };
       const now = await databaseNow(transaction);
+      if (nativeCreation) {
+        const proof = nativeCreation.proof;
+        const metadata = nativeCreation.metadata;
+        if (
+          purpose !== 'native-handoff' ||
+          nativeCreation.receiptExpiresAt <= now.getTime() ||
+          (nativeCreation.markerExpiresAt !== undefined && nativeCreation.markerExpiresAt < now.getTime()) ||
+          nativeCreation.authority.projectionId !== authority.projectionId ||
+          nativeCreation.authority.normalizerVersion !== authority.normalizerVersion ||
+          nativeCreation.authority.authority !== authority.authority ||
+          nativeCreation.authority.epoch !== authority.epoch ||
+          nativeCreation.cursor.bindingId !== selected.cursor.bindingId ||
+          nativeCreation.cursor.version !== selected.cursor.version ||
+          nativeCreation.cursor.bindingExpiresAt !== selected.cursor.bindingExpiresAt.toISOString() ||
+          nativeCreation.credentialExpiresAt !== selected.session.expiresAt.toISOString() ||
+          proof.userId !== selected.session.userId ||
+          proof.authSessionId !== selected.session.authSessionId ||
+          proof.generation !== selected.session.generation ||
+          proof.authenticatedAt !== (selected.session.authenticatedAt?.toISOString() ?? null) ||
+          proof.linkGuarded !== selected.session.linkGuarded ||
+          Boolean(proof.requiresAccountCutoff) !== selected.session.requiresAccountCutoff ||
+          (metadata !== undefined &&
+            (metadata.userId !== selected.session.userId || metadata.completedAt > now.getTime()))
+        )
+          return { status: 'conflict' };
+      }
       const expiresAt = new Date(
         Math.min(
           now.getTime() + BROWSER_SOURCE_CAPABILITY_LIFETIME_MS,
@@ -219,10 +281,18 @@ export async function issueBrowserSourceCapability(
         authority: authority.authority,
         epoch: authority.epoch,
         issuedAt: now.getTime(),
+        ...(nativeCreation?.metadata ? { nativeCreation: nativeCreation.metadata } : {}),
       });
       const token = seal(claims, key, purpose);
       await revalidateIdentityAuthority(transaction, authority);
-      if ((await databaseNow(transaction)).getTime() >= expiresAt.getTime()) return { status: 'denied' };
+      const finishedAt = (await databaseNow(transaction)).getTime();
+      if (
+        finishedAt >= expiresAt.getTime() ||
+        (nativeCreation &&
+          (finishedAt >= nativeCreation.receiptExpiresAt ||
+            (nativeCreation.markerExpiresAt !== undefined && finishedAt > nativeCreation.markerExpiresAt)))
+      )
+        return { status: 'denied' };
       return {
         status: 'admitted',
         token,
@@ -289,7 +359,12 @@ export async function useBrowserSourceCapability<Result>(
   qualification: IdentityAuthorityQualification,
   purpose: BrowserSourceCapabilityPurpose,
   token: string,
-  operation: (transaction: AuthorityTransaction, session: FirstPartySession, expiresAt: Date) => Promise<Result>,
+  operation: (
+    transaction: AuthorityTransaction,
+    session: FirstPartySession,
+    expiresAt: Date,
+    nativeCreation?: NativeBrowserCreationMetadata,
+  ) => Promise<Result>,
   environmentInput: Environment = process.env,
 ): Promise<BrowserSourceCapabilityAdmission<Result>> {
   const environment = Object.freeze({ ...environmentInput });
@@ -363,7 +438,7 @@ export async function useBrowserSourceCapability<Result>(
       if (decision.denial !== null) return { status: 'denied' };
       const boundedSession = { ...session, expiresAt: new Date(claims.sourceExpiresAt) };
       const expiresAt = new Date(claims.expiresAt);
-      const result = await operation(transaction, boundedSession, expiresAt);
+      const result = await operation(transaction, boundedSession, expiresAt, claims.nativeCreation);
       await revalidateIdentityAuthority(transaction, authority);
       // An issuer may already have inserted child rows. Throwing rolls its
       // receipt and credentials back together when a final deadline is lost.

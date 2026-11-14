@@ -7,6 +7,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./native-oauth-attempt": {
+      "types": "./src/native-oauth-attempt.ts",
+      "import": "./src/native-oauth-attempt.ts",
+      "default": "./src/native-oauth-attempt.ts"
+    },
     "./browser-backend-http-operation": {
       "types": "./src/browser-backend-http-operation.ts",
       "import": "./src/browser-backend-http-operation.ts",

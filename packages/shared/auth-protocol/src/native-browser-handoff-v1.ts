@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { browserBindingCursorSchema, browserSelectionPossessionSchema } from './browser-binding-v1';
+import { anonymousProviderPayloadSchemas } from './anonymous-provider-v1';
 
 /** Private service command. Public adapters return only this single-use native handoff,
  * never source proof bytes, binding tokens or the backend-only handoff key. */
@@ -7,6 +8,16 @@ export const NATIVE_BROWSER_HANDOFF_PROTOCOL_VERSION = 1;
 export const NATIVE_BROWSER_HANDOFF_COMMAND_PATH = '/api/internal/auth/native-browser-handoff/v1/issue';
 export const NATIVE_BROWSER_HANDOFF_REQUEST_BYTES = 65_536;
 export const NATIVE_BROWSER_HANDOFF_RESPONSE_BYTES = 8192;
+/** No creation bit or asserted owner: the backend verifies the original
+ * consumed provider preparation and marker against actual selected source. */
+export const nativeProviderSigninContextSchema = z
+  .object({
+    receipt: anonymousProviderPayloadSchemas.finalize.omit({ candidate: true }),
+    attempt: z.object({ token: z.string().min(1).max(2048), returnUrl: z.string().min(1).max(4096) }).strict(),
+  })
+  .strict();
+export type NativeProviderSigninContext = z.infer<typeof nativeProviderSigninContextSchema>;
+
 export const nativeBrowserHandoffCommandSchema = z
   .object({
     nativeBrowserHandoffProtocolVersion: z.literal(NATIVE_BROWSER_HANDOFF_PROTOCOL_VERSION),
@@ -14,7 +25,11 @@ export const nativeBrowserHandoffCommandSchema = z
     requestId: z.uuidv4(),
     issuedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     payload: z
-      .object({ bindingToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/), actor: browserSelectionPossessionSchema })
+      .object({
+        bindingToken: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+        actor: browserSelectionPossessionSchema,
+        providerSignin: nativeProviderSigninContextSchema.optional(),
+      })
       .strict(),
   })
   .strict();

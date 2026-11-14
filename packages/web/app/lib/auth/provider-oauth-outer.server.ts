@@ -4,6 +4,7 @@ import type { NextAuthOptions } from 'next-auth';
 import { NextRequest } from 'next/server';
 import { providerSecurityMode, type WebOAuthProvider } from '@boardsesh/auth-protocol';
 import { browserBindingMode } from '@boardsesh/auth-protocol/browser-binding-v1';
+import { NATIVE_OAUTH_ATTEMPT_COOKIE, nativeOAuthAttemptBinding } from './native-oauth-attempt.server';
 import type { AuthServiceEnvironment } from '@boardsesh/auth-protocol/transport';
 import type {
   AnonymousProviderResponseAdmission,
@@ -268,7 +269,9 @@ function actualReturn(
     .map((header) => parseSetCookie(header))
     .filter((cookie) => cookie.name === name && cookie.value);
   if (observed.length !== 1 || !observed[0].value) return refuse();
-  const url = new URL(decodeURIComponent(observed[0].value));
+  // parseSetCookie already decodes the serialized cookie once. Preserve the
+  // nested callback query's original percent encoding.
+  const url = new URL(observed[0].value);
   if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.href.length > 4096) return refuse();
   if (url.origin !== origin && validatedExpoReturnUrl(url.href, provider, origin) !== url.href) return refuse();
   return url.href;
@@ -570,7 +573,20 @@ export async function createProviderOAuthOuter(
             );
           } else {
             if (!anonymous) return refuse();
+            const markers = observed.filter((cookie) => cookie.name === NATIVE_OAUTH_ATTEMPT_COOKIE);
+            const nativeAttemptHash =
+              markers.length === 1
+                ? nativeOAuthAttemptBinding(
+                    markers[0].content,
+                    returnUrl,
+                    provider,
+                    environment.NEXTAUTH_SECRET ?? '',
+                    Date.now(),
+                  )
+                : null;
+            const attribution = nativeAttemptHash ? { nativeAttemptHash } : {};
             const result = await anonymousFactory().command('intent', {
+              ...attribution,
               browser: anonymous.browser,
               provider,
               flowHash: input.flowHash,
@@ -580,6 +596,7 @@ export async function createProviderOAuthOuter(
             if (result.outcome !== 'recorded' || !sameProviderSecurityCursor(result.browserCursor, anonymous.cursor))
               return refuse();
             const flow: AnonymousProviderFlow = {
+              ...attribution,
               version: 1,
               provider,
               credentialKind: 'canonical-token',

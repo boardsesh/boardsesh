@@ -1,5 +1,7 @@
 import { webCredentialProofSchema, type WebCredentialProof } from '@boardsesh/auth-protocol';
 import crypto from 'crypto';
+import { signNativeOAuthAttempt, readNativeOAuthAttempt, type NativeOAuthAttempt } from './native-oauth-attempt.server';
+export { NATIVE_OAUTH_ATTEMPT_COOKIE, type NativeOAuthAttempt } from './native-oauth-attempt.server';
 import { parseAccountCreationReceipt, type AccountCreationReceipt } from '@boardsesh/analytics';
 
 const NATIVE_OAUTH_TRANSFER_TTL_SECONDS = 120;
@@ -193,43 +195,14 @@ export const verifyNativeOAuthTransferToken = (
   };
 };
 
-export const NATIVE_OAUTH_ATTEMPT_COOKIE = 'boardsesh-native-oauth-attempt';
-export type NativeOAuthAttempt = { attemptId: string; provider: 'apple' | 'google'; startedAt: number };
-
 /** Functional OAuth correlation only; this marker carries no account or campaign identity. */
 export function issueNativeOAuthAttempt(attempt: Omit<NativeOAuthAttempt, 'startedAt'>): string {
-  const encodedPayload = base64UrlEncode(
-    JSON.stringify({ ...attempt, startedAt: Date.now(), kind: 'native-oauth-attempt' }),
-  );
-  const signature = crypto.createHmac('sha256', getNativeOAuthSecret()).update(encodedPayload).digest('base64url');
-  return `${encodedPayload}.${signature}`;
+  return signNativeOAuthAttempt(attempt, getNativeOAuthSecret(), Date.now());
 }
 
 export function verifyNativeOAuthAttempt(token: string | undefined): NativeOAuthAttempt | null {
-  if (!token || token.length > 2048) return null;
   try {
-    const segments = token.split('.');
-    if (segments.length !== 2 || !segments[0] || !segments[1]) return null;
-    const signature = Buffer.from(segments[1]);
-    const expected = Buffer.from(
-      crypto.createHmac('sha256', getNativeOAuthSecret()).update(segments[0]).digest('base64url'),
-    );
-    if (signature.length !== expected.length || !crypto.timingSafeEqual(signature, expected)) return null;
-    const decoded: unknown = JSON.parse(base64UrlDecode(segments[0]));
-    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) return null;
-    const attempt = decoded as Record<string, unknown>;
-    if (
-      attempt.kind !== 'native-oauth-attempt' ||
-      typeof attempt.attemptId !== 'string' ||
-      !/^[0-9a-f]{32}$/.test(attempt.attemptId) ||
-      (attempt.provider !== 'apple' && attempt.provider !== 'google') ||
-      typeof attempt.startedAt !== 'number' ||
-      !Number.isSafeInteger(attempt.startedAt) ||
-      attempt.startedAt > Date.now() ||
-      Date.now() - attempt.startedAt > NATIVE_OAUTH_TRANSFER_TTL_SECONDS * 1000
-    )
-      return null;
-    return { attemptId: attempt.attemptId, provider: attempt.provider, startedAt: attempt.startedAt };
+    return readNativeOAuthAttempt(token, getNativeOAuthSecret(), Date.now());
   } catch {
     return null;
   }

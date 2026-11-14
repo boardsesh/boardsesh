@@ -79,6 +79,7 @@ export async function handleNativeBrowserHandoffIssue(
       {
         bindingToken: command.payload.bindingToken,
         actor: { version: command.payload.actor.version, credential: proof },
+        ...(command.payload.providerSignin ? { providerSignin: command.payload.providerSignin } : {}),
       },
     );
     const reply: NativeBrowserHandoffReply = nativeBrowserHandoffReplySchema.parse(

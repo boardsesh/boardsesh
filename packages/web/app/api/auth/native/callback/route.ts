@@ -10,6 +10,7 @@ import {
 } from '@/app/lib/auth/native-oauth-transfer';
 import { NATIVE_OAUTH_CALLBACK_SCHEME } from '@/app/lib/auth/native-oauth-config';
 import { selectedNativeBrowserHandoff } from '@/app/lib/auth/native-browser-handoff.server';
+import { resolvePublicAuthOrigin } from '@/app/lib/auth/canonical-auth-url';
 
 const sanitizeNextPath = (nextPath: string | null): string => (nextPath && nextPath.startsWith('/') ? nextPath : '/');
 
@@ -48,7 +49,12 @@ const deepLinkRedirect = (url: string) => {
 };
 
 async function nativeCallback(request: NextRequest) {
-  const selected = await selectedNativeBrowserHandoff(request.headers.get('cookie'));
+  const origin = resolvePublicAuthOrigin();
+  const attribution =
+    origin && new URL(origin).protocol === 'https:' && request.headers.get('host') === new URL(origin).host
+      ? { returnUrl: new URL(`${request.nextUrl.pathname}${request.nextUrl.search}`, origin).href }
+      : undefined;
+  const selected = await selectedNativeBrowserHandoff(request.headers.get('cookie'), attribution);
   if (selected.status !== 'legacy') {
     if (selected.status !== 'admitted')
       return deepLinkRedirect(

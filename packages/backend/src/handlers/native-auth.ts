@@ -782,15 +782,21 @@ export async function handleNativeAuthExchange(req: IncomingMessage, res: Server
         () => getCredentialDatabase('private-native-handoff-v1'),
         qualification,
         transferToken,
-        (transaction, source, expiresAt) =>
-          generateTokenPair(source.userId, transaction, {
+        async (transaction, source, expiresAt, creation) => {
+          const pair = await generateTokenPair(source.userId, transaction, {
             kind: 'transfer',
             generation: source.generation,
             authSessionId: source.authSessionId,
             authenticatedAt: source.authenticatedAt,
             requiresAccountCutoff: source.requiresAccountCutoff,
             capabilityExpiresAt: expiresAt.getTime(),
-          }),
+          });
+          const accountCreation = creation ? parseAccountCreationReceipt(creation) : null;
+          return {
+            ...pair,
+            ...(accountCreation && accountCreation.userId === source.userId ? { accountCreation } : {}),
+          };
+        },
         environment,
       );
       if (result.status === 'admitted') {

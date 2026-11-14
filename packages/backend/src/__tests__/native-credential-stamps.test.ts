@@ -1,11 +1,14 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import postgres from 'postgres';
 import { hash } from 'bcryptjs';
 import { SignJWT, decodeJwt, jwtVerify, type JWTPayload } from 'jose';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+const webRequire = createRequire(new URL('../../../web/package.json', import.meta.url));
+vi.doMock(webRequire.resolve('server-only'), () => ({}));
 import { authSubjectCutoffs, mobileRefreshTokens, userCredentials, users } from '@boardsesh/db/schema/auth';
 import { db } from '../db/client';
 import { getWorkerDatabaseUrl } from './worker-db';

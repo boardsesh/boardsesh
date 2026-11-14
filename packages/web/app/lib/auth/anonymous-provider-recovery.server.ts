@@ -79,6 +79,7 @@ export async function readAnonymousProviderRecoveryInput(
     browserIntentToken: flow.browserIntentToken,
     flowHash: flow.flowHash,
     nonceHash: providerOwnedSigninNonceHash(flow.nonce),
+    ...(flow.nativeAttemptHash ? { nativeAttemptHash: flow.nativeAttemptHash } : {}),
     preparationToken: flow.preparationToken,
     preparation: target,
     candidate: { kind: candidate.proof.kind, credential: candidate.proof.rawCredential },

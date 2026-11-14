@@ -375,7 +375,15 @@ async function stagedReset(newPassword: string) {
   expect(row).toMatchObject({ generation: 1, nativeGeneration: 0, deletedAt: null });
 }
 async function acknowledged(client: Awaited<ReturnType<typeof connect>>) {
-  await until(() => client.frames.some((frame) => frame.type === 'connection_ack'));
+  try {
+    await until(() => client.frames.some((frame) => frame.type === 'connection_ack'));
+  } catch (error) {
+    const frameTypes = client.frames.slice(0, 8).map((frame) => frame.type);
+    throw new Error(
+      `Owned admission ACK missing (socket state ${client.socket.readyState}; frame types ${JSON.stringify(frameTypes)})`,
+      { cause: error },
+    );
+  }
 }
 async function refreshRows() {
   return db
