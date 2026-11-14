@@ -61,6 +61,7 @@ import { authOptions } from '@/app/lib/auth/auth-options';
 import { withAuthResponseAdmission } from '@/app/lib/auth/auth-response-admission.server';
 import { withPartnerSignInFailureReturn } from '@/app/lib/partner-oauth/sign-in-failure-return';
 import { createProviderOwnedSigninAuthPublication } from '@/app/lib/auth/provider-owned-signin-auth.server';
+import { createProviderOwnedSigninAcknowledgment } from '@/app/lib/auth/provider-owned-signin-recovery.server';
 import {
   providerOwnedSigninCookieName,
   providerOwnedSigninPendingCookieName,
@@ -72,7 +73,10 @@ import {
   type ProviderSecurityCommandClient,
   type ProviderSecurityOperationReply,
 } from '@/app/lib/auth/provider-security-command-client.server';
-import { buildBrowserProofCookieCandidate } from '@/app/lib/auth/browser-proof-cookies.server';
+import {
+  BROWSER_CORRELATION_COOKIE,
+  buildBrowserProofCookieCandidate,
+} from '@/app/lib/auth/browser-proof-cookies.server';
 import { webOAuthFlowHash } from '@/app/lib/auth/web-oauth-continuation.server';
 
 const NOW = Date.UTC(2026, 10, 13, 12, 0, 0, 100);
@@ -188,6 +192,17 @@ async function start(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'canonic
   };
   fixture.selected = selected;
   const actor = captureProviderBrowserContext(selected);
+  cookies.set(BROWSER_CORRELATION_COOKIE, selected.bindingToken);
+  for (const header of buildBrowserProofCookieCandidate({
+    cursor: { bindingId: selected.cursor.bindingId, version: selected.cursor.version },
+    proof: { kind, rawCredential: actor.actor.credential },
+    proofMaxAgeSeconds: 1800,
+    observedCookieHeader: null,
+  }).proofHeaders) {
+    const pair = header.split(';', 1)[0];
+    const separator = pair.indexOf('=');
+    cookies.set(pair.slice(0, separator), pair.slice(separator + 1));
+  }
   const flow: ProviderOwnedSigninFlow = {
     version: 1,
     provider,
@@ -226,7 +241,7 @@ async function start(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'canonic
   return { flow, actor, current };
 }
 async function complete(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'canonical-token', fault?: string) {
-  if (fault === 'observed-capacity') cookies.set('retained-browser-cookie', 'p'.repeat(5200));
+  if (fault === 'observed-capacity') cookies.set('retained-browser-cookie', 'p'.repeat(4300));
   if (fault === 'event')
     base.events = {
       signIn: async () => {
@@ -327,7 +342,7 @@ async function complete(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'cano
         reply = {
           ...metadata,
           operation,
-          outcome: 'committed',
+          outcome: commits === 1 ? 'committed' : 'recovered',
           candidateCredentialHash: providerCandidateCredentialHash(payload.candidate),
           browserCursor: { ...actor.browserCursor, version: actor.browserCursor.version + 1 },
         };
@@ -419,7 +434,7 @@ async function complete(provider: 'google' | 'apple', kind: 'legacy-jwe' | 'cano
     }
     return final;
   });
-  return { response, commits, aborts, candidate: issuedCandidate, flow, proof, targetExpiry };
+  return { response, commits, aborts, candidate: issuedCandidate, flow, proof, targetExpiry, client, actor };
 }
 beforeAll(async () => {
   providers = await startConfiguredProviderTransport();
@@ -510,9 +525,64 @@ afterAll(async () => {
 
 describe('actual installed NextAuth owned-provider pending publication', () => {
   it.each(['google', 'apple'] as const)(
+    'acknowledges %s publication using actual next-request old A and B cookies across both source kinds',
+    async (provider) => {
+      for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
+        fixture.trace = [];
+        cookies = new Map([[SESSION, source]]);
+        const result = await complete(provider, kind);
+        expect(result.response.status).toBe(302);
+        remember(result.response);
+        fixture.selected = {
+          status: 'admitted',
+          bindingToken: result.actor.actor.browserBindingToken,
+          actor: {
+            version: result.actor.browserCursor.version + 1,
+            credential:
+              kind === 'canonical-token'
+                ? { kind, token: result.candidate!.credential }
+                : { kind, credential: result.candidate!.credential },
+          },
+          cursor: { ...result.actor.browserCursor, version: result.actor.browserCursor.version + 1 },
+          session: {
+            userId: result.proof.userId,
+            authSessionId: result.proof.authSessionId,
+            generation: result.proof.generation,
+            authenticatedAt: result.proof.authenticatedAt,
+            linkGuarded: result.proof.linkGuarded,
+            requiresAccountCutoff: false,
+            expiresAt: result.targetExpiry,
+          },
+          user: userB,
+        };
+        const acknowledge = createProviderOwnedSigninAcknowledgment({
+          environment: {
+            NEXTAUTH_SECRET: fixture.secret,
+            CURRENT_STORE_PROVIDER_SECURITY_MODE: 'backend-staging',
+            CURRENT_STORE_BROWSER_BINDING_MODE: 'backend-staging',
+          },
+          ready: () => true,
+          readSelection: async () => fixture.selected!,
+          clientFactory: () => result.client,
+        });
+        const ack = await acknowledge({
+          cookieHeader: request('session').headers.get('cookie'),
+          flowHash: result.flow.flowHash,
+        });
+        expect(ack.status).toBe(200);
+        expect(await ack.json()).toEqual({ outcome: 'recovered' });
+        expect(ack.headers.getSetCookie()).toEqual([]);
+        expect(fixture.trace.filter((step) => step === 'finalize')).toHaveLength(2);
+        expect(fixture.writes).toBe(0);
+      }
+    },
+  );
+  it.each(['google', 'apple'] as const)(
     'prepares %s B with both source kinds without admitting or publishing a pending credential',
     async (provider) => {
       for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
+        fixture.trace = [];
+        cookies = new Map([[SESSION, source]]);
         const result = await complete(provider, kind);
         expect(result.response.status, JSON.stringify(fixture.trace)).toBe(302);
         expect(result.commits).toBe(1);
