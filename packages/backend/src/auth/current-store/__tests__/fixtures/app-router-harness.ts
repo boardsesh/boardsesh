@@ -35,6 +35,8 @@ export async function startAppRouterHarness(options: {
   };
   browserIdentity?: ConfiguredIdentity;
   sessionPublicationProof?: boolean;
+  publicationTopology?: 'shared-domain';
+  publicationPasswordBackend?: { origin: string; secret: string; projectionId: string };
 }) {
   const require = createRequire(import.meta.url);
   const secret = options.nextAuthSecret ?? randomBytes(32).toString('base64url');
@@ -119,6 +121,8 @@ export async function startAppRouterHarness(options: {
     faults: options.faults,
     browserIdentity: options.browserIdentity,
     sessionPublicationProof: options.sessionPublicationProof,
+    publicationTopology: options.publicationTopology,
+    publicationPasswordBackend: options.publicationPasswordBackend,
   });
   let ready: Record<string, unknown>;
   try {
@@ -130,10 +134,14 @@ export async function startAppRouterHarness(options: {
   }
   if (
     typeof ready.origin !== 'string' ||
-    !/^https:\/\/localhost:\d+$/.test(ready.origin) ||
+    !(options.publicationTopology === 'shared-domain'
+      ? /^https:\/\/www\.boardsesh\.test:\d+$/.test(ready.origin)
+      : /^https:\/\/localhost:\d+$/.test(ready.origin)) ||
     (options.sessionPublicationProof &&
       (typeof ready.peerOrigin !== 'string' ||
-        !/^https:\/\/localhost:\d+$/.test(ready.peerOrigin) ||
+        !(options.publicationTopology === 'shared-domain'
+          ? /^https:\/\/app\.boardsesh\.test:\d+$/.test(ready.peerOrigin)
+          : /^https:\/\/localhost:\d+$/.test(ready.peerOrigin)) ||
         ready.peerOrigin === ready.origin))
   ) {
     processHandle.kill('SIGKILL');
@@ -197,9 +205,9 @@ export async function startAppRouterHarness(options: {
     request: requestOwned,
     call,
     waitEncodeCheckpoint: () => wait((message) => message.kind === 'encode-checkpoint'),
-    async armSessionResponseGate() {
+    async armSessionResponseGate(path = '/api/auth/session') {
       const gateId = randomUUID();
-      await call('arm-session-response', { gateId });
+      await call('arm-session-response', { gateId, path });
       return gateId;
     },
     waitSessionResponseGate: (gateId: string) =>
