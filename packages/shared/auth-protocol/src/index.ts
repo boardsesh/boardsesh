@@ -5,6 +5,7 @@ export * from './web-credential-proof';
 export { AUTH_BACKEND_UNAVAILABLE, isAuthBackendUnavailable } from './client-errors';
 export * from './web-oauth-v1';
 export * from './provider-security-v1';
+export * from './anonymous-provider-v1';
 export * from './first-password-v1';
 export * from './batch-system-user-v1';
 

@@ -4,6 +4,7 @@ import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signo
 import { handleBrowserBinding } from './handlers/browser-binding';
 import { handleBrowserDelegation } from './handlers/browser-delegation';
 import { handleProviderSecurity } from './handlers/provider-security';
+import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleNativeBrowserHandoffIssue } from './handlers/native-browser-handoff';
 import { handleFirstPassword } from './handlers/first-password';
 import { handleControllerPreview } from './handlers/controller-preview';
@@ -813,6 +814,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {
         await handleProviderSecurity(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/anonymous-provider/v1/')) {
+        await handleAnonymousProvider(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/first-password/v1/')) {
