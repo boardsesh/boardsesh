@@ -194,6 +194,11 @@ export const SHARED_EVENTS = {
   // into one bucket costs. Counts and a reason string, never climb identity;
   // whether a tick preceded it is a session + timestamp join against `Tick Logged`.
   QueueSwipeTrackDormant: 'Queue Swipe Track Dormant',
+  // A pick after the climb on the wall sat 4 h or more dropped an older list's
+  // swipe leftovers from Up next (#7304). Anomaly-only, like the event above:
+  // it fires on the first pick after a long idle, never per swipe.
+  // Props: { droppedCount, idleHours, nowSlotMode, boardName }.
+  QueueStaleLeftoversDropped: 'Queue Stale Leftovers Dropped',
   // Props: { climbUuid, layoutId, boardType, trigger, source, sessionId,
   // participantCount }. `boardType` (#6027) is one of the nine board types or
   // null (`boardTypeProperty`, board-type-property.ts); it is what tells a
