@@ -39,6 +39,9 @@ vi.mock('../../../auth-interceptor', () => ({
 }));
 vi.mock('../index', () => ({ useProfile: () => ({ data: { id: state.profile } }) }));
 vi.mock('../../../browser-consumer-readiness.web', () => ({ publicExpoBrowserConsumersReady: () => state.required }));
+vi.mock('../../../browser-coordinator-client.web', () => ({
+  coordinateExpoBrowserSession: vi.fn(async () => {}),
+}));
 vi.mock('../../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 vi.mock('../../../connectivity/connectivity-store', () => ({

@@ -17,7 +17,7 @@ import {
   buildBrowserProofCookieCandidate,
   readBrowserProofCookie,
 } from '../browser-proof-cookies.server';
-import { BROWSER_RENEWAL_CARRIER_PREFIX } from '../browser-renewal-carrier.server';
+import { BROWSER_RENEWAL_CARRIER_PREFIX, readBrowserRenewalCarrier } from '../browser-renewal-carrier.server';
 import { readPresentedBrowserSelection } from '../presented-browser-selection.server';
 
 const origin = 'https://www.actual-renewal-broker.example.test';
@@ -347,6 +347,24 @@ describe('actual credential browser renewal publication', () => {
     expect(await current.recover(current.request('observe'))).toBeNull();
     expect(current.finalize).not.toHaveBeenCalled();
     expect(current.state.cursor.version).toBe(3);
+  });
+  it('requires durable completion even when a future candidate independently passes primary admission', async () => {
+    const current = await fixture('legacy-jwe');
+    const started = await current.begin();
+    const carrier = readBrowserRenewalCarrier(current.header(), started.operationKey, secret, origin);
+    current.state.cursor = { ...carrier.preparation.futureBrowserCursor };
+    current.state.session.expiresAt = carrier.preparation.targetExpiresAt;
+    current.state.credential = { ...carrier.candidate };
+    const candidateActor = { version: carrier.preparation.futureBrowserCursor.version, credential: carrier.candidate };
+    expect(await current.binding.read({ bindingToken, actor: candidateActor })).toMatchObject({ outcome: 'admitted' });
+    current.read.mockClear();
+    const response = await current.recover(current.request('observe'));
+    expect(
+      current.read.mock.calls.filter(([payload]) => payload.actor?.version === candidateActor.version),
+    ).toHaveLength(0);
+    expect(response).toBeNull();
+    expect(current.acknowledge).toHaveBeenCalledOnce();
+    expect(current.finalize).not.toHaveBeenCalled();
   });
   it('limits recovery before any private primary read or ACK', async () => {
     const current = await fixture();

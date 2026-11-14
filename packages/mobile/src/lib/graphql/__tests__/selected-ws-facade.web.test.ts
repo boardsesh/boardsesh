@@ -17,6 +17,7 @@ vi.mock('../../browser-backend-client.web', async (importOriginal) => {
 });
 
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
+vi.mock('../../browser-coordinator-client.web', () => ({ coordinateExpoBrowserSession: vi.fn(async () => {}) }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { version: 'owned' } } }));
 
 /** Native browser properties dispatch too; the selected shared wrapper owns

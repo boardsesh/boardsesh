@@ -31,6 +31,7 @@ vi.mock('../request-scope', () => ({
     active().scope.assertCurrentHttpResult(scope, result),
 }));
 vi.mock('../../browser-consumer-readiness.web', () => ({ publicExpoBrowserConsumersReady: () => true }));
+vi.mock('../../browser-coordinator-client.web', () => ({ coordinateExpoBrowserSession: vi.fn(async () => {}) }));
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 vi.mock('../../connectivity/connectivity-store', () => ({
