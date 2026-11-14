@@ -118,3 +118,8 @@ actual App Router exports separately prove their production code gate remains
 false despite staged environment and HTTP claims. These do not qualify the
 complete Next.js application, restricted LOGIN composition, external proxies or
 the full browser response-order matrix.
+
+An expired or refused resume selector leaves independently admitted current
+methods available. The warning does not start another operation: the climber
+must explicitly confirm a fresh change, and its reply must still belong to the
+same accepted Session and authority revision before it updates Settings.
