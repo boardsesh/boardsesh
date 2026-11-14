@@ -51,7 +51,8 @@ const configuredContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT ?? 'private
 if (
   configuredContract !== 'private-provider-v1' &&
   configuredContract !== 'private-first-password-v1' &&
-  configuredContract !== 'private-native-handoff-v1'
+  configuredContract !== 'private-native-handoff-v1' &&
+  configuredContract !== 'private-browser-renewal-v1'
 )
   throw new Error('OWNED_ANONYMOUS_PROVIDER_CONTRACT_REQUIRED');
 const contract = configuredContract;

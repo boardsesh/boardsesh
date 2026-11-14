@@ -70,6 +70,14 @@ const reviewedCapabilities: Readonly<Record<CredentialWriterContract, readonly C
       'private-first-password-v1',
       'private-native-handoff-v1',
     ] as const),
+    'private-browser-renewal-v1': Object.freeze([
+      'private-web-v1',
+      'private-browser-v1',
+      'private-provider-v1',
+      'private-first-password-v1',
+      'private-native-handoff-v1',
+      'private-browser-renewal-v1',
+    ] as const),
   });
 
 /** Called only after a private command has passed transport and input checks. */

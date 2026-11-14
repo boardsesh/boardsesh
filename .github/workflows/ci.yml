@@ -1718,6 +1718,11 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:native-handoff-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-native-handoff-credential-writer.xml
           test -s packages/backend/test-results/junit-native-handoff-credential-writer.xml
+      - name: Run ordinary browser renewal and compatible handler proofs serially
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:browser-renewal-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-renewal-credential-writer.xml
+          test -s packages/backend/test-results/junit-browser-renewal-credential-writer.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1728,6 +1733,7 @@ jobs:
             packages/backend/test-results/junit-provider-credential-writer.xml
             packages/backend/test-results/junit-first-password-credential-writer.xml
             packages/backend/test-results/junit-native-handoff-credential-writer.xml
+            packages/backend/test-results/junit-browser-renewal-credential-writer.xml
           retention-days: 7
 
   aurora-circuit-arbitration:

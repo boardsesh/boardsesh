@@ -2206,6 +2206,13 @@
       "when": 1794590446204,
       "tag": "0314_first_password_challenges",
       "breakpoints": true
+    },
+    {
+      "idx": 315,
+      "version": "7",
+      "when": 1794661067525,
+      "tag": "0315_browser-renewals",
+      "breakpoints": true
     }
   ]
 }

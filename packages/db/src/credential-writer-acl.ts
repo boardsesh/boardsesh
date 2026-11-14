@@ -4,6 +4,7 @@ import reviewedPrivateWebRelationShapes from './credential-writer-private-web-v1
 import reviewedBrowserRelationShapes from './credential-writer-private-browser-v1';
 import reviewedProviderRelationShapes from './credential-writer-private-provider-v1';
 import reviewedFirstPasswordRelationShapes from './credential-writer-private-first-password-v1';
+import reviewedBrowserRenewalRelationShapes from './credential-writer-private-browser-renewal-v1';
 
 export const CREDENTIAL_WRITER_ROLE = 'boardsesh_identity_writer';
 export type CredentialWriterContract =
@@ -11,7 +12,8 @@ export type CredentialWriterContract =
   | 'private-browser-v1'
   | 'private-provider-v1'
   | 'private-first-password-v1'
-  | 'private-native-handoff-v1';
+  | 'private-native-handoff-v1'
+  | 'private-browser-renewal-v1';
 export type CredentialPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE';
 export type CredentialColumnPrivilege = 'SELECT' | 'INSERT' | 'UPDATE' | 'REFERENCES';
 
@@ -117,6 +119,25 @@ export const PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES: Readonly<Record<str
     mobile_refresh_tokens: Object.freeze(['SELECT', 'INSERT', 'UPDATE'] as const),
   });
 
+/** Renewal records cannot be deleted or have their frozen identity/evidence
+ * rewritten. Only completion fields receive column-level UPDATE permission. */
+export const PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES: Readonly<Record<string, readonly CredentialPrivilege[]>> =
+  Object.freeze({
+    ...PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES,
+    auth_browser_renewals: Object.freeze(['SELECT', 'INSERT'] as const),
+  });
+export const PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES: Readonly<
+  Record<string, Readonly<Record<string, readonly CredentialColumnPrivilege[]>>>
+> = Object.freeze({
+  ...PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES,
+  auth_browser_renewals: Object.freeze({
+    candidate_hash: updateOnly,
+    result_version: updateOnly,
+    completed_at: updateOnly,
+    acknowledge_until: updateOnly,
+  }),
+});
+
 // All profiles review the existing password-trigger closure. The provider
 // profile and its explicit supersets permit the pinned invoker and narrow grants.
 const partnerRevocationRelations = [
@@ -171,25 +192,31 @@ export async function qualifyCredentialWriter(
       'private-provider-v1',
       'private-first-password-v1',
       'private-native-handoff-v1',
+      'private-browser-renewal-v1',
     ].includes(requested.contract) ||
     !requested.expectedDatabase
   )
     refuse('CREDENTIAL_WRITER_CONTRACT_REQUIRED');
-  const nativeHandoff = requested.contract === 'private-native-handoff-v1';
+  const browserRenewal = requested.contract === 'private-browser-renewal-v1';
+  const nativeHandoff = requested.contract === 'private-native-handoff-v1' || browserRenewal;
   const firstPassword = requested.contract === 'private-first-password-v1' || nativeHandoff;
   const directPartnerRevocation = requested.contract === 'private-provider-v1' || firstPassword;
-  const capabilities = nativeHandoff
-    ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
-    : firstPassword
-      ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
-      : directPartnerRevocation
-        ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-        : requested.contract === 'private-browser-v1'
-          ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-          : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
-  const columnCapabilities = directPartnerRevocation
-    ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
-    : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
+  const capabilities = browserRenewal
+    ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_CAPABILITIES
+    : nativeHandoff
+      ? PRIVATE_NATIVE_HANDOFF_CREDENTIAL_CAPABILITIES
+      : firstPassword
+        ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+        : directPartnerRevocation
+          ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+          : requested.contract === 'private-browser-v1'
+            ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+            : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+  const columnCapabilities = browserRenewal
+    ? PRIVATE_BROWSER_RENEWAL_CREDENTIAL_COLUMN_CAPABILITIES
+    : directPartnerRevocation
+      ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
+      : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
   const closureRelations = [...new Set([...Object.keys(capabilities), ...partnerRevocationRelations])];
   const deleteSources = [
     ...Object.entries(capabilities)
@@ -212,6 +239,7 @@ export async function qualifyCredentialWriter(
         ...reviewedBrowserRelationShapes,
         ...reviewedProviderRelationShapes,
         ...(firstPassword ? reviewedFirstPasswordRelationShapes : []),
+        ...(browserRenewal ? reviewedBrowserRenewalRelationShapes : []),
       ].sort((left, right) => left.name.localeCompare(right.name))
     : requested.contract === 'private-browser-v1'
       ? [...reviewedPrivateWebRelationShapes, ...reviewedBrowserRelationShapes].sort((left, right) =>

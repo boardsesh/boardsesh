@@ -1231,6 +1231,11 @@ export default defineConfig({
           'vp test run --config packages/backend/vite.native-handoff-proof.config.ts --maxWorkers=1 --reporter=agent',
         cache: false,
       },
+      'test:browser-renewal-credential-writer': {
+        command:
+          'vp test run --config packages/backend/vite.browser-renewal-proof.config.ts --maxWorkers=1 --reporter=agent',
+        cache: false,
+      },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
         cache: false,
