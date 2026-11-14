@@ -3,7 +3,7 @@ import { decode, encode } from 'next-auth/jwt';
 import type { NextAuthOptions } from 'next-auth';
 import type { Adapter, AdapterUser } from 'next-auth/adapters';
 import type { NextRequest } from 'next/server';
-import { parseSetCookie, stringifySetCookie } from 'cookie';
+import { stringifySetCookie } from 'cookie';
 import {
   providerOwnedSigninPreparationSchema,
   webCredentialProofSchema,
@@ -12,7 +12,6 @@ import {
 import type { AuthServiceEnvironment } from '@boardsesh/auth-protocol/transport';
 import { AuthBackendUnavailableError } from './auth-command-transport.server';
 import { requireProviderCookieCapacity } from './provider-cookie-capacity.server';
-import { BROWSER_CORRELATION_COOKIE, BROWSER_PROOF_COOKIE_PREFIX } from './browser-proof-cookies.server';
 import { unavailableCredentialResponse } from './credential-admission-response.server';
 import { readPresentedBrowserSelection, type PresentedBrowserSelection } from './presented-browser-selection.server';
 import { readProviderSecurityAuthBody } from './provider-security-auth-body.server';
@@ -34,45 +33,21 @@ import {
   prepareProviderSecurityPublicationResponse,
   providerSecurityClaimsMatch,
   providerSecurityCookieName,
-  providerSecuritySessionFamily,
   sameProviderSecurityCursor,
   type PrepareProviderSecurityCookies,
   type ProviderSecurityCandidate,
 } from './provider-security-publication.server';
 import { captureProviderBrowserContext, type ProviderBrowserContext } from './provider-security-selection.server';
+import {
+  providerCookieFamily as family,
+  providerFrameworkProtectedCookie as protectedCookie,
+  providerFrameworkCandidate as emittedCandidate,
+} from './provider-framework-cookies.server';
 
 type Prepared = Extract<ProviderSecurityReply, { operation: 'signin-prepare'; outcome: 'prepared' }>;
 const refuse = (): never => {
   throw new AuthBackendUnavailableError();
 };
-const family = (name: string, base: string): boolean => name === base || name.startsWith(`${base}.`);
-function protectedCookie(name: string): boolean {
-  return (
-    providerSecuritySessionFamily(name) ||
-    name.startsWith(BROWSER_CORRELATION_COOKIE) ||
-    name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) ||
-    name.startsWith('__Host-boardsesh.provider-security.') ||
-    name.startsWith('__Host-boardsesh.provider-signin.') ||
-    name.startsWith('__Host-boardsesh.provider-signin-pending.')
-  );
-}
-function emittedCandidate(headers: readonly string[], name: string): string {
-  const cookies = headers.map((header) => parseSetCookie(header));
-  const fresh = cookies.filter((cookie) => cookie.value && (cookie.maxAge === undefined || cookie.maxAge > 0));
-  if (
-    !fresh.length ||
-    fresh.some((cookie) => !family(cookie.name, name)) ||
-    new Set(fresh.map((cookie) => cookie.name)).size !== fresh.length
-  )
-    return refuse();
-  if (fresh.some((cookie) => cookie.name === name)) {
-    if (fresh.length !== 1) return refuse();
-  } else {
-    fresh.sort((left, right) => Number(left.name.slice(name.length + 1)) - Number(right.name.slice(name.length + 1)));
-    if (fresh.some((cookie, index) => cookie.name !== `${name}.${index}`)) return refuse();
-  }
-  return fresh.map((cookie) => cookie.value).join('');
-}
 function sameProof(
   left: ProviderBrowserContext['sourceCredentialProof'],
   right: ProviderBrowserContext['sourceCredentialProof'],

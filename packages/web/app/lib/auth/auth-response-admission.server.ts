@@ -16,6 +16,12 @@ type AuthRouteContext = { params: Promise<{ nextauth: string[] }> };
 export type SignOutCompletion = (response: Response, credential: string) => void;
 /** Trusted request-local receipt after all ordinary admission checks finish. */
 export type AuthResponseAdmissionCompletion = (response: Response) => void;
+/** Trusted request-local source-free OAuth scope. Its completion acknowledges
+ * only a repeated anonymous primary read, never an authenticated actor. */
+export interface AnonymousProviderResponseAdmission {
+  readonly cursor: Readonly<{ bindingId: string; version: number; bindingExpiresAt: string }>;
+  readonly complete: AuthResponseAdmissionCompletion;
+}
 
 function deniedAuthResponse(action: string): Response {
   return NextResponse.json(action === 'session' ? {} : { error: 'Authentication required' }, {
@@ -55,15 +61,29 @@ async function selectedResponseAdmission(
   action: string,
   invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
   completeAdmission?: AuthResponseAdmissionCompletion,
+  anonymousProvider?: AnonymousProviderResponseAdmission,
 ): Promise<Response | null> {
   try {
     const cookieHeader = request.headers.get('cookie');
     const before = await browserConsumerFacade.observe(cookieHeader);
-    if (before.status === 'legacy') return null;
+    if (before.status === 'legacy') return anonymousProvider ? selectedRefusal('unavailable') : null;
     if (before.status !== 'admitted' && before.status !== 'anonymous') return selectedRefusal(before.status);
+    if (
+      anonymousProvider &&
+      (before.status !== 'anonymous' ||
+        before.cursor.bindingId !== anonymousProvider.cursor.bindingId ||
+        before.cursor.version !== anonymousProvider.cursor.version ||
+        before.cursor.bindingExpiresAt !== anonymousProvider.cursor.bindingExpiresAt ||
+        !((action === 'signin' && request.method === 'POST') || (action === 'callback' && request.method === 'GET')) ||
+        !/^\/api\/auth\/(?:signin|callback)\/(?:google|apple)$/.test(request.nextUrl.pathname))
+    )
+      return selectedRefusal('conflict');
     // A durable selected logout needs its separately qualified exact-response
     // backend ACK. The legacy sign-out acknowledgment cannot stand in for it.
-    if (action === 'signout' || (before.status === 'anonymous' && !['session', 'csrf', 'providers'].includes(action)))
+    if (
+      action === 'signout' ||
+      (before.status === 'anonymous' && !anonymousProvider && !['session', 'csrf', 'providers'].includes(action))
+    )
       return selectedRefusal('unavailable');
     const response =
       action === 'session'
@@ -90,11 +110,13 @@ async function selectedResponseAdmission(
       if (
         after.status !== 'anonymous' ||
         before.cursor.bindingId !== after.cursor.bindingId ||
-        before.cursor.version !== after.cursor.version
+        before.cursor.version !== after.cursor.version ||
+        before.cursor.bindingExpiresAt !== after.cursor.bindingExpiresAt
       )
         return selectedRefusal('conflict');
       response.headers.set('Cache-Control', 'private, no-store');
       // Anonymous observation is never an authenticated provider actor ACK.
+      anonymousProvider?.complete(response);
     }
     return response;
   } catch {
@@ -147,9 +169,10 @@ export async function withAuthResponseAdmission(
   context: AuthRouteContext,
   invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
   completeAdmission?: AuthResponseAdmissionCompletion,
+  anonymousProvider?: AnonymousProviderResponseAdmission,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
-  const selected = await selectedResponseAdmission(request, action, invoke, completeAdmission);
+  const selected = await selectedResponseAdmission(request, action, invoke, completeAdmission, anonymousProvider);
   if (selected) return selected;
   // Clearing a cookie needs no proof the account still exists, so an outage must
   // not stop a climber signing out. A known denial still answers as before.
