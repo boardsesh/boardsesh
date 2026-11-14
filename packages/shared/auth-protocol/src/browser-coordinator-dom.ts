@@ -86,6 +86,7 @@ export function createCanonicalBrowserCoordinatorFrame(options: {
   let closed = false;
   let client: BrowserCoordinatorClient | null = null;
   let connecting: Promise<BrowserCoordinatorClient> | null = null;
+  let metadataStarted = false;
   let stopLoading = () => {};
   const loaded = new Promise<Window>((resolve, reject) => {
     const fail = () => reject(new Error('COORDINATOR_UNAVAILABLE'));
@@ -134,10 +135,17 @@ export function createCanonicalBrowserCoordinatorFrame(options: {
               client.close();
               return { status: 'unavailable' } as const;
             }
+          } catch {
+            // No control request has been sent, so this failed load/handshake
+            // cannot own an outstanding cookie fetch. Let the next read rebuild.
+            // Once any request has started, retain this host through settlement.
+            if (!metadataStarted) close();
+            return { status: 'unavailable' } as const;
           } finally {
             connecting = null;
           }
         }
+        metadataStarted = true;
         return await client.request({ operation: 'read' }, signal);
       } catch {
         return { status: 'unavailable' } as const;

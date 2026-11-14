@@ -228,6 +228,19 @@ describe('canonical browser bootstrap routes', () => {
     expect(current.intent).not.toHaveBeenCalled();
     expect(current.login).not.toHaveBeenCalled();
   });
+  it.each(['anonymous', 'legacy'] as const)(
+    'bounds the whole next-request cookie pair count for %s bootstrap',
+    async (kind) => {
+      const current = fixture();
+      const pairs = Array.from({ length: kind === 'anonymous' ? 128 : 126 }, (_unused, index) => `other${index}=x`);
+      if (kind === 'legacy') pairs.push((await legacyCookie()).cookie);
+      const response = await current.routes.initialize(request('initialize', pairs.join('; ')));
+      expect(response.status).toBe(503);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(current.intent).not.toHaveBeenCalled();
+      expect(current.login).not.toHaveBeenCalled();
+    },
+  );
   it('withholds every candidate header after an unknown commit and never retries it', async () => {
     const current = fixture();
     current.login.mockRejectedValue(new Error('commit outcome unknown'));

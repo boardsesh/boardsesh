@@ -13,6 +13,7 @@ import {
 } from './browser-binding-command-client.server';
 import {
   BROWSER_PROOF_COOKIE_PREFIX,
+  BROWSER_PROOF_COOKIE_LIMITS,
   buildBrowserProofCookieCandidate,
   buildCanonicalCoordinatorCorrelationCookie,
   readBrowserCorrelationCookie,
@@ -190,7 +191,12 @@ export function createBrowserCoordinatorRoutes(
       const cursor = { bindingId, version: legacy === null ? 0 : 1 };
       // Include correlation in the projected *whole* next-request capacity.
       const projectedHeader = [header, correlation.split(';', 1)[0]].filter(Boolean).join('; ');
-      if (Buffer.byteLength(projectedHeader) > 8_192) return refuse();
+      const projectedPairs = projectedHeader.split(';').length;
+      if (
+        Buffer.byteLength(projectedHeader) > BROWSER_PROOF_COOKIE_LIMITS.projectedCookieHeaderBytes ||
+        projectedPairs > BROWSER_PROOF_COOKIE_LIMITS.incomingPairs
+      )
+        return refuse();
       if (legacy === null) return response({ status: 'ready', cursor }, 200, [correlation]);
       const bindingExpiry = Date.parse(created.cursor.bindingExpiresAt);
       const maxAge = Math.floor((Math.min(expiry!, bindingExpiry) - Date.now()) / 1_000);
@@ -201,6 +207,7 @@ export function createBrowserCoordinatorRoutes(
         observedCookieHeader: projectedHeader,
         responseHeaderBudgetBytes: 32_768 - Buffer.byteLength(`Set-Cookie: ${correlation}\r\n`),
       });
+      if (projectedPairs + proof.proofHeaders.length > BROWSER_PROOF_COOKIE_LIMITS.incomingPairs) return refuse();
       const buffered = response({ status: 'ready', cursor }, 200, [correlation, ...proof.headers]);
       const intent = await client.intent({ bindingToken: created.token, transition: 'login', expectedVersion: 0 });
       if (
