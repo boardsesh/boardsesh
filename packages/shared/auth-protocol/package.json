@@ -12,6 +12,11 @@
       "import": "./src/browser-delegation-v1.ts",
       "default": "./src/browser-delegation-v1.ts"
     },
+    "./browser-backend-lease": {
+      "types": "./src/browser-backend-lease.ts",
+      "import": "./src/browser-backend-lease.ts",
+      "default": "./src/browser-backend-lease.ts"
+    },
     "./browser-binding-v1": {
       "types": "./src/browser-binding-v1.ts",
       "import": "./src/browser-binding-v1.ts",
