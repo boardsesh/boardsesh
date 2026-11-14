@@ -42,6 +42,7 @@ import {
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { isCurrentBrowserBackendGraphQLResult } from '@/app/lib/auth/browser-backend-graphql';
 import { trackCncFunnelEvent } from '@/app/lib/cnc-funnel-analytics';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { boardDisplayLabel, tb2ConfigurationLabel } from '../order-display';
@@ -93,6 +94,7 @@ import { useCncFinalise } from './use-cnc-finalise';
 import { useCncLayout } from './use-cnc-layout';
 import { useCncPreview } from './use-cnc-preview';
 import { useCncOrderPoll } from '../use-cnc-order-poll';
+import { useCncBrowserScope } from '../use-cnc-browser-scope';
 
 const TIERS: readonly CncLicenceTier[] = ['personal', 'commercial_single'];
 
@@ -138,15 +140,17 @@ type ConfiguratorProps = {
  */
 export default function Configurator(props: ConfiguratorProps) {
   const { data: session, status } = useSession();
-  if (status === 'loading') return null;
+  const browserScopeKey = useCncBrowserScope(session);
+  if (status === 'loading' || browserScopeKey === null) return null;
   const ownerId = session?.user?.id ?? null;
   const authSessionId = session?.authSessionId ?? null;
   return (
     <OwnedConfigurator
-      key={JSON.stringify([ownerId, authSessionId])}
+      key={JSON.stringify([ownerId, authSessionId, browserScopeKey])}
       {...props}
       ownerId={ownerId}
       authSessionId={authSessionId}
+      browserScopeKey={browserScopeKey}
     />
   );
 }
@@ -156,7 +160,8 @@ function OwnedConfigurator({
   locale,
   ownerId,
   authSessionId,
-}: ConfiguratorProps & { ownerId: string | null; authSessionId: string | null }) {
+  browserScopeKey,
+}: ConfiguratorProps & { ownerId: string | null; authSessionId: string | null; browserScopeKey?: string }) {
   const { t } = useTranslation('cnc');
   const { openAuthModal } = useAuthModal();
   const { token, isAuthenticated } = useWsAuthToken();
@@ -200,7 +205,14 @@ function OwnedConfigurator({
     order: polledPreviewOrder,
     errorKey: pollErrorKey,
     seedOrder,
-  } = useCncOrderPoll({ licenceId: state.previewLicenceId, ownerId, authSessionId, authToken: token, enabled: true });
+  } = useCncOrderPoll({
+    licenceId: state.previewLicenceId,
+    ownerId,
+    authSessionId,
+    browserScopeKey,
+    authToken: token,
+    enabled: true,
+  });
   // The poll retains its last answer while switching keys. A cleared or new
   // preview pointer must never display artwork for the previous wall.
   const previewOrder =
@@ -441,7 +453,7 @@ function OwnedConfigurator({
     // for.
     const sentConfigKey = currentConfigKey;
     const order = await requestPreview(configInput);
-    if (!order || !isMountedRef.current) return;
+    if (!order || !isMountedRef.current || !isCurrentBrowserBackendGraphQLResult(order)) return;
     seedOrder(order);
     dispatch({ type: 'previewCreated', orderId: order.id, licenceId: order.licenceId, configKey: sentConfigKey });
   };

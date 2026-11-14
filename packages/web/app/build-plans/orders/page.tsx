@@ -8,12 +8,14 @@ import type { CncOrder } from '@boardsesh/shared-schema';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import I18nProvider from '@/app/components/providers/i18n-provider';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
+import { getServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
 import { executeAuthenticatedGraphQL } from '@/app/lib/graphql/server-graphql';
 import { getServerTranslation } from '@/app/lib/i18n/server';
 import { createNoIndexMetadata } from '@/app/lib/seo/metadata';
 import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPacksFlag } from '../build-plans-page';
 import { PageFrame } from '../ui';
 import OrdersList from './orders-list';
+import { SelectedOrdersList } from './selected-orders';
 
 /** Somebody's purchase history. Never cached, never shared, never static. */
 export const dynamic = 'force-dynamic';
@@ -40,13 +42,9 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function BuildPlansOrdersPage() {
   await requireCncPacksFlag();
 
-  // `getServerAuthToken` is BOTH the session read and the credential: it
-  // returns the next-auth session cookie, which is what the backend accepts as
-  // a Bearer token. `getServerSession(authOptions)` would decode the same
-  // cookie a second time and still leave this page needing the raw value for
-  // the GraphQL call, so it is deliberately not used here.
-  const authToken = await getServerAuthToken();
-  if (!authToken) {
+  const viewer = await getServerRenderViewer();
+  const authToken = viewer.kind === 'legacy' ? await getServerAuthToken() : undefined;
+  if (viewer.kind !== 'selected' && !authToken) {
     redirect(`/auth/login?callbackUrl=${encodeURIComponent(ORDERS_PATH)}`);
   }
 
@@ -56,12 +54,14 @@ export default async function BuildPlansOrdersPage() {
   // fetch costs the label, not the list — an order still shows its licence id,
   // status and date, which is what someone came to check.
   const [ordersResult, catalog] = await Promise.all([
-    executeAuthenticatedGraphQL<GetMyCncOrdersQueryResponse>(GET_MY_CNC_ORDERS, undefined, authToken)
-      .then((response) => ({ ok: true as const, orders: response.myCncOrders }))
-      .catch((error: unknown) => {
-        console.error('myCncOrders failed:', error);
-        return { ok: false as const, orders: [] as CncOrder[] };
-      }),
+    viewer.kind === 'legacy'
+      ? executeAuthenticatedGraphQL<GetMyCncOrdersQueryResponse>(GET_MY_CNC_ORDERS, undefined, authToken)
+          .then((response) => ({ ok: true as const, orders: response.myCncOrders }))
+          .catch((error: unknown) => {
+            console.error('myCncOrders failed:', error);
+            return { ok: false as const, orders: [] as CncOrder[] };
+          })
+      : null,
     fetchCncCatalog(),
   ]);
 
@@ -76,7 +76,9 @@ export default async function BuildPlansOrdersPage() {
           </MuiLink>
         }
       >
-        {ordersResult.ok ? (
+        {viewer.kind === 'selected' ? (
+          <SelectedOrdersList owner={viewer.owner} catalog={catalog} locale={locale} />
+        ) : ordersResult?.ok ? (
           <OrdersList orders={ordersResult.orders} catalog={catalog} locale={locale} />
         ) : (
           <Alert severity="error" sx={{ borderRadius: 'var(--border-radius-lg)' }}>

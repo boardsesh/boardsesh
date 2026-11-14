@@ -2,7 +2,11 @@
 import { GraphQLClient } from 'graphql-request';
 import { describe, expect, it, vi } from 'vitest';
 import { createBrowserBackendClient } from '../browser-backend-client';
-import { captureBrowserBackendRequestScope, createBrowserBackendGraphQLTransport } from '../browser-backend-graphql';
+import {
+  captureBrowserBackendRequestScope,
+  createBrowserBackendGraphQLTransport,
+  isCurrentBrowserBackendGraphQLResult,
+} from '../browser-backend-graphql';
 
 function owner() {
   return {
@@ -63,6 +67,102 @@ function deferred<ResponseType>() {
 const query = '{ viewer { id } }';
 
 describe('actual graphql-request selected-browser transport', () => {
+  it('rejects caller cancellation while an actual decoded response stream ignores abort', async () => {
+    const current = await fixture();
+    const controller = new AbortController();
+    let finish!: () => void;
+    const body = new ReadableStream<Uint8Array>({
+      start(stream) {
+        stream.enqueue(new TextEncoder().encode('{"data":{"viewer":'));
+        finish = () => {
+          stream.enqueue(new TextEncoder().encode('{"id":"owned-user"}}}'));
+          stream.close();
+        };
+      },
+    });
+    current.fetchGraphQL.mockResolvedValueOnce(new Response(body, { headers: { 'Content-Type': 'application/json' } }));
+    const pending = current.graphql.request({ document: query, signal: controller.signal });
+    await vi.waitFor(() => expect(body.locked).toBe(true));
+    controller.abort(new Error('Owned body cancelled'));
+    finish();
+    await expect(pending).rejects.toThrow('Owned body cancelled');
+    expect(current.fetchGraphQL).toHaveBeenCalledOnce();
+    current.client.dispose();
+  });
+  it('does not publish a body that ignored the original caller abort signal', async () => {
+    const current = await fixture();
+    const controller = new AbortController();
+    current.fetchGraphQL.mockImplementationOnce(async () => {
+      controller.abort(new Error('Owned caller cancelled'));
+      return Response.json({ data: { viewer: { id: 'owned-user' } } });
+    });
+    await expect(current.graphql.request({ document: query, signal: controller.signal })).rejects.toThrow(
+      'Owned caller cancelled',
+    );
+    expect(current.fetchGraphQL).toHaveBeenCalledOnce();
+    current.client.dispose();
+  });
+  it('retires a decoded delivery if the caller aborts before its own consumer resumes', async () => {
+    const current = await fixture();
+    const controller = new AbortController();
+    const result = await current.graphql.request({ document: query, signal: controller.signal });
+    expect(isCurrentBrowserBackendGraphQLResult(result, current.client)).toBe(true);
+    controller.abort();
+    expect(isCurrentBrowserBackendGraphQLResult(result, current.client)).toBe(false);
+    current.client.dispose();
+  });
+  it('receipts the actual decoded result and its direct operation object, but refuses copies', async () => {
+    const current = await fixture();
+    const result = await current.graphql.request<{ viewer: { id: string } }>(query);
+    expect(isCurrentBrowserBackendGraphQLResult(result, current.client)).toBe(true);
+    expect(isCurrentBrowserBackendGraphQLResult(result.viewer, current.client)).toBe(true);
+    expect(isCurrentBrowserBackendGraphQLResult(structuredClone(result), current.client)).toBe(false);
+    expect(isCurrentBrowserBackendGraphQLResult({ ...result.viewer }, current.client)).toBe(false);
+    const other = await fixture();
+    expect(isCurrentBrowserBackendGraphQLResult(result, other.client)).toBe(false);
+    current.client.dispose();
+    other.client.dispose();
+  });
+  it('keeps the original delivery deadline after a newer same-owner request renews its lease', async () => {
+    const current = await fixture();
+    const first = await current.graphql.request(query);
+    current.advance(90_000);
+    const renewed = await current.graphql.request(query);
+    expect(isCurrentBrowserBackendGraphQLResult(first, current.client)).toBe(true);
+    current.advance(30_000);
+    expect(isCurrentBrowserBackendGraphQLResult(first, current.client)).toBe(false);
+    expect(isCurrentBrowserBackendGraphQLResult(renewed, current.client)).toBe(true);
+    current.client.dispose();
+  });
+  it.each(['invalidate', 'retire', 'dispose', 'ABA'] as const)(
+    'refuses a delivery after the caller resumes across %s',
+    async (change) => {
+      const current = await fixture();
+      const result = await current.graphql.request(query);
+      if (change === 'invalidate') current.client.invalidate(current.scope);
+      else if (change === 'ABA') {
+        current.client.acceptSession(session({ ...owner(), userId: 'other-owner' }));
+        current.client.acceptSession(session());
+      } else current.client[change]();
+      expect(isCurrentBrowserBackendGraphQLResult(result, current.client)).toBe(false);
+      current.client.dispose();
+    },
+  );
+  it('keeps legacy result behavior only until selected dispatch is observed', () => {
+    const client = createBrowserBackendClient({
+      ready: () => true,
+      fetch: vi.fn<typeof fetch>(),
+      endpoint: '/owned-lease',
+      now: () => 0,
+      schedule: () => () => {},
+    });
+    const legacy = { viewer: { id: 'legacy-user' } };
+    expect(isCurrentBrowserBackendGraphQLResult(legacy, client)).toBe(true);
+    client.acceptSession(session());
+    expect(isCurrentBrowserBackendGraphQLResult(legacy, client)).toBe(false);
+    client.dispose();
+    expect(isCurrentBrowserBackendGraphQLResult(legacy, client)).toBe(false);
+  });
   it('attaches only a privately receipted current lease and validates the parsed result', async () => {
     const current = await fixture();
     await expect(current.graphql.request(query)).resolves.toEqual({ viewer: { id: 'owned-user' } });

@@ -4,6 +4,7 @@ import { getSession, signIn, type SignInOptions, type SignInResponse } from 'nex
 
 export const WEB_SESSION_REFRESH_EVENT = 'boardsesh-web-session-refresh';
 const EPOCH_KEY = Symbol.for('boardsesh.web-session-intent.epoch-v1');
+const refreshedViewRevisions = new WeakMap<object, number>();
 type EpochGlobal = typeof globalThis & { [key: symbol]: { epoch: number } | undefined };
 
 function epochState(): { epoch: number } {
@@ -22,6 +23,14 @@ export function beginWebSessionIntent(): number {
 export function requestWebSessionRefresh(expectedEpoch?: number): void {
   if (expectedEpoch !== undefined && expectedEpoch !== captureWebSessionEpoch()) return;
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(WEB_SESSION_REFRESH_EVENT));
+}
+
+/** Several private islands may observe one retirement. Request one primary
+ * read for that actual Session object/revision, without inventing a new intent. */
+export function requestWebSessionRefreshForView(session: object, revision: number): void {
+  if (refreshedViewRevisions.get(session) === revision) return;
+  refreshedViewRevisions.set(session, revision);
+  requestWebSessionRefresh();
 }
 
 /** Own the intent before the public client starts any asynchronous work. */

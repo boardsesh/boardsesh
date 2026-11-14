@@ -14,7 +14,8 @@ import { CNC_FLAG_OFF_METADATA, fetchCncCatalog, isCncPacksEnabled, requireCncPa
 import { wallLabel } from '../../order-display';
 import { PageFrame } from '../../ui';
 import OrderStatus from './order-status';
-import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { getAdmittedServerSession, getServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
+import { SelectedOrderDetail } from '../selected-orders';
 
 /** One person's order, with a live status. Never cached, never static. */
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,26 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
     notFound();
   }
   const searchParams = await props.searchParams;
+  const rawCheckoutParam = searchParams.checkout;
+  const checkoutParam = Array.isArray(rawCheckoutParam) ? rawCheckoutParam[0] : rawCheckoutParam;
+  const checkoutOutcome = checkoutParam === 'success' || checkoutParam === 'cancelled' ? checkoutParam : null;
+  const viewer = await getServerRenderViewer();
+  if (viewer.kind === 'selected') {
+    const [{ locale }, catalog] = await Promise.all([getServerTranslation('cnc'), fetchCncCatalog()]);
+    return (
+      <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
+        <SelectedOrderDetail
+          licenceId={licenceId}
+          owner={viewer.owner}
+          catalog={catalog}
+          checkoutOutcome={checkoutOutcome}
+          locale={locale}
+        />
+      </I18nProvider>
+    );
+  }
+  if (viewer.kind === 'anonymous' || viewer.kind === 'refused')
+    redirect(`/auth/login?callbackUrl=${encodeURIComponent(`/build-plans/orders/${licenceId}`)}`);
 
   const [authToken, session] = await Promise.all([getServerAuthToken(), getAdmittedServerSession()]);
   if (!authToken || !session?.user?.id) {
@@ -117,10 +138,6 @@ export default async function BuildPlanOrderPage(props: OrderRouteProps) {
   // `?checkout=success&checkout=cancelled` parses as an array, so take the
   // first entry rather than comparing an array to a string and silently
   // dropping the alert Stripe sent the buyer back for.
-  const rawCheckoutParam = searchParams.checkout;
-  const checkoutParam = Array.isArray(rawCheckoutParam) ? rawCheckoutParam[0] : rawCheckoutParam;
-  const checkoutOutcome = checkoutParam === 'success' || checkoutParam === 'cancelled' ? checkoutParam : null;
-
   return (
     <I18nProvider locale={locale} namespaces={['common', 'cnc']}>
       {/* `OrderStatus` owns the page frame: the header carries a live status
