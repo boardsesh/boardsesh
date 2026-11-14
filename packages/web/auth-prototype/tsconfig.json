@@ -12,6 +12,7 @@
     "provider-security-publication.proof.ts",
     "provider-security-google-reauth.proof.ts",
     "provider-owned-signin-auth.proof.ts",
+    "provider-oauth-outer.proof.ts",
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts",
     "browser-proof-cookies.proof.ts",

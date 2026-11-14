@@ -9,6 +9,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
 import {
+  captureProviderOAuthRequest,
+  createProviderOAuthOuter,
+  type ProviderOAuthOuter,
+} from '@/app/lib/auth/provider-oauth-outer.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
+import { normalizeProviderSecurityAppleCallback } from '@/app/lib/auth/provider-security-apple-transport.server';
+import {
   readSignInStartCallbackUrl,
   withPartnerSignInFailureReturn,
 } from '@/app/lib/partner-oauth/sign-in-failure-return';
@@ -289,7 +296,11 @@ async function getAuth(
   return clearLegacyCookieIfSessionWritten(await handler(request, context));
 }
 
-async function routeAuth(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+async function routeAuth(
+  request: NextRequest,
+  context: NextAuthRouteContext,
+  provider: ProviderOAuthOuter | null,
+): Promise<Response> {
   // Check both route authorities before a delegate can exchange a code or write a cookie.
   // The stored Facebook identity and an existing session remain readable.
   const { nextauth } = await context.params;
@@ -308,23 +319,60 @@ async function routeAuth(request: NextRequest, context: NextAuthRouteContext): P
       { status: 404, headers: { 'Cache-Control': 'private, no-store' } },
     );
   }
-  return withAuthResponseAdmission(request, context, (completeSignOut) =>
-    withWebOAuthIdentity(request, context, authOptions, (current, options) =>
-      current.method === 'POST'
-        ? postAuth(current, context, options, completeSignOut)
-        : getAuth(current, context, options),
-    ),
+  return withAuthResponseAdmission(
+    request,
+    context,
+    async (completeSignOut) => {
+      const response = await withWebOAuthIdentity(
+        request,
+        context,
+        provider?.options ?? authOptions,
+        (current, options) =>
+          current.method === 'POST'
+            ? postAuth(current, context, options, completeSignOut)
+            : getAuth(current, context, options),
+        provider?.delegate,
+      );
+      // Apple continuation clearing can clone the framework response. Quarantine
+      // the finished flow response before acknowledging its exact admission.
+      return provider ? provider.quarantine(response) : response;
+    },
+    provider?.completeAdmission,
+    provider?.anonymousAdmission,
   );
+}
+
+async function composedAuth(
+  request: NextRequest,
+  context: NextAuthRouteContext,
+  startCallbackUrl?: string | null,
+): Promise<Response> {
+  let captured: NextRequest;
+  try {
+    captured = captureProviderOAuthRequest(request);
+  } catch {
+    return unavailableCredentialResponse();
+  }
+  const normalized = await normalizeProviderSecurityAppleCallback(captured, context, authOptions);
+  if (normalized) return normalized;
+  const provider = await createProviderOAuthOuter(captured, context, authOptions);
+  const invoke = async () =>
+    withPartnerSignInFailureReturn(captured, await routeAuth(captured, context, provider), startCallbackUrl);
+  // Every actual framework hook, admission, scoped-cookie clear and partner/
+  // Expo decorator settles before the publisher builds its final SQL command.
+  return provider ? provider.run(invoke) : invoke();
 }
 
 // A failed social sign-in that started on the partner sign-in page goes back
 // there, not to /auth/login, which the iPhone app claims.
 export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
-  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context));
+  const captured = new NextRequest(request.clone(), { headers: new Headers(request.headers) });
+  return composedAuth(captured, context);
 }
 
 export async function POST(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  const captured = new NextRequest(request.clone(), { headers: new Headers(request.headers) });
   // A sign-in start's own callbackUrl, read before NextAuth consumes the body.
-  const startCallbackUrl = await readSignInStartCallbackUrl(request);
-  return await withPartnerSignInFailureReturn(request, await routeAuth(request, context), startCallbackUrl);
+  const startCallbackUrl = await readSignInStartCallbackUrl(captured);
+  return composedAuth(captured, context, startCallbackUrl);
 }

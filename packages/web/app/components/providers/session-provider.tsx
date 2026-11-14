@@ -8,6 +8,7 @@ import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-f
 import { BROWSER_COORDINATOR_FRAME_PATH } from '@boardsesh/auth-protocol/browser-coordinator';
 import { publicBrowserCoordinatorReady } from '../../lib/auth/browser-coordinator-readiness';
 import { readCanonicalBrowserCoordinator } from '../../lib/auth/browser-coordinator-client';
+import { registerCanonicalBrowserOrigin } from '../../lib/auth/canonical-browser-origin';
 import { browserBackendClient } from '../../lib/auth/browser-backend-client';
 import { PRIVACY_REVOKED_EVENT } from '../../lib/privacy-client';
 import { CNC_CONFIGURATOR_DRAFT_KEY } from '@/app/build-plans/configurator/configurator-state';
@@ -107,6 +108,8 @@ export default function SessionProviderWrapper({
   const mountedRef = useRef(false);
   const suspendedRef = useRef(false);
   const broadcastIdentityRef = useRef<string | null>(null);
+
+  useIsomorphicLayoutEffect(() => registerCanonicalBrowserOrigin(canonicalBrowserOrigin), [canonicalBrowserOrigin]);
 
   useIsomorphicLayoutEffect(() => {
     // Every owned cookie fetch uses the same origin-scoped lock. It does not
