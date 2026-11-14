@@ -27,7 +27,12 @@ import { sprayImportRoute } from '../../../spray/spray-import-progress';
 
 const requestMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: ({ document, variables }: { document: unknown; variables?: unknown }) => requestMock(document, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 vi.mock('../../use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' }) }));
 
 import {
