@@ -3,6 +3,7 @@ import { useMutation, type DefaultError, type UseMutationOptions } from '@tansta
 import { useHttpQueryScope, type HttpQueryOperation } from './use-http-query-scope';
 
 type Callbacks<Result, Error, Variables, Context> = {
+  signal?: AbortSignal;
   onSuccess?: (
     result: Result,
     variables: Variables,
@@ -119,7 +120,10 @@ export function useHttpMutation<Result, Error = DefaultError, Variables = void, 
   });
   const capture = useCallback(
     (variables: Variables, callbacks: Callbacks<Result, Error, Variables, Context> = {}) => {
-      const operation = scope.create({ signal: currentOptions.current.signal });
+      const hookSignal = currentOptions.current.signal;
+      const callSignal = callbacks.signal;
+      const signal = hookSignal && callSignal ? AbortSignal.any([hookSignal, callSignal]) : (callSignal ?? hookSignal);
+      const operation = scope.create({ signal });
       operation.assertView();
       const invocation: Invocation = Object.freeze({
         variables,

@@ -4,6 +4,11 @@
 const responses = new WeakMap<Response, () => void>();
 const bodyMethods = new Set<PropertyKey>(['arrayBuffer', 'blob', 'bytes', 'formData', 'json', 'text']);
 
+/** Capture once before a derived value escapes its original response. */
+export function captureBrowserResponseCurrent(response: Response): (() => void) | null {
+  return responses.get(response) ?? null;
+}
+
 export function assertBrowserResponseCurrent(response: Response): void {
   responses.get(response)?.();
 }
