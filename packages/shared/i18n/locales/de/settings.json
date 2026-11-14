@@ -732,7 +732,9 @@
     "unavailable": "Diese Änderung konnte nicht abgeschlossen werden. Versuche es erneut.",
     "linkCompleted": "{{provider}} ist verknüpft.",
     "unlinkCompleted": "{{provider}} ist getrennt.",
-    "redirecting": "Fahre zum Abschließen im Browser fort."
+    "redirecting": "Fahre zum Abschließen im Browser fort.",
+    "loading": "Anmeldemethoden werden geprüft…",
+    "resumeCompleted": "Deine Anmeldemethode wurde geändert."
   },
   "firstPassword": {
     "title": "Passwort hinzufügen",

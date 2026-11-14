@@ -732,7 +732,9 @@
     "unavailable": "Impossibile completare questa modifica. Riprova.",
     "linkCompleted": "{{provider}} è collegato.",
     "unlinkCompleted": "{{provider}} è scollegato.",
-    "redirecting": "Continua nel browser per terminare."
+    "redirecting": "Continua nel browser per terminare.",
+    "loading": "Verifica dei metodi di accesso…",
+    "resumeCompleted": "La modifica dell’accesso è completata."
   },
   "firstPassword": {
     "title": "Aggiungi una password",

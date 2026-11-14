@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import {
   providerSecurityMode,
@@ -24,6 +25,12 @@ import {
 import { publicProviderSecurityReady } from './provider-security-readiness';
 import { createProviderSecurityDirectPublication } from './provider-security-direct.server';
 import { checkRateLimit } from './rate-limiter';
+import { providerSecurityResumeSchema } from './provider-security-resume';
+import {
+  providerSettingsViewFrame,
+  PROVIDER_SETTINGS_VIEW_HEADER,
+  PROVIDER_SETTINGS_OPERATION_HEADER,
+} from './provider-security-view';
 import {
   captureProviderBrowserContext,
   ProviderSecurityIdentityChangedError,
@@ -33,6 +40,7 @@ import {
 
 export const PROVIDER_SETTINGS_PATHS = Object.freeze({
   methods: '/api/internal/auth/provider-security/methods',
+  resume: '/api/internal/auth/provider-security/resume',
   intent: '/api/internal/auth/provider-security/intent',
   password: '/api/internal/auth/provider-security/reauthenticate-password',
   unlink: '/api/internal/auth/provider-security/unlink',
@@ -236,7 +244,7 @@ export function createProviderSecuritySettingsBroker(
       if (request.headers.get('host') !== new URL(origin).host) return refuse(403, 'invalid_request');
       if (url.pathname !== PROVIDER_SETTINGS_PATHS[operation] || url.search !== '')
         return refuse(400, 'invalid_request');
-      const method = operation === 'methods' ? 'GET' : 'POST';
+      const method = operation === 'methods' || operation === 'resume' ? 'GET' : 'POST';
       if (request.method !== method) return refuse(400, 'invalid_request');
       const claimedOrigin = request.headers.get('origin');
       const fetchSite = request.headers.get('sec-fetch-site');
@@ -248,8 +256,50 @@ export function createProviderSecuritySettingsBroker(
         return refuse(403, 'invalid_request');
       const cookies = request.headers.get('cookie');
       const pairs = cookiePairs(cookies);
-      if (operation === 'methods') {
+      if (operation === 'methods' || operation === 'resume') {
         const current = await admit(cookies);
+        const expectedView = operationKeySchema.parse(request.headers.get(PROVIDER_SETTINGS_VIEW_HEADER));
+        const actualView = createHash('sha256')
+          .update(
+            providerSettingsViewFrame({
+              userId: current.actor.expectedUserId,
+              authSessionId: current.actor.expectedAuthSessionId,
+              generation: current.sourceCredentialProof.generation,
+              cursor: { bindingId: current.browserCursor.bindingId, version: current.browserCursor.version },
+            }),
+          )
+          .digest('hex');
+        if (expectedView !== actualView) return refuse(409, 'identity_changed');
+        if (operation === 'resume') {
+          const operationKey = operationKeySchema.parse(request.headers.get(PROVIDER_SETTINGS_OPERATION_HEADER));
+          const cookieName = providerSecurityFlowCookieName(operationKey, true);
+          const matches = pairs.filter((pair) => pair.name === cookieName);
+          if (matches.length !== 1) return refuse(409, 'identity_changed');
+          const flow = await openProviderSecurityFlow(
+            matches[0].content,
+            operationKey,
+            environment.NEXTAUTH_SECRET ?? '',
+            clock(),
+          );
+          requireProviderSecurityFlowActor(flow, current);
+          await revalidate(cookies, current);
+          if (request.signal.aborted) return refuse(503, 'unavailable');
+          return response(
+            providerSecurityResumeSchema.parse({
+              providerSecurityResumeVersion: 1,
+              outcome: 'resumable',
+              operationKey,
+              actorContextKey: current.actorContextKey,
+              action: flow.action,
+              provider: flow.provider,
+              methodId: flow.methodId,
+              reauthenticationReady:
+                flow.reauthenticationToken !== null &&
+                flow.reauthenticationExpiresAt !== null &&
+                Date.parse(flow.reauthenticationExpiresAt) > clock().getTime(),
+            }),
+          );
+        }
         const reply = await clientFactory().command('methods', { actor: current.actor });
         if (reply.outcome !== 'available') return failure(reply);
         await revalidate(cookies, current);
@@ -397,6 +447,7 @@ export function createProviderSecuritySettingsBroker(
   }
   return Object.freeze({
     methods: (request: Request) => run(request, 'methods'),
+    resume: (request: Request) => run(request, 'resume'),
     intent: (request: Request) => run(request, 'intent'),
     reauthenticatePassword: (request: Request) => run(request, 'password'),
     unlink: (request: Request) => run(request, 'unlink'),

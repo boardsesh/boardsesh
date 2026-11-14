@@ -1,8 +1,8 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 49
+ * The standing inventory oracle for issue #1889 (REST surface audit: 50
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
- * its prewarm cron were retired, plus five staged provider Settings facades
+ * its prewarm cron were retired, plus six staged provider Settings facades
  * and five staged first-password browser facades).
  *
  * A classification table living only in an issue body or a doc goes stale the
@@ -68,7 +68,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (24) ---
+  // --- /api/internal/* (25) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -106,6 +106,7 @@ const VERDICTS: Record<string, Verdict> = {
   // Their literal-false public readiness and actual HTTPS/PG caller proofs stay
   // required while the card/OAuth composition and rollout remain unfinished.
   'app/api/internal/auth/provider-security/methods/route.ts': 'keep-staged',
+  'app/api/internal/auth/provider-security/resume/route.ts': 'keep-staged',
   'app/api/internal/auth/provider-security/intent/route.ts': 'keep-staged',
   'app/api/internal/auth/provider-security/reauthenticate-password/route.ts': 'keep-staged',
   'app/api/internal/auth/provider-security/unlink/route.ts': 'keep-staged',
@@ -277,6 +278,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider/first-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(49);
+    expect(derived.size).toBe(50);
   });
 });
