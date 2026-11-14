@@ -96,9 +96,11 @@ function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string
         return;
       }
       await prepareAttribution();
-      if (!active || controller.signal.aborted) return;
+      if (!active) return;
+      if (controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
       const csrfToken = await getCsrfToken();
-      if (!active || controller.signal.aborted || submitted.current) return;
+      if (!active || submitted.current) return;
+      if (controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
       if (!csrfToken || !formRef.current) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
       submitted.current = true;
 

@@ -1,12 +1,12 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import NativeStartClient from '../native-start-client';
 
 const { selection, getCsrfToken, readiness, canonicalStart, preflight } = vi.hoisted(() => ({
-  selection: { provider: 'facebook' },
-  getCsrfToken: vi.fn(async () => undefined),
+  selection: { provider: 'facebook', callbackUrl: '' },
+  getCsrfToken: vi.fn<() => Promise<string | undefined>>(async () => undefined),
   readiness: { coordinator: false, provider: false },
   canonicalStart: vi.fn<typeof import('@/app/lib/auth/canonical-provider-start').startCanonicalProviderSignin>(
     async () => {},
@@ -14,7 +14,11 @@ const { selection, getCsrfToken, readiness, canonicalStart, preflight } = vi.hoi
   preflight: vi.fn(async () => {}),
 }));
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams({ provider: selection.provider }),
+  useSearchParams: () =>
+    new URLSearchParams({
+      provider: selection.provider,
+      ...(selection.callbackUrl ? { callbackUrl: selection.callbackUrl } : {}),
+    }),
 }));
 vi.mock('next-auth/react', () => ({ getCsrfToken }));
 vi.mock('@/app/lib/auth/canonical-provider-start', () => ({ startCanonicalProviderSignin: canonicalStart }));
@@ -30,6 +34,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 beforeEach(() => {
+  selection.callbackUrl = '';
+  getCsrfToken.mockReset().mockResolvedValue(undefined);
   readiness.coordinator = false;
   readiness.provider = false;
   canonicalStart.mockReset().mockResolvedValue();
@@ -37,6 +43,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('native browser provider start', () => {
@@ -101,6 +110,50 @@ describe('native browser provider start', () => {
     expect(getCsrfToken).not.toHaveBeenCalled();
     expect(canonicalStart).toHaveBeenCalledOnce();
   });
+  it.each(['csrf', 'attribution'] as const)(
+    'shows retry after a timed-out legacy %s physically settles without submitting',
+    async (pending) => {
+      vi.useFakeTimers();
+      selection.provider = 'google';
+      const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+      let settle!: () => void;
+      if (pending === 'csrf')
+        getCsrfToken.mockImplementation(
+          () =>
+            new Promise<string>((resolve) => {
+              settle = () => resolve('held-csrf');
+            }),
+        );
+      else {
+        selection.callbackUrl = `${window.location.origin}/api/auth/native/callback?attemptId=${'a'.repeat(32)}`;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(
+            () =>
+              new Promise<Response>((resolve) => {
+                settle = () => resolve(new Response(null));
+              }),
+          ),
+        );
+      }
+      render(<NativeStartClient />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(settle).toEqual(expect.any(Function));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_000);
+      });
+      expect(submit).not.toHaveBeenCalled();
+      await act(async () => {
+        settle();
+        await Promise.resolve();
+      });
+      expect(screen.queryByRole('button', { name: tFromCatalog('auth', 'nativeStart.retryProviders') })).toBeTruthy();
+      expect(submit).not.toHaveBeenCalled();
+      if (pending === 'attribution') expect(getCsrfToken).not.toHaveBeenCalled();
+    },
+  );
   it('aborts the exact pending canonical operation on unmount', async () => {
     readiness.coordinator = true;
     readiness.provider = true;

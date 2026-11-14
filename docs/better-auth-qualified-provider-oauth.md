@@ -10,6 +10,8 @@ Anonymous starts have a distinct sealed carrier and private protocol. They issue
 
 Explicit links use the existing account-bound reauthentication and atomic credential rotation. Google reauthentication exits NextAuth with a string, emits no credential, and depends on the backend's verified owned `auth_time`. Requesting a fresh Google challenge does not itself establish freshness. Apple, callback time, token issue time and token refresh never establish fresh age.
 
+The fixed configured HTTPS origin and exact canonical Host authorize the route. An internal proxy URL is rebuilt from that fixed origin while retaining the captured path, query, method, body, headers and signal; forwarded headers never choose the authority. A partial rollback or retained selected/provider cookie refuses before legacy framework or identity work. A genuinely legacy request with no selected material retains its original path.
+
 Raw Apple POST callbacks normalize to the existing signed, bounded WWW GET continuation before any selected-owner admission or provider-code exchange. The resumed GET must present actual Lax source/operation cookies. Transport normalization never supplies a missing account or authorizes anonymous fallback.
 
 ## Publication order

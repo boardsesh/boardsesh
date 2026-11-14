@@ -8,7 +8,12 @@ import { getToken } from 'next-auth/jwt';
 import { NextRequest, NextResponse } from 'next/server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { withWebOAuthIdentity } from '@/app/lib/auth/web-oauth-request.server';
-import { createProviderOAuthOuter, type ProviderOAuthOuter } from '@/app/lib/auth/provider-oauth-outer.server';
+import {
+  captureProviderOAuthRequest,
+  createProviderOAuthOuter,
+  type ProviderOAuthOuter,
+} from '@/app/lib/auth/provider-oauth-outer.server';
+import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admission-response.server';
 import { normalizeProviderSecurityAppleCallback } from '@/app/lib/auth/provider-security-apple-transport.server';
 import {
   readSignInStartCallbackUrl,
@@ -342,11 +347,17 @@ async function composedAuth(
   context: NextAuthRouteContext,
   startCallbackUrl?: string | null,
 ): Promise<Response> {
-  const normalized = await normalizeProviderSecurityAppleCallback(request, context, authOptions);
+  let captured: NextRequest;
+  try {
+    captured = captureProviderOAuthRequest(request);
+  } catch {
+    return unavailableCredentialResponse();
+  }
+  const normalized = await normalizeProviderSecurityAppleCallback(captured, context, authOptions);
   if (normalized) return normalized;
-  const provider = await createProviderOAuthOuter(request, context, authOptions);
+  const provider = await createProviderOAuthOuter(captured, context, authOptions);
   const invoke = async () =>
-    withPartnerSignInFailureReturn(request, await routeAuth(request, context, provider), startCallbackUrl);
+    withPartnerSignInFailureReturn(captured, await routeAuth(captured, context, provider), startCallbackUrl);
   // Every actual framework hook, admission, scoped-cookie clear and partner/
   // Expo decorator settles before the publisher builds its final SQL command.
   return provider ? provider.run(invoke) : invoke();

@@ -96,6 +96,46 @@ const unavailableOuter = (base: NextAuthOptions): ProviderOAuthOuter => ({
   run: async () => unavailableCredentialResponse(),
 });
 
+function permitsLegacyProviderRequest(environment: AuthServiceEnvironment, cookies: string | null): boolean {
+  return (
+    browserBindingMode(environment) === 'legacy' &&
+    !boundedAuthCookiePairs(cookies).some((cookie) => cookie.name.startsWith('__Host-boardsesh.'))
+  );
+}
+
+/** The canonical Host plus fixed server configuration authorizes OAuth. A
+ * standalone server's internal URL and forwarded headers never choose it. */
+export function captureProviderOAuthRequest(
+  requested: NextRequest,
+  suppliedEnvironment: AuthServiceEnvironment = process.env,
+): NextRequest {
+  const headers = new Headers(requested.headers);
+  const environment = Object.freeze({ ...suppliedEnvironment });
+  const url = new URL(requested.url);
+  if (!/^\/api\/auth\/(?:signin|callback)\/(?:google|apple)(?:\/|$)/.test(url.pathname))
+    return new NextRequest(requested.clone(), { headers });
+  if (providerSecurityMode(environment) === 'legacy') {
+    if (!permitsLegacyProviderRequest(environment, headers.get('cookie'))) return refuse();
+    return new NextRequest(requested.clone(), { headers });
+  }
+  const origin = resolvePublicAuthOrigin(environment);
+  if (
+    !origin ||
+    new URL(origin).protocol !== 'https:' ||
+    headers.get('host') !== new URL(origin).host ||
+    !/^\/api\/auth\/(?:signin|callback)\/(?:google|apple)$/.test(url.pathname) ||
+    (url.pathname.includes('/signin/') && headers.get('origin') !== origin)
+  )
+    return refuse();
+  const canonical = new URL(`${url.pathname}${url.search}`, origin);
+  return new NextRequest(canonical, {
+    method: requested.method,
+    headers,
+    signal: requested.signal,
+    ...(requested.body ? { body: requested.clone().body } : {}),
+  });
+}
+
 function captureIssuer(base: NextAuthOptions): NextAuthOptions {
   return {
     ...base,
@@ -287,7 +327,8 @@ export async function createProviderOAuthOuter(
   const [action, provider] = route;
   if (!['signin', 'callback'].includes(action) || (provider !== 'google' && provider !== 'apple')) return null;
   try {
-    if (providerSecurityMode(environment) === 'legacy') return null;
+    if (providerSecurityMode(environment) === 'legacy')
+      return permitsLegacyProviderRequest(environment, cookies) ? null : unavailableOuter(base);
     if (
       !ready() ||
       browserBindingMode(environment) !== 'backend-staging' ||

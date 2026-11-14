@@ -38,6 +38,8 @@ const fixture = vi.hoisted(() => {
     client: undefined as AnonymousProviderCommandClient | undefined,
     providerClient: undefined as ProviderSecurityCommandClient | undefined,
     ready: true,
+    internalRequestUrl: false,
+    legacyConsumer: false,
     primaryReads: 0,
     fault: '',
     trace: [] as string[],
@@ -57,6 +59,19 @@ vi.mock('@/app/lib/db/db', () => ({
     insert: () => {
       fixture.writes += 1;
       throw new Error('Legacy write refused');
+    },
+  }),
+}));
+vi.mock('@/app/lib/auth/web-oauth-command-client.server', async (original) => ({
+  ...(await original<typeof import('@/app/lib/auth/web-oauth-command-client.server')>()),
+  createWebOAuthCommandClient: () => ({
+    intent: async () => {
+      fixture.trace.push('legacy-intent');
+      return { outcome: 'recorded' };
+    },
+    resolve: async () => {
+      fixture.trace.push('legacy-resolve');
+      throw new Error('Unexpected legacy identity resolution');
     },
   }),
 }));
@@ -94,7 +109,7 @@ vi.mock('@/app/lib/auth/browser-consumers.server', async (original) => {
       ...actual.browserConsumerFacade,
       observe: async () => {
         fixture.trace.push('actual-admission');
-        return fixture.selected;
+        return fixture.legacyConsumer ? { status: 'legacy' } : fixture.selected;
       },
     },
   };
@@ -223,10 +238,18 @@ function remember(response: Response) {
   }
 }
 function request(path: string, fields?: Record<string, string> | string, cookieFilter?: (name: string) => boolean) {
-  return new NextRequest(path.startsWith('https:') ? path : `${fixture.origin}/api/auth/${path}`, {
+  const incoming = new URL(path.startsWith('https:') ? path : `${fixture.origin}/api/auth/${path}`);
+  if (fixture.internalRequestUrl) {
+    incoming.protocol = 'http:';
+    incoming.host = '0.0.0.0:3000';
+  }
+  return new NextRequest(incoming, {
     method: fields ? 'POST' : 'GET',
     headers: {
       Host: new URL(fixture.origin).host,
+      ...(fixture.internalRequestUrl
+        ? { 'X-Forwarded-Host': 'foreign.example.test', 'X-Forwarded-Proto': 'http' }
+        : {}),
       Cookie: [...cookies]
         .filter(([name]) => !cookieFilter || cookieFilter(name))
         .map(([name, content]) => `${name}=${content}`)
@@ -246,15 +269,16 @@ async function start(provider: 'google' | 'apple', fault = '') {
   const csrfResponse = await invoke(request('csrf'));
   remember(csrfResponse);
   const csrfToken = ((await csrfResponse.json()) as { csrfToken: string }).csrfToken;
-  const response = await invoke(
-    request(`signin/${provider}`, {
-      csrfToken: fault === 'csrf' ? 'wrong' : csrfToken,
-      callbackUrl: `${fixture.origin}/settings`,
-      json: 'true',
-      ...(fault === 'asserted-uid' ? { assertedUserId: 'chosen-user' } : {}),
-      ...explicitStartFields,
-    }),
-  );
+  const current = request(`signin/${provider}`, {
+    csrfToken: fault === 'csrf' ? 'wrong' : csrfToken,
+    callbackUrl: `${fixture.origin}/settings`,
+    json: 'true',
+    ...(fault === 'asserted-uid' ? { assertedUserId: 'chosen-user' } : {}),
+    ...explicitStartFields,
+  });
+  if (fault === 'bad-host') current.headers.set('host', 'foreign.example.test');
+  if (fault === 'external-origin') current.headers.set('origin', 'https://foreign.example.test');
+  const response = await invoke(current);
   remember(response);
   if (response.status >= 400) return { response, state: '', hash: '', callback: undefined };
   const location = ((await response.json()) as { url: string }).url;
@@ -333,6 +357,8 @@ beforeEach(() => {
   fixture.commands = [];
   fixture.fault = '';
   fixture.ready = true;
+  fixture.internalRequestUrl = false;
+  fixture.legacyConsumer = false;
   fixture.primaryReads = 0;
   vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'backend-staging');
@@ -1038,6 +1064,112 @@ describe('actual production OAuth outer route and installed NextAuth', () => {
     const result = await start('google');
     expect(result.response.status).toBe(503);
     expect(intents).toBe(0);
+  });
+  it('refuses partial provider rollback before the actual legacy intent', async () => {
+    await selectOwnedA('canonical-token');
+    cookies.set(
+      '__Secure-next-auth.session-token',
+      await encode({
+        secret: fixture.secret,
+        maxAge: 1800,
+        token: { sub: 'unrelated-legacy-A', authSessionId: 'unrelated-legacy-session-A' },
+      }),
+    );
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'legacy');
+    const result = await start('google');
+    expect(fixture.trace).not.toContain('legacy-intent');
+    expect(fixture.trace).not.toContain('legacy-resolve');
+    expect(result.response.status).toBe(503);
+    expect(result.response.headers.getSetCookie()).toEqual([]);
+    expect(fixture.writes).toBe(0);
+    expect(intents).toBe(0);
+    expect(commits).toBe(0);
+  });
+  it.each(['google', 'apple'] as const)(
+    'refuses %s callbacks after partial rollback before any legacy resolver or sign-in event',
+    async (provider) => {
+      await selectOwnedA('canonical-token');
+      cookies.set(
+        '__Secure-next-auth.session-token',
+        await encode({
+          secret: fixture.secret,
+          maxAge: 1800,
+          token: { sub: 'unrelated-legacy-A', authSessionId: 'unrelated-session-A' },
+        }),
+      );
+      const started = await start(provider);
+      if (!started.callback) throw new Error('Actual provider callback missing');
+      vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'legacy');
+      fixture.trace = [];
+      const response = await invoke(
+        request(started.callback.url, started.callback.method === 'POST' ? started.callback.form : undefined),
+      );
+      expect(response.status).toBe(503);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(fixture.trace).not.toContain('legacy-resolve');
+      expect(fixture.trace).not.toContain('actual-signin-event');
+      expect(fixture.writes).toBe(0);
+      expect(commits).toBe(0);
+    },
+  );
+  it.each(['google', 'apple'] as const)(
+    'completes %s from an internal proxy URL using only the fixed canonical Host',
+    async (provider) => {
+      fixture.internalRequestUrl = true;
+      const result = await complete(provider);
+      expect(result.response.status).toBe(302);
+      expect(result.response.headers.get('Location')).toBe(`${fixture.origin}/settings`);
+      expect(commits).toBe(1);
+      expect(fixture.writes).toBe(0);
+      expect(fixture.trace).not.toContain('legacy-intent');
+      expect(result.response.headers.getSetCookie().join(';')).toContain('__Host-boardsesh.browser-proof.');
+    },
+  );
+  it.each(['bad-host', 'external-origin'])(
+    'refuses internal proxy %s before any provider or identity command',
+    async (fault) => {
+      fixture.internalRequestUrl = true;
+      const result = await start('google', fault);
+      expect(result.response.status).toBe(503);
+      expect(result.response.headers.getSetCookie()).toEqual([]);
+      expect(intents).toBe(0);
+      expect(commits).toBe(0);
+      expect(fixture.writes).toBe(0);
+      expect(fixture.trace).not.toContain('legacy-intent');
+    },
+  );
+  it.each([
+    '__Host-boardsesh.browser-binding',
+    '__Host-boardsesh.browser-proof.future',
+    '__Host-boardsesh.provider-security.future',
+    '__Host-boardsesh.provider-signin.future',
+    '__Host-boardsesh.provider-signin-pending.future',
+    '__Host-boardsesh.anonymous-provider.future',
+    '__Host-boardsesh.anonymous-provider-pending.future',
+  ])('refuses presented %s even after both selectors roll back', async (cookieName) => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'legacy');
+    cookies = new Map([[cookieName, 'retained-selected-material']]);
+    const result = await start('google');
+    expect(result.response.status).toBe(503);
+    expect(result.response.headers.getSetCookie()).toEqual([]);
+    expect(fixture.trace).not.toContain('legacy-intent');
+    expect(fixture.trace).not.toContain('legacy-resolve');
+    expect(fixture.writes).toBe(0);
+  });
+  it('preserves the actual legacy start with no selected mode or retained material', async () => {
+    vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'legacy');
+    vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'off');
+    fixture.legacyConsumer = true;
+    cookies.clear();
+    const result = await start('google');
+    expect(result.response.status).toBe(200);
+    expect(result.state).not.toBe('');
+    expect(fixture.trace).toContain('legacy-intent');
+    expect(fixture.writes).toBe(0);
+    expect(intents).toBe(0);
+    expect(commits).toBe(0);
   });
   it('keeps Facebook closed before provider, identity or cookie work', async () => {
     const response = await invoke(request('callback/facebook?state=not-a-provider-flow'));
