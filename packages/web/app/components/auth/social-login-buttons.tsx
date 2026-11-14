@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Skeleton from '@mui/material/Skeleton';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
+import Alert from '@mui/material/Alert';
 
 import { signInWithSessionIntent as signIn } from '@/app/lib/auth/web-session-events';
 import { useTranslation } from 'react-i18next';
@@ -57,6 +58,18 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
   const [providers, setProviders] = useState<ProvidersConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCapacitorApp, setIsCapacitorApp] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const active = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     setIsCapacitorApp(isNativeApp());
@@ -76,34 +89,49 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
       });
   }, []);
 
-  const handleSocialSignIn = (provider: 'apple' | 'google') => {
-    const flow = isCapacitorApp ? 'native' : 'web';
-    track('Login Attempted', {
-      auth_method: provider,
-      flow,
-    });
-    // Drop an IDB marker that party-profile-context consumes on the next
-    // authenticated-session detection to emit Login Succeeded. NextAuth handles
-    // OAuth success via server-side redirect, so there's no explicit client
-    // callback to track from — the marker bridges the gap. Stale markers expire
-    // after 5 minutes (see oauth-pending-db).
-    void setOAuthPending({ provider, flow, attempted_at: Date.now() });
-
-    if (isCapacitorApp) {
-      const browser = window.Capacitor?.Plugins?.Browser;
-      if (!browser) return;
-
-      const url = buildNativeOAuthSignInUrl({
-        origin: window.location.origin,
-        provider,
-        callbackPath: callbackUrl,
+  const handleSocialSignIn = async (provider: 'apple' | 'google') => {
+    if (active.current || disabled) return;
+    const controller = new AbortController();
+    active.current = controller;
+    setPending(true);
+    setFailed(false);
+    try {
+      const flow = isCapacitorApp ? 'native' : 'web';
+      track('Login Attempted', {
+        auth_method: provider,
+        flow,
       });
+      // Drop an IDB marker that party-profile-context consumes on the next
+      // authenticated-session detection to emit Login Succeeded. NextAuth handles
+      // OAuth success via server-side redirect, so there's no explicit client
+      // callback to track from — the marker bridges the gap. Stale markers expire
+      // after 5 minutes (see oauth-pending-db).
+      void setOAuthPending({ provider, flow, attempted_at: Date.now() });
 
-      void browser.open({ url });
-      return;
+      if (isCapacitorApp) {
+        const browser = window.Capacitor?.Plugins?.Browser;
+        if (!browser) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+
+        const url = buildNativeOAuthSignInUrl({
+          origin: window.location.origin,
+          provider,
+          callbackPath: callbackUrl,
+        });
+
+        await browser.open({ url });
+        return;
+      }
+
+      const response = await signIn(provider, { callbackUrl }, { signal: controller.signal });
+      if (response?.error) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+    } catch {
+      if (mounted.current && !controller.signal.aborted) setFailed(true);
+    } finally {
+      if (active.current === controller) {
+        active.current = null;
+        if (mounted.current) setPending(false);
+      }
     }
-
-    void signIn(provider, { callbackUrl });
   };
 
   // Don't render anything if no providers are configured
@@ -128,6 +156,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {failed && <Alert severity="error">{t('nativeStart.oauthError')}</Alert>}
       {providers.google && (
         <Button
           fullWidth
@@ -135,7 +164,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
           variant="outlined"
           startIcon={<GoogleIcon />}
           onClick={() => handleSocialSignIn('google')}
-          disabled={disabled}
+          disabled={disabled || pending}
         >
           {t('login.providers.google')}
         </Button>
@@ -148,7 +177,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
           variant="outlined"
           startIcon={<AppleIcon />}
           onClick={() => handleSocialSignIn('apple')}
-          disabled={disabled}
+          disabled={disabled || pending}
           sx={appleButtonStyles}
         >
           {t('login.providers.apple')}

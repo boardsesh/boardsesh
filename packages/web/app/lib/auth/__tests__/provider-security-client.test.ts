@@ -161,11 +161,19 @@ describe('provider Settings accepted-view client', () => {
     await current.client.readMethods();
     await current.client.action(unlink);
     expect(await current.client.reauthenticate({ method: 'google' })).toEqual({ outcome: 'redirecting' });
-    expect(current.signIn).toHaveBeenCalledExactlyOnceWith('google', {
-      callbackUrl: `https://www.boardsesh.test/fr/settings?providerSecurityResume=${operationKey}`,
-      providerSecurityOperation: 'reauthenticate-google',
-      providerSecurityOperationKey: operationKey,
-    });
+    expect(current.signIn).toHaveBeenCalledExactlyOnceWith(
+      'google',
+      {
+        callbackUrl: `https://www.boardsesh.test/fr/settings?providerSecurityResume=${operationKey}`,
+        providerSecurityOperation: 'reauthenticate-google',
+        providerSecurityOperationKey: operationKey,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
+    const captured = current.signIn.mock.calls[0]?.[2]?.signal;
+    expect(captured?.aborted).toBe(false);
+    current.authority.acceptSession(selected('other-user'));
+    expect(captured?.aborted).toBe(true);
   });
   it('links Apple only after operation-bound password verification', async () => {
     const current = fixture();

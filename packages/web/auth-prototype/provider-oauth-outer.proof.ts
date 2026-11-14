@@ -38,6 +38,7 @@ const fixture = vi.hoisted(() => {
     client: undefined as AnonymousProviderCommandClient | undefined,
     providerClient: undefined as ProviderSecurityCommandClient | undefined,
     ready: true,
+    primaryReads: 0,
     fault: '',
     trace: [] as string[],
     commands: [] as string[],
@@ -60,6 +61,7 @@ vi.mock('@/app/lib/db/db', () => ({
   }),
 }));
 vi.mock('@/app/lib/auth/provider-security-readiness', () => ({ publicProviderSecurityReady: () => fixture.ready }));
+vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({ publicBrowserCoordinatorReady: () => fixture.ready }));
 vi.mock('@/app/lib/auth/anonymous-provider-command-client.server', async (original) => ({
   ...(await original<typeof import('@/app/lib/auth/anonymous-provider-command-client.server')>()),
   createAnonymousProviderCommandClient: () => {
@@ -78,6 +80,9 @@ vi.mock('@/app/lib/auth/presented-browser-selection.server', async (original) =>
   ...(await original<typeof import('@/app/lib/auth/presented-browser-selection.server')>()),
   readPresentedBrowserSelection: async () => {
     fixture.trace.push('primary-read');
+    fixture.primaryReads += 1;
+    if (fixture.fault === 'observer-drift' && fixture.primaryReads >= 5)
+      fixture.selected = { status: 'proof-required' };
     return fixture.selected;
   },
 }));
@@ -114,6 +119,30 @@ vi.mock('@/app/lib/partner-oauth/sign-in-failure-return', async (original) => {
       fixture.trace.push('actual-partner-finished');
       if (fixture.fault === 'future-cookie')
         response.headers.append('Set-Cookie', '__Host-boardsesh.future-provider.injected=bad; Path=/; Secure');
+      if (fixture.fault === 'wrong-path-capacity')
+        response.headers.append('Set-Cookie', 'retained-browser-cookie=; Max-Age=0; Path=/other; Secure');
+      if (fixture.fault === 'wrong-domain-capacity')
+        response.headers.append(
+          'Set-Cookie',
+          'retained-browser-cookie=; Max-Age=0; Path=/; Domain=other.example.test; Secure',
+        );
+      if (fixture.fault === 'header-during-body') {
+        let retained!: Response;
+        retained = new Response(
+          new ReadableStream(
+            {
+              pull(controller) {
+                retained.headers.append('Set-Cookie', '__Host-boardsesh.browser-proof.forged=bad; Path=/; Secure');
+                controller.enqueue(new TextEncoder().encode(JSON.stringify({ url: `${fixture.origin}/settings` })));
+                controller.close();
+              },
+            },
+            { highWaterMark: 0 },
+          ),
+          { headers: { 'Content-Type': 'application/json' } },
+        );
+        return retained;
+      }
       if (fixture.fault === 'body-error')
         return new Response(
           new ReadableStream({
@@ -154,6 +183,8 @@ import {
 } from '@/app/lib/auth/provider-signin-acknowledgment';
 import { releaseRateLimitAttempt } from '@/app/lib/auth/rate-limiter';
 import { trustedClientRateLimitKey } from '@/app/lib/auth/trusted-client-ip.server';
+import { GET as coordinatorObserve } from '@/app/api/internal/auth/browser-coordinator/observe/route';
+import { BROWSER_COORDINATOR_PATHS } from '@/app/lib/auth/browser-coordinator-routes.server';
 
 const NOW = Date.UTC(2026, 10, 14, 12, 0, 0, 100);
 const bindingToken = 'A'.repeat(43);
@@ -237,10 +268,25 @@ async function start(provider: 'google' | 'apple', fault = '') {
   return { response, state, hash: webOAuthFlowHash(provider, state), callback };
 }
 async function complete(provider: 'google' | 'apple', fault = '') {
+  if (fault === 'callback-clock') {
+    const jwt = originalCallbacks?.jwt;
+    if (!jwt) throw new Error('Actual JWT callback missing');
+    authOptions.callbacks = {
+      ...authOptions.callbacks,
+      jwt: async (parameters) => {
+        const claims = await jwt(parameters);
+        claims.auth_time = Math.floor(NOW / 1000);
+        claims.link_guarded = true;
+        return claims;
+      },
+    };
+  }
   const started = await start(provider, fault);
   if (!started.callback) return { ...started, response: started.response };
   fixture.trace = [];
   fixture.fault = fault;
+  if (['observed-capacity', 'wrong-path-capacity', 'wrong-domain-capacity'].includes(fault))
+    cookies.set('retained-browser-cookie', 'p'.repeat(4300));
   const callback = started.callback;
   let response: Response;
   if (callback.method === 'POST') {
@@ -287,6 +333,7 @@ beforeEach(() => {
   fixture.commands = [];
   fixture.fault = '';
   fixture.ready = true;
+  fixture.primaryReads = 0;
   vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'backend-staging');
@@ -393,6 +440,7 @@ beforeEach(() => {
             }),
           },
         };
+        if (fixture.fault === 'prepare-response-lost') throw new Error('Uncertain preparation reply');
       } else if (operation === 'abort') {
         aborts += 1;
         reply = { ...metadata, operation, outcome: 'aborted' };
@@ -687,7 +735,17 @@ async function holdCommittedAnonymousProof(provider: 'google' | 'apple' = 'googl
     user: { id: proof.userId, email: 'stored@example.test', name: 'Stored backend name', image: null },
   };
   fixture.trace = [];
+  fixture.primaryReads = 0;
   return result;
+}
+function actualCoordinatorRequest() {
+  return new Request(`${fixture.origin}${BROWSER_COORDINATOR_PATHS.observe}`, {
+    headers: {
+      Host: new URL(fixture.origin).host,
+      Origin: fixture.origin,
+      Cookie: [...cookies].map(([name, content]) => `${name}=${content}`).join('; '),
+    },
+  });
 }
 async function acknowledgeActualRoute() {
   return acknowledgeProviderSignin(fixture.origin, new AbortController().signal, async (url, settings) => {
@@ -711,6 +769,50 @@ async function acknowledgeActualRoute() {
 }
 
 describe('actual production OAuth outer route and installed NextAuth', () => {
+  it.each(['google', 'apple'] as const)(
+    'joins %s next-request candidate ACK through the actual canonical coordinator route',
+    async (provider) => {
+      await holdCommittedAnonymousProof(provider);
+      const response = await coordinatorObserve(actualCoordinatorRequest());
+      expect(response.status).toBe(200);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(await response.json()).toEqual({ status: 'ready', cursor: { bindingId, version: 1 } });
+      expect(fixture.trace.filter((entry) => entry === 'private-finalize')).toHaveLength(1);
+      expect(commits).toBe(1);
+      expect(aborts).toBe(0);
+      expect(fixture.trace).not.toContain('actual-signin-event');
+    },
+  );
+  it('keeps positive anonymous canonical reads separate from B ACK', async () => {
+    const started = await start('google');
+    expect(started.state).toBeTruthy();
+    fixture.commands = [];
+    const response = await coordinatorObserve(actualCoordinatorRequest());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'ready', cursor: { bindingId, version: 0 } });
+    expect(fixture.commands).toEqual([]);
+    expect(commits).toBe(0);
+  });
+  it.each(['ack-committed', 'ack-drift', 'observer-drift'] as const)(
+    'preserves canonical unavailable/conflict on %s without cookies',
+    async (fault) => {
+      await holdCommittedAnonymousProof();
+      fixture.fault = fault;
+      const response = await coordinatorObserve(actualCoordinatorRequest());
+      expect(response.status).toBe(fault === 'ack-committed' ? 503 : 409);
+      expect(await response.json()).toEqual({ status: fault === 'ack-committed' ? 'unavailable' : 'conflict' });
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(commits).toBe(1);
+    },
+  );
+  it('copies final private headers before a retaining decorator reads the body', async () => {
+    const result = await complete('google', 'header-during-body');
+    expect(result.response.status).toBe(200);
+    expect(commits).toBe(1);
+    expect(result.response.headers.getSetCookie().some((header) => header.includes('browser-proof.forged'))).toBe(
+      false,
+    );
+  });
   it.each(['google', 'apple'] as const)(
     'acknowledges %s only from real next-request B proof and prepared carrier without OAuth state',
     async (provider) => {
@@ -887,16 +989,28 @@ describe('actual production OAuth outer route and installed NextAuth', () => {
       }
     },
   );
-  it.each(['event', 'capacity', 'future-cookie', 'body-error', 'drift', 'cancel', 'token-reject'])(
-    'withholds every cookie and finalizer on %s',
-    async (fault) => {
-      const result = await complete('google', fault);
-      expect(result.response.status).toBe(503);
-      expect(result.response.headers.getSetCookie()).toEqual([]);
-      expect(commits).toBe(0);
-      expect(fixture.writes).toBe(0);
-    },
-  );
+  it.each([
+    'event',
+    'capacity',
+    'future-cookie',
+    'body-error',
+    'drift',
+    'cancel',
+    'token-reject',
+    'callback-clock',
+    'prepare-response-lost',
+    'observed-capacity',
+    'wrong-path-capacity',
+    'wrong-domain-capacity',
+  ])('withholds every cookie and finalizer on %s', async (fault) => {
+    const result = await complete('google', fault);
+    expect(result.response.status).toBe(503);
+    expect(result.response.headers.getSetCookie()).toEqual([]);
+    expect(commits).toBe(0);
+    expect(fixture.writes).toBe(0);
+    if (['observed-capacity', 'wrong-path-capacity', 'wrong-domain-capacity'].includes(fault))
+      expect(fixture.trace).toContain('cookie-plan');
+  });
   it('does not retry or abort after an uncertain SQL finalizer', async () => {
     const result = await complete('google', 'lost-finalizer');
     expect(result.response.status).toBe(503);

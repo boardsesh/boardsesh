@@ -48,6 +48,7 @@ export async function startCanonicalProviderSignin(
     readonly provider: 'google' | 'apple';
     readonly callbackUrl: string;
     readonly signal: AbortSignal;
+    readonly operation?: Readonly<{ purpose: 'link' | 'reauthenticate-google'; operationKey: string }>;
   },
   dependencies: {
     readonly currentOrigin: string;
@@ -62,6 +63,7 @@ export async function startCanonicalProviderSignin(
   const provider = input.provider;
   const callbackUrl = input.callbackUrl;
   const signal = input.signal;
+  const operation = input.operation ? Object.freeze({ ...input.operation }) : undefined;
   const preflight = dependencies.preflight;
   const send = dependencies.send;
   const beforeSignin = dependencies.beforeSignin;
@@ -79,6 +81,18 @@ export async function startCanonicalProviderSignin(
     return unavailable();
   const callback = new URL(callbackUrl, canonicalOrigin);
   if (callback.protocol !== 'https:' || callback.username || callback.password || callback.hash) return unavailable();
+  if (
+    operation &&
+    (!/^[a-f0-9]{64}$/.test(operation.operationKey) ||
+      (operation.purpose !== 'link' && operation.purpose !== 'reauthenticate-google') ||
+      (operation.purpose === 'reauthenticate-google' && provider !== 'google') ||
+      callback.origin !== canonicalOrigin ||
+      !/^\/(?:(?:es|fr|de|it)\/)?settings$/.test(callback.pathname) ||
+      callback.searchParams.getAll('providerSecurityResume').length !== 1 ||
+      callback.searchParams.get('providerSecurityResume') !== operation.operationKey ||
+      [...callback.searchParams.keys()].length !== 1)
+  )
+    return unavailable();
   const requestLock = dependencies.locks.request.bind(dependencies.locks);
   // The frame itself takes the same canonical-origin lock. Holding it here
   // while awaiting frame preflight would deadlock the two documents.
@@ -120,7 +134,14 @@ export async function startCanonicalProviderSignin(
       redirect: 'error',
       signal,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ csrfToken: csrf.csrfToken, callbackUrl: callback.href, json: 'true' }),
+      body: new URLSearchParams({
+        csrfToken: csrf.csrfToken,
+        callbackUrl: callback.href,
+        json: 'true',
+        ...(operation
+          ? { providerSecurityOperation: operation.purpose, providerSecurityOperationKey: operation.operationKey }
+          : {}),
+      }),
     });
     const reply = await settledJson(response);
     if (

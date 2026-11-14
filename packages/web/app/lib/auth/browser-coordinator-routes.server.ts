@@ -25,6 +25,8 @@ import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
 import { checkRateLimit } from './rate-limiter';
 import { trustedClientRateLimitKey } from './trusted-client-ip.server';
+import { publicProviderSecurityReady } from './provider-security-readiness';
+import { createProviderSigninAcknowledgment } from './provider-signin-acknowledgment.server';
 
 export const BROWSER_COORDINATOR_PATHS = BROWSER_COORDINATOR_PUBLIC_PATHS;
 type Observation = BrowserCoordinatorResult | { readonly status: 'missing-binding' };
@@ -52,6 +54,26 @@ function response(body: Observation, status = 200, cookies: readonly string[] = 
   if (status === 503) headers.set('Retry-After', '1');
   for (const cookie of cookies) headers.append('Set-Cookie', cookie);
   return new Response(JSON.stringify(body), { status, headers });
+}
+function selectedFrame(selected: Extract<PresentedBrowserSelection, { status: 'admitted' }>): string {
+  const credential = selected.actor.credential;
+  return JSON.stringify([
+    selected.bindingToken,
+    selected.actor.version,
+    credential.kind,
+    credential.kind === 'canonical-token' ? credential.token : credential.credential,
+    selected.cursor.bindingId,
+    selected.cursor.version,
+    selected.cursor.bindingExpiresAt,
+    selected.session.userId,
+    selected.session.authSessionId,
+    selected.session.generation,
+    selected.session.authenticatedAt,
+    selected.session.linkGuarded,
+    Boolean(selected.session.requiresAccountCutoff),
+    selected.session.expiresAt,
+    selected.user.id,
+  ]);
 }
 function missingCookies(header: string | null): string | null {
   const correlation = readBrowserCorrelationCookie(header);
@@ -103,12 +125,18 @@ export function createBrowserCoordinatorRoutes(
     readonly admitLegacy?: (credential: string) => Promise<string | null>;
     readonly legacyExpiry?: (credential: string) => Promise<number | null>;
     readonly rateLimit?: (request: Request, operation: keyof typeof BROWSER_COORDINATOR_PATHS) => boolean;
+    readonly providerReady?: () => boolean;
+    readonly acknowledgeProviderSignin?: ReturnType<typeof createProviderSigninAcknowledgment>;
   } = {},
 ) {
   const environment = Object.freeze({ ...(options.environment ?? process.env) });
   const ready = options.ready ?? publicBrowserCoordinatorReady;
   const clientFactory = options.clientFactory ?? (() => createBrowserBindingCommandClient({ environment }));
   const readSelection = options.readSelection ?? ((cookies) => readPresentedBrowserSelection(cookies, { environment }));
+  const providerReady = options.providerReady ?? publicProviderSecurityReady;
+  const acknowledgeProviderSignin =
+    options.acknowledgeProviderSignin ??
+    createProviderSigninAcknowledgment({ environment, ready: providerReady, readSelection });
   const admitLegacy = options.admitLegacy ?? admitPresentedWebCredential;
   const legacyExpiry =
     options.legacyExpiry ??
@@ -147,6 +175,18 @@ export function createBrowserCoordinatorRoutes(
       const header = request.headers.get('cookie');
       const selected = await readSelection(header);
       if (request.signal.aborted) return refuse();
+      if (operation === 'observe' && selected.status === 'admitted' && providerReady()) {
+        // ACK only an actual selected B. No control-message selector, UID or
+        // sealed flow can substitute for this primary admission and possession.
+        const before = selectedFrame(selected);
+        const acknowledged = await acknowledgeProviderSignin({ cookieHeader: header, signal: request.signal });
+        if (request.signal.aborted || acknowledged === 'unavailable') return refuse();
+        if (acknowledged === 'identity_changed') return refuse(409, 'conflict');
+        if (acknowledged !== 'none' && acknowledged !== 'recovered') return refuse();
+        const after = await readSelection(header);
+        if (request.signal.aborted || after.status === 'unavailable') return refuse();
+        if (after.status !== 'admitted' || selectedFrame(after) !== before) return refuse(409, 'conflict');
+      }
       if (selected.status === 'admitted' || selected.status === 'anonymous')
         return response({
           status: 'ready',

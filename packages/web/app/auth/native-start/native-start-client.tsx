@@ -1,30 +1,40 @@
 'use client';
 
-import { useEffect, useRef, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getCsrfToken } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import { readCanonicalBrowserCoordinator } from '@/app/lib/auth/browser-coordinator-client';
+import { publicBrowserCoordinatorReady } from '@/app/lib/auth/browser-coordinator-readiness';
+import { publicProviderSecurityReady } from '@/app/lib/auth/provider-security-readiness';
+import { startCanonicalProviderSignin } from '@/app/lib/auth/canonical-provider-start';
 
 const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
 
-function NativeStartInner() {
+function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string | null }) {
   const { t } = useTranslation('auth');
   const params = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
   const submitted = useRef(false);
-  const preparing = useRef(false);
+  const currentAttempt = useRef<AbortController | null>(null);
+  const [failed, setFailed] = useState(false);
   const provider = params.get('provider');
   const callbackUrl = params.get('callbackUrl') ?? '/';
 
   useEffect(() => {
-    if (submitted.current || preparing.current) return;
+    if (submitted.current || currentAttempt.current) return;
     if (!provider || !ALLOWED_PROVIDERS.has(provider)) return;
-    preparing.current = true;
+    const controller = new AbortController();
+    currentAttempt.current = controller;
+    let active = true;
+    const timeout = setTimeout(() => controller.abort(), 15_000);
 
-    const prepareAttempt = async () => {
+    const prepareAttribution = async () => {
+      if (controller.signal.aborted) return;
       try {
         const callback = new URL(callbackUrl, window.location.origin);
         const attemptId = callback.searchParams.get('attemptId');
@@ -35,38 +45,81 @@ function NativeStartInner() {
           /^[0-9a-f]{32}$/.test(attemptId) &&
           (provider === 'apple' || provider === 'google')
         ) {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 3000);
+          const attribution = new AbortController();
+          const stop = () => attribution.abort();
+          controller.signal.addEventListener('abort', stop, { once: true });
+          const attributionTimeout = setTimeout(stop, 3000);
           try {
-            await fetch('/api/auth/native/attempt', {
+            const response = await fetch('/api/auth/native/attempt', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ attemptId, provider }),
               credentials: 'same-origin',
-              signal: controller.signal,
+              signal: attribution.signal,
             });
+            await response.arrayBuffer();
           } finally {
-            clearTimeout(timeout);
+            clearTimeout(attributionTimeout);
+            controller.signal.removeEventListener('abort', stop);
           }
         }
       } catch {
         // Missing attribution proof must never block the OAuth fallback.
       }
-      return getCsrfToken();
     };
-    void prepareAttempt()
-      .then((csrfToken: string | undefined) => {
-        if (!csrfToken || !formRef.current || submitted.current) return;
-        submitted.current = true;
+    void (async () => {
+      const coordinatorReady = publicBrowserCoordinatorReady();
+      const providerReady = publicProviderSecurityReady();
+      if (coordinatorReady || providerReady) {
+        if (
+          !coordinatorReady ||
+          !providerReady ||
+          !canonicalAuthOrigin ||
+          (provider !== 'google' && provider !== 'apple')
+        )
+          throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+        await startCanonicalProviderSignin(
+          { canonicalOrigin: canonicalAuthOrigin, provider, callbackUrl, signal: controller.signal },
+          {
+            currentOrigin: window.location.origin,
+            locks: navigator.locks,
+            preflight: readCanonicalBrowserCoordinator,
+            send: fetch,
+            beforeSignin: prepareAttribution,
+            navigate: (destination) => {
+              if (!active || controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+              submitted.current = true;
+              window.location.assign(destination);
+            },
+          },
+        );
+        return;
+      }
+      await prepareAttribution();
+      if (!active || controller.signal.aborted) return;
+      const csrfToken = await getCsrfToken();
+      if (!active || controller.signal.aborted || submitted.current) return;
+      if (!csrfToken || !formRef.current) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
+      submitted.current = true;
 
-        const input = formRef.current.querySelector<HTMLInputElement>('input[name="csrfToken"]');
-        if (input) input.value = csrfToken;
-        formRef.current.submit();
+      const input = formRef.current.querySelector<HTMLInputElement>('input[name="csrfToken"]');
+      if (input) input.value = csrfToken;
+      formRef.current.submit();
+    })()
+      .catch(() => {
+        if (active) setFailed(true);
       })
       .finally(() => {
-        preparing.current = false;
+        clearTimeout(timeout);
+        if (currentAttempt.current === controller) currentAttempt.current = null;
       });
-  }, [provider, callbackUrl]);
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+      controller.abort();
+      if (currentAttempt.current === controller) currentAttempt.current = null;
+    };
+  }, [provider, callbackUrl, canonicalAuthOrigin]);
 
   if (!provider || !ALLOWED_PROVIDERS.has(provider)) {
     return (
@@ -94,14 +147,20 @@ function NativeStartInner() {
         gap: 2,
       }}
     >
-      <CircularProgress />
-      <Typography>{t('nativeStart.signingIn')}</Typography>
-      <form
-        ref={formRef}
-        method="POST"
-        action={`/api/auth/signin/${encodeURIComponent(provider)}`}
-        style={{ display: 'none' }}
-      >
+      {failed ? (
+        <>
+          <Typography>{t('nativeStart.oauthError')}</Typography>
+          <Button variant="contained" onClick={() => window.location.reload()}>
+            {t('nativeStart.retryProviders')}
+          </Button>
+        </>
+      ) : (
+        <>
+          <CircularProgress />
+          <Typography>{t('nativeStart.signingIn')}</Typography>
+        </>
+      )}
+      <form ref={formRef} method="POST" action={`/api/auth/signin/${encodeURIComponent(provider)}`} hidden>
         <input type="hidden" name="csrfToken" value="" />
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
       </form>
@@ -109,7 +168,7 @@ function NativeStartInner() {
   );
 }
 
-export default function NativeStartClient() {
+export default function NativeStartClient({ canonicalAuthOrigin = null }: { canonicalAuthOrigin?: string | null }) {
   return (
     <Suspense
       fallback={
@@ -125,7 +184,7 @@ export default function NativeStartClient() {
         </Box>
       }
     >
-      <NativeStartInner />
+      <NativeStartInner canonicalAuthOrigin={canonicalAuthOrigin} />
     </Suspense>
   );
 }

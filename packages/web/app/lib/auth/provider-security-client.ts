@@ -218,11 +218,15 @@ export function createProviderSettingsClient(options: {
   ): Promise<ProviderMethodResult> {
     assertCurrent();
     const callbackUrl = providerSecurityResumeUrl(canonicalOrigin, operationKey, locale);
-    const reply = await signIn(providerName, {
-      callbackUrl,
-      providerSecurityOperation: purpose,
-      providerSecurityOperationKey: operationKey,
-    });
+    const reply = await signIn(
+      providerName,
+      {
+        callbackUrl,
+        providerSecurityOperation: purpose,
+        providerSecurityOperationKey: operationKey,
+      },
+      { signal: lifetime.signal },
+    );
     assertCurrent();
     return { outcome: reply?.error ? 'unavailable' : 'redirecting' };
   }

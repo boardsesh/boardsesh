@@ -82,6 +82,51 @@ function setup(provider: 'google' | 'apple' = 'google') {
   return { input, dependencies, send, controller, trace, held: () => held };
 }
 describe('canonical WWW provider start physical network settlement', () => {
+  it.each(['link', 'reauthenticate-google'] as const)(
+    'sends only fixed %s fields for an explicit captured operation',
+    async (purpose) => {
+      const fixture = setup();
+      const key = 'a'.repeat(64);
+      const original = fixture.send.getMockImplementation()!;
+      fixture.send.mockImplementation(async (url, settings) => {
+        if (href(url).endsWith('/signin/google')) {
+          if (!(settings?.body instanceof URLSearchParams)) throw new Error('Expected fixed form fields');
+          expect(Object.fromEntries(settings.body)).toEqual({
+            csrfToken: 'actual-csrf',
+            callbackUrl: `${origin}/settings?providerSecurityResume=${key}`,
+            json: 'true',
+            providerSecurityOperation: purpose,
+            providerSecurityOperationKey: key,
+          });
+        }
+        return original(url, settings);
+      });
+      await startCanonicalProviderSignin(
+        {
+          ...fixture.input,
+          callbackUrl: `${origin}/settings?providerSecurityResume=${key}`,
+          operation: { purpose, operationKey: key },
+        },
+        fixture.dependencies,
+      );
+      expect(fixture.dependencies.navigate).toHaveBeenCalledExactlyOnceWith(google);
+    },
+  );
+  it.each(['foreign-origin', 'different-key', 'wrong-provider'] as const)(
+    'refuses mismatched explicit operation %s before transport',
+    async (fault) => {
+      const fixture = setup();
+      const key = 'a'.repeat(64);
+      const input = {
+        ...fixture.input,
+        ...(fault === 'wrong-provider' ? { provider: 'apple' as const } : {}),
+        callbackUrl: `${fault === 'foreign-origin' ? 'https://other.example.test' : origin}/settings?providerSecurityResume=${fault === 'different-key' ? 'b'.repeat(64) : key}`,
+        operation: { purpose: 'reauthenticate-google' as const, operationKey: key },
+      };
+      await expect(startCanonicalProviderSignin(input, fixture.dependencies)).rejects.toThrow();
+      expect(fixture.send).not.toHaveBeenCalled();
+    },
+  );
   it.each(['google', 'apple'] as const)(
     'preflights before the WWW lock and settles %s ACK/attempt/CSRF/start before navigation',
     async (provider) => {
