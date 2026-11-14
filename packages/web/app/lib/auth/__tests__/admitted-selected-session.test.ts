@@ -39,7 +39,7 @@ vi.mock('../browser-consumers.server', async (importOriginal) => {
     browserConsumerFacade: { ...actual.browserConsumerFacade, observe: control.observe, lease: control.lease },
   };
 });
-import { getAdmittedRawServerToken, getAdmittedServerSession } from '../admitted-session.server';
+import { getAdmittedRawServerToken, getAdmittedServerSession, getServerRenderViewer } from '../admitted-session.server';
 import { CredentialAuthorityUnavailable } from '../credential-admission.server';
 function selected(): AdmittedBrowserSelection {
   return {
@@ -79,6 +79,53 @@ beforeEach(() => {
   control.legacyAdmission.mockReset().mockRejectedValue(new Error('Legacy admission must not run'));
 });
 describe('selected-source server render admission', () => {
+  it('shares one central observation and exposes only the public owner tuple for route rendering', async () => {
+    const viewers = await Promise.all(Array.from({ length: 4 }, () => getServerRenderViewer()));
+    expect(viewers[0]).toEqual({
+      kind: 'selected',
+      owner: {
+        userId: 'current-owner',
+        authSessionId: 'current-session',
+        generation: 3,
+        cursor: { bindingId: 'b'.repeat(64), version: 2 },
+      },
+    });
+    expect(new Set(viewers).size).toBe(1);
+    expect(JSON.stringify(viewers)).not.toMatch(/current@example|actual-opaque|foreign-old|Current climber/);
+    expect(control.observe).toHaveBeenCalledTimes(1);
+    expect(control.lease).not.toHaveBeenCalled();
+    expect(control.legacySession).not.toHaveBeenCalled();
+    await getAdmittedServerSession();
+    expect(control.observe).toHaveBeenCalledTimes(1);
+  });
+  it.each(['missing-binding', 'proof-required', 'denied'] as const)(
+    'keeps %s on the exclusive public-render path rather than legacy fallback',
+    async (status) => {
+      control.observe.mockResolvedValue({ status });
+      expect(await getServerRenderViewer()).toEqual({ kind: 'refused' });
+      expect(control.lease).not.toHaveBeenCalled();
+      expect(control.legacyAdmission).not.toHaveBeenCalled();
+      expect(control.legacySession).not.toHaveBeenCalled();
+    },
+  );
+  it('labels only a positive central anonymous observation as anonymous', async () => {
+    control.observe.mockResolvedValue({ status: 'anonymous' });
+    expect(await getServerRenderViewer()).toEqual({ kind: 'anonymous' });
+    expect(control.legacyAdmission).not.toHaveBeenCalled();
+    expect(control.legacySession).not.toHaveBeenCalled();
+  });
+  it.each(['unavailable', 'conflict'] as const)('never renders %s as an anonymous success', async (status) => {
+    control.observe.mockResolvedValue({ status });
+    await expect(getServerRenderViewer()).rejects.toBeInstanceOf(CredentialAuthorityUnavailable);
+    expect(control.legacySession).not.toHaveBeenCalled();
+  });
+  it('returns legacy metadata without admitting or forwarding a credential', async () => {
+    control.observe.mockResolvedValue({ status: 'legacy' });
+    expect(await getServerRenderViewer()).toEqual({ kind: 'legacy' });
+    expect(control.lease).not.toHaveBeenCalled();
+    expect(control.legacyAdmission).not.toHaveBeenCalled();
+    expect(control.legacySession).not.toHaveBeenCalled();
+  });
   it('shares actual central admission and one short lease across server forwarding callers', async () => {
     expect(await Promise.all(Array.from({ length: 15 }, () => getAdmittedRawServerToken()))).toEqual(
       Array(15).fill('bsbd1_BACKENDONLYLEASE'),

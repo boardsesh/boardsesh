@@ -2,7 +2,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getServerAuthToken } from '@/app/lib/auth/server-auth';
-import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { getAdmittedServerSession, getServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
 import ProfilePageContent from './profile-page-content';
 import ProfileJsonLd from './profile-json-ld';
 import { getProfileData } from './server-profile-data';
@@ -111,23 +111,30 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function ProfilePage({ params }: PageProps) {
   const { user_id } = await params;
 
-  // Only check session if auth cookie exists (skip for anonymous visitors)
-  const authToken = await getServerAuthToken();
+  const renderViewer = await getServerRenderViewer();
   let viewerUserId: string | undefined;
-  if (authToken) {
-    const session = await getAdmittedServerSession();
-    viewerUserId = session?.user?.id;
+  if (renderViewer.kind === 'legacy') {
+    const authToken = await getServerAuthToken();
+    if (authToken) {
+      const session = await getAdmittedServerSession();
+      viewerUserId = session?.user?.id;
+    }
   }
 
-  const initialProfile = await getProfileData(user_id, viewerUserId);
+  // Public props are safe even when an older RSC response arrives after an
+  // account switch. Do not serialize privileged data behind a client guard.
+  const initialProfile =
+    renderViewer.kind === 'legacy'
+      ? await getProfileData(user_id, viewerUserId)
+      : await getProfileData(user_id, undefined, { authToken: undefined, publicOnly: true });
 
   if (!initialProfile) {
     notFound();
   }
 
   const [statsData, initialUserBeta, locale] = await Promise.all([
-    fetchProfileStatsData(user_id),
-    getUserBetaLinks(user_id),
+    renderViewer.kind === 'legacy' ? fetchProfileStatsData(user_id) : undefined,
+    renderViewer.kind === 'legacy' ? getUserBetaLinks(user_id) : undefined,
     getLocale(),
   ]);
 
@@ -145,10 +152,10 @@ export default async function ProfilePage({ params }: PageProps) {
       <ProfilePageContent
         userId={user_id}
         initialProfile={initialProfile}
-        initialProfileStats={statsData.initialProfileStats}
-        initialPercentile={statsData.initialPercentile}
-        initialAllBoardsTicks={statsData.initialAllBoardsTicks}
-        initialLogbook={statsData.initialLogbook}
+        initialProfileStats={statsData?.initialProfileStats}
+        initialPercentile={statsData?.initialPercentile}
+        initialAllBoardsTicks={statsData?.initialAllBoardsTicks}
+        initialLogbook={statsData?.initialLogbook}
         initialIsOwnProfile={viewerUserId === user_id}
         initialUserBeta={initialUserBeta}
       />

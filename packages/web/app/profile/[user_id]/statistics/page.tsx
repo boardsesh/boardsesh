@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
-import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
+import { getAdmittedServerSession, getServerRenderViewer } from '@/app/lib/auth/admitted-session.server';
 import { fetchProfileStatsData } from '../server-profile-stats';
 import AnalyticsContent from './analytics-content';
 import { getServerTranslation } from '@/app/lib/i18n/server';
@@ -19,20 +19,21 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ProfileStatisticsPage({ params }: PageProps) {
   const { user_id } = await params;
-  const session = await getAdmittedServerSession();
+  const renderViewer = await getServerRenderViewer();
+  const session = renderViewer.kind === 'legacy' ? await getAdmittedServerSession() : null;
   const viewerUserId = session?.user?.id;
 
-  const statsData = await fetchProfileStatsData(user_id);
+  const statsData = renderViewer.kind === 'legacy' ? await fetchProfileStatsData(user_id) : undefined;
   const locale = await getLocale();
 
   return (
     <I18nProvider locale={locale} namespaces={['profile', 'settings']}>
       <AnalyticsContent
         userId={user_id}
-        initialProfileStats={statsData.initialProfileStats}
-        initialPercentile={statsData.initialPercentile}
-        initialAllBoardsTicks={statsData.initialAllBoardsTicks}
-        initialLogbook={statsData.initialLogbook}
+        initialProfileStats={statsData?.initialProfileStats}
+        initialPercentile={statsData?.initialPercentile}
+        initialAllBoardsTicks={statsData?.initialAllBoardsTicks}
+        initialLogbook={statsData?.initialLogbook}
         initialIsOwnProfile={viewerUserId === user_id}
       />
     </I18nProvider>

@@ -110,6 +110,45 @@ Meaningful independently public SSR content must remain available. The dark
 source and injected transport tests do not constitute an actual browser or
 supported-engine qualification.
 
+## Public server payloads and private client views
+
+Hiding server children behind a client component does not remove their props
+from React Flight. The selected profile, statistics and profile-session routes
+therefore omit viewer-private server seeds entirely. The profile card is fetched
+without a credential and contains no owner email, local board mappings, logbook,
+stats or beta seed. Its public name remains an `h1` with existing crawlable links.
+The legacy rendering branch retains its existing behavior.
+
+Selected gym management sends only the route slug and public owner tuple to its
+client island. Its metadata uses the generic utility title without looking up
+the private gym. The client fetches the gym through the owned GraphQL transport
+only after the actual accepted SessionContext object matches UID, SID,
+generation, binding and version. A copied session object cannot supply that
+private local receipt. Invalidation, retirement, disposal and exact-tuple ABA
+invalidate earlier accepted-session receipts independently of public metadata.
+Subscriber failures cannot stop another view from receiving retirement.
+
+The private-view boundary uses a synchronous external-store subscription; its
+server HTML is the independently public fallback. Children of this boundary
+must never include private server props. Mismatched cached route labels request
+one shared route refresh per accepted response. Same-owner invalidation requests
+one central session refresh per local revision, without superseding an already
+admitted account transition that is awaiting ordered preference cleanup.
+
+Page suspension retires selected receipts, flushes the private DOM removal
+synchronously before the event returns, and aborts pending session reads.
+A restored document must accept a new primary-backed session response before
+these client islands reveal private content. Event-driven React tests cover
+suspension, outages and abort-ignoring old bodies; they do not establish actual
+browser BFCache behavior.
+
+This is a bounded source change. Remaining viewer-derived pages, private cookie
+JSON reads, server actions, native handoff, actual HTML/Flight/prefetch sentinel
+checks and supported-browser history/BFCache races remain rollout gates in
+#7430. In particular, a cache remount or event test is not evidence that every
+private response or restored document has been qualified. Public readiness
+remains false.
+
 ## Evidence and remaining work
 
 The memory holder has 29 independently reviewed tests, including cached-positive

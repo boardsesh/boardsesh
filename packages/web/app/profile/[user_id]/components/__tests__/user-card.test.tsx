@@ -73,7 +73,7 @@ describe('UserCard', () => {
 
   it('renders display name from profile.profile.displayName', () => {
     render(<UserCard {...createDefaultProps()} />);
-    expect(screen.getByText('Display Name')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Display Name', level: 1 })).toBeTruthy();
   });
 
   it('falls back to profile.name when displayName is null', () => {

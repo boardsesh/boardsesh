@@ -6,7 +6,8 @@ import { getToken } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import { admitPresentedWebCredential, CredentialAuthorityUnavailable } from './credential-admission.server';
 import { isSecureCookieContext, sessionCookieNameCandidates } from './secure-cookies';
-import { browserConsumerFacade } from './browser-consumers.server';
+import { browserConsumerFacade, publicBrowserLeaseOwner } from './browser-consumers.server';
+import type { BrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 
 export type PresentedWebCredential = Readonly<{ credential: string; cookieName: string }>;
 
@@ -42,6 +43,24 @@ const serverCookieHeaderForRender = cache(async (): Promise<string> => {
     .join('; ');
 });
 const selectedBrowserForRender = cache(async () => browserConsumerFacade.observe(await serverCookieHeaderForRender()));
+
+export type ServerRenderViewer =
+  | { readonly kind: 'legacy' }
+  | { readonly kind: 'selected'; readonly owner: Readonly<BrowserBackendLeaseOwner> }
+  | { readonly kind: 'anonymous' }
+  | { readonly kind: 'refused' };
+
+/** Metadata only. Selected routes must fetch their server props independently
+ * of the viewer: a client boundary cannot remove private bytes from Flight. */
+export const getServerRenderViewer = cache(async (): Promise<ServerRenderViewer> => {
+  const selected = await selectedBrowserForRender();
+  if (selected.status === 'legacy') return Object.freeze({ kind: 'legacy' });
+  if (selected.status === 'unavailable' || selected.status === 'conflict') throw new CredentialAuthorityUnavailable();
+  if (selected.status === 'anonymous') return Object.freeze({ kind: 'anonymous' });
+  if (selected.status !== 'admitted') return Object.freeze({ kind: 'refused' });
+  return Object.freeze({ kind: 'selected', owner: publicBrowserLeaseOwner(selected) });
+});
+
 const selectedBackendLeaseForRender = cache(async () => {
   const observed = await selectedBrowserForRender();
   return observed.status === 'admitted' ? browserConsumerFacade.lease(observed) : null;
