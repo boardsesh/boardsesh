@@ -17,6 +17,8 @@ import LocaleLink from '@/app/components/i18n/locale-link';
 import { applyLocale } from '@/app/lib/i18n/locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import FirstPasswordEmailSection from './first-password-email-section';
+import { publicFirstPasswordReady } from '@/app/lib/auth/first-password-readiness';
 
 type SetPasswordSectionProps = {
   hasPassword: boolean;
@@ -24,7 +26,7 @@ type SetPasswordSectionProps = {
   linkedProviders: string[];
   onPasswordSet: () => void;
   expectedSession?: { userId: string; authSessionId: string };
-  onAccountChanged?: () => void;
+  onAccountChanged?: () => void | Promise<void>;
 };
 
 function formatProviderName(provider: string): string {
@@ -154,6 +156,14 @@ export default function SetPasswordSection({
     );
   }
 
+  if (
+    publicFirstPasswordReady() &&
+    expectedSession &&
+    linkedProviders.includes('apple') &&
+    linkedProviders.every((provider) => provider === 'apple')
+  ) {
+    return <FirstPasswordEmailSection expectedSession={expectedSession} onAccountChanged={onAccountChanged} />;
+  }
   const providerNames = linkedProviders.map(formatProviderName);
   const providersJoined = providerNames.join(', ');
 

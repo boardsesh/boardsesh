@@ -733,5 +733,21 @@
     "linkCompleted": "{{provider}} está vinculado.",
     "unlinkCompleted": "{{provider}} está desvinculado.",
     "redirecting": "Continúa en el navegador para terminar."
+  },
+  "firstPassword": {
+    "title": "Añadir una contraseña",
+    "description": "Confirma tu correo actual para añadir una contraseña a esta cuenta de Apple. Abre el enlace del correo en este navegador.",
+    "send": "Enviar correo de confirmación",
+    "sending": "Enviando correo…",
+    "sent": "Revisa tu correo. Abre el enlace en este navegador antes de cinco minutos.",
+    "unavailable": "No hemos podido confirmar la contraseña. Revisa los ajustes antes de volver a intentarlo.",
+    "confirmDescription": "Elige una contraseña para la cuenta que solicitó este correo.",
+    "checking": "Comprobando el enlace de confirmación…",
+    "completed": "Tu contraseña está lista. Puedes usarla la próxima vez que inicies sesión.",
+    "invalid": "Este enlace ha caducado o no se puede usar. Solicita otro en los ajustes.",
+    "changed": "Tu cuenta ha cambiado. Abre los ajustes de la cuenta que solicitó este correo.",
+    "passwordMismatch": "Usa entre 8 y 128 caracteres y escribe la misma contraseña dos veces.",
+    "saving": "Guardando contraseña…",
+    "settings": "Abrir ajustes"
   }
 }

@@ -82,6 +82,14 @@ describe('isPartnerOAuthAnalyticsUrl', () => {
 });
 
 describe('isProductAnalyticsFreeUrl', () => {
+  it('excludes first-password confirmation pages before any fragment-reading effect', () => {
+    for (const prefix of ['', '/es', '/fr', '/de', '/it']) {
+      expect(isProductAnalyticsFreeUrl(`${prefix}/auth/confirm-first-password#token=secret`)).toBe(true);
+      expect(isProductAnalyticsFreeUrl(`${prefix}/auth/confirm-first-password/`)).toBe(true);
+    }
+    expect(isProductAnalyticsFreeUrl('/auth/confirm-first-password-help')).toBe(false);
+    expect(isProductAnalyticsFreeUrl('/?next=/auth/confirm-first-password')).toBe(false);
+  });
   it('covers embeds, the kiosk and the partner OAuth pages, and nothing else', () => {
     expect(isProductAnalyticsFreeUrl('/embed/board/abc')).toBe(true);
     expect(isProductAnalyticsFreeUrl('/kiosk/some-gym')).toBe(true);

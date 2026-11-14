@@ -733,5 +733,21 @@
     "linkCompleted": "{{provider}} est associé.",
     "unlinkCompleted": "{{provider}} est dissocié.",
     "redirecting": "Continue dans ton navigateur pour terminer."
+  },
+  "firstPassword": {
+    "title": "Ajouter un mot de passe",
+    "description": "Confirme ton adresse e-mail actuelle pour ajouter un mot de passe à ce compte Apple. Ouvre le lien reçu dans ce navigateur.",
+    "send": "Envoyer l’e-mail de confirmation",
+    "sending": "Envoi de l’e-mail…",
+    "sent": "Consulte tes e-mails. Ouvre le lien dans ce navigateur sous cinq minutes.",
+    "unavailable": "Impossible de confirmer la création du mot de passe. Vérifie les paramètres avant de réessayer.",
+    "confirmDescription": "Choisis un mot de passe pour le compte qui a demandé cet e-mail.",
+    "checking": "Vérification du lien de confirmation…",
+    "completed": "Ton mot de passe est prêt. Tu pourras l’utiliser à ta prochaine connexion.",
+    "invalid": "Ce lien a expiré ou ne peut pas être utilisé. Demande-en un autre dans les paramètres.",
+    "changed": "Ton compte a changé. Ouvre les paramètres du compte qui a demandé cet e-mail.",
+    "passwordMismatch": "Utilise 8 à 128 caractères et saisis deux fois le même mot de passe.",
+    "saving": "Enregistrement du mot de passe…",
+    "settings": "Ouvrir les paramètres"
   }
 }

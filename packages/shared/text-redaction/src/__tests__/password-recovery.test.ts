@@ -5,6 +5,39 @@ const token = 'a363934b-b7ba-41ba-a279-52185daa100e';
 const email = 'Climber+tag@example.test';
 const url = `https://www.boardsesh.test/auth/reset-password?token=${token}&email=${encodeURIComponent(email)}&src=mail`;
 
+describe('first-password telemetry boundary', () => {
+  it.each([
+    '/auth/confirm-first-password',
+    '/fr/auth/confirm-first-password/',
+    '/api/internal/auth/first-password/submit',
+  ])('redacts the new confirmation URL and structured body at %s', (path) => {
+    const capability = 'E'.repeat(43);
+    const marked = `${path}#token=${capability}&operation=${'a'.repeat(64)}`;
+    expect(redactPasswordRecoveryUrls(marked)).toBe(`${path}#[redacted]`);
+    const result = scrubPasswordRecoveryEvent({
+      request: {
+        url: path,
+        data: { confirmationToken: capability, password: 'exact-password', confirmPassword: 'exact-password' },
+        query_string: `token=${capability}`,
+      },
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(capability);
+    expect(serialized).not.toContain('exact-password');
+    expect(result.request.query_string).toBe('[redacted]');
+  });
+  it('redacts an encoded confirmation field in the actual public submit context', () => {
+    const capability = 'E'.repeat(43);
+    expect(
+      JSON.stringify(
+        scrubPasswordRecoveryEvent({
+          request: { url: '/api/internal/auth/first-password/submit', data: { '%63onfirmationToken': capability } },
+        }),
+      ),
+    ).not.toContain(capability);
+  });
+});
+
 describe('password recovery telemetry capabilities', () => {
   it.each(['/auth/reset-password', '/fr/auth/reset-password/', '/app/auth/reset-password', '/api/auth/reset-password'])(
     'scrubs the entire capability query and fragment on %s',
