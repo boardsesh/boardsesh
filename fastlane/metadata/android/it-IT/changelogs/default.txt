@@ -1,6 +1,6 @@
-Novità della 2.7:
-- Tocca per sfogliare senza illuminare. Illumina il pannello: le tue scelte si illuminano fino al timer (45 s). Scorri a sinistra: senza fine; tocca per fermarti.
-- Ora in italiano. Recupero con conto alla rovescia e suono nella notifica.
-- Allenamenti in fasi. Scorri nella tua lista; metti subito dopo o in fondo.
-- Ordina e filtra playlist, Mi piace e Progetti.
-- Diario, Mi piace e playlist offline. La ricerca trova MoonBoard.
+Novità 2.8.0:
+- Illumina la tua Spraywall con WLED. Mappa i LED sulla foto e prova le prese. Installare Bluetooth è una beta facoltativa per controller compatibili.
+- La scheda di blocco usa i colori del blocco: lampadina e Avanti senza espanderla, anello per il tempo di controllo.
+- Filtra i blocchi Verificati di Kilter.
+- Prova Graphite, schede compatte e Filtri a mezza altezza.
+- Condividi playlist e session con anteprime di blocchi illuminati.

@@ -1,47 +1,21 @@
-Boardsesh est maintenant disponible en italien.
+Nouveautés de la version 2.8.0
 
-SACHE QUAND TU ALLUMES LA BOARD
+Allume ta Spraywall
 
-Toucher un bloc l’affiche sans l’allumer. « Allumer sur la board » l’allume et tu pilotes la board : tes blocs suivants s’allument jusqu’à la fin du temps réglé (45 s au départ). Balaye le bouton à gauche pour piloter sans limite ; touche « Tu pilotes la board » pour arrêter.
+Connecte ta Spraywall à WLED en Wi-Fi. Place les trous sur une photo zoomable, trace les LED et le câble, puis corrige les LED associées à chaque prise. Teste les prises une par une et vois ta Spraywall s'allumer pendant que tu crées un bloc. Enregistre la configuration une fois pour que ta crew puisse aussi allumer les blocs.
 
-iPad et iPhone Duo : plus de place pour la board
+Les contrôleurs compatibles avec le support Bluetooth de Boardsesh peuvent aussi allumer les blocs en Bluetooth. Si tu es propriétaire, tu peux inspecter le contrôleur et le sauvegarder depuis les réglages des LED. L'installation du support Bluetooth est une bêta facultative pour les contrôleurs compatibles ; l'app vérifie la compatibilité et demande un accord distinct avant l'installation.
 
-Sur iPad, tes blocs passent en plein écran et le bloc au mur reste dans un mini-lecteur en bas. Touche-le pour ouvrir le lecteur. En mode paysage, la board se place à côté de À suivre, de ton carnet et de la beta. Fixe un iPad près de ta board et ouvre Affichage mural depuis le mini-lecteur pour afficher le bloc en plein écran, assez grand pour le lire depuis le tapis.
+TROUVE LES BLOCS VÉRIFIÉS
 
-Ouvre ton iPhone Duo et la board se place à côté de ta liste. Crée un entraînement sur un Duo ouvert et vois les blocs prévus à côté de tes phases.
+Les blocs Vérifiés de Kilter ont leur propre filtre rapide à côté de Cotation. Combine-le avec les blocs aimés ou Mes brouillons pour affiner ta liste.
 
-Choisis deux colonnes pour la liste Blocs quand l'iPad a assez de place. Choisis les boutons du mini-lecteur dans Options d'affichage, fais la croix sans ouvrir le lecteur et accède à Favori, Playlist et Partager depuis son menu sur les écrans larges.
+PARTAGE TA PROCHAINE SESSION
 
-TON MINUTEUR DE REPOS SUR L'ÉCRAN VERROUILLÉ
+Les liens vers les playlists, profils, sessions, salles et boards affichent un bloc allumé dans leur aperçu. Les invitations montrent avec qui tu grimperas et sur quelle board. Partager est à portée de main dans l'en-tête des playlists.
 
-Ton compte à rebours de repos s'affiche sur l'écran verrouillé et dans la Dynamic Island. Un tic doux retentit dans les dernières secondes et une tonalité à la fin du repos, même avec ton téléphone en silencieux.
+DES CORRECTIONS POUR TON PROCHAIN ESSAI
 
-ENTRAÎNEMENTS PAR PHASES
+Les noms de blocs longs défilent à nouveau dans le lecteur. L'angle de la board reste visible dans la barre des blocs, et les lumières du bouton de contrôle accompagnent le passage au bloc suivant.
 
-Compose une séance en phases : échauffement, puis une pyramide, puis du volume. Ajoute une phase en cours de séance, donne à chaque phase ses propres filtres de blocs et vois où tu en es d'un coup d'œil. Les entraînements choisissent d'abord les blocs que tu n'as pas enchaînés, peuvent ignorer ceux que tu as enchaînés ou essayés, et peuvent puiser dans tes blocs Enchaînés ou Aimés. Note une chute ou une croix depuis le mini-lecteur. Le bilan de séance réunit tes phases, répétitions et résultats.
-
-LANCE LES BLOCS DE LA LISTE QUE TU AS TOUCHÉE
-
-Le lecteur indique ta liste, et balayer t’y garde : carnet, séances, profils ou blocs similaires. Les playlists se lancent sans toucher à ta file. Balaye un bloc dans n'importe quelle liste pour le mettre juste après ou à la fin.
-
-PLUS D'OPTIONS À TON GOÛT
-
-- Trie n'importe quelle playlist par difficulté, ajout récent, note ou au hasard. Aimées, Cinq étoiles, Projets et les pages d'ouvreurs et d'ouvreuses se trient et se filtrent aussi.
-- Blocs a son propre onglet. Touche-le à nouveau pour ouvrir Filtres et la recherche par nom. Sur iPhone, Filtres s'ouvre à mi-hauteur et ressemble aux Réglages iOS.
-- Choisis les sections affichées sur Accueil et leur ordre, et si l'app s'ouvre sur Accueil ou sur Blocs.
-- Paramètres tient en six pages, avec tes minuteurs au même endroit.
-- Enregistre une croix à un angle différent de celui du mur.
-- Reçois des notifications pour les commentaires sur tes séances, blocs, playlists, boards et salles.
-
-CORRECTIONS POUR TA PROCHAINE SÉANCE
-
-- Ton carnet, tes likes et tes playlists fonctionnent sans réseau, et les boards téléchargées ne se retéléchargent plus chaque semaine.
-- Les scans de boards trouvent les MoonBoards et les boîtiers Kilter récents, les plus proches d'abord. Boardsesh demande le Bluetooth à ton premier scan, pas au lancement.
-- Balayer vers le bas ferme de nouveau le lecteur. Les prises allumées restent visibles pendant que tu navigues.
-- Dans les salles avec plusieurs boards, la connexion suit la board du bloc actuel. Le bouton indique son état, même quand ta crew l’éteint.
-- Les blocs en miroir gardent leur orientation dans ton carnet et l'historique de la file.
-- Supprime plusieurs entrées du carnet à la suite, ou celles d'un bloc regroupées sur une journée.
-- Les blocs que tu n'aimes plus quittent Aimées tout de suite.
-- Meilleure prise en charge de VoiceOver et du texte agrandi.
-
-Gratuit, sans pub, open source.
+Gratuit, sans publicité, open source.

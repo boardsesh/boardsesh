@@ -1,47 +1,21 @@
-Boardsesh gibt es jetzt auch auf Italienisch.
+Neu in 2.8.0
 
-SIEH, WANN DU DAS BOARD BELEUCHTEST
+Beleuchte deine Spraywall
 
-Antippen zeigt einen Boulder ohne Licht. „Am Board beleuchten“ beleuchtet ihn, und du steuerst das Board: Deine nächsten Boulder leuchten, bis die Zeit um ist (zuerst 45 s). Taste nach links wischen: ohne Ende; „Du steuerst das Board“ antippen stoppt.
+Verbinde deine Spraywall über WLAN mit WLED. Markiere Löcher auf einem zoombaren Foto, lege LEDs und Kabelverlauf fest und korrigiere, welche LEDs welchen Griff beleuchten. Teste einzelne Griffe und sieh deine Spraywall beim Erstellen eines Boulders leuchten. Speichere die Einrichtung einmal, damit auch deine Crew Boulder beleuchten kann.
 
-iPad und iPhone Duo: mehr Platz fürs Board
+Kompatible Controller mit Boardsesh-Bluetooth-Unterstützung können Boulder auch über Bluetooth beleuchten. Als Besitzer*in kannst du den Controller in den LED-Einstellungen prüfen und sichern. Die Installation der Bluetooth-Unterstützung ist eine freiwillige Beta für passende Controller; die App prüft die Kompatibilität und fragt vor der Installation gesondert nach deiner Zustimmung.
 
-Auf dem iPad bekommen deine Boulder den ganzen Bildschirm, und der Boulder an der Wand sitzt unten in einem Mini-Player. Tippe darauf, um den Player zu öffnen. Im Querformat sitzt das Board neben Als Nächstes, deinem Routenbuch und der Beta. Montiere ein iPad am Board und öffne die Wandanzeige im Mini-Player: der Boulder im Vollbild, von der Matte aus lesbar.
+FINDE VERIFIZIERTE BOULDER
 
-Öffne dein iPhone Duo, und das Board sitzt neben deiner Liste. Baue ein Workout auf einem geöffneten Duo und sieh die geplanten Boulder neben deinen Blöcken.
+Verifizierte Kilter-Boulder haben einen eigenen Schnellfilter neben dem Grad. Kombiniere ihn mit deinen Likes oder eigenen Entwürfen, um die Liste einzugrenzen.
 
-Wähle zwei Spalten für die Boulder-Liste, wenn auf dem iPad genug Platz ist. Wähle die Mini-Player-Tasten in den Ansichtsoptionen, trage eine Begehung ein, ohne den Player zu öffnen, und erreiche Favorit, Playlist und Teilen über sein Menü auf breiten Bildschirmen.
+TEILE DEINE NÄCHSTE SESSION
 
-DEIN PAUSEN-TIMER AUF DEM SPERRBILDSCHIRM
+Geteilte Playlists, Profile, Sessions, Hallen und Boards zeigen einen beleuchteten Boulder in der Linkvorschau. Einladungen zeigen, mit wem und an welchem Board du kletterst. Im Playlist-Kopf erreichst du Teilen direkt.
 
-Dein Pausen-Countdown erscheint auf dem Sperrbildschirm und in der Dynamic Island. In den letzten Sekunden tickt es leise, und am Ende der Pause ertönt ein Ton, auch wenn dein Handy auf lautlos steht.
+KORREKTUREN FÜR DEINEN NÄCHSTEN VERSUCH
 
-WORKOUTS IN BLÖCKEN
-
-Baue eine Session aus Blöcken: Aufwärmen, dann eine Pyramide, dann Volumen. Füge mitten in der Session einen Block hinzu, gib jedem Block eigene Boulder-Filter und sieh auf einen Blick, wo du stehst. Workouts wählen zuerst Boulder, die du noch nicht getoppt hast, können Getoppte und Versuchte überspringen und sich aus deinen getoppten oder gelikten Bouldern füllen. Markiere einen Sturz oder eine Begehung im Mini-Player. Der Session-Rückblick zeigt deine Blöcke, Wiederholungen und Ergebnisse zusammen.
-
-ABSPIELEN AUS DER LISTE, DIE DU ANGETIPPT HAST
-
-Der Player zeigt deine Liste, und beim Wischen bleibst du darin: Routenbuch, Sessions, Profile oder ähnliche Boulder. Playlists laufen, ohne deine Warteschlange anzutasten. Wische in jeder Liste über einen Boulder, um ihn als Nächstes oder als Letztes zu spielen.
-
-MEHR NACH DEINEM GESCHMACK
-
-- Sortiere jede Playlist nach Schwierigkeit, zuletzt hinzugefügt, Bewertung oder zufällig. Gelikt, Fünf Sterne, Projekte und Seiten von Routenbauer*innen lassen sich auch sortieren und filtern.
-- Boulder hat einen eigenen Tab. Tippe erneut darauf für Filter und die Namenssuche. Auf dem iPhone öffnet sich Filter in halber Höhe und sieht aus wie die iOS-Einstellungen.
-- Wähle, welche Bereiche auf Start erscheinen und in welcher Reihenfolge, und ob die App auf Start oder auf Boulder öffnet.
-- Einstellungen hat nur noch sechs Seiten, mit deinen Timern an einem Ort.
-- Trage eine Begehung in einem anderen Winkel ein als dem an der Wand.
-- Lass dich über Kommentare zu deinen Sessions, Bouldern, Playlists, Boards und Hallen benachrichtigen.
-
-KORREKTUREN FÜR DEINE NÄCHSTE SESSION
-
-- Routenbuch, Likes und Playlists funktionieren ohne Empfang. Heruntergeladene Boards werden nicht mehr wöchentlich neu geladen.
-- Board-Scans finden MoonBoards und neuere Kilter-Boxen, die nächstgelegenen zuerst. Boardsesh fragt beim ersten Scan nach Bluetooth, nicht beim Start.
-- Nach unten wischen schließt den Player wieder. Beleuchtete Griffe bleiben beim Stöbern sichtbar.
-- In Hallen mit mehreren Boards folgt die Verbindung dem Board deines aktuellen Boulders. Die Taste zeigt den Lichtstatus, auch wenn deine Crew das Licht ausschaltet.
-- Gespiegelte Boulder behalten ihre Ausrichtung im Routenbuch und im Warteschlangenverlauf.
-- Lösche mehrere Routenbucheinträge nacheinander oder die Tageseinträge eines Boulders zusammen.
-- Boulder, die du entlikest, verschwinden sofort aus Gelikt.
-- Bessere Unterstützung für VoiceOver und große Schrift.
+Lange Bouldernamen scrollen wieder im Player. Der Boardwinkel bleibt in der Boulderleiste sichtbar, und die Lichter der Steuerungstaste begleiten den Wechsel zum nächsten Boulder.
 
 Kostenlos, ohne Werbung, Open Source.

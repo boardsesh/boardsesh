@@ -1,47 +1,21 @@
-Boardsesh is now available in Italian.
+New in 2.8.0
 
-KNOW WHEN YOU’RE LIGHTING THE WALL
+Light your Spraywall
 
-A tap shows a climb without lighting it, so browse freely. “Put on board” lights it and you drive the wall: every climb you pick lights too, until the time you set in Settings runs out (45 seconds to start with). Swipe “Put on board” left to drive with no end; tap “You are driving the wall” to stop. Want the board free for the next climber? Turn on “Disconnect Bluetooth when driving ends”.
+Connect your Spraywall to WLED over Wi-Fi. Mark holes on a zoomable photo, lay out the LEDs and cable, and correct which LEDs light each hold. Test individual holds and see your Spraywall light up while you set a climb. Save the setup once so your crew can light climbs too.
 
-iPad and iPhone Duo: more room for the board
+Compatible controllers with Boardsesh Bluetooth support can also light climbs over Bluetooth. Owners can inspect and back up their controller from LED settings. Installing Bluetooth support is an opt-in beta for matching controllers; the app checks compatibility and asks for separate consent before installation.
 
-On iPad, your climbs get the whole screen and the climb on the wall sits in a mini player at the bottom. Tap it to open the player. In landscape, the board sits beside Up next, your logbook and beta. Mount an iPad by your board and open Wall display from the mini player to show the climb full screen, big enough to read from the mat.
+FIND VERIFIED CLIMBS
 
-Open your iPhone Duo and the board sits beside your list. Build a workout on an open Duo and see the planned climbs next to your blocks.
+Kilter's Verified climbs have their own quick filter beside Grade. Combine it with Liked or My drafts to narrow your list.
 
-Choose two columns for the Climbs list when there's room on iPad. Pick the mini player's buttons in View options, log a send without opening the player, and reach Favourite, Playlist and Share from its menu on wide screens.
+SHARE YOUR NEXT SESSION
 
-YOUR REST TIMER ON THE LOCK SCREEN
+Shared playlists, profiles, sessions, gyms and boards show a lit climb in link previews. Invite links show who you'd be climbing with and on which board. Playlist headers put Share within reach.
 
-Your rest countdown shows on the Lock Screen and in the Dynamic Island. A soft tick plays in the last seconds and a tone when rest ends, even with your phone on silent.
+SMALL FIXES FOR YOUR NEXT GO
 
-WORKOUTS IN BLOCKS
-
-Build a session out of blocks: warm up, then a pyramid, then volume. Add a block mid-session, give each block its own climb filters, and see where you are at a glance. Workouts pick climbs you haven't sent first, can skip what you've sent or tried, and can fill from your Sent or Liked climbs. Mark Fell or Sent from the mini player. Your session recap keeps your workout blocks, reps and results together.
-
-PLAY FROM THE LIST YOU TAPPED
-
-The player shows which list you're climbing from, and swiping stays on that list, from your logbook and sessions to profiles and similar climbs. Playlists play without touching your queue. Swipe a climb in any list to play it next or last.
-
-MORE WAYS TO MAKE IT YOURS
-
-- Sort any playlist by difficulty, newest added, rating or shuffle. Liked, Five Stars, Projects and setter pages sort and filter too.
-- Climbs has its own tab. Tap it again for Filters and name search. On iPhone, Filters opens at half height and looks like iOS Settings.
-- Choose which sections show on Home and in what order, and whether the app opens on Home or Climbs.
-- Settings is down to six pages, with your timers in one place.
-- Log a send at a different angle from the one on the wall.
-- Get notified about comments on your sessions, climbs, playlists, boards and gyms.
-
-FIXES FOR YOUR NEXT SESSION
-
-- Your logbook, likes and playlists work with no signal, and downloaded boards no longer download again every week.
-- Board scans find MoonBoards and newer Kilter boxes, closest first. Boardsesh asks for Bluetooth at your first scan, not at launch.
-- Swiping down closes the player again. Lit holds stay visible while you browse.
-- At multi-board gyms, connecting follows the board your current climb is on. The board light button shows whether it's lit, connecting or off, including when a crewmate turns it off.
-- Mirrored climbs keep their orientation in your logbook and queue history.
-- Delete several logbook entries in a row, or a climb's grouped entries for one day.
-- Climbs you unlike leave Liked straight away.
-- Better VoiceOver and large text support.
+Long climb names scroll in the player again. The board angle stays visible in the Climbs bar, and the wall button's lights move with you as you pick the next climb.
 
 Free, no ads, open source.
