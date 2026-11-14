@@ -305,13 +305,9 @@ async function finalize(
     )
     .returning();
   if (!updated) return refuse();
-  const acknowledgeUntil = new Date(
-    Math.min(
-      now.getTime() + 300_000,
-      Date.parse(preparation.sourceExpiresAt),
-      Date.parse(preparation.browserCursor.bindingExpiresAt),
-    ),
-  );
+  // Exact read-only recovery can follow a committed renewal past the parent's
+  // expiry. Finalization still requires that parent to be live through commit.
+  const acknowledgeUntil = new Date(now.getTime() + 300_000);
   await transaction
     .update(authBrowserRenewals)
     .set({
@@ -364,6 +360,16 @@ async function acknowledge(
   if (
     !stored.completedAt ||
     !stored.acknowledgeUntil ||
+    stored.completedAt.getTime() < stored.preparedAt.getTime() ||
+    stored.completedAt.getTime() > now.getTime() ||
+    stored.completedAt.getTime() >=
+      Math.min(
+        stored.expiresAt.getTime(),
+        Date.parse(preparation.expiresAt),
+        Date.parse(preparation.sourceExpiresAt),
+        Date.parse(preparation.browserCursor.bindingExpiresAt),
+      ) ||
+    stored.acknowledgeUntil.getTime() > stored.completedAt.getTime() + 300_000 ||
     stored.acknowledgeUntil.getTime() <= now.getTime() ||
     stored.resultVersion !== current.cursor.version ||
     stored.candidateHash !== credentialHash(input.candidate) ||
@@ -377,17 +383,10 @@ async function acknowledge(
     input.actor.credential.kind !== preparation.credentialKind
   )
     return refuse();
-  const original = await readFirstPartySession(transaction, sourceCredential(input.actor, runtime), now, (userId) =>
-    readLockedWebSubjectState(transaction, userId),
-  );
-  if (
-    original.status !== 'admitted' ||
-    !sameProvenance(original.session, preparation.sourceCredentialProof) ||
-    Date.parse(preparation.sourceExpiresAt) <= now.getTime() ||
-    original.session.expiresAt.getTime() < Date.parse(preparation.sourceExpiresAt) ||
-    (input.actor.credential.kind === 'legacy-jwe' && iso(original.session.expiresAt) !== preparation.sourceExpiresAt)
-  )
-    return refuse();
+  // operation() compared the actual old bytes against the immutable source
+  // hash admitted before completion. This grants no generic expired-source
+  // admission: only this exact durable candidate, still current and live, may
+  // acknowledge a commit made before every frozen parent deadline.
   return {
     outcome: 'completed' as const,
     cursor: preparation.futureBrowserCursor,
@@ -437,13 +436,18 @@ export async function executeBrowserRenewalCommand(
           ? reply.outcome === 'prepared'
             ? Math.min(Date.parse(reply.preparation.expiresAt), durable?.expiresAt.getTime() ?? 0)
             : 0
-          : Math.min(
-              Date.parse(command.payload.preparation.sourceExpiresAt),
-              Date.parse(command.payload.preparation.browserCursor.bindingExpiresAt),
-              command.operation === 'finalize'
-                ? Math.min(Date.parse(command.payload.preparation.expiresAt), durable?.expiresAt.getTime() ?? 0)
-                : (durable?.until?.getTime() ?? 0),
-            );
+          : command.operation === 'acknowledge'
+            ? Math.min(
+                durable?.until?.getTime() ?? 0,
+                Date.parse(command.payload.preparation.targetExpiresAt),
+                Date.parse(command.payload.preparation.futureBrowserCursor.bindingExpiresAt),
+              )
+            : Math.min(
+                Date.parse(command.payload.preparation.sourceExpiresAt),
+                Date.parse(command.payload.preparation.browserCursor.bindingExpiresAt),
+                Date.parse(command.payload.preparation.expiresAt),
+                durable?.expiresAt.getTime() ?? 0,
+              );
       if (finished.getTime() >= deadline) return refuse();
       return reply;
     });

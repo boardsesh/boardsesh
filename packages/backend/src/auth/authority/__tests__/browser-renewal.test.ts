@@ -28,6 +28,7 @@ import { switchIdentityAuthority } from '../router';
 import { executeBrowserRenewalCommand } from '../browser-renewal';
 import { readFirstPartySession } from '../session-reader';
 import { readLockedWebSubjectState } from '../../current-store/web-credential-state';
+import { LEGACY_WEB_CLOCK_TOLERANCE_SECONDS } from '../../legacy-web-credentials';
 import { providerDatabaseNow } from '../provider-security-context';
 import * as authorityRouter from '../router';
 
@@ -64,7 +65,12 @@ function prepared(reply: BrowserRenewalReply) {
   if (reply.outcome !== 'prepared') throw new Error(`Renewal preparation refused: ${reply.outcome}`);
   return reply;
 }
-async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false, noSid = false) {
+async function setup(
+  kind: 'legacy-jwe' | 'canonical-token',
+  knownAge = false,
+  noSid = false,
+  lifetime: { readonly sourceSeconds?: number; readonly bindingMilliseconds?: number } = {},
+) {
   let authSessionId: string = randomUUID();
   const authenticatedAt = knownAge ? new Date(Math.floor(Date.now() / 1_000) * 1_000 - 86_400_000) : null;
   let credential: BrowserSelectionCredential['credential'];
@@ -80,7 +86,7 @@ async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false, n
           gen: 0,
           ...(authenticatedAt ? { auth_time: authenticatedAt.getTime() / 1_000, link_guarded: true } : {}),
         },
-        maxAge: 3_600,
+        maxAge: lifetime.sourceSeconds ?? 3_600,
       }),
     };
   else {
@@ -91,7 +97,7 @@ async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false, n
       token,
       userId: ownerId,
       createdAt: new Date(Date.now() - 2 * 86_400_000),
-      expiresAt: new Date(Date.now() + 3_600_000),
+      expiresAt: new Date(Date.now() + (lifetime.sourceSeconds ?? 3_600) * 1_000),
       updatedAt: new Date(),
       revocationGeneration: 0,
       originalAuthenticatedAt: authenticatedAt,
@@ -109,7 +115,7 @@ async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false, n
   const created = await createUnpublishedBrowserBinding(
     environment.database,
     qualification,
-    new Date(Date.now() + 86_400_000),
+    new Date(Date.now() + (lifetime.bindingMilliseconds ?? 86_400_000)),
   );
   if (created.status !== 'created') throw new Error('Fixture binding refused');
   const intent = await beginBrowserIntent(environment.database, qualification, created.token, {
@@ -417,15 +423,240 @@ describe('ordinary selected-browser renewal transactions', () => {
             const second = prepared(
               await invoke(command('prepare', { bindingToken: current.bindingToken, actor: current.actor, nonceHash })),
             );
-            expect(
-              await invoke(command('finalize', bound(current, first, await candidate(current, first)))),
-            ).toMatchObject({ outcome: 'completed' });
+            const firstCandidate = await candidate(current, first);
+            const secondCandidate = await candidate(current, second);
+            expect(await invoke(command('finalize', bound(current, first, firstCandidate)))).toMatchObject({
+              outcome: 'completed',
+            });
             const before = await environment.database.select().from(authSession);
-            expect(
-              await invoke(command('finalize', bound(current, second, await candidate(current, second)))),
-            ).toMatchObject({ outcome: 'conflict' });
+            expect(await invoke(command('finalize', bound(current, second, secondCandidate)))).toMatchObject({
+              outcome: 'conflict',
+            });
+            expect(await invoke(command('acknowledge', bound(current, second, secondCandidate)))).toMatchObject({
+              outcome: 'conflict',
+            });
+            if (kind === 'legacy-jwe')
+              expect(await invoke(command('acknowledge', bound(current, first, secondCandidate)))).toMatchObject({
+                outcome: 'conflict',
+              });
+            if (kind === 'legacy-jwe') {
+              const alternate = await candidate(current, first);
+              expect(
+                await readBrowserBinding(environment.database, qualification, current.bindingToken, {
+                  version: 2,
+                  credential: alternate.kind === 'canonical-token' ? alternate : { ...alternate, secret },
+                }),
+              ).toMatchObject({ status: 'admitted' });
+              const exactBefore = {
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+              };
+              expect(await invoke(command('acknowledge', bound(current, first, alternate)))).toMatchObject({
+                outcome: 'conflict',
+              });
+              expect({
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+              }).toEqual(exactBefore);
+            }
+            expect(await invoke(command('acknowledge', bound(current, first, firstCandidate)))).toMatchObject({
+              outcome: 'completed',
+            });
             expect(await environment.database.select().from(authSession)).toEqual(before);
           });
+          it('rechecks the durable ACK deadline after the final authority await', async () => {
+            const current = await setup(kind);
+            const result = prepared(
+              await invoke(
+                command('prepare', {
+                  bindingToken: current.bindingToken,
+                  actor: current.actor,
+                  nonceHash,
+                }),
+              ),
+            );
+            const payload = bound(current, result, await candidate(current, result));
+            expect(await invoke(command('finalize', payload))).toMatchObject({ outcome: 'completed' });
+            const [stored] = await environment.database.select().from(authBrowserRenewals);
+            const clock = await environment.database.transaction(providerDatabaseNow);
+            await environment.database
+              .update(authBrowserRenewals)
+              .set({ acknowledgeUntil: new Date(clock.getTime() + 1000) })
+              .where(eq(authBrowserRenewals.operationHash, stored.operationHash));
+            const before = {
+              sessions: await environment.database.select().from(authSession),
+              bindings: await environment.database.select().from(authBrowserBindings),
+              renewals: await environment.database.select().from(authBrowserRenewals),
+            };
+            const revalidate = authorityRouter.revalidateIdentityAuthority;
+            let calls = 0;
+            let delayedAfterAcknowledgment = false;
+            vi.spyOn(authorityRouter, 'revalidateIdentityAuthority').mockImplementation(
+              async (transaction, authority) => {
+                await revalidate(transaction, authority);
+                calls++;
+                // Two primary selection checks precede ACK. The third is the
+                // common outer await after its complete read-only result exists.
+                if (calls === 3) {
+                  delayedAfterAcknowledgment = true;
+                  await transaction.execute(sql`SELECT pg_sleep(1.1)`);
+                }
+              },
+            );
+            expect(await invoke(command('acknowledge', payload))).toMatchObject({ outcome: 'conflict' });
+            expect(delayedAfterAcknowledgment).toBe(true);
+            expect({
+              sessions: await environment.database.select().from(authSession),
+              bindings: await environment.database.select().from(authBrowserBindings),
+              renewals: await environment.database.select().from(authBrowserRenewals),
+            }).toEqual(before);
+          });
+          it.each(['cutoff', 'authority'] as const)(
+            'post-expiry ACK still refuses a current %s change',
+            async (fault) => {
+              const current = await setup(kind, true, false, { bindingMilliseconds: 1500 });
+              const result = prepared(
+                await invoke(
+                  command('prepare', {
+                    bindingToken: current.bindingToken,
+                    actor: current.actor,
+                    nonceHash,
+                  }),
+                ),
+              );
+              const renewed = await candidate(current, result);
+              const payload = bound(current, result, renewed);
+              expect(await invoke(command('finalize', payload))).toMatchObject({ outcome: 'completed' });
+              const oldDeadline = Date.parse(result.preparation.browserCursor.bindingExpiresAt);
+              const databaseClock = await environment.database.transaction(providerDatabaseNow);
+              await environment.database.execute(
+                sql`SELECT pg_sleep(${Math.max(0, (oldDeadline + 100 - databaseClock.getTime()) / 1000)})`,
+              );
+              if (fault === 'cutoff')
+                await environment.database.insert(authSubjectCutoffs).values({
+                  userId: ownerId,
+                  generation: 1,
+                  revokedThrough: new Date(0),
+                  lastOperationId: randomUUID(),
+                });
+              else
+                await environment.database.transaction(async (transaction) => {
+                  const [manifest] = await transaction.select().from(authEmailProjection);
+                  await switchIdentityAuthority(transaction, {
+                    projectionId: qualification.expectedProjectionId,
+                    from: manifest.writerAuthority,
+                    to: manifest.writerAuthority === 'current-store' ? 'better-auth' : 'current-store',
+                    epoch: manifest.writerEpoch,
+                  });
+                });
+              const before = {
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+                projection: await environment.database.select().from(authEmailProjection),
+                cutoffs: await environment.database.select().from(authSubjectCutoffs),
+              };
+              expect(
+                await readBrowserBinding(environment.database, qualification, current.bindingToken, {
+                  version: 2,
+                  credential: renewed.kind === 'canonical-token' ? renewed : { ...renewed, secret },
+                }),
+              ).toMatchObject({ status: fault === 'cutoff' ? 'denied' : 'admitted' });
+              expect(await invoke(command('acknowledge', payload))).toMatchObject({ outcome: 'conflict' });
+              expect({
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+                projection: await environment.database.select().from(authEmailProjection),
+                cutoffs: await environment.database.select().from(authSubjectCutoffs),
+              }).toEqual(before);
+            },
+          );
+          it.each(['source', 'binding'] as const)(
+            'read-only ACK survives the old %s deadline without admitting the old version',
+            async (deadline) => {
+              const current = await setup(
+                kind,
+                true,
+                false,
+                deadline === 'source' ? { sourceSeconds: 3 } : { bindingMilliseconds: 2500 },
+              );
+              const result = prepared(
+                await invoke(
+                  command('prepare', {
+                    bindingToken: current.bindingToken,
+                    actor: current.actor,
+                    nonceHash,
+                  }),
+                ),
+              );
+              const renewed = await candidate(current, result);
+              const payload = bound(current, result, renewed);
+              expect(await invoke(command('finalize', payload))).toMatchObject({ outcome: 'completed' });
+              const [operation] = await environment.database.select().from(authBrowserRenewals);
+              expect(operation.acknowledgeUntil!.getTime()).toBe(operation.completedAt!.getTime() + 300_000);
+              const oldDeadline = Date.parse(
+                deadline === 'source'
+                  ? result.preparation.sourceExpiresAt
+                  : result.preparation.browserCursor.bindingExpiresAt,
+              );
+              expect(operation.acknowledgeUntil!.getTime()).toBeGreaterThan(oldDeadline);
+              const before = {
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+              };
+              const databaseClock = await environment.database.transaction(providerDatabaseNow);
+              await environment.database.execute(
+                sql`SELECT pg_sleep(${Math.max(0, (oldDeadline + 100 - databaseClock.getTime()) / 1000)})`,
+              );
+              const afterDeadline = await environment.database.transaction(providerDatabaseNow);
+              expect(afterDeadline.getTime()).toBeGreaterThan(oldDeadline);
+              expect(
+                await readBrowserBinding(environment.database, qualification, current.bindingToken, {
+                  version: 1,
+                  credential: current.actual,
+                }),
+              ).toMatchObject({ status: 'denied' });
+              const ordinaryClock =
+                kind === 'legacy-jwe' && deadline === 'source'
+                  ? new Date(oldDeadline + (LEGACY_WEB_CLOCK_TOLERANCE_SECONDS + 1) * 1000)
+                  : afterDeadline;
+              const original = await environment.database.transaction((transaction) =>
+                readFirstPartySession(transaction, current.actual, ordinaryClock, (userId) =>
+                  readLockedWebSubjectState(transaction, userId),
+                ),
+              );
+              // A canonical token is the same actual token after row renewal.
+              // Legacy verification keeps its existing transport clock grace;
+              // ACK never widens it or admits a JWE beyond that grace.
+              expect(original.status).toBe(kind === 'legacy-jwe' && deadline === 'source' ? 'denied' : 'admitted');
+              expect(await invoke(command('acknowledge', payload))).toMatchObject({ outcome: 'completed' });
+              const forged = structuredClone(payload);
+              forged.actor.credential =
+                forged.actor.credential.kind === 'canonical-token'
+                  ? { kind: 'canonical-token', token: forged.actor.credential.token + 'x' }
+                  : { kind: 'legacy-jwe', credential: forged.actor.credential.credential + 'x' };
+              expect(await invoke(command('acknowledge', forged))).toMatchObject({ outcome: 'conflict' });
+              expect({
+                sessions: await environment.database.select().from(authSession),
+                bindings: await environment.database.select().from(authBrowserBindings),
+                renewals: await environment.database.select().from(authBrowserRenewals),
+              }).toEqual(before);
+              await environment.database
+                .update(authBrowserRenewals)
+                .set({ acknowledgeUntil: new Date(afterDeadline.getTime() + 200) })
+                .where(eq(authBrowserRenewals.operationHash, operation.operationHash));
+              await environment.database.execute(sql`SELECT pg_sleep(0.25)`);
+              const expired = await environment.database.select().from(authBrowserRenewals);
+              expect(await invoke(command('acknowledge', payload))).toMatchObject({ outcome: 'conflict' });
+              expect(await environment.database.select().from(authBrowserRenewals)).toEqual(expired);
+              expect(await environment.database.select().from(authSession)).toEqual(before.sessions);
+              expect(await environment.database.select().from(authBrowserBindings)).toEqual(before.bindings);
+            },
+          );
         });
     });
 });

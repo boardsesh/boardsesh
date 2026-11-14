@@ -36,11 +36,40 @@ otherwise valid rolling session. Old-source and operation deadlines, primary
 cutoffs and authority are checked after real writes so failure rolls back all
 changes.
 
-Unknown commit outcomes publish no candidate cookies and never retry mutation.
+An unknown finalizer outcome publishes no current proof or ordinary session
+cookie and never retries mutation. The previously delivered operation carrier
+remains available only for exact read-only acknowledgment.
 Read-only acknowledgment requires the exact operation/preparation plus actual
 old and new source possession and current primary selection. No operation row
 stores or reconstructs a bearer. Retained operation expiry indexes support a
 separately reviewed retention procedure; no existing data is deleted here.
+
+The publication continuation adds a narrowly bounded acknowledgment after an
+old source or binding deadline. Finalization still requires every parent to be
+live through its last database-clock check. Acknowledgment requires immutable
+source-byte possession, an exact durable candidate hash, a completion timestamp
+before every frozen parent deadline, and the same live current candidate,
+authority epoch and cutoffs. Its database deadline is five minutes after that
+completion; the last authority await cannot extend it. This grants no generic
+expired-source admission or fresh authentication. Canonical renewal keeps the
+same actual token; old browser versions still refuse. Legacy verification keeps
+its existing 60-second transport clock grace.
+
+A separate operation-named encrypted HttpOnly carrier retains both actual old
+and candidate credentials before commit. Its AEAD purpose, exact canonical host
+and operation hash are bound together. This carrier is actual credential
+custody, not metadata-only flow state. It cannot be used as a current proof
+before exact durable acknowledgment. Its deadline is bounded by preparation
+expiry plus five minutes and the future credential/binding deadlines. Complete
+physical chunks and whole-cookie pair/byte capacity remain mandatory.
+
+Preparation must also refresh the exact existing correlation cookie's constant
+relative lease. Otherwise an unknown finalizer response near its physical
+expiry could strand recovery. Retain the carrier and old proof until a later
+request presents the complete installed current proof, even after emitting
+successful response headers. GET observation may acknowledge only; it never
+finalizes an uncommitted preparation. Orphan carriers cannot bootstrap a fresh
+anonymous binding. This publication join remains disabled and unmounted here.
 
 Qualification must cover both authorities and credential kinds, unknown-age
 and no-SID ancestry, preservation of unrelated sessions, renewal past the old
