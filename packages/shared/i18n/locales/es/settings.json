@@ -732,7 +732,9 @@
     "unavailable": "No se ha podido completar este cambio. Inténtalo de nuevo.",
     "linkCompleted": "{{provider}} está vinculado.",
     "unlinkCompleted": "{{provider}} está desvinculado.",
-    "redirecting": "Continúa en el navegador para terminar."
+    "redirecting": "Continúa en el navegador para terminar.",
+    "loading": "Comprobando las formas de iniciar sesión…",
+    "resumeCompleted": "El cambio de acceso se ha completado."
   },
   "firstPassword": {
     "title": "Añadir una contraseña",

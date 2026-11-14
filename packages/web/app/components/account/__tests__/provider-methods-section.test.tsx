@@ -40,6 +40,25 @@ function deferred<Result>() {
 }
 
 describe('controlled provider methods card', () => {
+  it('restores an actor-bound operation for explicit confirmation without acting on mount', async () => {
+    const props = defaults();
+    render(
+      <ProviderMethodsSection
+        {...props}
+        resumeAction={{ action: 'unlink', provider: 'google', methodId: google.methodId }}
+      />,
+    );
+    await screen.findByRole('dialog');
+    expect(props.onAction).not.toHaveBeenCalled();
+    confirm();
+    await waitFor(() =>
+      expect(props.onAction).toHaveBeenCalledExactlyOnceWith({
+        action: 'unlink',
+        provider: 'google',
+        methodId: google.methodId,
+      }),
+    );
+  });
   it('offers only configured Google/Apple methods and respects unlink capability', () => {
     const props = defaults();
     render(

@@ -732,7 +732,9 @@
     "unavailable": "Impossible de terminer ce changement. Réessaie.",
     "linkCompleted": "{{provider}} est associé.",
     "unlinkCompleted": "{{provider}} est dissocié.",
-    "redirecting": "Continue dans ton navigateur pour terminer."
+    "redirecting": "Continue dans ton navigateur pour terminer.",
+    "loading": "Vérification des moyens de connexion…",
+    "resumeCompleted": "La modification de tes accès est terminée."
   },
   "firstPassword": {
     "title": "Ajouter un mot de passe",

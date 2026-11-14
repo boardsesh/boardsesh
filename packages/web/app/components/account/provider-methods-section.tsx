@@ -55,6 +55,8 @@ export interface ProviderMethodsSectionProps {
   readonly recoveryHref?: string;
   readonly onAction: (action: ProviderMethodAction) => Promise<ProviderMethodResult>;
   readonly onReauthenticate: (method: ProviderReauthentication) => Promise<ProviderMethodResult>;
+  /** Restored only from the actor-bound server resume reader. */
+  readonly resumeAction?: ProviderMethodAction;
 }
 
 /** Controlled view only. The owning broker verifies identity, freshness and
@@ -69,6 +71,7 @@ export default function ProviderMethodsSection({
   recoveryHref,
   onAction,
   onReauthenticate,
+  resumeAction,
 }: ProviderMethodsSectionProps) {
   const { t } = useTranslation('settings');
   const headingId = useId();
@@ -100,6 +103,18 @@ export default function ProviderMethodsSection({
       attempt.current += 1;
     };
   }, []);
+  useEffect(() => {
+    if (!resumeAction) return;
+    attempt.current += 1;
+    working.current = false;
+    handlers.current = { onAction, onReauthenticate };
+    setPending({ ...resumeAction });
+    setPhase('confirmation');
+    setPassword('');
+    setBusy(false);
+    setNotice(null);
+    setSuccess(false);
+  }, [resumeAction, actorContextKey, onAction, onReauthenticate]);
 
   const providerName = (provider: AccountProvider) =>
     provider === 'google' ? t('providerMethods.providers.google') : t('providerMethods.providers.apple');

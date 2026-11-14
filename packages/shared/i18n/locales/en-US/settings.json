@@ -732,7 +732,9 @@
     "unavailable": "Could not complete this change. Try again.",
     "linkCompleted": "{{provider}} is linked.",
     "unlinkCompleted": "{{provider}} is unlinked.",
-    "redirecting": "Continue in your browser to finish."
+    "redirecting": "Continue in your browser to finish.",
+    "loading": "Checking sign-in methods…",
+    "resumeCompleted": "Your sign-in change is complete."
   },
   "firstPassword": {
     "title": "Add a password",

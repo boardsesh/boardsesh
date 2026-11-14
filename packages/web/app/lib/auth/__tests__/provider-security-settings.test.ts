@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import type { ProviderSecurityOperation, ProviderSecurityReply } from '@boardsesh/auth-protocol';
 vi.mock('server-only', () => ({}));
 import type { PresentedBrowserSelection, AdmittedBrowserSelection } from '../presented-browser-selection.server';
@@ -16,6 +17,11 @@ import {
 } from '../provider-security-flow.server';
 import { captureProviderBrowserContext, providerBindingHash } from '../provider-security-selection.server';
 import { createProviderSecuritySettingsBroker, PROVIDER_SETTINGS_PATHS } from '../provider-security-settings.server';
+import {
+  providerSettingsViewFrame,
+  PROVIDER_SETTINGS_VIEW_HEADER,
+  PROVIDER_SETTINGS_OPERATION_HEADER,
+} from '../provider-security-view';
 
 const origin = 'https://www.boardsesh.test';
 const now = new Date('2026-11-13T12:00:00.000Z');
@@ -108,9 +114,22 @@ function request(operation: keyof typeof PROVIDER_SETTINGS_PATHS, input?: unknow
     'sec-fetch-site': 'same-origin',
     cookie: 'actual-browser-proof=opaque; foreign-legacy-session=unrelated',
   });
+  requestHeaders.set(
+    PROVIDER_SETTINGS_VIEW_HEADER,
+    createHash('sha256')
+      .update(
+        providerSettingsViewFrame({
+          userId: selected().session.userId,
+          authSessionId: selected().session.authSessionId,
+          generation: selected().session.generation,
+          cursor: { bindingId: selected().cursor.bindingId, version: selected().cursor.version },
+        }),
+      )
+      .digest('hex'),
+  );
   new Headers(headers).forEach((content, name) => requestHeaders.set(name, content));
   return new Request(`${origin}${PROVIDER_SETTINGS_PATHS[operation]}`, {
-    method: operation === 'methods' ? 'GET' : 'POST',
+    method: operation === 'methods' || operation === 'resume' ? 'GET' : 'POST',
     headers: requestHeaders,
     ...(input === undefined ? {} : { body: JSON.stringify(input) }),
   });
@@ -231,6 +250,54 @@ describe('source-bound public provider Settings broker', () => {
     const result = await broker().methods(request('methods'));
     expect(result.status).toBe(expectedStatus);
     expect(await result.json()).toEqual({ outcome });
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it('refuses a different accepted UI view before loading another account’s methods', async () => {
+    const current = request('methods', undefined, { [PROVIDER_SETTINGS_VIEW_HEADER]: 'f'.repeat(64) });
+    const result = await broker().methods(current);
+    expect(result.status).toBe(409);
+    expect(await result.json()).toEqual({ outcome: 'identity_changed' });
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.headers.getSetCookie()).toEqual([]);
+  });
+  it('requires the accepted view correlation header on methods', async () => {
+    const current = request('methods');
+    current.headers.delete(PROVIDER_SETTINGS_VIEW_HEADER);
+    expect((await broker().methods(current)).status).toBe(400);
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it('resumes only actual owned flow metadata with no private command or bearer publication', async () => {
+    const current = request('resume', undefined, {
+      cookie: await cookieHeader(),
+      [PROVIDER_SETTINGS_OPERATION_HEADER]: operationKey,
+    });
+    const result = await broker().resume(current);
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual({
+      providerSecurityResumeVersion: 1,
+      outcome: 'resumable',
+      operationKey,
+      actorContextKey: intent().actorContextKey,
+      action: 'link',
+      provider: 'apple',
+      methodId: null,
+      reauthenticationReady: false,
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(readSelection).toHaveBeenCalledTimes(2);
+    expect(result.headers.getSetCookie()).toEqual([]);
+  });
+  it('does not resume another account or emit fresh reauthentication proof', async () => {
+    const current = request('resume', undefined, {
+      cookie: await cookieHeader(),
+      [PROVIDER_SETTINGS_OPERATION_HEADER]: operationKey,
+    });
+    readSelection.mockImplementation(async () => ({
+      ...selected(),
+      session: { ...selected().session, userId: 'different-user' },
+      user: { ...selected().user, id: 'different-user' },
+    }));
+    expect((await broker().resume(current)).status).toBe(409);
     expect(execute).not.toHaveBeenCalled();
   });
   it.each(['https://attacker.invalid', 'null', 'https://app.boardsesh.test'])(

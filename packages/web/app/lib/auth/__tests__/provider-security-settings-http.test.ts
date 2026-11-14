@@ -130,6 +130,7 @@ describe('mounted provider Settings HTTP boundary', () => {
   );
   for (const [name, load] of [
     ['methods', async () => (await import('../../../api/internal/auth/provider-security/methods/route')).GET],
+    ['resume', async () => (await import('../../../api/internal/auth/provider-security/resume/route')).GET],
     ['intent', async () => (await import('../../../api/internal/auth/provider-security/intent/route')).POST],
     [
       'password',
@@ -144,7 +145,7 @@ describe('mounted provider Settings HTTP boundary', () => {
       const handler = await load();
       const result = await handler(
         new Request(`${origin}${PROVIDER_SETTINGS_PATHS[name]}`, {
-          method: name === 'methods' ? 'GET' : 'POST',
+          method: name === 'methods' || name === 'resume' ? 'GET' : 'POST',
           headers: { host: 'www.boardsesh.test', origin, 'x-auth-ready': 'true' },
         }),
       );
