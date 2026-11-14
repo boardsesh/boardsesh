@@ -1,9 +1,9 @@
 # Staged browser GraphQL HTTP clients
 
-The HTTP continuation composes the reviewed Expo consumer parent #7504 with
-the CNC and private-view parent #7503. Both commit histories are retained; all
-69 ending feature blobs matched their respective parents before extraction.
-Public browser and Expo readiness remain code-owned false.
+The HTTP continuation is based on the merged browser consumers, CNC and private
+views. The earlier composition compared 69 ending feature blobs before extracting
+the shared HTTP core. That source evidence is historical. Public browser and Expo
+readiness remain code-owned false.
 
 ## Original delivery authority
 
@@ -39,7 +39,7 @@ checks; it records one reachable sample. Observer failure cannot change denial o
 prevent scope retirement. The default/native reporting path leaves the optional
 classification seam unset.
 
-## Unmounted Expo SDK factory
+## Expo SDK and opaque browser views
 
 The selected Expo HTTP factory uses the shared transport with the installed
 `graphql-request` client. The existing native connectivity gate, malformed-body
@@ -53,13 +53,52 @@ signals. Cancellation remains effective during real SDK decoding and after the
 temporary inspection listener has been removed. Connectivity fails before a
 cold credential request; the request deadline includes that acquisition.
 
-This factory is not yet the public Expo HTTP facade or authentication hook.
-It does not qualify existing callers, query persistence, offline outboxes or
-their effects. The next host layer must expose an opaque view scope instead
-of placing a backend bearer in a query key and must bind retained clients to
-that original scope.
+The Expo browser facade now locates fixed clients through process-local opaque
+view labels. A cryptographic nonce separates registry lifetimes; at most 64
+entries are retained. Unknown, retired, reset or disposed labels refuse instead
+of choosing the current account. Reserved labels can never become bearer
+headers. The web authentication query stores a label or confirmed anonymity,
+never the raw JWE or backend lease. Native keeps its existing credential and
+query behavior.
 
-## Bounded evidence
+Interactive and offline clients retain their respective 20-second and 30-second
+deadlines. The selected SDK client rejects `setEndpoint()` changes before issuing
+a credential. The unused raw selected fetch entry refuses because it cannot
+provide the SDK decoder's original delivery receipt.
+
+The following actual callers now retain the original view:
+
+- Community-role reads use an opaque view key and verify their decoded result.
+- Privacy reads use the same view key through body completion.
+- Privacy writes capture immutable intent before TanStack's first await, then
+  check the original delivery before and after cache refresh and success effects.
+- Offline-aware reads capture before local database awaits and verify their
+  original network response after local enrichment.
+
+Native scope adapters preserve existing keys and transport behavior. Local
+offline identity remains separate from usable network authority. The web offline
+engine remains disabled; the local-reader composition tests inject its I/O and
+do not qualify SQLite or outbox publication in a browser.
+
+## Required central dispatch
+
+A code-gated required-dispatch path checks actual central admission before a
+cached legacy credential may dispatch. A 503, malformed body or unqualified
+legacy reply leaves network dispatch unavailable while retaining the previous
+offline identity. An old anonymous observation cannot authorize a request after
+that failure. A newly admitted B cannot replay A's pending mutation.
+
+The required-mode refusal remains sticky after observation. A successful actual
+anonymous response is required for anonymous dispatch, and that request removes
+unrelated supplied authentication headers.
+
+This is an explicit dispatch contract for a future qualified selected deployment.
+A local registry cannot discover an unseen server account while central admission
+is unavailable. Legacy-permitted dispatch retains its separate activation and
+retirement gate; its earlier first-503 counterexample is not qualified by these
+required-mode tests. The public readiness function still returns literal false.
+
+## Historical producer evidence
 
 Independent extraction review passed 12 shared cases and the unchanged 24
 actual WWW SDK cases. The separate cold-view 401 change passed independent
@@ -84,9 +123,35 @@ external 14-case fixture now passes all four prior failures too. The mobile
 TypeScript task and canonical check pass. Native function/helper equivalence is
 recorded with both optional host seams unset. The type task runs without install,
 build or schema-generation dependencies. This approves the unmounted producer;
-host facade, authentication-scope hook and consumer adoption remain next.
+host facade, authentication-scope hook and consumer adoption required separate
+qualification from that producer review.
 
-The first unseen-selected-503 legacy-cache interval remains open. Actual
-application/browser history, UI and cache publication, supported engine behavior,
-private SSR/Flight/prefetch, native handoff and complete public bootstrap and
-rolling-cookie publication retain their separate qualification gates.
+## Current caller evidence and remaining implementation
+
+Actual SDK tests reproduced three required-mode failures before the new central
+barrier: cached A could send an authenticated request, an explicit failed central
+read could leave that bearer usable, and earlier anonymity could permit a public
+request after failure. All three are refused by the new required path. A separate
+installed-SDK endpoint mutation reproduced credential issuance and dispatch to a
+different owned fixture URL; the fixed client now refuses before either step.
+
+The focused caller tests exercise actual React Query and SDK decoding: delayed A
+roles cannot fill B or ABA keys; a held `onMutate` cannot select B; a held cache
+refresh cannot publish A settings or its success callback; and a newer lease
+cannot extend the original settings delivery through another caller-owned await.
+Local-reader tests exercise same-tuple retirement before network dispatch and
+original lease expiry during enrichment without accessing a real database.
+
+A source census still identifies 85 other files containing 202 get-client call
+expressions: 38 hook files, seven providers, five offline-sync files, six
+components and 29 other files. This includes public reads and requires a separate
+authenticated/public classification. It is not a claim that all 202 expressions
+need authenticated admission. No production mobile caller invokes `iterate()`;
+the selected API remains fail-closed.
+
+Remaining implementation includes the other authenticated callers, offline
+outboxes and pulls, derived-result effects, and application-wide view/cache
+retirement. A common scope-aware operation context can retain the actual original
+delivery receipts through those awaits. Real browser history and supported-engine
+acceptance, private SSR/Flight/prefetch, native handoff, complete public bootstrap
+and rolling-cookie publication retain their separate qualification gates.

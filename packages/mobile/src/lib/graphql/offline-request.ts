@@ -20,6 +20,7 @@ import {
 } from '../../db/queries/board-download-status';
 import { getClimbStatsHistoryLocal } from '../../db/queries/get-climb-stats-history-local';
 import { getHttpClient } from './client';
+import { captureHttpRequestScope, assertCurrentHttpResult } from './request-scope';
 import { createAbortError } from './request-timeout';
 import { isGraphqlRequestTimeoutError } from './request-timeout';
 import { isBackendUnavailableError } from '../connectivity/backend-unavailable-error';
@@ -535,6 +536,9 @@ export async function offlineAwareRequest<TResponse>(
   variables?: Variables,
   options?: { signal?: AbortSignal },
 ): Promise<TResponse> {
+  // Capture before local database/enrichment awaits. A later login cannot
+  // become the authority for this operation's eventual network request.
+  const httpScope = captureHttpRequestScope();
   const suppliedVariables = variables as Record<string, unknown> | undefined;
   if (document === GET_CLIMB && suppliedVariables?.boardName === 'spray') {
     const layoutId = typeof suppliedVariables.layoutId === 'number' ? suppliedVariables.layoutId : null;
@@ -624,14 +628,16 @@ export async function offlineAwareRequest<TResponse>(
         ? operation.networkVariables(variables as never)
         : variables;
     const networkResponse = signal
-      ? await getHttpClient().request<TResponse>({ document, variables: sentVariables, signal })
-      : await getHttpClient().request<TResponse>(document, sentVariables);
+      ? await getHttpClient(httpScope).request<TResponse>({ document, variables: sentVariables, signal })
+      : await getHttpClient(httpScope).request<TResponse>(document, sentVariables);
     assertNotCancelled();
+    assertCurrentHttpResult(httpScope, networkResponse);
     if (operation && !localAllowed()) throw createAbortError('Privacy changed during climb request');
     const response = localAllowed()
       ? await enrichNetworkResponse(operation, localDb, variables, networkResponse)
       : networkResponse;
     assertNotCancelled();
+    assertCurrentHttpResult(httpScope, networkResponse);
     if (operation && !localAllowed()) throw createAbortError('Privacy changed during climb request');
     return response;
   } catch (networkError) {

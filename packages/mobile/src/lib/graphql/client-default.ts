@@ -44,6 +44,7 @@ export function createOfflineSyncGraphQLHttpClient(): GraphQLClient {
 let httpClient: GraphQLClient | null = null;
 let offlineSyncHttpClient: GraphQLClient | null = null;
 
+export function getHttpClient(_scope?: string | null): GraphQLClient;
 export function getHttpClient(): GraphQLClient {
   if (!httpClient) {
     httpClient = createGraphQLHttpClient();
@@ -51,6 +52,7 @@ export function getHttpClient(): GraphQLClient {
   return httpClient;
 }
 
+export function getOfflineSyncHttpClient(_scope?: string | null): GraphQLClient;
 export function getOfflineSyncHttpClient(): GraphQLClient {
   if (!offlineSyncHttpClient) {
     offlineSyncHttpClient = createOfflineSyncGraphQLHttpClient();

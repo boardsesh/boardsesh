@@ -4,6 +4,7 @@ import {
   isAuthCredentialGenerationCurrent,
   synchronizeWebSession,
   hasConfirmedAnonymousWebSession,
+  isRequiredBrowserDispatch,
 } from './auth-store.web';
 import { signOutForGeneration } from './auth.web';
 import { reportHandledError } from './error-reporting';
@@ -109,13 +110,14 @@ export async function ensureFreshToken(): Promise<boolean> {
   const generation = captureAuthCredentialGeneration();
   if (await getAuthToken()) return isAuthCredentialGenerationCurrent(generation);
   if (!isAuthCredentialGenerationCurrent(generation)) return false;
+  if (isRequiredBrowserDispatch() && hasConfirmedAnonymousWebSession()) return false;
   const session = await synchronizeWebSession();
   return session.status === 'authenticated' && isAuthCredentialGenerationCurrent(generation);
 }
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
   const requestGeneration = captureAuthCredentialGeneration();
-  const selectedRequest = expoBrowserBackendClient.isSelected();
+  const selectedRequest = isRequiredBrowserDispatch();
   const fresh = await ensureFreshToken();
   if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
     throw new Error('Authentication session changed before the request could be sent');
@@ -133,7 +135,7 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
   headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  if (expoBrowserBackendClient.isSelected()) {
+  if (isRequiredBrowserDispatch()) {
     const scope = token ? expoBrowserBackendClient.capture(token) : null;
     if (token && !scope) throw new BrowserBackendConsumerError('superseded');
     const lease = scope ? await expoBrowserBackendClient.acquireScope(scope) : null;

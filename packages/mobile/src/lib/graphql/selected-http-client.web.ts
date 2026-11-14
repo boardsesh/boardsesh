@@ -46,6 +46,10 @@ export function createSelectedBrowserHttpClient(options: {
   });
   const client = new GraphQLClient(url, {
     fetch(input, init = {}) {
+      // graphql-request exposes setEndpoint(). This view's credential belongs
+      // only to its configured backend, even if a caller mutates that SDK API.
+      const destination = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
+      if (destination !== url) throw new BrowserBackendConsumerError('unavailable');
       const caller = init.signal ?? (input instanceof Request ? input.signal : undefined);
       const signal = AbortSignal.any(caller ? [caller, controller.signal] : [controller.signal]);
       return gatedFetch(input, { ...init, signal }, timeoutMs());
