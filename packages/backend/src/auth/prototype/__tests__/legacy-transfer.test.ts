@@ -1,9 +1,12 @@
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import type { AccountCreationReceipt } from '@boardsesh/analytics';
 import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
+const webRequire = createRequire(new URL('../../../../../web/package.json', import.meta.url));
+vi.doMock(webRequire.resolve('server-only'), () => ({}));
 import { createPrototypeEnvironment } from '../environment';
 import { createPrototypeNativeFacade } from '../identity-native-facade';
 import { createPrototypeLegacyHandler } from '../legacy-bridge';

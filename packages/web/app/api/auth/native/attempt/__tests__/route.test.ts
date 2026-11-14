@@ -1,4 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vite-plus/test';
+vi.mock('server-only', () => ({}));
 import { NextRequest } from 'next/server';
 import { POST } from '../route';
 import { NATIVE_OAUTH_ATTEMPT_COOKIE, verifyNativeOAuthAttempt } from '@/app/lib/auth/native-oauth-transfer';
