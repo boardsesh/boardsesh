@@ -224,15 +224,19 @@ describe('strict anonymous provider preparation and atomic browser publication',
       const prepared = await prepare(pending);
       const exact = await candidate(prepared);
       const before = await allRows();
-      await expect(
-        readAnonymousProviderCreationReceipt(environment.database, environment.runtime, {
+      let rejected: unknown;
+      try {
+        await readAnonymousProviderCreationReceipt(environment.database, environment.runtime, {
           ...pending.bound,
           preparationToken: prepared.preparationToken,
           preparation: prepared.preparation,
           candidate: exact,
-        }),
-      ).rejects.toMatchObject({ code: 'replayed' });
+        });
+      } catch (error) {
+        rejected = error;
+      }
       expect(await allRows()).toEqual(before);
+      expect(rejected).toMatchObject({ code: 'replayed' });
       expect((await finalize(pending, prepared, exact)).outcome).toBe('committed');
     },
   );

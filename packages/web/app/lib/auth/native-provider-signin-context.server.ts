@@ -2,7 +2,7 @@ import 'server-only';
 import type { NativeProviderSigninContext } from '@boardsesh/auth-protocol/native-browser-handoff-v1';
 import { NATIVE_OAUTH_ATTEMPT_COOKIE, nativeOAuthAttemptBinding } from './native-oauth-attempt.server';
 import { boundedAuthCookiePairs } from './public-auth-request.server';
-import { openAnonymousProviderFlow } from './anonymous-provider-flow.server';
+import { openAnonymousProviderFlow, type AnonymousProviderFlow } from './anonymous-provider-flow.server';
 import { readAnonymousProviderRecoveryInput } from './anonymous-provider-recovery.server';
 import {
   readPresentedBrowserSelection,
@@ -34,7 +34,14 @@ export async function readNativeProviderSigninContext(
   for (const carrier of carriers) {
     const located = carrier.name.match(/^__Host-boardsesh\.anonymous-provider\.([a-f0-9]{64})$/);
     if (!located) continue;
-    const flow = await openAnonymousProviderFlow(carrier.content, located[1], options.secret);
+    let flow: AnonymousProviderFlow;
+    try {
+      flow = await openAnonymousProviderFlow(carrier.content, located[1], options.secret);
+    } catch {
+      // Unrelated retained carriers count toward capacity but cannot block the
+      // current receipt. Matched-current source/recovery failures still escape.
+      continue;
+    }
     if (
       !flow.preparation ||
       !flow.nativeAttemptHash ||

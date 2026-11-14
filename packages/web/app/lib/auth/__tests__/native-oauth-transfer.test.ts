@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vite-plus/test';
+vi.mock('server-only', () => ({}));
 import {
   issueNativeOAuthTransferToken,
   verifyNativeOAuthTransferToken,

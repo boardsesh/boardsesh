@@ -209,6 +209,7 @@ import {
   anonymousProviderFlowCookieName,
   anonymousProviderPendingCookieName,
   openAnonymousProviderFlow,
+  sealAnonymousProviderFlow,
 } from '@/app/lib/auth/anonymous-provider-flow.server';
 import { webOAuthFlowHash } from '@/app/lib/auth/web-oauth-continuation.server';
 import { captureProviderBrowserContext } from '@/app/lib/auth/provider-security-selection.server';
@@ -887,6 +888,45 @@ describe('actual production OAuth outer route and installed NextAuth', () => {
       expect(fixture.nativeContext?.receipt.preparation).toEqual(flow.preparation);
       expect(fixture.nativeContext?.receipt.nativeAttemptHash).toBe(flow.nativeAttemptHash);
       expect(fixture.nativeContext?.receipt).not.toHaveProperty('candidate');
+    },
+  );
+  it.each(['invalid', 'expired'] as const)(
+    'ignores unrelated %s retained carriers during actual native handoff attribution',
+    async (retained) => {
+      const provider = 'google';
+      fixture.callbackUrl = `${fixture.origin}/api/auth/native/callback?next=%2F&provider=${provider}&attemptId=${'a'.repeat(32)}`;
+      cookies.set(
+        NATIVE_OAUTH_ATTEMPT_COOKIE,
+        signNativeOAuthAttempt({ attemptId: 'a'.repeat(32), provider }, fixture.secret, NOW - 1000),
+      );
+      const result = await holdCommittedAnonymousProof(provider);
+      const flow = await openAnonymousProviderFlow(
+        cookies.get(anonymousProviderFlowCookieName(result.hash))!,
+        result.hash,
+        fixture.secret,
+      );
+      const unrelatedHash = 'f'.repeat(64);
+      cookies.set(
+        anonymousProviderFlowCookieName(unrelatedHash),
+        retained === 'invalid'
+          ? 'unrelated-malformed'
+          : await sealAnonymousProviderFlow(
+              {
+                ...flow,
+                flowHash: unrelatedHash,
+                issuedAt: new Date(NOW - 1000).toISOString(),
+                expiresAt: new Date(NOW + 5000).toISOString(),
+                preparation: null,
+                preparationToken: null,
+              },
+              fixture.secret,
+            ),
+      );
+      vi.setSystemTime(NOW + 6000);
+      const response = await nativeCallbackGet(request(fixture.callbackUrl));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('bsnh1_OWNEDNATIVECAPABILITY');
+      expect(fixture.nativeContext?.receipt.flowHash).toBe(result.hash);
     },
   );
   it.each(['new-marker', 'query-drift'] as const)(

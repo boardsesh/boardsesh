@@ -58,7 +58,19 @@ process.on('message', (message: unknown) => {
       EXPO_PUBLIC_POSTHOG_KEY: '',
       EXPO_PUBLIC_SCREENSHOT_MODE: '1',
     });
-    for (const key of ['NEXTAUTH_SECRET', 'AUTH_SECRET', 'CRON_SECRET', 'CURRENT_STORE_AUTH_RPC_SECRET'])
+    for (const key of [
+      'NEXTAUTH_SECRET',
+      'AUTH_SECRET',
+      'CRON_SECRET',
+      'CURRENT_STORE_AUTH_RPC_SECRET',
+      'NATIVE_BROWSER_HANDOFF_SECRET',
+      'BROWSER_DELEGATION_SECRET',
+      'AUTH_IDENTITY_DATABASE_URL',
+      'CREDENTIAL_WRITER_PROOF_DATABASE_URL',
+      'AUTH_PROTOTYPE_DATABASE_URL',
+      'DATABASE_URL',
+      'DATABASE_URL_UNPOOLED',
+    ])
       delete process.env[key];
     Object.assign(globalThis, { __DEV__: false });
     let opens = 0;
