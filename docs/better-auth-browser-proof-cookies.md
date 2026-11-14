@@ -39,6 +39,12 @@ A provider result planner may pass literal true to retain the exact old actor
 proof needed for a bounded ACK. This emits no older-proof cleanup and counts
 every actual old proof and operation carrier toward projected capacity; it does
 not filter or hide observed headers. Malformed option values fail closed.
+The projected next request must also fit the reader's 128-cookie-pair limit.
+This counts unrelated cookies, retained proofs and every future proof chunk;
+only exact overwritten or explicitly cleared names leave the projection. A
+candidate that fits the byte budget but exceeds this count fails before the
+caller can mutate credentials or publish headers. Exact-capacity replacements
+and observed older-family cleanup remain readable.
 Initial provider finalization must retain both actor possession and recovery
 capabilities until next-request ACK is qualified. Complete reply/header loss
 without the exact candidate still needs separate fresh same-owner recovery.
