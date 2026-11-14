@@ -8,6 +8,7 @@ import {
   PRIVATE_WEB_CREDENTIAL_CAPABILITIES,
   PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES,
   PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES,
+  PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES,
   PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES,
   PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES,
   type CredentialWriterContract,
@@ -46,16 +47,18 @@ export async function grantOwnedCredentialWriterCapabilities(
   owner: postgres.Sql,
   contract: CredentialWriterContract = 'private-web-v1',
 ) {
-  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(contract))
+  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1', 'private-first-password-v1'].includes(contract))
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const capabilities =
-    contract === 'private-provider-v1'
-      ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
-      : contract === 'private-browser-v1'
-        ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
-        : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
+    contract === 'private-first-password-v1'
+      ? PRIVATE_FIRST_PASSWORD_CREDENTIAL_CAPABILITIES
+      : contract === 'private-provider-v1'
+        ? PRIVATE_PROVIDER_CREDENTIAL_CAPABILITIES
+        : contract === 'private-browser-v1'
+          ? PRIVATE_BROWSER_CREDENTIAL_CAPABILITIES
+          : PRIVATE_WEB_CREDENTIAL_CAPABILITIES;
   const columnCapabilities =
-    contract === 'private-provider-v1'
+    contract === 'private-provider-v1' || contract === 'private-first-password-v1'
       ? PRIVATE_PROVIDER_CREDENTIAL_COLUMN_CAPABILITIES
       : PRIVATE_WEB_CREDENTIAL_COLUMN_CAPABILITIES;
   const relations = await owner<{ schema: string; name: string; kind: string; columns: string[] }[]>`
@@ -96,7 +99,7 @@ export async function grantOwnedCredentialWriterCapabilities(
     WHERE namespace.nspname !~ '^pg_' AND namespace.nspname<>'information_schema'`;
   for (const routine of routines)
     await owner.unsafe(`REVOKE ALL ON ROUTINE ${routine.signature} FROM PUBLIC,boardsesh_identity_writer`);
-  if (contract === 'private-provider-v1')
+  if (contract === 'private-provider-v1' || contract === 'private-first-password-v1')
     await owner`GRANT EXECUTE ON FUNCTION public.partner_revoke_user(text) TO boardsesh_identity_writer`;
   const owners = await owner<{ name: string }[]>`
     SELECT DISTINCT pg_get_userbyid(owner) AS name FROM (
@@ -112,13 +115,15 @@ export async function grantOwnedCredentialWriterCapabilities(
 }
 
 export async function createCredentialWriterEnvironment(contract: CredentialWriterContract = 'private-web-v1') {
-  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1'].includes(contract))
+  if (!['private-web-v1', 'private-browser-v1', 'private-provider-v1', 'private-first-password-v1'].includes(contract))
     throw new Error('OWNED_CREDENTIAL_PROOF_CONTRACT_REQUIRED');
   const target = ownedCredentialProofUrl();
   if (
     target.port === '5432' &&
     target.pathname !==
-      (contract === 'private-provider-v1' ? '/epic6975_credential_ci' : '/epic6975_credential_historical_ci')
+      (contract === 'private-provider-v1' || contract === 'private-first-password-v1'
+        ? '/epic6975_credential_ci'
+        : '/epic6975_credential_historical_ci')
   )
     throw new Error('OWNED_CREDENTIAL_PROOF_PROFILE_DATABASE_MISMATCH');
   const databaseName = target.pathname.slice(1);
@@ -141,7 +146,9 @@ export async function createCredentialWriterEnvironment(contract: CredentialWrit
       })),
     );
     const expected =
-      contract === 'private-provider-v1' ? canonical : (await readHistoricalCredentialWriterMigrations()).ledger;
+      contract === 'private-provider-v1' || contract === 'private-first-password-v1'
+        ? canonical
+        : (await readHistoricalCredentialWriterMigrations()).ledger;
     for (const ledger of ['public', 'drizzle']) {
       const observed = await owner.unsafe<{ hash: string; created_at: string }[]>(
         `SELECT hash,created_at::text FROM ${ledger}.__drizzle_migrations ORDER BY id`,

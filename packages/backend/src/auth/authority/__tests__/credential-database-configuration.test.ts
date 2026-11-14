@@ -76,7 +76,7 @@ describe('credential database target binding', () => {
     });
   });
 
-  it.each(['private-browser-v1', 'private-provider-v1'] as const)(
+  it.each(['private-browser-v1', 'private-provider-v1', 'private-first-password-v1'] as const)(
     'selects explicit reviewed %s without changing targets',
     (contract) => {
       expect(
