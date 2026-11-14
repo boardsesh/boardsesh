@@ -10,8 +10,6 @@ import type {
   CreateBoardInput,
   UpdateBoardInput,
   SetterStatsInput,
-  PublicUserProfile,
-  UpdateProfileInput,
   SessionHealthExport,
   UpdateGymInput,
   GrantGymWriteAccessInput,
@@ -110,8 +108,6 @@ import { useGradeSourceSearchInput } from './search-grade-source';
 import type { AdvertisedBoardTypes } from '../../ble/advertised-board-type';
 import { fetchBoardsForObservedSerials } from '../../ble/observed-board-matches';
 import {
-  GET_PROFILE,
-  UPDATE_PROFILE,
   GET_MY_BOARDS,
   GET_BOARD,
   GET_BOARDS_BY_SERIAL_NUMBERS,
@@ -131,8 +127,6 @@ import {
   GET_SESSION_HEALTH_EXPORT,
   END_SESSION,
   TOGGLE_FAVORITE,
-  type GetProfileQueryResponse,
-  type UpdateProfileMutationResponse,
   type GetMyBoardsQueryResponse,
   type GetBoardQueryResponse,
   type GetBoardsBySerialNumbersQueryResponse,
@@ -270,45 +264,7 @@ function scheduleDrain(
 // User Profile
 // ============================================
 
-export function useProfile(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: ['profile'],
-    queryFn: () => getHttpClient().request<GetProfileQueryResponse>(GET_PROFILE),
-    select: (data) => data.profile,
-    enabled: options?.enabled ?? true,
-  });
-}
-
-/**
- * Update the current user's display name and/or avatar URL. The mutation result
- * is written into the `['profile']` cache immediately, then invalidated so every
- * current-user consumer refreshes against the backend. The avatar image itself
- * is uploaded separately via `uploadAvatar` (REST), and its absolute URL is then
- * persisted here.
- */
-export function useUpdateProfile() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: UpdateProfileInput) => {
-      const response = await getHttpClient().request<UpdateProfileMutationResponse>(UPDATE_PROFILE, { input });
-      return response.updateProfile;
-    },
-    onSuccess: (updatedProfile) => {
-      queryClient.setQueryData<GetProfileQueryResponse>(['profile'], { profile: updatedProfile });
-      queryClient.setQueryData<PublicUserProfile | null>(['publicProfile', updatedProfile.id], (cachedProfile) =>
-        cachedProfile
-          ? {
-              ...cachedProfile,
-              displayName: updatedProfile.displayName,
-              avatarUrl: updatedProfile.avatarUrl,
-            }
-          : cachedProfile,
-      );
-      void queryClient.invalidateQueries({ queryKey: ['profile'] });
-      void queryClient.invalidateQueries({ queryKey: ['publicProfile', updatedProfile.id] });
-    },
-  });
-}
+export { useProfile, useUpdateProfile } from './use-profile';
 
 // ============================================
 // Board Queries

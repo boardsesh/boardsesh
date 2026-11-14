@@ -197,6 +197,56 @@ Two exact-restored semantic controls rejected latest-receipt borrowing and an
 expired older delivery despite a newer same-owner lease. This qualifies the
 unmounted API; staged query/mutation caller and UI adoption remains separate.
 
+## Captured query and mutation callers
+
+The next staged adapter captures the original browser view before React Query
+starts a query, paused mutation or asynchronous `onMutate`. Selected query keys
+use an opaque view prefix; native and legacy keys retain their existing shape.
+The cache facade exposes only scoped reads, writes, cancellation, invalidation
+and removal. It checks the original view or delivery before and after effects,
+including updater and predicate callbacks. Predicates see the actual scoped key;
+custom key parsing still needs individual adoption.
+
+Each query invocation creates a separate operation. Infinite queries retain the
+original public key and page parameter passed to the query callback. Initial and
+placeholder data and custom key hashing are absent from this adapter until they
+have an explicit ownership contract. Actual confirmed anonymity may perform a
+nullable profile or admin read; required-but-unavailable admission stays inert.
+
+Each mutation captures its operation and callback closures before React Query's
+first await. Optimistic work uses the original view; server-derived cache work
+uses the original decoded deliveries. Hook and invocation callbacks receive the
+operation and must check it after their own awaits before publishing effects.
+`mutateWithReceipt` returns the result with its original guard, including for
+primitive or derived results. A caller must check that guard again after awaiting
+it and immediately before its own state, navigation or cache publication.
+`mutateAsync` alone cannot qualify that later continuation. Signals cancel work
+before lookup and after actual body decoding without replaying mutations.
+
+The actual profile and admin reads and profile-update cache effects now use these
+adapters. Profile updates refresh only their original view's cache. This does not
+yet adopt EditProfileScreen's later UI continuation or avatar-upload flow, the
+other query/mutation hooks, offline writes, persistence or application-wide local
+state. The earlier 85-file/202-capture census is historical; this slice replaces
+three of those direct client captures. No selected-mode activation or native
+credential/account policy change is introduced.
+
+Independent review of this caller slice passed 59 cases before and after exact
+source restoration. Removing only an updater's post-callback guard caused a
+stale cache overwrite even though the outer guard still threw. Removing only
+the cache's post-await guard caused three stale completions, including an expired
+original delivery while a newer same-owner lease remained live.
+
+The complete mobile run passed 29,138 cases with two skipped across 1,935 files.
+All 64 actual uncached workspace type tasks passed at the reviewed checkpoint.
+Its replay onto the merged provider/renewal main preserves all 14 reviewed
+code/test hashes and the complete mobile tree. This documentation records the
+new evidence; final-head workspace types remain required.
+Local native and browser bundle attempts again reached Metro but failed to see
+the existing Expo Router entry through the borrowed external dependency link.
+No install or Metro configuration workaround was applied. Normal-install CI
+must qualify those bundles before this slice becomes Ready.
+
 Real browser history and supported-engine
 acceptance, private SSR/Flight/prefetch, native handoff, complete public bootstrap
 and rolling-cookie publication retain their separate qualification gates.
