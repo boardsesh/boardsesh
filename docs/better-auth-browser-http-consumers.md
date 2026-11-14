@@ -224,10 +224,11 @@ it and immediately before its own state, navigation or cache publication.
 before lookup and after actual body decoding without replaying mutations.
 
 The actual profile and admin reads and profile-update cache effects now use these
-adapters. Profile updates refresh only their original view's cache. This does not
-yet adopt EditProfileScreen's later UI continuation or avatar-upload flow, the
-other query/mutation hooks, offline writes, persistence or application-wide local
-state. The earlier 85-file/202-capture census is historical; this slice replaces
+adapters. Profile updates refresh only their original view's cache. That
+query/cache slice did not adopt EditProfileScreen's later UI continuation or
+avatar-upload flow; the next section describes their separate adoption. Other
+query/mutation hooks, offline writes, persistence and application-wide local
+state remain separate. The earlier 85-file/202-capture census is historical; that slice replaces
 three of those direct client captures. No selected-mode activation or native
 credential/account policy change is introduced.
 
@@ -250,3 +251,47 @@ must qualify those bundles before this slice becomes Ready.
 Real browser history and supported-engine
 acceptance, private SSR/Flight/prefetch, native handoff, complete public bootstrap
 and rolling-cookie publication retain their separate qualification gates.
+
+## Profile editing and avatar upload
+
+Each profile UI action captures its original view and mounted lifetime before
+opening the image picker or awaiting compression, local image bytes, upload or
+profile save. Selected forms use the opaque view key; native and legacy forms
+retain their existing key and credential policy. Unmount and Strict Mode cleanup
+abort owned pending actions. A later view or remount cannot revive one.
+
+The avatar uploader exposes a receipt alongside its derived URL. On web, that
+receipt comes only from the actual authenticated Response's private original
+lease guard. Copies and reconstructed successful response metadata cannot supply
+one. A newer response or same-owner lease cannot extend the old upload. The
+existing string-returning upload API remains available for native compatibility.
+The actual profile editor uses the receipt API and retains the upload guard
+through the later GraphQL save, then checks both original receipts before its
+success toast and navigation. Per-invocation mutation signals compose with any
+hook signal; cancellation does not replay an upload or mutation.
+
+Focused tests cover actual multipart bytes through the selected interceptor and
+injected lease manager, B during local image reads and delayed response bodies,
+original upload expiry despite a fresh same-owner response, composed mutation
+cancellation, copied-response refusal, UI ABA/unmount and retirement during the
+success callback. These tests exercise controlled platform I/O; they do not
+qualify a real device image picker, whole-application account retirement or public
+activation. Notifications, the other authenticated callers and offline outboxes
+still need their own captured-operation adoption.
+
+Independent review found that passive unmount cleanup left a removed action
+usable inside its parent's layout effect. The real removal-phase test observed
+`current: true` and `aborted: false`; layout cleanup now produces the required
+opposite result before that effect runs. The corrected 59-case suite and the
+external removal-phase control pass. Removing only the original REST receipt
+guard admitted an expired derived avatar URL; removing only the original-view
+guard allowed a forbidden back navigation after account replacement. All source
+bytes were restored before the final independent 59-case replay passed.
+
+On the reviewed code replayed onto main `14fc54caac`, all 1,938 mobile test files
+passed: 29,165 cases and two skipped. All 64 actual uncached workspace type tasks
+passed. Required local native and browser bundle attempts reached Metro but
+could not resolve the existing Expo Router entry linked outside this worktree's
+watched repository. The browser attempt reused its installed nested runtime;
+no dependency install or Metro configuration change was applied. Normal-install
+CI must pass both bundles before this slice becomes Ready.

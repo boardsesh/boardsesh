@@ -313,4 +313,61 @@ describe('actual scoped profile/admin and QueryClient mutation consumers', () =>
     expect(success).not.toHaveBeenCalled();
     expect(current.performFetch).toHaveBeenCalledTimes(1);
   });
+
+  it.each(['hook', 'call'] as const)(
+    'honors the %s signal when an invocation supplies both signals',
+    async (cancel) => {
+      const current = fixture();
+      const held = heldResponse({ viewer: { id: 'owned-A' } });
+      current.performFetch.mockResolvedValueOnce(held.response);
+      const hook = new AbortController();
+      const call = new AbortController();
+      const success = vi.fn();
+      const { result } = renderHook(
+        () =>
+          useHttpMutation({
+            signal: hook.signal,
+            mutationFn: (_input: void, operation) => operation.request('{ viewer { id } }'),
+            onSuccess: success,
+          }),
+        current,
+      );
+      let pending!: Promise<unknown>;
+      act(() => {
+        pending = result.current.mutateWithReceipt(undefined, { signal: call.signal });
+      });
+      const reason = new Error(`Original ${cancel} cancelled`);
+      const refused = expect(pending).rejects.toBe(reason);
+      await waitFor(() => expect(current.performFetch).toHaveBeenCalledTimes(1));
+      (cancel === 'hook' ? hook : call).abort(reason);
+      await act(async () => {
+        held.release();
+        await refused;
+      });
+      expect(success).not.toHaveBeenCalled();
+      expect(current.performFetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('refuses an already-cancelled per-call signal before onMutate or any packet', async () => {
+    const current = fixture();
+    const call = new AbortController();
+    const onMutate = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useHttpMutation({
+          onMutate,
+          mutationFn: (_input: void, operation) => operation.request('{ viewer { id } }'),
+        }),
+      current,
+    );
+    const reason = new Error('Already cancelled action');
+    call.abort(reason);
+    await expect(result.current.mutateWithReceipt(undefined, { signal: call.signal })).rejects.toMatchObject({
+      status: 'superseded',
+    });
+    expect(onMutate).not.toHaveBeenCalled();
+    expect(current.issueLease).not.toHaveBeenCalled();
+    expect(current.performFetch).not.toHaveBeenCalled();
+  });
 });
