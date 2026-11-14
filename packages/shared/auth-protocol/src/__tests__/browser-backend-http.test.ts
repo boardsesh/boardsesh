@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserBackendClient } from '../browser-backend-client';
 import {
   captureBrowserBackendHttpScope,
+  captureBrowserBackendHttpResult,
   createBrowserBackendHttpTransport,
   createBrowserBackendHttpTransportForView,
   isCurrentBrowserBackendHttpResult,
@@ -71,6 +72,56 @@ async function decoded(transport: ReturnType<typeof createBrowserBackendHttpTran
 }
 
 describe('SDK-independent browser HTTP authority and delivery receipts', () => {
+  it('captures the original lease even if a decoder later reuses its result object', async () => {
+    const current = fixture();
+    const transport = current.create();
+    const result = await decoded(transport);
+    const original = captureBrowserBackendHttpResult(result, current.client);
+    expect(original).not.toBeNull();
+    current.setClock(90_000);
+    const secondResponse = await transport.fetch('/graphql', undefined);
+    transport.admitResponse({ kind: 'result', headers: secondResponse.headers, data: result });
+    const renewed = captureBrowserBackendHttpResult(result, current.client);
+    current.setClock(120_001);
+    expect(() => original!()).toThrow();
+    expect(() => renewed!()).not.toThrow();
+    expect(isCurrentBrowserBackendHttpResult(result, current.client)).toBe(true);
+  });
+  it.each(['B', 'ABA', 'abort', 'dispose'] as const)(
+    'a captured delivery still refuses %s after a caller-owned await',
+    async (change) => {
+      const current = fixture();
+      const transport = current.create();
+      const controller = new AbortController();
+      const result = await decoded(transport, { signal: controller.signal });
+      const original = captureBrowserBackendHttpResult(result.preview, current.client);
+      expect(original).not.toBeNull();
+      if (change === 'B' || change === 'ABA') {
+        current.switchAccount('owned-B');
+        if (change === 'ABA') current.switchAccount('owned-A');
+      } else if (change === 'abort') controller.abort();
+      else transport.dispose();
+      await Promise.resolve();
+      expect(() => original!()).toThrow();
+      expect(current.client.getSnapshot().owner?.userId).toBe(change === 'B' ? 'owned-B' : 'owned-A');
+    },
+  );
+  it("does not capture copied, primitive or another client's delivery metadata", async () => {
+    const current = fixture();
+    const result = await decoded(current.create());
+    expect(captureBrowserBackendHttpResult(structuredClone(result), current.client)).toBeNull();
+    expect(captureBrowserBackendHttpResult('claimed-delivery', current.client)).toBeNull();
+    expect(captureBrowserBackendHttpResult(result, fixture().client)).toBeNull();
+    const neverSelected = createBrowserBackendClient({
+      ready: () => false,
+      fetch: current.leaseFetch,
+      endpoint: '/owned-unused',
+      now: () => 0,
+      schedule: () => () => {},
+    });
+    closeClients.push(() => neverSelected.dispose());
+    expect(captureBrowserBackendHttpResult(result, neverSelected)).toBeNull();
+  });
   it('lazily acquires a real first lease, attaches it once, and remembers only the original decoded objects', async () => {
     const current = fixture();
     const transport = current.create();

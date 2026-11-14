@@ -97,6 +97,14 @@ export function createBrowserHttpClientFacade(provided: {
           return false;
         }
       },
+      captureResult: (_result: unknown) => {
+        try {
+          assertPublicOrLegacy();
+          return assertPublicOrLegacy;
+        } catch {
+          return null;
+        }
+      },
       dispose: () => controller.abort(new BrowserBackendConsumerError('superseded')),
     };
   }
@@ -121,6 +129,7 @@ export function createBrowserHttpClientFacade(provided: {
           client: Object.freeze({ interactive: interactive.client, offline: offline.client }),
           isCurrent: () => interactive.isCurrent() && offline.isCurrent(),
           isCurrentResult: (result) => interactive.isCurrentResult(result) || offline.isCurrentResult(result),
+          captureResult: (result) => interactive.captureResult(result) ?? offline.captureResult(result),
           dispose() {
             interactive.dispose();
             offline.dispose();
@@ -177,6 +186,14 @@ export function createBrowserHttpClientFacade(provided: {
       if (handle === undefined && !required()) return;
       if (!handle || !getRegistry().isCurrentResult(handle, result))
         throw new BrowserBackendConsumerError('superseded');
+    },
+    captureResult(handle: string | undefined, result: unknown): (() => void) | null {
+      if (closed) return null;
+      if (handle === undefined && !required())
+        return () => {
+          if (closed || required()) throw new BrowserBackendConsumerError('superseded');
+        };
+      return handle ? getRegistry().captureResult(handle, result) : null;
     },
     queryKey<Key extends readonly unknown[]>(key: Key, handle: string | null | undefined): readonly unknown[] {
       return typeof handle === 'string' && handle.startsWith(BROWSER_HTTP_VIEW_PREFIX)

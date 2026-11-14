@@ -12,6 +12,7 @@ export type BrowserHttpViewClient<Client> = {
   readonly client: Client;
   readonly isCurrent: () => boolean;
   readonly isCurrentResult: (result: unknown) => boolean;
+  readonly captureResult?: (result: unknown) => (() => void) | null;
   readonly dispose: () => void;
 };
 
@@ -99,6 +100,20 @@ export function createBrowserBackendHttpViewRegistry<Client>(options: {
         return requireEntry(handle).transport.isCurrentResult(result);
       } catch {
         return false;
+      }
+    },
+    captureResult(handle: string, result: unknown): (() => void) | null {
+      try {
+        const entry = requireEntry(handle);
+        const assertResult = entry.transport.captureResult?.(result);
+        if (!assertResult) return null;
+        assertResult();
+        return () => {
+          if (requireEntry(handle) !== entry) throw new BrowserBackendConsumerError('superseded');
+          assertResult();
+        };
+      } catch {
+        return null;
       }
     },
     /** Clear local clients only. This never changes the actual source
