@@ -8,7 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### App update
 
-A new version shipped to the App Store.
+A new version shipped to the App Store and Play Store.
 
 ### New
 
@@ -19,6 +19,7 @@ A new version shipped to the App Store.
 
 ### Improved
 
+- Old web import links now open your board accounts in the app. ([#7491](https://github.com/boardsesh/boardsesh/pull/7491))
 - Climb pages use less data when you open a shared link. ([#7479](https://github.com/boardsesh/boardsesh/pull/7479))
 - The help pages are easier to read, with big app screenshots beside each step ([#7269](https://github.com/boardsesh/boardsesh/pull/7269))
 

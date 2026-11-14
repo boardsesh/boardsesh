@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-13T19:13:38.087Z",
+  "generatedAt": "2026-11-14T00:08:04.167Z",
   "entries": [
+    {
+      "prNumber": 7491,
+      "category": "improved",
+      "title": "Old web import links now open your board accounts in the app.",
+      "mergedAt": "2026-11-13T19:19:58Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7491"
+    },
     {
       "prNumber": 7353,
       "category": "fixed",
@@ -9592,6 +9599,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-13T20:57:53+02:00",
+      "sha": "d4a157ce70913962e2aebec41a869c7798cc9c6e",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "6fdfc1cc8705f00e5047043e52b93a3263054e30"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-13T18:03:56Z",
