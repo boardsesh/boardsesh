@@ -166,6 +166,11 @@ Metro configuration workaround was applied; the browser attempt reused the
 existing nested runtime without running its install dependency. Normal-install
 CI must qualify both native and browser bundles before this slice is Ready.
 
+The normal-install CI bundle job subsequently passed native and browser exports
+at `a50b66a3fa` ([CI job](https://github.com/boardsesh/boardsesh/actions/runs/43593939328/job/132444364531)).
+That qualification is separate from the local borrowed-dependency limitation;
+all required checks on the current PR head still need to pass before Ready.
+
 A source census still identifies 85 other files containing 202 get-client call
 expressions: 38 hook files, seven providers, five offline-sync files, six
 components and 29 other files. This includes public reads and requires a separate
