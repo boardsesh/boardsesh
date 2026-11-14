@@ -13,6 +13,7 @@
     "credential-proof.vite.config.ts",
     "../app/lib/auth/types.ts",
     "browser-proof-cookies.proof.ts",
+    "provider-security-cookie-recovery.proof.ts",
     "browser-proof-cookies.vite.config.ts"
   ],
   "exclude": []
