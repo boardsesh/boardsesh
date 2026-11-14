@@ -1,6 +1,6 @@
 # Staged canonical browser coordinator
 
-The shared auth protocol exposes three opt-in subpaths: `browser-coordinator`
+The shared auth protocol exposes four opt-in subpaths: `browser-coordinator`
 for strict control metadata, `browser-coordinator-runner` for canonical lock and
 network settlement, `browser-coordinator-channel` for www/app MessageChannel
 clients, and `browser-coordinator-dom` for browser platform I/O. The WWW session
