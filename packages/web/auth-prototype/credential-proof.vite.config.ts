@@ -25,6 +25,7 @@ export default defineConfig(async (environment) => {
         'auth-prototype/provider-security-auth.proof.ts',
         'auth-prototype/provider-security-publication.proof.ts',
         'auth-prototype/provider-security-google-reauth.proof.ts',
+        'auth-prototype/provider-owned-signin-auth.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,

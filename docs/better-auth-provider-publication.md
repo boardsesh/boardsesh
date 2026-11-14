@@ -1,9 +1,10 @@
-# Unmounted explicit provider publication
+# Unmounted provider publication
 
 This prerequisite for epic #6975 separates an explicit Google/Apple method
 change from ordinary OAuth identity resolution. Rollout remains tracked in
-#7430. No qualified flow reader, Settings broker, public route adapter or mode
-activation is supplied here.
+#7430. The selected flow reader and Apple transport normalizer now have
+server-only factories. Public composition, Settings wiring and mode activation
+remain incomplete.
 
 The server-only client uses the frozen private provider-security protocol with
 explicit 192 KiB request and 128 KiB response budgets. It captures submitted
@@ -94,6 +95,40 @@ The backend independently rechecks ordinary subject ownership before consuming
 any legacy intent. That transactional fence and the broker's actual central
 reader remain native/provider implementation scope; these frontend hook types
 do not establish ownership themselves.
+
+## Ordinary owned-account publication
+
+The request-local owned sign-in factory keeps the browser's actual A credential
+for central admission while NextAuth verifies Google or Apple. A separate
+pending cookie family prevents NextAuth from automatically associating B's
+provider subject with A. All adapter writes and email matching are refused.
+The backend's existing `signin-prepare` result either preserves the same owner
+without a new credential or fixes the distinct B owner, SID, generation,
+provenance, expiry and canonical proposal. Apple never supplies a fresh age.
+
+The actual JWT callback and installed public encoder run before finalization.
+The factory removes the entire pending session-cookie family, waits for the
+original A response admission and partner response work, buffers the response,
+seals a metadata-only preparation carrier and checks the complete projected
+browser Cookie header. Only then does it finalize the exact candidate. Failures
+before finalization attempt cancellation; an uncertain finalization never
+retries, aborts or publishes the pending candidate.
+
+The next-request acknowledgment factory requires both physically observed
+versioned A and B proofs, the preparation carrier, and current primary B
+admission. It matches the complete prepared B proof and cursor, calls the exact
+backend acknowledgment once, and rechecks primary admission before returning
+only `recovered`. It emits no cookies and cannot recover credentials after
+their bytes or the carrier were lost. Its production readiness remains false.
+
+Installed NextAuth proofs join actual Google/Apple discovery, token exchange,
+JWT verification and cookie publication with a controlled private command
+boundary across both credential kinds. They cover same-owner preservation,
+pending-family quarantine, late hook/codec/admission/body/whole-header failures,
+uncertain finalization and next-request exact acknowledgment. The private
+command boundary and primary receipt are controlled fixtures here; restricted
+LOGIN and real transaction composition, public mounting, selected anonymous
+sign-in and real browser/device acceptance remain open.
 
 ## Evidence limits
 
