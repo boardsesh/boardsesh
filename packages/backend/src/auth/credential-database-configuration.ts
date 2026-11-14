@@ -44,7 +44,8 @@ export function credentialDatabaseConfiguration(
       contract !== 'private-browser-v1' &&
       contract !== 'private-provider-v1' &&
       contract !== 'private-first-password-v1' &&
-      contract !== 'private-native-handoff-v1'
+      contract !== 'private-native-handoff-v1' &&
+      contract !== 'private-browser-renewal-v1'
     )
       throw new Error();
     if (

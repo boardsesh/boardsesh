@@ -48,3 +48,23 @@ login/binding deadline, delayed older responses, lock waits, competing login /
 logout / provider changes, exact encoding expiry, post-write expiry rollback,
 whole-cookie capacity and uncertain completion. Missing-proof recovery and
 supported-browser two-account cancellation remain separate acceptance gates.
+
+The private HTTP namespace is `/api/internal/auth/browser-renewal/v1/` and is
+disabled unless both browser-binding and renewal modes select backend staging.
+It authenticates the service, validates the exact path and bounded command,
+and checks request freshness before opening the credential pool. It never uses
+the shared content pool or emits browser cookies.
+
+`private-browser-renewal-v1` is an explicit sixth credential-writer contract.
+The five earlier contracts keep their existing capability maps. The sixth
+adds only `SELECT` and `INSERT` on the generated renewal relation and column
+updates on its four completion fields. It has no relation-wide update or
+delete grant. Catalog qualification pins the generated relation shape, and
+an unqualified or differently configured pool refuses the command. The
+canonical CI fixture runs the renewal and five compatible HTTP handler suites
+serially under that actual LOGIN. Historical profile proofs stay separate.
+
+This source slice does not mount the canonical browser renewal publisher.
+Preparing the actual JWE, buffering the cookie response, observing physical
+delivery, and coordinating every browser session writer remain prerequisites
+to public activation.

@@ -61,11 +61,16 @@ const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
 if (
   selectedHttpContract &&
   selectedHttpContract !== 'private-first-password-v1' &&
-  selectedHttpContract !== 'private-native-handoff-v1'
+  selectedHttpContract !== 'private-native-handoff-v1' &&
+  selectedHttpContract !== 'private-browser-renewal-v1'
 )
   throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
 const httpContract =
-  selectedHttpContract === 'private-native-handoff-v1' ? 'private-native-handoff-v1' : 'private-first-password-v1';
+  selectedHttpContract === 'private-browser-renewal-v1'
+    ? 'private-browser-renewal-v1'
+    : selectedHttpContract === 'private-native-handoff-v1'
+      ? 'private-native-handoff-v1'
+      : 'private-first-password-v1';
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin: string;

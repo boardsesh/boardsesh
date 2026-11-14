@@ -86,6 +86,7 @@ export function currentStoreDeletedEmailKey(environment: Environment = process.e
 /** Every switch that turns on a staged writer of credentials or cutoffs. Unset, empty or `legacy` is off. */
 export const STAGED_WRITER_MODE_ENV = [
   'CURRENT_STORE_BROWSER_BINDING_MODE',
+  'CURRENT_STORE_BROWSER_RENEWAL_MODE',
   AUTH_COMMAND_ENV.mode,
   'CURRENT_STORE_WEB_OAUTH_MODE',
   'CURRENT_STORE_NATIVE_REGISTRATION_MODE',

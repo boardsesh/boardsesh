@@ -2,6 +2,7 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
+import { handleBrowserRenewal } from './handlers/browser-renewal';
 import { handleBrowserDelegation } from './handlers/browser-delegation';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
@@ -810,6 +811,10 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
         await handleBrowserBinding(req, res);
+        return;
+      }
+      if (pathname.startsWith('/api/internal/auth/browser-renewal/v1/')) {
+        await handleBrowserRenewal(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {

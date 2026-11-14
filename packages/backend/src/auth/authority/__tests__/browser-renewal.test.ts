@@ -64,8 +64,8 @@ function prepared(reply: BrowserRenewalReply) {
   if (reply.outcome !== 'prepared') throw new Error(`Renewal preparation refused: ${reply.outcome}`);
   return reply;
 }
-async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false) {
-  const authSessionId = randomUUID();
+async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false, noSid = false) {
+  let authSessionId: string = randomUUID();
   const authenticatedAt = knownAge ? new Date(Math.floor(Date.now() / 1_000) * 1_000 - 86_400_000) : null;
   let credential: BrowserSelectionCredential['credential'];
   if (kind === 'legacy-jwe')
@@ -76,7 +76,7 @@ async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false) {
         secret,
         token: {
           sub: ownerId,
-          authSessionId,
+          ...(noSid ? {} : { authSessionId }),
           gen: 0,
           ...(authenticatedAt ? { auth_time: authenticatedAt.getTime() / 1_000, link_guarded: true } : {}),
         },
@@ -125,6 +125,10 @@ async function setup(kind: 'legacy-jwe' | 'canonical-token', knownAge = false) {
     credential,
   );
   if (login.status !== 'committed') throw new Error('Fixture source publication refused');
+  if (noSid) {
+    if (!login.session) throw new Error('Fixture published source absent');
+    authSessionId = login.session.authSessionId;
+  }
   const actor = {
     version: 1,
     credential:
@@ -138,17 +142,24 @@ async function candidate(
 ) {
   if (current.actor.credential.kind === 'canonical-token') return current.actor.credential;
   const proof = result.preparation.sourceCredentialProof;
-  const token = await jwt.encode({
-    secret,
-    token: {
-      sub: proof.userId,
-      authSessionId: proof.authSessionId,
-      gen: proof.generation,
-      ...(proof.authenticatedAt ? { auth_time: Date.parse(proof.authenticatedAt) / 1_000, link_guarded: true } : {}),
-      ...(proof.requiresAccountCutoff ? { legacy_no_sid: true } : {}),
-    },
-    maxAge: Date.parse(result.preparation.targetExpiresAt) / 1_000 - Math.floor(Date.now() / 1_000),
-  });
+  const milliseconds = Math.floor(Date.now() / 1_000) * 1_000;
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(milliseconds);
+  let token: string;
+  try {
+    token = await jwt.encode({
+      secret,
+      token: {
+        sub: proof.userId,
+        authSessionId: proof.authSessionId,
+        gen: proof.generation,
+        ...(proof.authenticatedAt ? { auth_time: Date.parse(proof.authenticatedAt) / 1_000, link_guarded: true } : {}),
+        ...(proof.requiresAccountCutoff ? { legacy_no_sid: true } : {}),
+      },
+      maxAge: Date.parse(result.preparation.targetExpiresAt) / 1_000 - milliseconds / 1_000,
+    });
+  } finally {
+    clock.mockRestore();
+  }
   expect((await jwt.decode({ secret, token }))?.exp).toBe(Date.parse(result.preparation.targetExpiresAt) / 1_000);
   return { kind: 'legacy-jwe' as const, credential: token };
 }
@@ -202,6 +213,46 @@ describe('ordinary selected-browser renewal transactions', () => {
               epoch: manifest.writerEpoch,
             });
         });
+      });
+      it.each([false, true])('preserves actual no-SID ancestry and original age, known=%s', async (knownAge) => {
+        const current = await setup('legacy-jwe', knownAge, true);
+        const result = prepared(
+          await invoke(command('prepare', { bindingToken: current.bindingToken, actor: current.actor, nonceHash })),
+        );
+        expect(result.preparation.sourceCredentialProof).toMatchObject({
+          authSessionId: current.authSessionId,
+          requiresAccountCutoff: true,
+          authenticatedAt: current.authenticatedAt?.toISOString() ?? null,
+          linkGuarded: knownAge,
+        });
+        const renewed = await candidate(current, result);
+        const unqualified = structuredClone(result);
+        delete unqualified.preparation.sourceCredentialProof.requiresAccountCutoff;
+        const forged = await candidate(current, unqualified);
+        const before = {
+          sessions: await environment.database.select().from(authSession),
+          bindings: await environment.database.select().from(authBrowserBindings),
+          renewals: await environment.database.select().from(authBrowserRenewals),
+        };
+        expect(await invoke(command('finalize', bound(current, result, forged)))).toMatchObject({
+          outcome: 'conflict',
+        });
+        expect({
+          sessions: await environment.database.select().from(authSession),
+          bindings: await environment.database.select().from(authBrowserBindings),
+          renewals: await environment.database.select().from(authBrowserRenewals),
+        }).toEqual(before);
+        const payload = bound(current, result, renewed);
+        expect(await invoke(command('finalize', payload))).toMatchObject({
+          outcome: 'completed',
+          credentialProof: {
+            authSessionId: current.authSessionId,
+            requiresAccountCutoff: true,
+            authenticatedAt: current.authenticatedAt?.toISOString() ?? null,
+            linkGuarded: knownAge,
+          },
+        });
+        expect(await invoke(command('acknowledge', payload))).toMatchObject({ outcome: 'completed' });
       });
       for (const kind of ['legacy-jwe', 'canonical-token'] as const)
         describe(kind, () => {

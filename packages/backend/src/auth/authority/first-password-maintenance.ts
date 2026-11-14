@@ -136,7 +136,8 @@ export async function runFirstPasswordPreparationMaintenance(
   firstPasswordMode(environment);
   if (
     environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-first-password-v1' &&
-    environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-native-handoff-v1'
+    environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-native-handoff-v1' &&
+    environment.AUTH_IDENTITY_DATABASE_CONTRACT !== 'private-browser-renewal-v1'
   )
     return { observed: 0, scrubbed: 0 };
   const authority = currentStoreAuthorityConfiguration(environment);

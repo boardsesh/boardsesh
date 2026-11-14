@@ -24,7 +24,7 @@ describe('first-password maintenance profile selection', () => {
       expect(dependencies.get).not.toHaveBeenCalled();
     },
   );
-  for (const contract of ['private-first-password-v1', 'private-native-handoff-v1'])
+  for (const contract of ['private-first-password-v1', 'private-native-handoff-v1', 'private-browser-renewal-v1'])
     it.each(['legacy', 'backend-staging'])(
       `requires the reviewed ${contract} during feature mode %s, without any JWE reader key`,
       async (mode) => {
