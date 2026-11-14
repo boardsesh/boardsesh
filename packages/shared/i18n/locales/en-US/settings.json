@@ -697,5 +697,41 @@
     "publishLinkMessage": "Anyone with the link can open this board, even though it stays off search and the map. The link is built from the board's name, so it isn't secret. Keep its location hidden unless you choose to share it.",
     "publishLink": "Share by link",
     "publishResourceMessage": "Anyone can open this session or board. Your other private activity stays limited to people you approve."
+  },
+  "providerMethods": {
+    "title": "Sign-in methods",
+    "description": "Manage how you sign in to this account. Accounts are never merged.",
+    "providers": {
+      "google": "Google",
+      "apple": "Apple"
+    },
+    "usable": "Ready to sign in",
+    "notUsable": "Not available for sign-in",
+    "link": "Link {{provider}}",
+    "unlink": "Unlink {{provider}}",
+    "noProviders": "No supported providers are available right now.",
+    "confirmTitle": "Confirm sign-in change",
+    "confirmLink": "Link {{provider}} to this account?",
+    "confirmUnlink": "Unlink {{provider}} from this account?",
+    "securityEffects": "You'll stay signed in on this device. Other devices will sign out, partner apps will disconnect, and older recovery and verification links will stop working.",
+    "confirm": "Confirm change",
+    "cancel": "Cancel",
+    "reauthenticationTitle": "Confirm recent access",
+    "reauthenticationDescription": "Verify an existing sign-in method before changing linked providers.",
+    "password": "Current password",
+    "verifyPassword": "Verify password",
+    "verifyGoogle": "Verify with Google",
+    "passwordOptions": "Open password options",
+    "recovery": "Account recovery",
+    "recoveryNotProof": "Opening password or recovery options does not confirm recent access.",
+    "reauthenticationRequired": "Confirm recent access to continue.",
+    "reauthenticationUnavailable": "Recent verification is unavailable for this account.",
+    "identityChanged": "Your sign-in changed. Check the account before trying again.",
+    "lastUsableMethod": "Keep at least one usable way to sign in.",
+    "ownershipConflict": "That provider account is already linked elsewhere. Your account stays unchanged.",
+    "unavailable": "Could not complete this change. Try again.",
+    "linkCompleted": "{{provider}} is linked.",
+    "unlinkCompleted": "{{provider}} is unlinked.",
+    "redirecting": "Continue in your browser to finish."
   }
 }

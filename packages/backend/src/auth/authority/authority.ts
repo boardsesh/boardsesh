@@ -19,6 +19,17 @@ export function verifyAuthorityPassword({
   return compare(password, passwordHash);
 }
 
+/** Keep installed provider cryptography behind the reviewed authority boundary.
+ * Loading this verifier neither creates an authority nor selects a writer. */
+export async function verifyAuthorityGoogleIdToken(input: {
+  readonly token: string;
+  readonly audience: string;
+  readonly nonce: string;
+}) {
+  const { verifyGoogleIdToken } = await import('better-auth/social-providers');
+  return verifyGoogleIdToken(input);
+}
+
 /** Unmounted first-party authority. No OAuth provider, import, mirror, or writer switch. */
 export function createAuthority(database: AuthorityTransaction, configuration: AuthorityConfiguration) {
   const options = {

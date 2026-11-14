@@ -103,6 +103,33 @@ describe('private credential database connection ownership', () => {
     );
   });
 
+  it.each(['private-web-v1', 'private-browser-v1'] as const)(
+    'refuses provider commands under %s before opening a connection',
+    async (contract) => {
+      vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', contract);
+      const connection = await load();
+      await expect(connection.getCredentialDatabase('private-provider-v1')).rejects.toThrow(
+        'CREDENTIAL_DATABASE_CAPABILITY_REQUIRED',
+      );
+      expect(dependencies.createPool).not.toHaveBeenCalled();
+      expect(dependencies.qualify).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shares only the catalog-qualified provider handle with browser and web operations', async () => {
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', 'private-provider-v1');
+    dependencies.qualify.mockResolvedValue({ ...receipt, contract: 'private-provider-v1' });
+    const connection = await load();
+    const providerDatabase = await connection.getCredentialDatabase('private-provider-v1');
+    expect(await connection.getCredentialDatabase('private-browser-v1')).toBe(providerDatabase);
+    expect(await connection.getCredentialDatabase('private-web-v1')).toBe(providerDatabase);
+    expect(dependencies.createPool).toHaveBeenCalledOnce();
+    expect(dependencies.qualify).toHaveBeenCalledExactlyOnceWith(
+      pools[0].pool,
+      expect.objectContaining({ contract: 'private-provider-v1' }),
+    );
+  });
+
   it('refuses a changed profile while preserving the previously qualified owner', async () => {
     const connection = await load();
     const original = await connection.getCredentialDatabase();

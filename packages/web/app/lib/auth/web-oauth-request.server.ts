@@ -1,4 +1,4 @@
-import { webCredentialProofMode } from '@boardsesh/auth-protocol';
+import { providerSecurityMode, webCredentialProofMode } from '@boardsesh/auth-protocol';
 import 'server-only';
 import type { NextAuthOptions } from 'next-auth';
 import type { NextRequest } from 'next/server';
@@ -27,6 +27,27 @@ import { trustedClientRateLimitKey } from './trusted-client-ip.server';
 
 type RouteContext = { params: Promise<{ nextauth: string[] }> };
 type InvokeAuth = (request: NextRequest, options: NextAuthOptions) => Promise<Response>;
+/** Server-owned injection only. Implementations retain actual NextAuth provider
+ * verification and select explicit/owned/anonymous commands from qualified
+ * central possession; no claimed request field enables this delegation. */
+export interface QualifiedWebOAuthProviderDelegate {
+  start(input: {
+    readonly request: NextRequest;
+    readonly provider: WebOAuthProvider;
+    readonly state: string;
+    readonly flowHash: string;
+    readonly response: Response;
+    readonly options: NextAuthOptions;
+  }): Promise<Response>;
+  callback(input: {
+    readonly request: NextRequest;
+    readonly provider: WebOAuthProvider;
+    readonly state: string;
+    readonly flowHash: string;
+    readonly options: NextAuthOptions;
+    readonly invoke: InvokeAuth;
+  }): Promise<Response>;
+}
 const CONTINUATION_PARAM = 'boardseshOAuthContinue';
 const providers = new Set<string>(['google', 'apple']);
 const flowCookieKeys = ['state', 'pkceCodeVerifier', 'nonce', 'callbackUrl'] as const;
@@ -194,14 +215,24 @@ export async function withWebOAuthIdentity(
   context: RouteContext,
   base: NextAuthOptions,
   invoke: InvokeAuth,
+  qualifiedProvider?: QualifiedWebOAuthProviderDelegate,
 ): Promise<Response> {
   const [action, rawProvider] = (await context.params).nextauth;
   const configured = base.providers.find((candidate) => (candidate.options?.id ?? candidate.id) === rawProvider);
   if ((action !== 'signin' && action !== 'callback') || configured?.type !== 'oauth') return invoke(request, base);
   const provider = providers.has(rawProvider) ? (rawProvider as WebOAuthProvider) : undefined;
   let mode: ReturnType<typeof webOAuthMode>;
+  let securityMode: ReturnType<typeof providerSecurityMode>;
   try {
     mode = webOAuthMode();
+    securityMode = providerSecurityMode(process.env);
+    if (
+      securityMode === 'backend-staging' &&
+      (mode !== 'backend-staging' ||
+        typeof qualifiedProvider?.start !== 'function' ||
+        typeof qualifiedProvider.callback !== 'function')
+    )
+      return unavailableResponse(request, false, provider ?? 'google');
   } catch {
     return unavailableResponse(request, false, provider ?? 'google');
   }
@@ -223,7 +254,9 @@ export async function withWebOAuthIdentity(
     return clearContinuation ? clearContinuation(cleared) : cleared;
   };
   try {
-    const actorCookie = readWebOAuthActorCookie(request);
+    // A qualified delegate reads actual central possession itself. An unused
+    // legacy cookie must neither become its actor nor select a fallback writer.
+    const actorCookie = securityMode === 'backend-staging' ? null : readWebOAuthActorCookie(request);
     const originalCookieHeader = request.headers.get('cookie');
     if (action === 'signin') {
       const fields = await requestFields(request);
@@ -238,14 +271,19 @@ export async function withWebOAuthIdentity(
         debug: false,
         logger: createWebOAuthLogger(),
       };
-      const response = await invoke(request, options);
+      let response = await invoke(request, options);
       state = (await initiationState(response)) ?? undefined;
       // CSRF rejection/provider cancellation is the public handler's response;
       // only its actual successful state generation can create durable intent.
       if (!state) return response;
       const flow = webOAuthFlowHash(provider, state);
-      const reply = await createWebOAuthCommandClient().intent({ provider, flow, actorCookie });
-      if (reply.outcome !== 'recorded') return reject();
+      if (securityMode === 'backend-staging') {
+        response = await qualifiedProvider!.start({ request, provider, state, flowHash: flow, response, options });
+        if ((await initiationState(response)) !== state) return reject();
+      } else {
+        const reply = await createWebOAuthCommandClient().intent({ provider, flow, actorCookie });
+        if (reply.outcome !== 'recorded') return reject();
+      }
       // Only a flow that really started displaces an older one, so a refused or
       // CSRF-rejected POST above has cleared nothing.
       for (const retiredScope of retiredScopes) clearObservedFlowCookies(response, request, base, retiredScope);
@@ -274,6 +312,18 @@ export async function withWebOAuthIdentity(
     }
     verifiedScope = scope;
     if (current.headers.get('cookie') !== originalCookieHeader) return reject();
+    if (securityMode === 'backend-staging') {
+      return finish(
+        await qualifiedProvider!.callback({
+          request: current,
+          provider,
+          state,
+          flowHash: webOAuthFlowHash(provider, state),
+          options: { ...base, cookies: boundedFlowCookies(base, scope) },
+          invoke,
+        }),
+      );
+    }
     const delegated = createWebOAuthIdentityAuthRequest(
       { ...base, cookies: boundedFlowCookies(base, scope) },
       { provider, flow: webOAuthFlowHash(provider, state), actorCookie },

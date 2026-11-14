@@ -113,6 +113,39 @@ authorize production schema, role, configuration or mode changes.
 
 ## Verification
 
+### Provider profile and versioned fixtures
+
+`private-provider-v1` is an explicit reviewed superset of the web and browser
+profiles on the same authenticated LOGIN. It adds SELECT/INSERT/UPDATE on the two
+0313 provider intent/reauthentication tables, without maintenance DELETE. Direct
+partner revocation permits only the pinned strict SECURITY INVOKER
+`public.partner_revoke_user(text)`, with no PUBLIC or grantable EXECUTE. Its
+column grants read only predicate/join/revocation fields, update the four existing
+connection revocation fields, and delete the eight existing credential/code
+relations. They do not permit token reads, issuance, extension, ownership changes
+or connection deletion. Every other application routine remains unavailable.
+
+The 0313 security-event CHECK contains nine explicit kinds. The unchanged web and
+browser catalog receipts reject that shape even after excess provider grants
+are removed. Applying 0313, provisioning the reviewed provider grants and choosing
+the explicit backend profile therefore require a coordinated rollout. A profile
+name is not an attestation, and no production role, URL or activation flag is
+changed by the qualifier or fixture tools.
+
+The required credential CI job keeps two databases and serial tasks. Historical
+web/browser proofs use exactly the published 313-entry journal through 0312;
+both the normalized journal and every SQL byte are pinned by fixed SHA256
+provenance. Only the fixed `--historical-private-browser-v1` bootstrap option can
+materialize that prefix. It is never called current-canonical. Provider proofs
+use the full current canonical journal, including 0313, and rerun the actual
+private web/browser HTTP commands through `private-provider-v1` alongside the
+provider command proofs. Both JUnit artifacts are required. There is no generic
+migration cutoff, schema CHECK rewrite or permissive old-profile fallback.
+
+The ordinary staged first-password path remains closed pending its separate
+account-bound existing-email confirmation and publication proof. Email
+confirmation itself must not create fresh provider reauthentication evidence.
+
 Owned-fixture tests cover explicit pool target selection and existing TLS behavior,
 configuration refusal without connection-string leakage, actual SQL logging
 suppression with a working logging positive control, and shutdown failure isolation.
@@ -120,6 +153,6 @@ The credential role's catalog and mounted command evidence are recorded separate
 in the capability document. Mounted HTTP proofs use the production default
 factory and an actual restricted LOGIN for both selected stores: registration,
 resend and verification, password sign-in and recovery/reset, provider intent
-and resolution, first-password setup and signout. Their generic shared database
+and resolution, the first-password boundary and signout. Their generic shared database
 handle throws on access, and an actual content-login write is refused. Source
 readiness does not qualify production rollout.

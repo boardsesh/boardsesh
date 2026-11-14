@@ -47,6 +47,10 @@ const rpcSecret = 'owned-default-credential-rpc-secret-6975';
 const sessionSecret = 'owned-default-credential-cookie-secret-6975';
 const originalPassword = ' owned original password ';
 const nextPassword = ' owned replacement password ';
+const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
+if (selectedHttpContract && selectedHttpContract !== 'private-provider-v1')
+  throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
+const httpContract = selectedHttpContract === 'private-provider-v1' ? 'private-provider-v1' : 'private-web-v1';
 let projectionId: string = randomUUID();
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
@@ -136,7 +140,7 @@ function encodeCredential(proof: WebCredentialProof) {
 
 describe('mounted private commands on the actual qualified credential LOGIN', () => {
   beforeAll(async () => {
-    environment = await createCredentialWriterEnvironment();
+    environment = await createCredentialWriterEnvironment(httpContract);
     // The generic content LOGIN supplies admission reads, never credential writes.
     await environment.owner`REVOKE INSERT,UPDATE,DELETE ON public.users FROM boardsesh_retired_runtime`;
     await environment.owner`GRANT USAGE ON SCHEMA public TO boardsesh_retired_runtime`;
@@ -189,6 +193,7 @@ describe('mounted private commands on the actual qualified credential LOGIN', ()
     registrationFailure = undefined;
     vi.stubEnv('DATABASE_URL', environment.legacyUrl);
     vi.stubEnv('AUTH_IDENTITY_DATABASE_URL', environment.writerUrl);
+    vi.stubEnv('AUTH_IDENTITY_DATABASE_CONTRACT', httpContract);
     vi.stubEnv('CURRENT_STORE_WEB_AUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_WEB_OAUTH_MODE', 'backend-staging');
     vi.stubEnv('CURRENT_STORE_WEB_SIGNOUT_MODE', 'backend-staging');

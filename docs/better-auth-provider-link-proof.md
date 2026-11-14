@@ -8,8 +8,15 @@ The [implementation ledger](./better-auth-implementation.md) owns rollout status
 
 ## Recorded decisions
 
-The provider continuation policy is an **agent decision**, consistent with the
-password experience; it is not an explicit user answer about provider policy.
+This section records the prototype's original decisions. The owner subsequently
+approved the five-minute actual-reauthentication and requesting-device
+continuation policy for **Google and Apple**, with Facebook excluded from product
+sign-in and linking. The [selected-authority adoption](./better-auth-provider-security-adoption.md)
+describes that implementation boundary. Historical Facebook fixtures below remain
+prototype evidence and do not enable a product flow.
+
+The original prototype continuation policy was an agent decision, consistent with
+the password experience.
 A fresh, authenticated link or unlink replaces the requesting session with a
 new session for that same user, preserving its original authentication time and
 expiry. Previous sessions, native descendants, partner credentials and older
