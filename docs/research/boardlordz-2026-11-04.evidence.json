@@ -1,0 +1,1075 @@
+{
+  "investigation_date": "2026-11-04",
+  "comparison_commit": "796746a5db3c4fae37a54d8d8fd2d0a7cb00fc1f",
+  "package": "com.provatech.boardlordz",
+  "version_name": "1.1.0",
+  "version_code": 43,
+  "acquisition": {
+    "source": "Official Google Play delivery using publicly offered Aurora anonymous access",
+    "artifacts": [
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.022864+00:00",
+        "file": "com.provatech.boardlordz-43.apk",
+        "size": 23834117,
+        "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca",
+        "sha1": "39c4ca1c21396a54270d999674916068c954efdd",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      },
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.066287+00:00",
+        "file": "com.provatech.boardlordz-43-config.en.apk",
+        "size": 74137,
+        "sha256": "95f11e2dcea944fcf0e57b09047129fd14e64d5f5c27b911948e9ea4f19dfb67",
+        "sha1": "0ddab8cfcaf4edacbcf3e1cd467e3c461b533d0a",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      },
+      {
+        "package": "com.provatech.boardlordz",
+        "version_code": 43,
+        "version_string": "1.1.0",
+        "time": "2026-11-04T09:08:30.072903+00:00",
+        "file": "com.provatech.boardlordz-43-config.xxhdpi.apk",
+        "size": 120352,
+        "sha256": "26a8f1a4ae3d2e7659c10c63db543bc29dcf922045d65d430dcf110787b94345",
+        "sha1": "6c91ec2e45d65687f5a19fbf7a1f64a24a7fddbb",
+        "url_origin": "https://play.googleapis.com/download/by-token/download",
+        "zip_valid": true
+      }
+    ],
+    "private_tokens_or_signed_delivery_urls_included": false
+  },
+  "signature_verification": {
+    "tool": "Google apksig 8.13.0",
+    "zip_crcs": "pass for base and acquired splits",
+    "v2": true,
+    "v3": true,
+    "source_stamp": true,
+    "errors": [],
+    "warnings": [],
+    "signer_certificate_sha256": "daea75c2747a626ad5ccf357724a0583a5eeabd55c057e2fe79017f48385c016"
+  },
+  "base_scan": {
+    "schema_version": 1,
+    "artifact": {
+      "filename": "com.provatech.boardlordz-43.apk",
+      "bytes": 23834117,
+      "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca"
+    },
+    "coverage": {
+      "zip_entries": 579,
+      "regular_members_scanned": 579,
+      "uncompressed_bytes_scanned": 25925173,
+      "all_regular_member_crcs_verified": true,
+      "indicator_encodings": ["utf-8", "utf-16le"],
+      "javascript_members": 91,
+      "native_libraries": [],
+      "limitations": [
+        "No target execution, HTTP requests, signature verification or decryption.",
+        "Only decompressed ZIP member bytes are scanned, not APK signing blocks.",
+        "Computed, remotely configured, encoded or encrypted destinations can be missed.",
+        "Literal origins include documentation and schema URLs, not only network targets.",
+        "Four Apache text markers identify candidates, not completeness or compliance."
+      ]
+    },
+    "capacitor_config": {
+      "appId": "com.provatech.boardlordz",
+      "appName": "Boardlordz",
+      "webDir": "build",
+      "plugins": {
+        "LocalNotifications": {
+          "smallIcon": "ic_stat_boardlordz",
+          "iconColor": "#F2A93B"
+        },
+        "SocialLogin": {
+          "providers": {
+            "google": true,
+            "apple": true,
+            "facebook": false,
+            "twitter": false
+          },
+          "logLevel": 1
+        }
+      }
+    },
+    "capacitor_plugins": [
+      {
+        "pkg": "@capacitor-community/bluetooth-le",
+        "classpath": "com.capacitorjs.community.plugins.bluetoothle.BluetoothLe"
+      },
+      {
+        "pkg": "@capacitor/app",
+        "classpath": "com.capacitorjs.plugins.app.AppPlugin"
+      },
+      {
+        "pkg": "@capacitor/haptics",
+        "classpath": "com.capacitorjs.plugins.haptics.HapticsPlugin"
+      },
+      {
+        "pkg": "@capacitor/local-notifications",
+        "classpath": "com.capacitorjs.plugins.localnotifications.LocalNotificationsPlugin"
+      },
+      {
+        "pkg": "@capgo/capacitor-social-login",
+        "classpath": "ee.forgr.capacitor.social.login.SocialLoginPlugin"
+      },
+      {
+        "pkg": "@capacitor/share",
+        "classpath": "com.capacitorjs.plugins.share.SharePlugin"
+      }
+    ],
+    "indicator_matches": [
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1135
+      },
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1145
+      },
+      {
+        "member": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1156
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8696
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8706
+      },
+      {
+        "member": "assets/public/about.html",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 8717
+      },
+      {
+        "member": "assets/public/boards/SOURCES.md",
+        "indicator": "boardsesh",
+        "encoding": "utf-8",
+        "byte_offset": 1098
+      }
+    ],
+    "apache_license_candidate_members": ["META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt"],
+    "license_named_members": [
+      "META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt",
+      "assets/public/fonts/LICENSE-Inter.txt",
+      "assets/public/fonts/LICENSE-JetBrainsMono.txt",
+      "okhttp3/internal/publicsuffix/NOTICE"
+    ],
+    "member_manifest_sha256": "c210c2ff23f41bc7139059f6a959160e33ef504db5f351150c8604d8d69129ab"
+  },
+  "literal_origin_count": 48,
+  "selected_members": [
+    {
+      "path": "assets/public/_app/immutable/chunks/DzaoLw-V.js",
+      "bytes": 11585,
+      "sha256": "07a9763d1120cc23632507d35ba574ba404df53695d4c1b9fc36e9bb65839846",
+      "markers": [
+        {
+          "literal": "https://boardlordz-api.fly.dev",
+          "byte_offset": 345
+        },
+        {
+          "literal": "/api/v1/plan",
+          "byte_offset": 1848
+        },
+        {
+          "literal": "/api/v1/guess-grade",
+          "byte_offset": 2753
+        },
+        {
+          "literal": "/api/v1/me/heatmap/compare",
+          "byte_offset": 1784
+        },
+        {
+          "literal": "/api/v1/leagues",
+          "byte_offset": 8959
+        },
+        {
+          "literal": "/api/v1/prova",
+          "byte_offset": 8227
+        },
+        {
+          "literal": "beta-submission",
+          "byte_offset": 9814
+        },
+        {
+          "literal": "/sequence",
+          "byte_offset": 9731
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/chunks/7JG8B3Vy.js",
+      "bytes": 4117,
+      "sha256": "48b11a644ce6df888520ba392e8bdbbb545c7123f3c9c16cba4ab0e7783c109f",
+      "markers": [
+        {
+          "literal": "ledsWithColour",
+          "byte_offset": 1866
+        },
+        {
+          "literal": "allLedsDark",
+          "byte_offset": 1883
+        },
+        {
+          "literal": "[1,.8,.6,.4,.2,.1,.05]",
+          "byte_offset": 574
+        },
+        {
+          "literal": "b=18",
+          "byte_offset": 567
+        },
+        {
+          "literal": "cast_problem",
+          "byte_offset": 3394
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/2.D1uGF9ZH.js",
+      "bytes": 356894,
+      "sha256": "88ea95671f500628e92a6998ce66ae8d4f22531e16c19f16eac1eae21c38c499",
+      "markers": [
+        {
+          "literal": "/api/v1/sessions/",
+          "byte_offset": 51627
+        },
+        {
+          "literal": "new WebSocket",
+          "byte_offset": 51609
+        },
+        {
+          "literal": "Setter Rotation",
+          "byte_offset": 313908
+        },
+        {
+          "literal": "Flash Comp",
+          "byte_offset": 313959
+        },
+        {
+          "literal": "from_coord",
+          "byte_offset": 31884
+        },
+        {
+          "literal": "to_coord",
+          "byte_offset": 31903
+        },
+        {
+          "literal": "Your hold map",
+          "byte_offset": 192349
+        },
+        {
+          "literal": "Me vs board",
+          "byte_offset": 246533
+        },
+        {
+          "literal": "parser",
+          "byte_offset": 131785
+        },
+        {
+          "literal": "hunters",
+          "byte_offset": 38779
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/3.NVsT88l9.js",
+      "bytes": 1665,
+      "sha256": "64c980d47cc37a80b30b47beea7fcb0999d3ba3caefdbd5d517265301b5c5209",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 1156
+        },
+        {
+          "literal": "Apache 2.0",
+          "byte_offset": 1171
+        }
+      ]
+    },
+    {
+      "path": "assets/public/boards/SOURCES.md",
+      "bytes": 1778,
+      "sha256": "1cc26638ea08523ace15b8f7c873f8cd7993321734f163142ebf86af496a1ee2",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 1098
+        },
+        {
+          "literal": "6fdc0d6e",
+          "byte_offset": 1153
+        },
+        {
+          "literal": "one-time copy",
+          "byte_offset": 1169
+        }
+      ]
+    },
+    {
+      "path": "assets/public/about.html",
+      "bytes": 10482,
+      "sha256": "ba6963ebaa19514b8ef6482ea361121ad4f54852a12231f6e20ce96362f4b92d",
+      "markers": [
+        {
+          "literal": "Boardsesh",
+          "byte_offset": 8717
+        },
+        {
+          "literal": "Apache 2.0",
+          "byte_offset": 8732
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/chunks/b0Y818fH.js",
+      "bytes": 5022,
+      "sha256": "945c506ca720823e4e24030346d52fe120dbc6c36baf42947bb21088bfbf86f0",
+      "markers": [
+        {
+          "literal": "Digital Training Board",
+          "byte_offset": 119
+        }
+      ]
+    },
+    {
+      "path": "assets/public/_app/immutable/nodes/7.ivqhKCZX.js",
+      "bytes": 8213,
+      "sha256": "905098217edc9c550fb3112838e5d6870e0ae6d3bda746cf47dfc2b3264cfbdc",
+      "markers": [
+        {
+          "literal": "guessGrade(",
+          "byte_offset": 4332
+        },
+        {
+          "literal": "What grade is it?",
+          "byte_offset": 7731
+        }
+      ]
+    },
+    {
+      "path": "assets/capacitor.config.json",
+      "bytes": 347,
+      "sha256": "30aaa2155ba2c6744e71b53d1d72c5c28bdc4fe18f0183bb9173d96a4aaf1e49",
+      "markers": []
+    },
+    {
+      "path": "assets/capacitor.plugins.json",
+      "bytes": 667,
+      "sha256": "74005fee736dfee18d3ca68c5386d45c3eb771d7ea74f506e1ebabe28dc59656",
+      "markers": []
+    },
+    {
+      "path": "META-INF/androidx/concurrent/concurrent-futures/LICENSE.txt",
+      "bytes": 10175,
+      "sha256": "809fa1ed21450f59827d1e9aec720bbc4b687434fa22283c6cb5dd82a47ab9c0",
+      "markers": []
+    }
+  ],
+  "rea": [
+    {
+      "filename": "rea-apk-evidence.json",
+      "evidence_id": "ev_bcc4b9323227775f535a8dd88a2e00ea0eeb4f9fad6bb27313a61979252d9acd",
+      "operation": "inspect_artifact",
+      "sha256": "2ba9ad8f20d8396154d04286af93eb670f14c02bb63271a1adc4c497e34daaa1",
+      "subject": {
+        "name": "com.provatech.boardlordz-43.apk",
+        "digest": {
+          "sha256": "dc6fa93990c6fc0b1f4d50a032003a6bad16ab7a718a2250882ca15fcd6fe7ca"
+        },
+        "local_path": "com.provatech.boardlordz-43.apk",
+        "format": "apk",
+        "architecture": null
+      },
+      "limitations": [
+        "Inspection derives bounded static hypotheses and next probes; it does not execute the artifact or claim format-specific semantics.",
+        "ZIP inventory lists central-directory entries only. Non-entry bytes, including an APK Signing Block before the central directory or a ZIP comment after it, are not occurrences."
+      ],
+      "statistics": null,
+      "completeness": null
+    },
+    {
+      "filename": "rea-apk-javascript-evidence.json",
+      "evidence_id": "ev_16535b03f76d8667cff8ef80c2e599a288456a2af5ccdd1271724c8e1de78f6a",
+      "operation": "analyze_javascript_application",
+      "sha256": "d477dc9766f3ff265acaa4fb979ae2af72986c55022b85518a2c4d2a1f9d4a46",
+      "subject": {
+        "name": "public",
+        "digest": {
+          "sha256": "a159b54eda729759ec4c02289e43f9ac720f437eda1fea654e96c1ad60887fcb"
+        },
+        "local_path": "public",
+        "format": "directory",
+        "architecture": null
+      },
+      "limitations": [
+        "Caller-selected source analysis leaves 95 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+      ],
+      "statistics": {
+        "relevant_files": 101,
+        "nested_asar_containers": 0,
+        "text_bytes_read": 378901,
+        "invalid_utf8_files": 0,
+        "parsed_javascript_files": 6,
+        "skipped_javascript_files": 0,
+        "visited_ast_nodes": 122808,
+        "findings": 351,
+        "modules": 0,
+        "parse_failures": 0
+      },
+      "completeness": null
+    },
+    {
+      "filename": "rea-network-success-evidence.json",
+      "evidence_id": "ev_94969fbac3cf5a70e6b4bb31f13854c44a9c9541aaa23c05ef92f8289aeeef1c",
+      "operation": "capture_browser_scenario",
+      "sha256": "0aa1a22c709df73737f202e9f7bd83613b89feaafda6fdf322408ed3919ecdbd",
+      "subject": null,
+      "limitations": [
+        "Artifact identity is unavailable for this observation.",
+        "Event sequence records provider receipt order; simultaneous browser causality is not inferred.",
+        "Network content is retained only when selected; Playwright response-body bytes are API results and are not guaranteed to match wire bytes.",
+        "Request bytes are limited to what Playwright exposes; not_exposed does not establish body absence or multipart file coverage.",
+        "Network content reads settle within 5 seconds each and the observer does not request bodies from unfinished responses.",
+        "Playwright scenario events do not expose request initiator stacks; receipt order does not prove causality.",
+        "Storage values are hashed only after declared-secret redaction.",
+        "Some network requests had not completed when capture ended; later activity is unknown.",
+        "Browser host platform and architecture were not observed."
+      ],
+      "statistics": null,
+      "completeness": {
+        "status": "incomplete",
+        "equality_eligible": false,
+        "missing_sections": ["events"],
+        "truncated_sections": []
+      }
+    }
+  ],
+  "supplemental_public_web_capture": {
+    "observed_at": "2026-11-04T09:12:33.852Z",
+    "target": "BoardLordz public website, not Android APK runtime",
+    "request_count": 76,
+    "request_counts_by_host": {
+      "boardlordz.com": 66,
+      "static.cloudflareinsights.com": 1,
+      "boardlordz-api.fly.dev": 5,
+      "accounts.google.com": 3,
+      "fonts.gstatic.com": 1
+    },
+    "boardsesh_origin_requests": 0,
+    "limitations": [
+      "Current public website, not Android runtime.",
+      "No sign-in, authenticated flow, BLE or server-side proxy observation."
+    ]
+  },
+  "backend_log_access": {
+    "railway_cli": "5.52.1",
+    "result": "Unauthorized for whoami and linked project status; no backend traffic logs obtained",
+    "loki_boundary": "last-24h service inventory listed worker streams, no identifiable public ingress/realtime backend stream",
+    "conclusion": "Production or server-side use is unresolved."
+  },
+  "apk_to_current_web_comparison": {
+    "total_apk_javascript_members": 91,
+    "public_app_javascript_members": 90,
+    "byte_identical_to_a_fetched_web_member": 41,
+    "api_chunk_identical": true,
+    "ble_chunk_identical": true,
+    "daily_crux_game_observed_in": "current website only, not acquired APK"
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "status": "confirmed",
+      "finding": "Aurora BLE code port acknowledged and corroborated by matching static implementation."
+    },
+    {
+      "id": "F2",
+      "status": "confirmed",
+      "finding": "Packaged image provenance says Kilter layers copied from Boardsesh commit 6fdc0d6e."
+    },
+    {
+      "id": "F3",
+      "status": "confirmed",
+      "finding": "Boardsesh credit and Apache 2.0 terms are packaged; no blanket no-attribution finding."
+    },
+    {
+      "id": "F4",
+      "status": "bounded-negative",
+      "finding": "No direct Boardsesh backend indicators in acquired APK member scans; API implementation points to own Fly.io origin."
+    },
+    {
+      "id": "F5",
+      "status": "unresolved",
+      "finding": "Cannot exclude server-side proxying or other unobserved backend use without authenticated runtime/production logs."
+    }
+  ],
+  "renderer_followup": {
+    "compared_source_commit": "796746a5db3c4fae37a54d8d8fd2d0a7cb00fc1f",
+    "historical_source_commit": "6fdc0d6e41949ca758c0c5db42a570946543219f",
+    "rea": {
+      "evidence_id": "ev_a397967e1ad72029325605aa1085221b9474ba5e8854010eea01b5e6c2b4a369",
+      "filename": "rendering/rea-renderer-evidence.json",
+      "sha256": "5dc29f2a89aefc73c9b1ec0bf120d9ed60899db764efd635ef6df719e150e935",
+      "statistics": {
+        "relevant_files": 101,
+        "nested_asar_containers": 0,
+        "text_bytes_read": 15636,
+        "invalid_utf8_files": 0,
+        "parsed_javascript_files": 2,
+        "skipped_javascript_files": 0,
+        "visited_ast_nodes": 6770,
+        "findings": 53,
+        "modules": 0,
+        "parse_failures": 0
+      },
+      "limitations": [
+        "Caller-selected source analysis leaves 99 inventoried files outside analysis scope. Inventory identity covers the complete artifact; relationships through unselected sources remain unknown.",
+        "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+        "Graph coverage is incomplete; unavailable facts remain explicit and must not be read as absence.",
+        "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+        "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+        "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+        "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+      ]
+    },
+    "key_members": [
+      {
+        "path": "assets/public/_app/immutable/chunks/BvMzZtc1.js",
+        "bytes": 14941,
+        "sha256": "a3dc2e712bf6e41eb8f534aee8cc8c2d127421db1fc1f1c5b9e168fc60d68a4f"
+      },
+      {
+        "path": "assets/public/_app/immutable/chunks/D5vxCRIn.js",
+        "bytes": 1749609,
+        "sha256": "ea57147e3cf99342efadd03447dbcee52703ab58c3cf9af65c4ec66d43519b74"
+      },
+      {
+        "path": "assets/public/_app/immutable/chunks/D5w8oGkP.js",
+        "bytes": 695,
+        "sha256": "7572f4b1c0e5a382bdc88615df3c4bfad3aa81b9d2a8ea1b960874d402f572b5"
+      },
+      {
+        "path": "assets/public/_app/immutable/assets/BoardRenderer.BxGmw7C0.css",
+        "bytes": 1229,
+        "sha256": "0421f227f37de08716a70c30c4bc9d9cc455e9cbb6deaa9029d8ee5f98e31c8b"
+      }
+    ],
+    "implementation": "SVG silhouette polygons, Gaussian blur, foreground board image clipped to selected holds; no APK target execution claimed",
+    "binary_indicator_scan": {
+      "file": "rendering/binary-renderer-indicators.json",
+      "sha256": "7d3bf7160dc3749031ef25ddf78d2c966773a0097aa4fe96f41215e1b2247c8c",
+      "scope": "All 579 regular members of verified base APK; literal raw-byte markers, no decryption",
+      "results": [
+        {
+          "marker_hex": "0061736d",
+          "label": "\u0000asm",
+          "hits": []
+        },
+        {
+          "marker_hex": "576562417373656d626c79",
+          "label": "WebAssembly",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f72656e646572",
+          "label": "board_renderer_render",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f666669",
+          "label": "board_renderer_ffi",
+          "hits": []
+        },
+        {
+          "marker_hex": "626f6172645f72656e64657265725f7761736d",
+          "label": "board_renderer_wasm",
+          "hits": []
+        },
+        {
+          "marker_hex": "72656e6465725f6f7665726c6179",
+          "label": "render_overlay",
+          "hits": []
+        },
+        {
+          "marker_hex": "73696c686f75657474655f6c696768746e657373",
+          "label": "silhouette_lightness",
+          "hits": []
+        },
+        {
+          "marker_hex": "6c65645f696e6e6572",
+          "label": "led_inner",
+          "hits": []
+        },
+        {
+          "marker_hex": "7370726561645f6672616374696f6e",
+          "label": "spread_fraction",
+          "hits": []
+        },
+        {
+          "marker_hex": "6d657267655f736f66746e657373",
+          "label": "merge_softness",
+          "hits": []
+        },
+        {
+          "marker_hex": "7365616d5f626c656e645f6672616374696f6e",
+          "label": "seam_blend_fraction",
+          "hits": []
+        },
+        {
+          "marker_hex": "6e6f726d616c6973655f746172676574",
+          "label": "normalise_target",
+          "hits": []
+        }
+      ]
+    },
+    "geometry_literal_extraction": {
+      "files": 82,
+      "outline_datasets": 35,
+      "method": "Babel AST literal/identifier reconstruction; no target imports, eval or function execution"
+    },
+    "geometry_comparison": {
+      "matched_configuration_placement_pairs": 2671,
+      "compared_revisions": ["current comparison commit", "cited historical commit6fdc0d6e"],
+      "literal_matches": 0,
+      "matching_vertex_counts": 0,
+      "scope": "Six Kilter/Tension configurations, not every outline dataset",
+      "method": "Compare vertex counts and coordinates; for approximate boundary comparison translate polygon centroids and use uniform equal-area scaling. Four samples per edge in each direction, nearest segment distances. Not pixel identity or a proof of polygon origin.",
+      "results": [
+        {
+          "setup": "kilter-original-12x12",
+          "boardsesh_shard": "kilter/1-7",
+          "revision": "current",
+          "compared_placements": 476,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 16.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.324497327626889,
+          "median_max_sample_edge_distance_pixels": 1.0060162606673373,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1526",
+              "mean_edge_distance_pixels": 0.15146783386201468,
+              "max_sample_edge_distance_pixels": 0.8506724024123562,
+              "area_fit_scale": 30.628084934960558,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 10
+            },
+            {
+              "placement": "1534",
+              "mean_edge_distance_pixels": 0.16168591699691068,
+              "max_sample_edge_distance_pixels": 0.5371708742299677,
+              "area_fit_scale": 29.80133508786065,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-12x12",
+          "boardsesh_shard": "kilter/1-7",
+          "revision": "historical",
+          "compared_placements": 476,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 16.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.324497327626889,
+          "median_max_sample_edge_distance_pixels": 1.0060162606673373,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1526",
+              "mean_edge_distance_pixels": 0.15146783386201468,
+              "max_sample_edge_distance_pixels": 0.8506724024123562,
+              "area_fit_scale": 30.628084934960558,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 10
+            },
+            {
+              "placement": "1534",
+              "mean_edge_distance_pixels": 0.16168591699691068,
+              "max_sample_edge_distance_pixels": 0.5371708742299677,
+              "area_fit_scale": 29.80133508786065,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-8x12",
+          "boardsesh_shard": "kilter/1-8",
+          "revision": "current",
+          "compared_placements": 311,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 12,
+          "median_boardsesh_vertices": 17,
+          "median_symmetric_sample_edge_distance_pixels": 0.3386425640233852,
+          "median_max_sample_edge_distance_pixels": 1.0714878476177665,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1595",
+              "mean_edge_distance_pixels": 0.19837205040392855,
+              "max_sample_edge_distance_pixels": 0.6516943575572036,
+              "area_fit_scale": 45.1266935694231,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 15
+            },
+            {
+              "placement": "1583",
+              "mean_edge_distance_pixels": 0.2021432799108698,
+              "max_sample_edge_distance_pixels": 0.7218858328552057,
+              "area_fit_scale": 45.40217796535683,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "kilter-original-8x12",
+          "boardsesh_shard": "kilter/1-8",
+          "revision": "historical",
+          "compared_placements": 311,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 12,
+          "median_boardsesh_vertices": 17,
+          "median_symmetric_sample_edge_distance_pixels": 0.3386425640233852,
+          "median_max_sample_edge_distance_pixels": 1.0714878476177665,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "1595",
+              "mean_edge_distance_pixels": 0.19837205040392855,
+              "max_sample_edge_distance_pixels": 0.6516943575572036,
+              "area_fit_scale": 45.1266935694231,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 15
+            },
+            {
+              "placement": "1583",
+              "mean_edge_distance_pixels": 0.2021432799108698,
+              "max_sample_edge_distance_pixels": 0.7218858328552057,
+              "area_fit_scale": 45.40217796535683,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-10x12",
+          "boardsesh_shard": "kilter/8-25",
+          "revision": "current",
+          "compared_placements": 499,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 11,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.3316762080531031,
+          "median_max_sample_edge_distance_pixels": 1.055854855137434,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4199",
+              "mean_edge_distance_pixels": 0.18766659476641528,
+              "max_sample_edge_distance_pixels": 0.6851318859895696,
+              "area_fit_scale": 38.74414792079556,
+              "boardlordz_vertices": 12,
+              "boardsesh_vertices": 22
+            },
+            {
+              "placement": "4150",
+              "mean_edge_distance_pixels": 0.19146927132706515,
+              "max_sample_edge_distance_pixels": 0.8892682449942969,
+              "area_fit_scale": 38.59771848176179,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 21
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-10x12",
+          "boardsesh_shard": "kilter/8-25",
+          "revision": "historical",
+          "compared_placements": 499,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 11,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.3316762080531031,
+          "median_max_sample_edge_distance_pixels": 1.055854855137434,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4199",
+              "mean_edge_distance_pixels": 0.18766659476641528,
+              "max_sample_edge_distance_pixels": 0.6851318859895696,
+              "area_fit_scale": 38.74414792079556,
+              "boardlordz_vertices": 12,
+              "boardsesh_vertices": 22
+            },
+            {
+              "placement": "4150",
+              "mean_edge_distance_pixels": 0.19146927132706515,
+              "max_sample_edge_distance_pixels": 0.8892682449942969,
+              "area_fit_scale": 38.59771848176179,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 21
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-8x12",
+          "boardsesh_shard": "kilter/8-23",
+          "revision": "current",
+          "compared_placements": 389,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 13,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.33732474753053204,
+          "median_max_sample_edge_distance_pixels": 1.136417549020866,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4393",
+              "mean_edge_distance_pixels": 0.19057182019159485,
+              "max_sample_edge_distance_pixels": 1.1849793271767954,
+              "area_fit_scale": 49.540763707056065,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 17
+            },
+            {
+              "placement": "4397",
+              "mean_edge_distance_pixels": 0.1948006937135318,
+              "max_sample_edge_distance_pixels": 0.8227119055195289,
+              "area_fit_scale": 49.57551305406788,
+              "boardlordz_vertices": 15,
+              "boardsesh_vertices": 18
+            }
+          ]
+        },
+        {
+          "setup": "kilter-homewall-8x12",
+          "boardsesh_shard": "kilter/8-23",
+          "revision": "historical",
+          "compared_placements": 389,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 13,
+          "median_boardsesh_vertices": 19,
+          "median_symmetric_sample_edge_distance_pixels": 0.33732474753053204,
+          "median_max_sample_edge_distance_pixels": 1.136417549020866,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "4393",
+              "mean_edge_distance_pixels": 0.19057182019159485,
+              "max_sample_edge_distance_pixels": 1.1849793271767954,
+              "area_fit_scale": 49.540763707056065,
+              "boardlordz_vertices": 14,
+              "boardsesh_vertices": 17
+            },
+            {
+              "placement": "4397",
+              "mean_edge_distance_pixels": 0.1948006937135318,
+              "max_sample_edge_distance_pixels": 0.8227119055195289,
+              "area_fit_scale": 49.57551305406788,
+              "boardlordz_vertices": 15,
+              "boardsesh_vertices": 18
+            }
+          ]
+        },
+        {
+          "setup": "tension2",
+          "boardsesh_shard": "tension/10-6",
+          "revision": "current",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 22.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.3406497786213937,
+          "median_max_sample_edge_distance_pixels": 1.0791402959245722,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "535",
+              "mean_edge_distance_pixels": 0.183377775777303,
+              "max_sample_edge_distance_pixels": 0.6411250797365448,
+              "area_fit_scale": 32.298966348457604,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 13
+            },
+            {
+              "placement": "646",
+              "mean_edge_distance_pixels": 0.18375490295219865,
+              "max_sample_edge_distance_pixels": 0.643869763070661,
+              "area_fit_scale": 32.32570553065349,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "tension2",
+          "boardsesh_shard": "tension/10-6",
+          "revision": "historical",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 9.0,
+          "median_boardsesh_vertices": 22.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.3406497786213937,
+          "median_max_sample_edge_distance_pixels": 1.0791402959245722,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "535",
+              "mean_edge_distance_pixels": 0.183377775777303,
+              "max_sample_edge_distance_pixels": 0.6411250797365448,
+              "area_fit_scale": 32.298966348457604,
+              "boardlordz_vertices": 10,
+              "boardsesh_vertices": 13
+            },
+            {
+              "placement": "646",
+              "mean_edge_distance_pixels": 0.18375490295219865,
+              "max_sample_edge_distance_pixels": 0.643869763070661,
+              "area_fit_scale": 32.32570553065349,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 12
+            }
+          ]
+        },
+        {
+          "setup": "tension2-spray",
+          "boardsesh_shard": "tension/11-6",
+          "revision": "current",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 8.0,
+          "median_boardsesh_vertices": 17.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.34298942329507076,
+          "median_max_sample_edge_distance_pixels": 1.0528415404390192,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "958",
+              "mean_edge_distance_pixels": 0.15717942494447742,
+              "max_sample_edge_distance_pixels": 0.5861729566970033,
+              "area_fit_scale": 31.532176936895542,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            },
+            {
+              "placement": "1013",
+              "mean_edge_distance_pixels": 0.16542328019696476,
+              "max_sample_edge_distance_pixels": 0.7817463364678168,
+              "area_fit_scale": 32.26253665228053,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 11
+            }
+          ]
+        },
+        {
+          "setup": "tension2-spray",
+          "boardsesh_shard": "tension/11-6",
+          "revision": "historical",
+          "compared_placements": 498,
+          "literal_numeric_matches": 0,
+          "same_vertex_count": 0,
+          "exact_uniform_scale_translate_matches": 0,
+          "within_half_pixel_same_vertex_matches": 0,
+          "median_boardlordz_vertices": 8.0,
+          "median_boardsesh_vertices": 17.0,
+          "median_symmetric_sample_edge_distance_pixels": 0.34298942329507076,
+          "median_max_sample_edge_distance_pixels": 1.0528415404390192,
+          "best_same_vertex_matches": [],
+          "examples": [
+            {
+              "placement": "958",
+              "mean_edge_distance_pixels": 0.15717942494447742,
+              "max_sample_edge_distance_pixels": 0.5861729566970033,
+              "area_fit_scale": 31.532176936895542,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 14
+            },
+            {
+              "placement": "1013",
+              "mean_edge_distance_pixels": 0.16542328019696476,
+              "max_sample_edge_distance_pixels": 0.7817463364678168,
+              "area_fit_scale": 32.26253665228053,
+              "boardlordz_vertices": 8,
+              "boardsesh_vertices": 11
+            }
+          ]
+        }
+      ]
+    },
+    "observed_visual_fingerprints": {
+      "mode_name": "aura",
+      "common_display_color": "#4DF5FD",
+      "small_hold_boost_cap": 1.7,
+      "interpretation": "Consistent with similar design treatment; insufficient to establish renderer source copying."
+    },
+    "conclusions": {
+      "same_rust_binary": "No embedded Rust/WASM renderer evidence found; active shipped path is SVG. Remote or encoded code is outside this negative scan.",
+      "same_processed_geometry": "No unchanged or one-to-one uniformly scaled polygon copy in the six compared configurations. Retracing vs transformed/simplified derivation unresolved.",
+      "manufacturer_image_copy": "Kilter layer reuse remains explicitly acknowledged in packaged SOURCES.md."
+    }
+  }
+}

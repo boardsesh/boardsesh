@@ -1,0 +1,188 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="750" viewBox="0 0 1100 750" role="img" aria-labelledby="title description">
+<title id="title">Boardlordz and Boardsesh hold outline comparison</title>
+<desc id="description">Six matched hold outlines, aligned by centroid and area. Boardlordz uses fewer vertices. This compares geometry rather than renderer output.</desc>
+<rect width="1100" height="750" fill="white"/>
+<g font-family="sans-serif" fill="#17212B">
+<text x="28" y="37" font-size="23" font-weight="700">Same hold shapes, different polygon data</text>
+<path d="M30 66h30" stroke="#0B6573" stroke-width="3"/><text x="70" y="71" font-size="16">Boardsesh</text>
+<path d="M230 66h30" stroke="#B55218" stroke-width="3"/><text x="270" y="71" font-size="16">Boardlordz APK 1.1.0</text>
+<rect x="24" y="105" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="39" y="132" font-size="16" font-weight="700">Kilter Original 12x12</text>
+<text x="39" y="155" font-size="13">Placement 1073; vertices 15 / 7</text>
+<polygon points="192.43,173.73 211.98,176.84 236.08,193.64 256.35,218.95 263.70,238.25 265.81,258.66 257.50,289.12 241.02,313.30 220.86,328.45 201.70,334.75 166.32,328.69 130.70,309.08 108.81,284.44 119.97,258.64 186.56,177.19" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="192.43" cy="173.73" r="2.7" fill="#0B6573"/>
+<circle cx="211.98" cy="176.84" r="2.7" fill="#0B6573"/>
+<circle cx="236.08" cy="193.64" r="2.7" fill="#0B6573"/>
+<circle cx="256.35" cy="218.95" r="2.7" fill="#0B6573"/>
+<circle cx="263.70" cy="238.25" r="2.7" fill="#0B6573"/>
+<circle cx="265.81" cy="258.66" r="2.7" fill="#0B6573"/>
+<circle cx="257.50" cy="289.12" r="2.7" fill="#0B6573"/>
+<circle cx="241.02" cy="313.30" r="2.7" fill="#0B6573"/>
+<circle cx="220.86" cy="328.45" r="2.7" fill="#0B6573"/>
+<circle cx="201.70" cy="334.75" r="2.7" fill="#0B6573"/>
+<circle cx="166.32" cy="328.69" r="2.7" fill="#0B6573"/>
+<circle cx="130.70" cy="309.08" r="2.7" fill="#0B6573"/>
+<circle cx="108.81" cy="284.44" r="2.7" fill="#0B6573"/>
+<circle cx="119.97" cy="258.64" r="2.7" fill="#0B6573"/>
+<circle cx="186.56" cy="177.19" r="2.7" fill="#0B6573"/>
+<polygon points="189.53,170.00 237.46,191.30 269.41,255.21 248.11,308.47 210.83,335.10 162.90,329.77 104.32,281.84" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="189.53" cy="170.00" r="2.7" fill="#B55218"/>
+<circle cx="237.46" cy="191.30" r="2.7" fill="#B55218"/>
+<circle cx="269.41" cy="255.21" r="2.7" fill="#B55218"/>
+<circle cx="248.11" cy="308.47" r="2.7" fill="#B55218"/>
+<circle cx="210.83" cy="335.10" r="2.7" fill="#B55218"/>
+<circle cx="162.90" cy="329.77" r="2.7" fill="#B55218"/>
+<circle cx="104.32" cy="281.84" r="2.7" fill="#B55218"/>
+<rect x="384" y="105" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="399" y="132" font-size="16" font-weight="700">Kilter Original 8x12</text>
+<text x="399" y="155" font-size="13">Placement 1076; vertices 13 / 8</text>
+<polygon points="520.94,172.35 535.63,172.22 572.90,186.42 618.61,224.59 634.76,265.64 632.22,287.10 620.18,307.94 593.28,327.22 551.65,333.36 509.39,323.90 474.29,301.47 474.98,281.90 516.48,177.47" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="520.94" cy="172.35" r="2.7" fill="#0B6573"/>
+<circle cx="535.63" cy="172.22" r="2.7" fill="#0B6573"/>
+<circle cx="572.90" cy="186.42" r="2.7" fill="#0B6573"/>
+<circle cx="618.61" cy="224.59" r="2.7" fill="#0B6573"/>
+<circle cx="634.76" cy="265.64" r="2.7" fill="#0B6573"/>
+<circle cx="632.22" cy="287.10" r="2.7" fill="#0B6573"/>
+<circle cx="620.18" cy="307.94" r="2.7" fill="#0B6573"/>
+<circle cx="593.28" cy="327.22" r="2.7" fill="#0B6573"/>
+<circle cx="551.65" cy="333.36" r="2.7" fill="#0B6573"/>
+<circle cx="509.39" cy="323.90" r="2.7" fill="#0B6573"/>
+<circle cx="474.29" cy="301.47" r="2.7" fill="#0B6573"/>
+<circle cx="474.98" cy="281.90" r="2.7" fill="#0B6573"/>
+<circle cx="516.48" cy="177.47" r="2.7" fill="#0B6573"/>
+<polygon points="520.36,170.00 574.39,184.41 624.82,231.24 635.63,281.67 603.21,324.89 534.77,332.10 505.95,324.89 469.93,299.68" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="520.36" cy="170.00" r="2.7" fill="#B55218"/>
+<circle cx="574.39" cy="184.41" r="2.7" fill="#B55218"/>
+<circle cx="624.82" cy="231.24" r="2.7" fill="#B55218"/>
+<circle cx="635.63" cy="281.67" r="2.7" fill="#B55218"/>
+<circle cx="603.21" cy="324.89" r="2.7" fill="#B55218"/>
+<circle cx="534.77" cy="332.10" r="2.7" fill="#B55218"/>
+<circle cx="505.95" cy="324.89" r="2.7" fill="#B55218"/>
+<circle cx="469.93" cy="299.68" r="2.7" fill="#B55218"/>
+<rect x="744" y="105" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="759" y="132" font-size="16" font-weight="700">Kilter Homewall 10x12</text>
+<text x="759" y="155" font-size="13">Placement 4117; vertices 18 / 11</text>
+<polygon points="882.96,207.50 917.18,207.25 951.40,215.20 988.48,236.10 1001.51,249.37 1004.00,257.21 1001.74,265.14 988.92,281.39 964.92,299.86 932.87,314.67 911.90,318.02 875.13,306.96 848.25,289.23 835.42,272.99 832.36,249.27 838.30,233.70 853.92,217.76 879.92,208.49" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="882.96" cy="207.50" r="2.7" fill="#0B6573"/>
+<circle cx="917.18" cy="207.25" r="2.7" fill="#0B6573"/>
+<circle cx="951.40" cy="215.20" r="2.7" fill="#0B6573"/>
+<circle cx="988.48" cy="236.10" r="2.7" fill="#0B6573"/>
+<circle cx="1001.51" cy="249.37" r="2.7" fill="#0B6573"/>
+<circle cx="1004.00" cy="257.21" r="2.7" fill="#0B6573"/>
+<circle cx="1001.74" cy="265.14" r="2.7" fill="#0B6573"/>
+<circle cx="988.92" cy="281.39" r="2.7" fill="#0B6573"/>
+<circle cx="964.92" cy="299.86" r="2.7" fill="#0B6573"/>
+<circle cx="932.87" cy="314.67" r="2.7" fill="#0B6573"/>
+<circle cx="911.90" cy="318.02" r="2.7" fill="#0B6573"/>
+<circle cx="875.13" cy="306.96" r="2.7" fill="#0B6573"/>
+<circle cx="848.25" cy="289.23" r="2.7" fill="#0B6573"/>
+<circle cx="835.42" cy="272.99" r="2.7" fill="#0B6573"/>
+<circle cx="832.36" cy="249.27" r="2.7" fill="#0B6573"/>
+<circle cx="838.30" cy="233.70" r="2.7" fill="#0B6573"/>
+<circle cx="853.92" cy="217.76" r="2.7" fill="#0B6573"/>
+<circle cx="879.92" cy="208.49" r="2.7" fill="#0B6573"/>
+<polygon points="881.20,206.55 952.37,213.33 1003.20,247.22 1003.20,267.56 945.59,311.61 925.26,318.39 884.59,311.61 854.09,294.67 833.75,270.95 837.14,233.67 854.09,216.72" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="881.20" cy="206.55" r="2.7" fill="#B55218"/>
+<circle cx="952.37" cy="213.33" r="2.7" fill="#B55218"/>
+<circle cx="1003.20" cy="247.22" r="2.7" fill="#B55218"/>
+<circle cx="1003.20" cy="267.56" r="2.7" fill="#B55218"/>
+<circle cx="945.59" cy="311.61" r="2.7" fill="#B55218"/>
+<circle cx="925.26" cy="318.39" r="2.7" fill="#B55218"/>
+<circle cx="884.59" cy="311.61" r="2.7" fill="#B55218"/>
+<circle cx="854.09" cy="294.67" r="2.7" fill="#B55218"/>
+<circle cx="833.75" cy="270.95" r="2.7" fill="#B55218"/>
+<circle cx="837.14" cy="233.67" r="2.7" fill="#B55218"/>
+<circle cx="854.09" cy="216.72" r="2.7" fill="#B55218"/>
+<rect x="24" y="390" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="39" y="417" font-size="16" font-weight="700">Kilter Homewall 8x12</text>
+<text x="39" y="440" font-size="13">Placement 4117; vertices 18 / 12</text>
+<polygon points="162.98,492.49 197.19,492.24 231.39,500.19 268.47,521.10 281.50,534.38 284.00,542.20 281.73,550.14 268.91,566.39 244.92,584.86 212.88,599.67 191.90,603.01 155.14,591.96 128.26,574.23 115.43,557.99 112.36,534.28 118.31,518.69 133.93,502.76 159.92,493.50" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="162.98" cy="492.49" r="2.7" fill="#0B6573"/>
+<circle cx="197.19" cy="492.24" r="2.7" fill="#0B6573"/>
+<circle cx="231.39" cy="500.19" r="2.7" fill="#0B6573"/>
+<circle cx="268.47" cy="521.10" r="2.7" fill="#0B6573"/>
+<circle cx="281.50" cy="534.38" r="2.7" fill="#0B6573"/>
+<circle cx="284.00" cy="542.20" r="2.7" fill="#0B6573"/>
+<circle cx="281.73" cy="550.14" r="2.7" fill="#0B6573"/>
+<circle cx="268.91" cy="566.39" r="2.7" fill="#0B6573"/>
+<circle cx="244.92" cy="584.86" r="2.7" fill="#0B6573"/>
+<circle cx="212.88" cy="599.67" r="2.7" fill="#0B6573"/>
+<circle cx="191.90" cy="603.01" r="2.7" fill="#0B6573"/>
+<circle cx="155.14" cy="591.96" r="2.7" fill="#0B6573"/>
+<circle cx="128.26" cy="574.23" r="2.7" fill="#0B6573"/>
+<circle cx="115.43" cy="557.99" r="2.7" fill="#0B6573"/>
+<circle cx="112.36" cy="534.28" r="2.7" fill="#0B6573"/>
+<circle cx="118.31" cy="518.69" r="2.7" fill="#0B6573"/>
+<circle cx="133.93" cy="502.76" r="2.7" fill="#0B6573"/>
+<circle cx="159.92" cy="493.50" r="2.7" fill="#0B6573"/>
+<polygon points="162.70,492.04 202.24,492.04 249.70,507.86 278.70,528.95 281.33,552.68 247.06,584.31 204.88,602.77 175.88,600.13 144.24,586.95 117.88,563.22 112.61,528.95 133.70,502.59" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="162.70" cy="492.04" r="2.7" fill="#B55218"/>
+<circle cx="202.24" cy="492.04" r="2.7" fill="#B55218"/>
+<circle cx="249.70" cy="507.86" r="2.7" fill="#B55218"/>
+<circle cx="278.70" cy="528.95" r="2.7" fill="#B55218"/>
+<circle cx="281.33" cy="552.68" r="2.7" fill="#B55218"/>
+<circle cx="247.06" cy="584.31" r="2.7" fill="#B55218"/>
+<circle cx="204.88" cy="602.77" r="2.7" fill="#B55218"/>
+<circle cx="175.88" cy="600.13" r="2.7" fill="#B55218"/>
+<circle cx="144.24" cy="586.95" r="2.7" fill="#B55218"/>
+<circle cx="117.88" cy="563.22" r="2.7" fill="#B55218"/>
+<circle cx="112.61" cy="528.95" r="2.7" fill="#B55218"/>
+<circle cx="133.70" cy="502.59" r="2.7" fill="#B55218"/>
+<rect x="384" y="390" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="399" y="417" font-size="16" font-weight="700">Tension 2 Mirror</text>
+<text x="399" y="440" font-size="13">Placement 304; vertices 18 / 7</text>
+<polygon points="516.58,468.01 589.16,467.27 626.29,487.64 644.00,530.59 639.31,600.50 619.34,606.74 614.60,612.22 547.20,621.48 501.11,612.45 486.47,611.51 479.47,603.95 471.43,600.50 466.13,591.85 467.17,520.90 473.03,508.34 476.91,489.90 501.39,479.02 510.72,471.84" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="516.58" cy="468.01" r="2.7" fill="#0B6573"/>
+<circle cx="589.16" cy="467.27" r="2.7" fill="#0B6573"/>
+<circle cx="626.29" cy="487.64" r="2.7" fill="#0B6573"/>
+<circle cx="644.00" cy="530.59" r="2.7" fill="#0B6573"/>
+<circle cx="639.31" cy="600.50" r="2.7" fill="#0B6573"/>
+<circle cx="619.34" cy="606.74" r="2.7" fill="#0B6573"/>
+<circle cx="614.60" cy="612.22" r="2.7" fill="#0B6573"/>
+<circle cx="547.20" cy="621.48" r="2.7" fill="#0B6573"/>
+<circle cx="501.11" cy="612.45" r="2.7" fill="#0B6573"/>
+<circle cx="486.47" cy="611.51" r="2.7" fill="#0B6573"/>
+<circle cx="479.47" cy="603.95" r="2.7" fill="#0B6573"/>
+<circle cx="471.43" cy="600.50" r="2.7" fill="#0B6573"/>
+<circle cx="466.13" cy="591.85" r="2.7" fill="#0B6573"/>
+<circle cx="467.17" cy="520.90" r="2.7" fill="#0B6573"/>
+<circle cx="473.03" cy="508.34" r="2.7" fill="#0B6573"/>
+<circle cx="476.91" cy="489.90" r="2.7" fill="#0B6573"/>
+<circle cx="501.39" cy="479.02" r="2.7" fill="#0B6573"/>
+<circle cx="510.72" cy="471.84" r="2.7" fill="#0B6573"/>
+<polygon points="532.15,461.79 599.49,470.21 641.57,503.88 641.57,604.88 506.90,621.72 464.81,596.46 464.81,512.29" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="532.15" cy="461.79" r="2.7" fill="#B55218"/>
+<circle cx="599.49" cy="470.21" r="2.7" fill="#B55218"/>
+<circle cx="641.57" cy="503.88" r="2.7" fill="#B55218"/>
+<circle cx="641.57" cy="604.88" r="2.7" fill="#B55218"/>
+<circle cx="506.90" cy="621.72" r="2.7" fill="#B55218"/>
+<circle cx="464.81" cy="596.46" r="2.7" fill="#B55218"/>
+<circle cx="464.81" cy="512.29" r="2.7" fill="#B55218"/>
+<rect x="744" y="390" width="342" height="264" rx="8" fill="#F8FAFC" stroke="#D9E0E7"/>
+<text x="759" y="417" font-size="16" font-weight="700">Tension 2 Spray</text>
+<text x="759" y="440" font-size="13">Placement 802; vertices 12 / 8</text>
+<polygon points="902.26,471.03 964.35,476.95 996.98,490.87 1000.72,501.20 1001.24,554.04 989.61,595.19 940.43,623.62 886.27,623.55 831.67,585.93 824.00,531.07 829.69,490.84 892.76,472.41" fill="none" stroke="#0B6573" stroke-width="2.3"/>
+<circle cx="902.26" cy="471.03" r="2.7" fill="#0B6573"/>
+<circle cx="964.35" cy="476.95" r="2.7" fill="#0B6573"/>
+<circle cx="996.98" cy="490.87" r="2.7" fill="#0B6573"/>
+<circle cx="1000.72" cy="501.20" r="2.7" fill="#0B6573"/>
+<circle cx="1001.24" cy="554.04" r="2.7" fill="#0B6573"/>
+<circle cx="989.61" cy="595.19" r="2.7" fill="#0B6573"/>
+<circle cx="940.43" cy="623.62" r="2.7" fill="#0B6573"/>
+<circle cx="886.27" cy="623.55" r="2.7" fill="#0B6573"/>
+<circle cx="831.67" cy="585.93" r="2.7" fill="#0B6573"/>
+<circle cx="824.00" cy="531.07" r="2.7" fill="#0B6573"/>
+<circle cx="829.69" cy="490.84" r="2.7" fill="#0B6573"/>
+<circle cx="892.76" cy="472.41" r="2.7" fill="#0B6573"/>
+<polygon points="900.38,468.28 971.08,476.14 1002.50,499.70 994.65,586.11 939.66,625.38 884.67,625.38 829.69,586.11 829.69,491.85" fill="none" stroke="#B55218" stroke-width="2.3"/>
+<circle cx="900.38" cy="468.28" r="2.7" fill="#B55218"/>
+<circle cx="971.08" cy="476.14" r="2.7" fill="#B55218"/>
+<circle cx="1002.50" cy="499.70" r="2.7" fill="#B55218"/>
+<circle cx="994.65" cy="586.11" r="2.7" fill="#B55218"/>
+<circle cx="939.66" cy="625.38" r="2.7" fill="#B55218"/>
+<circle cx="884.67" cy="625.38" r="2.7" fill="#B55218"/>
+<circle cx="829.69" cy="586.11" r="2.7" fill="#B55218"/>
+<circle cx="829.69" cy="491.85" r="2.7" fill="#B55218"/>
+<text x="28" y="711" font-size="13">Aligned by polygon centroid and equal area; this is geometry comparison, not rendered app output.</text>
+<text x="28" y="734" font-size="13">Deterministic sample: lowest common placement ID in each of the six compared configurations.</text>
+</g></svg>
