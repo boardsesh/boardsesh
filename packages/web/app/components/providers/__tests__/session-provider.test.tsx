@@ -10,6 +10,11 @@ import {
 } from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
+const coordinator = vi.hoisted(() => ({ ready: false, read: vi.fn<() => Promise<void>>() }));
+vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({
+  publicBrowserCoordinatorReady: () => coordinator.ready,
+}));
+vi.mock('@/app/lib/auth/browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: coordinator.read }));
 
 function clearLockInstallation(): void {
   delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[LOCK_INSTALLATION_KEY];
@@ -78,6 +83,9 @@ let serverSession: Session | null;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  coordinator.ready = false;
+  coordinator.read.mockReset().mockResolvedValue(undefined);
+  window.history.replaceState({}, '', '/');
   clearLockInstallation();
   MockBroadcastChannel.instances = [];
   vi.stubGlobal('BroadcastChannel', MockBroadcastChannel);
@@ -91,6 +99,55 @@ beforeEach(() => {
   );
   vi.stubGlobal('fetch', fetchMock);
   window.localStorage.clear();
+});
+
+describe('canonical coordinator session preflight', () => {
+  it('waits for coordination before the independent primary session request', async () => {
+    coordinator.ready = true;
+    let release!: () => void;
+    coordinator.read.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    serverSession = session('owner-A', 'original-SID');
+    render(
+      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await waitFor(() => expect(coordinator.read).toHaveBeenCalledTimes(1));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText('loading:none:none')).toBeDefined();
+    await act(async () => release());
+    await screen.findByText('authenticated:owner-A:original-SID');
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/session', expect.objectContaining({ cache: 'no-store' }));
+  });
+  it('keeps initial identity unknown when coordination is unavailable', async () => {
+    coordinator.ready = true;
+    coordinator.read.mockRejectedValue(new Error('COORDINATOR_UNAVAILABLE'));
+    render(
+      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await waitFor(() => expect(coordinator.read).toHaveBeenCalledTimes(1));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText('loading:none:none')).toBeDefined();
+  });
+  it('does not recursively coordinate or fetch a session in the utility frame', async () => {
+    coordinator.ready = true;
+    window.history.replaceState({}, '', '/auth/browser-coordinator');
+    render(
+      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await act(async () => {});
+    expect(coordinator.read).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 afterEach(() => {
