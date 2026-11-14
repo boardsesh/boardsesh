@@ -1664,18 +1664,36 @@ jobs:
           cache: ${{ runner.environment == 'github-hosted' }}
       - name: Install dependencies
         run: vp install --frozen-lockfile
-      - name: Bootstrap the fresh owned credential proof database
-        run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh
-      - name: Run complete credential catalog and mounted HTTP proofs serially
+      - name: Verify pinned historical credential migration provenance
+        run: vp test run --config packages/backend/vite.auth-authority.config.ts credential-writer-historical-fixture.test.ts --reporter=agent
+      - name: Bootstrap the fixed historical0312 credential proof database
+        env:
+          PGDATABASE: epic6975_credential_historical_ci
+          CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_historical_ci
+        run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh --historical-private-browser-v1
+      - name: Run complete historical web and browser credential proofs serially
+        env:
+          PGDATABASE: epic6975_credential_historical_ci
+          CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_historical_ci
         run: |
           mkdir -p packages/backend/test-results
           vp run test:credential-writer --reporter=junit --outputFile.junit=./test-results/junit-credential-writer.xml
+          test -s packages/backend/test-results/junit-credential-writer.xml
+      - name: Bootstrap the fresh owned credential proof database
+        run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh
+      - name: Run complete canonical0313 provider catalog and mounted HTTP proofs serially
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:provider-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-provider-credential-writer.xml
+          test -s packages/backend/test-results/junit-provider-credential-writer.xml
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-credential-writer
-          path: packages/backend/test-results/junit-credential-writer.xml
+          path: |
+            packages/backend/test-results/junit-credential-writer.xml
+            packages/backend/test-results/junit-provider-credential-writer.xml
           retention-days: 7
 
   aurora-circuit-arbitration:

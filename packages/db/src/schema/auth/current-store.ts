@@ -114,6 +114,8 @@ export const authSecurityMutationEvents = pgTable(
         | 'password-set'
         | 'password-change'
         | 'password-reset'
+        | 'provider-link'
+        | 'provider-unlink'
         | 'account-deletion'
         | 'legacy-signout'
         | 'native-signout'
@@ -142,7 +144,7 @@ export const authSecurityMutationEvents = pgTable(
     ),
     check(
       'auth_security_mutation_events_kind',
-      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'account-deletion', 'legacy-signout', 'native-signout', 'admin-revocation')`,
+      sql`${table.kind} IN ('password-set', 'password-change', 'password-reset', 'provider-link', 'provider-unlink', 'account-deletion', 'legacy-signout', 'native-signout', 'admin-revocation')`,
     ),
     check(
       'auth_security_mutation_events_domains',

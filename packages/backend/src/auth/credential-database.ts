@@ -52,15 +52,17 @@ export async function createCredentialDatabase(
 
 let credentialDatabase: Promise<CredentialDatabase> | undefined;
 let credentialConnectionIdentity: string | undefined;
+const reviewedCapabilities: Readonly<Record<CredentialWriterContract, readonly CredentialWriterContract[]>> =
+  Object.freeze({
+    'private-web-v1': Object.freeze(['private-web-v1'] as const),
+    'private-browser-v1': Object.freeze(['private-web-v1', 'private-browser-v1'] as const),
+    'private-provider-v1': Object.freeze(['private-web-v1', 'private-browser-v1', 'private-provider-v1'] as const),
+  });
 
 /** Called only after a private command has passed transport and input checks. */
 export async function getCredentialDatabase(requiredContract?: CredentialWriterContract): Promise<DbInstance> {
   const configuration = credentialDatabaseConfiguration(process.env);
-  if (
-    requiredContract !== undefined &&
-    requiredContract !== configuration.contract &&
-    !(requiredContract === 'private-web-v1' && configuration.contract === 'private-browser-v1')
-  )
+  if (requiredContract !== undefined && !reviewedCapabilities[configuration.contract].includes(requiredContract))
     throw new Error('CREDENTIAL_DATABASE_CAPABILITY_REQUIRED');
   const connectionIdentity = `${configuration.contract}\0${configuration.connectionString}\0${configuration.contentConnectionString}`;
   if (credentialDatabase && credentialConnectionIdentity !== connectionIdentity) {

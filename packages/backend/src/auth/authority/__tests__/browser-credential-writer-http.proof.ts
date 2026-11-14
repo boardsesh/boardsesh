@@ -53,6 +53,10 @@ const jwt = requireWeb('next-auth/jwt') as {
 };
 const rpcSecret = 'owned-browser-http-rpc-service-secret-6975';
 const sessionSecret = 'owned-browser-http-session-source-secret-6975';
+const selectedHttpContract = process.env.AUTH_CREDENTIAL_HTTP_CONTRACT;
+if (selectedHttpContract && selectedHttpContract !== 'private-provider-v1')
+  throw new Error('OWNED_CREDENTIAL_HTTP_CONTRACT_REQUIRED');
+const httpContract = selectedHttpContract === 'private-provider-v1' ? 'private-provider-v1' : 'private-browser-v1';
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
 let origin: string;
@@ -167,7 +171,7 @@ async function login(kind: 'legacy-jwe' | 'canonical-token') {
 
 describe('private browser HTTP commands on the qualified restricted LOGIN', () => {
   beforeAll(async () => {
-    environment = await createCredentialWriterEnvironment('private-browser-v1');
+    environment = await createCredentialWriterEnvironment(httpContract);
     await environment.owner`GRANT USAGE ON SCHEMA public TO boardsesh_retired_runtime`;
     await environment.owner`GRANT SELECT ON public.users,public.auth_subject_cutoffs,public.auth_session_denials TO boardsesh_retired_runtime`;
     await expect(
@@ -204,7 +208,7 @@ describe('private browser HTTP commands on the qualified restricted LOGIN', () =
     for (const [name, content] of Object.entries({
       DATABASE_URL: environment.legacyUrl,
       AUTH_IDENTITY_DATABASE_URL: environment.writerUrl,
-      AUTH_IDENTITY_DATABASE_CONTRACT: 'private-browser-v1',
+      AUTH_IDENTITY_DATABASE_CONTRACT: httpContract,
       CURRENT_STORE_BROWSER_BINDING_MODE: 'backend-staging',
       CURRENT_STORE_AUTH_RPC_SECRET: rpcSecret,
       NEXTAUTH_SECRET: sessionSecret,
@@ -227,7 +231,10 @@ describe('private browser HTTP commands on the qualified restricted LOGIN', () =
     if (server)
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     if (environment) {
-      await grantOwnedCredentialWriterCapabilities(environment.owner, 'private-web-v1');
+      await grantOwnedCredentialWriterCapabilities(
+        environment.owner,
+        httpContract === 'private-provider-v1' ? httpContract : 'private-web-v1',
+      );
       await environment.close();
     }
   });

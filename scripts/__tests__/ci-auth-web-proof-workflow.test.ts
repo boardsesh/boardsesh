@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -14,12 +16,19 @@ interface Job {
 }
 const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as { jobs: Record<string, Job> };
 const proofFile = 'web-credential-proof.integration.proof.ts';
+const providerProofFiles = ['provider-security-auth.proof.ts', 'provider-security-publication.proof.ts'];
 const task = 'vp run test:auth-web-credential-proof';
 
 describe('database-backed backend/web credential proof placement', () => {
   it('keeps backend source imports outside the web-only build and default web tests', () => {
     expect(existsSync(`packages/web/auth-prototype/${proofFile}`)).toBe(true);
     expect(existsSync('packages/web/app/lib/auth/__tests__/web-credential-proof.integration.test.ts')).toBe(false);
+    for (const filename of providerProofFiles) {
+      expect(existsSync(`packages/web/auth-prototype/${filename}`)).toBe(true);
+      expect(existsSync(`packages/web/app/lib/auth/__tests__/${filename.replace('.proof.ts', '.test.ts')}`)).toBe(
+        false,
+      );
+    }
     const typeConfiguration = JSON.parse(readFileSync('packages/web/tsconfig.json', 'utf8')) as {
       exclude: string[];
     };
@@ -32,6 +41,7 @@ describe('database-backed backend/web credential proof placement', () => {
       include: string[];
     };
     expect(configuration.include).toContain(proofFile);
+    expect(configuration.include).toEqual(expect.arrayContaining(providerProofFiles));
     expect(configuration.include).toContain('credential-proof.vite.config.ts');
     expect(configuration.include).toContain('../app/lib/auth/types.ts');
     const tasks = readFileSync('vite.config.ts', 'utf8');
@@ -61,7 +71,8 @@ describe('database-backed backend/web credential proof placement', () => {
   it('selects only the explicit node proof and never the database-free default project', () => {
     const configuration = readFileSync('packages/web/auth-prototype/credential-proof.vite.config.ts', 'utf8');
     expect(configuration).toContain("environment: 'node'");
-    expect(configuration).toContain(`include: ['auth-prototype/${proofFile}']`);
+    for (const filename of [proofFile, ...providerProofFiles])
+      expect(configuration).toContain(`'auth-prototype/${filename}'`);
     expect(configuration).toContain('maxWorkers: 1');
   });
 

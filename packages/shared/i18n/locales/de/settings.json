@@ -697,5 +697,41 @@
     "publishLinkMessage": "Alle mit dem Link können dieses Board öffnen, auch wenn es in Suche und Karte nicht auftaucht. Der Link enthält den Namen des Boards, er ist also nicht geheim. Lass den Standort verborgen, wenn du ihn nicht teilen möchtest.",
     "publishLink": "Per Link teilen",
     "publishResourceMessage": "Alle können diese Session oder dieses Board öffnen. Deine anderen privaten Aktivitäten sehen weiterhin nur Personen, die du bestätigst."
+  },
+  "providerMethods": {
+    "title": "Anmeldemethoden",
+    "description": "Verwalte, wie du dich bei diesem Konto anmeldest. Konten werden nie zusammengeführt.",
+    "providers": {
+      "google": "Google",
+      "apple": "Apple"
+    },
+    "usable": "Zur Anmeldung verfügbar",
+    "notUsable": "Zur Anmeldung nicht verfügbar",
+    "link": "{{provider}} verknüpfen",
+    "unlink": "{{provider}} trennen",
+    "noProviders": "Derzeit sind keine unterstützten Anbieter verfügbar.",
+    "confirmTitle": "Anmeldeänderung bestätigen",
+    "confirmLink": "{{provider}} mit diesem Konto verknüpfen?",
+    "confirmUnlink": "{{provider}} von diesem Konto trennen?",
+    "securityEffects": "Auf diesem Gerät bleibst du angemeldet. Andere Geräte werden abgemeldet, Partner-Apps getrennt und ältere Wiederherstellungs- und Bestätigungslinks funktionieren nicht mehr.",
+    "confirm": "Änderung bestätigen",
+    "cancel": "Abbrechen",
+    "reauthenticationTitle": "Kürzlichen Zugriff bestätigen",
+    "reauthenticationDescription": "Bestätige eine bestehende Anmeldemethode, bevor du verknüpfte Anbieter änderst.",
+    "password": "Aktuelles Passwort",
+    "verifyPassword": "Passwort bestätigen",
+    "verifyGoogle": "Mit Google bestätigen",
+    "passwordOptions": "Passwortoptionen öffnen",
+    "recovery": "Konto wiederherstellen",
+    "recoveryNotProof": "Das Öffnen von Passwort- oder Wiederherstellungsoptionen bestätigt keinen kürzlichen Zugriff.",
+    "reauthenticationRequired": "Bestätige deinen kürzlichen Zugriff, um fortzufahren.",
+    "reauthenticationUnavailable": "Für dieses Konto ist keine Bestätigung eines kürzlichen Zugriffs verfügbar.",
+    "identityChanged": "Deine Anmeldung hat sich geändert. Prüfe das Konto und versuche es erneut.",
+    "lastUsableMethod": "Behalte mindestens eine nutzbare Anmeldemethode.",
+    "ownershipConflict": "Dieses Anbieterkonto ist bereits anderweitig verknüpft. Dein Konto bleibt unverändert.",
+    "unavailable": "Diese Änderung konnte nicht abgeschlossen werden. Versuche es erneut.",
+    "linkCompleted": "{{provider}} ist verknüpft.",
+    "unlinkCompleted": "{{provider}} ist getrennt.",
+    "redirecting": "Fahre zum Abschließen im Browser fort."
   }
 }

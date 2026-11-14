@@ -86,7 +86,7 @@ describe('private-browser-v1 on the actual restricted credential LOGIN', () => {
   });
   it('keeps old private-web-v1 strict and refuses unknown profile names before catalog access', async () => {
     await expect(qualify('private-web-v1')).rejects.toMatchObject({ code: 'CREDENTIAL_WRITER_EXCESS_RELATION_GRANT' });
-    await expect(qualify('private-provider-v1' as CredentialWriterContract)).rejects.toMatchObject({
+    await expect(qualify('private-provider-v2' as CredentialWriterContract)).rejects.toMatchObject({
       code: 'CREDENTIAL_WRITER_CONTRACT_REQUIRED',
     });
     await environment.owner`REVOKE SELECT,INSERT,UPDATE ON public.auth_browser_bindings,public.auth_browser_intents FROM boardsesh_identity_writer`;
