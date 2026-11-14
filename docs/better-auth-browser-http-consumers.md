@@ -147,6 +147,25 @@ cannot extend the original settings delivery through another caller-owned await.
 Local-reader tests exercise same-tuple retirement before network dispatch and
 original lease expiry during enrichment without accessing a real database.
 
+Independent source review and the restored focused suite passed 319 cases:
+260 mobile, 35 shared and 24 actual WWW SDK cases. Two semantic controls proved
+the guards matter: bypassing explicit required mode revived three stale legacy
+or anonymous dispatches, and removing the final enrichment receipt check returned
+expired network data. Both source files were restored exactly before the full
+focused replay passed.
+
+The full mobile run passed 29,097 cases and skipped two. One unchanged Metro
+configuration case failed because the sandbox refused its child Node process
+with `EPERM`; the exact unchanged three-case file passed with child-process
+permission. The failed full-run receipt remains separate from that replay.
+
+Local iOS, Android and browser bundle attempts reached Metro but could not resolve
+the linked Expo Router entry. The entry exists in the borrowed dependency tree
+outside this worktree's watched repository. No dependency install, source or
+Metro configuration workaround was applied; the browser attempt reused the
+existing nested runtime without running its install dependency. Normal-install
+CI must qualify both native and browser bundles before this slice is Ready.
+
 A source census still identifies 85 other files containing 202 get-client call
 expressions: 38 hook files, seven providers, five offline-sync files, six
 components and 29 other files. This includes public reads and requires a separate
