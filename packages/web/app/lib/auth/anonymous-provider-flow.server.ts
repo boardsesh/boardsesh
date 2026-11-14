@@ -22,6 +22,7 @@ export const anonymousProviderFlowSchema = z
     intentToken: token,
     browserIntentToken: token,
     flowHash: digest,
+    nativeAttemptHash: digest.optional(),
     nonce: z.string().min(1).max(1024).nullable(),
     returnUrl: z.url(),
     issuedAt: timestamp,
@@ -108,6 +109,7 @@ function capture(input: unknown, now: Date): AnonymousProviderFlow {
     const target = flow.preparation;
     const proof = target.credentialProof;
     if (
+      target.nativeAttemptHash !== flow.nativeAttemptHash ||
       target.identityPlan.provider !== flow.provider ||
       target.credentialKind !== flow.credentialKind ||
       proof.userId !== target.identityPlan.user.id ||

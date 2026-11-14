@@ -40,6 +40,10 @@ const fixture = vi.hoisted(() => {
     ready: true,
     internalRequestUrl: false,
     legacyConsumer: false,
+    callbackUrl: undefined as string | undefined,
+    nativeContext: undefined as
+      | import('@boardsesh/auth-protocol/native-browser-handoff-v1').NativeProviderSigninContext
+      | undefined,
     primaryReads: 0,
     fault: '',
     trace: [] as string[],
@@ -74,6 +78,26 @@ vi.mock('@/app/lib/auth/web-oauth-command-client.server', async (original) => ({
       throw new Error('Unexpected legacy identity resolution');
     },
   }),
+}));
+vi.mock('@/app/lib/auth/native-browser-handoff-token.server', () => ({
+  issueNativeBrowserHandoffToken: async (
+    selection: import('@/app/lib/auth/presented-browser-selection.server').AdmittedBrowserSelection,
+    options?: {
+      providerSignin?: import('@boardsesh/auth-protocol/native-browser-handoff-v1').NativeProviderSigninContext;
+    },
+  ) => {
+    fixture.trace.push('native-private-issue');
+    fixture.nativeContext = options?.providerSignin;
+    return {
+      status: 'admitted',
+      token: 'bsnh1_OWNEDNATIVECAPABILITY',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      cursor: selection.cursor,
+      userId: selection.session.userId,
+      authSessionId: selection.session.authSessionId,
+      usableForMs: 60_000,
+    };
+  },
 }));
 vi.mock('@/app/lib/auth/provider-security-readiness', () => ({ publicProviderSecurityReady: () => fixture.ready }));
 vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({ publicBrowserCoordinatorReady: () => fixture.ready }));
@@ -172,6 +196,12 @@ vi.mock('@/app/lib/partner-oauth/sign-in-failure-return', async (original) => {
   };
 });
 import { GET, POST } from '@/app/api/auth/[...nextauth]/route';
+import { GET as nativeCallbackGet } from '@/app/api/auth/native/callback/route';
+import {
+  signNativeOAuthAttempt,
+  nativeOAuthAttemptBinding,
+  NATIVE_OAUTH_ATTEMPT_COOKIE,
+} from '@/app/lib/auth/native-oauth-attempt.server';
 import { authOptions } from '@/app/lib/auth/auth-options';
 import { providerCandidateCredentialHash } from '@/app/lib/auth/provider-security-command-client.server';
 import { BROWSER_CORRELATION_COOKIE, readBrowserProofCookie } from '@/app/lib/auth/browser-proof-cookies.server';
@@ -227,7 +257,7 @@ let issuedCandidate: { kind: 'legacy-jwe' | 'canonical-token'; credential: strin
 let finalizedAnonymousFlows: Set<string>;
 function remember(response: Response) {
   for (const header of response.headers.getSetCookie()) {
-    const parsed = parseSetCookie(header);
+    const parsed = parseSetCookie(header, { decode: (content) => content });
     if (
       !parsed.value ||
       (parsed.maxAge !== undefined && parsed.maxAge <= 0) ||
@@ -271,7 +301,7 @@ async function start(provider: 'google' | 'apple', fault = '') {
   const csrfToken = ((await csrfResponse.json()) as { csrfToken: string }).csrfToken;
   const current = request(`signin/${provider}`, {
     csrfToken: fault === 'csrf' ? 'wrong' : csrfToken,
-    callbackUrl: `${fixture.origin}/settings`,
+    callbackUrl: fixture.callbackUrl ?? `${fixture.origin}/settings`,
     json: 'true',
     ...(fault === 'asserted-uid' ? { assertedUserId: 'chosen-user' } : {}),
     ...explicitStartFields,
@@ -359,6 +389,8 @@ beforeEach(() => {
   fixture.ready = true;
   fixture.internalRequestUrl = false;
   fixture.legacyConsumer = false;
+  fixture.callbackUrl = undefined;
+  fixture.nativeContext = undefined;
   fixture.primaryReads = 0;
   vi.stubEnv('CURRENT_STORE_PROVIDER_SECURITY_MODE', 'backend-staging');
   vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'backend-staging');
@@ -442,6 +474,7 @@ beforeEach(() => {
           browserCursor: cursor,
           preparation: {
             credentialKind: 'canonical-token',
+            ...(payload.nativeAttemptHash ? { nativeAttemptHash: payload.nativeAttemptHash } : {}),
             verifiedIdentity: payload.providerProof.identity,
             identityPlan: {
               kind: preparedIdentityKind,
@@ -829,6 +862,54 @@ describe('actual production OAuth outer route and installed NextAuth', () => {
       expect(await response.json()).toEqual({ status: fault === 'ack-committed' ? 'unavailable' : 'conflict' });
       expect(response.headers.getSetCookie()).toEqual([]);
       expect(commits).toBe(1);
+    },
+  );
+  it.each(['google', 'apple'] as const)(
+    'freezes original %s native attribution through actual NextAuth and the selected native callback',
+    async (provider) => {
+      const marker = signNativeOAuthAttempt({ attemptId: 'a'.repeat(32), provider }, fixture.secret, NOW - 1000);
+      fixture.callbackUrl = `${fixture.origin}/api/auth/native/callback?next=%2F&provider=${provider}&attemptId=${'a'.repeat(32)}`;
+      cookies.set(NATIVE_OAUTH_ATTEMPT_COOKIE, marker);
+      const result = await holdCommittedAnonymousProof(provider);
+      const flow = await openAnonymousProviderFlow(
+        cookies.get(anonymousProviderFlowCookieName(result.hash))!,
+        result.hash,
+        fixture.secret,
+      );
+      expect(flow.nativeAttemptHash).toBe(
+        nativeOAuthAttemptBinding(marker, fixture.callbackUrl, provider, fixture.secret, NOW),
+      );
+      expect(flow.preparation?.nativeAttemptHash).toBe(flow.nativeAttemptHash);
+      const response = await nativeCallbackGet(request(fixture.callbackUrl));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('bsnh1_OWNEDNATIVECAPABILITY');
+      expect(fixture.nativeContext?.attempt).toEqual({ token: marker, returnUrl: fixture.callbackUrl });
+      expect(fixture.nativeContext?.receipt.preparation).toEqual(flow.preparation);
+      expect(fixture.nativeContext?.receipt.nativeAttemptHash).toBe(flow.nativeAttemptHash);
+      expect(fixture.nativeContext?.receipt).not.toHaveProperty('candidate');
+    },
+  );
+  it.each(['new-marker', 'query-drift'] as const)(
+    'does not substitute %s for the original native OAuth attempt',
+    async (change) => {
+      const provider = 'google';
+      fixture.callbackUrl = `${fixture.origin}/api/auth/native/callback?next=%2F&provider=${provider}&attemptId=${'a'.repeat(32)}`;
+      cookies.set(
+        NATIVE_OAUTH_ATTEMPT_COOKIE,
+        signNativeOAuthAttempt({ attemptId: 'a'.repeat(32), provider }, fixture.secret, NOW - 1000),
+      );
+      await holdCommittedAnonymousProof(provider);
+      if (change === 'new-marker')
+        cookies.set(
+          NATIVE_OAUTH_ATTEMPT_COOKIE,
+          signNativeOAuthAttempt({ attemptId: 'a'.repeat(32), provider }, fixture.secret, NOW),
+        );
+      const destination =
+        change === 'query-drift' ? fixture.callbackUrl.replace('next=%2F', 'next=%2Fsettings') : fixture.callbackUrl;
+      const response = await nativeCallbackGet(request(destination));
+      expect(response.status).toBe(200);
+      expect(fixture.trace).toContain('native-private-issue');
+      expect(fixture.nativeContext).toBeUndefined();
     },
   );
   it('copies final private headers before a retaining decorator reads the body', async () => {

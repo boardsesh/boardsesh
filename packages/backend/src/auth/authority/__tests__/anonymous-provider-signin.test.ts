@@ -22,6 +22,7 @@ import {
   abortAnonymousProviderSignin,
   beginAnonymousProviderSignin,
   finalizeAnonymousProviderSignin,
+  readAnonymousProviderCreationReceipt,
   prepareAnonymousProviderSignin,
 } from '../anonymous-provider-signin';
 import {
@@ -216,6 +217,26 @@ describe('strict anonymous provider preparation and atomic browser publication',
   });
   afterAll(async () => environment?.close());
 
+  it.each(['current-store', 'better-auth'] as const)(
+    '%s: receipt reads cannot commit a pending anonymous preparation',
+    async (selected) => {
+      const pending = await start(selected, 'canonical-token');
+      const prepared = await prepare(pending);
+      const exact = await candidate(prepared);
+      const before = await allRows();
+      await expect(
+        readAnonymousProviderCreationReceipt(environment.database, environment.runtime, {
+          ...pending.bound,
+          preparationToken: prepared.preparationToken,
+          preparation: prepared.preparation,
+          candidate: exact,
+        }),
+      ).rejects.toMatchObject({ code: 'replayed' });
+      expect(await allRows()).toEqual(before);
+      expect((await finalize(pending, prepared, exact)).outcome).toBe('committed');
+    },
+  );
+
   for (const selected of ['current-store', 'better-auth'] as const) {
     for (const provider of ['google', 'apple'] as const) {
       for (const kind of ['legacy-jwe', 'canonical-token'] as const) {
@@ -235,6 +256,20 @@ describe('strict anonymous provider preparation and atomic browser publication',
             expect((await finalize(pending, prepared, exact)).outcome).toBe('committed');
             const committed = await allRows();
             expect((await finalize(pending, prepared, exact)).outcome).toBe('recovered');
+            const receipt = await readAnonymousProviderCreationReceipt(environment.database, environment.runtime, {
+              ...pending.bound,
+              preparationToken: prepared.preparationToken,
+              preparation: prepared.preparation,
+              candidate: exact,
+            });
+            expect(receipt.accountCreation).toEqual({
+              userId: prepared.preparation.identityPlan.user.id,
+              accountCreated: !existing,
+              provider,
+              createdAt: prepared.preparation.identityPlan.user.createdAt,
+            });
+            expect(receipt.nativeAttemptHash).toBeNull();
+            expect(Number.isFinite(Date.parse(receipt.completedAt))).toBe(true);
             expect(await allRows()).toEqual(committed);
             const credential =
               kind === 'legacy-jwe'

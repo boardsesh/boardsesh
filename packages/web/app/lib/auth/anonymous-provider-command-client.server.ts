@@ -54,6 +54,7 @@ function matches(command: AnonymousProviderCommand, reply: AnonymousProviderRepl
     const proof = target.credentialProof;
     const assertion = command.payload.providerProof;
     if (
+      target.nativeAttemptHash !== command.payload.nativeAttemptHash ||
       target.credentialKind !== command.payload.credentialKind ||
       target.identityPlan.provider !== assertion.provider ||
       target.identityPlan.subject !== assertion.identity.sub ||

@@ -100,6 +100,7 @@ export function createAnonymousProviderAuthPublication(
     browserIntentToken: flow.browserIntentToken,
     flowHash: flow.flowHash,
     nonceHash: providerOwnedSigninNonceHash(flow.nonce),
+    ...(flow.nativeAttemptHash ? { nativeAttemptHash: flow.nativeAttemptHash } : {}),
   });
   let prepared: Prepared | undefined;
   let candidate: ProviderSecurityCandidate | undefined;
@@ -218,6 +219,7 @@ export function createAnonymousProviderAuthPublication(
         if (reply.outcome !== 'prepared') return fail();
         const target = anonymousProviderPreparationSchema.parse(reply.preparation);
         if (
+          target.nativeAttemptHash !== flow.nativeAttemptHash ||
           target.credentialKind !== flow.credentialKind ||
           target.identityPlan.provider !== flow.provider ||
           target.identityPlan.subject !== account.providerAccountId ||

@@ -93,6 +93,7 @@ function flowBinding(
     authority.normalizerVersion,
     authority.authority,
     authority.epoch,
+    ...(input.nativeAttemptHash ? ['native-oauth-original-attempt-v1', input.nativeAttemptHash] : []),
   ]);
 }
 function preparedBinding(
@@ -352,6 +353,7 @@ export async function prepareAnonymousProviderSignin(
       input.credentialKind === 'canonical-token' ? randomBytes(32).toString('base64url') : null;
     const preparation = anonymousProviderPreparationSchema.parse({
       credentialKind: input.credentialKind,
+      ...(input.nativeAttemptHash ? { nativeAttemptHash: input.nativeAttemptHash } : {}),
       identityPlan: planned.plan,
       verifiedIdentity: assertion.identity,
       credentialProof: {
@@ -396,15 +398,17 @@ export async function prepareAnonymousProviderSignin(
   });
 }
 
-export async function finalizeAnonymousProviderSignin(
+async function finishAnonymousProviderSignin(
   database: AuthorityDatabase,
   runtimeInput: ProviderSecurityRuntime,
   requested: Payload<'finalize'>,
+  receiptOnly: boolean,
 ) {
   const input = capture('finalize', requested);
   const runtime = captureProviderSecurityRuntime(runtimeInput);
   const preparation = input.preparation;
   requirePreparation(preparation);
+  if (preparation.nativeAttemptHash !== input.nativeAttemptHash) return refuse('invalid_proof');
   return withProviderSecurityAuthority(database, runtime, async (transaction, authority) => {
     const planned = await planReservedCurrentStoreOAuthIdentity(
       transaction,
@@ -421,6 +425,8 @@ export async function finalizeAnonymousProviderSignin(
       .from(authWebOAuthIntents)
       .where(eq(authWebOAuthIntents.intentHash, preparationId(input.preparationToken)));
     const replayed = observed?.consumedAt !== null && observed?.consumedAt !== undefined;
+    // A receipt read is incapable of committing a pending preparation.
+    if (receiptOnly && !replayed) return refuse('replayed');
     if (
       replayed
         ? planned.plan.kind !== 'existing' || !samePlan(preparation.identityPlan, planned.plan, true)
@@ -465,8 +471,9 @@ export async function finalizeAnonymousProviderSignin(
     if (!runtime.methods.configuredProviders.includes(preparation.identityPlan.provider))
       return refuse('provider_unavailable');
     if (replayed) {
+      const observedAt = await providerDatabaseNow(transaction);
       if (
-        (await providerDatabaseNow(transaction)).getTime() >=
+        observedAt.getTime() >=
         Math.min(
           prepared.expiresAt.getTime(),
           Date.parse(preparation.credentialExpiresAt),
@@ -474,10 +481,31 @@ export async function finalizeAnonymousProviderSignin(
         )
       )
         return refuse('expired');
+      if (receiptOnly && prepared.consumedAt === null) return refuse('replayed');
       return {
         outcome: 'recovered' as const,
         candidateCredentialHash: providerCredentialHash(input.candidate),
         browserCursor: cursor,
+        creationReceipt:
+          receiptOnly && prepared.consumedAt
+            ? {
+                accountCreation: {
+                  userId: preparation.identityPlan.user.id,
+                  accountCreated: preparation.identityPlan.kind === 'new',
+                  provider: preparation.identityPlan.provider,
+                  createdAt: preparation.identityPlan.user.createdAt,
+                },
+                completedAt: prepared.consumedAt.toISOString(),
+                observedAt: observedAt.toISOString(),
+                authority: {
+                  projectionId: authority.projectionId,
+                  normalizerVersion: authority.normalizerVersion,
+                  authority: authority.authority,
+                  epoch: authority.epoch,
+                },
+                nativeAttemptHash: preparation.nativeAttemptHash ?? null,
+              }
+            : null,
       };
     }
     if (prepared.consumedAt !== null) return refuse('replayed');
@@ -529,8 +557,39 @@ export async function finalizeAnonymousProviderSignin(
       outcome: 'committed' as const,
       candidateCredentialHash: providerCredentialHash(input.candidate),
       browserCursor: browser.cursor,
+      creationReceipt: null,
     };
   });
+}
+
+/** Preserve the existing finalize wire shape, including exact readonly replay. */
+export async function finalizeAnonymousProviderSignin(
+  database: AuthorityDatabase,
+  runtime: ProviderSecurityRuntime,
+  input: Payload<'finalize'>,
+) {
+  const result = await finishAnonymousProviderSignin(database, runtime, input, false);
+  return {
+    outcome: result.outcome,
+    candidateCredentialHash: result.candidateCredentialHash,
+    browserCursor: result.browserCursor,
+  };
+}
+
+/** Metadata only after a known durable consume and actual current B possession.
+ * This entry point never applies a plan, creates credentials, or retries a finalizer. */
+export async function readAnonymousProviderCreationReceipt(
+  database: AuthorityDatabase,
+  runtime: ProviderSecurityRuntime,
+  input: Payload<'finalize'>,
+) {
+  const result = await finishAnonymousProviderSignin(database, runtime, input, true);
+  if (result.outcome !== 'recovered' || !result.creationReceipt) return refuse('invalid_proof');
+  return {
+    ...result.creationReceipt,
+    browserCursor: result.browserCursor,
+    candidateCredentialHash: result.candidateCredentialHash,
+  };
 }
 
 export async function abortAnonymousProviderSignin(

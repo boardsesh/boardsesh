@@ -15,6 +15,7 @@ import {
   NATIVE_BROWSER_HANDOFF_RESPONSE_BYTES,
   nativeBrowserHandoffCommandSchema,
   nativeBrowserHandoffReplySchema,
+  type NativeProviderSigninContext,
 } from '@boardsesh/auth-protocol/native-browser-handoff-v1';
 import { browserBindingMode } from '@boardsesh/auth-protocol/browser-binding-v1';
 import { createAuthCommandTransport, type AuthServiceEnvironment } from './auth-command-transport.server';
@@ -39,6 +40,8 @@ export interface BrowserCapabilityTokenOptions {
   readonly environment?: AuthServiceEnvironment;
   readonly fetch?: typeof fetch;
   readonly timeoutMs?: number;
+  /** Native handoff only; the backend verifies the durable provider proof. */
+  readonly providerSignin?: NativeProviderSigninContext;
 }
 export async function issueBrowserCapabilityToken(
   selection: AdmittedBrowserSelection,
@@ -46,6 +49,7 @@ export async function issueBrowserCapabilityToken(
   options: BrowserCapabilityTokenOptions = {},
 ): Promise<BrowserCapabilityTokenResult> {
   try {
+    if (purpose !== 'native-handoff' && options.providerSignin) return { status: 'unavailable' };
     const startedAt = performance.now();
     const environment = Object.freeze({ ...(options.environment ?? process.env) });
     if (browserBindingMode(environment) !== 'backend-staging') return { status: 'unavailable' };
@@ -77,7 +81,11 @@ export async function issueBrowserCapabilityToken(
       ...wire.metadata,
       requestId: randomUUID(),
       issuedAt: Date.now(),
-      payload: { bindingToken: selection.bindingToken, actor: selection.actor },
+      payload: {
+        bindingToken: selection.bindingToken,
+        actor: selection.actor,
+        ...(purpose === 'native-handoff' && options.providerSignin ? { providerSignin: options.providerSignin } : {}),
+      },
     });
     // Capture local correlation before the first await as well as source bytes.
     const expected = {

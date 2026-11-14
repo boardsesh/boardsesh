@@ -54,6 +54,7 @@ const verifiedIdentity = z
 export const anonymousProviderPreparationSchema = z
   .object({
     credentialKind,
+    nativeAttemptHash: digest.optional(),
     identityPlan: providerIdentityPlanSchema,
     verifiedIdentity,
     credentialProof: webCredentialProofSchema,
@@ -69,6 +70,7 @@ const bound = {
   browserIntentToken: token,
   flowHash: digest,
   nonceHash: digest.nullable(),
+  nativeAttemptHash: digest.optional(),
 };
 const metadata = { anonymousProviderVersion: z.literal(1), requestId: z.uuidv4(), issuedAt: timestamp };
 const command = <Operation extends string, Shape extends z.ZodRawShape>(operation: Operation, payload: Shape) =>
@@ -80,6 +82,7 @@ export const anonymousProviderPayloadSchemas = {
       provider,
       flowHash: digest,
       nonceHash: digest.nullable(),
+      nativeAttemptHash: digest.optional(),
       credentialKind,
     })
     .strict(),
