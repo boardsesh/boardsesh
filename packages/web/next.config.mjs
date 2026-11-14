@@ -481,15 +481,38 @@ const nextConfig = {
       // noindex/XFO/nosniff/HSTS there, pinned against Metro's canonical
       // constants by expo-web-header-parity.test.ts.
       {
-        // Every route EXCEPT /embed/** keeps the frame-denying default.
+        // Only embeds and the exact canonical coordinator utility may be framed.
         // If this exclusion ever regresses, the fail-safe is SAMEORIGIN
         // (embeds break visibly rather than the whole site becoming frameable).
-        source: '/((?!embed/).*)',
+        source: '/((?!embed/|auth/browser-coordinator$).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        ],
+      },
+      {
+        source: '/auth/browser-coordinator',
+        headers: [
+          // Exact configured app origin only; never the broader preview regex.
+          {
+            key: 'Content-Security-Policy',
+            value: (() => {
+              try {
+                const app = new URL(APP_ORIGIN);
+                if (app.protocol !== 'https:' || app.origin !== APP_ORIGIN) return "frame-ancestors 'none'";
+                return `frame-ancestors 'self' ${app.origin}`;
+              } catch {
+                return "frame-ancestors 'none'";
+              }
+            })(),
+          },
+          { key: 'Cache-Control', value: 'private, no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, follow' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
         ],
       },
       {

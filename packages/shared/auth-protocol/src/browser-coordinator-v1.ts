@@ -3,6 +3,11 @@ import { z } from 'zod';
 /** Control metadata only. No message is an authentication or identity assertion. */
 export const BROWSER_COORDINATOR_PROTOCOL_VERSION = 1;
 export const BROWSER_COORDINATOR_LOCK = 'boardsesh-browser-coordinator-v1';
+export const BROWSER_COORDINATOR_FRAME_PATH = '/auth/browser-coordinator';
+export const BROWSER_COORDINATOR_PUBLIC_PATHS = Object.freeze({
+  observe: '/api/internal/auth/browser-coordinator/observe',
+  initialize: '/api/internal/auth/browser-coordinator/initialize',
+});
 const identifier = z.uuid();
 const version = z.number().int().min(0).max(2_147_483_647);
 export const browserBindingCursorSchema = z.object({ bindingId: z.string().regex(/^[a-f0-9]{64}$/), version }).strict();

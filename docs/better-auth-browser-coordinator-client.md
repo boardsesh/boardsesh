@@ -1,11 +1,34 @@
-# Unmounted browser coordinator client
+# Staged canonical browser coordinator
 
-The shared auth protocol exposes three opt-in subpaths: `browser-coordinator`
+The shared auth protocol exposes four opt-in subpaths: `browser-coordinator`
 for strict control metadata, `browser-coordinator-runner` for canonical lock and
-network settlement, and `browser-coordinator-channel` for www/app MessageChannel
-clients and the unmounted receiving endpoint. No product imports these modules,
-no backend URL is selected, and no public route or bootstrap gate is enabled.
-Rollout ownership remains in #7430.
+network settlement, `browser-coordinator-channel` for www/app MessageChannel
+clients, and `browser-coordinator-dom` for browser platform I/O. The WWW session
+provider now has a canonical-frame preflight before its independent primary
+session fetch. Its new source-owned readiness function remains literally false;
+the public routes and frame perform no initialization in the shipped state.
+Rollout ownership remains in #7430. Expo session-provider adoption is separate.
+
+The locale-neutral `/auth/browser-coordinator` utility frame is noindex and stays
+out of the sitemap. Its GET does not change locale or session cookies. Only that
+exact path permits the exact configured HTTPS app origin as a frame ancestor;
+other auth/account pages retain their existing frame-denying policy. The frame's
+own layout skips session preflight/fetch so it cannot recursively create frames
+or roll another legacy cookie. A cancelled metadata request retains the host
+frame while its actual cookie request settles; document pagehide disposes it.
+
+The canonical GET observe and POST initialize adapters project metadata only.
+They require canonical Host and same-origin browser checks; POST accepts only
+a bounded empty JSON object. Refused correlation, orphan proof material,
+ambiguous legacy cookie families, and an unavailable authority never initialize
+a replacement anonymous selection. Initialization reuses a positively admitted
+existing selection without cookie writes. When there is an actual legacy JWE,
+it is independently primary-admitted before a binding is created. Its exact
+bytes become the version-one proof and backend login candidate: no new SID,
+credential, authentication time, generation, or original expiry is issued.
+Correlation, future proof cookies, whole next-request capacity and the complete
+buffered success response are prepared before the backend selection CAS. An
+unknown commit withholds all candidate headers and does not retry the mutation.
 
 Messages contain only connection/request UUIDs, typed control operations and a
 binding digest/version cursor. They carry no password, UID/SID, authentication
@@ -53,6 +76,13 @@ The local shared regression suite covers strict metadata, exact origin/source,
 real MessagePorts, connection/request/operation mismatch, delayed older replies,
 foreign bindings, teardown, timeout/abort settlement, read-before-retry,
 truncated-body recovery and refused proof. Existing auth protocol tests also run.
+
+The staged route tests exercise real JWE encoding/decoding, the actual primary
+selection reader and proof-cookie codecs. The DOM tests use real MessagePorts
+with injected Window/lock/network boundaries, including an abort-ignoring body
+that must settle before the next lock owner dispatches. Mounted React tests
+prove preflight ordering, unavailable initial identity and utility-frame
+recursion refusal. These do not qualify real-browser cookie delivery.
 
 Separate owned Chromium151 HTTPS transport experiments cover nine cases each
 on HTTP/1.1 and HTTP/2: abort, same-origin and sibling-origin navigation, iframe

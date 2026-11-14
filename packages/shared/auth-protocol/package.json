@@ -126,6 +126,11 @@
       "types": "./src/browser-coordinator-channel.ts",
       "import": "./src/browser-coordinator-channel.ts",
       "default": "./src/browser-coordinator-channel.ts"
+    },
+    "./browser-coordinator-dom": {
+      "types": "./src/browser-coordinator-dom.ts",
+      "import": "./src/browser-coordinator-dom.ts",
+      "default": "./src/browser-coordinator-dom.ts"
     }
   },
   "scripts": {

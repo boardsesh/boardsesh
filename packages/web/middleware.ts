@@ -149,6 +149,14 @@ function routeRequest(request: NextRequest) {
     return NextResponse.next({ request: { headers: expoWebRequestHeaders } });
   }
 
+  // The canonical coordinator is a locale-neutral, side-effect-free utility
+  // frame. No sticky-locale or session-query cookie belongs on its GET.
+  if (lowercasePathname === '/auth/browser-coordinator') {
+    const coordinatorRequestHeaders = new Headers(request.headers);
+    coordinatorRequestHeaders.set(LOCALE_HEADER, DEFAULT_LOCALE);
+    return NextResponse.next({ request: { headers: coordinatorRequestHeaders } });
+  }
+
   // /embed/** — iframe widgets for gym websites: display-only, cookieless,
   // anonymous. Bypass BEFORE the ?session= branch and locale detection so no
   // sticky-locale/session cookie (or any other cookie) is ever set on an

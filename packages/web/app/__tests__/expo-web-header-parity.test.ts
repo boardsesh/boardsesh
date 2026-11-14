@@ -74,7 +74,11 @@ describe('/app security-header parity across middleware, next.config, and Metro'
 
     // /app responses inherit the global (non-embed) security headers, including
     // the canonical HSTS value which next.config sets unconditionally.
-    const globalRule = headers.find(({ source }) => source === '/((?!embed/).*)');
+    const globalRule = headers.find(
+      ({ source, headers: applied }) =>
+        applied.some((header) => header.key === 'X-Frame-Options' && header.value === 'SAMEORIGIN') &&
+        new RegExp(`^${source}$`, 'i').test('/app'),
+    );
     const globalHeaders = headerMap(globalRule?.headers ?? []);
     for (const [name, value] of Object.entries(EXPO_WEB_SECURITY_HEADERS)) {
       expect(globalHeaders[name]).toBe(value);
