@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { createTelemetry, type BetterAuthOptions, type TelemetryEvent } from 'better-auth';
 import { drizzle } from 'drizzle-orm/postgres-js';
 
@@ -17,19 +17,6 @@ vi.mock('better-auth', async (importOriginal) => {
     betterAuth: (...args: Parameters<typeof actual.betterAuth>) => {
       callCounts.betterAuth += 1;
       return actual.betterAuth(...args);
-    },
-  };
-});
-
-vi.mock('@boardsesh/db/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@boardsesh/db/client')>();
-  return {
-    ...actual,
-    createDedicatedPool: (...args: Parameters<typeof actual.createDedicatedPool>) => {
-      callCounts.createDedicatedPool += 1;
-      callCounts.poolSizes.push(args[0]);
-      callCounts.poolIdleTimeouts.push(args[1]?.connection?.idle_in_transaction_session_timeout);
-      return actual.createDedicatedPool(...args);
     },
   };
 });
@@ -71,9 +58,25 @@ const PARTNER_MODULES = [
 
 const VALID_SECRET = 'partner-oauth-test-secret-never-deployed-0123456789';
 
+beforeEach(async () => {
+  // Resolve the real barrel before parallel partner imports ask for the mock.
+  // An async factory inside that graph can capture an incomplete export namespace.
+  const actual = await vi.importActual<typeof import('@boardsesh/db/client')>('@boardsesh/db/client');
+  vi.doMock('@boardsesh/db/client', () => ({
+    ...actual,
+    createDedicatedPool: (...args: Parameters<typeof actual.createDedicatedPool>) => {
+      callCounts.createDedicatedPool += 1;
+      callCounts.poolSizes.push(args[0]);
+      callCounts.poolIdleTimeouts.push(args[1]?.connection?.idle_in_transaction_session_timeout);
+      return actual.createDedicatedPool(...args);
+    },
+  }));
+});
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
+  vi.doUnmock('@boardsesh/db/client');
   vi.doUnmock('../authority');
 });
 
@@ -93,7 +96,11 @@ describe('importing partner modules', () => {
   it('constructs no instance, opens no pool and starts no telemetry', async () => {
     callCounts.betterAuth = 0;
     callCounts.createDedicatedPool = 0;
-    await Promise.all(PARTNER_MODULES.map((modulePath) => import(modulePath)));
+    const imports = await Promise.allSettled(PARTNER_MODULES.map((modulePath) => import(modulePath)));
+    // Never reset the module cache while a rejected import's siblings still run.
+    for (const imported of imports) {
+      if (imported.status === 'rejected') throw imported.reason;
+    }
     expect(callCounts.betterAuth).toBe(0);
     expect(callCounts.createDedicatedPool).toBe(0);
   });
