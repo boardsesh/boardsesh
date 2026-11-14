@@ -2,6 +2,11 @@ import { CLIENT_PLATFORM_HEADER } from '@boardsesh/shared-schema';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
+import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
+import {
+  captureBrowserBackendRequestScope,
+  createBrowserBackendGraphQLTransport,
+} from '@/app/lib/auth/browser-backend-graphql';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -34,7 +39,19 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
     console.info(`[GraphQL HTTP] Creating client for ${url} (authenticated: ${!!authToken})`);
   }
 
-  return new GraphQLClient(url, { headers });
+  // Server renders already forward their own admitted lease. Browser clients
+  // instead retain the exact local owner scope from their original token.
+  const scope = typeof window === 'undefined' ? null : captureBrowserBackendRequestScope(authToken);
+  return new GraphQLClient(url, {
+    headers,
+    ...(scope
+      ? createBrowserBackendGraphQLTransport({
+          client: browserBackendClient,
+          scope,
+          fetch: (...parameters) => fetch(...parameters),
+        })
+      : {}),
+  });
 }
 
 /**
