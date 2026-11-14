@@ -34,6 +34,16 @@ function request(path: string, body: Record<string, string>): NextRequest {
   });
 }
 
+async function expectForwardedRequest(original: NextRequest) {
+  expect(nextAuthHandlerMock).toHaveBeenCalledWith(expect.any(NextRequest), routeContext(original));
+  const forwarded: unknown = nextAuthHandlerMock.mock.calls[0]?.[0];
+  if (!(forwarded instanceof NextRequest)) throw new Error('Expected the actual forwarded request');
+  expect(forwarded.url).toBe(original.url);
+  expect(forwarded.method).toBe(original.method);
+  expect([...forwarded.headers]).toEqual([...original.headers]);
+  expect(await forwarded.clone().text()).toBe(await original.clone().text());
+}
+
 function hostOnlySessionCookieCleared(response: Response): boolean {
   const setCookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
   return setCookies.some(
@@ -208,7 +218,7 @@ describe('POST /api/auth/[...nextauth]', () => {
 
     await expect(POST(callbackRequest, routeContext(callbackRequest))).resolves.toMatchObject({ status: 200 });
 
-    expect(nextAuthHandlerMock).toHaveBeenCalledWith(callbackRequest, routeContext(callbackRequest));
+    await expectForwardedRequest(callbackRequest);
     expect(getTokenMock).not.toHaveBeenCalled();
   });
 
@@ -798,7 +808,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(response.headers.getSetCookie().some((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'))).toBe(
       false,
     );
-    expect(nextAuthHandlerMock).toHaveBeenCalledWith(lookalikeRequest, routeContext(lookalikeRequest));
+    await expectForwardedRequest(lookalikeRequest);
   });
 
   it('fails explicitly when Expo return binding has no signing secret', async () => {

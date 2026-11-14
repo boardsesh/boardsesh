@@ -62,6 +62,7 @@ export function captureAnonymousProviderBrowserContext(
     !Number.isSafeInteger(selection.cursor.version) ||
     selection.cursor.version < 0 ||
     selection.cursor.version >= 2_147_483_647 ||
+    !Number.isFinite(Date.parse(selection.cursor.bindingExpiresAt)) ||
     Date.parse(selection.cursor.bindingExpiresAt) <= Date.now()
   )
     return refuse();
