@@ -27,17 +27,35 @@ type Delivery = {
 };
 const deliveredResults = new WeakMap<object, Delivery>();
 
+/** Capture this delivery once. A later decoder observation of the same object
+ * must not replace an operation's original lease or cancellation signal. */
+export function captureBrowserBackendHttpResult(result: unknown, client: BrowserClient): (() => void) | null {
+  if (!client.isSelected() || result === null || typeof result !== 'object') return null;
+  const receipt = deliveredResults.get(result);
+  if (!receipt || receipt.client !== client) return null;
+  const assertCurrent = () => {
+    if (client.getSnapshot().closed || !client.isSelected() || receipt.signal?.aborted)
+      throw new BrowserBackendConsumerError('superseded');
+    receipt.authority.assertCurrent(receipt.lease);
+  };
+  try {
+    assertCurrent();
+    return assertCurrent;
+  } catch {
+    return null;
+  }
+}
+
 /** Retain the actual original delivery receipt through a caller's own awaits.
  * Ordinary legacy behavior remains separate; copied/serialized selected
  * results cannot borrow a current owner's or newer lease's authority. */
 export function isCurrentBrowserBackendHttpResult(result: unknown, client: BrowserClient): boolean {
   if (client.getSnapshot().closed) return false;
   if (!client.isSelected()) return true;
-  if (result === null || typeof result !== 'object') return false;
-  const receipt = deliveredResults.get(result);
-  if (!receipt || receipt.client !== client || receipt.signal?.aborted) return false;
   try {
-    receipt.authority.assertCurrent(receipt.lease);
+    const assertCurrent = captureBrowserBackendHttpResult(result, client);
+    if (!assertCurrent) return false;
+    assertCurrent();
     return true;
   } catch {
     return false;

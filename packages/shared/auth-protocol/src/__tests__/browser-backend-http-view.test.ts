@@ -115,6 +115,9 @@ describe('opaque process-local HTTP view labels', () => {
     const handle = current.registry.capture();
     const original = current.create.mock.results[0].value.result;
     expect(current.registry.isCurrentResult(handle, original)).toBe(true);
+    // Older injected transports have no immutable-capture contract. Their
+    // metadata-only positive cannot qualify the new operation API.
+    expect(current.registry.captureResult(handle, original)).toBeNull();
     expect(current.registry.isCurrentResult(handle, { ...original })).toBe(false);
     current.switch('B');
     expect(current.registry.isCurrentResult(handle, original)).toBe(false);

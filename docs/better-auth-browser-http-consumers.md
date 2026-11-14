@@ -180,7 +180,23 @@ the selected API remains fail-closed.
 
 Remaining implementation includes the other authenticated callers, offline
 outboxes and pulls, derived-result effects, and application-wide view/cache
-retirement. A common scope-aware operation context can retain the actual original
-delivery receipts through those awaits. Real browser history and supported-engine
+retirement. The staged operation API now retains the actual original delivery
+receipts through those awaits. `assertView()` checks original intent before a
+request; `assertDeliveries()` requires a decoded delivery and rechecks every
+captured receipt. A fresh same-owner receipt cannot replace an older one, even
+when an SDK reuses its result object. At most 64 requests may be pending or
+retained in one operation; capacity is reserved before sending. Disposal is local
+to the operation. Native keeps its existing credential/account policy and adds
+explicit cancellation checks to the new API.
+
+Independent review first reproduced two missing cancellation checks with the
+installed SDK: already-aborted work still sent, and an abort-ignoring held body
+returned data. The corrected wrapper checks the composed signal before client
+lookup and after decoding. The final 135 cases and both external probes passed.
+Two exact-restored semantic controls rejected latest-receipt borrowing and an
+expired older delivery despite a newer same-owner lease. This qualifies the
+unmounted API; staged query/mutation caller and UI adoption remains separate.
+
+Real browser history and supported-engine
 acceptance, private SSR/Flight/prefetch, native handoff, complete public bootstrap
 and rolling-cookie publication retain their separate qualification gates.

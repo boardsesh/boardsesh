@@ -4,6 +4,7 @@ import { createBrowserBackendClient } from '@boardsesh/auth-protocol/browser-bac
 import type { BrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 import type { WebAuthIdentity } from '../../auth-store.web';
 import { createBrowserHttpClientFacade } from '../http-client-facade.web';
+import { createBrowserHttpOperations } from '../http-operation-client.web';
 
 vi.mock('../../client-platform', () => ({ CLIENT_PLATFORM: 'web' }));
 vi.mock('../../connectivity/connectivity-store', () => ({
@@ -83,12 +84,20 @@ function fixture(kind: 'selected' | 'legacy' | 'anonymous' = 'selected') {
     legacy: { get: legacyGet, reset: legacyReset },
   };
   const facade = createBrowserHttpClientFacade(options);
+  const operations = createBrowserHttpOperations({
+    captureScope: facade.captureRequestView,
+    isCurrentView: facade.isCurrentView,
+    captureResult: facade.captureResult,
+    resolveClient: (scope, mode) =>
+      mode === 'offline' ? facade.getOfflineSyncHttpClient(scope) : facade.getHttpClient(scope),
+  });
   cleanup.push(() => {
     facade.dispose();
     backendClient.dispose();
   });
   return {
     facade,
+    operations,
     backendClient,
     rawFetch,
     leaseFetch,
@@ -123,6 +132,146 @@ function fixture(kind: 'selected' | 'legacy' | 'anonymous' = 'selected') {
   };
 }
 const document = '{ viewer { id } }';
+
+describe('original operation with the installed GraphQL SDK', () => {
+  it('captures before network work and preserves both SDK overloads, headers and variables', async () => {
+    const current = fixture();
+    const operation = current.operations.capture();
+    expect(current.leaseFetch).not.toHaveBeenCalled();
+    expect(current.rawFetch).not.toHaveBeenCalled();
+    expect(() => operation.assertDeliveries()).toThrow();
+    const first = await operation.request<{ viewer: { id: string } }, { limit: number }>(
+      document,
+      { limit: 2 },
+      { 'X-Owned-Test': 'positional' },
+    );
+    expect(first.viewer.id).toBe('owned-A');
+    expect(JSON.parse((current.rawFetch.mock.calls[0][1] as RequestInit).body as string).variables).toEqual({
+      limit: 2,
+    });
+    expect(new Headers((current.rawFetch.mock.calls[0][1] as RequestInit).headers).get('X-Owned-Test')).toBe(
+      'positional',
+    );
+    const second = await operation.request<{ viewer: { id: string } }>({
+      document,
+      requestHeaders: { 'X-Owned-Test': 'object' },
+    });
+    expect(second.viewer.id).toBe('owned-A');
+    expect(new Headers((current.rawFetch.mock.calls[1][1] as RequestInit).headers).get('X-Owned-Test')).toBe('object');
+    operation.assertDeliveries();
+  });
+
+  it.each(['B', 'ABA', 'generation'] as const)(
+    'a queued %s operation refuses before its first lease, getter or mutation send',
+    async (change) => {
+      const current = fixture();
+      const operation = current.operations.capture();
+      await Promise.resolve();
+      if (change === 'generation') current.nextGeneration();
+      else {
+        current.switchAccount('owned-B');
+        if (change === 'ABA') current.switchAccount('owned-A');
+      }
+      await expect(operation.request('mutation OwnedAction { setOwnedPreference }')).rejects.toMatchObject({
+        status: 'superseded',
+      });
+      expect(current.leaseFetch).not.toHaveBeenCalled();
+      expect(current.rawFetch).not.toHaveBeenCalled();
+      expect(current.legacyGet).not.toHaveBeenCalled();
+    },
+  );
+
+  it('checks every original delivery instead of borrowing the newest same-owner lease', async () => {
+    const current = fixture();
+    const operation = current.operations.capture();
+    await operation.request(document);
+    current.clock(90_000);
+    await operation.request(document);
+    const replacement = current.operations.capture();
+    await replacement.request(document);
+    current.clock(120_001);
+    await Promise.resolve();
+    expect(() => operation.assertView()).not.toThrow();
+    expect(() => operation.assertDeliveries()).toThrow();
+    expect(() => replacement.assertDeliveries()).not.toThrow();
+    expect(current.leaseFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an after-own-await result tied to its operation after B and ABA', async () => {
+    const current = fixture();
+    const operation = current.operations.capture();
+    const original = await operation.request<{ viewer: { id: string } }>(document);
+    current.switchAccount('owned-B');
+    current.switchAccount('owned-A');
+    const replacement = current.operations.capture();
+    await replacement.request(document);
+    await Promise.resolve();
+    expect(original.viewer.id).toBe('owned-A');
+    expect(() => operation.assertDeliveries()).toThrow();
+    expect(() => replacement.assertDeliveries()).not.toThrow();
+  });
+
+  it('composes the object-overload caller abort through held real body decoding', async () => {
+    const current = fixture();
+    let finish!: () => void;
+    current.rawFetch.mockImplementationOnce(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('{"data":{"viewer":{"id":"owned-A"}}}'));
+              finish = () => controller.close();
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    const caller = new AbortController();
+    const operation = current.operations.capture();
+    const pending = operation.request({ document, signal: caller.signal });
+    const rejected = expect(pending).rejects.toThrow();
+    await vi.waitFor(() => expect(current.rawFetch).toHaveBeenCalledTimes(1));
+    caller.abort();
+    expect((current.rawFetch.mock.calls[0][1] as RequestInit).signal?.aborted).toBe(true);
+    finish();
+    await rejected;
+    expect(() => operation.assertDeliveries()).toThrow();
+    expect(current.backendClient.getSnapshot().owner?.userId).toBe('owned-A');
+  });
+
+  it('local disposal refuses completed and pending work without retiring another operation', async () => {
+    const current = fixture();
+    const operation = current.operations.capture();
+    await operation.request(document);
+    operation.dispose();
+    await Promise.resolve();
+    expect(() => operation.assertDeliveries()).toThrow();
+    await expect(operation.request(document)).rejects.toMatchObject({ status: 'superseded' });
+    const replacement = current.operations.capture();
+    await replacement.request(document);
+    expect(() => replacement.assertDeliveries()).not.toThrow();
+    expect(current.backendClient.getSnapshot().owner?.userId).toBe('owned-A');
+  });
+
+  it('refuses a sixty-fifth request before sending it while sixty-four receipts remain valid', async () => {
+    const current = fixture();
+    const operation = current.operations.capture();
+    for (let index = 0; index < 64; index++) await operation.request(document);
+    expect(() => operation.assertDeliveries()).not.toThrow();
+    await expect(operation.request('mutation OwnedAction { setOwnedPreference }')).rejects.toMatchObject({
+      status: 'unavailable',
+    });
+    expect(current.rawFetch).toHaveBeenCalledTimes(64);
+  });
+
+  it("does not turn an explicit unknown view into today's account", async () => {
+    const current = fixture();
+    const operation = current.operations.create('bshv1_unknown');
+    await expect(operation.request(document)).rejects.toMatchObject({ status: 'superseded' });
+    expect(current.leaseFetch).not.toHaveBeenCalled();
+    expect(current.rawFetch).not.toHaveBeenCalled();
+  });
+});
 
 describe('actual SDK clients located by original opaque browser views', () => {
   it('labels expose no credential and the actual request uses only its issued lease', async () => {

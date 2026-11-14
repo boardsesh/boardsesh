@@ -7,6 +7,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./browser-backend-http-operation": {
+      "types": "./src/browser-backend-http-operation.ts",
+      "import": "./src/browser-backend-http-operation.ts",
+      "default": "./src/browser-backend-http-operation.ts"
+    },
     "./browser-backend-http-view": {
       "types": "./src/browser-backend-http-view.ts",
       "import": "./src/browser-backend-http-view.ts",
