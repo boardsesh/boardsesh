@@ -243,9 +243,10 @@ describe('CPP trio board labels', () => {
     ).rejects.toThrow('labels overflow');
   });
 
-  it('keeps the bottom of each complete native capture above the label footer', async () => {
-    const markerColors = ['#b03040', '#20a0d0', '#e0a030'];
-    for (const device of Object.keys(ACCEPTED_SIZES)) {
+  it.each(Object.keys(ACCEPTED_SIZES))(
+    'keeps the bottom of each complete native capture above the label footer on %s',
+    async (device) => {
+      const markerColors = ['#b03040', '#20a0d0', '#e0a030'];
       const { width, height } = ACCEPTED_SIZES[device][0];
       const captures = await Promise.all(
         markerColors.map((color) =>
@@ -279,8 +280,8 @@ describe('CPP trio board labels', () => {
         }
         expect(hits, `${device} must retain the ${color} native footer`).toBeGreaterThan(3);
       }
-    }
-  });
+    },
+  );
 
   it.each(Object.keys(ACCEPTED_SIZES))(
     'fits complete panels and ordered labels on %s in every locale',

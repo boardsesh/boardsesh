@@ -184,7 +184,7 @@ describe('PartnerConsentContent', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
 
     const connected = await screen.findByRole('heading', { name: 'Sequence is connected' });
-    expect(document.activeElement).toBe(connected);
+    await waitFor(() => expect(document.activeElement).toBe(connected));
     expect(assign).toHaveBeenCalledWith('com.example.app:/cb?code=abc&state=s');
     const [, init] = fetchMock.mock.calls[1];
     expect(postedJson(init)).toEqual({ accept: true, oauth_query: SIGNED_QUERY });
