@@ -3,12 +3,16 @@ import {
   getAuthToken,
   isAuthCredentialGenerationCurrent,
   synchronizeWebSession,
+  hasConfirmedAnonymousWebSession,
 } from './auth-store.web';
 import { signOutForGeneration } from './auth.web';
 import { reportHandledError } from './error-reporting';
 import type { AuthRejectionResult } from './auth-rejection-result';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { getClientIdentityHeaderValue } from './client-identity.web';
+import { expoBrowserBackendClient } from './browser-backend-client.web';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
+import { admitBrowserResponse } from './browser-response-admission.web';
 
 let onForcedSignOut: (() => void) | null = null;
 type WebRefreshResult =
@@ -111,10 +115,13 @@ export async function ensureFreshToken(): Promise<boolean> {
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
   const requestGeneration = captureAuthCredentialGeneration();
-  await ensureFreshToken();
+  const selectedRequest = expoBrowserBackendClient.isSelected();
+  const fresh = await ensureFreshToken();
   if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
     throw new Error('Authentication session changed before the request could be sent');
   }
+  if (!fresh && !hasConfirmedAnonymousWebSession())
+    throw new Error('Authentication session is unavailable before the request could be sent');
 
   const token = await getAuthToken();
   if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
@@ -126,8 +133,37 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
   headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
+  if (expoBrowserBackendClient.isSelected()) {
+    const scope = token ? expoBrowserBackendClient.capture(token) : null;
+    if (token && !scope) throw new BrowserBackendConsumerError('superseded');
+    const lease = scope ? await expoBrowserBackendClient.acquireScope(scope) : null;
+    const revision = expoBrowserBackendClient.getSnapshot().revision;
+    const assertCurrent = () => {
+      if (!isAuthCredentialGenerationCurrent(requestGeneration)) throw new BrowserBackendConsumerError('superseded');
+      if (scope && lease) expoBrowserBackendClient.assertCurrent(scope, lease);
+      else if (!hasConfirmedAnonymousWebSession() || revision !== expoBrowserBackendClient.getSnapshot().revision)
+        throw new BrowserBackendConsumerError('unavailable');
+    };
+    assertCurrent();
+    if (lease) headers.set('Authorization', `Bearer ${lease.token}`);
+    else headers.delete('Authorization');
+    const response = await fetch(url, { ...options, headers });
+    assertCurrent();
+    if (scope && response.status === 401) {
+      // A confirmed refusal of THIS still-live lease retires only its scope.
+      // Neither an uncertain mutation nor an expired old response is replayed.
+      expoBrowserBackendClient.invalidate(scope);
+      throw new BrowserBackendConsumerError('denied');
+    }
+    return admitBrowserResponse(response, assertCurrent);
+  }
+
   const response = await fetch(url, { ...options, headers });
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+    if (selectedRequest || expoBrowserBackendClient.isSelected())
+      throw new Error('Authentication session changed before the response could be accepted');
+    return response;
+  }
   if (response.status !== 401 || !token) return response;
 
   const refreshResult = await deduplicatedSessionRefresh();

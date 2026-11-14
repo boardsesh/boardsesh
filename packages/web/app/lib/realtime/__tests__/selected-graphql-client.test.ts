@@ -317,4 +317,29 @@ describe('WWW selected realtime adapter', () => {
     expect(observer.error).toHaveBeenCalledWith(expect.objectContaining({ status: 'superseded' }));
     expect(current.entry.releases[0]).toHaveBeenCalledTimes(1);
   });
+  it('a resumed next cannot relabel an older buffered payload for completion', async () => {
+    const current = await createSelectedClient();
+    const observer = sink();
+    current.client.subscribe({ query: 'subscription { viewer }' }, observer);
+    current.deliver({ data: { viewer: 'old-socket-payload' } });
+    clock = 120_000;
+    const next = await current.reconnect();
+    next.deliver({ data: { viewer: 'new-socket-payload' } });
+    expect(observer.next).toHaveBeenCalledTimes(2);
+    current.entry.sinks[0].complete();
+    expect(observer.complete).not.toHaveBeenCalled();
+    expect(observer.error).toHaveBeenCalledWith(expect.objectContaining({ status: 'superseded' }));
+    expect(fixture.browser!.capture(next.parameters.authToken as string)).not.toBeNull();
+  });
+  it('an empty old completion cannot borrow the newer actual socket receipt', async () => {
+    const current = await createSelectedClient();
+    const observer = sink();
+    current.client.subscribe({ query: 'subscription { viewer }' }, observer);
+    clock = 120_000;
+    const next = await current.reconnect();
+    current.entry.sinks[0].complete();
+    expect(observer.complete).not.toHaveBeenCalled();
+    expect(observer.error).toHaveBeenCalledWith(expect.objectContaining({ status: 'superseded' }));
+    expect(fixture.browser!.capture(next.parameters.authToken as string)).not.toBeNull();
+  });
 });

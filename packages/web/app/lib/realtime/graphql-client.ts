@@ -5,9 +5,11 @@ import {
 } from '@boardsesh/graphql-client';
 import { CLIENT_PLATFORM_CONNECTION_PARAM } from '@boardsesh/shared-schema';
 import type { FormattedExecutionResult, Sink, SubscribePayload } from 'graphql-ws';
-import { browserBackendLeaseWebSocket } from '@boardsesh/auth-protocol/browser-backend-socket';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
-import type { BrowserBackendLease } from '@boardsesh/auth-protocol/browser-backend-lease';
+import {
+  browserSubscriptionReplayPolicy,
+  createBrowserBackendSocketController,
+} from '@boardsesh/auth-protocol/browser-backend-socket-controller';
+import { parse } from 'graphql';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { captureBrowserBackendRequestScope } from '@/app/lib/auth/browser-backend-graphql';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
@@ -73,82 +75,30 @@ export function createGraphQLClient(
   const managerConnectionName = options.connectionName ?? 'primary';
   const { authToken, ...baseOptions } = options;
   const scope = captureBrowserBackendRequestScope(authToken);
-  const socketLeases = new WeakMap<WebSocket, BrowserBackendLease>();
-  let currentSocket: WebSocket | undefined;
-  let openingSocket: WebSocket | undefined;
-  let delivery: { socket: WebSocket; lease: BrowserBackendLease } | undefined;
-  let renewalTimer: ReturnType<typeof setTimeout> | undefined;
   let createdClient: ExtendedClient | undefined;
-  let disposed = false;
-  const clearRenewal = () => {
-    clearTimeout(renewalTimer);
-    renewalTimer = undefined;
-  };
-  const selectedSocket = scope
-    ? browserBackendLeaseWebSocket(SafeWebSocket, {
-        isCurrent: (socket) => !disposed && currentSocket === socket && browserBackendClient.isCurrent(scope),
-        canSend(socket) {
-          browserBackendClient.assertCurrent(scope, socketLeases.get(socket));
-          return true;
-        },
-        created(socket) {
-          currentSocket = socket;
-        },
-        opening(socket, deliver) {
-          const previous = openingSocket;
-          openingSocket = socket;
-          try {
-            deliver();
-          } finally {
-            openingSocket = previous;
-          }
-        },
-        receiving(socket, deliver) {
-          const lease = socketLeases.get(socket);
-          browserBackendClient.assertCurrent(scope, lease);
-          if (!lease || socket !== currentSocket) throw new BrowserBackendConsumerError('superseded');
-          const previous = delivery;
-          delivery = { socket, lease };
-          try {
-            deliver();
-          } finally {
-            delivery = previous;
-          }
-        },
-        async recover(socket) {
-          if (socket !== currentSocket || !browserBackendClient.isCurrent(scope)) return 'superseded';
-          let unexpired = false;
-          try {
-            browserBackendClient.assertCurrent(scope, socketLeases.get(socket));
-            unexpired = true;
-          } catch {
-            /* An expired same-owner lease needs a real new admission. */
-          }
-          if (unexpired) {
-            // This is an actual refusal of a locally live lease, not expiry.
-            // Retire its client scope; the owner hook may independently read
-            // the actual source again without replaying this operation.
-            browserBackendClient.invalidate(scope);
-            return 'denied';
-          }
-          try {
-            const renewed = await browserBackendClient.acquireScope(scope);
-            browserBackendClient.assertCurrent(scope, renewed);
-            return 'admitted';
-          } catch (error) {
-            return error instanceof BrowserBackendConsumerError ? error.status : 'unavailable';
-          }
+  const selectedController = scope
+    ? createBrowserBackendSocketController({
+        Socket: SafeWebSocket,
+        authority: {
+          isCurrent: () => browserBackendClient.isCurrent(scope),
+          assertCurrent: (lease) => browserBackendClient.assertCurrent(scope, lease),
+          acquire: () => browserBackendClient.acquireScope(scope),
+          invalidate: () => browserBackendClient.invalidate(scope),
         },
         closeEvent: (code, reason, wasClean) => new CloseEvent('close', { code, reason, wasClean }),
         schedule(callback, milliseconds) {
           const timer = setTimeout(callback, milliseconds);
           return () => clearTimeout(timer);
         },
+        terminate: () => createdClient?.terminate(),
       })
-    : SafeWebSocket;
+    : undefined;
 
   const client = createSharedGraphQLClient({
     ...baseOptions,
+    // A cancelled pre-handshake operation releases before its internal close
+    // race is observed. Give that release a turn before the lazy socket closes.
+    ...(scope ? { lazyCloseTimeoutMs: baseOptions.lazyCloseTimeoutMs ?? 3000 } : {}),
     // Always a provider (rather than the shared client's static `authToken`)
     // so the handshake also carries the client identity. Browsers cannot set
     // headers on the upgrade, so connectionParams is the only channel.
@@ -156,38 +106,14 @@ export function createGraphQLClient(
     // under `web`, as HTTP requests already are (docs/analytics-consent.md).
     connectionParams: async () => {
       let currentToken = authToken;
-      if (scope) {
-        // Captured synchronously inside this actual socket's onopen handler.
-        // A later connection cannot supply its socket or proof after the await.
-        const socket = openingSocket;
-        if (!socket || socket !== currentSocket || socketLeases.has(socket))
-          throw new BrowserBackendConsumerError('superseded');
-        const lease = await browserBackendClient.acquireScope(scope);
-        browserBackendClient.assertCurrent(scope, lease);
-        if (disposed || socket !== currentSocket || socket.readyState !== WebSocket.OPEN)
-          throw new BrowserBackendConsumerError('superseded');
-        socketLeases.set(socket, lease);
-        currentToken = lease.token;
-        clearRenewal();
-        const renewAfter =
-          lease.usableForMs > 30_000 ? lease.usableForMs - 30_000 : Math.max(1, lease.usableForMs - 1000);
-        renewalTimer = setTimeout(() => {
-          if (
-            !disposed &&
-            socket === currentSocket &&
-            socketLeases.get(socket) === lease &&
-            browserBackendClient.isCurrent(scope)
-          )
-            createdClient?.terminate();
-        }, renewAfter);
-      }
+      if (selectedController) currentToken = await selectedController.connectionToken();
       return {
         ...(currentToken ? { authToken: currentToken } : {}),
         ...webClientIdentityConnectionParams(),
         [CLIENT_PLATFORM_CONNECTION_PARAM]: 'web',
       };
     },
-    webSocketImpl: selectedSocket,
+    webSocketImpl: selectedController?.Socket ?? SafeWebSocket,
     onClientCreated: (client) => {
       createdClient = client;
       if (!scope && typeof window === 'undefined') return;
@@ -206,55 +132,29 @@ export function createGraphQLClient(
           })
         : undefined;
       return () => {
-        disposed = true;
-        clearRenewal();
+        selectedController?.dispose();
         unsubscribeOwner?.();
         unregister?.();
       };
     },
   });
-  if (scope) {
+  if (selectedController) {
     const subscribe = client.subscribe.bind(client);
     client.subscribe = <Data = Record<string, unknown>, Extensions = unknown>(
       payload: SubscribePayload,
       sink: Sink<FormattedExecutionResult<Data, Extensions>>,
     ) => {
-      if (!browserBackendClient.isCurrent(scope)) {
-        sink.error(new BrowserBackendConsumerError('superseded'));
-        return () => {};
+      const { query, operationName, variables, extensions } = payload;
+      const bufferedPayload = Object.freeze({ query, operationName, variables, extensions });
+      let replay: 'never' | 'subscription' = 'never';
+      try {
+        replay = browserSubscriptionReplayPolicy(parse(bufferedPayload.query), bufferedPayload.operationName);
+      } catch {
+        // Malformed/ambiguous documents never opt into transport replay.
       }
-      let stopped = false;
-      let release = () => {};
-      release = subscribe<Data, Extensions>(payload, {
-        next(result) {
-          if (stopped) return;
-          try {
-            if (!delivery || delivery.socket !== currentSocket) throw new BrowserBackendConsumerError('superseded');
-            browserBackendClient.assertCurrent(scope, delivery.lease);
-          } catch (error) {
-            stopped = true;
-            release();
-            sink.error(error);
-            return;
-          }
-          sink.next(result);
-        },
-        error(error) {
-          if (stopped) return;
-          stopped = true;
-          sink.error(browserBackendClient.isCurrent(scope) ? error : new BrowserBackendConsumerError('superseded'));
-        },
-        complete() {
-          if (stopped) return;
-          stopped = true;
-          sink.complete();
-        },
+      return selectedController.subscribe((guarded) => subscribe<Data, Extensions>(bufferedPayload, guarded), sink, {
+        replay,
       });
-      if (stopped) release();
-      return () => {
-        stopped = true;
-        release();
-      };
     };
   }
   return client;

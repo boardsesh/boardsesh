@@ -33,6 +33,8 @@ export { getOperationName } from './operation-name';
 
 export type { ClientSource, ExecuteOptions, RateLimitRetryEvent } from './execute';
 export { execute } from './execute';
+export type { ClientOperationScope } from './client-operation-scope';
+export { registerClientOperationScope } from './client-operation-scope';
 export { subscribe } from './subscribe';
 
 export type { BaseClientOptions, CreateGraphQLClientOptions, ExtendedClient } from './create-client';

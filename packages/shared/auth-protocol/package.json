@@ -7,6 +7,16 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./browser-backend-request-authority": {
+      "types": "./src/browser-backend-request-authority.ts",
+      "import": "./src/browser-backend-request-authority.ts",
+      "default": "./src/browser-backend-request-authority.ts"
+    },
+    "./browser-backend-socket-controller": {
+      "types": "./src/browser-backend-socket-controller.ts",
+      "import": "./src/browser-backend-socket-controller.ts",
+      "default": "./src/browser-backend-socket-controller.ts"
+    },
     "./browser-backend-client": {
       "types": "./src/browser-backend-client.ts",
       "import": "./src/browser-backend-client.ts",
