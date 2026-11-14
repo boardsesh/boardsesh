@@ -1,5 +1,5 @@
 import { createDbOnPool, createDedicatedPoolFromUrl, type DbInstance } from '@boardsesh/db/client';
-import type { CredentialWriterReceipt } from '@boardsesh/db/credential-writer-acl';
+import type { CredentialWriterContract, CredentialWriterReceipt } from '@boardsesh/db/credential-writer-acl';
 
 import {
   CREDENTIAL_WRITER_ROLE,
@@ -35,8 +35,9 @@ export async function createCredentialDatabase(
     const receipt = await qualifyCredentialWriter(pool, {
       expectedRole: CREDENTIAL_WRITER_ROLE,
       expectedDatabase: configuration.databaseName,
-      contract: 'private-web-v1',
+      contract: configuration.contract,
     });
+    if (receipt.contract !== configuration.contract) throw new Error('CREDENTIAL_DATABASE_CONTRACT_MISMATCH');
     await assertSameCredentialDatabaseTarget(pool, configuration.contentConnectionString, {
       writerRole: CREDENTIAL_WRITER_ROLE,
       contentRole: configuration.contentRole,
@@ -53,9 +54,15 @@ let credentialDatabase: Promise<CredentialDatabase> | undefined;
 let credentialConnectionIdentity: string | undefined;
 
 /** Called only after a private command has passed transport and input checks. */
-export async function getCredentialDatabase(): Promise<DbInstance> {
+export async function getCredentialDatabase(requiredContract?: CredentialWriterContract): Promise<DbInstance> {
   const configuration = credentialDatabaseConfiguration(process.env);
-  const connectionIdentity = `${configuration.connectionString}\0${configuration.contentConnectionString}`;
+  if (
+    requiredContract !== undefined &&
+    requiredContract !== configuration.contract &&
+    !(requiredContract === 'private-web-v1' && configuration.contract === 'private-browser-v1')
+  )
+    throw new Error('CREDENTIAL_DATABASE_CAPABILITY_REQUIRED');
+  const connectionIdentity = `${configuration.contract}\0${configuration.connectionString}\0${configuration.contentConnectionString}`;
   if (credentialDatabase && credentialConnectionIdentity !== connectionIdentity) {
     throw new Error('CREDENTIAL_DATABASE_CONFIGURATION_CHANGED');
   }
