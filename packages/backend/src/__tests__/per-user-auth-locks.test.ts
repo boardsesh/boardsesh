@@ -90,6 +90,7 @@ const routes: Record<string, Handler> = {
 const fixtureName = `ba04_pr3_${randomUUID().replaceAll('-', '')}`;
 const createdUserIds = new Set<string>();
 const pending = new Set<Promise<unknown>>();
+const parkReleases = new Set<() => void>();
 const installedTriggers: { table: string; name: string }[] = [];
 let passwordHash: string;
 let ownerId: string;
@@ -133,6 +134,40 @@ function barrier() {
     release = resolve;
   });
   return { promise, release };
+}
+
+/** Cleanup can release a transaction even when its caller never reaches its finally. */
+function parkBarrier() {
+  const parked = barrier();
+  const release = () => {
+    parkReleases.delete(release);
+    parked.release();
+  };
+  parkReleases.add(release);
+  return { promise: parked.promise, release };
+}
+
+async function settleFixtureOperations() {
+  for (const release of parkReleases) release();
+  await bounded(
+    (async () => {
+      while (pending.size) await Promise.allSettled(pending);
+    })(),
+    20_000,
+  );
+}
+
+async function cleanupFixture() {
+  try {
+    await settleFixtureOperations();
+  } finally {
+    try {
+      await dropParks();
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
+  }
 }
 
 function settled<Result>(operation: Promise<Result>) {
@@ -225,7 +260,7 @@ async function dropParks() {
 /** Holds `acquire` in a transaction on `connection` until released. */
 async function hold(connection: RawSql, acquire: (transaction: CurrentStoreTransaction) => Promise<unknown>) {
   const arrived = barrier(),
-    release = barrier();
+    release = parkBarrier();
   let pid = 0;
   const held = track(
     drizzle(connection).transaction(async (raw) => {
@@ -419,12 +454,7 @@ describe('per-user sign-in locks against the owned primary database', () => {
     await enforceProjection();
   });
 
-  afterEach(async () => {
-    await bounded(Promise.allSettled(pending), 20_000);
-    await dropParks();
-    vi.restoreAllMocks();
-    vi.unstubAllEnvs();
-  });
+  afterEach(cleanupFixture);
 
   afterAll(async () => {
     await clearAuthority();
@@ -1119,7 +1149,7 @@ describe('per-user sign-in locks against the owned primary database', () => {
     /** A partner flow parked after its first two locks, in its own order, then finishing. */
     function partnerFlow(kind: 'disconnect' | 'consent' | 'refresh') {
       const arrived = barrier(),
-        release = barrier();
+        release = parkBarrier();
       let pid = 0;
       const done = track(
         partnerDatabase().transaction(async (transaction) => {
@@ -1177,25 +1207,143 @@ describe('per-user sign-in locks against the owned primary database', () => {
       },
     };
 
+    it.each(['partner first', 'first party first'] as const)(
+      'cleans up real parked transactions after an observer failure with %s',
+      async (order) => {
+        const run = await firstPartyOperations['staged reset']();
+        const partners: ReturnType<typeof partnerFlow>[] = [];
+        let park: Awaited<ReturnType<typeof holdKey>> | undefined;
+        let operation: ReturnType<typeof settled<unknown>> | undefined;
+        let operationPid = 0;
+        let blockingPid: number;
+        let expectedWaiters: number;
+        const crossDatabaseUrl = new URL(getWorkerDatabaseUrl());
+        crossDatabaseUrl.pathname = '/postgres';
+        const horizonObserver = postgres(crossDatabaseUrl.toString(), {
+          max: 1,
+          connect_timeout: 3,
+          onnotice: () => {},
+          connection: { statement_timeout: 20_000 },
+        });
+        try {
+          if (order === 'partner first') {
+            const partner = partnerFlow('consent');
+            partners.push(partner);
+            await bounded(partner.arrived);
+            operation = track(settled(run()));
+            blockingPid = partner.pid();
+            expectedWaiters = 1;
+          } else {
+            const parkKey = randomInt(1, 2_147_483_647);
+            await installPark(
+              'public.auth_security_mutation_events',
+              'AFTER INSERT',
+              `NEW.user_id='${ownerId}'`,
+              parkKey,
+            );
+            park = await holdKey(parkKey);
+            operation = track(settled(run()));
+            operationPid = await waiterOn(parkKey);
+            for (const kind of ['disconnect', 'consent', 'refresh'] as const) partners.push(partnerFlow(kind));
+            blockingPid = operationPid;
+            expectedWaiters = 3;
+          }
+
+          const observationFailure = new Error('Injected lock observation failure');
+          await expect(
+            (async () => {
+              await waitBlockedBy(blockingPid, operation, expectedWaiters);
+              throw observationFailure;
+            })(),
+          ).rejects.toBe(observationFailure);
+          if (!operationPid) {
+            const [waiter] = await observer<{ pid: number }[]>`
+              SELECT pid FROM pg_stat_activity WHERE ${blockingPid}=ANY(pg_blocking_pids(pid))
+                AND wait_event_type='Lock'
+            `;
+            operationPid = waiter.pid;
+          }
+          const [transaction] = await observer<{ xid: string }[]>`
+            SELECT backend_xid::text AS xid FROM pg_stat_activity WHERE pid=${operationPid}
+          `;
+          expect(transaction.xid).toMatch(/^\d+$/);
+          const [heldSnapshot] = await horizonObserver<{ database: string; xmin: string; finished: boolean }[]>`
+            SELECT current_database() AS database, pg_snapshot_xmin(pg_current_snapshot())::text AS xmin,
+              pg_visible_in_snapshot(${transaction.xid}::xid8, pg_current_snapshot()) AS finished
+          `;
+          expect(heldSnapshot.database).not.toBe(new URL(getWorkerDatabaseUrl()).pathname.slice(1));
+          expect(BigInt(heldSnapshot.xmin)).toBeLessThanOrEqual(BigInt(transaction.xid));
+          expect(heldSnapshot.finished).toBe(false);
+
+          const cleaning = cleanupFixture();
+          try {
+            // Releasing happens before cleanup's first await, even when observation failed.
+            expect(parkReleases.size).toBe(0);
+            await cleaning;
+          } finally {
+            // Keep a negative-control failure from leaking the very fixture it exposes.
+            park?.release();
+            for (const partner of partners) partner.release();
+            await cleaning;
+          }
+          expect(pending.size).toBe(0);
+          expect(installedTriggers).toHaveLength(0);
+          expect(await operation).toMatchObject({ status: 'fulfilled', value: { outcome: 'reset' } });
+          await Promise.all(partners.map((partner) => partner.done));
+          const [releasedSnapshot] = await horizonObserver<{ finished: boolean }[]>`
+            SELECT pg_visible_in_snapshot(${transaction.xid}::xid8, pg_current_snapshot()) AS finished
+          `;
+          expect(releasedSnapshot.finished).toBe(true);
+          const [leaked] = await observer<{ count: number }[]>`
+            SELECT count(*)::int AS count FROM pg_stat_activity
+              WHERE pid=ANY(${[operationPid, ...partners.map((partner) => partner.pid())]})
+                AND state LIKE 'idle in transaction%'
+          `;
+          expect(leaked.count).toBe(0);
+          await observer.begin(
+            (transaction) => transaction`SELECT id FROM users WHERE id=${ownerId} FOR UPDATE NOWAIT`,
+          );
+          expect(await signIn(db, ownerEmail, newPassword)).toMatchObject({
+            outcome: 'authenticated',
+            user: { id: ownerId },
+          });
+        } finally {
+          park?.release();
+          for (const partner of partners) partner.release();
+          try {
+            await settleFixtureOperations();
+          } finally {
+            await horizonObserver.end({ timeout: 3 });
+          }
+        }
+      },
+    );
+
     describe.each(['disconnect', 'consent', 'refresh'] as const)('partner %s in flight first', (kind) => {
       it.each(FIRST_PARTY_OPERATIONS)(
         '%s waits or passes, and both finish without 40P01',
         async (operationName) => {
           const run = await firstPartyOperations[operationName]();
           const partner = partnerFlow(kind);
-          await bounded(partner.arrived);
-          const operation = track(settled(run()));
-          // FOR UPDATE writers wait for the partner's FOR SHARE; KEY SHARE readers pass it.
-          if (operationName === 'staged reset' || operationName === 'staged deletion')
-            await waitBlockedBy(partner.pid(), operation);
-          partner.release();
-          await bounded(partner.done);
-          const outcome = await bounded(operation, 15_000);
-          if (outcome.status === 'rejected') {
-            expect(getPostgresErrorCode(outcome.reason)).not.toBe('40P01');
-            throw outcome.reason;
+          let operation: ReturnType<typeof settled<unknown>> | undefined;
+          try {
+            await bounded(partner.arrived);
+            operation = track(settled(run()));
+            // FOR UPDATE writers wait for the partner's FOR SHARE; KEY SHARE readers pass it.
+            if (operationName === 'staged reset' || operationName === 'staged deletion')
+              await waitBlockedBy(partner.pid(), operation);
+            partner.release();
+            await bounded(partner.done);
+            const outcome = await bounded(operation, 15_000);
+            if (outcome.status === 'rejected') {
+              expect(getPostgresErrorCode(outcome.reason)).not.toBe('40P01');
+              throw outcome.reason;
+            }
+            if (operationName === 'native refresh') expect((outcome.value as Response).status).toBe(200);
+          } finally {
+            partner.release();
+            await bounded(Promise.allSettled([partner.done, ...(operation ? [operation] : [])]), 20_000);
           }
-          if (operationName === 'native refresh') expect((outcome.value as Response).status).toBe(200);
         },
         25_000,
       );
@@ -1220,6 +1368,7 @@ describe('per-user sign-in locks against the owned primary database', () => {
         const park = await holdKey(parkKey);
         let operation: ReturnType<typeof settled<unknown>> | undefined;
         const partners: ReturnType<typeof partnerFlow>[] = [];
+        let observationFinished = false;
         try {
           operation = track(settled(run()));
           const operationPid = await waiterOn(parkKey);
@@ -1240,11 +1389,21 @@ describe('per-user sign-in locks against the owned primary database', () => {
             for (const kind of ['disconnect', 'consent', 'refresh'] as const) partners.push(partnerFlow(kind));
             await waitBlockedBy(operationPid, operation, 3);
           }
+          observationFinished = true;
         } finally {
           park.release();
-          await park.held;
+          for (const partner of partners) partner.release();
+          if (!observationFinished)
+            await bounded(
+              Promise.allSettled([
+                park.held,
+                ...partners.map((partner) => partner.done),
+                ...(operation ? [operation] : []),
+              ]),
+              20_000,
+            );
         }
-        for (const partner of partners) partner.release();
+        await park.held;
         const outcome = await bounded(operation!, 15_000);
         if (outcome.status === 'rejected') throw outcome.reason;
         const partnerOutcomes = await bounded(Promise.all(partners.map((partner) => settled(partner.done))), 15_000);
