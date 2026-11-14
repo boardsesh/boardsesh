@@ -231,6 +231,22 @@ state. The earlier 85-file/202-capture census is historical; this slice replaces
 three of those direct client captures. No selected-mode activation or native
 credential/account policy change is introduced.
 
+Independent review of this caller slice passed 59 cases before and after exact
+source restoration. Removing only an updater's post-callback guard caused a
+stale cache overwrite even though the outer guard still threw. Removing only
+the cache's post-await guard caused three stale completions, including an expired
+original delivery while a newer same-owner lease remained live.
+
+The complete mobile run passed 29,138 cases with two skipped across 1,935 files.
+All 64 actual uncached workspace type tasks passed at the reviewed checkpoint.
+Its replay onto the merged provider/renewal main preserves all 14 reviewed
+code/test hashes and the complete mobile tree. This documentation records the
+new evidence; final-head workspace types remain required.
+Local native and browser bundle attempts again reached Metro but failed to see
+the existing Expo Router entry through the borrowed external dependency link.
+No install or Metro configuration workaround was applied. Normal-install CI
+must qualify those bundles before this slice becomes Ready.
+
 Real browser history and supported-engine
 acceptance, private SSR/Flight/prefetch, native handoff, complete public bootstrap
 and rolling-cookie publication retain their separate qualification gates.
