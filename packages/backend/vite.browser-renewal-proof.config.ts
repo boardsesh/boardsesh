@@ -4,6 +4,12 @@ import { defineConfig } from 'vite-plus';
 // Explicit owned canonical0315 fixture; legacy profile receipts stay distinct.
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
+  resolve: {
+    // The joined public proof resolves the web package's real internal imports.
+    alias: {
+      '@': fileURLToPath(new URL('../web', import.meta.url)),
+    },
+  },
   test: {
     name: 'browser-renewal-proof',
     environment: 'node',

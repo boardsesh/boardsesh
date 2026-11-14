@@ -3,7 +3,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserBackendClient } from '@boardsesh/auth-protocol/browser-backend-client';
 import { publicExpoBrowserConsumersReady } from '../browser-consumer-readiness.web';
 
-const fixture = vi.hoisted(() => ({ client: null as ReturnType<typeof createBrowserBackendClient> | null }));
+const fixture = vi.hoisted(() => ({
+  client: null as ReturnType<typeof createBrowserBackendClient> | null,
+  coordinator: vi.fn<(signal: AbortSignal) => Promise<void>>(),
+  legacyHeld: false,
+}));
+vi.mock('../browser-coordinator-client.web', () => ({ coordinateExpoBrowserSession: fixture.coordinator }));
+vi.mock('../auth-cookie-lock.web', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth-cookie-lock.web')>();
+  return {
+    withAuthCookieLock: <Result>(operation: () => Promise<Result>, signal?: AbortSignal) =>
+      actual.withAuthCookieLock(async () => {
+        fixture.legacyHeld = true;
+        try {
+          return await operation();
+        } finally {
+          fixture.legacyHeld = false;
+        }
+      }, signal),
+  };
+});
 vi.mock('../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('expo-constants', () => ({ default: { expoConfig: { version: 'owned-fixture' } } }));
 vi.mock('../browser-backend-client.web', async (importOriginal) => {
@@ -51,6 +70,10 @@ beforeEach(async () => {
   ready = true;
   issued = 0;
   posted = [];
+  fixture.legacyHeld = false;
+  fixture.coordinator.mockReset().mockImplementation(async () => {
+    expect(fixture.legacyHeld).toBe(false);
+  });
   vi.stubGlobal(
     'BroadcastChannel',
     class {
@@ -284,5 +307,47 @@ describe('gated Expo-web selected session and memory credentials', () => {
     expect(sent).toBeDefined();
     expect(new Headers(sent?.[1]?.headers).has('Authorization')).toBe(false);
     expect(await response.json()).toEqual({ public: true });
+  });
+  it('keeps the primary session packet behind canonical preflight outside the legacy lock', async () => {
+    await store.synchronizeWebSession();
+    fetch.mockClear();
+    let complete!: () => void;
+    fixture.coordinator.mockImplementation(() => {
+      expect(fixture.legacyHeld).toBe(false);
+      return new Promise<void>((resolve) => {
+        complete = resolve;
+      });
+    });
+    const pending = store.synchronizeWebSession();
+    await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+    expect(fetch).not.toHaveBeenCalled();
+    complete();
+    expect(await pending).toMatchObject({ status: 'authenticated' });
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+  it('refuses a preflight that completes after the original generation retires', async () => {
+    await store.synchronizeWebSession();
+    fetch.mockClear();
+    let complete!: () => void;
+    fixture.coordinator.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const pending = store.synchronizeWebSession();
+    await vi.waitFor(() => expect(complete).toBeTypeOf('function'));
+    await store.isolateTokensForSignOut();
+    complete();
+    expect(await pending).toEqual({ status: 'superseded' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it('keeps coordinator unavailability distinct from confirmed anonymous without a legacy retry', async () => {
+    await store.synchronizeWebSession();
+    fetch.mockClear();
+    fixture.coordinator.mockRejectedValue(new Error('COORDINATOR_UNAVAILABLE'));
+    expect(await store.synchronizeWebSession()).toMatchObject({ status: 'unavailable' });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(store.hasConfirmedAnonymousWebSession()).toBe(false);
   });
 });

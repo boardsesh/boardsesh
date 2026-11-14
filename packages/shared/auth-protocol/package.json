@@ -141,7 +141,8 @@
       "types": "./src/browser-renewal-v1.ts",
       "import": "./src/browser-renewal-v1.ts",
       "default": "./src/browser-renewal-v1.ts"
-    }
+    },
+    "./browser-renewal-browser-v1": "./src/browser-renewal-browser-v1.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

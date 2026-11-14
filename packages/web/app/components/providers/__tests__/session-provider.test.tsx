@@ -10,11 +10,22 @@ import {
 } from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
-const coordinator = vi.hoisted(() => ({ ready: false, read: vi.fn<() => Promise<void>>() }));
+const coordinator = vi.hoisted(() => ({
+  ready: false,
+  renewReady: false,
+  read: vi.fn<() => Promise<void>>(),
+  renew: vi.fn<() => Promise<void>>(),
+}));
 vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({
   publicBrowserCoordinatorReady: () => coordinator.ready,
 }));
-vi.mock('@/app/lib/auth/browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: coordinator.read }));
+vi.mock('@/app/lib/auth/browser-renewal-readiness', () => ({
+  publicBrowserRenewalReady: () => coordinator.renewReady,
+}));
+vi.mock('@/app/lib/auth/browser-coordinator-client', () => ({
+  readCanonicalBrowserCoordinator: coordinator.read,
+  renewCanonicalBrowserCoordinator: coordinator.renew,
+}));
 
 function clearLockInstallation(): void {
   delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[LOCK_INSTALLATION_KEY];
@@ -84,7 +95,9 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   coordinator.ready = false;
+  coordinator.renewReady = false;
   coordinator.read.mockReset().mockResolvedValue(undefined);
+  coordinator.renew.mockReset().mockResolvedValue(undefined);
   window.history.replaceState({}, '', '/');
   clearLockInstallation();
   MockBroadcastChannel.instances = [];
@@ -102,6 +115,42 @@ beforeEach(() => {
 });
 
 describe('canonical coordinator session preflight', () => {
+  it('waits for rolling coordination but authenticates only the later primary session', async () => {
+    coordinator.ready = true;
+    coordinator.renewReady = true;
+    let complete!: () => void;
+    coordinator.renew.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    serverSession = session('owner-A', 'original-SID');
+    render(
+      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await waitFor(() => expect(coordinator.renew).toHaveBeenCalledOnce());
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(coordinator.read).not.toHaveBeenCalled();
+    expect(screen.getByText('loading:none:none')).toBeDefined();
+    await act(async () => complete());
+    await screen.findByText('authenticated:owner-A:original-SID');
+  });
+  it('refuses a partially enabled renewal without falling back to legacy cookie reads', async () => {
+    coordinator.renewReady = true;
+    render(
+      <SessionProviderWrapper canonicalBrowserOrigin="https://www.boardsesh.test">
+        <SessionState />
+      </SessionProviderWrapper>,
+    );
+    await act(async () => {});
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(coordinator.read).not.toHaveBeenCalled();
+    expect(coordinator.renew).not.toHaveBeenCalled();
+    expect(screen.getByText('loading:none:none')).toBeDefined();
+  });
   it('waits for coordination before the independent primary session request', async () => {
     coordinator.ready = true;
     let release!: () => void;

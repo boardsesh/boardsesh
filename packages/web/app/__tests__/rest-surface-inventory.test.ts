@@ -1,5 +1,5 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 53
+ * The standing inventory oracle for issue #1889 (REST surface audit: 55
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired, plus six staged provider Settings facades
@@ -124,6 +124,8 @@ const VERDICTS: Record<string, Verdict> = {
   // Canonical coordinator bootstrap remains disabled until joined browser QA.
   'app/api/internal/auth/browser-coordinator/observe/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/initialize/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-coordinator/renew/prepare/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-coordinator/renew/commit/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -284,6 +286,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider/first-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(53);
+    expect(derived.size).toBe(55);
   });
 });

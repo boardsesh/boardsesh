@@ -5,6 +5,7 @@ import {
   type BrowserCoordinatorCommand,
   type BrowserCoordinatorResult,
 } from './browser-coordinator-v1';
+import { browserRenewalBrowserResultSchema } from './browser-renewal-browser-v1';
 
 export interface CoordinatorRequestContext {
   readonly signal: AbortSignal;
@@ -79,6 +80,17 @@ export function createBrowserCoordinatorRunner(options: BrowserCoordinatorRunner
           reply = await renew?.(command, context);
         }
         if (controller.signal.aborted) return { status: 'unavailable' };
+        if (command.operation === 'renew') {
+          const renewal = browserRenewalBrowserResultSchema.parse(reply);
+          if (renewal.status !== 'ready') return renewal;
+          const expectedVersion = command.expectedCursor.version + (renewal.renewal === 'renewed' ? 1 : 0);
+          if (
+            renewal.cursor.bindingId !== command.expectedCursor.bindingId ||
+            renewal.cursor.version !== expectedVersion
+          )
+            return { status: 'conflict' };
+          return { status: 'ready', cursor: renewal.cursor };
+        }
         const result = browserCoordinatorResultSchema.parse(reply);
         if (
           result.status === 'ready' &&

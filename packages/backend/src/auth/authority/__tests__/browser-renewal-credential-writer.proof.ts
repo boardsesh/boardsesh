@@ -20,6 +20,10 @@ import { closeCredentialDatabase, getCredentialDatabase } from '../../credential
 import { beginBrowserIntent } from '../browser-binding';
 import { switchIdentityAuthority } from '../router';
 import { handleBrowserRenewal } from '../../../handlers/browser-renewal';
+import { handleBrowserBinding } from '../../../handlers/browser-binding';
+import { BROWSER_BINDING_COMMAND_PATHS } from '@boardsesh/auth-protocol/browser-binding-v1';
+import { BROWSER_RENEWAL_BROWSER_PATHS } from '@boardsesh/auth-protocol/browser-renewal-browser-v1';
+import { BROWSER_COORDINATOR_PUBLIC_PATHS } from '@boardsesh/auth-protocol/browser-coordinator';
 
 vi.mock('../../../db/client', () => {
   const refused = new Proxy(
@@ -36,9 +40,34 @@ const contract = 'private-browser-renewal-v1' as const;
 const rpcSecret = 'owned-renewal-real-http-private-service-key-6975';
 const sourceSecret = 'owned-renewal-real-http-original-jwe-key-6975';
 const requireWeb = createRequire(new URL('../../../../../web/package.json', import.meta.url));
+vi.doMock(requireWeb.resolve('server-only'), () => ({}));
 const jwt = requireWeb('next-auth/jwt') as {
   encode(input: { secret: string; maxAge: number; token: Record<string, unknown> }): Promise<string>;
   decode(input: { secret: string; token: string }): Promise<Record<string, unknown> | null>;
+};
+// The web package owns these production entry points and its own rootDir.
+// Runtime imports exercise the real package without making backend emit web code.
+async function loadWebProofModule<Exports>(name: string): Promise<Exports> {
+  const moduleUrl = new URL(`../../../../../web/app/lib/auth/${name}`, import.meta.url);
+  return (await import(moduleUrl.href)) as Exports;
+}
+type ProofBrokerModule = {
+  createBrowserRenewalBrowserBroker(options: object): {
+    prepare(request: Request): Promise<Response>;
+    commit(request: Request): Promise<Response>;
+  };
+};
+type ProofRecoveryModule = {
+  createBrowserRenewalRecovery(options: object): (request: Request) => Promise<Response | null>;
+};
+type ProofBindingModule = { createBrowserBindingCommandClient(options: object): unknown };
+type ProofRenewalModule = { createBrowserRenewalCommandClient(options: object): unknown };
+type ProofSelectionModule = { readPresentedBrowserSelection(header: string | null, options: object): Promise<unknown> };
+type ProofCookieModule = {
+  readonly BROWSER_CORRELATION_COOKIE: string;
+  readonly BROWSER_PROOF_COOKIE_PREFIX: string;
+  buildBrowserProofCookieCandidate(options: object): { readonly headers: readonly string[] };
+  readBrowserProofCookie(header: string, cursor: object): { readonly status: string };
 };
 let environment: Awaited<ReturnType<typeof createCredentialWriterEnvironment>>;
 let server: Server;
@@ -179,8 +208,13 @@ describe('ordinary renewal through actual restricted LOGIN and mounted private H
         await transaction.update(authEmailProjection).set({ phase: 'enforced' });
       }
     });
+    const bindingPaths = new Set<string>(Object.values(BROWSER_BINDING_COMMAND_PATHS));
     server = createServer((request, response) => {
-      void handleBrowserRenewal(request, response).catch(() => {
+      void (
+        bindingPaths.has(request.url ?? '')
+          ? handleBrowserBinding(request, response)
+          : handleBrowserRenewal(request, response)
+      ).catch(() => {
         response.writeHead(500);
         response.end();
       });
@@ -280,6 +314,154 @@ describe('ordinary renewal through actual restricted LOGIN and mounted private H
             });
             expect(newSession.expiresAt.toISOString()).toBe(result.preparation.targetExpiresAt);
           }
+        },
+      );
+  for (const selected of ['current-store', 'better-auth'] as const)
+    for (const kind of ['legacy-jwe', 'canonical-token'] as const)
+      it.each([false, true])(
+        `${selected}/${kind}: actual public cookie custody to restricted HTTP, lost response=%s`,
+        async (loseFinalizerResponse) => {
+          const current = await source(selected, kind, true);
+          const publicOrigin = 'https://www.owned-public-renewal.example.test';
+          const [brokerModule, recoveryModule, bindingModule, renewalModule, selectionModule, cookieModule] =
+            await Promise.all([
+              loadWebProofModule<ProofBrokerModule>('browser-renewal-browser.server.ts'),
+              loadWebProofModule<ProofRecoveryModule>('browser-renewal-recovery.server.ts'),
+              loadWebProofModule<ProofBindingModule>('browser-binding-command-client.server.ts'),
+              loadWebProofModule<ProofRenewalModule>('browser-renewal-command-client.server.ts'),
+              loadWebProofModule<ProofSelectionModule>('presented-browser-selection.server.ts'),
+              loadWebProofModule<ProofCookieModule>('browser-proof-cookies.server.ts'),
+            ]);
+          const capturedEnvironment = {
+            ...process.env,
+            NODE_ENV: 'test',
+            NEXTAUTH_URL: publicOrigin,
+            NEXTAUTH_SECRET: sourceSecret,
+            CURRENT_STORE_AUTH_BACKEND_ORIGIN: origin,
+          };
+          const trace: string[] = [];
+          let dropped = false;
+          const privateFetch: typeof fetch = async (input, options) => {
+            const path = new URL(typeof input === 'string' || input instanceof URL ? input : input.url).pathname;
+            trace.push(path);
+            const response = await fetch(input, options);
+            if (loseFinalizerResponse && !dropped && path === BROWSER_RENEWAL_COMMAND_PATHS.finalize) {
+              expect(response.status).toBe(200);
+              await response.arrayBuffer();
+              dropped = true;
+              throw new Error('OWNED_ACTUAL_DURABLE_RESPONSE_LOSS');
+            }
+            return response;
+          };
+          const binding = bindingModule.createBrowserBindingCommandClient({
+            environment: capturedEnvironment,
+            fetch: privateFetch,
+          });
+          const renewal = renewalModule.createBrowserRenewalCommandClient({
+            environment: capturedEnvironment,
+            fetch: privateFetch,
+          });
+          const readSelection = (header: string | null) =>
+            selectionModule.readPresentedBrowserSelection(header, {
+              environment: capturedEnvironment,
+              client: binding,
+            });
+          const options = {
+            environment: capturedEnvironment,
+            ready: () => true,
+            bindingFactory: () => binding,
+            renewalFactory: () => renewal,
+            readSelection,
+            rateLimit: () => false,
+          };
+          const broker = brokerModule.createBrowserRenewalBrowserBroker(options);
+          const recover = recoveryModule.createBrowserRenewalRecovery(options);
+          const bindingId = createHash('sha256').update(current.payload.bindingToken).digest('hex');
+          const expectedCursor = { bindingId, version: current.payload.actor.version };
+          const jar = new Map<string, string>([
+            [cookieModule.BROWSER_CORRELATION_COOKIE, current.payload.bindingToken],
+          ]);
+          const apply = (response: Response) => {
+            for (const cookie of response.headers.getSetCookie()) {
+              const pair = cookie.split(';', 1)[0],
+                separator = pair.indexOf('=');
+              const name = pair.slice(0, separator),
+                content = pair.slice(separator + 1);
+              if (content) jar.set(name, content);
+              else jar.delete(name);
+            }
+          };
+          const cookieHeader = () => [...jar].map(([name, content]) => `${name}=${content}`).join('; ');
+          const rawCredential =
+            current.payload.actor.credential.kind === 'canonical-token'
+              ? current.payload.actor.credential.token
+              : current.payload.actor.credential.credential;
+          const initial = cookieModule.buildBrowserProofCookieCandidate({
+            cursor: expectedCursor,
+            proof: { kind, rawCredential },
+            proofMaxAgeSeconds: 3600,
+            observedCookieHeader: cookieHeader(),
+            retainObservedProofCookies: true,
+          });
+          apply(new Response(null, { headers: initial.headers.map((header) => ['Set-Cookie', header]) }));
+          const request = (operation: 'prepare' | 'commit' | 'observe', body?: unknown) =>
+            new Request(
+              publicOrigin +
+                (operation === 'observe'
+                  ? BROWSER_COORDINATOR_PUBLIC_PATHS.observe
+                  : BROWSER_RENEWAL_BROWSER_PATHS[operation]),
+              {
+                method: operation === 'observe' ? 'GET' : 'POST',
+                headers: {
+                  host: new URL(publicOrigin).host,
+                  origin: publicOrigin,
+                  cookie: cookieHeader(),
+                  'content-type': 'application/json',
+                },
+                ...(operation === 'observe' ? {} : { body: JSON.stringify(body) }),
+              },
+            );
+          const preparedResponse = await broker.prepare(request('prepare', { expectedCursor }));
+          expect(preparedResponse.status).toBe(200);
+          const preparedBody = (await preparedResponse.json()) as { status: string; operationKey: string };
+          expect(preparedBody.status).toBe('prepared');
+          expect(
+            preparedResponse.headers
+              .getSetCookie()
+              .every((cookie) => !cookie.startsWith(cookieModule.BROWSER_PROOF_COOKIE_PREFIX)),
+          ).toBe(true);
+          apply(preparedResponse);
+          const commit = await broker.commit(
+            request('commit', { expectedCursor, operationKey: preparedBody.operationKey }),
+          );
+          expect(commit.status).toBe(loseFinalizerResponse ? 503 : 200);
+          if (loseFinalizerResponse) expect(commit.headers.getSetCookie()).toEqual([]);
+          else apply(commit);
+          const committed = await snapshot();
+          const recovered = await recover(request('observe'));
+          expect(recovered?.status).toBe(200);
+          expect(await snapshot()).toEqual(committed);
+          apply(recovered!);
+          const selectedProof = await readSelection(cookieHeader());
+          expect(selectedProof).toMatchObject({
+            status: 'admitted',
+            cursor: { bindingId, version: expectedCursor.version + 1 },
+            session: {
+              userId: current.owner.userId,
+              authSessionId: current.owner.sid,
+              generation: 0,
+              authenticatedAt: null,
+            },
+          });
+          const cleanup = await recover(request('observe'));
+          if (cleanup) {
+            expect(cleanup.status).toBe(200);
+            apply(cleanup);
+          }
+          expect([...jar.keys()].some((name) => name.startsWith('__Host-boardsesh.browser-renewal.'))).toBe(false);
+          expect(cookieModule.readBrowserProofCookie(cookieHeader(), expectedCursor).status).toBe('missing');
+          expect(await snapshot()).toEqual(committed);
+          expect(trace.filter((path) => path === BROWSER_RENEWAL_COMMAND_PATHS.finalize)).toHaveLength(1);
         },
       );
   it('keeps old profiles exact and denies mutation of frozen preparation columns', async () => {

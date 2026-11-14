@@ -13,6 +13,10 @@ import {
   type BrowserCoordinatorClient,
 } from './browser-coordinator-channel';
 import { createBrowserCoordinatorRunner, type CoordinatorRequestContext } from './browser-coordinator-runner';
+import {
+  BROWSER_RENEWAL_BROWSER_PATHS,
+  browserRenewalBrowserPreparationReplySchema,
+} from './browser-renewal-browser-v1';
 
 /** Browser-only platform I/O shared by www and Expo web; no React or storage. */
 export function browserCoordinatorPort(port: MessagePort): CoordinatorPort {
@@ -113,7 +117,7 @@ export function createCanonicalBrowserCoordinatorFrame(options: {
     frame.remove();
   };
   owner.addEventListener('pagehide', close);
-  return {
+  const api = {
     isClosed: () => closed,
     close,
     async read(signal?: AbortSignal) {
@@ -152,18 +156,36 @@ export function createCanonicalBrowserCoordinatorFrame(options: {
       }
     },
   };
+  return {
+    ...api,
+    async renew(signal?: AbortSignal) {
+      // Connect/read before entering the renew runner's navigator lock. Calling
+      // another locking read from inside that span would deadlock the frame.
+      const observed = await api.read(signal);
+      if (observed.status !== 'ready' || closed || signal?.aborted || !client)
+        return { status: 'unavailable' } as const;
+      try {
+        return await client.request({ operation: 'renew', expectedCursor: observed.cursor }, signal);
+      } catch {
+        return { status: 'unavailable' } as const;
+      }
+    },
+  };
 }
 
-async function metadata(response: Response, context: CoordinatorRequestContext) {
+async function controlJson(response: Response, context: CoordinatorRequestContext): Promise<unknown> {
   if (
     ![200, 409, 503].includes(response.status) ||
     !/^application\/json(?:;|$)/i.test(response.headers.get('content-type') ?? '')
-  )
+  ) {
+    await response.body?.cancel().catch(() => {});
     throw new Error('COORDINATOR_UNAVAILABLE');
+  }
   const reader = response.body?.getReader();
   if (!reader) throw new Error('COORDINATOR_UNAVAILABLE');
   const chunks: Uint8Array[] = [];
   let size = 0;
+  let parsed: unknown;
   try {
     while (true) {
       const chunk = await reader.read();
@@ -179,21 +201,24 @@ async function metadata(response: Response, context: CoordinatorRequestContext) 
       joined.set(chunk, offset);
       offset += chunk.byteLength;
     }
-    const result = browserCoordinatorObservationSchema.parse(
-      JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(joined)),
-    );
-    if (
-      response.status !== 200 &&
-      result.status !== 'conflict' &&
-      result.status !== 'proof-required' &&
-      result.status !== 'unavailable'
-    )
-      throw new Error('COORDINATOR_UNAVAILABLE');
-    return result;
+    parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(joined)) as unknown;
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
+  if (context.signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
+  return parsed;
+}
+async function metadata(response: Response, context: CoordinatorRequestContext) {
+  const result = browserCoordinatorObservationSchema.parse(await controlJson(response, context));
+  if (
+    response.status !== 200 &&
+    result.status !== 'conflict' &&
+    result.status !== 'proof-required' &&
+    result.status !== 'unavailable'
+  )
+    throw new Error('COORDINATOR_UNAVAILABLE');
+  return result;
 }
 
 /** Only the canonical origin executes network work. Its real navigator.locks
@@ -208,8 +233,9 @@ export function mountCanonicalBrowserCoordinator(options: {
   const owner = options.window;
   if (owner.location.origin !== canonicalOrigin || !owner.navigator.locks) throw new Error('COORDINATOR_UNAVAILABLE');
   const send = options.fetch ?? owner.fetch.bind(owner);
-  const request = (operation: keyof typeof BROWSER_COORDINATOR_PUBLIC_PATHS, context: CoordinatorRequestContext) =>
-    send(new URL(BROWSER_COORDINATOR_PUBLIC_PATHS[operation], canonicalOrigin), {
+  const request = (operation: keyof typeof BROWSER_COORDINATOR_PUBLIC_PATHS, context: CoordinatorRequestContext) => {
+    if (context.signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
+    return send(new URL(BROWSER_COORDINATOR_PUBLIC_PATHS[operation], canonicalOrigin), {
       method: operation === 'observe' ? 'GET' : 'POST',
       credentials: context.credentials,
       cache: context.cache,
@@ -218,6 +244,24 @@ export function mountCanonicalBrowserCoordinator(options: {
       signal: context.signal,
       ...(operation === 'initialize' ? { headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}),
     });
+  };
+  const renewalRequest = (
+    operation: keyof typeof BROWSER_RENEWAL_BROWSER_PATHS,
+    body: unknown,
+    context: CoordinatorRequestContext,
+  ) => {
+    if (context.signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
+    return send(new URL(BROWSER_RENEWAL_BROWSER_PATHS[operation], canonicalOrigin), {
+      method: 'POST',
+      credentials: context.credentials,
+      cache: context.cache,
+      keepalive: context.keepalive,
+      redirect: 'error',
+      signal: context.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  };
   const run = createBrowserCoordinatorRunner({
     withExclusiveLock: (operation, signal) =>
       owner.navigator.locks.request(BROWSER_COORDINATOR_LOCK, { mode: 'exclusive', signal }, operation),
@@ -229,8 +273,45 @@ export function mountCanonicalBrowserCoordinator(options: {
         const result = await metadata(await request('initialize', context), context);
         if (result.status !== 'ready') throw new Error('COORDINATOR_UNAVAILABLE');
       },
-      // Mutating prepare and rolling renewal await their separate issuer/CAS
-      // composition; absent commands remain unavailable rather than succeeding.
+      async renew(command, context) {
+        const response = await renewalRequest('prepare', { expectedCursor: command.expectedCursor }, context);
+        const prepared = browserRenewalBrowserPreparationReplySchema.parse(await controlJson(response, context));
+        if (!('cursor' in prepared)) return prepared;
+        if (
+          response.status !== 200 ||
+          prepared.cursor.bindingId !== command.expectedCursor.bindingId ||
+          prepared.cursor.version !== command.expectedCursor.version
+        )
+          return { status: 'conflict' };
+        if (prepared.status === 'anonymous' || prepared.status === 'current')
+          return { status: 'ready', cursor: prepared.cursor, renewal: 'unchanged' };
+        const committed = await metadata(
+          await renewalRequest(
+            'commit',
+            { operationKey: prepared.operationKey, expectedCursor: command.expectedCursor },
+            context,
+          ),
+          context,
+        );
+        if (committed.status !== 'ready')
+          return committed.status === 'missing-binding' ? { status: 'unavailable' } : committed;
+        if (
+          committed.cursor.bindingId !== command.expectedCursor.bindingId ||
+          committed.cursor.version !== command.expectedCursor.version + 1
+        )
+          return { status: 'conflict' };
+        // A successful body is not proof that every cookie chunk arrived. Read
+        // primary state again while still owning this same real lock span.
+        const installed = await metadata(await request('observe', context), context);
+        if (installed.status !== 'ready')
+          return installed.status === 'missing-binding' ? { status: 'unavailable' } : installed;
+        if (
+          installed.cursor.bindingId !== committed.cursor.bindingId ||
+          installed.cursor.version !== committed.cursor.version
+        )
+          return { status: 'conflict' };
+        return { status: 'ready', cursor: installed.cursor, renewal: 'renewed' };
+      },
     },
   });
   const endpoint = createBrowserCoordinatorEndpoint({ peers: options.peers, run });

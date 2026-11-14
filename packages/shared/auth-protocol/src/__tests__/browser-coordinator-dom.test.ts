@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { connectBrowserCoordinatorClient } from '../browser-coordinator-channel';
 import { browserCoordinatorPort, mountCanonicalBrowserCoordinator } from '../browser-coordinator-dom';
 import { BROWSER_COORDINATOR_LOCK } from '../browser-coordinator-v1';
+import { BROWSER_RENEWAL_BROWSER_PATHS } from '../browser-renewal-browser-v1';
 
 const canonical = 'https://www.boardsesh.test';
 const app = 'https://app.boardsesh.test';
@@ -73,6 +74,172 @@ function fixture() {
   return { browser, owner, peer, host, send, locks, posted, connect };
 }
 describe('actual browser coordinator platform adapter', () => {
+  it('keeps prepare, physical commit body and installed-proof observation under one lock', async () => {
+    const current = fixture();
+    const future = { ...ready, cursor: { ...ready.cursor, version: 1 } };
+    current.send
+      .mockResolvedValueOnce(Response.json({ status: 'prepared', operationKey: 'b'.repeat(64), cursor: ready.cursor }))
+      .mockResolvedValueOnce(Response.json(future))
+      .mockResolvedValueOnce(Response.json(future));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'renew', expectedCursor: ready.cursor })).toEqual(future);
+    expect(current.send.mock.calls.map(([url]) => (url instanceof URL ? url.pathname : ''))).toEqual([
+      BROWSER_RENEWAL_BROWSER_PATHS.prepare,
+      BROWSER_RENEWAL_BROWSER_PATHS.commit,
+      '/api/internal/auth/browser-coordinator/observe',
+    ]);
+    expect(current.locks.mock.calls.map(([name]) => name)).toEqual([BROWSER_COORDINATOR_LOCK]);
+    for (const [, options] of current.send.mock.calls)
+      expect(options).toMatchObject({ credentials: 'include', keepalive: false, cache: 'no-store', redirect: 'error' });
+    const commitBody = current.send.mock.calls[1][1]?.body;
+    if (typeof commitBody !== 'string') throw new Error('Expected JSON commit body');
+    expect(JSON.parse(commitBody)).toEqual({
+      operationKey: 'b'.repeat(64),
+      expectedCursor: ready.cursor,
+    });
+    expect(client.cursor()).toEqual(future.cursor);
+  });
+  it.each(['anonymous', 'current'])('performs no commit for a typed %s no-op', async (status) => {
+    const current = fixture();
+    current.send.mockResolvedValueOnce(Response.json({ status, cursor: ready.cursor }));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'renew', expectedCursor: ready.cursor })).toEqual(ready);
+    expect(current.send).toHaveBeenCalledOnce();
+    expect(current.locks).toHaveBeenCalledOnce();
+  });
+  it('never retries a lost commit response and recovers only through a later read', async () => {
+    const current = fixture(),
+      future = { ...ready, cursor: { ...ready.cursor, version: 1 } };
+    current.send
+      .mockResolvedValueOnce(Response.json({ status: 'prepared', operationKey: 'b'.repeat(64), cursor: ready.cursor }))
+      .mockResolvedValueOnce(new Response('truncated', { headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(Response.json(future));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'renew', expectedCursor: ready.cursor })).toEqual({
+      status: 'unavailable',
+    });
+    expect(current.send).toHaveBeenCalledTimes(2);
+    expect(await client.request({ operation: 'read' })).toEqual(future);
+    expect(
+      current.send.mock.calls.filter(
+        ([url]) => url instanceof URL && url.pathname === BROWSER_RENEWAL_BROWSER_PATHS.commit,
+      ),
+    ).toHaveLength(1);
+  });
+  it('holds the lock through an aborted commit body before another canonical read', async () => {
+    const current = fixture(),
+      future = { ...ready, cursor: { ...ready.cursor, version: 1 } };
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    current.send
+      .mockResolvedValue(Response.json(future))
+      .mockResolvedValueOnce(Response.json({ status: 'prepared', operationKey: 'b'.repeat(64), cursor: ready.cursor }))
+      .mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              body = controller;
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    const first = await current.connect(),
+      second = await current.connect();
+    cleanup.push(
+      () => first.close(),
+      () => second.close(),
+    );
+    const controller = new AbortController();
+    const pending = first.request({ operation: 'renew', expectedCursor: ready.cursor }, controller.signal);
+    await flush();
+    expect(current.send).toHaveBeenCalledTimes(2);
+    controller.abort();
+    expect(await pending).toEqual({ status: 'unavailable' });
+    const later = second.request({ operation: 'read' });
+    await flush();
+    expect(current.send).toHaveBeenCalledTimes(2);
+    body.enqueue(new TextEncoder().encode(JSON.stringify(future)));
+    body.close();
+    expect(await later).toEqual(future);
+    expect(current.send).toHaveBeenCalledTimes(3);
+  });
+  it('settles even an invalid-status response cancellation before releasing the lock', async () => {
+    const current = fixture();
+    let finish!: () => void;
+    const cancelled = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    current.send.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream({
+          cancel() {
+            return cancelled;
+          },
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const first = await current.connect(),
+      second = await current.connect();
+    cleanup.push(
+      () => first.close(),
+      () => second.close(),
+    );
+    const controller = new AbortController();
+    const pending = first.request({ operation: 'renew', expectedCursor: ready.cursor }, controller.signal);
+    await flush();
+    controller.abort();
+    expect(await pending).toEqual({ status: 'unavailable' });
+    const later = second.request({ operation: 'read' });
+    await flush();
+    expect(current.send).toHaveBeenCalledOnce();
+    finish();
+    expect(await later).toEqual(ready);
+    expect(current.send).toHaveBeenCalledTimes(2);
+  });
+  it('does not dispatch commit after cancellation during settled prepare-body cleanup', async () => {
+    const current = fixture();
+    let finish!: () => void;
+    const release = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let cancelling!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      cancelling = resolve;
+    });
+    const response = Response.json({ status: 'prepared', operationKey: 'b'.repeat(64), cursor: ready.cursor });
+    const body = response.body!;
+    const reader = body.getReader();
+    vi.spyOn(body, 'getReader').mockReturnValue(reader);
+    vi.spyOn(reader, 'cancel').mockImplementation(async () => {
+      cancelling();
+      await release;
+    });
+    current.send.mockResolvedValueOnce(response);
+    const first = await current.connect(),
+      second = await current.connect();
+    cleanup.push(
+      () => first.close(),
+      () => second.close(),
+    );
+    const controller = new AbortController();
+    const pending = first.request({ operation: 'renew', expectedCursor: ready.cursor }, controller.signal);
+    await entered;
+    controller.abort();
+    expect(await pending).toEqual({ status: 'unavailable' });
+    const later = second.request({ operation: 'read' });
+    await flush();
+    expect(current.send).toHaveBeenCalledOnce();
+    finish();
+    expect(await later).toEqual(ready);
+    expect(current.send.mock.calls.map(([url]) => (url instanceof URL ? url.pathname : ''))).toEqual([
+      BROWSER_RENEWAL_BROWSER_PATHS.prepare,
+      '/api/internal/auth/browser-coordinator/observe',
+    ]);
+  });
   it('uses real MessagePorts and fixed credentialed endpoints for observe-initialize-confirm', async () => {
     const current = fixture();
     current.send

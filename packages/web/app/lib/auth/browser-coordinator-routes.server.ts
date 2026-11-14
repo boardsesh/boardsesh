@@ -79,7 +79,12 @@ function missingCookies(header: string | null): string | null {
   const correlation = readBrowserCorrelationCookie(header);
   if (correlation.status !== 'missing') return refuse(409, 'conflict');
   // Orphan or malformed reserved proof names never authorize a fresh binding.
-  if ((header ?? '').split(';').some((piece) => piece.trim().split('=', 1)[0].startsWith(BROWSER_PROOF_COOKIE_PREFIX)))
+  if (
+    (header ?? '').split(';').some((piece) => {
+      const name = piece.trim().split('=', 1)[0];
+      return name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) || name.startsWith('__Host-boardsesh.browser-renewal');
+    })
+  )
     return refuse(409, 'proof-required');
   return readBootstrapLegacyCredential(header);
 }

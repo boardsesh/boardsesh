@@ -69,7 +69,7 @@ expiry could strand recovery. Retain the carrier and old proof until a later
 request presents the complete installed current proof, even after emitting
 successful response headers. GET observation may acknowledge only; it never
 finalizes an uncommitted preparation. Orphan carriers cannot bootstrap a fresh
-anonymous binding. This publication join remains disabled and unmounted here.
+anonymous binding. The public join is staged behind code-owned false readiness.
 
 Qualification must cover both authorities and credential kinds, unknown-age
 and no-SID ancestry, preservation of unrelated sessions, renewal past the old
@@ -93,7 +93,31 @@ an unqualified or differently configured pool refuses the command. The
 canonical CI fixture runs the renewal and five compatible HTTP handler suites
 serially under that actual LOGIN. Historical profile proofs stay separate.
 
-This source slice does not mount the canonical browser renewal publisher.
-Preparing the actual JWE, buffering the cookie response, observing physical
-delivery, and coordinating every browser session writer remain prerequisites
-to public activation.
+The staged public adapter exposes separate prepare and commit POST routes under
+`/api/internal/auth/browser-coordinator/renew/`. A canonical frame retains the
+same navigator lock across preparation, physical commit-body settlement and a
+final primary observation of installed cookies. Cancellation retains the lock
+until body cancellation settles and prevents every later network dispatch.
+Lost commit responses are never retried automatically; later observation may
+publish only the exact durably acknowledged candidate.
+
+Ordinary polling first admits the actual current source. If both admitted
+source and binding have more than 29 days remaining, it refreshes only the same
+correlation cookie and preserves the current version. This limits rolling to
+approximately once per day without changing the database's 30-day target or
+manufacturing authentication age. Confirmed anonymous observation does not
+refresh its finite binding lease. Refusal and uncertainty remain distinct from
+confirmed anonymity.
+
+WWW SessionProvider and the Expo browser store call the fixed canonical frame
+before requesting their independently authenticated session packet. Coordinator
+metadata contains no identity and never supplies that packet's authority. The
+Expo selected path enters no legacy cookie lock, preventing the same-origin
+app shell from nesting its old lock with the canonical frame's lock. Provider
+and native-start preflights remain read-only so polling cannot supersede their
+pending account-change intents.
+
+Public readiness remains false. Explicit expired-binding login retirement,
+missing-proof recovery, remaining app callers, complete writer coordination and
+supported-browser physical delivery remain prerequisites to activation. Source
+and local HTTP/database proofs do not qualify those application gates.
