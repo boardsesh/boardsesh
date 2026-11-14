@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET_PRIVACY_SETTINGS, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 const state = vi.hoisted(() => ({
   offline: false,
-  viewerId: 'viewer',
+  viewerId: 'viewer' as string | undefined,
   credentialGeneration: 1,
   request: vi.fn(),
   readSettings: vi.fn(),
@@ -37,6 +37,7 @@ import {
   useSetAnonymousOnForeignBoards,
   useUpdatePrivacySettings,
   usePrivacyFollowAction,
+  useSetContentAudience,
   useProfilePrivacy,
   usePrivacySettings,
 } from '../use-privacy';
@@ -72,6 +73,35 @@ beforeEach(() => {
   state.readSettings.mockReset().mockResolvedValue({ privacySettings: original });
 });
 describe('privacy writes', () => {
+  it('keeps native follow and audience writes independent of a loaded profile', async () => {
+    state.viewerId = undefined;
+    state.request.mockResolvedValue({ acknowledged: true });
+    const { queryClient, wrapper } = setup();
+    const { result } = renderHook(() => ({ follow: usePrivacyFollowAction(), audience: useSetContentAudience() }), {
+      wrapper,
+    });
+    await act(async () => {
+      await result.current.follow.mutateAsync({ action: 'approve', userId: 'requester' });
+      await result.current.audience.mutateAsync({
+        entityType: 'session',
+        entityId: 'owned-session',
+        audience: 'only_me',
+        privacyRevision: 1,
+      });
+    });
+    expect(state.request).toHaveBeenCalledTimes(2);
+    queryClient.clear();
+  });
+  it('keeps settings writes unavailable without their viewer cache identity', async () => {
+    state.viewerId = undefined;
+    const { queryClient, wrapper } = setup();
+    const { result } = renderHook(() => useUpdatePrivacySettings(), { wrapper });
+    await act(async () => {
+      await expect(result.current.mutateAsync({ isPrivate: true })).rejects.toThrow('same signed-in account');
+    });
+    expect(state.request).not.toHaveBeenCalled();
+    queryClient.clear();
+  });
   it('only shows private after server acknowledgement', async () => {
     const { queryClient, wrapper } = setup();
     let acknowledge!: (response: { updatePrivacySettings: PrivacySettings }) => void;

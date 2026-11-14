@@ -7,7 +7,7 @@ import type { PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 
 const state = vi.hoisted(() => ({
   required: true,
-  profile: 'owned-A',
+  profile: 'owned-A' as string | undefined,
   account: 'owned-A',
   legacy: false,
   unavailable: false,
@@ -292,6 +292,37 @@ describe('actual web hook, SDK and React Query caller publication', () => {
           .map((mutation) => mutation.state.variables),
       ),
     ).not.toContain('bsbd1_');
+  });
+
+  it('a follow action without profile data still refuses its captured web view after B', async () => {
+    const current = await start();
+    state.profile = undefined;
+    const pause = deferred();
+    const beforeMutation = vi.fn(() => pause.promise);
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      mutationCache: new MutationCache({ onMutate: beforeMutation }),
+    });
+    const { result, rerender } = renderHook(
+      () => ({ mutation: current.privacy.usePrivacyFollowAction(), label: current.auth.useAuthToken().data }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.label).toMatch(/^bshv1_/));
+    await waitFor(() => expect(result.current.mutation.isReady).toBe(true));
+    let pending!: ReturnType<typeof result.current.mutation.mutateAsync>;
+    act(() => {
+      pending = result.current.mutation.mutateAsync({ action: 'approve', userId: 'requester' });
+    });
+    const rejected = expect(pending).rejects.toThrow('same signed-in account');
+    await waitFor(() => expect(beforeMutation).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await changeAccount(current, 'owned-B');
+    });
+    state.profile = undefined;
+    rerender();
+    pause.resolve();
+    await rejected;
+    expect(packets).toEqual([]);
   });
 
   it('a cache-refresh await cannot publish A settings after B or invoke its success callback', async () => {

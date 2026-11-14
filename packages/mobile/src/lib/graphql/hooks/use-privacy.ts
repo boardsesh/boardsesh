@@ -71,22 +71,23 @@ function useScopedPrivacyWrite<Input, Output>(
     queryClient: QueryClient,
     assertCurrent: () => void,
   ) => Promise<void>,
+  viewer?: Readonly<{ id: string | undefined }>,
 ) {
   const queryClient = useQueryClient();
-  const { data: profile } = useProfile();
   const httpScope = useHttpRequestScope();
-  const currentViewerId = useRef(profile?.id);
-  currentViewerId.current = profile?.id;
+  const currentViewerId = useRef(viewer?.id);
+  currentViewerId.current = viewer?.id;
   const scope = Object.freeze({
-    viewerId: profile?.id,
+    viewerId: viewer?.id,
+    viewerRequired: viewer !== undefined,
     credentialGeneration: captureAuthCredentialGeneration(),
     httpScope,
   });
   const requireCurrentScope = (candidate: typeof scope) => {
     if (
-      !candidate.viewerId ||
-      currentViewerId.current !== candidate.viewerId ||
-      !isAuthCredentialGenerationCurrent(candidate.credentialGeneration) ||
+      (candidate.viewerRequired && (!candidate.viewerId || currentViewerId.current !== candidate.viewerId)) ||
+      ((candidate.viewerRequired || candidate.httpScope !== undefined) &&
+        !isAuthCredentialGenerationCurrent(candidate.credentialGeneration)) ||
       !isCurrentHttpView(candidate.httpScope)
     ) {
       throw new Error('Privacy changes require the same signed-in account.');
@@ -146,7 +147,7 @@ function useScopedPrivacyWrite<Input, Output>(
   return {
     ...mutation,
     variables: mutation.variables?.input,
-    isReady: Boolean(scope.viewerId && isCurrentHttpView(scope.httpScope)),
+    isReady: (!scope.viewerRequired || Boolean(scope.viewerId)) && isCurrentHttpView(scope.httpScope),
     /** Caller-owned awaits need the actual original delivery again immediately
      * before publishing UI, cache or other effects. */
     assertCurrentResult: (output: Output) => {
@@ -162,15 +163,20 @@ function useScopedPrivacyWrite<Input, Output>(
 }
 
 function usePrivacySettingsWrite<Input>(write: (client: GraphQLClient, input: Input) => Promise<PrivacySettings>) {
-  return useScopedPrivacyWrite(write, async (settings, scope, queryClient, assertCurrent) => {
-    const savedAt = Date.now();
-    await refreshAfterOwnPrivacyChange(queryClient);
-    assertCurrent();
-    const settingsKey = httpScopeQueryKey(['privacySettings', scope.viewerId], scope.httpScope);
-    const settingsState = queryClient.getQueryState(settingsKey);
-    if (!settingsState || settingsState.status === 'error' || settingsState.dataUpdatedAt < savedAt)
-      queryClient.setQueryData(settingsKey, settings);
-  });
+  const { data: profile } = useProfile();
+  return useScopedPrivacyWrite(
+    write,
+    async (settings, scope, queryClient, assertCurrent) => {
+      const savedAt = Date.now();
+      await refreshAfterOwnPrivacyChange(queryClient);
+      assertCurrent();
+      const settingsKey = httpScopeQueryKey(['privacySettings', scope.viewerId], scope.httpScope);
+      const settingsState = queryClient.getQueryState(settingsKey);
+      if (!settingsState || settingsState.status === 'error' || settingsState.dataUpdatedAt < savedAt)
+        queryClient.setQueryData(settingsKey, settings);
+    },
+    { id: profile?.id },
+  );
 }
 
 export function useUpdatePrivacySettings() {

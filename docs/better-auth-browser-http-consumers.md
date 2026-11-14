@@ -80,6 +80,11 @@ offline identity remains separate from usable network authority. The web offline
 engine remains disabled; the local-reader composition tests inject its I/O and
 do not qualify SQLite or outbox publication in a browser.
 
+Native follow and audience writes retain their connection-only preconditions
+without requiring a loaded profile. Settings writes retain their existing viewer
+identity requirement. Browser follow and audience writes still require the
+original view and credential generation even when profile data has not loaded.
+
 ## Required central dispatch
 
 A code-gated required-dispatch path checks actual central admission before a
