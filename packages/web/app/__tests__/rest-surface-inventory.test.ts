@@ -1,8 +1,8 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 39
+ * The standing inventory oracle for issue #1889 (REST surface audit: 44
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
- * its prewarm cron were retired).
+ * its prewarm cron were retired, plus five staged provider Settings facades).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -32,6 +32,8 @@
  * steady state here, not evidence of deadness. `keep-caller` = has a live
  * in-repo (web, mobile, or backend) caller. Neither verdict means "safe to
  * delete" — see issue #1889 for the full reasoning per route.
+ * `keep-staged` = a deliberately disabled compatibility facade with required
+ * mounted proofs; it has no active product caller until its rollout gate closes.
  */
 import { describe, expect, it } from 'vite-plus/test';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -41,7 +43,7 @@ import { fileURLToPath } from 'node:url';
 const WEB_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const API_ROOT = join(WEB_ROOT, 'app', 'api');
 
-type Verdict = 'keep-external' | 'keep-caller';
+type Verdict = 'keep-external' | 'keep-caller' | 'keep-staged';
 
 const VERDICTS: Record<string, Verdict> = {
   // --- /api/auth/* (9) — session/OAuth/registration, called by www and by
@@ -65,7 +67,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (15) ---
+  // --- /api/internal/* (19) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -98,6 +100,15 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/profile/route.ts': 'keep-caller',
   'app/api/internal/profile/[userId]/route.ts': 'keep-caller',
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
+  // Provider Settings browser facades (#6975/#7501): the backend owns all
+  // commands, these routes enforce browser Host/Origin and response publication.
+  // Their literal-false public readiness and actual HTTPS/PG caller proofs stay
+  // required while the card/OAuth composition and rollout remain unfinished.
+  'app/api/internal/auth/provider-security/methods/route.ts': 'keep-staged',
+  'app/api/internal/auth/provider-security/intent/route.ts': 'keep-staged',
+  'app/api/internal/auth/provider-security/reauthenticate-password/route.ts': 'keep-staged',
+  'app/api/internal/auth/provider-security/unlink/route.ts': 'keep-staged',
+  'app/api/internal/auth/provider-security/acknowledge/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -113,7 +124,7 @@ const VERDICTS: Record<string, Verdict> = {
   // pages for those groups still advertise it.
   'app/api/og/session/route.tsx': 'keep-caller',
 
-  // --- /api/v1/* (11) — published in the OpenAPI doc rendered at the
+  // --- /api/v1/* (10) — published in the OpenAPI doc rendered at the
   // indexable, sitemapped /docs and served as a crawlable /openapi.json.
   // "No in-repo caller" is the intended steady state of a published API. ---
   'app/api/v1/[board_name]/grades/route.ts': 'keep-external',
@@ -255,8 +266,8 @@ describe('REST surface inventory (issue #1889)', () => {
   });
 
   it('counts exactly the audited surface', () => {
-    // Guards the headline number in issue #1889 itself — a change here means
-    // the issue body needs a fresh audit pass, not a quiet reclassification.
-    expect(derived.size).toBe(39);
+    // Keep the original #1889 audit plus explicit later deltas reconciled. The
+    // staged provider delta is tracked in #7430; the closed audit stays historical.
+    expect(derived.size).toBe(44);
   });
 });
