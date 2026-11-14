@@ -8,6 +8,7 @@ import {
 } from '../authority/router';
 import { randomUUID } from 'node:crypto';
 import { executeFirstRow } from '@boardsesh/db/client';
+import type { ProviderIdentityPlan } from '@boardsesh/auth-protocol';
 import {
   authEmailReservations,
   authEmailReservationMembers,
@@ -51,20 +52,7 @@ export type ReservedCurrentStoreOAuthIdentity =
   | { outcome: 'actor_conflict' }
   | { outcome: 'sensitive_link_unavailable' };
 
-export interface CurrentStoreOAuthIdentityPlan {
-  readonly kind: 'existing' | 'new';
-  readonly provider: CurrentStoreOAuthProvider;
-  readonly subject: string;
-  readonly generation: number;
-  readonly user: {
-    readonly id: string;
-    readonly email: string;
-    readonly name: string | null;
-    readonly image: string | null;
-    readonly emailVerified: string | null;
-    readonly createdAt: string;
-  };
-}
+export type CurrentStoreOAuthIdentityPlan = ProviderIdentityPlan;
 export type PlannedCurrentStoreOAuthIdentity =
   | { readonly outcome: 'planned'; readonly plan: CurrentStoreOAuthIdentityPlan }
   | Exclude<ReservedCurrentStoreOAuthIdentity, { outcome: 'linked' | 'created' }>;

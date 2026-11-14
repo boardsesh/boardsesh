@@ -404,6 +404,149 @@ export async function readBrowserBindingInTransaction(
   return result;
 }
 
+/** Strict anonymous preparation only. A caller may already own a target user's
+ * lock. Never discover and lock a different selected user after that target;
+ * selected, malformed and changed bindings refuse without account admission. */
+export async function readAnonymousBrowserBindingInTransaction(
+  transaction: AuthorityTransaction,
+  authority: IdentityAuthorityReceipt,
+  requested: { readonly bindingToken: string; readonly expectedVersion: number },
+): Promise<{ readonly status: 'anonymous'; readonly cursor: BrowserBindingCursor } | Refusal> {
+  const { bindingToken, expectedVersion } = requested;
+  if (
+    !tokenPattern.test(bindingToken) ||
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 0 ||
+    expectedVersion >= MAX_VERSION
+  )
+    return { status: 'denied' };
+  await revalidateIdentityAuthority(transaction, authority);
+  const binding = await findBinding(transaction, bindingToken, true);
+  const now = await databaseNow(transaction);
+  if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
+  if (binding.version !== expectedVersion || selectedSession(binding) !== null) return { status: 'conflict' };
+  await revalidateIdentityAuthority(transaction, authority);
+  return { status: 'anonymous', cursor: cursor(binding) };
+}
+
+/** Read-only exact anonymous-login ACK. The caller holds the actual candidate;
+ * a different selected owner is refused before any unexpected user-row lock.
+ * This never applies a selection or retrieves a stored credential. */
+export async function acknowledgeAnonymousBrowserLoginInTransaction(
+  transaction: AuthorityTransaction,
+  authority: IdentityAuthorityReceipt,
+  requested: {
+    readonly bindingToken: string;
+    readonly intentToken: string;
+    readonly expectedVersion: number;
+    readonly expectedUserId: string;
+    readonly expectedAuthSessionId: string;
+    readonly credential: FirstPartyCredential;
+  },
+): Promise<BrowserBindingCommitResult> {
+  const { bindingToken, intentToken, expectedVersion, expectedUserId, expectedAuthSessionId } = requested;
+  const credential = Object.freeze({ ...requested.credential });
+  if (
+    !tokenPattern.test(bindingToken) ||
+    !tokenPattern.test(intentToken) ||
+    !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 0 ||
+    expectedVersion >= MAX_VERSION ||
+    !expectedUserId ||
+    !expectedAuthSessionId
+  )
+    return { status: 'denied' };
+  await revalidateIdentityAuthority(transaction, authority);
+  await lockUser(transaction, expectedUserId);
+  const binding = await findBinding(transaction, bindingToken, true);
+  const now = await databaseNow(transaction);
+  if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
+  const session = selectedSession(binding);
+  if (
+    !session ||
+    binding.version !== expectedVersion + 1 ||
+    session.userId !== expectedUserId ||
+    session.authSessionId !== expectedAuthSessionId ||
+    binding.credentialKind !== credential.kind
+  )
+    return { status: 'conflict' };
+  const intent = await findIntent(transaction, intentToken);
+  if (
+    !intent ||
+    !intentMatches(intent, binding, authority, now) ||
+    intent.operation !== 'login' ||
+    intent.actorCredentialHash !== null ||
+    intent.expectedVersion !== expectedVersion ||
+    intent.consumedAt === null ||
+    intent.resultVersion !== binding.version ||
+    intent.resultCredentialHash !== credentialHash(credential)
+  )
+    return { status: 'conflict' };
+  const admitted = await readFirstPartySession(transaction, credential, now, async (userId) =>
+    userId === expectedUserId ? await readLockedWebSubjectState(transaction, userId) : undefined,
+  );
+  if (admitted.status !== 'admitted') return { status: admitted.status };
+  if (!sameSessionEvidence(session, admitted.session)) return { status: 'denied' };
+  if (
+    (await databaseNow(transaction)).getTime() >=
+    Math.min(binding.expiresAt.getTime(), intent.expiresAt.getTime(), admitted.session.expiresAt.getTime())
+  )
+    return { status: 'denied' };
+  await revalidateIdentityAuthority(transaction, authority);
+  return { status: 'already-committed', cursor: cursor(binding), session: admitted.session };
+}
+
+/** Anonymous login only. Do not look up or lock a selected owner merely to
+ * discover that this source-free operation has no permission to act for them. */
+export async function beginAnonymousBrowserIntent(
+  database: AuthorityDatabase,
+  qualification: IdentityAuthorityQualification,
+  requested: { readonly bindingToken: string; readonly expectedVersion: number },
+): Promise<
+  | {
+      readonly status: 'prepared';
+      readonly intentToken: string;
+      readonly cursor: BrowserBindingCursor;
+      readonly expiresAt: Date;
+    }
+  | Refusal
+> {
+  const input = Object.freeze({ ...requested });
+  const intentToken = randomBytes(32).toString('base64url');
+  return withAuthority(database, qualification, async (transaction, authority) => {
+    const admitted = await readAnonymousBrowserBindingInTransaction(transaction, authority, input);
+    if (admitted.status !== 'anonymous') return admitted;
+    // The strict reader holds this exact anonymous row through commit.
+    const binding = await findBinding(transaction, input.bindingToken);
+    if (!binding) return { status: 'denied' as const };
+    const now = await databaseNow(transaction);
+    const expiresAt = new Date(Math.min(now.getTime() + INTENT_LIFETIME_MS, binding.expiresAt.getTime()));
+    if (expiresAt.getTime() <= now.getTime()) return { status: 'denied' as const };
+    const revision = nextVersion(binding.intentRevision);
+    await transaction
+      .update(authBrowserBindings)
+      .set({ intentRevision: revision })
+      .where(eq(authBrowserBindings.id, binding.id));
+    await transaction.insert(authBrowserIntents).values({
+      id: digest(intentToken),
+      bindingId: binding.id,
+      revision,
+      expectedVersion: binding.version,
+      operation: 'login',
+      formatVersion: 2,
+      actorCredentialHash: null,
+      projectionId: authority.projectionId,
+      authority: authority.authority,
+      epoch: authority.epoch,
+      createdAt: now,
+      expiresAt,
+    });
+    if ((await databaseNow(transaction)).getTime() >= expiresAt.getTime())
+      throw new Error('BROWSER_SELECTION_DEADLINE_PASSED');
+    return { status: 'prepared' as const, intentToken, cursor: cursor(binding), expiresAt };
+  });
+}
+
 export async function beginBrowserIntent(
   database: AuthorityDatabase,
   qualification: IdentityAuthorityQualification,
