@@ -262,10 +262,14 @@ describe('Expo web Next proxy', () => {
     const headers = (await nextConfig.headers?.()) ?? [];
 
     expect(headers.filter(({ source }) => source === '/app' || source.startsWith('/app/'))).toEqual([]);
-    // The global (non-embed) catch-all is `/((?!embed/).*)`, which does match
-    // /app requests at runtime — it must survive, so assert it is still there
-    // rather than letting a blunt "no rule mentions app" check pass by
-    // deleting it.
-    expect(headers.some(({ source }) => source === '/((?!embed/).*)')).toBe(true);
+    // The global rule must still protect actual /app requests even when an
+    // unrelated utility frame needs a precise exclusion from its matcher.
+    expect(
+      headers.some(
+        ({ source, headers: applied }) =>
+          applied.some((header) => header.key === 'X-Frame-Options' && header.value === 'SAMEORIGIN') &&
+          new RegExp(`^${source}$`, 'i').test('/app'),
+      ),
+    ).toBe(true);
   });
 });
