@@ -9,6 +9,7 @@ import {
 } from '@boardsesh/auth-protocol/browser-backend-lease';
 import { readBrowserBackendSessionScope } from '@boardsesh/auth-protocol/browser-backend-session';
 import { expoBrowserBackendClient } from './browser-backend-client.web';
+import { publicExpoBrowserConsumersReady } from './browser-consumer-readiness.web';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -60,6 +61,7 @@ type AuthTokenClearPayload =
   | { reason: 'confirmed-signout'; identity: WebAuthIdentity };
 
 let backendToken: string | null = null;
+let requiredBrowserDispatchSeen = false;
 let confirmedSessionIdentity: WebAuthIdentity | null | undefined;
 let sessionGeneration = 0;
 let synchronization: {
@@ -317,6 +319,18 @@ export function isAuthCredentialGenerationCurrent(generation: number): boolean {
   return generation === sessionGeneration;
 }
 
+/** Code-owned required dispatch is a sticky refusal boundary, not evidence of
+ * a selected or anonymous account. Only the actual central read admits either. */
+export function isRequiredBrowserDispatch(): boolean {
+  if (publicExpoBrowserConsumersReady()) requiredBrowserDispatchSeen = true;
+  return requiredBrowserDispatchSeen || expoBrowserBackendClient.isSelected();
+}
+
+function retireUnqualifiedBrowserDispatch(): void {
+  backendToken = null;
+  expoBrowserBackendClient.retire();
+}
+
 async function fetchWebSession(generation: number, signal: AbortSignal): Promise<AuthSessionResult> {
   let activeGeneration = generation;
   let lastConfirmedIdentity: WebAuthIdentity | undefined;
@@ -338,6 +352,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       );
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
       if (!sessionResponse.ok) {
+        if (isRequiredBrowserDispatch()) retireUnqualifiedBrowserDispatch();
         return unavailable(
           new Error(`Session endpoint failed: HTTP ${sessionResponse.status}`),
           lastConfirmedIdentity,
@@ -348,7 +363,11 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       const session = (await readJsonObject(sessionResponse, signal)) as NextAuthSession;
       if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
       const observed = readBrowserBackendSessionScope(session);
-      if (observed.status === 'selected' || 'browserSelection' in session || expoBrowserBackendClient.isSelected()) {
+      if (isRequiredBrowserDispatch() || observed.status === 'selected' || 'browserSelection' in session) {
+        if (observed.status === 'legacy' || (requiredBrowserDispatchSeen && !publicExpoBrowserConsumersReady())) {
+          retireUnqualifiedBrowserDispatch();
+          return unavailable(new BrowserBackendConsumerError('unavailable'));
+        }
         try {
           // Only this successful central response establishes scope. Reserved
           // malformed/missing metadata after selection cannot restore legacy.
@@ -483,6 +502,7 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
     // A newer logout/login generation owns the current state. Returning a
     // distinct result prevents this stale request from signing out that session.
     if (!isAuthCredentialGenerationCurrent(activeGeneration)) return { status: 'superseded' };
+    if (isRequiredBrowserDispatch()) retireUnqualifiedBrowserDispatch();
     return unavailable(error, lastConfirmedIdentity, identityChangedDuringSynchronization);
   }
 }
@@ -518,6 +538,20 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
 
 /** The backend JWE is intentionally process-memory only. */
 export async function getAuthToken(): Promise<string | null> {
+  if (isRequiredBrowserDispatch() && !expoBrowserBackendClient.isSelected()) {
+    if (requiredBrowserDispatchSeen && !publicExpoBrowserConsumersReady())
+      throw new BrowserBackendConsumerError('unavailable');
+    if (expoBrowserBackendClient.isAnonymous() && confirmedSessionIdentity === null) return null;
+    const generation = captureAuthCredentialGeneration();
+    const admission = await synchronizeWebSession();
+    if (!isAuthCredentialGenerationCurrent(generation) || admission.status === 'superseded')
+      throw new BrowserBackendConsumerError('superseded');
+    if (requiredBrowserDispatchSeen && !publicExpoBrowserConsumersReady())
+      throw new BrowserBackendConsumerError('unavailable');
+    if (admission.status === 'anonymous' && expoBrowserBackendClient.isAnonymous()) return null;
+    if (admission.status !== 'authenticated' || !expoBrowserBackendClient.isSelected())
+      throw new BrowserBackendConsumerError('unavailable');
+  }
   if (expoBrowserBackendClient.isSelected()) {
     const generation = captureAuthCredentialGeneration();
     const owner = expoBrowserBackendClient.getSnapshot().owner;
@@ -538,10 +572,7 @@ export async function getAuthToken(): Promise<string | null> {
 
 /** Unknown/retired credentials are never evidence of an anonymous session. */
 export function hasConfirmedAnonymousWebSession(): boolean {
-  return (
-    confirmedSessionIdentity === null &&
-    (!expoBrowserBackendClient.isSelected() || expoBrowserBackendClient.isAnonymous())
-  );
+  return confirmedSessionIdentity === null && (!isRequiredBrowserDispatch() || expoBrowserBackendClient.isAnonymous());
 }
 
 export async function getRefreshToken(): Promise<null> {
