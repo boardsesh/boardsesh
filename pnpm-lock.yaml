@@ -353,8 +353,8 @@ importers:
         specifier: ^6.2.6
         version: 6.2.10
       nodemailer:
-        specifier: ^10.0.12
-        version: 10.0.12
+        specifier: ^10.1.4
+        version: 10.1.4
       pg-boss:
         specifier: 12.33.0
         version: 12.33.0
@@ -1377,8 +1377,8 @@ importers:
   packages/shared/email:
     dependencies:
       nodemailer:
-        specifier: ^10.0.12
-        version: 10.0.12
+        specifier: ^10.1.4
+        version: 10.1.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1820,7 +1820,7 @@ importers:
         version: 4.1.2(react@19.2.8)(supports-color@8.1.1)
       '@auth/drizzle-adapter':
         specifier: ^1.11.3
-        version: 1.11.3(nodemailer@10.0.12)
+        version: 1.11.3(nodemailer@10.1.4)
       '@aws-sdk/client-s3':
         specifier: ^3.1101.0
         version: 3.1116.0
@@ -2084,10 +2084,10 @@ importers:
         version: 16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       next-auth:
         specifier: ^4.24.15
-        version: 4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.12)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.1.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       nodemailer:
-        specifier: ^10.0.12
-        version: 10.0.12
+        specifier: ^10.1.4
+        version: 10.1.4
       pg:
         specifier: ^8.22.0
         version: 8.23.0
@@ -9972,8 +9972,8 @@ packages:
     resolution: {integrity: sha512-D9UOmYG3UH1V+ENW56t5QXBwJw1YEY18ruVeus89Rw+SyIgjPkCO84bRzO3uNIYosJbNwiabWVn48o3uJLjxFQ==}
     engines: {node: '>=18'}
 
-  nodemailer@10.0.12:
-    resolution: {integrity: sha512-PQ46oNbNMuH/Sno7B5IWIU9etytwrO0xdTFvWXpIQFRXhBAXtzD48243AS+BCbQQTPD8y3fqUrgLn0tSo77gvg==}
+  nodemailer@10.1.4:
+    resolution: {integrity: sha512-EsMnOR2oRv4LGnWvHgcVYkkQ4O2j8KO4WTw6l+PHR4sOXo8SAgIraxtEnGDmotjbhv0hDsu3IuDIFZm8iXwO4A==}
     engines: {node: '>=20.0.0'}
 
   non-error@0.1.0:
@@ -12244,7 +12244,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@auth/core@0.41.3(nodemailer@10.0.12)':
+  '@auth/core@0.41.3(nodemailer@10.1.4)':
     dependencies:
       '@panva/hkdf': 1.2.1
       jose: 6.2.10
@@ -12252,11 +12252,11 @@ snapshots:
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
     optionalDependencies:
-      nodemailer: 10.0.12
+      nodemailer: 10.1.4
 
-  '@auth/drizzle-adapter@1.11.3(nodemailer@10.0.12)':
+  '@auth/drizzle-adapter@1.11.3(nodemailer@10.1.4)':
     dependencies:
-      '@auth/core': 0.41.3(nodemailer@10.0.12)
+      '@auth/core': 0.41.3(nodemailer@10.1.4)
     transitivePeerDependencies:
       - '@simplewebauthn/browser'
       - '@simplewebauthn/server'
@@ -21366,7 +21366,7 @@ snapshots:
 
   neotraverse@1.0.1: {}
 
-  next-auth@4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.0.12)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  next-auth@4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@10.1.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       '@babel/runtime': 7.29.7
       '@panva/hkdf': 1.2.1
@@ -21381,7 +21381,7 @@ snapshots:
       react-dom: 19.2.8(react@19.2.8)
       uuid: 11.1.1
     optionalDependencies:
-      nodemailer: 10.0.12
+      nodemailer: 10.1.4
 
   next-auth@4.24.15(next@16.3.5(@babel/core@7.29.7(supports-color@8.1.1))(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@25.9.5)(@types/react-dom@19.2.4(@types/react@19.3.0))(@types/react@19.3.0)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.2.8):
     dependencies:
@@ -21509,7 +21509,7 @@ snapshots:
 
   node-releases@2.0.53: {}
 
-  nodemailer@10.0.12: {}
+  nodemailer@10.1.4: {}
 
   non-error@0.1.0: {}
 
