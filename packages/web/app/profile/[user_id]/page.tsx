@@ -151,6 +151,7 @@ export default async function ProfilePage({ params }: PageProps) {
       )}
       <ProfilePageContent
         userId={user_id}
+        publicServerView={renderViewer.kind !== 'legacy'}
         initialProfile={initialProfile}
         initialProfileStats={statsData?.initialProfileStats}
         initialPercentile={statsData?.initialPercentile}

@@ -29,6 +29,7 @@ import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 
 type ProfilePageContentProps = {
   userId: string;
+  publicServerView?: boolean;
   initialProfile?: UserProfile | null;
   initialProfileStats?: GetUserProfileStatsQueryResponse['userProfileStats'] | null;
   initialPercentile?: GetUserClimbPercentileQueryResponse['userClimbPercentile'] | null;
@@ -41,6 +42,7 @@ type ProfilePageContentProps = {
 
 export default function ProfilePageContent({
   userId,
+  publicServerView,
   initialProfile,
   initialProfileStats,
   initialPercentile,
@@ -57,6 +59,7 @@ export default function ProfilePageContent({
   const { loading, notFound, profile, setProfile, isOwnProfile, statisticsSummary, allBoardsTicks } = useProfileData(
     userId,
     {
+      publicServerView,
       initialProfile: initialProfile ?? undefined,
       initialProfileStats: initialProfileStats ?? undefined,
       initialPercentile,

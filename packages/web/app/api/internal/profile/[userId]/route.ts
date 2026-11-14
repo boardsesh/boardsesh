@@ -3,6 +3,7 @@ import { unavailableCredentialResponse } from '@/app/lib/auth/credential-admissi
 import { getAdmittedServerSession } from '@/app/lib/auth/admitted-session.server';
 import { type NextRequest, NextResponse } from 'next/server';
 import { getProfileData } from '@/app/profile/[user_id]/server-profile-data';
+import { selectedProfileResponse } from '@/app/lib/auth/selected-profile-response.server';
 
 type RouteParams = {
   params: Promise<{ userId: string }>;
@@ -11,6 +12,8 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { userId } = await params;
+    const selected = await selectedProfileResponse(request.headers.get('cookie'), userId);
+    if (selected) return selected;
     const session = await getAdmittedServerSession();
     const viewerUserId = session?.user?.id;
 
