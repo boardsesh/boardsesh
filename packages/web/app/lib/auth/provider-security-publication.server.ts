@@ -70,7 +70,7 @@ export function samePreparedProviderSecurityProof(before: WebCredentialProof, af
 /** The qualified primary reader supplies conservative original provenance.
  * Historical signed copies can omit SID/gen and can carry an unguarded age;
  * neither a rolling JTI nor that unqualified age replaces primary admission. */
-function originalLegacyClaimsMatch(claims: JWT, proof: WebCredentialProof): boolean {
+export function originalLegacyClaimsMatch(claims: JWT, proof: WebCredentialProof): boolean {
   const hasSessionId = claims.authSessionId !== undefined;
   return (
     claims.sub === proof.userId &&
@@ -86,7 +86,7 @@ function originalLegacyClaimsMatch(claims: JWT, proof: WebCredentialProof): bool
   );
 }
 
-function normalizedLegacyCandidate(original: JWT, proof: WebCredentialProof): JWT {
+export function normalizedLegacyCandidate(original: JWT, proof: WebCredentialProof): JWT {
   const claims: JWT = { ...original, authSessionId: proof.authSessionId, gen: proof.generation };
   if (proof.authenticatedAt === null) delete claims.auth_time;
   if (proof.linkGuarded) claims.link_guarded = true;
