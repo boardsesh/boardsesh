@@ -165,4 +165,29 @@ describe('mounted provider Settings controller', () => {
     expect(send).not.toHaveBeenCalled();
     expect(screen.queryByText('Sign-in methods')).toBeNull();
   });
+  it('keeps independently admitted methods usable after an expired operation', async () => {
+    const current = session();
+    state.authority!.acceptSession(current);
+    const oldOperation = 'd'.repeat(64);
+    const nextOperation = 'b'.repeat(64);
+    window.history.replaceState({}, '', `/settings?providerSecurityResume=${oldOperation}`);
+    send.mockImplementation(async (input) => {
+      if (typeof input !== 'string') throw new Error('Expected relative route');
+      if (input.endsWith('/methods')) return Response.json(methods());
+      if (input.endsWith('/intent'))
+        return Response.json({ outcome: 'reauthentication_required', operationKey: nextOperation });
+      return Response.json({ outcome: 'identity_changed' }, { status: 409 });
+    });
+    render(<ProviderSettingsController session={current} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Link Apple' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm change' }));
+    await screen.findByLabelText('Current password');
+    expect(new URLSearchParams(window.location.search).get('providerSecurityResume')).toBe(nextOperation);
+    expect(send.mock.calls.map(([input]) => input)).toEqual([
+      '/api/internal/auth/provider-security/methods',
+      '/api/internal/auth/provider-security/acknowledge',
+      '/api/internal/auth/provider-security/resume',
+      '/api/internal/auth/provider-security/intent',
+    ]);
+  });
 });

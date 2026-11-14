@@ -60,10 +60,11 @@ function OwnedProviderSettingsController({ session }: { readonly session: Sessio
     setResumeAction(undefined);
     setNotice(null);
     void (async () => {
+      let available: ProviderSettingsMethods | null = null;
       try {
-        const operationKey = operationInUrl();
-        const available = await client.readMethods();
+        available = await client.readMethods();
         if (!client.isCurrent()) return;
+        const operationKey = operationInUrl();
         if (operationKey !== null) {
           const resumed = await client.resume(operationKey);
           if (!client.isCurrent()) return;
@@ -75,9 +76,12 @@ function OwnedProviderSettingsController({ session }: { readonly session: Sessio
                 : { action: 'unlink', provider: resumed.metadata.provider, methodId: resumed.metadata.methodId },
             );
         }
-        if (client.isCurrent()) setMethods(available);
       } catch {
         if (client.isCurrent()) setNotice('unavailable');
+      } finally {
+        // A failed/expired operation must not hide independently admitted
+        // current methods or prevent the user from confirming a fresh change.
+        if (available && client.isCurrent()) setMethods(available);
       }
     })();
     return () => {
@@ -104,6 +108,11 @@ function OwnedProviderSettingsController({ session }: { readonly session: Sessio
     );
   return (
     <>
+      {notice === 'unavailable' && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {t('providerMethods.unavailable')}
+        </Alert>
+      )}
       {notice === 'completed' && (
         <Alert severity="success" sx={{ mb: 2 }}>
           {t('providerMethods.resumeCompleted')}
