@@ -323,3 +323,19 @@ allowing the authorized cache publication to finish. Leaving the entire screen
 cancels its pending actions through the screen's layout lifetime. No mutation is
 replayed. These controlled caller tests do not qualify every downstream screen,
 offline outbox, shared cache or supported browser. Public readiness stays false.
+
+Independent review passed all 83 focused cases, then removed three guards one at
+a time. Omitting the original receipt admitted an expired result; omitting the
+row attempt check let an older failure clear a newer pending action; a constant
+selected screen key retained the previous account's private thread. Each control
+failed its actual assertion. Exact source restoration passed all 83 cases again.
+
+The reviewed notification checkpoint passed all 1,940 mobile files: 29,186 cases
+and two skipped. Its nine-file patch was replayed unchanged onto main
+`49d238b047`; every other path matches that main. The notification and inherited
+coordinator tests then passed together: 149 cases. All 64 actual uncached
+workspace type tasks passed on this combined tree. Local native and browser
+bundle attempts stopped at the existing external Expo Router entry link before
+application code loaded. The browser attempt used the installed nested runtime;
+no install or Metro configuration change was applied. Fresh normal-install CI
+must pass both bundles before this slice becomes Ready.
