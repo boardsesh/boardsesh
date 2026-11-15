@@ -33,6 +33,10 @@ vi.mock('../../credential-database', () => ({ getCredentialDatabase: vi.fn() }))
 vi.mock('../expired-browser-binding-maintenance', () => ({
   runExpiredBrowserBindingRetirementMaintenance: vi.fn(),
 }));
+// Password receipt cleanup has its own hook and restricted-LOGIN proofs.
+vi.mock('../browser-password-maintenance', () => ({
+  runBrowserPasswordReceiptMaintenance: vi.fn(),
+}));
 vi.mock('../../../db/client', () => ({
   db: new Proxy(
     {},
