@@ -12,6 +12,8 @@ A new version shipped to the App Store and Play Store.
 
 ### New
 
+- Browse climbs on a steady wall with softer swipe transitions. ([#7542](https://github.com/boardsesh/boardsesh/pull/7542))
+  Set holds with brief lighting feedback, and zoom across the full board area.
 - Your wall’s lights now breathe and glide between climbs on Android 13+. ([#7541](https://github.com/boardsesh/boardsesh/pull/7541))
 
 ### Fixed

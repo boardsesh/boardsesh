@@ -1,6 +1,14 @@
 {
-  "generatedAt": "2026-11-15T18:18:20.953Z",
+  "generatedAt": "2026-11-15T20:04:40.100Z",
   "entries": [
+    {
+      "prNumber": 7542,
+      "category": "new",
+      "title": "Browse climbs on a steady wall with softer swipe transitions.",
+      "mergedAt": "2026-11-15T19:19:30Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7542",
+      "body": "Set holds with brief lighting feedback, and zoom across the full board area."
+    },
     {
       "prNumber": 7541,
       "category": "new",
@@ -9620,6 +9628,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-15T19:19:30Z",
+      "sha": "49ebeba4fdd852988da9e52626221012c82eb6d0",
+      "platforms": [
+        "ios"
+      ],
+      "fingerprints": {
+        "ios": "a7cd47f571ea475010116fd91c976eb93d010e48"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-15T16:25:30Z",
