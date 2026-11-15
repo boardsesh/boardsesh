@@ -28,6 +28,11 @@ import { clearExpiredAuthRecords } from '../../../services/background-job-mainte
 import type { AuthorityDatabase } from '../adapter';
 
 vi.mock('../../credential-database', () => ({ getCredentialDatabase: vi.fn() }));
+// This host proves the native cleanup's own qualified pool and fallback policy.
+// The sibling retirement worker has separate hook and restricted-LOGIN proofs.
+vi.mock('../expired-browser-binding-maintenance', () => ({
+  runExpiredBrowserBindingRetirementMaintenance: vi.fn(),
+}));
 vi.mock('../../../db/client', () => ({
   db: new Proxy(
     {},
