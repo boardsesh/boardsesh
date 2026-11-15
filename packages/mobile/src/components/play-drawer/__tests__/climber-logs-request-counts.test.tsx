@@ -104,7 +104,18 @@ const server = vi.hoisted(() => ({
   // How many followed climbers logged the climb, or an error to answer with.
   followedClimbers: 0 as number | Error,
 }));
-vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: server.request }) }));
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => ({
+    request: (documentOrOptions: unknown, variables?: unknown) =>
+      documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions
+        ? server.request(
+            documentOrOptions.document,
+            'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
+          )
+        : server.request(documentOrOptions, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 
 import { DeferredSections } from '../DeferredSections';
 

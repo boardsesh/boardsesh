@@ -10,7 +10,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const http = vi.hoisted(() => ({ request: vi.fn() }));
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: http.request }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: ({ document, variables }: { document: unknown; variables?: unknown }) => http.request(document, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 
 import { LOGGED_SETTERS_PAGE_LIMIT, useUserLoggedSetters, type LoggedSettersScope } from '../use-user-logged-setters';
 

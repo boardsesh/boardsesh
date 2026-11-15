@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useHttpQuery } from '../use-http-query';
 import {
   GET_FOLLOWING_CLIMB_ASCENTS,
   type GetFollowingClimbAscentsQueryResponse,
   type GetFollowingClimbAscentsQueryVariables,
 } from '@boardsesh/graphql/operations';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
-import { getHttpClient } from '../client';
 import { followingClimbLogsQueryKey } from '../query-keys';
 
 /**
@@ -30,10 +29,10 @@ export function useFollowingClimbLogs(boardName: string, climbUuid: string | nul
   const { userId: viewerId } = useStoredUserId(true);
   const enabled =
     (options?.enabled ?? true) && !!viewerId && !!climbUuid && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
-  const query = useQuery({
+  const query = useHttpQuery({
     queryKey: followingClimbLogsQueryKey(viewerId, boardName, climbUuid),
-    queryFn: () =>
-      getHttpClient().request<GetFollowingClimbAscentsQueryResponse, GetFollowingClimbAscentsQueryVariables>(
+    queryFn: (_context, operation) =>
+      operation.request<GetFollowingClimbAscentsQueryResponse, GetFollowingClimbAscentsQueryVariables>(
         GET_FOLLOWING_CLIMB_ASCENTS,
         { input: { boardType: boardName, climbUuid: climbUuid! } },
       ),

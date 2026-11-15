@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useHttpQuery } from '../use-http-query';
+import type { HttpQueryOperation } from '../use-http-query-scope';
 import {
   GET_USER_LOGGED_SETTERS,
   type GetUserLoggedSettersQueryResponse,
   type GetUserLoggedSettersQueryVariables,
 } from '@boardsesh/graphql/operations/ticks';
-import { getHttpClient } from '../client';
 
 /**
  * One page of setters is enough for nearly every logbook. Each request walks the
@@ -33,8 +33,12 @@ function scopeInput(scope: LoggedSettersScope): Pick<LoggedSettersInput, 'boardT
   };
 }
 
-async function fetchLoggedSetters(userId: string, input: LoggedSettersInput): Promise<LoggedSetter[]> {
-  const response = await getHttpClient().request<GetUserLoggedSettersQueryResponse, GetUserLoggedSettersQueryVariables>(
+async function fetchLoggedSetters(
+  operation: HttpQueryOperation,
+  userId: string,
+  input: LoggedSettersInput,
+): Promise<LoggedSetter[]> {
+  const response = await operation.request<GetUserLoggedSettersQueryResponse, GetUserLoggedSettersQueryVariables>(
     GET_USER_LOGGED_SETTERS,
     { userId, input },
   );
@@ -82,9 +86,9 @@ export function useUserLoggedSetters(userId: string | undefined, scope: LoggedSe
     const layoutIds = layoutKey ? layoutKey.split(',').map(Number) : [];
     return { ...scopeInput({ boardType, layoutIds }), limit: LOGGED_SETTERS_PAGE_LIMIT };
   }, [boardType, layoutKey]);
-  const firstPage = useQuery({
+  const firstPage = useHttpQuery({
     queryKey: ['userLoggedSetters', userId, baseInput],
-    queryFn: () => fetchLoggedSetters(userId as string, baseInput),
+    queryFn: (_context, operation) => fetchLoggedSetters(operation, userId as string, baseInput),
     enabled: !!userId,
     staleTime: LOGGED_SETTERS_STALE_TIME_MS,
   });
@@ -100,9 +104,9 @@ export function useUserLoggedSetters(userId: string | undefined, scope: LoggedSe
   const wantsServerSearch = firstPageFull && normalizedSearch.length > 0;
   const serverSearch = useDebouncedValue(wantsServerSearch ? normalizedSearch : '', SERVER_SEARCH_DEBOUNCE_MS);
   const serverSearchInput = useMemo(() => ({ ...baseInput, search: serverSearch }), [baseInput, serverSearch]);
-  const searchPage = useQuery({
+  const searchPage = useHttpQuery({
     queryKey: ['userLoggedSetters', userId, serverSearchInput],
-    queryFn: () => fetchLoggedSetters(userId as string, serverSearchInput),
+    queryFn: (_context, operation) => fetchLoggedSetters(operation, userId as string, serverSearchInput),
     enabled: !!userId && wantsServerSearch && serverSearch.length > 0,
     staleTime: LOGGED_SETTERS_STALE_TIME_MS,
   });
