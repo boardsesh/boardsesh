@@ -18,6 +18,7 @@ A new version shipped to the App Store and Play Store.
 
 ### Fixed
 
+- Comment drafts stay with the thread where you typed them. ([#7554](https://github.com/boardsesh/boardsesh/pull/7554))
 - See the highlighted climb's name, grade and send status on Home session cards again. ([#7538](https://github.com/boardsesh/boardsesh/pull/7538))
 - Your selected board stays selected when an earlier angle save finishes. ([#7539](https://github.com/boardsesh/boardsesh/pull/7539))
 
