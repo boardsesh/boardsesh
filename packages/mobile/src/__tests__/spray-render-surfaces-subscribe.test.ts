@@ -26,6 +26,8 @@ const SOURCE_ROOTS = [join(__dirname, '..'), join(__dirname, '..', '..', 'app')]
  * `useSprayWallToken`, each with the reason it cannot be the bug above.
  */
 const EXEMPT: Record<string, string> = {
+  'src/components/GpuClimbOverlay.stories.tsx':
+    'Development-only parity fixtures pin Kilter Homewall; this story never accepts a spray wall or runtime board selection.',
   'src/lib/board-details.ts': 'Defines it. Already folds `sprayCacheToken` into its own memo key.',
   'src/lib/background-image-cache.ts': 'Not React. Called from the render hook, which subscribes for it.',
   'src/lib/create-board-holds.ts': 'Not React. Calls `ensureSprayWallLoaded` itself and keys its memo on the token.',

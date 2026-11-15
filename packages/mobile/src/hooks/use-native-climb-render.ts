@@ -196,6 +196,9 @@ type NativeClimbRenderParams = {
    *    climber is waiting on.
    */
   playSurface?: boolean;
+  /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
+  gpuSurface?: boolean;
+  gpuFallbackConfigJson?: string | null;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -307,6 +310,9 @@ type NativeClimbRenderResult = {
    * Expo Go). Consumers stack this on top of `backgroundPaths`.
    */
   overlayUri: string | null;
+  /** Stable full-layout config for a live GPU view; frames travel separately. */
+  gpuConfigJson?: string | null;
+  gpuFrames?: string;
   /**
    * Changes whenever this consumer must make expo-image perform a fresh load,
    * including a regeneration that writes back to the same file:// URI.
@@ -1853,6 +1859,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    gpuSurface = false,
+    gpuFallbackConfigJson,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
@@ -2122,6 +2130,76 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // background-paths effect. Kept in sync with the strings that feed the keys.
   const setIdsArray = useMemo(() => setIds.split(',').map(Number).filter(Boolean), [setIds]);
 
+  const gpuStaticConfig = useMemo(() => {
+    if (
+      !gpuSurface ||
+      filledStyle ||
+      prefetch ||
+      boardName !== 'kilter' ||
+      layoutId !== 8 ||
+      effectiveRenderSettings.mode !== 'aura' ||
+      effectiveRenderSettings.boardsesh.softDisc ||
+      extraHoldStates ||
+      boardArtChunkPending
+    )
+      return null;
+    const holdIds = getBoardHoldIds(boardName, layoutId, sizeId, setIds, setIdsArray);
+    if (!holdIds) return null;
+    const boardConfig = getBoardConfig(
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      false,
+      renderWidth,
+      effectiveOverrides.colors,
+      effectiveOverrides.shapes,
+      effectiveOverrides.brushThickness,
+      effectiveOverrides.shapeSize,
+      configRenderSignature,
+      {
+        settings: effectiveRenderSettings.boardsesh,
+        glowFalloff: effectiveRenderSettings.glowFalloff,
+        fieldColor,
+        veilOpacity,
+      },
+      holdIds,
+    );
+    if (!boardConfig) return null;
+    const roleMap = boardConfig.configBase.hold_state_map as Record<number, unknown>;
+    // Homewall's four calibrated roles only. The general Kilter map includes
+    // other products that this layout never uses, wasting atlas role stamps.
+    const holdStateMap = Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
+    return { holdIds, json: JSON.stringify({ ...boardConfig.configBase, hold_state_map: holdStateMap, frames: '' }) };
+  }, [
+    gpuSurface,
+    filledStyle,
+    prefetch,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    setIdsArray,
+    renderWidth,
+    effectiveRenderSettings,
+    effectiveOverrides,
+    configRenderSignature,
+    fieldColor,
+    veilOpacity,
+    extraHoldStates,
+    boardArtChunkPending,
+  ]);
+  const gpuConfigJson = useMemo(() => {
+    if (!flatFrames || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson) return null;
+    const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
+      [42, 43, 44, 45].includes(Number(match[1])),
+    );
+    if (!rolesSupported) return null;
+    const litIds = parseLitHoldIds(flatFrames);
+    if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
+    return gpuStaticConfig.json;
+  }, [gpuStaticConfig, flatFrames, gpuFallbackConfigJson]);
+
   // Seed both pieces of state synchronously so the first paint already
   // shows whatever's available. Backgrounds in production are usually
   // available on the first frame (Asset.localUri pre-populated); the
@@ -2353,6 +2431,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
+    if (gpuConfigJson) return;
+    // A v2 GPU binary has Aura support, but the ordinary capability probe may
+    // still be resolving on first mount. Do not launch a competing classic PNG.
+    if (
+      gpuSurface &&
+      requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
+      getBoardseshRendererSupport() === null
+    )
+      return;
     if (!flatFrames || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
 
     // The lit placement ids the renderer will actually draw, parsed ONCE: the
@@ -2757,6 +2844,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCacheKey,
+    gpuConfigJson,
+    gpuSurface,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.
     boardArtChunkPending,
@@ -3259,6 +3348,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   return {
     artworkIdentity,
+    gpuConfigJson,
+    gpuFrames: flatFrames,
     getReadyBoardArtSnapshot,
     overlayUri,
     overlayLoadKey,

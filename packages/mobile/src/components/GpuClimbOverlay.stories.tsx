@@ -8,6 +8,7 @@ import { boardFieldColorForScheme } from '@boardsesh/board-look';
 import {
   compareClimbOverlayGPU,
   NativeClimbOverlayGPU,
+  NativeFrameClimbOverlayGPU,
   type ClimbOverlayGPUComparison,
 } from '../../modules/climb-overlay-gpu/src';
 import { renderHoldsOverlay } from '../../modules/board-renderer/src';
@@ -76,6 +77,7 @@ function Parity() {
 }
 
 function Comparison() {
+  const NativeParityGPU = NativeFrameClimbOverlayGPU ?? NativeClimbOverlayGPU;
   const parameters = gpuParityParameters(useLocalSearchParams());
   const { colorScheme } = useTheme();
   const scheme = colorScheme === 'dark' ? 'dark' : 'light';
@@ -120,6 +122,22 @@ function Comparison() {
       ),
     [scheme, sample.frames, outputWidth],
   );
+  const staticConfigJson = useMemo(
+    () =>
+      JSON.stringify(
+        buildGpuParityConfig({
+          boardWidth: board!.boardWidth,
+          boardHeight: board!.boardHeight,
+          holds: board!.holdsData,
+          geometry: geometry!,
+          wallLightness,
+          colorScheme: scheme,
+          frames: '',
+          outputWidth,
+        }),
+      ),
+    [scheme, outputWidth],
+  );
   const requestKey = `${scheme}-${fixtureIndex}-${mode}-${iteration}-${freshPng}-${enabled}-${outputWidth}`;
   const [requestIdentity, setRequestIdentity] = useState({ key: requestKey, generation: 0 });
   let currentIdentity = requestIdentity;
@@ -131,8 +149,8 @@ function Comparison() {
     setRequestIdentity(currentIdentity);
   }
   const requestId = `${sessionId.current}-${currentIdentity.generation}`;
-  const showRust = mode !== 'metal' || !enabled || !NativeClimbOverlayGPU || gpuError !== null;
-  const showGpu = mode !== 'rust' && enabled && NativeClimbOverlayGPU !== null && gpuError === null;
+  const showRust = mode !== 'metal' || !enabled || !NativeParityGPU || gpuError !== null;
+  const showGpu = mode !== 'rust' && enabled && NativeParityGPU !== null && gpuError === null;
 
   const record = useCallback((eventRequestId: string, fields: Partial<Sample>) => {
     if (!mounted.current || !isCurrentGpuParityRequest(currentRequest.current, eventRequestId)) return;
@@ -191,7 +209,7 @@ function Comparison() {
     setSampleCount(samples.current.length);
     setLatest(measurement);
     // Rust-only mode isolates CPU/PNG work; compare mode is visual evidence.
-    if (mode === 'metal' && enabled && NativeClimbOverlayGPU) return;
+    if (mode === 'metal' && enabled && NativeParityGPU) return;
     let cancelled = false;
     const pngKey = `${sessionId.current}-${scheme}-${fixtureIndex}-${freshPng}-${outputWidth}`;
     void renderHoldsOverlay(configJson, pngKey).then(
@@ -302,7 +320,7 @@ function Comparison() {
     <View style={styles.stack}>
       <Text variant="headline">Kilter Homewall · {sample.name}</Text>
       <Text variant="footnote">
-        {outputWidth} px overlays. Still drawing only; the player and editor are unchanged.
+        {outputWidth} px overlays. Still drawing comparison; test live swipes and edits in the player and editor.
       </Text>
       <View style={styles.buttons}>
         <Button title="Next sample" onPress={() => setFixtureIndex((previous) => (previous + 1) % fixtures.length)} />
@@ -344,24 +362,36 @@ function Comparison() {
             </View>
           </StoryVariant>
         ) : null}
-        {showGpu && NativeClimbOverlayGPU ? (
+        {showGpu && NativeParityGPU ? (
           <StoryVariant label="Metal shader">
             <View style={[boardStyle, { backgroundColor: boardFieldColorForScheme(scheme) }]}>
               {backgroundLayers}
-              <NativeClimbOverlayGPU
-                style={StyleSheet.absoluteFill}
-                configJson={configJson}
-                requestId={requestId}
-                active={focused && !comparingPixels}
-                onRenderReady={handleGpuReady}
-                onRenderError={handleGpuError}
-              />
+              {NativeFrameClimbOverlayGPU ? (
+                <NativeFrameClimbOverlayGPU
+                  style={StyleSheet.absoluteFill}
+                  configJson={staticConfigJson}
+                  frames={sample.frames}
+                  requestId={requestId}
+                  active={focused && !comparingPixels}
+                  onRenderReady={handleGpuReady}
+                  onRenderError={handleGpuError}
+                />
+              ) : NativeClimbOverlayGPU ? (
+                <NativeClimbOverlayGPU
+                  style={StyleSheet.absoluteFill}
+                  configJson={configJson}
+                  requestId={requestId}
+                  active={focused && !comparingPixels}
+                  onRenderReady={handleGpuReady}
+                  onRenderError={handleGpuError}
+                />
+              ) : null}
             </View>
           </StoryVariant>
         ) : null}
       </View>
       {!enabled ? <Text>GPU drawing is disabled. Enable the experiment above.</Text> : null}
-      {enabled && !NativeClimbOverlayGPU ? <Text>This binary has no GPU climb module. Showing Rust.</Text> : null}
+      {enabled && !NativeParityGPU ? <Text>This binary has no GPU climb module. Showing Rust.</Text> : null}
       {gpuError ? <Text>GPU unavailable: {gpuError}. Showing Rust.</Text> : null}
       {rustError ? <Text>Rust render failed: {rustError}</Text> : null}
       <Text variant="footnote">

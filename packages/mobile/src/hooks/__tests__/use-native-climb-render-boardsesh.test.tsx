@@ -87,6 +87,7 @@ const {
   buildCacheKey,
   _getBoardConfigForTests,
   _resetBoardConfigCacheForTests,
+  _resetBoardHoldIdsCacheForTests,
   _resetWarmupForTests,
   _resetBoardseshSupportForTests,
   _getBoardseshSupportForTests,
@@ -218,6 +219,7 @@ function stateInfoByColorRole(
 
 beforeEach(() => {
   _resetBoardConfigCacheForTests();
+  _resetBoardHoldIdsCacheForTests();
   _resetWarmupForTests();
   _resetBoardseshSupportForTests();
   _renderedOverlaysForTests.clear();
@@ -1278,5 +1280,92 @@ describe('useNativeClimbRender heatmap seams', () => {
     );
     await waitFor(() => expect(result.current.boardseshRendererAvailable).toBe(false));
     expect(sentConfigs().every((config) => config.render_mode === undefined)).toBe(true);
+  });
+});
+
+describe('live Homewall GPU render selection', () => {
+  const board = {
+    boardName: 'kilter' as const,
+    layoutId: 8,
+    sizeId: 25,
+    setIds: '26,27,28,29',
+    gpuSurface: true,
+    playSurface: true,
+  };
+  const nativeModule = {
+    boardRendererNative: {},
+    renderHoldsOverlay: vi.fn<(config: string, key: string) => Promise<string>>(),
+    probeBoardseshRendererSupport: vi.fn<() => Promise<boolean>>(),
+  };
+  beforeEach(() => {
+    nativeModule.renderHoldsOverlay.mockReset().mockResolvedValue('file:///gpu-fallback.png');
+    nativeModule.probeBoardseshRendererSupport.mockReset().mockResolvedValue(true);
+    _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
+    getBoardRenderDataMock.mockReturnValue({
+      boardWidth: 1080,
+      boardHeight: 1504,
+      holdsData: [4131, 4306].map((id) => ({ id, mirroredHoldId: null, cx: 100, cy: 200, r: 20 })),
+    });
+  });
+
+  it('prepares all hold geometry once across frame changes and skips competing PNG work', async () => {
+    const { result, rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...board, frames }), {
+      initialProps: { frames: 'p4131r42' },
+    });
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const initialConfig = result.current.gpuConfigJson!;
+    const parsed = JSON.parse(initialConfig) as {
+      holds: Array<{ id: number; outline?: number[] }>;
+      frames: string;
+      output_width: number;
+      hold_state_map: Record<string, unknown>;
+    };
+    expect(parsed.frames).toBe('');
+    expect(parsed.output_width).toBe(1080);
+    expect(parsed.holds.every((hold) => hold.outline && hold.outline.length > 0)).toBe(true);
+    expect(Object.keys(parsed.hold_state_map)).toEqual(['42', '43', '44', '45']);
+    rerender({ frames: 'p4306r43' });
+    expect(result.current.gpuConfigJson).toBe(initialConfig);
+    expect(result.current.gpuFrames).toBe('p4306r43');
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+    rerender({ frames: '' });
+    expect(result.current.gpuConfigJson).toBeNull();
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
+  it('falls back for a failed static config across later taps, with editor veil preserved', async () => {
+    const { result, rerender } = renderHook(
+      ({ fallback, frames }) =>
+        useNativeClimbRender({
+          ...board,
+          frames,
+          maxVeilOpacity: 0,
+          gpuFallbackConfigJson: fallback,
+        }),
+      { initialProps: { fallback: null as string | null, frames: 'p4131r42' } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const failed = result.current.gpuConfigJson!;
+    expect(JSON.parse(failed).veil).toBeUndefined();
+    rerender({ fallback: failed, frames: 'p4306r43' });
+    expect(result.current.gpuConfigJson).toBeNull();
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+  });
+
+  it('uses PNG for unsupported soft discs and role codes', async () => {
+    boardRenderSettingsRef.current = {
+      ...DEFAULT_BOARD_RENDER_SETTINGS,
+      mode: 'aura',
+      boardsesh: { ...DEFAULT_BOARD_RENDER_SETTINGS.boardsesh, softDisc: true },
+    };
+    const { result, rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...board, frames }), {
+      initialProps: { frames: 'p4131r42' },
+    });
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    expect(result.current.gpuConfigJson).toBeNull();
+    boardRenderSettingsRef.current = { ...DEFAULT_BOARD_RENDER_SETTINGS, mode: 'aura' };
+    rerender({ frames: 'p4131r12' });
+    expect(result.current.gpuConfigJson).toBeNull();
   });
 });

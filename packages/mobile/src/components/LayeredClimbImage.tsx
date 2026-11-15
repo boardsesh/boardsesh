@@ -17,6 +17,8 @@ import { noteBoardArtInMemory } from '../lib/board-render/warm-board-art-memory'
 
 type LayeredClimbImageProps = {
   overlayUri: string | null;
+  /** Live drawing in the same mirrored/layered stack; ready means presented. */
+  liveOverlay?: { node: ReactNode; identity: string; displayed: boolean };
   /**
    * Generation + per-consumer attempt identity. React's key must change when a
    * missing overlay is regenerated at the same URI: Android expo-image does not
@@ -208,6 +210,7 @@ const NativeImageLayer = React.memo(function NativeImageLayer({
 const LayeredClimbImage = React.memo(function LayeredClimbImage({
   overlayUri,
   overlayLoadKey,
+  liveOverlay,
   onOverlayLoad,
   onOverlayDisplay,
   onArtDisplayed,
@@ -261,10 +264,19 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const visibilityEpoch = visibilityEpochRef.current.epoch;
   const displayAttempt = JSON.stringify(
     paintedTestID === undefined
-      ? [overlayUri, overlayLoadKey, recyclingKey, displayIdentity, backgroundPaths, visibilityEpoch]
+      ? [
+          overlayUri,
+          overlayLoadKey,
+          liveOverlay?.identity,
+          recyclingKey,
+          displayIdentity,
+          backgroundPaths,
+          visibilityEpoch,
+        ]
       : [
           overlayUri,
           overlayLoadKey,
+          liveOverlay?.identity,
           recyclingKey,
           displayIdentity,
           backgroundPaths,
@@ -294,7 +306,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   const overlayAttempt = JSON.stringify([nativeOverlayIdentity, retainPreviousOverlayFor, retainDisplayedOverlayFor]);
   const latestOverlayAttemptRef = useRef(overlayAttempt);
   latestOverlayAttemptRef.current = overlayAttempt;
-  const overlayPainted = paintedOverlayIdentity === nativeOverlayIdentity;
+  const overlayPainted = liveOverlay ? liveOverlay.displayed : paintedOverlayIdentity === nativeOverlayIdentity;
   const nativeBackgroundIdentity = (path: string) =>
     JSON.stringify(['background', backgroundImageUri(path), visibilityEpoch]);
   const mountedNativeLayersRef = useRef(new Map<string, { token: NativeImageToken; displayed: boolean }>());
@@ -330,7 +342,9 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     return true;
   }, []);
   const actualLayersDisplayed = () =>
-    mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true &&
+    (liveOverlay
+      ? liveOverlay.displayed
+      : mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true) &&
     backgroundPaths.every(
       (path) => mountedNativeLayersRef.current.get(nativeBackgroundIdentity(path))?.displayed === true,
     );
@@ -358,7 +372,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   // Those views do not emit another display event merely for a new UUID.
   useEffect(() => {
     reportArtDisplayedRef.current();
-  }, [displayAttempt, missingBackgroundCount]);
+  }, [displayAttempt, missingBackgroundCount, liveOverlay?.displayed]);
   // The last overlay that reported onLoad, kept only while retention is opted
   // into. Decorative: it never feeds the load-key accounting or the testID anchor.
   const [retainedOverlay, setRetainedOverlay] = useState<{ uri: string; identity: string } | null>(null);
@@ -436,7 +450,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
     !awaitingOverlay &&
     missingBackgroundCount === 0 &&
     hasBackgrounds &&
-    (!overlayRequired || mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true) &&
+    (!overlayRequired ||
+      (liveOverlay
+        ? liveOverlay.displayed
+        : mountedNativeLayersRef.current.get(nativeOverlayIdentity)?.displayed === true)) &&
     backgroundPaths.every(
       (path) => mountedNativeLayersRef.current.get(nativeBackgroundIdentity(path))?.displayed === true,
     );
@@ -445,7 +462,21 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   useLayoutEffect(() => {
     onArtReadinessChange?.(artReadinessRef.current());
     return () => onArtReadinessChange?.(false);
-  }, [displayAttempt, missingBackgroundCount, overlayRequired, onArtReadinessChange, awaitingOverlay, hasBackgrounds]);
+  }, [
+    displayAttempt,
+    missingBackgroundCount,
+    overlayRequired,
+    onArtReadinessChange,
+    awaitingOverlay,
+    hasBackgrounds,
+    liveOverlay?.displayed,
+  ]);
+  useEffect(() => {
+    if (liveOverlay?.displayed && revealWithOverlay) {
+      setRevealed((previous) => (previous?.key === revealIdentity ? previous : { key: revealIdentity }));
+    }
+    reportArtDisplayedRef.current();
+  }, [liveOverlay?.displayed, revealWithOverlay, revealIdentity, awaitingOverlay]);
   useEffect(() => {
     if (!awaitingOverlay) return;
     const timer = setTimeout(() => setRevealed({ key: revealIdentity }), OVERLAY_REVEAL_TIMEOUT_MS);
@@ -535,7 +566,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           per-tap surface never blanks. Decorative only — no onLoad/onError, no
           recyclingKey, no testID — so it cannot disturb the live overlay's
           exact-attempt accounting. */}
-      {bridgeOverlay && (
+      {bridgeOverlay && !liveOverlay && (
         <Image
           key={`retained-${bridgeOverlay}`}
           source={{ uri: bridgeOverlay }}
@@ -549,7 +580,14 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       )}
       {/* No overlay has ever painted and none is coming (no native renderer):
           let the caller draw the holds itself rather than showing none. */}
-      {!overlayUri && !bridgeOverlay && emptyOverlayFallback}
+      {!overlayUri && !bridgeOverlay && !liveOverlay && emptyOverlayFallback}
+      {/* A live drawable must be visible to report presentation. Concealing it
+          until that callback would prevent the callback that reveals it. */}
+      {liveOverlay ? (
+        <View style={styles.layer} pointerEvents="none">
+          {liveOverlay.node}
+        </View>
+      ) : null}
       {overlayUri && (
         <NativeImageLayer
           key={overlayLoadKey ?? overlayUri}
@@ -643,7 +681,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       {overlayTestID && overlayPainted && <View testID={overlayTestID} style={styles.layer} pointerEvents="none" />}
       {paintedTestID &&
         !hidden &&
-        overlayUri &&
+        (overlayUri || liveOverlay) &&
         backgroundPaths.length > 0 &&
         missingBackgroundCount === 0 &&
         displayedAttemptRef.current.reported &&

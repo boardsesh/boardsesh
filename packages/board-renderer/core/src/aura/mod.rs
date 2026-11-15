@@ -17,8 +17,8 @@
 //! silhouette is the shape, and the glyphs are the accessibility channel that replaces it.
 
 mod geometry;
-pub mod gpu_atlas;
 mod glow;
+pub mod gpu_atlas;
 mod marks;
 #[cfg(test)]
 mod tests;

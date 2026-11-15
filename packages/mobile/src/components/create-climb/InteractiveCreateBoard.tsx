@@ -263,6 +263,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
         <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
           <Animated.View style={[styles.board, animatedZoomStyle]}>
             <BoardImageNative
+              editorSurface
               frames={frames}
               boardName={boardName}
               layoutId={layoutId}

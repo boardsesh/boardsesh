@@ -90,10 +90,15 @@ private enum OverlayRenderer {
   static let device = MTLCreateSystemDefaultDevice()
   static var pipeline: MTLRenderPipelineState?
   static var commands: MTLCommandQueue?
-  static var cache: (key: Data, atlas: GPUAtlas)?
+  static var cache: (source: String, key: Data, atlas: GPUAtlas)?
+  static let memoryWarningObserver = NotificationCenter.default.addObserver(
+    forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: nil
+  ) { _ in OverlayRenderer.work.async { OverlayRenderer.cache = nil } }
 
-  static func prepare(configJson: String) throws -> GPUScene {
+  static func prepare(configJson: String, frames overrideFrames: String? = nil,
+                      preparedAtlas: GPUAtlas? = nil) throws -> GPUScene {
     guard let device else { throw OverlayFailure.reason("Metal unavailable") }
+    _ = memoryWarningObserver
     if pipeline == nil {
       let library = try device.makeLibrary(source: ClimbOverlayShader.source, options: nil)
       let descriptor = MTLRenderPipelineDescriptor()
@@ -104,23 +109,43 @@ private enum OverlayRenderer {
       commands = device.makeCommandQueue()
     }
     let start = CACurrentMediaTime()
-    guard configJson.utf8.count <= 8 * 1024 * 1024,
-      var config = try JSONSerialization.jsonObject(with: Data(configJson.utf8)) as? [String: Any],
-      let frames = config["frames"] as? String,
-      frames.utf8.count <= 32 * 1024
-    else { throw OverlayFailure.reason("Invalid render config") }
-    config["frames"] = ""
-    let key = try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
-    let hit = cache?.key == key
+    let frames: String
+    let hit: Bool
     let atlas: GPUAtlas
-    if hit, let cached = cache { atlas = cached.atlas }
-    else {
-      // Drop the old cache before preparing its replacement. An in-flight view
-      // owns its own scene until the replacement is ready.
-      cache = nil
-      atlas = try makeAtlas(config: key, device: device)
-      cache = (key, atlas)
+    if let preparedAtlas, let overrideFrames {
+      // Warm frame update: no layout JSON parsing, serialization, comparison,
+      // field preparation or atlas upload. Only the small active-hold list.
+      atlas = preparedAtlas
+      frames = overrideFrames
+      hit = true
+    } else if let overrideFrames, let cached = cache, cached.source == configJson {
+      // A carousel can mount a new view for the same static config. Comparing
+      // that source avoids rebuilding a canonical JSON key on every swipe.
+      atlas = cached.atlas
+      frames = overrideFrames
+      hit = true
+    } else {
+      guard configJson.utf8.count <= 8 * 1024 * 1024,
+        var config = try JSONSerialization.jsonObject(with: Data(configJson.utf8)) as? [String: Any],
+        let configFrames = config["frames"] as? String
+      else { throw OverlayFailure.reason("Invalid render config") }
+      frames = overrideFrames ?? configFrames
+      config["frames"] = ""
+      let key = try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys])
+      hit = cache?.key == key
+      if hit, let cached = cache {
+        atlas = cached.atlas
+        cache = (configJson, key, atlas)
+      }
+      else {
+        // One bounded global entry survives carousel view replacement, so
+        // moving to a neighbouring climb does not rebuild the same layout.
+        cache = nil
+        atlas = try makeAtlas(config: key, device: device)
+        cache = (configJson, key, atlas)
+      }
     }
+    guard frames.utf8.count <= 32 * 1024 else { throw OverlayFailure.reason("Invalid frames") }
     var active: [GPUHold] = []
     for token in frames.split(separator: ",", omittingEmptySubsequences: false).first?.split(separator: "p") ?? [] {
       let pieces = token.split(separator: "r", omittingEmptySubsequences: false)
@@ -165,7 +190,7 @@ private enum OverlayRenderer {
     let manifest = try JSONDecoder().decode(AtlasManifest.self, from: Data(bytes: pointer+4, count: headerLength))
     let payloadLength = Int(length)-headerLength-4
     guard manifest.version == 1, manifest.lut.count == 257, manifest.veil.count == 4,
-      manifest.width > 0, manifest.width <= 1024, manifest.height > 0, manifest.height <= 2048,
+      manifest.width > 0, manifest.width <= 1536, manifest.height > 0, manifest.height <= 2048,
       payloadLength <= 128 * 1024 * 1024,
       Int(manifest.covers) + Int(manifest.width)*Int(manifest.height)*4 <= payloadLength
     else { throw OverlayFailure.reason("Invalid atlas layout") }
@@ -298,14 +323,21 @@ func compareClimbOverlayGPU(_ configJson: String) throws -> [String: Any] {
 final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   let onRenderReady = EventDispatcher()
   let onRenderError = EventDispatcher()
-  var configJson = ""
+  var configJson = "" {
+    didSet { if configJson != oldValue { configRevision &+= 1 } }
+  }
+  var frames: String?
   var requestId = ""
   var active = false
   private let metal: MTKView
   private var revision: UInt64 = 0
   private var reportedRevision: UInt64?
   private var scene: GPUScene?
-  private var submittedConfig = ""
+  private var configRevision: UInt64 = 0
+  private var submittedConfigRevision: UInt64?
+  private var submittedFrames: String?
+  private var preparedConfigRevision: UInt64?
+  private var preparedAtlas: GPUAtlas?
   private var submittedRequest = ""
   private var background = UIApplication.shared.applicationState != .active
   private var needsFrame = false
@@ -340,9 +372,11 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     super.didMoveToWindow()
     if window == nil {
       scene = nil
-      submittedConfig = ""
+      preparedAtlas = nil
+      preparedConfigRevision = nil
+      submittedConfigRevision = nil
+      submittedFrames = nil
       submittedRequest = ""
-      OverlayRenderer.work.async { OverlayRenderer.cache = nil }
       return
     }
     applyProps()
@@ -353,8 +387,17 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   @objc private func resume() { background = false; applyProps(); requestDraw() }
 
   func applyProps() {
+    if !active {
+      scene = nil
+      preparedAtlas = nil
+      preparedConfigRevision = nil
+      submittedConfigRevision = nil
+      submittedFrames = nil
+      submittedRequest = ""
+      return
+    }
     guard active, window != nil, !background, !configJson.isEmpty else { return }
-    if submittedConfig == configJson && submittedRequest == requestId {
+    if submittedConfigRevision == configRevision && submittedFrames == frames && submittedRequest == requestId {
       requestDraw()
       return
     }
@@ -366,24 +409,38 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     revision &+= 1
     let generation = revision
     let config = configJson
+    let layoutRevision = configRevision
+    let frame = frames
     let request = requestId
-    submittedConfig = config
+    let reusableAtlas = preparedConfigRevision == layoutRevision ? preparedAtlas : nil
+    submittedConfigRevision = layoutRevision
+    submittedFrames = frame
     submittedRequest = request
     OverlayRenderer.work.async { [weak self] in
-      let result = Result { try OverlayRenderer.prepare(configJson: config) }
+      let result = Result { try OverlayRenderer.prepare(configJson: config, frames: frame, preparedAtlas: reusableAtlas) }
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         self.preparing = false
-        guard self.revision == generation, self.configJson == config, self.requestId == request else {
+        // A rapid swipe can invalidate the active frame while its layout is
+        // still useful. Keep that atlas, then prepare only the latest frame.
+        if self.configRevision == layoutRevision, self.window != nil, self.active,
+          case .success(let scene) = result {
+          self.preparedAtlas = scene.atlas
+          self.preparedConfigRevision = layoutRevision
+        }
+        guard self.revision == generation, self.configRevision == layoutRevision,
+          self.frames == frame, self.requestId == request else {
           self.applyProps()
           return
         }
-        guard self.window != nil else {
-          self.submittedConfig = ""
+        guard self.window != nil, self.active else {
+          self.submittedConfigRevision = nil
+          self.submittedFrames = nil
           self.submittedRequest = ""
           return
         }
-        self.submittedConfig = config
+        self.submittedConfigRevision = layoutRevision
+        self.submittedFrames = frame
         self.submittedRequest = request
         switch result {
         case .success(let scene):
@@ -407,7 +464,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
 
   func draw(in view: MTKView) {
     guard needsFrame, !preparing, active, !background, window != nil,
-      configJson == submittedConfig, requestId == submittedRequest,
+      configRevision == submittedConfigRevision, frames == submittedFrames, requestId == submittedRequest,
       let scene, let pipeline = OverlayRenderer.pipeline,
       let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor
     else { return }
@@ -435,18 +492,39 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     encoder.endEncoding()
     let generation = revision
     let request = requestId
+    let requiresPresentation = frames != nil
+    // These are accessed only on main. A drawable callback and a command
+    // completion can arrive in either order; v2 readiness needs both.
+    var finishedGPUMs: Double?
+    var presented = false
+    let reportReady: () -> Void = { [weak self] in
+      guard let self, let gpuMs = finishedGPUMs,
+        !requiresPresentation || presented,
+        self.revision == generation, self.requestId == request,
+        self.configRevision == self.submittedConfigRevision, self.frames == self.submittedFrames,
+        self.active, !self.background, self.window != nil,
+        self.reportedRevision != generation else { return }
+      self.reportedRevision = generation
+      self.onRenderReady(["requestId":request,"prepareMs":scene.prepareMs,
+        "uploadMs":scene.cacheHit ? 0 : scene.atlas.uploadMs,"gpuMs":gpuMs,
+        "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit])
+    }
+    if requiresPresentation {
+      drawable.addPresentedHandler { _ in
+        DispatchQueue.main.async { presented = true; reportReady() }
+      }
+    }
     command.addCompletedHandler { [weak self] completed in
       let gpuMs = max(0, completed.gpuEndTime-completed.gpuStartTime)*1000
       DispatchQueue.main.async { [weak self] in
         guard let self, self.revision == generation, self.requestId == request,
-          self.configJson == self.submittedConfig, self.active, !self.background, self.window != nil else { return }
+          self.configRevision == self.submittedConfigRevision, self.frames == self.submittedFrames,
+          self.active, !self.background, self.window != nil else { return }
         if completed.status == .error {
           self.onRenderError(["requestId":request,"reason":completed.error?.localizedDescription ?? "GPU command failed"])
-        } else if self.reportedRevision != generation {
-          self.reportedRevision = generation
-          self.onRenderReady(["requestId":request,"prepareMs":scene.prepareMs,
-            "uploadMs":scene.cacheHit ? 0 : scene.atlas.uploadMs,"gpuMs":gpuMs,
-            "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit])
+        } else {
+          finishedGPUMs = gpuMs
+          reportReady()
         }
       }
     }

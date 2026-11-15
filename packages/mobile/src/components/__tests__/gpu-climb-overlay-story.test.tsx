@@ -86,6 +86,7 @@ vi.mock('../../../modules/board-renderer/src', () => ({
   renderHoldsOverlay: (config: string, key: string) => controls.renderRust(config, key),
 }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
+  NativeFrameClimbOverlayGPU: null,
   get compareClimbOverlayGPU() {
     return controls.compareAvailable ? controls.compare : null;
   },

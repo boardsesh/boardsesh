@@ -1,4 +1,4 @@
-//! Experimental, bounded atlas for the iOS parity story. No production caller.
+//! Bounded atlas for the opt-in iOS GPU renderer and parity story.
 //!
 //! Geometry and mark rasterization stay here so Metal only combines immutable
 //! per-hold fields. The binary is a little-endian JSON-length, a JSON manifest,
@@ -45,7 +45,7 @@ fn translated(mut hold: LitHold, x: f32, y: f32) -> Result<LitHold, String> {
 pub fn prepare(config: &RenderConfig) -> Result<Vec<u8>, String> {
     let (width, height) = crate::renderer::output_size(config)?;
     if config.render_mode != BoardRenderMode::Aura
-        || width > 1024
+        || width > 1536
         || height > 2048
         || config.holds.len() > 1024
         || config.hold_state_map.len() > 8
@@ -272,11 +272,23 @@ mod tests {
     #[test]
     fn dimensions_and_unsupported_treatments_are_bounded() {
         let mut config = config();
-        config.output_width = 1025;
+        config.output_width = 1537;
         assert!(prepare(&config).is_err());
         config.output_width = 100;
         config.glow.spill_boost = 1.0;
         assert!(prepare(&config).is_err());
+    }
+    #[test]
+    fn phone_resolution_keeps_native_width_within_the_layout_budget() {
+        let mut config = config();
+        config.holds.clear();
+        for width in [1080, 1536] {
+            config.output_width = width;
+            assert!(prepare(&config).is_ok(), "supported output width {width}");
+        }
+        config.output_width = 100;
+        config.board_height = 2049.0;
+        assert!(prepare(&config).is_err(), "height remains bounded at 2048");
     }
     #[test]
     fn fields_store_exact_squared_distance_and_coverage() {

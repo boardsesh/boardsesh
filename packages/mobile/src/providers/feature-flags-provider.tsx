@@ -66,6 +66,13 @@ export type FeatureFlagDefinition = {
 
 export const FEATURE_FLAG_DEFINITIONS = [
   {
+    key: 'gpu-climb-overlay-experiment',
+    label: 'GPU climb drawing experiment',
+    description:
+      'Use the iOS GPU renderer for the current Kilter Homewall player and editor. Requires a new native build. Development builds enable it unless explicitly off; store builds require on.',
+    defaultEnabled: false,
+  },
+  {
     key: 'privacy-consent-step-kill',
     label: 'Privacy step kill switch',
     description: 'Suppresses the privacy step and disables product analytics.',
@@ -688,6 +695,16 @@ export function useWallSwipeToDriveEnabled(): boolean {
  */
 export function useWallFrostMotionEnabled(): boolean {
   return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
+}
+
+export function useGpuClimbOverlayEnabled(): boolean {
+  const flag = useFeatureFlag('gpu-climb-overlay-experiment');
+  return gpuClimbOverlayOffered(flag);
+}
+
+export function gpuClimbOverlayOffered(flag: boolean | string | undefined): boolean {
+  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  return isDevBuild() ? flag !== false : flag === true;
 }
 
 /** The rule behind `useWallFrostMotionEnabled`, for tests. */
