@@ -409,6 +409,82 @@ describe('useInfiniteSearchClimbs', () => {
       }
     });
 
+    it('re-asks a paused search with no placeholder rows (a board switch)', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0, networkMode: 'offlineFirst' } },
+      });
+      const offlineWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      let otherBoardCalls = 0;
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) => {
+        if (variables.input.sizeId !== 7) return Promise.resolve(makeResponse(variables.input.page ?? 0));
+        otherBoardCalls += 1;
+        if (otherBoardCalls === 1) {
+          onlineManager.setOnline(false);
+          return Promise.reject(new TypeError('Network request failed'));
+        }
+        return Promise.resolve({ searchClimbs: { climbs: [], hasMore: false } });
+      });
+      try {
+        const { result, rerender } = renderHook(
+          ({ input }: { input: ClimbSearchInput }) =>
+            useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+          { initialProps: { input: baseInput }, wrapper: offlineWrapper },
+        );
+        await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+        rerender({ input: { ...baseInput, sizeId: 7 } });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        expect(result.current.isPlaceholderData).toBe(false);
+        expect(otherBoardCalls).toBe(2);
+      } finally {
+        onlineManager.setOnline(true);
+        queryClient.clear();
+      }
+    });
+
+    it('re-asks an errored-then-refetched search once, even when every re-ask fails offline', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0, networkMode: 'offlineFirst' } },
+      });
+      const offlineWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      let zenithCalls = 0;
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) => {
+        if (variables.input.name === 'Moonage') return Promise.resolve(makeResponse(variables.input.page ?? 0));
+        zenithCalls += 1;
+        // 1-3 end in an error, as in the test above; from 4 on, every call drops offline and fails.
+        if (zenithCalls === 1 || zenithCalls >= 4) onlineManager.setOnline(false);
+        if (zenithCalls === 2) onlineManager.setOnline(true);
+        return Promise.reject(new TypeError('Network request failed'));
+      });
+      try {
+        const { result, rerender } = renderHook(
+          ({ input }: { input: ClimbSearchInput }) =>
+            useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+          { initialProps: { input: baseInput }, wrapper: offlineWrapper },
+        );
+        await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+        rerender({ input: { ...baseInput, name: 'Zenith' } });
+        await waitFor(() => expect(result.current.isError).toBe(true));
+        expect(zenithCalls).toBe(3);
+
+        await act(async () => {
+          void queryClient.refetchQueries({ predicate: (query) => JSON.stringify(query.queryKey).includes('Zenith') });
+        });
+        // 4: the refetch, 5: its one re-ask. Nothing after that.
+        await waitFor(() => expect(zenithCalls).toBe(5));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(zenithCalls).toBe(5);
+      } finally {
+        onlineManager.setOnline(true);
+        queryClient.clear();
+      }
+    });
+
     it('drops to no data on a new search when the option is off', async () => {
       const { result, rerender } = renderHook(
         ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input),

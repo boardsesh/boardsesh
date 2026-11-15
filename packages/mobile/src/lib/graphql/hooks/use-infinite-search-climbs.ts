@@ -125,38 +125,40 @@ export function useInfiniteSearchClimbs(
 
   // A search whose first attempt failed (a wifi drop mid-request) and whose
   // retry then paused because the phone went offline sits in `pending` until
-  // the signal returns, with the previous search's rows tinted as "loading" the
-  // whole time. Ask again instead: under `offlineFirst` the first attempt of a
-  // new fetch runs even offline, and `offlineAwareRequest` answers it on-device
-  // or with its offline fallback, which the screen already knows how to
-  // explain. The paused fetch is cancelled first because `refetch` on a query
-  // with no data of its own only nudges the paused retryer, which stays paused.
-  // Once per pending stretch, so a re-ask that pauses again can't loop; the
-  // guard clears once the list stops showing placeholder rows, so a search
-  // that errored and is later refetched (a sync invalidation) and pauses again
-  // is re-asked too.
+  // the signal returns: the previous search's rows tinted as "loading", or
+  // skeleton rows on a first load or board switch, the whole time. Ask again
+  // instead: under `offlineFirst` the first attempt of a new fetch runs even
+  // offline, and `offlineAwareRequest` answers it on-device or with its offline
+  // fallback, which the screen already knows how to explain. The paused fetch
+  // is cancelled first because `refetch` on a query with no data of its own
+  // only nudges the paused retryer, which stays paused.
+  //
+  // `status` reads `success` while a placeholder is up, so "still waiting for
+  // its own answer" is pending OR showing a placeholder.
+  //
+  // Once per search per settled state: the guard is the key plus when the
+  // query last got data or an error. A re-ask that pauses again changes
+  // neither, so it can't loop, and the cancel's brief revert to an earlier
+  // state can't clear it. A search that settles and later pauses again (an
+  // error, then a sync invalidation's refetch) has a new stamp and is re-asked.
+  //
   // Backgrounding the app mid-retry also pauses it (focus, not connectivity);
   // the re-ask then costs one request, and a re-pause resumes on foreground.
-  // `status` reads `success` while a placeholder is up, so the placeholder flag
-  // is the pending signal: it holds exactly until the search has data or an
-  // error of its own.
-  const { fetchStatus, isPlaceholderData } = query;
+  const { fetchStatus, isPending, isPlaceholderData, dataUpdatedAt, errorUpdatedAt } = query;
   const searchHash = hashKey(queryKey);
+  const isWaitingForOwnAnswer = isPending || isPlaceholderData;
   const reaskedSearchRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isPlaceholderData) {
-      reaskedSearchRef.current = null;
-      return;
-    }
-    if (fetchStatus !== 'paused') return;
-    if (reaskedSearchRef.current === searchHash) return;
-    reaskedSearchRef.current = searchHash;
+    if (!isWaitingForOwnAnswer || fetchStatus !== 'paused') return;
+    const guard = `${searchHash}|${dataUpdatedAt}|${errorUpdatedAt}`;
+    if (reaskedSearchRef.current === guard) return;
+    reaskedSearchRef.current = guard;
     const pausedKey = queryClient.getQueryCache().get(searchHash)?.queryKey;
     if (!pausedKey) return;
     void queryClient
       .cancelQueries({ queryKey: pausedKey, exact: true })
       .then(() => queryClient.refetchQueries({ queryKey: pausedKey, exact: true }));
-  }, [fetchStatus, isPlaceholderData, searchHash, queryClient]);
+  }, [isWaitingForOwnAnswer, fetchStatus, searchHash, dataUpdatedAt, errorUpdatedAt, queryClient]);
 
   return query;
 }
