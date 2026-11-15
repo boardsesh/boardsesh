@@ -209,18 +209,66 @@ export function createBrowserPasswordAuthPreparation(
           return fail();
         const expiry = Date.parse(prepared.preparation.credentialExpiresAt) / 1_000;
         if (!Number.isSafeInteger(expiry)) return fail();
-        let credential: string;
+        let credential: string | undefined;
         if (input.credentialKind === 'canonical-token') {
           const proposal = prepared.proposedCanonicalToken;
           if (!proposal || !/^[A-Za-z0-9_-]{43}$/.test(proposal)) return fail();
           credential = proposal;
         } else {
-          const maxAge = expiry - Math.floor(Date.now() / 1_000);
-          if (maxAge <= 0) return fail();
-          credential = await encoder({ ...parameters, maxAge });
-          const actual = await decode({ token: credential, secret: parameters.secret, salt: parameters.salt });
-          if (!actual || actual.exp !== expiry || !claimsMatch(actual, prepared.preparation.credentialProof))
-            return fail();
+          // The installed local encoder awaits key derivation before sampling
+          // its relative expiry. One unpublished draft can therefore cross a
+          // second; compensate once without changing the prepared deadline.
+          let previousAttemptFinishedAt: number | undefined;
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            check();
+            const encodingStartedAt = Date.now();
+            const maxAge = expiry - Math.floor(encodingStartedAt / 1_000);
+            if (
+              !Number.isSafeInteger(encodingStartedAt) ||
+              encodingStartedAt <= 0 ||
+              (previousAttemptFinishedAt !== undefined && encodingStartedAt < previousAttemptFinishedAt) ||
+              !Number.isSafeInteger(maxAge) ||
+              maxAge <= 0 ||
+              !claimsMatch(parameters.token, prepared.preparation.credentialProof)
+            )
+              return fail();
+            const draft = await encoder({ ...parameters, maxAge });
+            // Decode latency must never explain an encoder's expiry drift.
+            const encodingFinishedAt = Date.now();
+            check();
+            if (
+              !Number.isSafeInteger(encodingFinishedAt) ||
+              encodingFinishedAt < encodingStartedAt ||
+              !draft ||
+              Buffer.byteLength(draft) > 16_384
+            )
+              return fail();
+            const actual = await decode({ token: draft, secret: parameters.secret, salt: parameters.salt });
+            check();
+            const decodingFinishedAt = Date.now();
+            if (
+              !Number.isSafeInteger(decodingFinishedAt) ||
+              decodingFinishedAt < encodingFinishedAt ||
+              !actual ||
+              typeof actual.exp !== 'number' ||
+              !Number.isSafeInteger(actual.exp) ||
+              !claimsMatch(actual, prepared.preparation.credentialProof)
+            )
+              return fail();
+            if (actual.exp === expiry) {
+              credential = draft;
+              break;
+            }
+            const encodedAtSeconds = actual.exp - maxAge;
+            if (
+              attempt !== 0 ||
+              actual.exp <= expiry ||
+              encodedAtSeconds < Math.floor(encodingStartedAt / 1_000) ||
+              encodedAtSeconds > Math.floor(encodingFinishedAt / 1_000)
+            )
+              return fail();
+            previousAttemptFinishedAt = decodingFinishedAt;
+          }
         }
         check();
         if (!credential || Buffer.byteLength(credential) > 16_384) return fail();
