@@ -240,7 +240,7 @@ function WallControlButtonComponent({
   const glowShown = frosted ? glow : null;
   // The filled bulb tracks this phone's ownership separately from driving frost.
   const holdsBoard = model.holder === 'self';
-  // The moving frost (Metal): lights breathe while driving and glide to the
+  // The moving frost (native GPU): lights breathe while driving and glide to the
   // next climb. Never on the preview card's picture or under Reduce Motion,
   // and only on a binary with the native view; otherwise today's still frost.
   const frostMovingOffered = useWallFrostMotionEnabled();

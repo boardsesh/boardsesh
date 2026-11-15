@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.frostedbokeh'
+  defaultConfig {
+    minSdk 24
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+}
