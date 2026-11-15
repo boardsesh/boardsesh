@@ -93,6 +93,22 @@ describe('useSetBoardAngle', () => {
     expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ angle: 25 }));
   });
 
+  it('still completes the remembered-angle save when the active-board write fails', async () => {
+    let finishRememberedSave: () => void = () => {};
+    const rememberedSave = new Promise<void>((resolve) => {
+      finishRememberedSave = resolve;
+    });
+    setStoredBoardAngleMock.mockReturnValueOnce(rememberedSave);
+    setActiveBoardMock.mockRejectedValueOnce(new Error('active-board storage unavailable'));
+    const { result } = renderHook(() => useSetBoardAngle());
+
+    await expect(result.current(board(), 25)).rejects.toThrow('active-board storage unavailable');
+    expect(setStoredBoardAngleMock).toHaveBeenCalledWith('kilter-1', 25);
+    finishRememberedSave();
+    await rememberedSave;
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
   it('reserves an active-board write even when returning to the rendered angle', async () => {
     const { result } = renderHook(() => useSetBoardAngle());
 

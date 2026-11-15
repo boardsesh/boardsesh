@@ -4,6 +4,7 @@ import { renderHook } from '@testing-library/react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 
 const setActiveBoardMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+const getActiveBoardWriteGenerationMock = vi.hoisted(() => vi.fn(() => 0));
 const adoptFoundBoardMock = vi.hoisted(() => vi.fn());
 const resolveBoardAngleMock = vi.hoisted(() => vi.fn());
 const hapticMock = vi.hoisted(() => vi.fn());
@@ -11,7 +12,10 @@ const trackMock = vi.hoisted(() => vi.fn());
 const reportErrorMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => setActiveBoardMock }));
+vi.mock('../../graphql/use-active-board', () => ({
+  useSetActiveBoard: () => setActiveBoardMock,
+  getActiveBoardWriteGeneration: getActiveBoardWriteGenerationMock,
+}));
 vi.mock('../../board-discovery/use-adopt-found-board', () => ({ useAdoptFoundBoard: () => adoptFoundBoardMock }));
 vi.mock('../board-angle-store', () => ({ resolveBoardAngle: resolveBoardAngleMock }));
 vi.mock('../../haptics', () => ({ hapticSelection: hapticMock }));
@@ -52,6 +56,7 @@ function switcher(options: Partial<SwitchBoardOptions> = {}) {
 describe('useSwitchBoard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getActiveBoardWriteGenerationMock.mockReturnValue(0);
     setActiveBoardMock.mockResolvedValue(true);
     resolveBoardAngleMock.mockImplementation((board: UserBoard) => Promise.resolve(board.angle));
   });
@@ -129,6 +134,30 @@ describe('useSwitchBoard', () => {
     expect(trackMock).not.toHaveBeenCalledWith('Board Swap Completed', expect.anything());
     expect(trackMock).toHaveBeenCalledWith('Board Swap Failed', expect.objectContaining({ reason: 'superseded' }));
     expect(showToastMock).toHaveBeenCalledWith('mobile.boardPresence.gymWalls.switchFailed', 'error');
+  });
+
+  it('keeps a newer board choice made while the target angle is resolving', async () => {
+    let resolveAngle = (_angle: number) => {};
+    resolveBoardAngleMock.mockReturnValueOnce(
+      new Promise<number>((resolve) => {
+        resolveAngle = resolve;
+      }),
+    );
+    const onSwitched = vi.fn();
+    const broadcastBoardPath = vi.fn();
+    const result = switcher({ onSwitched, broadcastBoardPath });
+
+    const olderSwitch = result.current(TENSION, KILTER);
+    getActiveBoardWriteGenerationMock.mockReturnValue(1);
+    resolveAngle(25);
+
+    await expect(olderSwitch).resolves.toBe('failed');
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    expect(onSwitched).not.toHaveBeenCalled();
+    expect(broadcastBoardPath).not.toHaveBeenCalled();
+    expect(adoptFoundBoardMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Swap Completed', expect.anything());
+    expect(trackMock).toHaveBeenCalledWith('Board Swap Failed', expect.objectContaining({ reason: 'superseded' }));
   });
 
   it('skips adoption when the board list came from on-device data', async () => {
