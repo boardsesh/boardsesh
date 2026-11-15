@@ -1,3 +1,5 @@
+import { captureOfflineNetworkContext } from './offline-network-context';
+import { isSyncRequestHeld } from '@boardsesh/offline-sync';
 // Mobile binding of @boardsesh/offline-sync's injected seams. The package is
 // platform-free; this adapter supplies the react-native pieces exactly once:
 //
@@ -125,19 +127,30 @@ export async function hasUsableInternetConnection(): Promise<boolean> {
   return isUsableConnection();
 }
 
-function reportMutationStatusListenerFailure({ error, event }: MutationStatusListenerFailure): void {
+function reportMutationStatusListenerFailure(
+  { error, event }: MutationStatusListenerFailure,
+  assertCurrent?: () => void,
+): void {
+  assertCurrent?.();
   try {
     reportHandledError(error, {
       tags: { source: 'offline-sync', kind: 'mutation-status-listener' },
       extra: { tableName: event.tableName, operation: event.operation, status: event.status },
     });
   } catch (reportingError) {
+    assertCurrent?.();
     if (__DEV__) console.warn('[MutationQueue] delivery-listener error reporter failed:', reportingError);
   }
 }
 
-function publishMutationDelivery(event: MutationDeliveryEvent): void {
-  publishMutationDeliveryEvent(event, reportMutationStatusListenerFailure);
+function publishMutationDelivery(event: MutationDeliveryEvent, assertCurrent?: () => void): void {
+  if (assertCurrent)
+    publishMutationDeliveryEvent(
+      event,
+      (failure) => reportMutationStatusListenerFailure(failure, assertCurrent),
+      assertCurrent,
+    );
+  else publishMutationDeliveryEvent(event, reportMutationStatusListenerFailure);
 }
 
 // A queued write we will never deliver. Both channels are deliberate: Sentry
@@ -148,24 +161,18 @@ function publishMutationDelivery(event: MutationDeliveryEvent): void {
 // same reason it is on reportSnapshotBootstrapError: reportHandledError
 // classifies what it is handed, and a synthetic wrapper with no cause matches
 // nothing (issue #4238).
-const reportMutationDeadLettered: MutationDeadLetterReporter = ({
-  tableName,
-  operation,
-  idempotencyKey,
-  reason,
-  retryCount,
-  maxRetries,
-  queuedForMs,
-  status,
-  errorMessage,
-  error,
-}) => {
+const reportMutationDeadLettered: MutationDeadLetterReporter = (
+  { tableName, operation, idempotencyKey, reason, retryCount, maxRetries, queuedForMs, status, errorMessage, error },
+  assertCurrent,
+) => {
+  assertCurrent?.();
   reportHandledError(new Error(`Offline ${tableName} ${operation} dead-lettered (${reason})`, { cause: error }), {
     tags: { source: 'offline-sync', kind: 'mutation-dead-letter', reason },
     extra: { tableName, operation, idempotencyKey, reason, retryCount, maxRetries, status, queuedForMs, errorMessage },
   });
   // idempotencyKey stays out of the analytics props on purpose: it is a raw
   // uuid for ticks and a per-climb key for favorites, i.e. unbounded cardinality.
+  assertCurrent?.();
   track(SHARED_EVENTS.OfflineMutationDeadLettered, {
     tableName,
     operation,
@@ -777,13 +784,16 @@ const schedulerTriggers: SchedulerTriggers = {
 // event per sign-in. No ids ride along, only the reason.
 let reportedOtherAccountOutboxGeneration: number | null = null;
 
-function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal): void {
+function reportOutboxOwnerRefused(reason: OutboxOwnerRefusal, assertCurrent?: () => void): void {
+  assertCurrent?.();
   // The moment between sign-in and the stamp is ordinary; leave a trail only.
   addErrorBreadcrumb({ category: 'offline-sync.outbox-owner', message: `Drain declined: ${reason}`, level: 'info' });
+  assertCurrent?.();
   if (reason !== 'other-account') return;
   const generation = captureAuthCredentialGeneration();
   if (reportedOtherAccountOutboxGeneration === generation) return;
   reportedOtherAccountOutboxGeneration = generation;
+  assertCurrent?.();
   reportHandledError(new Error('Offline outbox held: the local database belongs to another account'), {
     level: 'warning',
     tags: { source: 'offline-sync', kind: 'outbox-owner-hold', reason },
@@ -800,63 +810,105 @@ export function drainMutationQueue(
   graphqlFetch: GraphQLFetch,
   // The owner check is not a caller's choice: every mobile drain sends with the
   // token in SecureStore, so every one compares the stamp against that token.
-  options?: Partial<Omit<DrainOptions, 'getSignedInUserId'>>,
+  options?: Partial<Omit<DrainOptions, 'getSignedInUserId' | 'network'>>,
 ): Promise<void> {
   const sourceGeneration = captureAuthCredentialGeneration();
-  return drainMutationQueueCore(db, queryClient, graphqlFetch, {
-    ...options,
-    beforeMutationAcknowledged: async (mutation, fetch) => {
-      await acknowledgeClimbWrite(db, mutation, fetch);
-      await options?.beforeMutationAcknowledged?.(mutation, fetch);
+  const supplied = Object.freeze({ ...options });
+  const start = captureOfflineNetworkContext(readSignedInUserId);
+  const configured: DrainOptions = {
+    ...supplied,
+    beforeMutationAcknowledged: async (mutation, fetch, request) => {
+      request?.assertDeliveries();
+      if (request)
+        await acknowledgeClimbWrite(db, mutation, fetch, request.assertDeliveries, request.kind === 'selected');
+      else await acknowledgeClimbWrite(db, mutation, fetch);
+      request?.assertDeliveries();
+      if (request) await supplied.beforeMutationAcknowledged?.(mutation, fetch, request);
+      else await supplied.beforeMutationAcknowledged?.(mutation, fetch);
+      request?.assertDeliveries();
     },
-    isOnline: options?.isOnline ?? isOnline,
+    isOnline: supplied.isOnline ?? isOnline,
     // Whose account the server will file these sends under (#6824). The token
     // the HTTP client attaches, read the same way, so the check and the send
     // cannot disagree about who is signed in.
     getSignedInUserId: readSignedInUserId,
-    onOutboxOwnerRefused: (reason) => {
+    onOutboxOwnerRefused: (reason, assertCurrent) => {
+      assertCurrent?.();
       try {
-        options?.onOutboxOwnerRefused?.(reason);
+        if (assertCurrent) supplied.onOutboxOwnerRefused?.(reason, assertCurrent);
+        else supplied.onOutboxOwnerRefused?.(reason);
       } finally {
-        reportOutboxOwnerRefused(reason);
+        assertCurrent?.();
+        if (assertCurrent) reportOutboxOwnerRefused(reason, assertCurrent);
+        else reportOutboxOwnerRefused(reason);
       }
     },
     // A 5xx is not a reason to burn a queued write's retry budget (#4862): the
     // request was fine, the server was not. The store answers from its backoff
     // ladder when an outage is already known, so this costs a probe only when
     // the failure is the first news of one.
-    confirmServerAvailability: options?.confirmServerAvailability ?? confirmBackendAvailability,
+    confirmServerAvailability: supplied.confirmServerAvailability ?? confirmBackendAvailability,
     // A probe that throws is "server down" for the drain's purposes, but never
     // silently: a probe broken on every call would end every 5xx cycle with no
     // strike and no operator signal. Warning level — it is handled — tagged so
     // it can be split from real network noise.
     onServerAvailabilityProbeError:
-      options?.onServerAvailabilityProbeError ??
+      supplied.onServerAvailabilityProbeError ??
       ((error) =>
         reportHandledError(error, {
           level: 'warning',
           tags: { source: 'offline-sync', kind: 'availability-probe' },
         })),
-    onMutationStatusError: options?.onMutationStatusError ?? reportMutationStatusListenerFailure,
-    onMutationStatus: (event) => {
+    onMutationStatusError: supplied.onMutationStatusError ?? reportMutationStatusListenerFailure,
+    onMutationStatus: (event, assertCurrent) => {
+      assertCurrent?.();
       if (!isAuthCredentialGenerationCurrent(sourceGeneration)) return;
       try {
-        options?.onMutationStatus?.(event);
+        if (assertCurrent) supplied.onMutationStatus?.(event, assertCurrent);
+        else supplied.onMutationStatus?.(event);
       } finally {
-        if (isAuthCredentialGenerationCurrent(sourceGeneration)) publishMutationDelivery(event);
+        assertCurrent?.();
+        if (isAuthCredentialGenerationCurrent(sourceGeneration)) {
+          if (assertCurrent) publishMutationDelivery(event, assertCurrent);
+          else publishMutationDelivery(event);
+        }
       }
     },
     // Composed, not defaulted (unlike the reporters above): telemetry for a
     // permanently lost write must not be something a call site can opt out of
     // by passing its own handler.
-    onMutationDeadLettered: (info) => {
+    onMutationDeadLettered: (info, assertCurrent) => {
+      assertCurrent?.();
       try {
-        options?.onMutationDeadLettered?.(info);
+        if (assertCurrent) supplied.onMutationDeadLettered?.(info, assertCurrent);
+        else supplied.onMutationDeadLettered?.(info);
       } finally {
-        reportMutationDeadLettered(info);
+        assertCurrent?.();
+        if (assertCurrent) reportMutationDeadLettered(info, assertCurrent);
+        else reportMutationDeadLettered(info);
       }
     },
-  });
+  };
+  if (!start) return drainMutationQueueCore(db, queryClient, graphqlFetch, configured);
+  if (!configured.isOnline()) return Promise.resolve();
+  return (async () => {
+    let context: Awaited<ReturnType<typeof start.resolve>>;
+    try {
+      context = await start.resolve();
+    } catch (error) {
+      if (isSyncRequestHeld(error)) return;
+      throw error;
+    }
+    try {
+      return await drainMutationQueueCore(db, context.bindInvalidator(queryClient), graphqlFetch, {
+        ...configured,
+        network: context.network,
+        getSignedInUserId: async () => context.network.userId,
+      });
+    } finally {
+      context.network.dispose();
+    }
+  })();
 }
 
 /**
