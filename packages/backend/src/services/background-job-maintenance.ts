@@ -1,4 +1,4 @@
-import { clearExpiredCncComputations } from './cnc/computations';
+import { clearExpiredCncComputations } from './cnc/computation-retention';
 import { reconcileCncGenerationRuns } from './cnc/generation-queue';
 import { and, asc, eq, gt, inArray, lt } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
@@ -58,7 +58,7 @@ export function backgroundJobReconciler(database: DbInstance) {
     // two steps above.
     await clearFinishedProviderSyncRuns(database, 100);
     await reconcileCncGenerationRuns(database);
-    await clearExpiredCncComputations();
+    await clearExpiredCncComputations(database);
   };
 }
 

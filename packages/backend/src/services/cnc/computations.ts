@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, count, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { cncComputations, backgroundJobRuns, type CncComputation } from '@boardsesh/db/schema';
 import { db } from '../../db/client';
 import { enqueueBackgroundJobOn } from '../../workers/jobs';
@@ -104,29 +104,4 @@ export async function readCncComputation(
       return { ...view, status: 'failed', result: null, errorCode: 'CNC_WORKER_UNAVAILABLE' };
   }
   return view;
-}
-
-/** Expired computations are ephemeral; purchased artifacts never depend on them. */
-export async function clearExpiredCncComputations(): Promise<number> {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const expired = await db
-    .select({ id: cncComputations.id })
-    .from(cncComputations)
-    .where(lt(cncComputations.expiresAt, cutoff))
-    .orderBy(asc(cncComputations.expiresAt))
-    .limit(100);
-  if (expired.length === 0) return 0;
-  const removed = await db
-    .delete(cncComputations)
-    .where(
-      and(
-        inArray(
-          cncComputations.id,
-          expired.map((request) => request.id),
-        ),
-        lt(cncComputations.expiresAt, cutoff),
-      ),
-    )
-    .returning({ id: cncComputations.id });
-  return removed.length;
 }

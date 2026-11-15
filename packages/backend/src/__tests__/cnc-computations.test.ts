@@ -15,7 +15,8 @@ vi.mock('../services/cnc/generator-process', async (original) => ({
 import { db } from '../db/client';
 import { requireJobQueue, startJobQueue, stopJobQueue } from '../services/job-queue';
 import { executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
-import { clearExpiredCncComputations, readCncComputation, submitCncComputation } from '../services/cnc/computations';
+import { readCncComputation, submitCncComputation } from '../services/cnc/computations';
+import { clearExpiredCncComputations } from '../services/cnc/computation-retention';
 import { CncGeneratorError } from '../services/cnc/generator-process';
 const connection = new URL(process.env.DATABASE_URL!);
 // Refuse even fixture cleanup outside the dedicated local per-worker test database.
@@ -174,7 +175,7 @@ describe('durable CNC computations in an isolated local database', () => {
       .update(cncComputations)
       .set({ expiresAt: new Date(Date.now() - 25 * 3600_000) })
       .where(eq(cncComputations.id, expired.id));
-    expect(await clearExpiredCncComputations()).toBe(1);
+    expect(await clearExpiredCncComputations(db)).toBe(1);
     expect(await readCncComputation(expired.id, null)).toBeNull();
     expect(await readCncComputation(current.id, ownerId)).not.toBeNull();
   });
