@@ -51,6 +51,23 @@ const fixtureOrderIds = new Set<number>();
 const fixtureRunIds = new Set<string>();
 let localTestDatabaseVerified = false;
 
+/** The queue call exposes this operation's run ID even when its transaction rolls back. */
+function sentRunIds(calls: readonly (readonly unknown[])[]): string[] {
+  return calls.flatMap(([queueName, payload]) => {
+    if (queueName !== queue) return [];
+    if (!payload || typeof payload !== 'object' || !('runId' in payload) || typeof payload.runId !== 'string') {
+      throw new Error('Expected an addressed CNC queue run');
+    }
+    fixtureRunIds.add(payload.runId);
+    return [payload.runId];
+  });
+}
+
+async function findOwnedRuns(runIds: string[]) {
+  if (!runIds.length) throw new Error('Expected at least one captured CNC run ID');
+  return db.select().from(backgroundJobRuns).where(inArray(backgroundJobRuns.id, runIds));
+}
+
 async function clearFixtures(): Promise<void> {
   if (!localTestDatabaseVerified) return;
   if (fixtureOrderIds.size) {
@@ -210,9 +227,13 @@ describe('CNC pg-boss generation', () => {
     const preview = await fixture();
     const paid = await fixture('queued');
     const unpaid = await fixture('pending_payment');
+    const send = vi.spyOn(requireJobQueue(), 'send');
     await Promise.all([reconcileCncGenerationRuns(db), reconcileCncGenerationRuns(db)]);
     await reconcileCncGenerationRuns(db);
-    const runs = await db.select().from(backgroundJobRuns);
+    const runIds = sentRunIds(send.mock.calls);
+    expect(runIds).toHaveLength(2);
+    expect(new Set(runIds).size).toBe(2);
+    const runs = await findOwnedRuns(runIds);
     expect(runs).toHaveLength(2);
     expect((await getOrderById(unpaid.id))?.generationRunId).toBeNull();
     const first = await fetchJob();
@@ -231,10 +252,12 @@ describe('CNC pg-boss generation', () => {
       options,
       configHash: randomUUID(),
     };
-    vi.spyOn(requireJobQueue(), 'send').mockRejectedValueOnce(new Error('QUEUE_UNAVAILABLE'));
+    const send = vi.spyOn(requireJobQueue(), 'send').mockRejectedValueOnce(new Error('QUEUE_UNAVAILABLE'));
     await expect(createPreviewOrder(input)).rejects.toThrow('QUEUE_UNAVAILABLE');
-    expect(await db.select().from(cncOrders)).toHaveLength(0);
-    expect(await db.select().from(backgroundJobRuns)).toHaveLength(0);
+    expect(await db.select().from(cncOrders).where(eq(cncOrders.configHash, input.configHash))).toHaveLength(0);
+    const attemptedRuns = sentRunIds(send.mock.calls);
+    expect(attemptedRuns).toHaveLength(1);
+    expect(await findOwnedRuns(attemptedRuns)).toHaveLength(0);
     const order = await createPreviewOrder(input);
     fixtureOrderIds.add(order.id);
     if (order.generationRunId) fixtureRunIds.add(order.generationRunId);
@@ -248,12 +271,14 @@ describe('CNC pg-boss generation', () => {
     async (event) => {
       const order = await fixture(event === 'checkoutCompleted' ? 'pending_payment' : 'ready');
       const patch = event === 'regenerate' ? { generation: 2, attempts: 0 } : { paidAt: new Date() };
-      vi.spyOn(requireJobQueue(), 'send').mockRejectedValueOnce(new Error('QUEUE_UNAVAILABLE'));
+      const send = vi.spyOn(requireJobQueue(), 'send').mockRejectedValueOnce(new Error('QUEUE_UNAVAILABLE'));
       await expect(
         db.transaction((transaction) => transitionOrder(order.id, event, patch, { executor: transaction })),
       ).rejects.toThrow('QUEUE_UNAVAILABLE');
       expect((await getOrderById(order.id))?.status).toBe(order.status);
-      expect(await db.select().from(backgroundJobRuns)).toHaveLength(0);
+      const attemptedRuns = sentRunIds(send.mock.calls);
+      expect(attemptedRuns).toHaveLength(1);
+      expect(await findOwnedRuns(attemptedRuns)).toHaveLength(0);
       const queued = await transitionOrder(order.id, event, patch);
       expect(queued).toMatchObject({ status: 'queued', generation: event === 'regenerate' ? 2 : 1 });
       expect(queued?.generationRunId).toBeTruthy();
