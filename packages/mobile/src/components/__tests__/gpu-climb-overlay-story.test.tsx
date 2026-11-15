@@ -103,7 +103,7 @@ import stories from '../GpuClimbOverlay.stories';
 
 async function openStory() {
   await act(async () => {
-    render((stories.stories.parity as ComponentStory).render());
+    render((stories.stories.parity as ComponentStory).render({ onReady: vi.fn(), onError: vi.fn() }));
   });
 }
 async function enableGpu() {
