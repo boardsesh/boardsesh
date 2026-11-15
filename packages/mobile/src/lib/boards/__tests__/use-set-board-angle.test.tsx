@@ -93,12 +93,12 @@ describe('useSetBoardAngle', () => {
     expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ angle: 25 }));
   });
 
-  it('does not re-bind the active board when only the angle it already has is set', async () => {
+  it('reserves an active-board write even when returning to the rendered angle', async () => {
     const { result } = renderHook(() => useSetBoardAngle());
 
     await result.current(board(), 40);
 
     expect(setStoredBoardAngleMock).toHaveBeenCalledWith('kilter-1', 40);
-    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ angle: 40 }));
   });
 });

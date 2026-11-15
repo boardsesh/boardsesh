@@ -15,11 +15,55 @@ describe('board-angle-store', () => {
   beforeEach(() => {
     store.clear();
     vi.clearAllMocks();
-    getPreferenceMock.mockImplementation((key: string) => Promise.resolve(store.get(key) ?? null));
+    getPreferenceMock.mockImplementation((key: string) => Promise.resolve(structuredClone(store.get(key) ?? null)));
     setPreferenceMock.mockImplementation((key: string, value: unknown) => {
       store.set(key, value);
       return Promise.resolve();
     });
+  });
+
+  it('keeps overlapping saves for different boards', async () => {
+    await Promise.all([setStoredBoardAngle('kilter', 25), setStoredBoardAngle('tension', 40)]);
+    expect(await getStoredBoardAngle('kilter')).toBe(25);
+    expect(await getStoredBoardAngle('tension')).toBe(40);
+  });
+
+  it('waits for requested saves before resolving a switch-back angle', async () => {
+    let finishWrite: () => void = () => {};
+    let markStarted: () => void = () => {};
+    const writeStarted = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const writeGate = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    setPreferenceMock.mockImplementationOnce(async (key: string, angles: unknown) => {
+      markStarted();
+      await writeGate;
+      store.set(key, structuredClone(angles));
+    });
+    const first = setStoredBoardAngle('kilter', 25);
+    await writeStarted;
+    const second = setStoredBoardAngle('kilter', 40);
+    const readAngle = resolveBoardAngle({ uuid: 'kilter', angle: 10 });
+    let readFinished = false;
+    void readAngle.then(() => {
+      readFinished = true;
+    });
+    await Promise.resolve();
+    expect(readFinished).toBe(false);
+    finishWrite();
+    await Promise.all([first, second]);
+    expect(await readAngle).toBe(40);
+  });
+
+  it('recovers after a failed save without losing later boards', async () => {
+    setPreferenceMock.mockRejectedValueOnce(new Error('storage unavailable'));
+    const failed = setStoredBoardAngle('kilter', 25);
+    const recovered = setStoredBoardAngle('tension', 40);
+    await expect(failed).rejects.toThrow('storage unavailable');
+    await recovered;
+    expect(await getStoredBoardAngle('tension')).toBe(40);
   });
 
   it('round-trips an angle for a board', async () => {

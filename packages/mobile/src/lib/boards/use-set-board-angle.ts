@@ -38,18 +38,22 @@ export function useSetBoardAngle() {
       if (board.isAngleAdjustable === false) return;
       if (angle === board.angle && board.uuid !== activeBoard?.uuid) return;
 
-      // Recorded first: if the active-board write fails the climber still gets
-      // this angle back when they return to the wall, which is the weaker but
-      // still correct half of the behaviour.
-      try {
-        await setStoredBoardAngle(board.uuid, angle);
-      } catch (error: unknown) {
-        reportError(error);
-      }
+      // Reserve the active-board intent before storage can yield. Otherwise a
+      // delayed angle write can restore this board after the climber picks
+      // another one. Even a return to the rendered angle is a newer intent:
+      // an earlier angle change may still be queued without a new render yet.
+      const activeBoardWrite =
+        activeBoard && board.uuid === activeBoard.uuid ? setActiveBoard({ ...activeBoard, angle }) : Promise.resolve();
 
-      if (activeBoard && board.uuid === activeBoard.uuid && angle !== activeBoard.angle) {
-        await setActiveBoard({ ...activeBoard, angle });
-      }
+      // Keep the remembered angle independent of active-board persistence, so
+      // either write can succeed when the other fails. Attach both handlers
+      // immediately while the active-board coordinator preserves intent order.
+      await Promise.all([
+        activeBoardWrite,
+        setStoredBoardAngle(board.uuid, angle).catch((error: unknown) => {
+          reportError(error);
+        }),
+      ]);
     },
     [activeBoard, setActiveBoard],
   );
