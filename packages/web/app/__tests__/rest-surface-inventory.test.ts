@@ -114,6 +114,11 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/auth/provider-security/acknowledge/route.ts': 'keep-staged',
   // Exact current proof-cookie ACK only; no credential recovery or cookie writes.
   'app/api/internal/auth/provider-signin/acknowledge/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-password/prepare/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-password/commit/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-password/confirm/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-password/acknowledge/route.ts': 'keep-staged',
+
   // Account-bound first-password presentation (#6975/#7516). The backend owns
   // eligibility and password publication; the public readiness gate stays false.
   'app/api/internal/auth/first-password/context/route.ts': 'keep-staged',
@@ -288,8 +293,8 @@ describe('REST surface inventory (issue #1889)', () => {
 
   it('counts exactly the audited surface', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
-    // staged provider/first-password deltas are tracked in #7430; the closed
+    // staged provider/first-password/browser-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(58);
+    expect(derived.size).toBe(62);
   });
 });

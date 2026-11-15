@@ -1,4 +1,8 @@
 import { requiresWebSignOutForwarding } from '@boardsesh/auth-protocol';
+import { browserBindingMode } from '@boardsesh/auth-protocol/browser-binding-v1';
+import { publicBrowserCoordinatorReady } from '@/app/lib/auth/browser-coordinator-readiness';
+import { publicProviderSecurityReady } from '@/app/lib/auth/provider-security-readiness';
+import { publicBrowserPasswordReady } from '@/app/lib/auth/browser-password-readiness';
 import { forwardWebSignOut, responseClearsNextAuthSession } from '@/app/lib/auth/web-signout-command.server';
 import { capturePresentedWebCredential } from '@/app/lib/auth/admitted-session.server';
 import { withAuthResponseAdmission, type SignOutCompletion } from '@/app/lib/auth/auth-response-admission.server';
@@ -309,6 +313,24 @@ async function routeAuth(
     pathname = decodeURIComponent(pathname);
   } catch {
     // An undecodable URL cannot name a configured provider.
+  }
+  if (
+    ((nextauth[0] === 'signin' || nextauth[0] === 'callback') && nextauth[1] === 'credentials') ||
+    /^\/api\/auth\/(?:signin|callback)\/credentials(?:\/|$)/.test(pathname)
+  ) {
+    // Selected passwords enter only through the separate custody preparation
+    // route. No raw callback can invoke the legacy password writer as fallback.
+    try {
+      if (
+        browserBindingMode(process.env) !== 'legacy' ||
+        publicBrowserCoordinatorReady() ||
+        publicProviderSecurityReady() ||
+        publicBrowserPasswordReady()
+      )
+        return unavailablePasswordAuthResponse(request.url);
+    } catch {
+      return unavailablePasswordAuthResponse(request.url);
+    }
   }
   if (
     ((nextauth[0] === 'signin' || nextauth[0] === 'callback') && nextauth[1] === 'facebook') ||

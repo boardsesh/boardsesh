@@ -4,6 +4,8 @@ import { getSession, signIn, type SignInOptions, type SignInResponse } from 'nex
 import { z } from 'zod';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
+import { publicBrowserPasswordReady } from './browser-password-readiness';
+import { canonicalPasswordOptionsSchema, signInCanonicalPassword } from './canonical-password-signin';
 import { publicProviderSecurityReady } from './provider-security-readiness';
 import { readCanonicalBrowserCoordinator, signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
@@ -60,13 +62,44 @@ export async function signInWithSessionIntent(
   const epoch = beginWebSessionIntent();
   const coordinatorReady = publicBrowserCoordinatorReady();
   const providerReady = publicProviderSecurityReady();
+  const passwordReady = publicBrowserPasswordReady();
   const selectedProvider = provider !== 'credentials' && (coordinatorReady || providerReady);
   try {
-    // A selected password publisher must join the actual binding transaction.
-    // Until that separate writer exists, metadata preflight cannot authorize a
-    // naked NextAuth credential write or a legacy fallback.
-    if (provider === 'credentials' && (coordinatorReady || providerReady))
-      return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
+    if (provider === 'credentials' && (coordinatorReady || providerReady || passwordReady)) {
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      if (context?.signal?.aborted) abort();
+      else context?.signal?.addEventListener('abort', abort, { once: true });
+      const timeout = setTimeout(abort, 15_000);
+      try {
+        const origin = getCanonicalBrowserOrigin();
+        if (!coordinatorReady || !passwordReady || !origin || typeof window === 'undefined')
+          throw new Error('PASSWORD_SIGNIN_UNAVAILABLE');
+        const parsed = canonicalPasswordOptionsSchema.parse(options ?? {});
+        return await signInCanonicalPassword(
+          {
+            canonicalOrigin: origin,
+            email: parsed.email,
+            password: parsed.password,
+            callbackUrl: parsed.callbackUrl ?? '/',
+            redirect: parsed.redirect ?? true,
+            signal: controller.signal,
+          },
+          {
+            currentOrigin: window.location.origin,
+            locks: navigator.locks,
+            preflight: signInCanonicalBrowserCoordinator,
+            send: fetch,
+            navigate: (destination) => window.location.assign(destination),
+          },
+        );
+      } catch {
+        return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
+      } finally {
+        clearTimeout(timeout);
+        context?.signal?.removeEventListener('abort', abort);
+      }
+    }
     if (selectedProvider) {
       const controller = new AbortController();
       const abort = () => controller.abort();
@@ -118,6 +151,7 @@ export async function signInWithSessionIntent(
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.
-    if (!coordinatorReady && !providerReady && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
+    if (!coordinatorReady && !providerReady && !passwordReady && epoch === captureWebSessionEpoch())
+      void getSession().catch(() => {});
   }
 }
