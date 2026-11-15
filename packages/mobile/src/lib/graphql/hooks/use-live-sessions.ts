@@ -5,7 +5,6 @@
 // statically reaches react-native's Flow source under Vitest.
 
 import { useCallback, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useIsFocused } from 'expo-router';
 import {
   BOARD_LIVE_SESSIONS,
@@ -16,7 +15,7 @@ import {
   type FollowedLiveSessionsVariables,
 } from '@boardsesh/graphql/operations/live-sessions';
 import type { LiveSession } from '@boardsesh/shared-schema';
-import { getHttpClient } from '../client';
+import { useHttpQuery } from '../use-http-query';
 import { boardLiveSessionsQueryKey, followedLiveSessionsQueryKey } from '../query-keys';
 import { useIsOffline } from '../../../hooks/use-is-offline';
 import {
@@ -66,10 +65,10 @@ export function useFollowedLiveSessions(boardUuid: string | null, enabled: boole
     [selectCards],
   );
 
-  return useQuery({
+  return useHttpQuery({
     queryKey: followedLiveSessionsQueryKey(boardUuid),
-    queryFn: () =>
-      getHttpClient().request<FollowedLiveSessionsResponse, FollowedLiveSessionsVariables>(FOLLOWED_LIVE_SESSIONS, {
+    queryFn: (_context, operation) =>
+      operation.request<FollowedLiveSessionsResponse, FollowedLiveSessionsVariables>(FOLLOWED_LIVE_SESSIONS, {
         boardUuid,
         limit: FOLLOWED_LIVE_SESSIONS_LIMIT,
       }),
@@ -99,11 +98,11 @@ export function useBoardLiveSessions(boardId: number | null, enabled: boolean, b
   );
   const active = enabled && boardId != null;
 
-  return useQuery({
+  return useHttpQuery({
     queryKey: boardLiveSessionsQueryKey(boardId, boardUuid),
-    queryFn: () => {
+    queryFn: (_context, operation) => {
       if (boardId == null) throw new Error('Cannot load live sessions without a board id.');
-      return getHttpClient().request<BoardLiveSessionsResponse, BoardLiveSessionsVariables>(BOARD_LIVE_SESSIONS, {
+      return operation.request<BoardLiveSessionsResponse, BoardLiveSessionsVariables>(BOARD_LIVE_SESSIONS, {
         boardId,
         ...(boardUuid ? { boardUuid } : {}),
       });
