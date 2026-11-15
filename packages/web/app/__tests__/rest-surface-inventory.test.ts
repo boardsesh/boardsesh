@@ -1,10 +1,10 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 55
+ * The standing inventory oracle for issue #1889 (REST surface audit: 58
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired, plus six staged provider Settings facades
  * and five staged first-password browser facades, two canonical coordinator
- * facades, and ordinary sign-in ACK).
+ * facades, ordinary sign-in ACK, renewal, and explicit expired-binding recovery).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -69,7 +69,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (28) ---
+  // --- /api/internal/* (33) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -126,6 +126,10 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/auth/browser-coordinator/initialize/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/renew/prepare/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/renew/commit/route.ts': 'keep-staged',
+  // Explicit sign-in only; expired-binding retirement stays publicly disabled.
+  'app/api/internal/auth/browser-coordinator/signin/prepare/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-coordinator/signin/commit/route.ts': 'keep-staged',
+  'app/api/internal/auth/browser-coordinator/signin/confirm/route.ts': 'keep-staged',
 
   // --- /api/og/* (5) ---
   // Legacy og:image redirect shims (307 -> the backend renderer) kept
@@ -286,6 +290,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider/first-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(55);
+    expect(derived.size).toBe(58);
   });
 });
