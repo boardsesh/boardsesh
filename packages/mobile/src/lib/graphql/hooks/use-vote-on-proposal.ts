@@ -7,7 +7,7 @@
 // weight (2 for a community leader, 3 for an admin) is only known server-side,
 // so the optimistic step moves the totals by 1 and lets the response correct it.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   VOTE_ON_PROPOSAL,
   type VoteOnProposalResponse,
@@ -15,7 +15,8 @@ import {
 } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal } from '@boardsesh/shared-schema';
 import { applyOptimisticVote, type ProposalVoteValue } from '../../../components/moderation/proposal-presenters';
-import { getHttpClient } from '../client';
+import { useHttpMutation } from '../use-http-mutation';
+import { createHttpScopedCache } from '../http-scoped-cache';
 import { mapProposalCaches, writeProposalToCaches } from './use-browse-proposals';
 import { invalidateAppliedProposalCaches } from './proposal-cache';
 import { PROPOSALS_QUERY_KEY } from '../query-keys';
@@ -42,21 +43,26 @@ type ProposalVoteRollback = { preVote: Proposal | undefined };
 export function useVoteOnProposal() {
   const queryClient = useQueryClient();
 
-  return useMutation({
-    mutationFn: async ({ proposalUuid, value }: VoteOnProposalInput) => {
+  return useHttpMutation({
+    mutationFn: async ({ proposalUuid, value }: VoteOnProposalInput, operation) => {
       const variables: VoteOnProposalVariables = { input: { proposalUuid, value } };
-      const response = await getHttpClient().request<VoteOnProposalResponse, VoteOnProposalVariables>(
+      const response = await operation.request<VoteOnProposalResponse, VoteOnProposalVariables>(
         VOTE_ON_PROPOSAL,
         variables,
       );
       return response.voteOnProposal;
     },
-    onMutate: async ({ proposalUuid, value }): Promise<ProposalVoteRollback> => {
+    onMutate: async ({ proposalUuid, value }, operation): Promise<ProposalVoteRollback> => {
+      const cache = createHttpScopedCache({
+        client: queryClient,
+        key: operation.key,
+        assertCurrent: operation.assertView,
+      });
       // An in-flight refetch landing after the optimistic write would paint the
       // pre-vote row back over it, so stop them first.
-      await queryClient.cancelQueries({ queryKey: PROPOSALS_QUERY_KEY });
+      await cache.cancelQueries({ queryKey: PROPOSALS_QUERY_KEY });
       let preVote: Proposal | undefined;
-      mapProposalCaches(queryClient, (proposal) => {
+      mapProposalCaches(cache, (proposal) => {
         if (proposal.uuid !== proposalUuid) return proposal;
         // The same proposal sits in several caches; the first copy seen is the
         // pre-image for all of them.
@@ -65,25 +71,31 @@ export function useVoteOnProposal() {
       });
       return { preVote };
     },
-    onError: (_error, _variables, context) => {
+    onError: (_error, _variables, context, operation) => {
+      const cache = createHttpScopedCache({
+        client: queryClient,
+        key: operation.key,
+        assertCurrent: operation.assertView,
+      });
       // Put back only the row this vote touched, then let the server settle it:
       // the pre-image is one screen's idea of the proposal and other people have
       // been voting on it since, so it is a placeholder until the refetch lands,
       // not the truth.
       const { preVote } = context ?? {};
-      if (preVote) writeProposalToCaches(queryClient, preVote);
-      void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY });
+      if (preVote) writeProposalToCaches(cache, preVote);
+      void cache.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY }).catch(() => {});
     },
     // The server's weighted totals win: they account for the voter's role weight
     // and for every vote cast since this screen last refetched.
-    onSuccess: (proposal) => {
-      writeProposalToCaches(queryClient, proposal);
+    onSuccess: (proposal, _variables, _context, operation) => {
+      const cache = operation.cache(queryClient);
+      writeProposalToCaches(cache, proposal);
       // A vote can be the one that carries the proposal: the backend applies the
       // effect (the hide flips `is_hidden`, the grade change lands) and returns
       // it already resolved. From here that is indistinguishable from a
       // moderator's verdict, so it busts exactly the same caches — otherwise the
       // climb the crew just hid stays in the list behind the card.
-      if (proposal.status !== 'open') invalidateAppliedProposalCaches(queryClient);
+      if (proposal.status !== 'open') invalidateAppliedProposalCaches(cache);
     },
   });
 }

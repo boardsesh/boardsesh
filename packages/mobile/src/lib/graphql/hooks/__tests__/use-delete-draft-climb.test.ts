@@ -1,14 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { runMigrations, enqueue, climbMutationEntityKey } from '@boardsesh/offline-sync';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
-const invalidateQueries = vi.fn();
-vi.mock('@tanstack/react-query', () => ({
-  useMutation: (config: unknown) => config,
-  useQueryClient: () => ({ invalidateQueries }),
-}));
+const invalidateQueries = vi.fn(async (_filters?: { queryKey?: readonly unknown[] }) => {});
 const request = vi.fn();
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: ({ document, variables }: { document: unknown; variables?: unknown }) => request(document, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 let db: TestSqliteDb;
 vi.mock('../../../../db', () => ({ getDatabaseHandle: () => db }));
 vi.mock('../../../auth-store', () => ({
@@ -19,18 +24,26 @@ vi.mock('../../../offline-engine', () => ({ isOfflineEngineEnabled: () => true }
 vi.mock('../../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 import { useDeleteDraftClimb } from '../use-delete-draft-climb';
 
-type MutationConfig<TVariables> = {
-  mutationFn: (variables: TVariables) => Promise<unknown>;
-  onSuccess?: (result: unknown, variables: TVariables) => void;
-};
-const asConfig = <TVariables>(hook: unknown): MutationConfig<TVariables> => hook as MutationConfig<TVariables>;
+const clients: QueryClient[] = [];
+function setup() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  clients.push(client);
+  vi.spyOn(client, 'invalidateQueries').mockImplementation(invalidateQueries);
+  const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children);
+  return renderHook(useDeleteDraftClimb, { wrapper });
+}
 
 beforeEach(async () => {
   invalidateQueries.mockClear();
   request.mockReset();
   __resetDrainerStateForTests();
+  // Each existing business case owns an in-memory SQLite fixture, never user storage.
   db = createTestDatabase();
   await runMigrations(db);
+});
+afterEach(() => {
+  cleanup();
+  clients.splice(0).forEach((client) => client.clear());
 });
 
 describe('downloaded draft deletion', () => {
@@ -40,16 +53,29 @@ describe('downloaded draft deletion', () => {
     await db.runAsync(
       "INSERT INTO board_climbs (uuid, board_type, layout_id, is_draft) VALUES ('spray-draft', 'spray', 42, 1)",
     );
-    request.mockResolvedValue({ deleteDraftClimb: true });
-    const { mutationFn, onSuccess } = asConfig<typeof variables>(useDeleteDraftClimb());
-    const result = await mutationFn(variables);
+    let release!: () => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ deleteDraftClimb: true });
+        }),
+    );
+    const hook = setup();
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = hook.result.current.mutateAsync(variables);
+    });
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
     expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', [variables.uuid])).not.toBeNull();
-    onSuccess?.(result, variables);
+    await act(async () => {
+      release();
+      await pending;
+    });
     await vi.waitFor(async () => {
       expect(await db.getFirstAsync('SELECT uuid FROM board_climbs WHERE uuid = ?', [variables.uuid])).toBeNull();
-      expect(invalidateQueries.mock.calls.filter(([options]) => options.queryKey[0] === 'searchClimbs')).toHaveLength(
-        2,
-      );
+      expect(
+        invalidateQueries.mock.calls.filter(([options]) => options?.queryKey?.[0] === 'searchClimbs'),
+      ).toHaveLength(2);
     });
   });
 
@@ -58,16 +84,18 @@ describe('downloaded draft deletion', () => {
       entityKey: climbMutationEntityKey('spray', variables.uuid),
     });
     await db.runAsync('UPDATE pending_mutations SET status = ?', [status]);
-    const { mutationFn } = asConfig<typeof variables>(useDeleteDraftClimb());
-    await expect(mutationFn(variables)).rejects.toThrow('Sync your saved climb');
+    const hook = setup();
+    await expect(hook.result.current.mutateAsync(variables)).rejects.toThrow('Sync your saved climb');
     expect(request).not.toHaveBeenCalled();
   });
 
   it.each(['pending', 'dead_letter'])('refuses deletion while a %s draft tick can still be synced', async (status) => {
     await enqueue(db, 'boardsesh_ticks', 'create', { boardType: 'spray', climbUuid: variables.uuid }, 'queued-tick');
     await db.runAsync('UPDATE pending_mutations SET status = ?', [status]);
-    const { mutationFn } = asConfig<typeof variables>(useDeleteDraftClimb());
-    await expect(mutationFn(variables)).rejects.toMatchObject({ extensions: { code: 'CLIMB_HAS_TICKS' } });
+    const hook = setup();
+    await expect(hook.result.current.mutateAsync(variables)).rejects.toMatchObject({
+      extensions: { code: 'CLIMB_HAS_TICKS' },
+    });
     expect(request).not.toHaveBeenCalled();
   });
 });

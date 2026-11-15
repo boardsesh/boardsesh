@@ -42,9 +42,9 @@ export const CLIMB_EFFECT_QUERY_KEYS = [
  * `updated_at` bump puts in the delta. The invalidation above is what makes the
  * screen honest in the meantime: it sends the reads back to the server.
  */
-export function invalidateClimbEffectCaches(queryClient: QueryClient): void {
+export function invalidateClimbEffectCaches(queryClient: Pick<QueryClient, 'invalidateQueries'>): void {
   for (const queryKey of CLIMB_EFFECT_QUERY_KEYS) {
-    void queryClient.invalidateQueries({ queryKey });
+    void queryClient.invalidateQueries({ queryKey }).catch(() => {});
   }
 }
 
@@ -52,7 +52,7 @@ export function invalidateClimbEffectCaches(queryClient: QueryClient): void {
  * The full set an applied proposal invalidates: the proposal lists (their rows
  * carry the new status) plus every climb read above.
  */
-export function invalidateAppliedProposalCaches(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY });
+export function invalidateAppliedProposalCaches(queryClient: Pick<QueryClient, 'invalidateQueries'>): void {
+  void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY }).catch(() => {});
   invalidateClimbEffectCaches(queryClient);
 }

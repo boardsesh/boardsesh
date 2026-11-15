@@ -23,7 +23,18 @@ import type { Proposal } from '@boardsesh/shared-schema';
 const requestMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: (documentOrOptions: unknown, variables?: unknown) =>
+      documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions
+        ? requestMock(
+            documentOrOptions.document,
+            'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
+          )
+        : requestMock(documentOrOptions, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: showToastMock }) }));
 

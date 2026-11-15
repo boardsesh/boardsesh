@@ -5,13 +5,13 @@
 // Online only, never queued: a delete that waited in the outbox could land after
 // somebody ticked the climb. Errors are not toasted here; the caller does that.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   DELETE_CLIMB_MUTATION,
   type DeleteClimbMutationVariables,
   type DeleteClimbMutationResponse,
 } from '@boardsesh/graphql/operations/new-climb-feed';
-import { getHttpClient } from '../client';
+import { useHttpMutation } from '../use-http-mutation';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { removeDeletedClimbFromDevice } from '../../../offline/remove-deleted-climb';
 import { assertClimbDeleteReady } from '../../../offline/assert-climb-delete-ready';
@@ -34,27 +34,31 @@ import {
  */
 export function useDeleteClimb() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (variables: DeleteClimbMutationVariables) => {
+  return useHttpMutation({
+    mutationFn: async (variables: DeleteClimbMutationVariables, operation) => {
       // Captured before the request, so a sign-out during it stops the local write.
       const authGeneration = captureAuthCredentialGeneration();
       await assertClimbDeleteReady(variables);
       if (!isAuthCredentialGenerationCurrent(authGeneration)) throw new Error('Account changed before deleting climb');
-      const response = await getHttpClient().request<DeleteClimbMutationResponse>(DELETE_CLIMB_MUTATION, variables);
+      operation.assertView();
+      const response = await operation.request<DeleteClimbMutationResponse>(DELETE_CLIMB_MUTATION, variables);
       return { deleted: response.deleteClimb, authGeneration };
     },
-    onSuccess: ({ authGeneration }, variables) => {
+    onSuccess: ({ authGeneration }, variables, _context, operation) => {
+      const cache = operation.cache(queryClient);
       const invalidateClimbLists = () => {
-        void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY });
-        void queryClient.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY });
-        void queryClient.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY });
-        void queryClient.invalidateQueries({ queryKey: CLIMB_QUERY_KEY });
+        operation.assertDeliveries();
+        void cache.invalidateQueries({ queryKey: SEARCH_CLIMBS_QUERY_KEY }).catch(() => {});
+        void cache.invalidateQueries({ queryKey: INFINITE_SEARCH_CLIMBS_QUERY_KEY }).catch(() => {});
+        void cache.invalidateQueries({ queryKey: SEARCH_CLIMBS_COUNT_QUERY_KEY }).catch(() => {});
+        void cache.invalidateQueries({ queryKey: CLIMB_QUERY_KEY }).catch(() => {});
       };
       invalidateClimbLists();
+      operation.assertDeliveries();
       // `removeDeletedClimbFromDevice` never rejects; it reports its own errors.
-      void removeDeletedClimbFromDevice({ uuid: variables.uuid, boardType: variables.boardType }, authGeneration).then(
-        invalidateClimbLists,
-      );
+      void removeDeletedClimbFromDevice({ uuid: variables.uuid, boardType: variables.boardType }, authGeneration)
+        .then(invalidateClimbLists)
+        .catch(() => {});
     },
   });
 }

@@ -16,7 +16,18 @@ const ctrl = vi.hoisted(() => ({
   authCurrent: true,
 }));
 
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: ctrl.request }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: (documentOrOptions: unknown, variables?: unknown) =>
+      documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions
+        ? ctrl.request(
+            documentOrOptions.document,
+            'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
+          )
+        : ctrl.request(documentOrOptions, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 vi.mock('../../../auth-store', () => ({
   captureAuthCredentialGeneration: () => 7,
   isAuthCredentialGenerationCurrent: () => ctrl.authCurrent,
