@@ -153,3 +153,45 @@ describe('opaque process-local HTTP view labels', () => {
     expect(() => current.registry.resolve('bshv1_owned-process_1')).toThrow();
   });
 });
+
+describe('original view error receipt bridge', () => {
+  it('captures once and refuses unknown error identities or retired registry entries', () => {
+    let live = true;
+    let deadline = 100;
+    let clock = 0;
+    const error = new Error('Owned rejection');
+    const signal = new AbortController().signal;
+    const captureError = vi.fn((candidate: unknown, identity: AbortSignal) => {
+      if (candidate !== error || identity !== signal) return null;
+      const originalDeadline = deadline;
+      return () => {
+        if (clock >= originalDeadline) throw new Error('Original error expired');
+      };
+    });
+    const registry = createBrowserBackendHttpViewRegistry({
+      namespace: 'owned-error-bridge',
+      capture: () => ({ key: 'owned-original', kind: 'selected', isCurrent: () => live }),
+      create: () => ({
+        client: {},
+        isCurrent: () => true,
+        isCurrentResult: () => false,
+        captureErrorDelivery: captureError,
+        dispose: vi.fn(),
+      }),
+    });
+    const handle = registry.capture();
+    expect(registry.captureErrorDelivery(handle, new Error(error.message), signal)).toBeNull();
+    expect(registry.captureErrorDelivery(handle, error, new AbortController().signal)).toBeNull();
+    const original = registry.captureErrorDelivery(handle, error, signal)!;
+    expect(original).not.toThrow();
+    deadline = 200;
+    clock = 100;
+    expect(original).toThrow('Original error expired');
+    expect(captureError).toHaveBeenCalledTimes(3);
+    clock = 0;
+    live = false;
+    expect(original).toThrow();
+    expect(registry.captureErrorDelivery(handle, error, signal)).toBeNull();
+    registry.dispose();
+  });
+});
