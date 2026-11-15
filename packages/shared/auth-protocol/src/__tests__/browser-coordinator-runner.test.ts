@@ -35,6 +35,51 @@ function fixture(transport: BrowserCoordinatorTransport) {
   return { run: createBrowserCoordinatorRunner({ transport, schedule, withExclusiveLock, timeoutMs: 15_000 }), timers };
 }
 describe('canonical lock and network settlement', () => {
+  it('keeps explicit sign-in unmounted and distinct from ordinary observation', async () => {
+    const observe = vi.fn(async () => ({ status: 'proof-required' }));
+    const initialize = vi.fn(async () => {});
+    const current = fixture({ observe, initialize });
+    expect(await current.run({ operation: 'signin' })).toEqual({ status: 'unavailable' });
+    expect(observe).not.toHaveBeenCalled();
+    expect(initialize).not.toHaveBeenCalled();
+    expect(await current.run({ operation: 'read' })).toEqual({ status: 'proof-required' });
+    expect(initialize).not.toHaveBeenCalled();
+  });
+  it('captures the explicit sign-in transport before any later mutation', async () => {
+    const next = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+    const signIn = vi.fn(async (context: CoordinatorRequestContext) => {
+      expect(context).toMatchObject({ credentials: 'include', cache: 'no-store', keepalive: false });
+      return next;
+    });
+    const transport: BrowserCoordinatorTransport = { observe: async () => ready, signIn };
+    const current = fixture(transport);
+    const replacement = vi.fn(async () => ready);
+    transport.signIn = replacement;
+    expect(await current.run({ operation: 'signin' })).toEqual(next);
+    expect(signIn).toHaveBeenCalledOnce();
+    expect(replacement).not.toHaveBeenCalled();
+  });
+  it.each(['abort', 'timeout'] as const)(
+    'holds explicit sign-in through %s until its transport physically settles',
+    async (reason) => {
+      const physical = deferred<unknown>();
+      const observe = vi.fn(async () => ready);
+      const current = fixture({ observe, signIn: async () => physical.promise });
+      const controller = new AbortController();
+      const old = current.run({ operation: 'signin' }, controller.signal);
+      await flush();
+      if (reason === 'abort') controller.abort();
+      else [...current.timers][0]();
+      const later = current.run({ operation: 'read' });
+      await flush();
+      expect(observe).not.toHaveBeenCalled();
+      physical.resolve({ status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } });
+      expect(await old).toEqual({ status: 'unavailable' });
+      expect(await later).toEqual(ready);
+      expect(observe).toHaveBeenCalledOnce();
+      expect(current.timers.size).toBe(0);
+    },
+  );
   it('coalesces cold callers, confirms installation, then reuses the cookie', async () => {
     let installed = false;
     const observe = vi.fn(async () => (installed ? ready : { status: 'missing-binding' }));

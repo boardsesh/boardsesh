@@ -14,7 +14,12 @@ const ctrl = vi.hoisted(() => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/graphql/hooks/use-delete-climb', () => ({
-  useDeleteClimb: () => ({ mutateAsync: ctrl.mutateAsync }),
+  useDeleteClimb: () => ({
+    mutateWithReceipt: async (variables: unknown) => ({
+      result: await ctrl.mutateAsync(variables),
+      assertCurrent: () => {},
+    }),
+  }),
 }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: ctrl.offline }),
@@ -150,4 +155,11 @@ describe('useDeleteClimbAction (#5960)', () => {
     expect(ctrl.confirm).toHaveBeenCalledTimes(1);
     expect(ctrl.mutateAsync).toHaveBeenCalledTimes(1);
   });
+});
+
+// The native host keeps its existing credential policy; the real action hook
+// still owns layout cleanup and caller cancellation.
+vi.mock('../../../lib/graphql/use-http-query-scope', () => {
+  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
+  return { useHttpQueryScope: () => scope };
 });

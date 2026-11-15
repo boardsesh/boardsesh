@@ -6,6 +6,7 @@ import { startCanonicalProviderSignin } from '../canonical-provider-start';
 const origin = 'https://www.canonical-provider.example.test';
 const google = 'https://accounts.google.com/o/oauth2/v2/auth?state=actual-state';
 const apple = 'https://appleid.apple.com/auth/authorize?state=actual-state';
+const cursor = { bindingId: 'a'.repeat(64), version: 3 };
 function href(target: RequestInfo | URL): string {
   return typeof target === 'string' ? target : target instanceof URL ? target.href : target.url;
 }
@@ -25,6 +26,10 @@ function setup(provider: 'google' | 'apple' = 'google') {
     expect(settings?.credentials).toBe('same-origin');
     expect(settings?.keepalive).toBe(false);
     expect(settings?.redirect).toBe('error');
+    if (href(url).endsWith('/browser-coordinator/observe')) {
+      trace.push('cursor-settled');
+      return Response.json({ status: 'ready', cursor });
+    }
     if (href(url).endsWith('/acknowledge')) {
       trace.push('ack-settled');
       return Response.json({ outcome: 'none' });
@@ -62,6 +67,7 @@ function setup(provider: 'google' | 'apple' = 'google') {
     preflight: vi.fn(async () => {
       expect(held).toBe(false);
       trace.push('preflight-settled');
+      return { ...cursor };
     }),
     send,
     beforeSignin: vi.fn(async () => {
@@ -82,6 +88,127 @@ function setup(provider: 'google' | 'apple' = 'google') {
   return { input, dependencies, send, controller, trace, held: () => held };
 }
 describe('canonical WWW provider start physical network settlement', () => {
+  it.each(['oversize', 'identity', 'wrong-status', 'wrong-content-type'] as const)(
+    'refuses direct observation %s metadata before any ACK or OAuth write',
+    async (fault) => {
+      const fixture = setup();
+      const body = JSON.stringify(
+        fault === 'identity' ? { status: 'ready', cursor, userId: 'private-user' } : { status: 'ready', cursor },
+      );
+      fixture.send.mockResolvedValueOnce(
+        new Response(fault === 'oversize' ? body + ' '.repeat(8_193) : body, {
+          status: fault === 'wrong-status' ? 409 : 200,
+          headers: { 'Content-Type': fault === 'wrong-content-type' ? 'text/plain' : 'application/json' },
+        }),
+      );
+      await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
+      expect(fixture.send).toHaveBeenCalledOnce();
+      expect(fixture.dependencies.beforeSignin).not.toHaveBeenCalled();
+      expect(fixture.dependencies.navigate).not.toHaveBeenCalled();
+    },
+  );
+  it('accepts exactly 8192 bytes of matching direct observation metadata', async () => {
+    const fixture = setup();
+    const body = JSON.stringify({ status: 'ready', cursor });
+    fixture.send.mockResolvedValueOnce(
+      new Response(body.padEnd(8_192, ' '), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    await startCanonicalProviderSignin(fixture.input, fixture.dependencies);
+    expect(fixture.dependencies.navigate).toHaveBeenCalledExactlyOnceWith(google);
+  });
+  it.each(['binding', 'version', 'ABA'] as const)(
+    'refuses an intervening %s before any ACK, intent or OAuth write',
+    async (change) => {
+      const fixture = setup();
+      const original = fixture.send.getMockImplementation()!;
+      fixture.send.mockImplementation(async (url, options) =>
+        href(url).endsWith('/browser-coordinator/observe')
+          ? Response.json({
+              status: 'ready',
+              cursor:
+                change === 'binding'
+                  ? { ...cursor, bindingId: 'b'.repeat(64) }
+                  : { ...cursor, version: cursor.version + (change === 'ABA' ? 2 : 1) },
+            })
+          : original(url, options),
+      );
+      await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
+      expect(fixture.send).toHaveBeenCalledOnce();
+      expect(fixture.dependencies.beforeSignin).not.toHaveBeenCalled();
+      expect(fixture.dependencies.navigate).not.toHaveBeenCalled();
+    },
+  );
+  it('copies the preflight cursor before lock acquisition instead of adopting its later mutation', async () => {
+    const fixture = setup();
+    const returned = { ...cursor };
+    fixture.dependencies.preflight.mockResolvedValueOnce(returned);
+    const lock = fixture.dependencies.locks.request.getMockImplementation()!;
+    fixture.dependencies.locks.request.mockImplementation((name, options, invoke) => {
+      returned.bindingId = 'b'.repeat(64);
+      return lock(name, options, invoke);
+    });
+    const send = fixture.send.getMockImplementation()!;
+    fixture.send.mockImplementation(async (url, options) =>
+      href(url).endsWith('/browser-coordinator/observe')
+        ? Response.json({ status: 'ready', cursor: returned })
+        : send(url, options),
+    );
+    await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
+    expect(fixture.send).toHaveBeenCalledOnce();
+    expect(fixture.dependencies.beforeSignin).not.toHaveBeenCalled();
+  });
+  it('refuses an ordinary start without an explicit preflight cursor', async () => {
+    const fixture = setup();
+    await expect(
+      startCanonicalProviderSignin(fixture.input, { ...fixture.dependencies, preflight: async () => {} }),
+    ).rejects.toThrow();
+    expect(fixture.dependencies.locks.request).not.toHaveBeenCalled();
+    expect(fixture.send).not.toHaveBeenCalled();
+  });
+  it('keeps a cancelled direct observation under the parent lock until its body settles', async () => {
+    const fixture = setup();
+    const started = deferred<void>();
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    fixture.send.mockImplementationOnce(
+      async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              body = controller;
+              started.resolve();
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    const operation = startCanonicalProviderSignin(fixture.input, fixture.dependencies);
+    await started.promise;
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.controller.abort();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fixture.held()).toBe(true);
+    expect(fixture.send).toHaveBeenCalledOnce();
+    body.enqueue(new TextEncoder().encode(JSON.stringify({ status: 'ready', cursor })));
+    body.close();
+    await expect(operation).rejects.toThrow();
+    expect(fixture.held()).toBe(false);
+    expect(fixture.dependencies.beforeSignin).not.toHaveBeenCalled();
+  });
+  it.each(['proof-required', 'conflict', 'unavailable'] as const)(
+    'does not use an observed %s as sign-in authority',
+    async (status) => {
+      const fixture = setup();
+      fixture.send.mockResolvedValueOnce(Response.json({ status }, { status: status === 'unavailable' ? 503 : 409 }));
+      await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
+      expect(fixture.send).toHaveBeenCalledOnce();
+      expect(fixture.dependencies.beforeSignin).not.toHaveBeenCalled();
+      expect(fixture.dependencies.navigate).not.toHaveBeenCalled();
+    },
+  );
   it.each(['link', 'reauthenticate-google'] as const)(
     'sends only fixed %s fields for an explicit captured operation',
     async (purpose) => {
@@ -135,6 +262,7 @@ describe('canonical WWW provider start physical network settlement', () => {
       expect(fixture.trace).toEqual([
         'preflight-settled',
         'parent-lock',
+        'cursor-settled',
         'ack-settled',
         'attempt-settled',
         'csrf-settled',
@@ -142,7 +270,7 @@ describe('canonical WWW provider start physical network settlement', () => {
         'parent-release',
         `navigate:${provider === 'google' ? google : apple}`,
       ]);
-      expect(fixture.send).toHaveBeenCalledTimes(3);
+      expect(fixture.send).toHaveBeenCalledTimes(4);
     },
   );
   it('holds the lock when an aborted fetch ignores abort until its real settlement', async () => {
@@ -167,7 +295,7 @@ describe('canonical WWW provider start physical network settlement', () => {
     network.resolve(Response.json({ url: google }));
     await expect(operation).rejects.toThrow('PROVIDER_SIGNIN_UNAVAILABLE');
     expect(fixture.held()).toBe(false);
-    expect(fixture.send).toHaveBeenCalledTimes(3);
+    expect(fixture.send).toHaveBeenCalledTimes(4);
   });
   it('holds the lock through a pending signin response body even after abort', async () => {
     const fixture = setup();
@@ -242,17 +370,20 @@ describe('canonical WWW provider start physical network settlement', () => {
     await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
     expect(fixture.dependencies.navigate).not.toHaveBeenCalled();
     expect(fixture.held()).toBe(false);
-    expect(fixture.send).toHaveBeenCalledTimes(3);
+    expect(fixture.send).toHaveBeenCalledTimes(4);
   });
   it.each(['identity_changed', 'unavailable'] as const)(
     'does not start new OAuth after ACK %s and never retries',
     async (outcome) => {
       const fixture = setup();
-      fixture.send.mockResolvedValue(
-        Response.json({ outcome }, { status: outcome === 'identity_changed' ? 409 : 503 }),
+      const original = fixture.send.getMockImplementation()!;
+      fixture.send.mockImplementation(async (url, options) =>
+        href(url).endsWith('/acknowledge')
+          ? Response.json({ outcome }, { status: outcome === 'identity_changed' ? 409 : 503 })
+          : original(url, options),
       );
       await expect(startCanonicalProviderSignin(fixture.input, fixture.dependencies)).rejects.toThrow();
-      expect(fixture.send).toHaveBeenCalledOnce();
+      expect(fixture.send).toHaveBeenCalledTimes(2);
       expect(fixture.dependencies.navigate).not.toHaveBeenCalled();
     },
   );

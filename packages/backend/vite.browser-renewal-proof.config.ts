@@ -17,6 +17,7 @@ export default defineConfig({
     include: [
       'src/auth/authority/__tests__/browser-renewal-credential-writer.proof.ts',
       'src/auth/authority/__tests__/expired-browser-binding-credential-writer.proof.ts',
+      'src/auth/authority/__tests__/public-expired-browser-binding.proof.ts',
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',
       'src/auth/authority/__tests__/browser-credential-writer-http.proof.ts',
       'src/auth/authority/__tests__/provider-security-http.proof.ts',

@@ -15,14 +15,15 @@
 // toasts and re-fetches the proposal caches itself, so a card never sits on a
 // verdict the server rejected.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   RESOLVE_PROPOSAL_FEED,
   type ResolveProposalFeedResponse,
   type ResolveProposalFeedVariables,
 } from '@boardsesh/graphql/operations/proposals';
-import { getHttpClient } from '../client';
+import { useHttpMutation } from '../use-http-mutation';
+import { createHttpScopedCache } from '../http-scoped-cache';
 import { useToast } from '../../../providers/toast-provider';
 import { writeProposalToCaches } from './use-browse-proposals';
 import { invalidateAppliedProposalCaches } from './proposal-cache';
@@ -38,28 +39,36 @@ export function useResolveProposal() {
   const { showToast } = useToast();
   const { t } = useTranslation('climbs');
 
-  return useMutation({
-    mutationFn: async ({ proposalUuid, status }: ResolveProposalInput) => {
+  return useHttpMutation({
+    mutationFn: async ({ proposalUuid, status }: ResolveProposalInput, operation) => {
       const variables: ResolveProposalFeedVariables = { input: { proposalUuid, status } };
-      const response = await getHttpClient().request<ResolveProposalFeedResponse, ResolveProposalFeedVariables>(
+      const response = await operation.request<ResolveProposalFeedResponse, ResolveProposalFeedVariables>(
         RESOLVE_PROPOSAL_FEED,
         variables,
       );
       return response.resolveProposal;
     },
-    onError: () => {
-      showToast(t('mobile.moderation.resolveError'), 'error');
+    onError: (_error, _variables, _context, operation) => {
+      const message = t('mobile.moderation.resolveError');
+      operation.assertView();
+      showToast(message, 'error');
+      const cache = createHttpScopedCache({
+        client: queryClient,
+        key: operation.key,
+        assertCurrent: operation.assertView,
+      });
       // Nothing optimistic went in, so there is nothing to roll back — but a
       // rejection usually means the row moved under the moderator (someone else
       // resolved it, or a vote carried it), so pull the current one rather than
       // leaving the card on a stale open proposal.
-      void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY });
+      void cache.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY }).catch(() => {});
     },
-    onSuccess: (proposal) => {
+    onSuccess: (proposal, _variables, _context, operation) => {
+      const cache = operation.cache(queryClient);
       // Write first, invalidate second: the card keeps its resolved chip through
       // the refetch instead of flashing back to an open one.
-      writeProposalToCaches(queryClient, proposal);
-      invalidateAppliedProposalCaches(queryClient);
+      writeProposalToCaches(cache, proposal);
+      invalidateAppliedProposalCaches(cache);
     },
   });
 }

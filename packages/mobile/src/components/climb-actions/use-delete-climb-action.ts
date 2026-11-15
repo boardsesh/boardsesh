@@ -1,7 +1,9 @@
 import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { useDeleteClimb } from '../../lib/graphql/hooks/use-delete-climb';
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { getConnectivitySnapshot } from '../../lib/connectivity/connectivity-store';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
@@ -21,24 +23,34 @@ export function useDeleteClimbAction(): (
   const { t } = useTranslation('climbs');
   const confirm = useConfirm();
   const { showToast } = useToast();
-  const { mutateAsync } = useDeleteClimb();
+  const { mutateWithReceipt } = useDeleteClimb();
+  const { capture: captureAction } = useHttpActionScope();
   // A double tap must not stack two dialogs or send the delete twice.
-  const inFlight = useRef(false);
+  const inFlight = useRef<ReturnType<typeof captureAction> | null>(null);
 
   return useCallback(
     async (climb, boardName, onDeleted) => {
-      if (inFlight.current) return;
-      // Never queued: a delete waiting in the outbox could land after somebody
-      // ticked the climb. Say so instead of sending a request that cannot land.
-      if (getConnectivitySnapshot().effectiveOffline) {
-        showToast(t('mobile.climbActions.deleteClimb.offline'), 'error');
+      if (inFlight.current?.isCurrent()) return;
+      let action: ReturnType<typeof captureAction>;
+      try {
+        action = captureAction();
+      } catch {
         return;
       }
-      inFlight.current = true;
+      inFlight.current = action;
       try {
+        // Never queued: a delete waiting in the outbox could land after somebody
+        // ticked the climb. Say so instead of sending a request that cannot land.
+        if (getConnectivitySnapshot().effectiveOffline) {
+          action.assertView();
+          showToast(t('mobile.climbActions.deleteClimb.offline'), 'error');
+          return;
+        }
         // A send of the climber's own still waiting in the outbox is a tick the
         // server cannot see yet. Deleting now would win the race and strand it.
-        if (await hasQueuedTickForClimb(climb.uuid)) {
+        const pendingTick = await hasQueuedTickForClimb(climb.uuid);
+        action.assertView();
+        if (pendingTick) {
           showToast(t('mobile.climbActions.deleteClimb.pendingTick'), 'error');
           return;
         }
@@ -49,19 +61,30 @@ export function useDeleteClimbAction(): (
           cancelLabel: t('mobile.climbActions.deleteClimb.cancel'),
           destructive: true,
         });
+        action.assertView();
         if (!confirmed) return;
-        try {
-          await mutateAsync({ uuid: climb.uuid, boardType: boardName });
-        } catch (error) {
-          showToast(deleteClimbErrorMessage(deleteClimbRefusal(error), t), 'error');
-          return;
-        }
+        const receipt = await mutateWithReceipt(
+          { uuid: climb.uuid, boardType: boardName },
+          { signal: action.signal },
+        ).catch((error: unknown) => {
+          if (action.isCurrent() && !(error instanceof BrowserBackendConsumerError))
+            showToast(deleteClimbErrorMessage(deleteClimbRefusal(error), t), 'error');
+          return null;
+        });
+        if (!receipt) return;
+        action.assertView();
+        receipt.assertCurrent();
         showToast(t('mobile.climbActions.deleteClimb.success'), 'success');
+        action.assertView();
+        receipt.assertCurrent();
         onDeleted?.();
+      } catch (error) {
+        if (action.isCurrent() && !(error instanceof BrowserBackendConsumerError)) throw error;
       } finally {
-        inFlight.current = false;
+        action.finish();
+        if (inFlight.current === action) inFlight.current = null;
       }
     },
-    [confirm, mutateAsync, showToast, t],
+    [captureAction, confirm, mutateWithReceipt, showToast, t],
   );
 }

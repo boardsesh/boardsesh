@@ -17,7 +17,18 @@ import type { ReportClimbInput } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: (documentOrOptions: unknown, variables?: unknown) =>
+      documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions
+        ? requestMock(
+            documentOrOptions.document,
+            'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
+          )
+        : requestMock(documentOrOptions, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 const releaseContext = vi.hoisted(() => ({
   channel: 'production',
   branch: 'pr-beta',
