@@ -28,7 +28,8 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 // boards and never tags the bind as onboarding, and the ordinary picker's Find
 // nearby tile, which says what happened instead of going dead.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
+import { renderWithNativeTextCheck as render } from '../../../test/native-text-contract';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { FirstBoardGymState } from '../../../src/lib/boards/first-board-gym-state';
@@ -104,7 +105,7 @@ const gymWall = {
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
-  View: ({ children }: Children) => createElement('div', null, children),
+  View: ({ children }: Children) => createElement('div', { 'data-native-view': true }, children),
   ScrollView: ({ children }: Children) => createElement('div', null, children),
   Pressable: ({ children, onPress }: Children & { onPress?: () => void }) =>
     createElement('button', { onClick: onPress, type: 'button' }, children),

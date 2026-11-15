@@ -16,7 +16,7 @@ import { Appbar } from 'react-native-paper';
 import { useTranslation } from 'react-i18next';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { StoryModule } from '../../dev/stories/types';
-import { STORY_BOARD, STORY_CLIMBS } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { NO_LOCKED_DIMENSIONS } from '../../lib/dimension-chips';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
@@ -49,7 +49,6 @@ import { ClimbsEmptyState, type ClimbsEmptyStateProps } from './ClimbsEmptyState
 const noop = () => {};
 const noContent = () => null;
 const thumbnailSize = climbListThumbnailSize(1);
-const climbs = STORY_CLIMBS.slice(0, 3);
 const keyExtractor = (climb: Climb) => climb.uuid;
 const ReadyContext = createContext<(uuid: string) => void>(noop);
 const ErrorContext = createContext<(error: unknown) => void>(noop);
@@ -86,6 +85,9 @@ export function ClimbsStory({
   onReady: () => void;
   onError?: (error: unknown) => void;
 }) {
+  const fixture = useStoryBoardFixture();
+  const STORY_BOARD = useMemo(() => ({ ...fixture.board, name: fixture.label }), [fixture]);
+  const climbs = useMemo(() => fixture.climbs.slice(0, 3), [fixture]);
   const { t } = useTranslation('climbs');
   const bottomInset = useStoryBottomInset();
   const { t: tCommon } = useTranslation('common');
@@ -96,7 +98,7 @@ export function ClimbsStory({
     () => selectByVariant(variant, { material: { top: chromeHeight }, liquidGlass: undefined }),
     [variant, chromeHeight],
   );
-  const [filtered, setFiltered] = useState(scene === 'filtered');
+  const [filtered, setFiltered] = useState(scene === 'filtered' || !!fixture.gradeRange);
   const [selected, setSelected] = useState<string | null>(null);
   const [laidOut, setLaidOut] = useState(false);
   const [artReady, setArtReady] = useState(false);
@@ -104,10 +106,13 @@ export function ClimbsStory({
   const onMenuPresented = useCallback(() => setMenuPresented(true), []);
   const readyClimbs = useRef(new Set<string>());
   const showRows = scene === 'populated' || scene === 'refreshing' || scene === 'filtered' || scene === 'actions';
-  const markArtReady = useCallback((uuid: string) => {
-    readyClimbs.current.add(uuid);
-    if (climbs.every((climb) => readyClimbs.current.has(climb.uuid))) setArtReady(true);
-  }, []);
+  const markArtReady = useCallback(
+    (uuid: string) => {
+      readyClimbs.current.add(uuid);
+      if (climbs.every((climb) => readyClimbs.current.has(climb.uuid))) setArtReady(true);
+    },
+    [climbs],
+  );
   useEffect(() => {
     if (!laidOut || (showRows && !artReady) || (scene === 'actions' && !menuPresented)) return;
     const frame = requestAnimationFrame(onReady);
@@ -138,7 +143,7 @@ export function ClimbsStory({
       accessibilityActions: [],
       onAccessibilityAction: noop,
     }),
-    [t, actionColors],
+    [t, actionColors, climbs, STORY_BOARD],
   );
   const renderItem = useCallback(
     ({ item }: { item: Climb }) => (
@@ -156,7 +161,7 @@ export function ClimbsStory({
         menu={menu}
       />
     ),
-    [onPress, selected, menu, scene, artReady, onMenuPresented],
+    [onPress, selected, menu, scene, artReady, onMenuPresented, climbs, STORY_BOARD],
   );
   const toggleFilter = useCallback(() => setFiltered((current) => !current), []);
   const filterChrome = (
@@ -164,7 +169,7 @@ export function ClimbsStory({
       pinnedChips={['grade', 'progress', 'sort']}
       activeFilterCount={filtered ? 1 : 0}
       onOpenFilters={toggleFilter}
-      gradeLabel={filtered ? 'V4–V6' : t('mobile.filter.grade')}
+      gradeLabel={filtered ? (fixture.gradeRange?.label ?? 'V4–V6') : t('mobile.filter.grade')}
       gradeActive={filtered}
       onOpenGrade={toggleFilter}
       gradeRailOpen={false}
@@ -180,7 +185,7 @@ export function ClimbsStory({
       collection="any"
       onChangeCollection={noop}
       canFilterPersonalCollections
-      isSprayWall={false}
+      isSprayWall={STORY_BOARD.boardName === 'spray'}
       boardName={STORY_BOARD.boardName}
       accuracyValue="off"
       onChangeAccuracy={noop}

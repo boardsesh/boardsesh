@@ -4,7 +4,7 @@ import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { resolveDisplayGrade } from '../../../lib/boardsesh-grade-display';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from '../../../lib/board-details';
-import { STORY_BOARD, STORY_CLIMBS } from '../../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../../dev/stories/story-board-fixture';
 import { StoryBoard } from '../../../dev/stories/StoryBoard';
 import type { StoryModule, StoryRenderControls } from '../../../dev/stories/types';
 import { WallKioskView } from './WallKioskView';
@@ -16,24 +16,33 @@ import { WallIdleRecoveryView } from './WallIdleRecoveryView';
 import type { WallPreviewState } from './useWallPreview';
 
 const noop = () => {};
-const presenceClimbs: BoardPresenceClimb[] = STORY_CLIMBS.map((climb, seq) => ({
-  climbUuid: climb.uuid,
-  name: climb.name,
-  grade: climb.difficulty,
-  frames: climb.frames,
-  sentAt: '2026-11-15T10:00:00.000Z',
-  seq,
-  angle: STORY_BOARD.angle,
-}));
 function WallScene({
   initialHistory = false,
   idle = false,
   ...controls
 }: StoryRenderControls & { initialHistory?: boolean; idle?: boolean }) {
+  const { board: STORY_BOARD, climbs: STORY_CLIMBS } = useStoryBoardFixture();
+  const presenceClimbs = useMemo(
+    () =>
+      STORY_CLIMBS.map(
+        (climb, seq) =>
+          ({
+            climbUuid: climb.uuid,
+            name: climb.name,
+            grade: climb.difficulty,
+            frames: climb.frames,
+            sentAt: '2026-11-15T10:00:00.000Z',
+            seq,
+            angle: STORY_BOARD.angle,
+          }) satisfies BoardPresenceClimb,
+      ),
+    [STORY_CLIMBS, STORY_BOARD],
+  );
+
   const [position, setPosition] = useState(initialHistory ? 1 : 0);
   const renderData = useMemo(
     () => getBoardRenderData({ ...STORY_BOARD, setIds: STORY_BOARD.setIds.split(',').map(Number) }),
-    [],
+    [STORY_BOARD],
   );
   const climb = presenceClimbs[position];
   const { gradeFormat } = useGradeFormat();
@@ -74,7 +83,11 @@ function WallScene({
       emptyState={null}
       renderBoard={(width, height) => (
         <View style={{ width, height }}>
-          <StoryBoard {...controls} climb={idle ? { ...STORY_CLIMBS[0], frames: '' } : STORY_CLIMBS[position]} />
+          <StoryBoard
+            {...controls}
+            board={STORY_BOARD}
+            climb={idle ? { ...STORY_CLIMBS[0], frames: '' } : STORY_CLIMBS[position]}
+          />
         </View>
       )}
       renderChrome={({ region, bandWidth, typeScale }) => (

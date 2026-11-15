@@ -23,6 +23,7 @@ import {
   queueButtonReadinessSelector,
   buildScreenshotSessionEnv,
   collectScreenshots,
+  clearNativeCaptureThumbnails,
   deviceSlug,
   findFrozenClockProblems,
   findOrCreateIosDevice,
@@ -1019,6 +1020,20 @@ describe('findDuplicateScreenshotGroups', () => {
 });
 
 describe('writeCapturedScreenshots', () => {
+  it.each([null, []])('saves Android captures without store locales: %s', (locales) => {
+    const root = mkdtempSync(join(tmpdir(), 'android-story-captures-'));
+    try {
+      const capture = join(root, 'capture');
+      mkdirSync(capture);
+      writeFileSync(join(capture, '01-climbs.png'), 'captured pixels');
+      const saved = collectScreenshots(capture, 'android', 'Pixel 2', locales, false, join(root, 'stores'));
+      expect(saved).toEqual([join(root, 'stores/google/screenshots/pixel-2/01-climbs.png')]);
+      expect(readFileSync(saved[0], 'utf8')).toBe('captured pixels');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(['ios', 'android'] as const)('rejects an empty %s capture before framing previous raw images', (platform) => {
     const root = mkdtempSync(join(tmpdir(), 'screenshot-empty-capture-'));
     try {
@@ -2163,5 +2178,24 @@ describe('bounded iOS Maestro invocation', () => {
       ),
     ).toThrow('lease rejected');
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('native capture cache isolation', () => {
+  it('removes prior thumbnails while preserving unrelated app-group state', () => {
+    const root = mkdtempSync(join(tmpdir(), 'native-capture-cache-'));
+    try {
+      const cache = join(root, 'thumbnails');
+      mkdirSync(cache);
+      writeFileSync(join(cache, 'prior-classic.webp'), 'stale board pixels');
+      writeFileSync(join(cache, 'cache-version'), '6');
+      writeFileSync(join(root, 'session.json'), 'keep');
+      clearNativeCaptureThumbnails(root);
+      expect(readdirSync(cache)).toEqual(['cache-version']);
+      expect(readFileSync(join(root, 'session.json'), 'utf8')).toBe('keep');
+      clearNativeCaptureThumbnails(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

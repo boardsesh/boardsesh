@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSharedValue } from 'react-native-reanimated';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { STORY_BOARDS } from '../../dev/fixtures/boards';
 import { sprayStoryPhoto } from '../../dev/stories/StorySprayBoard';
 import { InteractiveFilterBoard, type FilterBoardTransformContext } from '../search/InteractiveFilterBoard';
@@ -23,16 +24,26 @@ import { countEditorHolds, type SprayEditorHold } from './spray-hold-editor-redu
 const noop = () => {};
 const noHolds: never[] = [];
 const noCommands: never[] = [];
-const geometry = STORY_BOARDS['spray-liz'].spray!;
-const fixtureHolds: SprayEditorHold[] = geometry.holds.map((hold) => ({
-  ...hold,
-  source: 'AUTO',
-  confidence: 1,
-  review: 'accepted',
-  dirty: false,
-}));
-const counts = countEditorHolds(Object.fromEntries(fixtureHolds.map((hold) => [hold.id, hold])), 0);
 function SprayEditorStory({ onReady, onError }: StoryRenderControls) {
+  const activeFixture = useStoryBoardFixture();
+  const fixture = activeFixture.spray ? activeFixture : STORY_BOARDS['spray-liz'];
+  const geometry = fixture.spray!;
+  const fixtureHolds = useMemo(
+    () =>
+      geometry.holds.map(
+        (hold) =>
+          ({
+            ...hold,
+            source: 'AUTO',
+            confidence: 1,
+            review: 'accepted',
+            dirty: false,
+          }) satisfies SprayEditorHold,
+      ),
+    [geometry],
+  );
+  const counts = countEditorHolds(Object.fromEntries(fixtureHolds.map((hold) => [hold.id, hold])), 0);
+
   const { t } = useTranslation('boards');
   const insets = useSafeAreaInsets();
   const [area, setArea] = useState({ width: 0, height: 0 });
@@ -53,7 +64,7 @@ function SprayEditorStory({ onReady, onError }: StoryRenderControls) {
     return () => {
       cancelled = true;
     };
-  }, [onError]);
+  }, [onError, geometry]);
   const onLayout = useCallback(
     ({ nativeEvent: { layout: bounds } }: LayoutChangeEvent) =>
       setArea((previous) =>
@@ -99,7 +110,7 @@ function SprayEditorStory({ onReady, onError }: StoryRenderControls) {
         renderHeight={renderHeight}
       />
     ),
-    [maybeOpacitySV, draftPointsSV],
+    [maybeOpacitySV, draftPointsSV, fixtureHolds, geometry],
   );
   const onArtReadinessChange = useCallback(
     (status: 'ready' | 'loading' | 'failed') => {
@@ -157,8 +168,8 @@ function SprayEditorStory({ onReady, onError }: StoryRenderControls) {
               <InteractiveFilterBoard
                 backgroundPhotoUrl={photo}
                 boardName="spray"
-                layoutId={47}
-                sizeId={47}
+                layoutId={fixture.board.layoutId}
+                sizeId={fixture.board.sizeId}
                 setIds="1"
                 boardWidth={geometry.width}
                 boardHeight={geometry.height}

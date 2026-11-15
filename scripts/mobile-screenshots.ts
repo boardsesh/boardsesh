@@ -1,3 +1,4 @@
+import { createCppStoryCapture, cppStorySourceSha256 } from './lib/cpp-story-provenance';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screenshot-maestro';
 /// <reference types="node" />
@@ -1862,7 +1863,7 @@ export function collectScreenshots(
 ): string[] {
   const storeRoot = join(outputRoot, STORE_BY_PLATFORM[platform], ...(cpp ? ['cpp', cpp] : []));
   const saved: string[] = [];
-  for (const storeLocale of appStoreLocales ?? ['']) {
+  for (const storeLocale of appStoreLocales?.length ? appStoreLocales : ['']) {
     const shard = join(storeLocale, deviceSlug(deviceName));
     const output = join(storeRoot, 'screenshots', shard);
     if (!framed) {
@@ -4524,6 +4525,30 @@ export function screenshotFixtureReference(options: ScreenshotOptions): string {
     : FIXTURE_SNAPSHOT_REFERENCE;
 }
 
+/** Only derived thumbnail pixels in this simulator's app group are disposable. */
+export function clearNativeCaptureThumbnails(container: string): void {
+  const directory = join(container, 'thumbnails');
+  if (!existsSync(directory)) return;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.webp')) rmSync(join(directory, entry.name));
+  }
+}
+
+function endNativeActivityCapture(deviceId: string, captureDir: string): void {
+  const flow = join(captureDir, 'end-native-activity.yaml');
+  writeFileSync(
+    flow,
+    `appId: ${APP_ID}\n---\n- openLink: com.boardsesh.app://dev/stories/native-live-activity?end=1&shot=${Date.now()}\n- tapOn:\n    text: Open\n    optional: true\n`,
+  );
+  const offset = metroLogOffset(METRO_LOG_PATH);
+  const status = runIosScreenshotMaestro(['--device', deviceId, 'test', flow], { deviceId, cpp: false, captureDir });
+  if (
+    status !== 0 ||
+    !waitForMetroLogLine((line) => line.includes('[stories] native ended'), offset, 15, METRO_LOG_PATH)
+  )
+    throw new Error('Native activity cleanup was not confirmed');
+}
+
 /** Wait for the real native thumbnail cache, then expand ActivityKit before capturing pixels. */
 function prepareNativeActivityCapture(deviceId: string, board: string, offset: number, captureDir: string): void {
   const line = waitForMetroLogLine(
@@ -4588,6 +4613,7 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       ? resolveAppStoreLocaleTargets(options.appLocales)
       : [{ appLocale: 'en-US' as const, appStoreLocales: [] }];
   const variant = (options.variant ?? (platform === 'ios' ? 'liquidGlass' : 'material')) as StoryVariant;
+  const storySourceSha256 = options.cpp ? cppStorySourceSha256() : undefined;
   const metroEnv = buildStoryEnv(process.env);
   const metro = startMetro(metroEnv);
   let nativeBackend: ScreenshotBackendSession | null = null;
@@ -4655,6 +4681,29 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
                 throw new Error('Native Live Activity captures require iOS');
               if (capture.nativeActivityBoard && !nativeBackend)
                 nativeBackend = startScreenshotBackend({ ...options, fixtures: 'replay' });
+              if (capture.nativeActivityBoard) {
+                // End the activity and stop its process before evicting pixels:
+                // endSession alone does not cancel native thumbnail tasks.
+                endNativeActivityCapture(device.udid, captureDir);
+                if (runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]).status !== 0)
+                  throw new Error('Could not stop the previous native thumbnail producer');
+                const container = runCapture('xcrun', [
+                  'simctl',
+                  'get_app_container',
+                  device.udid,
+                  APP_ID,
+                  'group.com.boardsesh.app',
+                ]);
+                if (container.status !== 0 || !container.stdout.trim())
+                  throw new Error('Native activity app-group container unavailable');
+                clearNativeCaptureThumbnails(container.stdout.trim());
+                const restartOffset = metroLogOffset(METRO_LOG_PATH);
+                if (
+                  runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0 ||
+                  !waitForMetroLogLine(isStoryRootReadyLine, restartOffset, 120, METRO_LOG_PATH)
+                )
+                  throw new Error('Story root did not restart for a fresh native capture');
+              }
               const route = capture.nativeActivityBoard
                 ? `dev/stories/native-live-activity?board=${capture.nativeActivityBoard}&server=${encodeURIComponent(`http://localhost:${nativeBackend!.port}`)}&shot=${Date.now()}`
                 : `${storyRoute({ id: capture.storyId, theme: options.theme, variant, renderMode: options.renderMode ?? 'aura' })}&locale=${localeTarget.appLocale}`;
@@ -4714,6 +4763,25 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
           const duplicates = findDuplicateScreenshotGroups(captureDir);
           if (duplicates.length)
             throw new Error(`Duplicate screenshots: ${duplicates.map((group) => group.join(' = ')).join('; ')}`);
+          if (options.cpp && options.cpp !== 'all') {
+            writeFileSync(
+              join(captureDir, 'cpp-capture.json'),
+              JSON.stringify(
+                createCppStoryCapture(
+                  {
+                    target: options.cpp,
+                    sourceSha256: storySourceSha256!,
+                    locale: localeTarget.appLocale,
+                    device: deviceSlug(device.name),
+                    theme: options.theme,
+                    variant,
+                    renderMode: options.renderMode ?? 'aura',
+                  },
+                  captureDir,
+                ),
+              ),
+            );
+          }
           const saved = collectScreenshots(
             captureDir,
             platform,
@@ -4729,21 +4797,11 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
         succeeded = true;
       } finally {
         if (descriptor && nativeActivityStarted) {
-          const cleanupFlow = join(captureDir, 'end-native-activity.yaml');
-          writeFileSync(
-            cleanupFlow,
-            `appId: ${APP_ID}\n---\n- openLink: com.boardsesh.app://dev/stories/native-live-activity?end=1\n- tapOn:\n    text: Open\n    optional: true\n`,
-          );
-          const cleanupOffset = metroLogOffset(METRO_LOG_PATH);
-          runIosScreenshotMaestro(['--device', device.udid, 'test', cleanupFlow], {
-            deviceId: device.udid,
-            cpp: false,
-            captureDir,
-          });
-          if (
-            !waitForMetroLogLine((line) => line.includes('[stories] native ended'), cleanupOffset, 15, METRO_LOG_PATH)
-          )
-            console.error(`${LOG} Native activity cleanup was not confirmed`);
+          try {
+            endNativeActivityCapture(device.udid, captureDir);
+          } catch (error) {
+            console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
         if (!succeeded) preserveFailedRunArtifacts(captureDir);
         rmSync(captureDir, { recursive: true, force: true });

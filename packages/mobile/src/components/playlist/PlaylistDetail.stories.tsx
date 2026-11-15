@@ -1,9 +1,9 @@
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import { useNavigation } from 'expo-router';
 import type { Climb } from '@boardsesh/queue';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { STORY_CLIMBS } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { StoryClimbArtObserverProvider, StoryClimbRow } from '../../dev/stories/StoryClimbRow';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
 import { useVisibleArtReadiness } from '../../dev/stories/use-visible-art-readiness';
@@ -11,9 +11,10 @@ import { toQueueClimbs, toSchemaClimb } from '../../lib/climb-types';
 import { PlaylistDetailPresentation } from './PlaylistDetailPresentation';
 const noop = () => {};
 const identity = (children: ReactNode) => children;
-const CLIMBS = toQueueClimbs(STORY_CLIMBS.slice(0, 3));
 const assetId = (climb: Climb) => climb.uuid;
 function PlaylistStory({ onReady, onError }: StoryRenderControls) {
+  const fixture = useStoryBoardFixture();
+  const CLIMBS = useMemo(() => toQueueClimbs(fixture.climbs.slice(0, 3)), [fixture]);
   const { onDisplayed, onViewableItemsChanged } = useVisibleArtReadiness(assetId, onReady);
   const { t } = useTranslation('playlists');
   const navigation = useNavigation();

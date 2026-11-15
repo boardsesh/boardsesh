@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { liveActivityNative, type LiveActivityQueueItem } from '../../../modules/live-activity/src';
 import { STORY_BOARDS } from '../fixtures/boards';
+import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
 
 /** Initializes actual ActivityKit UI for native-system captures, outside the application providers. */
 export default function NativeActivitySetup() {
@@ -13,12 +14,17 @@ export default function NativeActivitySetup() {
     end,
   } = useLocalSearchParams<{ board?: string; server?: string; shot?: string; end?: string }>();
   const [status, setStatus] = useState('Preparing native activity');
+  // Route changes must finish the old native start and teardown before starting
+  // the next capture; a late endSession would otherwise erase its activity.
+  const lifecycleRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
     let cancelled = false;
     const prepare = async () => {
+      if (cancelled) return;
       if (Platform.OS !== 'ios' || !liveActivityNative || !(await liveActivityNative.isAvailable()).available) {
         throw new Error('ActivityKit is unavailable in this native binary');
       }
+      if (cancelled) return;
       await liveActivityNative.endSession();
       if (cancelled) return;
       if (end === '1') {
@@ -30,6 +36,17 @@ export default function NativeActivitySetup() {
         throw new Error('Native captures require the local read-only replay server');
       const fixture = STORY_BOARDS[boardId as keyof typeof STORY_BOARDS];
       if (!fixture?.climbs.length) throw new Error(`Missing native board fixture ${boardId}`);
+      const { ensureBackgroundsCached } = await import('../../lib/background-image-cache');
+      const backgrounds = await ensureBackgroundsCached({
+        boardName: fixture.board.boardName,
+        layoutId: fixture.board.layoutId,
+        sizeId: fixture.board.sizeId,
+        setIds: parseSetIds(fixture.board.setIds),
+        variant: 'thumb',
+      });
+      if (cancelled) return;
+      if (!backgrounds || backgrounds.paths.length === 0 || backgrounds.missingCount > 0)
+        throw new Error(`Missing bundled board backgrounds for native capture ${boardId}`);
       const queue: LiveActivityQueueItem[] = fixture.climbs.slice(0, 3).map((climb, index) => ({
         uuid: `native-story-${index}`,
         climbUuid: climb.uuid,
@@ -53,11 +70,9 @@ export default function NativeActivitySetup() {
         isPartySession: false,
         boardConnection: 'disconnected',
         renderMode: 'classic',
+        boardBackgroundPaths: backgrounds.paths,
       });
-      if (cancelled) {
-        await liveActivityNative.endSession();
-        return;
-      }
+      if (cancelled) return;
       await liveActivityNative.updateActivity({
         sessionId,
         queueSequence: 0,
@@ -81,13 +96,20 @@ export default function NativeActivitySetup() {
         console.log(`[stories] native started ${boardId} ${current.climbUuid}-classic.webp`);
       }
     };
-    void prepare().catch((error: unknown) => {
+    lifecycleRef.current = lifecycleRef.current.then(prepare).catch((error: unknown) => {
+      if (cancelled) return;
       console.error(`[stories] error native-live-activity ${error instanceof Error ? error.message : String(error)}`);
-      if (!cancelled) setStatus('Native activity failed');
+      setStatus('Native activity failed');
     });
     return () => {
       cancelled = true;
-      void liveActivityNative?.endSession();
+      lifecycleRef.current = lifecycleRef.current
+        .then(() => liveActivityNative?.endSession())
+        .catch((error: unknown) => {
+          console.error(
+            `[stories] error native-live-activity ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
     };
   }, [boardId, server, shot, end]);
   return (

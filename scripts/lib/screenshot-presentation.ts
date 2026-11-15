@@ -412,7 +412,12 @@ export interface PresentationManifest {
   version: typeof PRESENTATION_VERSION;
   locale: CaptionLocale;
   files: Record<string, PresentedScreenshot>;
-  cpp?: { target: string; manifestSha256: string; fixtureSha256?: string };
+  cpp?: {
+    target: string;
+    manifestSha256: string;
+    fixtureSha256?: string;
+    storyCapture?: import('./cpp-story-provenance').CppStoryCapture;
+  };
 }
 
 export function sha256Screenshot(bytes: Buffer): string {

@@ -8,7 +8,9 @@ import { useStorySessionFooterBottom } from '../../../dev/stories/use-story-bott
 import { formatGradeByDifficultyId } from '@boardsesh/play-view';
 import { summarizePlanFill, DEFAULT_VOLUME_OPTIONS } from '@boardsesh/playlist-generator';
 import type { StoryModule, StoryRenderControls } from '../../../dev/stories/types';
-import { STORY_BOARD, STORY_CLIMBS } from '../../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../../dev/stories/story-board-fixture';
+import { buildStoryWorkout } from '../../../dev/fixtures/workout';
+import { StorySprayBoard } from '../../../dev/stories/StorySprayBoard';
 import { StoryBoard } from '../../../dev/stories/StoryBoard';
 import { StoryClimbArtObserverProvider, renderStoryClimbContent } from '../../../dev/stories/StoryClimbRow';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
@@ -31,47 +33,56 @@ import { singleBlockSelection } from './workout-blocks';
 import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sections';
 import type { WorkoutPresentation } from './workout-presentation';
 const noop = () => {};
-const EMPTY_BOARD = { ...STORY_CLIMBS[0], frames: '' };
 const VIEWABILITY = { minimumViewTime: 0, itemVisiblePercentThreshold: 1 };
 const presentation: WorkoutPresentation = {
   isAuthenticated: true,
   timedBlocksOffered: false,
   formatGradeByDifficultyId: (grade, board) => formatGradeByDifficultyId(grade, 'v-grade', board),
 };
-const previews = STORY_CLIMBS.slice(0, 3).map((climb, index) => ({
-  item: climbToQueueItem(climb),
-  slot: { grade: 18, section: 'main' as const, index },
-}));
-const rows = buildPreviewListRows(previews);
-const summary = summarizePlanFill(
-  previews.map(({ slot }) => slot),
-  previews.map(({ slot }) => slot),
-);
-const startQueue = { climbCount: 3, estimatedMinutes: null };
-const board = {
-  name: 'Kilter Board',
-  boardType: 'kilter',
-  layoutId: 1,
-  sizeId: 7,
-  setIds: '1,20',
-  sizeName: 'Original',
-  angle: 40,
-};
 const rowAssetId = (row: PreviewListRow) => (row.kind === 'climb' ? (row.preview.item.climb?.uuid ?? null) : null);
-const renderRow = ({ item: row }: { item: PreviewListRow }) =>
-  row.kind === 'climb' ? (
-    <WorkoutPreviewRowView
-      item={row.preview.item}
-      board={STORY_BOARD}
-      isActive={false}
-      isRefreshing={false}
-      refreshDisabled={false}
-      rowDisplay={DEFAULT_CLIMB_ROW_DISPLAY}
-      renderContent={renderStoryClimbContent}
-      onRefresh={noop}
-    />
-  ) : null;
 function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
+  const fixture = useStoryBoardFixture();
+  const STORY_BOARD = fixture.board;
+  const workout = useMemo(() => buildStoryWorkout(fixture), [fixture]);
+  const previews = useMemo(
+    () =>
+      workout.climbs.map((climb, index) => ({
+        item: climbToQueueItem(climb),
+        slot: { grade: workout.targetGrade, section: 'main' as const, index },
+      })),
+    [workout],
+  );
+  const rows = useMemo(() => buildPreviewListRows(previews), [previews]);
+  const summary = useMemo(
+    () =>
+      summarizePlanFill(
+        previews.map(({ slot }) => slot),
+        previews.map(({ slot }) => slot),
+      ),
+    [previews],
+  );
+  const startQueue = useMemo(() => ({ climbCount: previews.length, estimatedMinutes: null }), [previews]);
+  const board = useMemo(
+    () => ({ ...STORY_BOARD, boardType: STORY_BOARD.boardName, name: fixture.label, sizeName: '' }),
+    [STORY_BOARD, fixture.label],
+  );
+  const emptyBoard = useMemo(() => ({ ...fixture.climbs[0], frames: '' }), [fixture]);
+  const renderRow = useCallback(
+    ({ item: row }: { item: PreviewListRow }) =>
+      row.kind === 'climb' ? (
+        <WorkoutPreviewRowView
+          item={row.preview.item}
+          board={STORY_BOARD}
+          isActive={false}
+          isRefreshing={false}
+          refreshDisabled={false}
+          rowDisplay={DEFAULT_CLIMB_ROW_DISPLAY}
+          renderContent={renderStoryClimbContent}
+          onRefresh={noop}
+        />
+      ) : null,
+    [STORY_BOARD],
+  );
   const { t } = useTranslation('session');
   const footerBottom = useStorySessionFooterBottom();
   const nativeRootHeader = useNativeRootHeader();
@@ -81,7 +92,10 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
   });
   const glassCapability = useGlassCapability();
   const [selection, setSelection] = useState(() =>
-    singleBlockSelection({ ...DEFAULT_VOLUME_OPTIONS, targetGrade: 18, mainSetClimbs: 3 }, 'volume'),
+    singleBlockSelection(
+      { ...DEFAULT_VOLUME_OPTIONS, targetGrade: workout.targetGrade, mainSetClimbs: workout.requestedCount },
+      'volume',
+    ),
   );
   const [armed, setArmed] = useState(false);
   const [isPublic, setPublic] = useState(true);
@@ -119,7 +133,7 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
       }),
     );
     reportReady();
-  }, [reportReady]);
+  }, [reportReady, rows]);
   const onViewableItemsChanged = useCallback<NonNullable<FlashListProps<PreviewListRow>['onViewableItemsChanged']>>(
     ({ viewableItems }) => {
       expected.current = new Set(
@@ -146,7 +160,11 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
             onRetry={noop}
             thumbnail={
               <View style={{ width: 44, height: 56 }}>
-                <StoryBoard climb={EMPTY_BOARD} onReady={markBoardReady} onError={onError} />
+                {fixture.spray ? (
+                  <StorySprayBoard geometry={fixture.spray} frames="" onReady={markBoardReady} onError={onError} />
+                ) : (
+                  <StoryBoard board={STORY_BOARD} climb={emptyBoard} onReady={markBoardReady} onError={onError} />
+                )}
               </View>
             }
           />
@@ -171,7 +189,7 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
         }
         preview={
           <WorkoutPreviewSection
-            boardName="kilter"
+            boardName={STORY_BOARD.boardName}
             hasPreviewItems
             summary={summary}
             startQueue={startQueue}
@@ -182,7 +200,21 @@ function WorkoutGeneratorStory({ onReady, onError }: StoryRenderControls) {
         }
       />
     ),
-    [nativeRootHeader, markBoardReady, onError, armed, restSeconds, isPublic, selection],
+    [
+      nativeRootHeader,
+      markBoardReady,
+      onError,
+      armed,
+      restSeconds,
+      isPublic,
+      selection,
+      fixture,
+      STORY_BOARD,
+      emptyBoard,
+      board,
+      summary,
+      startQueue,
+    ],
   );
   return (
     <StoryClimbArtObserverProvider onDisplayed={onDisplayed} onError={onError}>

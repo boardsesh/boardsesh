@@ -11,7 +11,8 @@ import { formatGrade } from '@boardsesh/play-view';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWindowDimensions, View } from 'react-native';
-import { STORY_ASCENTS } from '../../dev/fixtures/ascents';
+import { buildStoryAscents } from '../../dev/fixtures/ascents';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import type { StoryModule } from '../../dev/stories/types';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useTheme } from '../../providers/theme-provider';
@@ -34,24 +35,31 @@ const EMPTY_MENU: LogbookRowViewProps['menu'] = {
 };
 const NOW = Date.parse('2026-10-26T12:00:00Z');
 function LogbookStory({ state = 'ready' }: { state?: 'ready' | 'loading' | 'empty' | 'error' | 'offline' }) {
+  const fixture = useStoryBoardFixture();
+  const ascents = useMemo(() => buildStoryAscents(fixture), [fixture]);
   const { i18n } = useTranslation('you');
   const { variant } = useTheme();
   const nativeRootHeader = useNativeRootHeader();
   const bottomInset = useStoryBottomInset();
   const { fontScale } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(0);
-  const [filters, setFilters] = useState(DEFAULT_LOGBOOK_FILTERS);
+  const [filters, setFilters] = useState<LogbookFilterState>(() => ({
+    ...DEFAULT_LOGBOOK_FILTERS,
+    includeSends: !fixture.attemptsOnly,
+    includeAttempts: true,
+    boardType: fixture.board.boardName,
+    layoutIds: [fixture.board.layoutId],
+  }));
   const changeFilters = useCallback(
     (patch: Partial<LogbookFilterState>) => setFilters((previous) => ({ ...previous, ...patch })),
     [],
   );
   const rows = useMemo(
     () =>
-      buildLogbookListRows(
-        state === 'ready' ? STORY_ASCENTS.map((ascent) => ({ ...ascent, wall: 'Garage Board' })) : [],
-        { hasMore: false },
-      ),
-    [state],
+      buildLogbookListRows(state === 'ready' ? ascents.map((ascent) => ({ ...ascent, wall: fixture.label })) : [], {
+        hasMore: false,
+      }),
+    [state, ascents, fixture.label],
   );
   const renderItem = useCallback(
     ({ item }: { item: LogbookListRow<LogbookGroupUnit> }) => {
@@ -134,7 +142,7 @@ function LogbookStory({ state = 'ready' }: { state?: 'ready' | 'loading' | 'empt
           isBlocked: state === 'offline',
           reason: state === 'offline' ? 'offline' : null,
         }}
-        isFiltered={false}
+        isFiltered={!!fixture.attemptsOnly}
         listRows={rows}
         renderItem={renderItem}
         handleRetry={noop}

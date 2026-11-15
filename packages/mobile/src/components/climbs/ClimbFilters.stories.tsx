@@ -1,3 +1,7 @@
+import { getBoulderGradesForBoard, MOONBOARD_DIFFICULTY_IDS } from '@boardsesh/board-constants/boulder-grade-mapping';
+import { getTallWideScope } from '@boardsesh/board-constants';
+import { getBoardCapabilities } from '@boardsesh/board-config';
+import { isVerifiedBoard } from '../../lib/benchmark-term';
 import { selectByVariant } from '../../theme/variants';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
@@ -11,7 +15,7 @@ import {
 import type { StoryModule } from '../../dev/stories/types';
 import { DEFAULT_FILTERS, type ClimbFilters } from '../../lib/climb-filter-types';
 import { progressFilterLabel } from '../../lib/filter-labels';
-import { getCollectionFilter, collectionPatch } from '../../lib/collection-filter';
+import { getCollectionFilter, collectionPatch, offersBenchmarksFilter } from '../../lib/collection-filter';
 import { ClimbFilterSheetContent } from '../ClimbFilterSheetContent';
 import { SwitchRow } from '../SwitchRow';
 import { NO_LOCKED_DIMENSIONS } from '../../lib/dimension-chips';
@@ -30,10 +34,12 @@ import { MEDIUM_LARGE_SNAP_POINTS, LARGE_SNAP_POINTS } from '../sheet-snap-point
 import { ModalSheet } from '../ModalSheet';
 import { SheetTopBar } from '../SheetTopBar';
 import { GradeRangeRail } from '../grade';
-import { STORY_BOARD } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { ClimbsStory } from './Climbs.stories';
 const noop = () => {};
 function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (error: unknown) => void }) {
+  const fixture = useStoryBoardFixture();
+  const STORY_BOARD = fixture.board;
   const { t } = useTranslation('climbs');
   const { variant } = useTheme();
   const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
@@ -45,7 +51,18 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
   useEffect(() => {
     if (backgroundReady && sheetReady) onReady();
   }, [backgroundReady, sheetReady, onReady]);
-  const [filters, setFilters] = useState<ClimbFilters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<ClimbFilters>(() =>
+    fixture.gradeRange
+      ? { ...DEFAULT_FILTERS, minGrade: fixture.gradeRange.minGrade, maxGrade: fixture.gradeRange.maxGrade }
+      : DEFAULT_FILTERS,
+  );
+  const isSprayWall = STORY_BOARD.boardName === 'spray';
+  const offerBenchmarks = offersBenchmarksFilter(isSprayWall, !!boardFilters.onlyBenchmarks);
+  const { hasShorter, hasNarrower } = getTallWideScope(STORY_BOARD.boardName, STORY_BOARD.layoutId, STORY_BOARD.sizeId);
+  const showOtherAngles = getBoardCapabilities(STORY_BOARD.boardName).angleBoundClimbs;
+  const showClimbType = !isSprayWall || getClimbTypeFilter(filters) === 'routes';
+  const handleBenchmarksChange = (onlyBenchmarks: boolean) =>
+    setBoardFilters((previous) => ({ ...previous, onlyBenchmarks }));
   const [name, setName] = useState('');
   const [visible, setVisible] = useState(true);
   const ref = useRef<ClimbFilterSurfaceHandle>(null);
@@ -59,14 +76,9 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
     setName('');
   };
   const grade = {
-    grades: [
-      { difficultyId: 10, name: 'V1' },
-      { difficultyId: 12, name: 'V2' },
-      { difficultyId: 14, name: 'V3' },
-      { difficultyId: 16, name: 'V4' },
-      { difficultyId: 18, name: 'V5' },
-      { difficultyId: 20, name: 'V6' },
-    ],
+    grades: getBoulderGradesForBoard(STORY_BOARD.boardName)
+      .filter((grade) => STORY_BOARD.boardName !== 'moonboard' || MOONBOARD_DIFFICULTY_IDS.has(grade.difficulty_id))
+      .map((grade) => ({ difficultyId: grade.difficulty_id, name: grade.difficulty_name })),
     bound: { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade },
     boardName: STORY_BOARD.boardName,
     onChange: (bound: { minGradeId?: number; maxGradeId?: number }) =>
@@ -114,18 +126,22 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
       selected: getCollectionFilter(filters),
       onSelect: (key) => setFiltersPatch(collectionPatch(key, filters).filters),
     },
-    benchmarks: {
-      label: t('mobile.filter.onlyVerified'),
-      subtitle: t('mobile.filter.verifiedDescription'),
-      value: !!boardFilters.onlyBenchmarks,
-      onValueChange: (onlyBenchmarks) => setBoardFilters((previous) => ({ ...previous, onlyBenchmarks })),
-    },
+    benchmarks: offerBenchmarks
+      ? {
+          label: isVerifiedBoard(STORY_BOARD.boardName)
+            ? t('mobile.filter.onlyVerified')
+            : t('mobile.filter.onlyBenchmarks'),
+          subtitle: isVerifiedBoard(STORY_BOARD.boardName) ? t('mobile.filter.verifiedDescription') : undefined,
+          value: !!boardFilters.onlyBenchmarks,
+          onValueChange: handleBenchmarksChange,
+        }
+      : null,
     popularity: {
       onStatusChange: (status) => setFiltersPatch({ status }),
       onBucket: (minAscents) => setFiltersPatch({ minAscents }),
     },
     climbType: {
-      show: true,
+      show: showClimbType,
       options: [
         { key: 'boulders', label: t('mobile.filter.climbType.boulders') },
         { key: 'routes', label: t('mobile.filter.climbType.routes') },
@@ -133,9 +149,9 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
       selected: getClimbTypeFilter(filters),
       onSelect: (key) => setFiltersPatch(climbTypePatch(key)),
     },
-    showOtherAngles: false,
-    tall: { show: true, locked: false },
-    wide: { show: true, locked: false },
+    showOtherAngles,
+    tall: { show: hasShorter, locked: false },
+    wide: { show: hasNarrower, locked: false },
     showFollowing: true,
     showBeta: true,
     boardFit: null,
@@ -184,7 +200,7 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
           ref={ref}
           model={model}
           title={t('mobile.filter.title')}
-          subtitle={t('mobile.filter.matchingCount', { count: 128 })}
+          subtitle={t('mobile.filter.matchingCount', { count: fixture.climbs.length })}
           closeLabel={t('mobile.filter.close')}
           resetLabel={t('mobile.filter.reset')}
           resetDisabled={false}
@@ -203,7 +219,7 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
           header={
             <SheetTopBar
               title={t('mobile.filter.title')}
-              subtitle={t('mobile.filter.matchingCount', { count: 128 })}
+              subtitle={t('mobile.filter.matchingCount', { count: fixture.climbs.length })}
               leading={{
                 kind: 'close',
                 onPress: () => setVisible(false),
@@ -257,22 +273,22 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
               collectionOptions={input.collection.options}
               collectionFilter={input.collection.selected}
               handleCollectionChange={input.collection.onSelect}
-              offerBenchmarks
+              offerBenchmarks={offerBenchmarks}
               boardName={STORY_BOARD.boardName}
               selectedBoardFilters={boardFilters}
-              handleBenchmarksChange={input.benchmarks!.onValueChange}
+              handleBenchmarksChange={handleBenchmarksChange}
               handleClearMinRating={() => setFiltersPatch({ minRating: undefined })}
               handleStatusChange={input.popularity.onStatusChange}
               popularityLabel={(bucket) => (bucket == null ? t('mobile.filter.anyRating') : String(bucket))}
               handlePopularity={input.popularity.onBucket}
-              showClimbTypeControl
+              showClimbTypeControl={showClimbType}
               climbTypeOptions={input.climbType.options}
               climbTypeKey={input.climbType.selected}
               handleClimbTypeChange={input.climbType.onSelect}
-              showOtherAnglesControl={false}
-              showTallControl
+              showOtherAnglesControl={showOtherAngles}
+              showTallControl={hasShorter}
               lockedDimensions={NO_LOCKED_DIMENSIONS}
-              showWideControl
+              showWideControl={hasNarrower}
               formatSetterSelection={(names) => names.join(', ')}
               openSetters={noop}
               settersRowNeedsBoard

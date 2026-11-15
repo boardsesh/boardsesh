@@ -32,8 +32,11 @@ export function IntegrationBoardSetup(): null {
       return;
     }
     const board = candidates[0];
-    if (activeBoard?.uuid === board.uuid || attempted.current === board.uuid) return;
+    if (attempted.current === board.uuid) return;
     attempted.current = board.uuid;
+    // An already-selected starting board completes setup too. Later picker
+    // interactions belong to the recording, not to this initializer.
+    if (activeBoard?.uuid === board.uuid) return;
     void activate(board).catch((error) => {
       attempted.current = null;
       reportScreenshotSmokeError(error instanceof Error ? error : new Error('Board setup failed'));

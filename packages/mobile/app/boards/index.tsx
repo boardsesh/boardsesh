@@ -1073,7 +1073,7 @@ export default function BoardSelection() {
             onSelect={onScanSelectBoard}
             onFindAtGym={onScanFindAtGym}
             onOwnBoard={onScanOwnBoard}
-          />{' '}
+          />
         </>
       }
     />

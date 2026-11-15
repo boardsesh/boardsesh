@@ -18,6 +18,7 @@ import {
   METRO_LOG_PATH,
   METRO_PORT,
   metroLogPathForPort,
+  readMetroLogSince,
   waitForMetroLogLine,
 } from './metro-dev-server';
 import { sleepSeconds } from './exec';
@@ -168,8 +169,16 @@ export function settleAfterStory(
   if (event.kind === 'scenario') {
     throw new Error(`Story ${id} redirects to ${event.route}; capture a view story with explicit readiness instead.`);
   }
-  console.log(`${logPrefix} Story ${event.storyId} is ready.`);
+  // The line poll returns the first match. Scan the whole capture interval so
+  // a later asset failure cannot be hidden by an earlier readiness marker.
+  const assertNoFailure = () => {
+    const latest = findStoryLogEvent(readMetroLogSince(offset, logPath), id);
+    if (latest?.kind === 'error') throw new Error(latest.line);
+  };
+  assertNoFailure();
   sleepSeconds(STORY_READY_SETTLE_SECONDS);
+  assertNoFailure();
+  console.log(`${logPrefix} Story ${event.storyId} is ready.`);
 }
 
 /** Story captures never inherit live-app fixture transports or test credentials. */

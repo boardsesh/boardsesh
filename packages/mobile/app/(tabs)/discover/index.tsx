@@ -669,7 +669,6 @@ export default function DiscoverLibrary() {
       pinned={
         isAuthenticated && hasVisiblePinnedItems ? (
           <>
-            {' '}
             {visiblePinnedSmartCards.map(({ preset, count }, index) => (
               <View key={preset.type} style={styles.gridItem}>
                 <DiscoverSmartPlaylistCard

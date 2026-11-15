@@ -1,5 +1,7 @@
 /// <reference types="node" />
 
+import { isReplayCapturePath } from './lib/screenshot-capture-source';
+export { isReplayCapturePath } from './lib/screenshot-capture-source';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -39,7 +41,6 @@ import {
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const WORKFLOW = '.github/workflows/mobile-screenshots-ios.yml';
-const CPP_MANIFEST = 'app-stores/apple/custom-product-pages.json';
 // Release operators may explicitly accept older queue-attribution UI and release
 // notes after reviewing this exact byte delta. Capture gates remain immutable.
 const REVIEWABLE_RUNTIME_PATHS = new Set([
@@ -207,34 +208,7 @@ const STORE_LOCALES: Record<string, string[]> = {
 };
 // Bind runtime code, including the native components that expose readiness anchors.
 // Tooling-only changes stay reusable; any UI or shared renderer change needs fresh replay.
-export function isReplayCapturePath(path: string): boolean {
-  return (
-    (path === CPP_MANIFEST ||
-      path === '.github/actions/ios-screenshot-shard/action.yml' ||
-      path === 'scripts/mobile-screenshots.ts' ||
-      path === 'scripts/frame-screenshots.ts' ||
-      [
-        'package.json',
-        'pnpm-lock.yaml',
-        'pnpm-workspace.yaml',
-        'vite.config.ts',
-        'scripts/mobile-build-sim-app.ts',
-        'scripts/mobile-ios-run.ts',
-        'scripts/screenshot-sim.entitlements',
-      ].includes(path) ||
-      path.startsWith('patches/') ||
-      /^scripts\/assert-(cpp-)?screenshot/.test(path) ||
-      path.startsWith('scripts/lib/') ||
-      path.startsWith('packages/mobile/.maestro/') ||
-      path.startsWith('app-stores/presentation/') ||
-      (path.startsWith('packages/shared/') && !/^packages\/shared\/(?:pr-body|email)\//.test(path)) ||
-      path.startsWith('packages/board-constants/') ||
-      /^packages\/mobile\/(?:app|src|plugins|modules|assets|locales)\//.test(path) ||
-      /^packages\/mobile\/[^/]+\.(?:json|[cm]?[jt]s)$/.test(path)) &&
-    !path.includes('/__tests__/') &&
-    !/\.(test|spec)\.[cm]?[jt]sx?$/.test(path)
-  );
-}
+
 export const replayHash = (bytes: string | Buffer): string => createHash('sha256').update(bytes).digest('hex');
 const object = (candidate: unknown): candidate is Record<string, unknown> =>
   candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate);

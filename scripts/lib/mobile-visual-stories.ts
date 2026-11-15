@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
 import type { CppPage } from './screenshot-cpp';
+import {
+  CPP_STORY_SCENES,
+  CPP_STORY_TARGETS,
+  type CppStoryTarget,
+} from '../../packages/mobile/src/dev/fixtures/cpp-scenes';
 
 export interface VisualStoryCapture {
   name: string;
@@ -74,6 +79,10 @@ export function readVisualStoryCaptures(flowFile: string): VisualStoryCapture[] 
 }
 
 export function cppStoryCaptures(page: CppPage, device: 'phone' | 'ipad'): VisualStoryCapture[] {
+  const target = (Object.keys(CPP_STORY_TARGETS) as CppStoryTarget[]).find(
+    (candidate) => CPP_STORY_TARGETS[candidate].boardId === page.primaryBoard.id,
+  );
+  if (!target) throw new Error(`No CPP scene fixtures for ${page.primaryBoard.id}`);
   const names = [...new Set(page.recipes[device].flatMap((recipe) => recipe.sources))];
   return names.map((filename) => {
     const name = filename.replace(/\.png$/, '');
@@ -84,6 +93,9 @@ export function cppStoryCaptures(page: CppPage, device: 'phone' | 'ipad'): Visua
       const variants = board[1] === 'hero' ? page.heroBoards : page.otherBoards;
       return { name, storyId: `player--${variants[Number(board[2]) - 1].id}` };
     }
-    return { name, storyId: storyForCaptureName(name) };
+    const scene = name.replace(/^\d+-/, '');
+    if (!(CPP_STORY_SCENES[target] as readonly string[]).includes(scene))
+      throw new Error(`No ${target} CPP story for ${name}`);
+    return { name, storyId: `cpp-scenes--${target}-${scene}` };
   });
 }

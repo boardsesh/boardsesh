@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,6 +10,7 @@ vi.mock('../lib/metro-dev-server', () => ({
   METRO_LOG_PATH: '/tmp/unused',
   metroLogPathForPort: () => '/tmp/unused',
   waitForMetroLogLine: mocks.wait,
+  readMetroLogSince: (offset: number, path: string) => readFileSync(path).subarray(offset).toString('utf8'),
 }));
 vi.mock('../lib/exec', () => ({ sleepSeconds: mocks.sleep }));
 import { settleAfterStory, storyRoute } from '../lib/mobile-stories';
@@ -43,6 +44,20 @@ describe('visual captures require readiness evidence', () => {
     mocks.wait.mockReturnValue(line);
     expect(() => settleAfterStory('sample--loaded', logPath, 10, 2, '[shots]')).toThrow(message);
     expect(mocks.sleep).not.toHaveBeenCalled();
+  });
+  it.each(['same batch', 'settle interval'])('rejects errors after ready in the %s', (timing) => {
+    const ready = '[stories] ready sample--loaded\n';
+    const failed = ready + '[stories] error sample--loaded Missing image\n';
+    mocks.wait.mockReturnValue(ready.trim());
+    writeFileSync(logPath, timing === 'same batch' ? failed : ready);
+    if (timing === 'settle interval') mocks.sleep.mockImplementation(() => writeFileSync(logPath, failed));
+    expect(() => settleAfterStory('sample--loaded', logPath, 0, 2, '[shots]')).toThrow('Missing image');
+  });
+  it('ignores errors before the current capture offset', () => {
+    const previous = '[stories] error sample--loaded Previous capture\n';
+    writeFileSync(logPath, previous + '[stories] ready sample--loaded\n');
+    mocks.wait.mockReturnValue('[stories] ready sample--loaded');
+    expect(() => settleAfterStory('sample--loaded', logPath, Buffer.byteLength(previous), 2, '[shots]')).not.toThrow();
   });
   it('allows capture after the requested view reports its paint', () => {
     mocks.wait.mockReturnValue('[stories] ready sample--loaded');

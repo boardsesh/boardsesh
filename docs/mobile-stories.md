@@ -66,6 +66,8 @@ Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <
 
 `mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 
+CPP captures write a `cpp-capture.json` sidecar with `kind: "view-stories"`. It binds the source checkout, exact story/board inventory, locale, device, appearance, and raw PNG hashes. Framing carries that metadata into `presentation.json`; publication checks both sidecars against the current sources and pixels. These fixtures do not claim a verified backend recording. Existing recorded captures keep their separate snapshot provenance and checks. Native Live Activity presentation sources retain their native fixture validation.
+
 ## Integration smoke remains separate
 
 The `smoke` flow opens the real Home, Profile and Climbs screens and the real play drawer against recorded backend responses. `src/dev/integration` owns dev-only login/bootstrap and content reporting. A generic `ContentRenderObserverProvider` observes markers mounted inside rendered content; production defaults to no observer. Tests must not emit success merely because a query returned rows.

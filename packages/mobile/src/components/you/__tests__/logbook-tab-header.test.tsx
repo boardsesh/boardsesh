@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logbook';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent } from '@testing-library/react';
+import { renderWithNativeTextCheck as render } from '../../../../test/native-text-contract';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -51,6 +52,7 @@ vi.mock('react-native', () => ({
     createElement(
       'div',
       {
+        'data-native-view': true,
         'data-style': JSON.stringify(flattenStyles(style)),
         'data-pointer': pointerEvents,
         'data-accessibility-hidden': accessibilityElementsHidden,

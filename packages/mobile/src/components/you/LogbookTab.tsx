@@ -894,7 +894,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderH
               onOpenSetters={handleOpenSetters}
               initialSection={sheetSection}
             />
-          ) : null}{' '}
+          ) : null}
         </>
       }
     />

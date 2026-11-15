@@ -1,3 +1,4 @@
+import { assertCppStoryCapture, cppStorySourceSha256 } from './lib/cpp-story-provenance';
 /// <reference types="node" />
 
 import { createHash } from 'node:crypto';
@@ -156,10 +157,11 @@ export function assertCppScreenshots(
   const inputRoot = options.inputRoot ?? repoRoot;
   const targets = selection === 'all' ? CPP_TARGETS : [selection];
   let screenshots = 0;
+  let storySourceSha256: string | undefined;
   for (const target of targets) {
     const page = readCppPage(target);
     if (!page.fixtureReference) throw new Error(`CPP ${target} has no verified fixture reference`);
-    const fixture = readFixtureSnapshotReference(resolve(inputRoot, page.fixtureReference));
+
     for (const storeLocale of STORE_LOCALES) {
       for (const device of DEVICES) {
         const base = join(inputRoot, 'app-stores/apple/cpp', target);
@@ -180,10 +182,29 @@ export function assertCppScreenshots(
           !object(presentation.cpp) ||
           presentation.cpp.target !== target ||
           presentation.cpp.manifestSha256 !== manifestHash ||
-          presentation.cpp.fixtureSha256 !== fixture.sha256 ||
           !object(presentation.files)
         )
           throw new Error(`CPP ${target}/${storeLocale}/${device} has stale or unverified provenance`);
+        if (presentation.cpp.storyCapture !== undefined) {
+          if (presentation.cpp.fixtureSha256 !== undefined)
+            throw new Error('Story captures cannot claim recorded fixture provenance');
+          storySourceSha256 ??= cppStorySourceSha256();
+          const expectedStory = {
+            target,
+            locale: captionLocaleForStore('ios', storeLocale),
+            device,
+            sourceSha256: storySourceSha256,
+          };
+          assertCppStoryCapture(presentation.cpp.storyCapture, expectedStory, rawFolder);
+          const rawCapture: unknown = JSON.parse(readFileSync(join(rawFolder, 'cpp-capture.json'), 'utf8'));
+          assertCppStoryCapture(rawCapture, expectedStory, rawFolder);
+          if (canonicalJson(rawCapture) !== canonicalJson(presentation.cpp.storyCapture))
+            throw new Error('CPP story sidecar differs from presentation');
+        } else {
+          const fixture = readFixtureSnapshotReference(resolve(inputRoot, page.fixtureReference));
+          if (presentation.cpp.fixtureSha256 !== fixture.sha256)
+            throw new Error(`CPP ${target}/${storeLocale}/${device} has stale or unverified provenance`);
+        }
         const pngs = recipes.map((recipe) => {
           const buffer = readFileSync(join(folder, recipe.output));
           const metadata = (presentation.files as Record<string, unknown>)[recipe.output];

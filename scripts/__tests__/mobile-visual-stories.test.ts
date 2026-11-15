@@ -28,7 +28,16 @@ describe('visual capture inventory', () => {
       for (const [index, board] of page.heroBoards.entries()) {
         expect(captures.find((capture) => capture.name === `hero-${index + 1}`)?.storyId).toBe(`player--${board.id}`);
       }
+      for (const capture of captures.filter(({ name }) => !/^(hero|other)-/.test(name) && name !== '08-island')) {
+        expect(capture.storyId).toBe(`cpp-scenes--${target}-${capture.name.replace(/^\d+-/, '')}`);
+      }
     }
+  });
+  it('rejects a target whose primary board has no corresponding scene fixture', () => {
+    const page = readCppPage('moonboard');
+    expect(() => cppStoryCaptures({ ...page, primaryBoard: { ...page.primaryBoard, id: 'unknown' } }, 'phone')).toThrow(
+      'No CPP scene fixtures',
+    );
   });
   it('dispatches visual captures before the live runner and never executes inventory commands', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../mobile-screenshots.ts'), 'utf8');

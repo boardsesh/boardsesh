@@ -14,7 +14,8 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
 });
 import { variantFeatures } from '../../../../src/theme/variants/variant-features';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render as renderDom, waitFor } from '@testing-library/react';
+import { assertNativeTextChildren, renderWithNativeTextCheck as render } from '../../../../test/native-text-contract';
 import { router } from 'expo-router';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -182,7 +183,7 @@ vi.mock('react-native-reanimated', () => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-native-view': true }, children),
   ScrollView: ({
     children,
     refreshControl,
@@ -452,6 +453,42 @@ vi.mock('../../../../src/components/chrome', () => ({
 }));
 
 import DiscoverLibrary from '../index';
+import { View } from 'react-native';
+import { Text } from '../../../../src/components/Text';
+
+describe('native text host contract', () => {
+  it.each([' ', 'unwrapped text', 0])('rejects raw %j inside nested fragments', (rawText) => {
+    const { container } = renderDom(
+      <View>
+        <>
+          <>{rawText}</>
+        </>
+      </View>,
+    );
+    expect(() => assertNativeTextChildren(container)).toThrow('Text strings must be rendered within a <Text>');
+  });
+
+  it('accepts text inside Text through fragments', () => {
+    const { getByText } = render(
+      <View>
+        <>
+          <Text>Pinned climbs</Text>
+        </>
+      </View>,
+    );
+    expect(getByText('Pinned climbs')).toBeTruthy();
+  });
+
+  it('rejects raw text beside a route root through fragments', () => {
+    const { container } = renderDom(
+      <>
+        <View />
+        <> </>
+      </>,
+    );
+    expect(() => assertNativeTextChildren(container)).toThrow('Text strings must be rendered within a <Text>');
+  });
+});
 
 // The hub calls useQueryClient(); give it a real client so cache writes/reads
 // behave. Surface the client so the create test can read ['userPlaylists'].

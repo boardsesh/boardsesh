@@ -1,11 +1,11 @@
 import { useStorySheetPresentation } from '../../dev/stories/use-story-sheet-presentation';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
-import { STORY_BOARD, STORY_CLIMBS } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { StoryClimbArtObserverProvider, renderStoryClimbContent } from '../../dev/stories/StoryClimbRow';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
@@ -30,9 +30,10 @@ const menu = {
 const StoryRow = memo(function StoryRow(props: QueueItemRowProps) {
   return <QueueItemRowView {...props} hasThumbnail menu={menu} ContentComponent={renderStoryClimbContent} />;
 });
-const initialQueue = STORY_CLIMBS.slice(0, 3).map((climb) => climbToQueueItem(climb));
 
 function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & { empty?: boolean }) {
+  const { board: STORY_BOARD, climbs } = useStoryBoardFixture();
+  const initialQueue = useMemo(() => climbs.slice(0, 3).map((climb) => climbToQueueItem(climb)), [climbs]);
   const sheetRef = useRef<BottomSheetModal>(null);
   const managed = useStorySheetPresentation(sheetRef);
   const presented = managed.presented;
@@ -44,7 +45,9 @@ function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & {
   }, [presented, artReady, onReady]);
   const insets = useSafeAreaInsets();
   const [queue, setQueue] = useState(empty ? [] : initialQueue);
-  const [current, setCurrent] = useState<ClimbQueueItem | null>(empty ? null : initialQueue[1]);
+  const [current, setCurrent] = useState<ClimbQueueItem | null>(
+    empty ? null : initialQueue[Math.min(1, initialQueue.length - 1)],
+  );
   const [editing, setEditing] = useState(false);
   const [history, setHistory] = useState(true);
   const [fullHistory, setFullHistory] = useState(false);
@@ -102,7 +105,7 @@ function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & {
                 onViewableItemsChanged={art.onViewableItemsChanged}
                 queue={queue}
                 currentItem={current}
-                historyCount={empty ? 0 : 1}
+                historyCount={empty || initialQueue.length < 2 ? 0 : 1}
                 board={STORY_BOARD}
                 isEditMode={editing}
                 showHistory={history}

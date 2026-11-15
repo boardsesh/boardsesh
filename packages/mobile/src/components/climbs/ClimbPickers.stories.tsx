@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
@@ -11,9 +11,10 @@ import type {
   ZoneMatchMode,
 } from '@boardsesh/shared-schema';
 import type { StoryModule } from '../../dev/stories/types';
-import { STORY_BOARD } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
+import { sprayStoryPhoto } from '../../dev/stories/StorySprayBoard';
 import { useStoryBoardRenderStyle } from '../../dev/fixtures/board-render-style';
-import { getCreateBoardHolds } from '../../lib/create-board-holds';
+import { getCreateBoardHolds, type CreateBoardHolds } from '../../lib/create-board-holds';
 import { useTheme } from '../../providers/theme-provider';
 import { overlays } from '../../theme/tokens';
 import { HoldFilterView } from './HoldFilterView';
@@ -24,17 +25,6 @@ import { SetterPickerList } from '../filter-sheet/SetterPickerList';
 import { SheetTopBar } from '../SheetTopBar';
 
 const noop = () => {};
-const geometry = getCreateBoardHolds({ ...STORY_BOARD, setIds: [1, 20] });
-if (!geometry) throw new Error('Story board geometry missing');
-const dims = {
-  boardWidth: geometry.boardWidth,
-  boardHeight: geometry.boardHeight,
-  edgeLeft: geometry.edgeLeft,
-  edgeRight: geometry.edgeRight,
-  edgeTop: geometry.edgeTop,
-  edgeBottom: geometry.edgeBottom,
-};
-const targets = geometry.holdTargets;
 const setters = [
   { setterUsername: 'alex', count: 42 },
   { setterUsername: 'morgan', count: 18 },
@@ -49,6 +39,48 @@ function PickerStory({
   onReady: () => void;
   onError: (error: unknown) => void;
 }) {
+  const fixture = useStoryBoardFixture();
+  const STORY_BOARD = fixture.board;
+  const geometry = useMemo<CreateBoardHolds>(() => {
+    if (fixture.spray)
+      return {
+        boardWidth: fixture.spray.width,
+        boardHeight: fixture.spray.height,
+        edgeLeft: 0,
+        edgeRight: fixture.spray.width,
+        edgeTop: 0,
+        edgeBottom: fixture.spray.height,
+        holdTargets: fixture.spray.holds,
+        family: 'spray',
+      };
+    const resolved = getCreateBoardHolds({ ...STORY_BOARD, setIds: STORY_BOARD.setIds.split(',').map(Number) });
+    if (!resolved) throw new Error('Story board geometry missing');
+    return resolved;
+  }, [fixture, STORY_BOARD]);
+  const dims = useMemo(
+    () => ({
+      boardWidth: geometry.boardWidth,
+      boardHeight: geometry.boardHeight,
+      edgeLeft: geometry.edgeLeft,
+      edgeRight: geometry.edgeRight,
+      edgeTop: geometry.edgeTop,
+      edgeBottom: geometry.edgeBottom,
+    }),
+    [geometry],
+  );
+  const targets = geometry.holdTargets;
+  const [photo, setPhoto] = useState<string>();
+  useEffect(() => {
+    if (!fixture.spray) return;
+    let cancelled = false;
+    const asset = sprayStoryPhoto(fixture.spray.photoId);
+    void asset.downloadAsync().then(() => {
+      if (!cancelled) setPhoto(asset.localUri ?? asset.uri);
+    }, onError);
+    return () => {
+      cancelled = true;
+    };
+  }, [fixture, onError]);
   const renderStyle = useStoryBoardRenderStyle();
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
@@ -96,7 +128,7 @@ function PickerStory({
           cornerHint={t('mobile.zoneFilter.corner.hint')}
         />
       ) : null,
-    [zoneBox, brandColors.primary, t],
+    [zoneBox, brandColors.primary, t, dims],
   );
   const onArtReadinessChange = useCallback(
     (state: string) => {
@@ -112,6 +144,7 @@ function PickerStory({
   const board = useMemo(
     () => ({
       ...STORY_BOARD,
+      backgroundPhotoUrl: photo,
       renderStyleOverride: renderStyle,
       ...dims,
       holdTargets: targets,
@@ -119,7 +152,7 @@ function PickerStory({
       renderHeight: (width * dims.boardHeight) / dims.boardWidth,
       onArtReadinessChange,
     }),
-    [width, onArtReadinessChange, renderStyle],
+    [width, onArtReadinessChange, renderStyle, STORY_BOARD, photo, dims, targets],
   );
   const title =
     kind === 'zone'
@@ -135,7 +168,7 @@ function PickerStory({
       />
       {kind === 'holds' ? (
         <HoldFilterView
-          board={{ ...board, holdsFilter, onHoldTap }}
+          board={fixture.spray && !photo ? null : { ...board, holdsFilter, onHoldTap }}
           picker={{
             holdStyleOverride: renderStyle.holds,
             boardName: STORY_BOARD.boardName,

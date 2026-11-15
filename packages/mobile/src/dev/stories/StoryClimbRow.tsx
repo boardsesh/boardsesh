@@ -2,7 +2,10 @@ import { memo, createContext, useContext, useMemo, useCallback, type ReactNode, 
 import type { Climb } from '@boardsesh/shared-schema';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { resolveDisplayGrade } from '../../lib/boardsesh-grade-display';
-import { STORY_BOARD } from '../fixtures/climbs';
+import { View } from 'react-native';
+import { useStoryBoardFixture } from './story-board-fixture';
+import { StorySprayBoard } from './StorySprayBoard';
+import { useClimbListThumbnailSize } from '../../components/climb-list-thumbnail-metrics';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { ClimbListRowView, type ClimbListRowViewProps } from '../../components/ClimbListRow';
 import {
@@ -30,6 +33,8 @@ export function StoryClimbThumbnail({
   ...props
 }: ComponentProps<typeof ClimbListThumbnail>) {
   const renderStyle = useStoryBoardRenderStyle();
+  const fixture = useStoryBoardFixture();
+  const listSize = useClimbListThumbnailSize();
   const observer = useContext(StoryClimbArtContext);
   const reportDisplayed = useCallback(() => {
     onArtDisplayed?.();
@@ -42,6 +47,21 @@ export function StoryClimbThumbnail({
     },
     [onArtError, observer],
   );
+  if (props.boardName === 'spray') {
+    if (!fixture.spray || fixture.board.layoutId !== props.layoutId)
+      throw new Error('Spray thumbnail has no matching story geometry');
+    return (
+      <View style={props.size ?? listSize}>
+        <StorySprayBoard
+          geometry={fixture.spray}
+          frames={props.frames}
+          mirrored={props.mirrored}
+          onReady={reportDisplayed}
+          onError={reportError}
+        />
+      </View>
+    );
+  }
   return (
     <ClimbListThumbnail
       {...props}
@@ -100,9 +120,10 @@ export const StoryClimbRow = memo(function StoryClimbRow({
   onPress?: (climb: Climb) => void;
   selected?: boolean;
 }) {
+  const { board } = useStoryBoardFixture();
   return (
     <ClimbListRowView
-      {...STORY_BOARD}
+      {...board}
       climb={climb}
       onPress={onPress}
       selected={selected}

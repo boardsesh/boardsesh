@@ -1,11 +1,11 @@
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useStorySheetPresentation } from '../../dev/stories/use-story-sheet-presentation';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, FlatList } from 'react-native';
 import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import type { BoardPresenceClimb, Climb } from '@boardsesh/shared-schema';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
-import { STORY_BOARD, STORY_CLIMBS } from '../../dev/fixtures/climbs';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { useStoryBoardRenderStyle } from '../../dev/fixtures/board-render-style';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
 import { useVisibleArtReadiness } from '../../dev/stories/use-visible-art-readiness';
@@ -20,40 +20,28 @@ import { WallStatTile } from './WallPanelStatsViews';
 import { styles } from './wall-panel-styles';
 
 const noop = () => {};
-const presence = STORY_CLIMBS.slice(0, 3).map((climb, index): BoardPresenceClimb => ({
-  climbUuid: climb.uuid,
-  name: climb.name,
-  frames: climb.frames,
-  grade: climb.difficulty,
-  angle: STORY_BOARD.angle,
-  seq: index,
-  sentAt: '2026-11-15T10:00:00Z',
-  sentByDisplayName: index ? 'Alex' : 'Sam',
-  setter: climb.setter_username,
-}));
 const keyExtractor = (climb: BoardPresenceClimb) => climb.climbUuid;
-const sampleFor = (presenceClimb: BoardPresenceClimb): Climb =>
-  STORY_CLIMBS.find((climb) => climb.uuid === presenceClimb.climbUuid)!;
 const Thumbnail = memo(function Thumbnail({
   climb,
   onReady,
   onError,
 }: {
-  climb: BoardPresenceClimb;
+  climb: Climb;
   onReady: (uuid: string) => void;
   onError: (error: unknown) => void;
 }) {
+  const { board: STORY_BOARD } = useStoryBoardFixture();
   const renderStyle = useStoryBoardRenderStyle();
   const report = useCallback(
     (state: 'loading' | 'ready' | 'failed') => {
-      if (state === 'ready') onReady(climb.climbUuid);
+      if (state === 'ready') onReady(climb.uuid);
       if (state === 'failed') onError(new Error('Wall history art failed'));
     },
-    [climb.climbUuid, onReady, onError],
+    [climb.uuid, onReady, onError],
   );
   return (
     <AccessoryClimbThumbnail
-      climb={sampleFor(climb)}
+      climb={climb}
       boardConfig={STORY_BOARD}
       renderStyleOverride={renderStyle}
       onArtReadinessChange={report}
@@ -61,6 +49,24 @@ const Thumbnail = memo(function Thumbnail({
   );
 });
 export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
+  const { board: STORY_BOARD, climbs, label } = useStoryBoardFixture();
+  const presence = useMemo(
+    () =>
+      climbs.slice(0, 3).map((climb, index): BoardPresenceClimb => ({
+        climbUuid: climb.uuid,
+        name: climb.name,
+        frames: climb.frames,
+        grade: climb.difficulty,
+        angle: STORY_BOARD.angle,
+        seq: index,
+        sentAt: '2026-11-15T10:00:00Z',
+        sentByDisplayName: index ? 'Alex' : 'Sam',
+        setter: climb.setter_username,
+      })),
+    [climbs, STORY_BOARD],
+  );
+  const samples = useMemo(() => new Map(climbs.map((climb) => [climb.uuid, climb])), [climbs]);
+  const sampleFor = useCallback((climb: BoardPresenceClimb) => samples.get(climb.climbUuid)!, [samples]);
   const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { t } = useTranslation('session');
@@ -68,7 +74,7 @@ export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
   const managed = useStorySheetPresentation(ref);
   const presented = managed.presented;
   const [heroReady, setHeroReady] = useState(false);
-  const [rowsReady, setRowsReady] = useState(false);
+  const [rowsReady, setRowsReady] = useState(presence.length <= 1);
   const reportRowsReady = useCallback(() => setRowsReady(true), []);
   const { onDisplayed, onViewableItemsChanged } = useVisibleArtReadiness(keyExtractor, reportRowsReady);
   const reportHero = useCallback(() => setHeroReady(true), []);
@@ -88,11 +94,11 @@ export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
           gradeColor={getGradeColor(item.grade ?? '') ?? DEFAULT_GRADE_COLOR}
           sentAgo="5m"
           pressableAvatar={false}
-          thumbnail={<Thumbnail climb={item} onReady={onDisplayed} onError={onError} />}
+          thumbnail={<Thumbnail climb={sampleFor(item)} onReady={onDisplayed} onError={onError} />}
         />
       </View>
     ),
-    [systemColors, onDisplayed, onError, formatGrade],
+    [systemColors, onDisplayed, onError, formatGrade, sampleFor, STORY_BOARD],
   );
   const header = (
     <>
@@ -107,7 +113,7 @@ export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
           formattedGrade={formatGrade(presence[0].grade, STORY_BOARD.boardName)}
           gradeColor={getGradeColor(presence[0].grade ?? '') ?? DEFAULT_GRADE_COLOR}
           pressableAvatar={false}
-          thumbnail={<Thumbnail climb={presence[0]} onReady={reportHero} onError={onError} />}
+          thumbnail={<Thumbnail climb={sampleFor(presence[0])} onReady={reportHero} onError={onError} />}
         />
       </View>
       <View style={styles.statsBlock}>
@@ -141,7 +147,7 @@ export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
     <BoardSheetView ref={ref} onChange={managed.onChange} onFullyDismissed={managed.onFullyDismissed}>
       <NowOnTheWallPanelView
         variant="sheet"
-        boardLabel="Kilter Original"
+        boardLabel={label}
         headerTopPadding={0}
         footerBottomPadding={0}
         onClose={managed.handle.dismiss}
