@@ -10,6 +10,7 @@ import {
   NativeClimbOverlayGPU,
   NativeFrameClimbOverlayGPU,
   type ClimbOverlayGPUComparison,
+  type ClimbOverlayGPUReady,
 } from '../../modules/climb-overlay-gpu/src';
 import { renderHoldsOverlay } from '../../modules/board-renderer/src';
 import { FeatureFlagsProvider, useFeatureFlag } from '../providers/feature-flags-provider';
@@ -30,14 +31,7 @@ import type { StoryModule } from '../dev/stories/types';
 import { spacing } from '../theme/tokens';
 import { Text } from './Text';
 
-type GpuResult = {
-  requestId: string;
-  prepareMs: number;
-  uploadMs: number;
-  gpuMs: number;
-  atlasBytes: number;
-  atlasCacheHit: boolean;
-};
+type GpuResult = ClimbOverlayGPUReady;
 type Sample = {
   requestId: string;
   fixture: string;
@@ -50,6 +44,7 @@ type Sample = {
   gpu?: GpuResult;
 };
 type Mode = GpuParityMode;
+// Keep the existing 'metal' deep-link mode for diagnostic links on either platform.
 const MODES: readonly Mode[] = ['compare', 'rust', 'metal'];
 const RESOLUTIONS = [512, 768, 1024] as const;
 const BOARD_PARAMS = { ...GPU_PARITY_BOARD, setIds: [...GPU_PARITY_BOARD.setIds] };
@@ -237,7 +232,7 @@ function Comparison() {
     ({ nativeEvent }: NativeSyntheticEvent<{ requestId: string; reason: string }>) => {
       if (!mounted.current || !isCurrentGpuParityRequest(currentRequest.current, nativeEvent.requestId)) return;
       setGpuError(nativeEvent.reason);
-      // A Metal-only run still falls back to the matching Rust climb on failure.
+      // A GPU-only run still falls back to the matching Rust climb on failure.
       if (mode === 'metal') {
         void renderHoldsOverlay(
           configJson,
@@ -313,8 +308,8 @@ function Comparison() {
       transition={0}
     />
   ));
-  const milliseconds = (duration: number | undefined) =>
-    duration === undefined ? 'pending' : `${duration.toFixed(1)} ms`;
+  const milliseconds = (duration: number | null | undefined) =>
+    duration === undefined ? 'pending' : duration === null ? 'unavailable' : `${duration.toFixed(1)} ms`;
 
   return (
     <View style={styles.stack}>
@@ -324,7 +319,10 @@ function Comparison() {
       </Text>
       <View style={styles.buttons}>
         <Button title="Next sample" onPress={() => setFixtureIndex((previous) => (previous + 1) % fixtures.length)} />
-        <Button title={`Mode: ${mode}`} onPress={() => setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length])} />
+        <Button
+          title={`Mode: ${mode === 'metal' ? 'gpu' : mode}`}
+          onPress={() => setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length])}
+        />
         <Button
           title={`${outputWidth} px`}
           onPress={() =>
@@ -363,7 +361,7 @@ function Comparison() {
           </StoryVariant>
         ) : null}
         {showGpu && NativeParityGPU ? (
-          <StoryVariant label="Metal shader">
+          <StoryVariant label="GPU shader">
             <View style={[boardStyle, { backgroundColor: boardFieldColorForScheme(scheme) }]}>
               {backgroundLayers}
               {NativeFrameClimbOverlayGPU ? (
@@ -395,13 +393,13 @@ function Comparison() {
       {gpuError ? <Text>GPU unavailable: {gpuError}. Showing Rust.</Text> : null}
       {rustError ? <Text>Rust render failed: {rustError}</Text> : null}
       <Text variant="footnote">
-        Use Rust or Metal mode for isolated timings. Compare mode runs both and is for appearance.
+        Use Rust or GPU mode for isolated timings. Compare mode runs both and is for appearance.
       </Text>
       <Text variant="footnote" numeric>
         Rust API / PNG ready: {milliseconds(latest?.rustApiMs)} · image onLoad: {milliseconds(latest?.rustLoadMs)}
       </Text>
       <Text variant="footnote" numeric>
-        Metal callback: {milliseconds(latest?.gpuCallbackMs)} · GPU: {milliseconds(latest?.gpu?.gpuMs)}
+        GPU callback: {milliseconds(latest?.gpuCallbackMs)} · GPU: {milliseconds(latest?.gpu?.gpuMs)}
       </Text>
       <Text variant="footnote" numeric>
         Atlas prepare: {milliseconds(latest?.gpu?.prepareMs)} · upload: {milliseconds(latest?.gpu?.uploadMs)}
@@ -433,7 +431,7 @@ function Comparison() {
             <StoryVariant label="Rust snapshot">
               <Image source={{ uri: currentPixels.referenceUri }} style={boardStyle} contentFit="contain" />
             </StoryVariant>
-            <StoryVariant label="Metal snapshot">
+            <StoryVariant label="GPU snapshot">
               <Image source={{ uri: currentPixels.gpuUri }} style={boardStyle} contentFit="contain" />
             </StoryVariant>
           </View>
@@ -467,7 +465,7 @@ function Comparison() {
 
 const stories: StoryModule = {
   title: 'GPU climb overlay / Kilter Homewall parity',
-  stories: { parity: { name: 'Rust vs Metal, still', render: () => <Parity /> } },
+  stories: { parity: { name: 'Rust vs GPU, still', render: () => <Parity /> } },
 };
 export default stories;
 

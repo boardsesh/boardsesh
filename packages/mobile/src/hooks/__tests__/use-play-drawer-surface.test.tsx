@@ -69,24 +69,28 @@ describe('player surface and board veil', () => {
     },
   );
 
-  it('tracks Material low tone, Reduce Transparency and theme changes using the route tint', () => {
-    appearance.variant = 'material';
-    appearance.mode = 'material';
-    const { result, rerender } = renderHook(usePlayDrawerSurface);
-    // low #161616 under 55% #0e0e0e; solid uses secondary #1e1e1e.
-    expect(result.current.fieldColor).toBe('#121212');
-    appearance.mode = 'solid';
-    rerender();
-    expect(result.current.fieldColor).toBe('#151515');
-    appearance.scheme = 'light';
-    appearance.mode = 'material';
-    rerender();
-    // low #eaeaea under 60% white.
-    expect(result.current.fieldColor).toBe('#f7f7f7');
-    appearance.mode = 'solid';
-    rerender();
-    expect(result.current.fieldColor).toBe('#ffffff');
-  });
+  it.each(['ios', 'android'])(
+    '%s tracks Material low tone, Reduce Transparency and theme changes using the route tint',
+    (platform) => {
+      appearance.platform = platform;
+      appearance.variant = 'material';
+      appearance.mode = 'material';
+      const { result, rerender } = renderHook(usePlayDrawerSurface);
+      // low #161616 under 55% #0e0e0e; solid uses secondary #1e1e1e.
+      expect(result.current.fieldColor).toBe('#121212');
+      appearance.mode = 'solid';
+      rerender();
+      expect(result.current.fieldColor).toBe('#151515');
+      appearance.scheme = 'light';
+      appearance.mode = 'material';
+      rerender();
+      // low #eaeaea under 60% white.
+      expect(result.current.fieldColor).toBe('#f7f7f7');
+      appearance.mode = 'solid';
+      rerender();
+      expect(result.current.fieldColor).toBe('#ffffff');
+    },
+  );
 
   it('uses the correct iOS and Android secondary bases when Reduce Transparency forces solid', () => {
     appearance.mode = 'solid';

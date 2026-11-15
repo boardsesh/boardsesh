@@ -17,7 +17,7 @@ const controls = vi.hoisted(() => ({
         requestId: string;
         prepareMs: number;
         uploadMs: number;
-        gpuMs: number;
+        gpuMs: number | null;
         atlasBytes: number;
         atlasCacheHit: boolean;
       };
@@ -136,6 +136,28 @@ describe('GPU parity story fallback and request ownership', () => {
     expect(screen.queryByTestId('gpu-view')).toBeNull();
   });
 
+  it('reports unavailable GPU duration without treating it as pending or zero', async () => {
+    await openStory();
+    await enableGpu();
+    expect(screen.getByText(/GPU callback: pending · GPU: pending/)).toBeTruthy();
+    const current = controls.nativeProps!;
+    await act(async () => {
+      current.onRenderReady({
+        nativeEvent: {
+          requestId: current.requestId,
+          prepareMs: 2,
+          uploadMs: 1,
+          gpuMs: null,
+          atlasBytes: 1024,
+          atlasCacheHit: false,
+        },
+      });
+    });
+    expect(screen.getByText(/GPU: unavailable/)).toBeTruthy();
+    expect(screen.queryByText(/GPU: 0.0 ms/)).toBeNull();
+    expect(screen.getByRole('region', { name: 'GPU shader' })).toBeTruthy();
+  });
+
   it('keeps Rust visible when the optional native module is missing', async () => {
     controls.available = false;
     await openStory();
@@ -240,7 +262,7 @@ describe('GPU parity story fallback and request ownership', () => {
       });
     });
     expect(screen.getByText(/image onLoad: 20.0 ms/)).toBeTruthy();
-    expect(screen.getByText(/Metal callback: 30.0 ms/)).toBeTruthy();
+    expect(screen.getByText(/GPU callback: 30.0 ms/)).toBeTruthy();
     expect(screen.getByText(/Atlas prepare: 42.0 ms/)).toBeTruthy();
     expect(screen.queryByText(/999.0 ms/)).toBeNull();
   });
