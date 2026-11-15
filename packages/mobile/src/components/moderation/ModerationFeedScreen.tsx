@@ -31,6 +31,7 @@ import { useBrowseProposals, useClimbProposalsPinned } from '../../lib/graphql/h
 import { useMyRoles } from '../../lib/graphql/hooks/use-my-roles';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useAuthToken } from '../../lib/graphql/use-auth-token';
+import { useHttpActionScope, type HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDeferredSheetData } from '../../hooks/use-deferred-sheet-data';
@@ -61,7 +62,35 @@ export type ModerationFeedScreenProps = {
   boardType?: string;
 };
 
-export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardType }: ModerationFeedScreenProps) {
+export function ModerationFeedScreen(props: ModerationFeedScreenProps) {
+  const actionScope = useHttpActionScope();
+  return <OwnedModerationFeedScreen key={actionScope.key} {...props} actionScope={actionScope} />;
+}
+
+function OwnedModerationFeedScreen({
+  highlightProposalUuid,
+  climbUuid,
+  boardType,
+  actionScope,
+}: ModerationFeedScreenProps & { actionScope: HttpActionScope }) {
+  const { capture: captureAction } = actionScope;
+  const invokeCurrent = useCallback(
+    <Result,>(invoke: () => Result): Result | undefined => {
+      let action: ReturnType<typeof captureAction>;
+      try {
+        action = captureAction();
+      } catch {
+        return;
+      }
+      try {
+        action.assertView();
+        return invoke();
+      } finally {
+        action.finish();
+      }
+    },
+    [captureAction],
+  );
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { t: tBoards } = useTranslation('boards');
@@ -157,50 +186,52 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
   const showSpinner = !showOffline && isPending && proposals.length === 0;
   const showError = !showOffline && isError && proposals.length === 0;
 
-  const handleRefresh = useCallback(() => void refetch(), [refetch]);
+  const handleRefresh = useCallback(() => void invokeCurrent(() => refetch()), [refetch, invokeCurrent]);
 
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (hasNextPage && !isFetchingNextPage) void invokeCurrent(() => fetchNextPage());
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, invokeCurrent]);
 
   // Preview, not activate: opening a reported climb from the queue is a look at
   // what is being argued about, not a decision to climb it next.
   const handleOpenClimb = useCallback(
     (proposal: Proposal) => {
-      const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
-      const climb = proposalToClimb(proposal);
-      if (climb && boardConfig) {
+      invokeCurrent(() => {
+        const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
+        const climb = proposalToClimb(proposal);
+        if (climb && boardConfig) {
+          openClimbInPlayDrawer(
+            {
+              kind: 'climb',
+              climb,
+              boardConfig: {
+                boardName: boardConfig.boardName,
+                layoutId: boardConfig.layoutId,
+                sizeId: boardConfig.sizeId,
+                setIds: boardConfig.setIds.join(','),
+                angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
+              },
+            },
+            { openPlayDrawer, router },
+            { preview: true },
+          );
+          return;
+        }
+        // No frames on the feed row (or a board that can't resolve): fall back to
+        // the reference open, which loads the full climb by uuid.
         openClimbInPlayDrawer(
           {
-            kind: 'climb',
-            climb,
-            boardConfig: {
-              boardName: boardConfig.boardName,
-              layoutId: boardConfig.layoutId,
-              sizeId: boardConfig.sizeId,
-              setIds: boardConfig.setIds.join(','),
-              angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
-            },
+            kind: 'ref',
+            climbUuid: proposal.climbUuid,
+            boardType: proposal.boardType,
+            layoutId: proposal.layoutId,
+            angle: proposal.angle ?? (boardConfig ? defaultAngle(boardConfig.boardName) : 0),
           },
           { openPlayDrawer, router },
-          { preview: true },
         );
-        return;
-      }
-      // No frames on the feed row (or a board that can't resolve): fall back to
-      // the reference open, which loads the full climb by uuid.
-      openClimbInPlayDrawer(
-        {
-          kind: 'ref',
-          climbUuid: proposal.climbUuid,
-          boardType: proposal.boardType,
-          layoutId: proposal.layoutId,
-          angle: proposal.angle ?? (boardConfig ? defaultAngle(boardConfig.boardName) : 0),
-        },
-        { openPlayDrawer, router },
-      );
+      });
     },
-    [openPlayDrawer, router],
+    [openPlayDrawer, router, invokeCurrent],
   );
 
   // A card menu's Add to playlist presents HERE, inside this modal route: the
@@ -215,8 +246,8 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
     clearIfClosed: clearPlaylistSheet,
   } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const openPlaylistInRoute = useCallback(
-    (climb: Climb, boardConfig: BoardConfig) => openPlaylistSheet({ climb, boardConfig }),
-    [openPlaylistSheet],
+    (climb: Climb, boardConfig: BoardConfig) => invokeCurrent(() => openPlaylistSheet({ climb, boardConfig })),
+    [openPlaylistSheet, invokeCurrent],
   );
 
   const handleLongPressClimb = useCallback(
@@ -224,19 +255,21 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
       const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
       const climb = proposalToClimb(proposal);
       if (!climb || !boardConfig) return;
-      return getClimbActions(
-        climb,
-        {
-          boardName: boardConfig.boardName,
-          layoutId: boardConfig.layoutId,
-          sizeId: boardConfig.sizeId,
-          setIds: boardConfig.setIds.join(','),
-          angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
-        },
-        { openPlaylistInRoute },
+      return invokeCurrent(() =>
+        getClimbActions(
+          climb,
+          {
+            boardName: boardConfig.boardName,
+            layoutId: boardConfig.layoutId,
+            sizeId: boardConfig.sizeId,
+            setIds: boardConfig.setIds.join(','),
+            angle: proposal.angle ?? defaultAngle(boardConfig.boardName),
+          },
+          { openPlaylistInRoute },
+        ),
       );
     },
-    [getClimbActions, openPlaylistInRoute],
+    [getClimbActions, openPlaylistInRoute, invokeCurrent],
   );
 
   const renderItem = useCallback(
@@ -275,7 +308,10 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
     [activeBoardType],
   );
 
-  const openSprayReports = useCallback(() => router.push('/moderation/spray-walls'), [router]);
+  const openSprayReports = useCallback(
+    () => invokeCurrent(() => router.push('/moderation/spray-walls')),
+    [router, invokeCurrent],
+  );
 
   const listHeader = useMemo(
     () => (

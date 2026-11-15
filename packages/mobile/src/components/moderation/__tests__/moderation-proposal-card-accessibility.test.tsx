@@ -163,3 +163,10 @@ describe('ModerationProposalCard — native climb commands', () => {
     expect(onOpenClimb).toHaveBeenCalledWith(proposal);
   });
 });
+
+// The native host keeps its existing credential policy; the real action hook
+// still owns layout cleanup and caller cancellation.
+vi.mock('../../../lib/graphql/use-http-query-scope', () => {
+  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
+  return { useHttpQueryScope: () => scope };
+});
