@@ -7,18 +7,28 @@ let current: {
 /** Coordinates only; the subsequent primary session response still determines
  * identity. No metadata cursor is accepted as an authenticated Session. */
 export async function readCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
-  await coordinate(origin, signal, false);
+  await coordinate(origin, signal, 'read');
 }
-/** Session refresh only. OAuth preflight keeps using the read-only method so
- * an existing account-change intent cannot block its own provider continuation. */
+/** Session refresh only. Explicit account-change preflight remains read-only;
+ * ordinary provider sign-in uses its dedicated signIn method below. */
 export async function renewCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
-  await coordinate(origin, signal, true);
+  await coordinate(origin, signal, 'renew');
 }
-async function coordinate(origin: string, signal: AbortSignal, renew: boolean) {
+/** Explicit ordinary sign-in only. The returned cursor is control metadata to
+ * pin across the caller's next lock, never an authenticated Session. */
+export async function signInCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
+  return coordinate(origin, signal, 'signin');
+}
+async function coordinate(origin: string, signal: AbortSignal, operation: 'read' | 'renew' | 'signin') {
   if (typeof window === 'undefined') throw new Error('COORDINATOR_UNAVAILABLE');
   if (current && current.origin !== origin) throw new Error('COORDINATOR_UNAVAILABLE');
   if (!current || current.frame.isClosed())
     current = { origin, frame: createCanonicalBrowserCoordinatorFrame({ window, canonicalOrigin: origin }) };
-  const observed = await (renew ? current.frame.renew(signal) : current.frame.read(signal));
+  const observed = await (operation === 'renew'
+    ? current.frame.renew(signal)
+    : operation === 'signin'
+      ? current.frame.signIn(signal)
+      : current.frame.read(signal));
   if (observed.status !== 'ready' || signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
+  return Object.freeze({ ...observed.cursor });
 }

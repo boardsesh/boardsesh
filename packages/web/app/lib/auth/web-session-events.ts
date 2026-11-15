@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
 import { publicProviderSecurityReady } from './provider-security-readiness';
-import { readCanonicalBrowserCoordinator } from './browser-coordinator-client';
+import { readCanonicalBrowserCoordinator, signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
 import { startCanonicalProviderSignin } from './canonical-provider-start';
 
@@ -62,6 +62,11 @@ export async function signInWithSessionIntent(
   const providerReady = publicProviderSecurityReady();
   const selectedProvider = provider !== 'credentials' && (coordinatorReady || providerReady);
   try {
+    // A selected password publisher must join the actual binding transaction.
+    // Until that separate writer exists, metadata preflight cannot authorize a
+    // naked NextAuth credential write or a legacy fallback.
+    if (provider === 'credentials' && (coordinatorReady || providerReady))
+      return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
     if (selectedProvider) {
       const controller = new AbortController();
       const abort = () => controller.abort();
@@ -93,7 +98,9 @@ export async function signInWithSessionIntent(
           {
             currentOrigin: window.location.origin,
             locks: navigator.locks,
-            preflight: readCanonicalBrowserCoordinator,
+            preflight: parsed.providerSecurityOperation
+              ? readCanonicalBrowserCoordinator
+              : signInCanonicalBrowserCoordinator,
             send: fetch,
             navigate: (destination) => window.location.assign(destination),
           },
@@ -111,6 +118,6 @@ export async function signInWithSessionIntent(
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.
-    if (!selectedProvider && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
+    if (!coordinatorReady && !providerReady && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
   }
 }

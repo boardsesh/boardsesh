@@ -1,4 +1,10 @@
-import { BROWSER_COORDINATOR_LOCK } from '@boardsesh/auth-protocol/browser-coordinator';
+import {
+  BROWSER_COORDINATOR_LOCK,
+  BROWSER_COORDINATOR_PUBLIC_PATHS,
+  browserBindingCursorSchema,
+  browserCoordinatorObservationSchema,
+  type BrowserBindingCursor,
+} from '@boardsesh/auth-protocol/browser-coordinator';
 import { acknowledgeProviderSignin } from './provider-signin-acknowledgment';
 
 interface ProviderStartLocks {
@@ -11,7 +17,7 @@ interface ProviderStartLocks {
 const unavailable = (): never => {
   throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
 };
-async function settledJson(response: Response): Promise<unknown> {
+async function settledJson(response: Response, maximumBytes = 16_384): Promise<unknown> {
   if (!response.body) return unavailable();
   const reader = response.body.getReader();
   let bytes = 0;
@@ -21,7 +27,7 @@ async function settledJson(response: Response): Promise<unknown> {
       const chunk = await reader.read();
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
-      if (bytes > 16_384) {
+      if (bytes > maximumBytes) {
         await reader.cancel();
         return unavailable();
       }
@@ -53,7 +59,7 @@ export async function startCanonicalProviderSignin(
   dependencies: {
     readonly currentOrigin: string;
     readonly locks: ProviderStartLocks | undefined;
-    readonly preflight: (origin: string, signal: AbortSignal) => Promise<void>;
+    readonly preflight: (origin: string, signal: AbortSignal) => Promise<BrowserBindingCursor | void>;
     readonly send: typeof fetch;
     readonly beforeSignin?: () => Promise<void>;
     readonly navigate: (destination: string) => void;
@@ -96,11 +102,32 @@ export async function startCanonicalProviderSignin(
   const requestLock = dependencies.locks.request.bind(dependencies.locks);
   // The frame itself takes the same canonical-origin lock. Holding it here
   // while awaiting frame preflight would deadlock the two documents.
-  await preflight(canonicalOrigin, signal);
+  const observed = await preflight(canonicalOrigin, signal);
   if (signal.aborted) return unavailable();
+  const pinned = operation ? null : browserBindingCursorSchema.parse(observed);
   let destination: string | undefined;
   await requestLock(BROWSER_COORDINATOR_LOCK, { mode: 'exclusive', signal }, async () => {
     if (signal.aborted) return unavailable();
+    if (pinned) {
+      // The frame released this same-name lock before we acquired it. Observe
+      // directly here so an intervening selection cannot adopt an old click.
+      const response = await send(`${canonicalOrigin}${BROWSER_COORDINATOR_PUBLIC_PATHS.observe}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        keepalive: false,
+        redirect: 'error',
+        signal,
+      });
+      const current = browserCoordinatorObservationSchema.parse(await settledJson(response, 8_192));
+      if (
+        response.status !== 200 ||
+        current.status !== 'ready' ||
+        signal.aborted ||
+        current.cursor.bindingId !== pinned.bindingId ||
+        current.cursor.version !== pinned.version
+      )
+        return unavailable();
+    }
     const acknowledged = await acknowledgeProviderSignin(canonicalOrigin, signal, send);
     if ((acknowledged !== 'none' && acknowledged !== 'recovered') || signal.aborted) return unavailable();
     await beforeSignin?.();
