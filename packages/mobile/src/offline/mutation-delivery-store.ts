@@ -10,12 +10,16 @@ export function subscribeMutationDelivery(listener: (event: MutationDeliveryEven
 export function publishMutationDeliveryEvent(
   event: MutationDeliveryEvent,
   onListenerError: (failure: MutationStatusListenerFailure) => void,
+  assertCurrent?: () => void,
 ): void {
   for (const listener of listeners) {
+    assertCurrent?.();
     try {
       listener(event);
     } catch (error) {
+      assertCurrent?.();
       onListenerError({ error, event });
     }
+    assertCurrent?.();
   }
 }

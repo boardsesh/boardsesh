@@ -1,3 +1,4 @@
+import { createTestDatabase } from '../../testing/sqlite-test-db';
 // runPullWrite's ladder sizing, guard placement and telemetry (issue #5851).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { OfflineDatabase, SqlExecutor } from '../../database';
@@ -181,5 +182,46 @@ describe('runGuardedPullWrite (#5851)', () => {
     await expect(
       runGuardedPullWrite(db, { site: 'user-data-complete', canWrite: () => true }, async () => {}),
     ).resolves.toBe(true);
+  });
+});
+
+describe('original write assertion under the actual transaction', () => {
+  it('rolls back an executed SQLite write when its original guard retires during an await', async () => {
+    const db = createTestDatabase();
+    await db.execAsync('CREATE TABLE owned_proof (note TEXT)');
+    let live = true;
+    const assertCurrent = () => {
+      if (!live) throw new Error('Original delivery expired');
+    };
+    try {
+      await expect(
+        runPullWrite(
+          db,
+          async (transaction) => {
+            await transaction.runAsync('INSERT INTO owned_proof (note) VALUES (?)', ['must-roll-back']);
+            await Promise.resolve();
+            live = false;
+          },
+          { site: 'owned-test', assertCurrent },
+        ),
+      ).rejects.toThrow('Original delivery expired');
+      expect(await db.getAllAsync('SELECT * FROM owned_proof')).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+  it('does not publish lock-settlement telemetry under a retired original guard', async () => {
+    const { db } = scriptedDatabase(1);
+    const reporter = vi.fn();
+    setPullWriteSettledReporter(reporter);
+    await expect(
+      runPullWrite(db, async () => {}, {
+        site: 'owned-test',
+        assertCurrent: () => {
+          throw new Error('Retired');
+        },
+      }),
+    ).rejects.toThrow('Retired');
+    expect(reporter).not.toHaveBeenCalled();
   });
 });
