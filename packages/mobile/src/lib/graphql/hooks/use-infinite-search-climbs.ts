@@ -103,6 +103,7 @@ export function useInfiniteSearchClimbs(
   // above it stays out of the placeholder's board scope.
   const searchInput: ClimbSearchInput = useGradeSourceSearchInput({ ...input, crossAngleStats });
   const queryClient = useQueryClient();
+  const isQueryEnabled = enabled && (!input.onlyFollowedAuthors || !!userId);
   const queryKey = [...getSearchClimbsQueryKey(searchInput), ...(input.onlyFollowedAuthors ? [userId] : [])];
   const query = useInfiniteQuery({
     queryKey,
@@ -116,7 +117,7 @@ export function useInfiniteSearchClimbs(
       screenshotModeNextPageParam(lastPage.searchClimbs.hasMore ? allPages.length : undefined, allPages.length),
     select: selectSearchClimbPages,
     placeholderData,
-    enabled: enabled && (!input.onlyFollowedAuthors || !!userId),
+    enabled: isQueryEnabled,
     // Preserve the provider's offlineFirst default for downloaded-board reads.
     ...(input.onlyFollowedAuthors ? { networkMode: 'always' as const } : {}),
     staleTime: options?.staleTime,
@@ -136,21 +137,26 @@ export function useInfiniteSearchClimbs(
   // `status` reads `success` while a placeholder is up, so "still waiting for
   // its own answer" is pending OR showing a placeholder.
   //
-  // Once per search per settled state: the guard is the key plus when the
-  // query last got data or an error. A re-ask that pauses again changes
-  // neither, so it can't loop, and the cancel's brief revert to an earlier
-  // state can't clear it. A search that settles and later pauses again (an
-  // error, then a sync invalidation's refetch) has a new stamp and is re-asked.
+  // Once per search per settled state: the guard is the key plus how many
+  // errors the query has had (a search still waiting for its own answer has
+  // no data of its own, so errors are the only way it can have settled). A
+  // re-ask that pauses again leaves both alone, so it can't loop, and the
+  // cancel's brief revert to an earlier state can't clear it. A search that
+  // errors and later pauses again (a sync invalidation's refetch) has a new
+  // count and is re-asked.
   //
   // Backgrounding the app mid-retry also pauses it (focus, not connectivity);
   // the re-ask then costs one request, and a re-pause resumes on foreground.
-  const { fetchStatus, isPending, isPlaceholderData, dataUpdatedAt, errorUpdatedAt } = query;
+  //
+  // Skipped while disabled: a refetch would be filtered out, spending the
+  // guard on a cancel alone.
+  const { fetchStatus, isPending, isPlaceholderData, errorUpdateCount } = query;
   const searchHash = hashKey(queryKey);
   const isWaitingForOwnAnswer = isPending || isPlaceholderData;
   const reaskedSearchRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!isWaitingForOwnAnswer || fetchStatus !== 'paused') return;
-    const guard = `${searchHash}|${dataUpdatedAt}|${errorUpdatedAt}`;
+    if (!isQueryEnabled || !isWaitingForOwnAnswer || fetchStatus !== 'paused') return;
+    const guard = `${searchHash}|${errorUpdateCount}`;
     if (reaskedSearchRef.current === guard) return;
     reaskedSearchRef.current = guard;
     const pausedKey = queryClient.getQueryCache().get(searchHash)?.queryKey;
@@ -158,7 +164,7 @@ export function useInfiniteSearchClimbs(
     void queryClient
       .cancelQueries({ queryKey: pausedKey, exact: true })
       .then(() => queryClient.refetchQueries({ queryKey: pausedKey, exact: true }));
-  }, [isWaitingForOwnAnswer, fetchStatus, searchHash, dataUpdatedAt, errorUpdatedAt, queryClient]);
+  }, [isQueryEnabled, isWaitingForOwnAnswer, fetchStatus, searchHash, errorUpdateCount, queryClient]);
 
   return query;
 }
