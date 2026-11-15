@@ -1,10 +1,11 @@
 import { useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   PROPOSAL_REPORT_RELEASE_CONTEXTS,
   type ProposalReportReleaseContextsQueryResponse,
 } from '@boardsesh/graphql/operations';
-import { getHttpClient } from '../client';
+import { useHttpQuery } from '../use-http-query';
+import { useHttpQueryScope } from '../use-http-query-scope';
 import { useAuthToken } from '../use-auth-token';
 
 let nextSessionScope = 0;
@@ -18,22 +19,24 @@ export function useProposalReportReleaseContexts(proposalUuid: string, enabled: 
     () => ['proposalReportReleaseContexts', proposalUuid, sessionScope] as const,
     [proposalUuid, sessionScope],
   );
-  const canRead = enabled && !!authToken;
+  const httpScope = useHttpQueryScope();
+  const ownedQueryKey = useMemo(() => Object.freeze([...httpScope.key(queryKey)]), [httpScope, queryKey]);
+  const canRead = enabled && !!authToken && httpScope.isReady();
   useEffect(() => {
     if (!canRead) {
-      void queryClient.cancelQueries({ queryKey });
-      queryClient.removeQueries({ queryKey });
+      void queryClient.cancelQueries({ queryKey: ownedQueryKey, exact: true }).catch(() => {});
+      queryClient.removeQueries({ queryKey: ownedQueryKey, exact: true });
     }
     return () => {
-      void queryClient.cancelQueries({ queryKey });
-      queryClient.removeQueries({ queryKey });
+      void queryClient.cancelQueries({ queryKey: ownedQueryKey, exact: true }).catch(() => {});
+      queryClient.removeQueries({ queryKey: ownedQueryKey, exact: true });
     };
-  }, [canRead, queryClient, queryKey]);
-  const query = useQuery({
+  }, [canRead, queryClient, ownedQueryKey]);
+  const query = useHttpQuery({
     queryKey,
-    queryFn: async ({ signal }) =>
+    queryFn: async ({ signal }, operation) =>
       (
-        await getHttpClient().request<ProposalReportReleaseContextsQueryResponse>({
+        await operation.request<ProposalReportReleaseContextsQueryResponse>({
           document: PROPOSAL_REPORT_RELEASE_CONTEXTS,
           variables: { proposalUuid },
           signal,

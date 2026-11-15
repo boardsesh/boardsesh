@@ -6,13 +6,13 @@
 // backend's message inline (a frozen climb, an already-hidden climb), where the
 // climber can read it next to the form that produced it.
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   REPORT_CLIMB,
   type ReportClimbResponse,
   type ReportClimbVariables,
 } from '@boardsesh/graphql/operations/proposals';
-import { getHttpClient } from '../client';
+import { useHttpMutation } from '../use-http-mutation';
 import { readMobileReleaseContext } from '../../release-context';
 import { PROPOSALS_QUERY_KEY } from '../query-keys';
 import { requestReport } from '../request-report';
@@ -27,23 +27,24 @@ const CLIMB_LIST_QUERY_KEYS = [['searchClimbs'], ['infiniteSearchClimbs'], ['sea
 
 export function useReportClimb() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (variables: ReportClimbVariables) => {
+  return useHttpMutation({
+    mutationFn: async (variables: ReportClimbVariables, operation) => {
       const response = await requestReport(
         (requestVariables: ReportClimbVariables) =>
-          getHttpClient().request<ReportClimbResponse, ReportClimbVariables>(REPORT_CLIMB, requestVariables),
+          operation.request<ReportClimbResponse, ReportClimbVariables>(REPORT_CLIMB, requestVariables),
         { ...variables, input: { ...variables.input, releaseContext: readMobileReleaseContext() } },
         'ReportClimbInput',
       );
       return response.reportClimb;
     },
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY });
-      void queryClient.invalidateQueries({ queryKey: CLIMB_QUERY_KEY });
+    onSuccess: (result, _variables, _context, operation) => {
+      const cache = operation.cache(queryClient);
+      void cache.invalidateQueries({ queryKey: PROPOSALS_QUERY_KEY }).catch(() => {});
+      void cache.invalidateQueries({ queryKey: CLIMB_QUERY_KEY }).catch(() => {});
       // An approved grade (a spray wall owner's, #5971) changed the climb's grade
       // on the server, so the lists showing the old one refetch.
       if (result.proposal.status === 'approved' && result.proposal.type === 'grade') {
-        for (const queryKey of CLIMB_LIST_QUERY_KEYS) void queryClient.invalidateQueries({ queryKey });
+        for (const queryKey of CLIMB_LIST_QUERY_KEYS) void cache.invalidateQueries({ queryKey }).catch(() => {});
       }
     },
   });
