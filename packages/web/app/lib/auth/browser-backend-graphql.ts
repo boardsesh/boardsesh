@@ -40,7 +40,7 @@ export function createBrowserBackendGraphQLTransport(options: {
           : 'headers' in response
             ? response.headers
             : undefined;
-      if (response instanceof Error) transport.admitResponse({ kind: 'error', headers });
+      if (response instanceof Error) transport.admitResponse({ kind: 'error', headers, error: response });
       else transport.admitResponse({ kind: 'result', headers, data: 'data' in response ? response.data : undefined });
     },
   };

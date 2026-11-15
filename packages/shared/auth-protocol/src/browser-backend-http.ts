@@ -16,7 +16,12 @@ type LeaseAuthority = {
  * recovered from this transport's original Response headers, never these
  * fields, a reconstructed result, or serialized client metadata. */
 export type BrowserBackendHttpObservation =
-  | { readonly kind: 'error'; readonly headers?: unknown }
+  | {
+      readonly kind: 'error';
+      readonly headers?: unknown;
+      readonly error?: unknown;
+      readonly requestIdentity?: AbortSignal | null;
+    }
   | { readonly kind: 'result'; readonly headers: unknown; readonly data: unknown };
 
 type Delivery = {
@@ -26,6 +31,29 @@ type Delivery = {
   readonly signal: AbortSignal | null | undefined;
 };
 const deliveredResults = new WeakMap<object, Delivery>();
+const deliveredErrors = new WeakMap<object, Delivery & { readonly requestIdentity: AbortSignal | null | undefined }>();
+
+/** Exact SDK error and invocation identity, never copied error metadata. */
+export function captureBrowserBackendHttpError(
+  error: unknown,
+  client: BrowserClient,
+  requestIdentity: AbortSignal,
+): (() => void) | null {
+  if (!client.isSelected() || error === null || typeof error !== 'object') return null;
+  const receipt = deliveredErrors.get(error);
+  if (!receipt || receipt.client !== client || receipt.requestIdentity !== requestIdentity) return null;
+  const assertCurrent = () => {
+    if (client.getSnapshot().closed || !client.isSelected() || receipt.signal?.aborted || requestIdentity.aborted)
+      throw new BrowserBackendConsumerError('superseded');
+    receipt.authority.assertCurrent(receipt.lease);
+  };
+  try {
+    assertCurrent();
+    return assertCurrent;
+  } catch {
+    return null;
+  }
+}
 
 /** Capture this delivery once. A later decoder observation of the same object
  * must not replace an operation's original lease or cancellation signal. */
@@ -132,6 +160,16 @@ function createHttpTransport(client: BrowserClient, performFetch: typeof fetch, 
       if (!lease || !delivery) throw new BrowserBackendConsumerError('superseded');
       if (delivery.signal?.aborted) throw delivery.signal.reason ?? new Error('GraphQL request aborted');
       authority.assertCurrent(lease);
+      if (observed.kind === 'error' && observed.error instanceof Error) {
+        if (deliveredErrors.has(observed.error)) throw new BrowserBackendConsumerError('superseded');
+        deliveredErrors.set(observed.error, {
+          client,
+          authority,
+          lease,
+          signal: delivery.signal,
+          requestIdentity: observed.requestIdentity ?? delivery.signal,
+        });
+      }
       if (observed.kind === 'result' && observed.data !== null && typeof observed.data === 'object') {
         const receipt = { client, authority, lease, signal: delivery.signal };
         deliveredResults.set(observed.data, receipt);

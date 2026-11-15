@@ -3,6 +3,7 @@ import { createBrowserBackendClient } from '../browser-backend-client';
 import {
   captureBrowserBackendHttpScope,
   captureBrowserBackendHttpResult,
+  captureBrowserBackendHttpError,
   createBrowserBackendHttpTransport,
   createBrowserBackendHttpTransportForView,
   isCurrentBrowserBackendHttpResult,
@@ -325,4 +326,67 @@ describe('SDK-independent browser HTTP authority and delivery receipts', () => {
     expect(current.onConfirmedRefusal).toHaveBeenCalledTimes(1);
     expect(current.graphFetch).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('exact error objects carry separate immutable HTTP provenance', () => {
+  it('captures only the exact admitted error and actual request identity', async () => {
+    const current = fixture();
+    const transport = current.create();
+    const signal = new AbortController().signal;
+    const response = await transport.fetch('https://owned.test/graphql', { signal });
+    const error = new Error('Owned decoder rejection');
+    transport.admitResponse({ kind: 'error', headers: response.headers, error });
+    expect(captureBrowserBackendHttpError(error, current.client, signal)).not.toBeNull();
+    expect(captureBrowserBackendHttpError(new Error(error.message), current.client, signal)).toBeNull();
+    expect(captureBrowserBackendHttpError(error, current.client, new AbortController().signal)).toBeNull();
+    expect(captureBrowserBackendHttpResult(error, current.client)).toBeNull();
+  });
+  it('refuses copied headers and unknown errors without creating a delivery', async () => {
+    const current = fixture();
+    const transport = current.create();
+    const signal = new AbortController().signal;
+    const response = await transport.fetch('https://owned.test/graphql', { signal });
+    const error = new Error('Owned rejection');
+    expect(() =>
+      transport.admitResponse({ kind: 'error', headers: new Headers(response.headers), error }),
+    ).not.toThrow();
+    expect(captureBrowserBackendHttpError(error, current.client, signal)).toBeNull();
+    transport.admitResponse({ kind: 'error', error });
+    expect(captureBrowserBackendHttpError(error, current.client, signal)).toBeNull();
+  });
+  it('never relabels the same error with a later packet or lease', async () => {
+    const current = fixture();
+    const transport = current.create();
+    const firstSignal = new AbortController().signal;
+    const first = await transport.fetch('https://owned.test/graphql', { signal: firstSignal });
+    const error = new Error('Owned rejection');
+    transport.admitResponse({ kind: 'error', headers: first.headers, error });
+    const original = captureBrowserBackendHttpError(error, current.client, firstSignal)!;
+    current.setClock(90_000);
+    const secondSignal = new AbortController().signal;
+    const second = await transport.fetch('https://owned.test/graphql', { signal: secondSignal });
+    expect(() => transport.admitResponse({ kind: 'error', headers: second.headers, error })).toThrow();
+    expect(captureBrowserBackendHttpError(error, current.client, secondSignal)).toBeNull();
+    current.setClock(120_001);
+    expect(original).toThrow();
+    expect(captureBrowserBackendHttpError(error, current.client, firstSignal)).toBeNull();
+  });
+  it.each(['B', 'ABA', 'abort', 'dispose'] as const)(
+    'refuses error admission after original %s retirement',
+    async (change) => {
+      const current = fixture();
+      const transport = current.create();
+      const caller = new AbortController();
+      const response = await transport.fetch('https://owned.test/graphql', { signal: caller.signal });
+      const error = new Error('Owned decoder rejection');
+      if (change === 'abort') caller.abort();
+      else if (change === 'dispose') transport.dispose();
+      else {
+        current.switchAccount('owned-B');
+        if (change === 'ABA') current.switchAccount('owned-A');
+      }
+      expect(() => transport.admitResponse({ kind: 'error', headers: response.headers, error })).toThrow();
+      expect(captureBrowserBackendHttpError(error, current.client, caller.signal)).toBeNull();
+    },
+  );
 });

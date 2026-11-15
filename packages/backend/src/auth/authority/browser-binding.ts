@@ -199,7 +199,7 @@ async function admitSelection(
     return { status: 'denied' };
   if (session.expiresAt.getTime() <= now.getTime()) return { status: 'denied' };
   const admitted = await readFirstPartySession(transaction, presented.credential, now, (userId) =>
-    readLockedWebSubjectState(transaction, userId),
+    userId === session.userId ? readLockedWebSubjectState(transaction, userId) : Promise.resolve(undefined),
   );
   if (admitted.status !== 'admitted') return admitted;
   if (!sameSessionEvidence(session, admitted.session)) return { status: 'denied' };
@@ -625,6 +625,92 @@ export async function beginBrowserIntent(
     });
     return { status: 'prepared' as const, intentToken, cursor: cursor(binding), expiresAt };
   });
+}
+
+/** The issuer owns the transaction and has already locked every possible
+ * target/source user in ID order. Refuse a changed owner before any new user
+ * lock. The returned state hash includes this operation's intent revision. */
+export async function beginBrowserLoginInTransaction(
+  transaction: AuthorityTransaction,
+  authority: IdentityAuthorityReceipt,
+  requested: {
+    readonly bindingToken: string;
+    readonly expectedVersion: number;
+    readonly expectedSourceUserId: string | null;
+    readonly actor?: BrowserSelectionCredential;
+    readonly maximumLifetimeMs: number;
+  },
+) {
+  const input = { ...requested, actor: copyPossession(requested.actor) };
+  if (
+    !tokenPattern.test(input.bindingToken) ||
+    !Number.isSafeInteger(input.expectedVersion) ||
+    input.expectedVersion < 0 ||
+    input.expectedVersion >= MAX_VERSION ||
+    !Number.isSafeInteger(input.maximumLifetimeMs) ||
+    input.maximumLifetimeMs <= 0 ||
+    input.maximumLifetimeMs > INTENT_LIFETIME_MS
+  )
+    return { status: 'denied' as const };
+  await revalidateIdentityAuthority(transaction, authority);
+  const binding = await findBinding(transaction, input.bindingToken, true);
+  const now = await databaseNow(transaction);
+  if (!binding || binding.expiresAt.getTime() <= now.getTime()) return { status: 'denied' as const };
+  if (binding.version !== input.expectedVersion || binding.userId !== input.expectedSourceUserId)
+    return { status: 'conflict' as const };
+  const selection = selectedSession(binding);
+  let sourceSession: FirstPartySession | null = null;
+  if (selection) {
+    const admitted = await admitSelection(transaction, binding, selection, input.actor, now);
+    if (admitted.status !== 'admitted') return { status: admitted.status };
+    sourceSession = admitted.session;
+  } else if (input.actor) return { status: 'denied' as const };
+  const intentToken = randomBytes(32).toString('base64url');
+  const sourceIntentRevision = binding.intentRevision;
+  const revision = nextVersion(sourceIntentRevision);
+  const expiresAt = new Date(
+    Math.min(
+      now.getTime() + input.maximumLifetimeMs,
+      binding.expiresAt.getTime(),
+      sourceSession?.expiresAt.getTime() ?? Infinity,
+    ),
+  );
+  await transaction
+    .update(authBrowserBindings)
+    .set({ intentRevision: revision })
+    .where(eq(authBrowserBindings.id, binding.id));
+  await transaction.insert(authBrowserIntents).values({
+    id: digest(intentToken),
+    bindingId: binding.id,
+    revision,
+    expectedVersion: binding.version,
+    operation: 'login',
+    formatVersion: 2,
+    actorCredentialHash: actorHash(input.actor),
+    projectionId: authority.projectionId,
+    authority: authority.authority,
+    epoch: authority.epoch,
+    createdAt: now,
+    expiresAt,
+  });
+  // Preserve PostgreSQL timestamp precision and every row field in the hash.
+  const [precise] = await transaction
+    .select({ state: sql<string>`to_jsonb(${authBrowserBindings})::text` })
+    .from(authBrowserBindings)
+    .where(eq(authBrowserBindings.id, binding.id));
+  if (!precise || (await databaseNow(transaction)).getTime() >= expiresAt.getTime())
+    throw new Error('BROWSER_SELECTION_DEADLINE_PASSED');
+  return {
+    status: 'prepared' as const,
+    intentToken,
+    cursor: cursor(binding),
+    sourceSession,
+    sourceIntentRevision,
+    intentRevision: revision,
+    preparedStateHash: digest(JSON.stringify(['browser-password-prepared-state-v1', precise.state])),
+    preparedAt: now,
+    expiresAt,
+  };
 }
 
 export async function commitBrowserLogin(

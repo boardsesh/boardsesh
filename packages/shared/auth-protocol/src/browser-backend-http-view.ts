@@ -13,6 +13,7 @@ export type BrowserHttpViewClient<Client> = {
   readonly isCurrent: () => boolean;
   readonly isCurrentResult: (result: unknown) => boolean;
   readonly captureResult?: (result: unknown) => (() => void) | null;
+  readonly captureErrorDelivery?: (error: unknown, requestIdentity: AbortSignal) => (() => void) | null;
   readonly dispose: () => void;
 };
 
@@ -111,6 +112,20 @@ export function createBrowserBackendHttpViewRegistry<Client>(options: {
         return () => {
           if (requireEntry(handle) !== entry) throw new BrowserBackendConsumerError('superseded');
           assertResult();
+        };
+      } catch {
+        return null;
+      }
+    },
+    captureErrorDelivery(handle: string, error: unknown, requestIdentity: AbortSignal): (() => void) | null {
+      try {
+        const entry = requireEntry(handle);
+        const assertError = entry.transport.captureErrorDelivery?.(error, requestIdentity);
+        if (!assertError) return null;
+        assertError();
+        return () => {
+          if (requireEntry(handle) !== entry) throw new BrowserBackendConsumerError('superseded');
+          assertError();
         };
       } catch {
         return null;

@@ -5,7 +5,9 @@ import { createAbortError } from './request-timeout';
  * composition and the original invocation's delivery admission are added. */
 export function createHttpOperationRequest(options: {
   readonly resolveClient: () => GraphQLClient;
-  readonly beginRequest: () => Readonly<{ admit: (result: unknown) => void; discard: () => void }>;
+  readonly beginRequest: (
+    requestIdentity: AbortSignal,
+  ) => Readonly<{ admit: (result: unknown) => void; admitError: (error: unknown) => void; discard: () => void }>;
   readonly signal: AbortSignal;
 }): GraphQLClient['request'] {
   const { resolveClient, beginRequest, signal } = options;
@@ -17,7 +19,7 @@ export function createHttpOperationRequest(options: {
         if (candidate.aborted) throw candidate.reason ?? createAbortError('GraphQL operation aborted');
       };
       assertActive(signal);
-      const pending = beginRequest();
+      let pending: ReturnType<typeof beginRequest> | undefined;
       try {
         const first = parameters[0];
         // The SDK accepts either RequestOptions or document/variables/headers.
@@ -27,7 +29,9 @@ export function createHttpOperationRequest(options: {
             ? { ...first }
             : { document: first, variables: parameters[1], requestHeaders: parameters[2] };
         const caller = 'signal' in requestOptions ? (requestOptions.signal as AbortSignal | null | undefined) : null;
-        const requestSignal = caller ? AbortSignal.any([caller, signal]) : signal;
+        // A distinct identity for every invocation, even without caller signal.
+        const requestSignal = AbortSignal.any(caller ? [caller, signal] : [signal]);
+        pending = beginRequest(requestSignal);
         assertActive(requestSignal);
         const client = resolveClient();
         assertActive(requestSignal);
@@ -37,8 +41,11 @@ export function createHttpOperationRequest(options: {
         pending.admit(result);
         assertActive(requestSignal);
         return result;
+      } catch (error) {
+        pending?.admitError(error);
+        throw error;
       } finally {
-        pending.discard();
+        pending?.discard();
       }
     },
   });
