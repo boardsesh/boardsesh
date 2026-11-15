@@ -212,7 +212,7 @@ fallback. It:
 1. creates (once) and boots two dedicated simulators, "Boardsesh Showcase" and,
    for the crew take, "Boardsesh Showcase 2" (iPhone 16 Pro Max, status bar at
    9:41, app in UTC), resets their keychains and installs the dev-client;
-2. starts Metro with the screenshot-mode env (`EXPO_PUBLIC_SCREENSHOT_MODE=1`,
+2. starts Metro with the dev integration env (`EXPO_PUBLIC_SCREENSHOT_MODE=1`,
    `EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1`, the walls in `EXPO_PUBLIC_SCREENSHOT_BOARDS`,
    the account) and waits for the app to reach home. Each phone reports home
    through its own GET endpoint on the recorder’s loopback signal server, independently

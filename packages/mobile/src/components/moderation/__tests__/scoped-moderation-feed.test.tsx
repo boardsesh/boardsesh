@@ -36,7 +36,6 @@ vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: false, reason: null }),
   reportBackendOutcome: vi.fn(),
 }));
-vi.mock('../../../lib/screenshot-mode', () => ({ screenshotModeNextPageParam: (next: unknown) => next }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'web' },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,

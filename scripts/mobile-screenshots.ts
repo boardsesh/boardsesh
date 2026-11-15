@@ -424,7 +424,7 @@ export interface ScreenshotOptions {
   /**
    * `|`-separated board selectors, in slot order — slot 0 is the board every
    * board-backed shot sits on, slot 1 the second board-view's wall. `null` leaves
-   * the app's defaults (see `screenshot-mode.ts`) in place.
+   * the integration defaults (see `src/dev/integration/config.ts`) in place.
    */
   boards: string | null;
   /** Prebuilt/cached app artifact to install; iOS can build one when null. */
@@ -829,9 +829,9 @@ export function buildScreenshotEnv(
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
     EXPO_PUBLIC_SCREENSHOT_MODE: '1',
-    // Baked at JS-bundle time; theme-provider locks to it in screenshot mode.
+    // Passed to the dev integration root as presentation props.
     EXPO_PUBLIC_SCREENSHOT_THEME: options.theme,
-    // The app auto-signs-in with these on boot (see screenshot-mode.ts), so the
+    // The dev integration bootstrap signs in with these on boot, so the
     // Maestro flow never types into the login form — which pops iOS's
     // "Save Password?" dialog over every shot and blocks the board picker.
     // `||`, not `??`: CI passes these through as EMPTY on a replay run (the
@@ -849,7 +849,7 @@ export function buildScreenshotEnv(
   if (options.flow === 'smoke') {
     // Only the smoke gets this, so a store capture makes exactly the requests it
     // always has. With it set, each smoke-visited screen reports its content
-    // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
+    // count and the crash screen reports itself (src/dev/integration/screenshot-smoke.ts).
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
   const wallControlCapture =
@@ -1290,7 +1290,7 @@ export function findDuplicateScreenshotGroups(captureDir: string): string[][] {
 
 /**
  * The app's screenshot default when `--render-mode` is not passed. Kept in step
- * with `SCREENSHOT_RENDER_MODE` in `packages/mobile/src/lib/screenshot-mode.ts`;
+ * with the renderer fallback in `packages/mobile/src/dev/stories/StoryRoot.tsx`;
  * asserting against it is what catches a bundle that never picked the env up.
  */
 export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
@@ -1354,7 +1354,7 @@ export function findScreenshotRenderProblems(
   }
   // The roster the app logged alongside a miss, so the failing run says what to
   // use instead. Carried separately because the app logs it on its own line —
-  // see the truncation note in screenshot-board-selection.ts.
+  // see the truncation note in dev/integration/screenshot-board-matching.ts.
   if (boardProblems.length > 0) {
     for (const line of lines) {
       const roster = line.match(BOARD_ROSTER_LINE);
@@ -1404,11 +1404,7 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
   return false;
 }
 
-/**
- * The frozen-clock line the app logs once at boot
- * (`screenshot-board-auto-activator.tsx`), as it reaches the capture log —
- * Metro's tee on iOS, logcat on Android.
- */
+/** Legacy frozen-clock evidence retained for historical capture-log validation. */
 const FROZEN_CLOCK_LINE = /\[screenshot\] clock: frozen at (\S+)/;
 const LIVE_CLOCK_LINE = /\[screenshot\] clock: live/;
 
@@ -3838,7 +3834,7 @@ export function buildAndroidMaestroArgs(
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const boards = context.boards ?? context.capture?.boards.join('|') ?? env.EXPO_PUBLIC_SCREENSHOT_BOARDS;
-  // Match screenshot-mode.ts: missing or blank selectors use its two default boards.
+  // Match dev/integration/config.ts: blank selectors use the two default boards.
   const boardCount = boards?.split('|').filter((selector) => selector.trim().length > 0).length || 2;
   return [
     '--device',

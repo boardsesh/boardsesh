@@ -617,7 +617,7 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     theme: 'dark',
     workout: null,
     // null on both: an ad-hoc dev shot gets the same pinned Aura look and store
-    // walls a store capture does, straight from screenshot-mode.ts. Point it
+    // walls configured by the dev integration bootstrap. Point it
     // somewhere else with EXPO_PUBLIC_SCREENSHOT_BOARDS in the environment.
     renderMode: null,
     boards: null,

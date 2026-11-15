@@ -277,11 +277,8 @@ export function resolveScreenshotRecipes(
   // It runs on the same six captures the sidebar flow already takes, so it needs
   // no board switching and no extra fixtures.
   //
-  // There is deliberately no board-family frame yet. Switching boards mid-flow
-  // works, but the screenshot wall seed's now-playing event does not follow the
-  // new board, so the second board renders with the previous board's climb and
-  // no holds lit. That is harness plumbing in `screenshot-wall-seed.ts`, and the
-  // frame is not worth shipping until it is fixed.
+  // Preserve the six-image iPad campaign. Board-family scenes are separate
+  // isolated stories; adding a campaign frame requires an explicit recipe.
   if (platform === 'ios' && device.startsWith('ipad-') && matches(legacyNames)) {
     return [
       { output: '00-wall-kiosk.png', caption: 'storeBoards', layout: 'screen', sources: ['00-wall.png'] },

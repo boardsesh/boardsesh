@@ -121,20 +121,16 @@ frame preserves the full native list instead of enlarging an obsolete crop.
 It runs on the same six captures the sidebar flow already takes, each feeding one
 frame, so it needs no board switching and no extra fixtures.
 
-**No board-family frame yet, and it is not an oversight.** Switching boards
-mid-flow works (the picker is a horizontal carousel; scroll right and tap the card
-by its title, not by a `.*name.*` regex, which also matches the card's "Make
-<name> available offline" glyph and raises a native Alert). What does not work is
-the wall seed: `screenshot-wall-seed.ts` republishes for the new board, but its
-now-playing event keeps the boot board's climb, so the second board renders the
-previous board's climb with no holds lit. Fix that before adding the frame.
+The six-image iPad campaign has no board-family frame. Board-family stories use
+their matching fixtures independently; adding a campaign frame requires an
+explicit recipe and updated store artwork.
 
-Every board in the set is drawn with **Aura**, the app's default look. Both the
-drawing and which wall each shot sits on are pinned by the screenshots build
-(`EXPO_PUBLIC_SCREENSHOT_RENDER_MODE`, `EXPO_PUBLIC_SCREENSHOT_BOARDS` — defaults in
-`packages/mobile/src/lib/screenshot-mode.ts`), and the capture fails rather than
-upload a set that came back in the classic look or on a fallback wall. Retarget one
-run from the workflow's `render_mode` / `boards` dispatch inputs.
+Every board in the set is drawn with **Aura**, the default story renderer.
+`packages/mobile/src/dev/stories/StoryRoot.tsx` receives the workflow's
+`render_mode` through the story URL. Story IDs select the board fixtures;
+`boards` selectors apply to live integration setup. Capture readiness fails
+closed if a scene or its assets cannot render.
+
 
 ## Header and Search Results
 

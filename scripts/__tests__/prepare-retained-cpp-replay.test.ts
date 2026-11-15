@@ -45,7 +45,14 @@ const trackedPaths = [
   'packages/mobile/src/components/LayeredClimbImage.tsx',
   'packages/mobile/src/components/play-drawer/SwipeBoardCarousel.tsx',
   'packages/mobile/app/(tabs)/climbs/index.tsx',
-  'packages/mobile/src/components/ScreenshotSmokeMarker.tsx',
+  'packages/mobile/src/components/ContentRenderObserver.tsx',
+  'packages/mobile/src/dev/integration/smoke.tsx',
+  'packages/mobile/src/dev/integration/screenshot-smoke.ts',
+  'packages/mobile/src/dev/stories/StoryRoot.tsx',
+  'packages/mobile/src/dev/stories/screens.tsx',
+  'packages/mobile/src/dev/stories/registry.ts',
+  'packages/mobile/src/dev/fixtures/board-render-style.ts',
+  'packages/mobile/src/components/climbs/Climbs.stories.tsx',
   'packages/mobile/src/components/play-drawer/QueueList.tsx',
   'packages/mobile/src/providers/queue-provider.tsx',
   'packages/mobile/src/data/changelog.generated.json',
@@ -420,7 +427,7 @@ describe('original native replay provenance', () => {
     expect(() => verifyReplayProducer(otherProducer.options, otherProducer.client)).toThrow();
   });
   it.each([
-    'packages/mobile/src/components/ScreenshotSmokeMarker.tsx',
+    'packages/mobile/src/components/ContentRenderObserver.tsx',
     'packages/mobile/src/dev/integration/screenshot-climb-selection.ts',
     'packages/mobile/src/components/LayeredClimbImage.tsx',
     'packages/mobile/app.config.ts',
@@ -1271,6 +1278,7 @@ describe('replay pixels and reviewed byte binding', () => {
     source.client.bytes = (path) => archives.get(Number(path.split('/').at(-2)))!;
     return source;
   }
+  // Two full image inventories require real hashing and pixel verification.
   it('assembles 180 exact images, verifies native sources, and permits the same reviewed bytes on retry', async () => {
     const first = preparedSource();
     const digest = await prepareRetainedReplay(first.options, first.client);
@@ -1293,7 +1301,7 @@ describe('replay pixels and reviewed byte binding', () => {
     second.options.stage = true;
     second.options.expectedReceipt = digest;
     expect(await prepareRetainedReplay(second.options, second.client)).toBe(digest);
-  });
+  }, 15_000);
   // Three complete screenshot fixtures include real hashing and image checks.
   // Keep this integration test bounded while allowing slower CI runners.
   it('binds explicit source bytes, current verifier and compatibility into a v2 reviewed receipt', async () => {
@@ -1344,7 +1352,7 @@ describe('replay pixels and reviewed byte binding', () => {
     staged.options.stage = true;
     staged.options.expectedReceipt = digest;
     expect(await prepareRetainedReplay(staged.options, staged.client)).toBe(digest);
-  });
+  }, 15_000);
   it('rechecks successful retry history after downloads and removes unreviewed assembled output', async () => {
     const retry = retrySource();
     const source = preparedSource(retry);

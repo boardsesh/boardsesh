@@ -268,8 +268,8 @@ it read an empty webhook and never fired.
 - `.github/actions/ios-screenshot-shard`: the iOS shard, shared with
   `mobile-screenshots-ios.yml`.
 - `packages/mobile/.maestro/smoke-android.yaml`, `smoke.yaml`: the flows.
-- `packages/mobile/src/components/ScreenshotSmokeMarker.tsx`,
-  `packages/mobile/src/lib/screenshot-smoke.ts`: the app's pings.
+- `packages/mobile/src/components/ContentRenderObserver.tsx`: neutral content observations.
+- `packages/mobile/src/dev/integration/smoke.tsx` and `screenshot-smoke.ts`: dev-only pings.
 - `scripts/lib/mobile-smoke.ts`: ping assertions, crash detection, failure
   classes.
 - `scripts/mobile-e2e-gate-verdict.ts`: the verdict.

@@ -1,17 +1,20 @@
-# App Store screenshots against recorded fixtures
+# Recorded fixtures for mobile integration captures
 
-The store capture used to shoot the app against PROD, so every screenshot moved
-whenever the data behind it moved — a new tick in a shared feed, a resolver
-change, a rollout. The screenshot backend removes that: it records what PROD
-answered once, then replays those bytes for every later capture. The screenshots
-become a pure function of the JS bundle.
+Store screenshots now render isolated view stories with injected fixtures; see
+[mobile stories](mobile-stories.md). This runbook covers recorded backend data
+used by live integration smoke, native recording workflows, and retained CPP
+capture provenance. Those checks replay real recorded responses and fail when
+an exercised request has no coverage. Historical store-capture procedures below
+remain relevant when verifying old producer artifacts, not as story setup.
 
 The server is `scripts/lib/screenshot-backend.ts`; everything it keys, validates
 and logs is defined in the pure sibling `scripts/lib/screenshot-fixtures.ts`.
 
 ## Storage
 
-Recorded backend responses are never committed. Public development storage holds
+Full recorded snapshots live outside the repository. Sanitized, hash-pinned
+additions may be committed under `app-stores/screenshot-fixture-overlays/`; their
+manifest binds them to an exact base snapshot. Public development storage holds
 immutable compressed snapshots. `app-stores/apple/campaign-fixtures.json` pins the
 iOS store campaign; `app-stores/screenshot-fixtures.json` remains the shared pin
 for Android and other capture flows. Each reference records the URL, SHA-256,
@@ -1103,47 +1106,21 @@ capture would only discover as a replay miss.
 
 ## Recording a set
 
-**Every list stops after its first page in screenshot mode.** How far a
-list pages is timing-dependent — against a live backend the flow moves on before
-much has prefetched, against an instant replay backend it scrolls further — so
-`screenshotModeNextPageParam` (`packages/mobile/src/lib/screenshot-mode.ts`)
-returns `undefined` for every page after the first while
-`EXPO_PUBLIC_SCREENSHOT_MODE` is on. A store screenshot never shows page two,
-and `hasNextPage` goes false with the param, so every `onEndReached` downstream
-stops firing too. The two lists behind `PlaylistDetailView` are capped at that
-component instead, because their hooks live in the renderer-agnostic
-`@boardsesh/playlists-react`, which web also consumes and which must not read a
-mobile build flag.
+Visual captures now mount isolated view stories with injected data. They do not
+execute list queries, cap application pagination, seed application shuffle, or
+prefetch stats through production components. See [mobile stories](mobile-stories.md).
 
-A list that pages itself rather than through React Query —
-`useDiscoverPlaylists`, `useUserPlaylists`, `useUserBetaLinks`, each exposing a
-`loadMore` an `onEndReached` calls — is wrapped at the call site with
-`screenshotModeLoadMore`, which returns a shared no-op in screenshot mode. The
-drift test scans the source for a `useInfiniteQuery(` with no
-`screenshotModeNextPageParam` beside it, so a new list cannot quietly skip the
-cap; the two `@boardsesh/playlists-react` hooks are on its allowlist because
-`PlaylistDetailView` wraps its own end-reach handler in `screenshotModeLoadMore`
-instead.
+Recorded responses remain the evidence for the live integration smoke and native
+recording workflows. Those routes use ordinary application pagination and random
+selection. Record every query the exercised flow needs; missing replay coverage
+fails the run. Extra pages and old stats batches in a snapshot are harmless, but
+no first-page cap or seeded shuffle prevents new requests.
 
-**The workout generator's shuffle is seeded in screenshot mode.** Its candidate
-pool is shuffled per grade and a refresh re-rolls a row out of it, so on
-`Math.random` the preview picks different climbs every run — the shot is not
-byte-stable, and the app asks the replay backend for stats on climbs the
-recording never fetched. `screenshotModeRandom()`
-(`packages/mobile/src/lib/screenshot-mode.ts`) hands `shuffleInPlace` /
-`pickRandomUnused` a `mulberry32` generator seeded from
-`SCREENSHOT_RANDOM_SEED`, fresh per call so no draw depends on how many came
-before it. **Moving that seed invalidates the recorded set** — the generator
-picks different climbs, and their stats were never recorded. Change it only
-alongside a re-record.
-
-A set recorded after this change therefore holds only first pages. The extra
-pages in the published set (`GetSessionGroupedFeed` up to cursor `{"o":60}`,
-`SearchClimbs` up to page 2) are harmless — they are simply never asked for.
-
-The same is true of the old per-row `ClimbStatsForClimbs` batches: a set recorded
-after the whole-list prefetch holds one wide batch per board instead, and the
-narrow ones left over from before just go unused.
+The workflow procedure below describes the historical live-route capture pipeline.
+Running an isolated visual story does not produce backend recording traffic. For
+current smoke coverage, use `vp run mobile:screenshots -- --flow smoke --fixtures record`
+with the appropriate platform and private recording credentials, then merge its
+recorded responses using the same validation and publication steps below.
 
 Record through the capture workflows, or a local Android emulator, then merge the shards.
 
