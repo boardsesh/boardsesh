@@ -8,6 +8,15 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../aurora-credentials', () => ({ getAuroraCredentials: vi.fn() }));
+// This host exercises pure polling helpers and cache events, never REST reads.
+vi.mock('../../rest-operation', () => ({
+  createRestOperation: () => {
+    throw new Error('Unexpected REST operation in pure import-completion fixture');
+  },
+  useRestView: () => {
+    throw new Error('Unexpected REST view hook in pure import-completion fixture');
+  },
+}));
 
 import { createQueryClient } from '../../../providers/query-provider';
 import {
