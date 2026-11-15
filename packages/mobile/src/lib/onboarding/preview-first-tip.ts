@@ -84,8 +84,7 @@ export function usePreviewFirstTipState(): PreviewFirstTipState {
 /**
  * Read the seen flag once per app run. Safe to call on every player mount: a
  * read in flight is shared, and a known status is never read again. A read error
- * reports "seen" (`hasSeenTip`), so a flaky store never nags, and screenshot mode
- * reports seen too.
+ * reports "seen" (`hasSeenTip`), so a flaky store never nags.
  */
 export function loadPreviewFirstTip(): Promise<void> {
   if (state.status !== 'unknown') return Promise.resolve();
@@ -189,7 +188,6 @@ export type PreviewFirstTipGateInput = {
    * spend its seen flag and its screen-reader line.
    */
   slotInView: boolean;
-  screenshotMode: boolean;
 };
 
 /**
@@ -198,7 +196,7 @@ export type PreviewFirstTipGateInput = {
  * tips and anything in the player that is asking the climber something.
  */
 export function shouldShowPreviewFirstTip(input: PreviewFirstTipGateInput): boolean {
-  if (input.screenshotMode || !input.signedIn || !input.boardHasLights) return false;
+  if (!input.signedIn || !input.boardHasLights) return false;
   if (input.connectCardVisible || input.connectConfirmationShowing) return false;
   if (input.listTipShowing || input.playerBusy || !input.slotInView) return false;
   const { status, opens } = input.state;

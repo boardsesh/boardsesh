@@ -1,11 +1,12 @@
+import { PreSessionHeaderView } from './PreSessionHeaderView';
+import { PreSessionPresentation } from './PreSessionPresentation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNativeRootHeader } from '../../../hooks/use-native-root-header';
 import { usePrivacySettings } from '../../../lib/graphql/hooks/use-privacy';
 import { AudiencePicker, SESSION_AUDIENCES } from '../../privacy/AudiencePicker';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type ViewInstance } from 'react-native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { ScrollView as GestureScrollView } from 'react-native-gesture-handler';
+import { type FlashListRef } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useIsFocused } from 'expo-router';
@@ -17,7 +18,6 @@ import { track } from '../../../lib/analytics';
 import { prepareWorkoutRun } from '../../../lib/workout-run-store';
 import { captureWorkoutRunClimbs } from '../../../lib/session-workout-plan';
 import { enqueueSessionWorkoutWrite } from '../../../offline/session-workout-outbox';
-import { ScreenTitle } from '../../ScreenTitle';
 import type { QueueItemRowBoard } from '../../QueueItemRow';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
@@ -37,15 +37,12 @@ import { useBoardShortcutNavigation } from '../../../lib/boards/use-board-shortc
 import { RestTimerArmRow } from '../RestTimerArmRow';
 import { SessionVisibilityRow } from '../SessionVisibilityRow';
 import { summarizePlanFill } from '@boardsesh/playlist-generator';
-import { SCREENSHOT_WORKOUT } from '../../../lib/screenshot-mode';
 import { GeneratorPickerCard } from './GeneratorPickerCard';
 import {
   NO_WORKOUT,
-  buildDefaultOptions,
   firstWorkoutType,
   hasWorkoutBlocks,
   selectionWorkoutTypes,
-  singleBlockSelection,
   type GeneratorSelection,
 } from './workout-blocks';
 import { WorkoutPreviewListRow } from './WorkoutPreviewListRow';
@@ -59,16 +56,6 @@ import { buildPreviewListRows, type PreviewListRow } from './workout-preview-sec
 import { OnboardingTipBanner } from '../../onboarding/OnboardingTipBanner';
 import { hasSeenTip, markTipSeen } from '../../../lib/onboarding/onboarding-storage';
 import { ONBOARDING_TIP_CREW_KEY, ONBOARDING_TIP_WORKOUT_KEY } from '@boardsesh/key-value-storage';
-
-// Screenshot mode starts with one open block of the preset type, so the Record
-// screen renders a block card and its generated preview on load without
-// Maestro driving the picker. No blocks in normal builds. A mid-grade target, as
-// the DEFAULT_*_OPTIONS leave `targetGrade` out. Blocks added later get uuids,
-// so this fixed id can't collide.
-function initialGeneratorSelection(): GeneratorSelection {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !SCREENSHOT_WORKOUT) return NO_WORKOUT;
-  return singleBlockSelection(buildDefaultOptions(SCREENSHOT_WORKOUT, 15), 'screenshot-block');
-}
 
 type PreSessionViewProps = {
   /** Render the floating glass chrome (large title + board pill). True in the
@@ -170,7 +157,7 @@ export function PreSessionView({
     material: t('mobile.session.recordTab'),
   });
 
-  const [selection, setSelection] = useState<GeneratorSelection>(initialGeneratorSelection);
+  const [selection, setSelection] = useState<GeneratorSelection>(NO_WORKOUT);
   const [isStarting, setIsStarting] = useState(false);
   const isStartPending = isStarting || isOpeningClimbs;
   // "Show this session live". Public by default and not remembered between
@@ -443,32 +430,25 @@ export function PreSessionView({
 
   const listHeader = useMemo(
     () => (
-      <View style={styles.header}>
-        {activeTip ? (
-          <View style={styles.cardInset}>
-            <OnboardingTipBanner
-              text={
-                activeTip === 'workout'
-                  ? tCommon('mobile.onboarding.tips.workout')
-                  : tCommon('mobile.onboarding.tips.crew')
-              }
-              dismissLabel={tCommon('actions.close')}
-              onDismiss={dismissTip}
-              icon={activeTip === 'crew' ? 'people' : 'lightbulb.fill'}
-            />
-          </View>
-        ) : null}
-
-        {/* Native and overlay headers already own the title. Material's app
-            bar suppresses ScreenTitle through the theme feature flag. */}
-        {showChrome && !nativeRootHeader ? (
-          <ScreenTitle style={styles.screenTitle}>{t('mobile.session.headerStart')}</ScreenTitle>
-        ) : null}
-
-        {/* The chrome pill owns board identity but collapses on scroll, so this
-            keeps the full config (name · size · angle) persistently visible when a
-            board is set, and prompts to pick one when none is. */}
-        <View style={styles.cardInset} testID="pre-session-board-summary">
+      <PreSessionHeaderView
+        tip={
+          activeTip ? (
+            <View style={styles.cardInset}>
+              <OnboardingTipBanner
+                text={
+                  activeTip === 'workout'
+                    ? tCommon('mobile.onboarding.tips.workout')
+                    : tCommon('mobile.onboarding.tips.crew')
+                }
+                dismissLabel={tCommon('actions.close')}
+                onDismiss={dismissTip}
+                icon={activeTip === 'crew' ? 'people' : 'lightbulb.fill'}
+              />
+            </View>
+          ) : null
+        }
+        showTitle={showChrome && !nativeRootHeader}
+        board={
           <BoardSummaryCard
             board={activeBoard}
             hasNoBoard={hasNoBoard}
@@ -477,19 +457,10 @@ export function PreSessionView({
             onChangeBoard={openBoardSwitcher}
             onRetry={retryBoard}
           />
-        </View>
-
-        {/* Arm the rest timer for the session you're about to start (#5378). The
-            arm carries in on its own — RestTimerSessionSync binds it when the
-            session id appears. */}
-        <View style={styles.cardInset}>
-          <RestTimerArmRow />
-        </View>
-
-        {/* Whether the session you're about to start shows up live for your
-            crew and climbers on this board. Sent with Start. */}
-        <View style={styles.cardInset}>
-          {privacySettings?.enabled ? (
+        }
+        timer={<RestTimerArmRow />}
+        visibility={
+          privacySettings?.enabled ? (
             <AudiencePicker
               resource
               confirmPublic={privacySettings.isPrivate}
@@ -500,21 +471,21 @@ export function PreSessionView({
             />
           ) : (
             <SessionVisibilityRow isPublic={isPublic} onChange={handleVisibilityChange} disabled={isStartPending} />
-          )}
-        </View>
-
-        <GeneratorPickerCard
-          boardName={activeBoard ? toBoardName(activeBoard.boardType) : null}
-          layoutId={activeBoard?.layoutId ?? null}
-          sizeId={activeBoard?.sizeId ?? null}
-          angle={activeBoard?.angle ?? null}
-          selection={selection}
-          onChange={setSelection}
-          onRevealBlock={revealBlock}
-        />
-
-        {previewPlacement === 'inline' ? previewSection : null}
-      </View>
+          )
+        }
+        generator={
+          <GeneratorPickerCard
+            boardName={activeBoard ? toBoardName(activeBoard.boardType) : null}
+            layoutId={activeBoard?.layoutId ?? null}
+            sizeId={activeBoard?.sizeId ?? null}
+            angle={activeBoard?.angle ?? null}
+            selection={selection}
+            onChange={setSelection}
+            onRevealBlock={revealBlock}
+          />
+        }
+        preview={previewPlacement === 'inline' ? previewSection : null}
+      />
     ),
     [
       activeBoard,
@@ -561,73 +532,43 @@ export function PreSessionView({
   usePhoneSplitPaneContent(paneContent);
 
   return (
-    <View ref={screenRef} style={styles.container}>
-      <FlashList
-        ref={listRef}
-        style={styles.scroll}
-        data={previewPlacement === 'pane' ? NO_PREVIEW_ROWS : previewRows}
-        renderItem={renderPreviewRow}
-        keyExtractor={previewKeyExtractor}
-        getItemType={previewItemType}
-        ListHeaderComponent={listHeader}
-        // Use a gesture-handler scroll host so Android nested chip rails keep their
-        // horizontal gestures while the preview rows stay virtualized.
-        renderScrollComponent={GestureScrollView}
-        // The floating chrome owns the top inset (tab mode), so pad manually by
-        // the measured chrome height; never auto-inset under the (absent) header.
-        contentInsetAdjustmentBehavior={showChrome && nativeRootHeader ? 'automatic' : 'never'}
-        contentContainerStyle={{
-          paddingTop: listPaddingTop,
-          paddingBottom: footerHeight + footerBottom,
-        }}
-        scrollIndicatorInsets={{ top: showChrome ? chromeHeight : 0 }}
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        // Every frame, so the app bar tints while rows pass under it (the browser
-        // build otherwise reports little more than the start and end of a scroll).
-        scrollEventThrottle={16}
-        {...scrollEdge.list?.listProps}
-        onScroll={handleScroll}
-      />
-
-      {showChrome ? (
-        <RecordTopChrome title={chromeTitle} onHeightChange={setChromeHeight} scrollEdge={scrollEdge.backdrop} />
-      ) : null}
-
-      <SessionStartFab
-        testID="pre-session-footer"
-        actionTestID="session-start"
-        bottomOffset={footerBottom}
-        onHeightChange={setFooterHeight}
-        label={isStartPending ? t('mobile.session.preStarting') : t('mobile.session.preStart')}
-        icon="play.fill"
-        onPress={() => void handleStart()}
-        disabled={!canStart}
-        loading={isStartPending}
-      />
-    </View>
+    <PreSessionPresentation
+      screenRef={screenRef}
+      listRef={listRef}
+      rows={previewPlacement === 'pane' ? NO_PREVIEW_ROWS : previewRows}
+      renderItem={renderPreviewRow}
+      header={listHeader}
+      listProps={{ ...scrollEdge.list?.listProps, onScroll: handleScroll }}
+      automaticInsets={showChrome && nativeRootHeader}
+      paddingTop={listPaddingTop}
+      paddingBottom={footerHeight + footerBottom}
+      indicatorTop={showChrome ? chromeHeight : 0}
+      chrome={
+        showChrome ? (
+          <RecordTopChrome title={chromeTitle} onHeightChange={setChromeHeight} scrollEdge={scrollEdge.backdrop} />
+        ) : null
+      }
+      footer={
+        <SessionStartFab
+          testID="pre-session-footer"
+          actionTestID="session-start"
+          bottomOffset={footerBottom}
+          onHeightChange={setFooterHeight}
+          label={isStartPending ? t('mobile.session.preStarting') : t('mobile.session.preStart')}
+          icon="play.fill"
+          onPress={() => void handleStart()}
+          disabled={!canStart}
+          loading={isStartPending}
+        />
+      }
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    flex: 1,
-  },
   // No horizontal padding: the largeTitle and SectionHeaders bring their own
   // 16px inset, and the cards self-inset via `cardInset`, so the chip rails
   // inside the generator card can bleed to the card edges.
-  header: {
-    gap: spacing[3],
-  },
-  screenTitle: {
-    paddingHorizontal: spacing[4],
-    paddingTop: 0,
-    paddingBottom: spacing[2],
-  },
   // Matches the 16px screen gutter the SectionHeaders use, so cards line up.
   cardInset: {
     paddingHorizontal: spacing[4],

@@ -1,6 +1,5 @@
 import { useRef, useSyncExternalStore } from 'react';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import { useQueueData, useQueueSessionId } from '../../providers/queue-provider';
 import type { AccessoryPlacement } from '../../lib/analytics-board-connect';
 import { NativeAccessoryClimbRow } from './NativeAccessoryClimbRow';
 import { useBarClimb } from './use-bar-climb';
@@ -59,8 +58,6 @@ type MiniPlayerAccessoryBodyProps = {
  * session id), so a queue edit that leaves the head alone does not re-render it.
  */
 export function MiniPlayerAccessoryBody({ placement, host }: MiniPlayerAccessoryBodyProps) {
-  const { currentClimbQueueItem: head } = useQueueData();
-  const { sessionId } = useQueueSessionId();
   // The climber's last pick or the queue's current, never the wall's lit climb
   // (that lives in the top "On the wall" strip). Retained across a presence
   // blip so the live platter never blanks while the host is held open.
@@ -73,16 +70,6 @@ export function MiniPlayerAccessoryBody({ placement, host }: MiniPlayerAccessory
   const currentClimb = showsBar && bar.climb ? bar.climb : currentItem.climb;
   const pick = showsBar ? bar.pick : null;
 
-  // A retained row during rehydration cannot prove that the real solo queue
-  // currently contains this climb. Capture metadata belongs to the actual head.
-  const testID =
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-    process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
-    sessionId === null &&
-    head != null &&
-    head.uuid === currentItem.uuid
-      ? `cpp-accessory-climb-${currentClimb.uuid}`
-      : undefined;
   return (
     <NativeAccessoryClimbRow
       climb={currentClimb}
@@ -90,7 +77,6 @@ export function MiniPlayerAccessoryBody({ placement, host }: MiniPlayerAccessory
       pick={pick}
       placement={placement}
       host={host}
-      testID={testID}
     />
   );
 }

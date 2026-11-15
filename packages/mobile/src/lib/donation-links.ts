@@ -31,11 +31,8 @@
  * in any storefront and on Android, so the link and its tap event can be
  * checked on our own phones from Australia. App Review never signs in as an
  * admin, and the only admin is the maintainer. It still needs the flag on, so
- * the kill switch covers it, and screenshot mode still wins. `useIsAdmin`
+ * the kill switch covers it. `useIsAdmin`
  * fails closed: signed out, loading or an error all read as not admin.
- *
- * Screenshot mode always reads "not allowed", so App Store captures and the
- * replayed screenshot fixtures never show a donation ask.
  *
  * The Expo browser app (`Platform.OS === 'web'`, served at /app) reads
  * "allowed" whatever `donation-links-v2` says. It is a web page, not a store
@@ -168,7 +165,6 @@ export function useDonationLinksAllowed(): boolean {
     };
   }, [flagEnabled]);
 
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   // The Expo browser app: no store, so no store rule, and its own kill switch
   // (see the header).
   if (Platform.OS === 'web') return !webKilled;

@@ -1,5 +1,6 @@
+import { ZoneFilterView } from '../../../src/components/climbs/ZoneFilterView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,19 +14,10 @@ import {
 } from '@boardsesh/climb-filters';
 import { getLayout } from '@boardsesh/board-constants';
 import type { BoardName, HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
-import { Text } from '../../../src/components/Text';
 import { HeaderTrailingButton } from '../../../src/components/HeaderActionButtons';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
-import { Button } from '../../../src/components/Button';
-import { SegmentedControl } from '../../../src/components/SegmentedControl';
-import { GlassSurface } from '../../../src/components/GlassSurface';
-import {
-  InteractiveFilterBoard,
-  type FilterBoardTransformContext,
-} from '../../../src/components/search/InteractiveFilterBoard';
+import { type FilterBoardTransformContext } from '../../../src/components/search/InteractiveFilterBoard';
 import { ZoneOverlay, type ZoneCornerLabels } from '../../../src/components/search/ZoneOverlay';
 import { useTheme } from '../../../src/providers/theme-provider';
-import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { getCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { emitZoneFilterSelection } from '../../../src/lib/zone-filter-handoff';
 import { track } from '../../../src/lib/analytics';
@@ -100,19 +92,14 @@ export default function ZoneFilterScreen() {
   const params = useLocalSearchParams<Params>();
   const navigation = useNavigation();
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  // A screenshot deep link (`://climbs/zone`) opens this route with none of the
-  // params the filter sheet pushes, which would render an empty board. In
-  // screenshot mode only, fall back to the wall the capture activated on boot;
-  // `null` in every normal build and whenever the route carried a board.
-  const screenshotBoard = useScreenshotBoardParams(params.boardName);
-  const boardName = (screenshotBoard?.boardName ?? params.boardName ?? '') as BoardName;
-  const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
-  const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
-  const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
+  const boardName = (params.boardName ?? '') as BoardName;
+  const layoutId = Number(params.layoutId ?? 0);
+  const sizeId = Number(params.sizeId ?? 0);
+  const setIds = params.setIds ?? '';
   // The `boardLayout` analytics property is the layout NAME (e.g. "Original"),
   // matching web's `boardDetails.layout_name`. The route's `layoutName` param
   // carried the board family (e.g. "kilter"), so resolve the real name from the
@@ -295,101 +282,31 @@ export default function ZoneFilterScreen() {
     });
   }, [navigation, zoneActive, handleClear, t]);
 
-  if (!boardHolds || !boardName || !dims) {
-    return (
-      <View style={[styles.loading, { backgroundColor: systemColors.background }]}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <View style={styles.boardSection}>
-        <InteractiveFilterBoard
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          boardWidth={boardHolds.boardWidth}
-          boardHeight={boardHolds.boardHeight}
-          holdTargets={boardHolds.holdTargets}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-          renderInTransform={renderZoneOverlay}
-        />
-      </View>
-
-      {zoneActive ? (
-        <GlassSurface
-          glassEffectStyle="regular"
-          fallbackColor={systemColors.elevatedSurface}
-          borderRadius={16}
-          style={styles.modeIsland}
-        >
-          <SegmentedControl
-            options={modeOptions}
-            selectedKey={zoneMode}
-            onSelect={handleModeChange}
-            trackColor={systemColors.fill}
-            accessibilityLabel={t('mobile.zoneFilter.modeLabel')}
-          />
-          <Button
-            title={t('mobile.zoneFilter.clearZone')}
-            onPress={handleClear}
-            variant="outlined"
-            size="small"
-            over="glass"
-            style={styles.clearButton}
-          />
-        </GlassSurface>
-      ) : (
-        <View style={styles.enableRow}>
-          <Button title={t('mobile.zoneFilter.enable')} onPress={handleEnable} variant="filled" size="medium" />
-        </View>
-      )}
-
-      <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerText}>
-          {zoneActive ? t('mobile.zoneFilter.activeHint') : t('mobile.zoneFilter.hint')}
-        </Text>
-      </View>
-    </View>
+    <ZoneFilterView
+      board={
+        boardHolds && boardName && dims
+          ? {
+              boardName,
+              layoutId,
+              sizeId,
+              setIds,
+              boardWidth: boardHolds.boardWidth,
+              boardHeight: boardHolds.boardHeight,
+              holdTargets: boardHolds.holdTargets,
+              renderWidth: boardRender.width,
+              renderHeight: boardRender.height,
+              renderInTransform: renderZoneOverlay,
+            }
+          : null
+      }
+      zoneActive={zoneActive}
+      zoneMode={zoneMode}
+      modeOptions={modeOptions}
+      onModeChange={handleModeChange}
+      onClear={handleClear}
+      onEnable={handleEnable}
+      bottomInset={insets.bottom}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  boardSection: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modeIsland: {
-    marginHorizontal: spacing[4],
-    padding: spacing[3],
-    gap: spacing[2],
-  },
-  clearButton: {
-    alignSelf: 'center',
-  },
-  enableRow: {
-    paddingHorizontal: spacing[4],
-    alignItems: 'center',
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    alignItems: 'center',
-  },
-  footerText: {
-    textAlign: 'center',
-  },
-});

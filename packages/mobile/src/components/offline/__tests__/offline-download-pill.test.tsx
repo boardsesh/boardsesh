@@ -217,11 +217,11 @@ describe('OfflineDownloadPill', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('stays out of screenshot captures', () => {
+  it('shows active downloads regardless of retired capture flags', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     render(<ReadyPill />);
 
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByRole('button', { name: /^Open My Boards/ })).toBeTruthy();
   });
 });
 

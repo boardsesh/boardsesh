@@ -1446,3 +1446,21 @@ Only the resolver's echoed `boardPath` changes; queue, members and identities ke
 their recorded values. Preserve the source fixture and include the source and
 variant hashes in the capture provenance. This is a preparation step, not a
 runtime wildcard for unrecorded session requests.
+
+## Additive smoke recordings
+
+`app-stores/screenshot-fixtures.json` can pin a small committed `overlay` in
+`app-stores/screenshot-fixture-overlays`. This is an append-only set of genuine,
+pseudonymized recordings bound to the archived baseline SHA and its own SHA/byte
+count. The loader verifies the same recording account, upstream and flow, keeps
+every archived response unchanged, checks the complete resulting manifest and
+uses a separate cache directory containing both hashes. A missing or altered
+overlay fails closed. It is never fetched from an unpinned URL.
+
+The November 15, 2026 overlay records the default Home crew feed through the
+official recording backend, plus its session/tick vote summaries and workout
+headlines. The four first-page requests cover omitted timezone, UTC,
+America/Los_Angeles and America/New_York. Each genuine response contains 20 feed
+items; this does not provide arbitrary timezone, pagination or mutation coverage.
+View-story captures use no replay backend; actual native ActivityKit capture is
+a separate dev setup that uses replay only for native thumbnail assets.

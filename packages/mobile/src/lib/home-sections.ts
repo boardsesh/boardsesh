@@ -1,10 +1,5 @@
 import { isSameSectionLayout, type SectionLayout, type SectionLayoutSpec } from './section-layout';
-import {
-  createSectionLayoutStore,
-  settingsLayoutStorage,
-  useSectionLayout,
-  type SectionLayoutStorage,
-} from './section-layout-store';
+import { createSectionLayoutStore, settingsLayoutStorage, useSectionLayout } from './section-layout-store';
 
 // The sections Home shows, and in what order (#6289). The default is today's
 // Home: Climbing now, then the feed. The three Boardz-style cards and Fresh beta
@@ -67,15 +62,9 @@ export function visibleTopHomeSections(layout: SectionLayout<HomeSectionId>): Ho
   return layout.order.filter(isTopSection).filter((sectionId) => layout.visible[sectionId]);
 }
 
-// Screenshot builds start every launch on the default Home and never save an
-// edit, so a capture never inherits a layout from an earlier run on the same
-// simulator. An edit still applies for the rest of that launch, so a capture
-// can show it. The gate is inlined so it folds away in normal builds.
-const SCREENSHOT_STORAGE: SectionLayoutStorage = { read: () => null, write: () => {} };
-
 export const homeSectionsStore = createSectionLayoutStore({
   spec: HOME_SECTIONS,
-  ...(process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? SCREENSHOT_STORAGE : settingsLayoutStorage('homeSectionsV1')),
+  ...settingsLayoutStorage('homeSectionsV1'),
 });
 
 export function useHomeSectionLayout(): SectionLayout<HomeSectionId> {

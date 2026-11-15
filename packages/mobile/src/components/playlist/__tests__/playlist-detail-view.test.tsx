@@ -549,7 +549,7 @@ describe('PlaylistDetailView', () => {
   // app's own infinite queries, `hasNextPage` stays TRUE here and the cap lives
   // in this component's own end-reach handler.
 
-  describe('screenshot-mode page cap', () => {
+  describe('pagination independent of capture configuration', () => {
     const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
 
     afterEach(() => {
@@ -565,14 +565,12 @@ describe('PlaylistDetailView', () => {
       expect(fetchNextPage).toHaveBeenCalledTimes(1);
     });
 
-    it('never pages past the first page in screenshot mode', () => {
+    it('keeps ordinary pagination when a capture environment is present', () => {
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
       const fetchNextPage = vi.fn();
-      // hasNextPage is deliberately true: the shared hook still reports more,
-      // which is exactly why the handler has to be the thing that stops.
       const { container } = render(<PlaylistDetailView {...makeProps({ hasNextPage: true, fetchNextPage })} />);
       fireEvent.click(container.querySelector('[data-list="true"]') as HTMLElement);
-      expect(fetchNextPage).not.toHaveBeenCalled();
+      expect(fetchNextPage).toHaveBeenCalledTimes(1);
     });
   });
 

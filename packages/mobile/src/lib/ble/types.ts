@@ -177,6 +177,8 @@ export type BleAdapterOptions = {
 export type BleDisconnectOptions = { keepBoard?: boolean };
 
 export type BluetoothAdapter = {
+  /** False for a transient transport whose peripheral identity cannot be reconnected after restart. */
+  readonly persistConnection?: boolean;
   isAvailable(): Promise<boolean>;
   // `targetSerial` (Aurora) / `targetDeviceId` (MoonBoard) auto-select the
   // remembered board on the reconnect scan while the picker shows "searching";

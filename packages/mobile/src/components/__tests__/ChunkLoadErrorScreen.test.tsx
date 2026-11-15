@@ -144,12 +144,15 @@ describe('ChunkLoadErrorScreen', () => {
 describe('root ErrorBoundary wiring', () => {
   // Rendering app/_layout.tsx pulls in every provider; the branch is one line,
   // so pin it at the source instead.
-  const layoutSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../app/_layout.tsx'), 'utf8');
+  const layoutSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../../application-root.tsx'),
+    'utf8',
+  );
 
   it('sends chunk failures to ChunkLoadErrorScreen before the generic crash screen', () => {
     const boundary = layoutSource.slice(layoutSource.indexOf('export function ErrorBoundary('));
     const body = boundary.slice(0, boundary.indexOf('\n}\n'));
     expect(body).toMatch(/if \(isChunkLoadError\(error\)\) return <ChunkLoadErrorScreen error=\{error\} \/>;/);
-    expect(body).toMatch(/return <CrashScreen error=\{error\} retry=\{retry\} \/>;/);
+    expect(body).toMatch(/<CrashScreen error=\{error\} retry=\{retry\} \/>/);
   });
 });

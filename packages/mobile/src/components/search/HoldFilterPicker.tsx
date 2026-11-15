@@ -1,3 +1,4 @@
+import type { HoldMarkerStyle } from '../../lib/board-render-style';
 import { PressableSurface } from '../PressableSurface';
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -18,6 +19,7 @@ import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
 import { getHoldFilterTypeShape } from './hold-filter-visuals';
 
 type HoldFilterPickerProps = {
+  holdStyleOverride?: HoldMarkerStyle;
   boardName: BoardName;
   /** The active brush: the hold type tapping a hold will apply. */
   selectedType: HoldFilterType;
@@ -41,6 +43,7 @@ type HoldFilterPickerProps = {
  */
 export function HoldFilterPicker({
   boardName,
+  holdStyleOverride,
   selectedType,
   onSelectType,
   applyMode,
@@ -57,12 +60,13 @@ export function HoldFilterPicker({
   const verticalTabBar = useVerticalTabBar();
   const { bottom: tabInsetBottom } = useSafeAreaInsets();
   const controlsInsetBottom = verticalTabBar ? tabInsetBottom : windowInsetBottom;
+  const storedHoldStyle = useHoldColorOverrides();
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
-  } = useHoldColorOverrides();
+  } = holdStyleOverride ?? storedHoldStyle;
 
   const options = useMemo(() => buildHoldFilterOptions(boardName, holdColorOverrides), [boardName, holdColorOverrides]);
   const shapeByType = useMemo(() => {

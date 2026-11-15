@@ -1,18 +1,18 @@
-import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { type RefObject, useCallback, useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
-import { useTranslation } from 'react-i18next';
-import { BOARD_FILTER_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { BOARD_FILTER_TYPES, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { type RefObject, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { StyleSheet, View } from 'react-native';
+import { useTheme } from '../../providers/theme-provider';
+import { spacing } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
-import { Sheet } from '../Sheet';
-import { SheetTopBar } from '../SheetTopBar';
-import { SegmentedControl } from '../SegmentedControl';
 import { SectionHeader } from '../SectionHeader';
-import { spacing } from '../../theme/tokens';
-import { useTheme } from '../../providers/theme-provider';
+import { SegmentedControl } from '../SegmentedControl';
+import { Sheet } from '../Sheet';
+import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { SheetTopBar } from '../SheetTopBar';
 
 type YouFilterSheetProps = {
   sheetRef: RefObject<BottomSheet | null>;
@@ -32,18 +32,6 @@ export function YouFilterSheet({
 }: YouFilterSheetProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
-  // The change callback records a sheet request; it does not prove native visibility.
-  const handleChange = useCallback((index: number) => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-      console.log(`[showcase-profile-filter] ${JSON.stringify({ event: 'change', index, timestampMs: Date.now() })}`);
-    }
-  }, []);
-  const handleFullyDismissed = useCallback(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-      console.log(`[showcase-profile-filter] ${JSON.stringify({ event: 'fully-dismissed', timestampMs: Date.now() })}`);
-    }
-  }, []);
-
   // BOARD_FILTER_TYPES, not BOARD_TYPES: the wider list is what the You screen
   // FETCHES so no ascent is dropped, this is what the filter OFFERS.
   const boardOptions = useMemo(() => ['all', ...BOARD_FILTER_TYPES], []);
@@ -60,8 +48,6 @@ export function YouFilterSheet({
   return (
     <Sheet
       ref={sheetRef}
-      onChange={handleChange}
-      onFullyDismissed={handleFullyDismissed}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       // Android's fixed partial detent leaves empty sheet under the form.
       // Fit its bounded content there; iOS keeps the requested 55% detent.

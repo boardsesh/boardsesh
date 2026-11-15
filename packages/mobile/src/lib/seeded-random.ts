@@ -2,9 +2,6 @@
  * A seeded pseudo-random generator, for the places that must draw the same
  * numbers twice.
  *
- * Pure and dependency-free on purpose: the one caller is screenshot mode, which
- * has to fold away entirely from a shipped build, and pulling a package in for
- * nine lines of arithmetic would put it in the native graph for nothing.
  */
 
 /** Anything that answers like `Math.random`: a float in `[0, 1)`. */

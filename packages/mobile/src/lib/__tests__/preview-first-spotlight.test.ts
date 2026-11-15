@@ -89,9 +89,4 @@ describe('hasUnseenPreviewFirstSpotlight', () => {
     store.values.set(KEY, { shownAt: null, dismissed: true });
     expect(await hasUnseenPreviewFirstSpotlight()).toBe(false);
   });
-
-  it('never lights it in screenshot mode', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(await hasUnseenPreviewFirstSpotlight()).toBe(false);
-  });
 });

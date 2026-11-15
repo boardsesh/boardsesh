@@ -56,7 +56,17 @@ const RESOLVED_BOARDS = new Map<string, ResolvedBoardEntry>([
   ['99000002', { kind: 'saved', board: fixtureBoard(TENSION_UUID, 'tension', 'QA Tension 2 Mirror', '99000002') }],
 ]);
 
-function GymBoardPicker({ initiallyShowAll = false, targetMissing = false, withBareKilter = false }) {
+function GymBoardPicker({
+  initiallyShowAll = false,
+  targetMissing = false,
+  withBareKilter = false,
+  onReady,
+}: {
+  initiallyShowAll?: boolean;
+  targetMissing?: boolean;
+  withBareKilter?: boolean;
+  onReady: () => void;
+}) {
   const [showAllBoards, setShowAllBoards] = useState(initiallyShowAll);
   const [open, setOpen] = useState(true);
   const handleSearchAnyBoard = useCallback(() => setShowAllBoards(true), []);
@@ -71,6 +81,7 @@ function GymBoardPicker({ initiallyShowAll = false, targetMissing = false, withB
       showAllBoards={showAllBoards}
       isScanning={false}
       open={open}
+      onPresented={onReady}
       onDismiss={handleDismiss}
       onSelect={handleDismiss}
       onSearchAnyBoard={handleSearchAnyBoard}
@@ -84,27 +95,32 @@ const stories: StoryModule = {
     firstConnection: {
       name: 'First Kilter connection beside a stronger Tension',
       layout: 'fullscreen',
-      render: () => <GymBoardPicker />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <GymBoardPicker onReady={onReady} />,
     },
     allBoards: {
       name: 'Search for any board reveals both boards',
       layout: 'fullscreen',
-      render: () => <GymBoardPicker initiallyShowAll />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <GymBoardPicker onReady={onReady} initiallyShowAll />,
     },
     targetMissing: {
       name: 'The intended Kilter is not advertising',
       layout: 'fullscreen',
-      render: () => <GymBoardPicker targetMissing />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <GymBoardPicker onReady={onReady} targetMissing />,
     },
     bareKilter: {
       name: 'A serial-less Kilter box lists under the intended Kilter',
       layout: 'fullscreen',
-      render: () => <GymBoardPicker withBareKilter />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <GymBoardPicker onReady={onReady} withBareKilter />,
     },
     bareKilterOnly: {
       name: 'Only a serial-less Kilter box beside the Tension',
       layout: 'fullscreen',
-      render: () => <GymBoardPicker targetMissing withBareKilter />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <GymBoardPicker onReady={onReady} targetMissing withBareKilter />,
     },
   },
 };

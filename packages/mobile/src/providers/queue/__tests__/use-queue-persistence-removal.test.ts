@@ -212,7 +212,7 @@ it('reschedules a pending solo save after a sign-in or sign-out', async () => {
   unmount();
 });
 
-it('leaves saved queues untouched and starts empty in screenshot mode', async () => {
+it('restores an owned saved queue regardless of retired capture flags', async () => {
   sessions.get.mockClear();
   sessions.clear.mockClear();
   snapshots.get.mockReset();
@@ -240,11 +240,12 @@ it('leaves saved queues untouched and starts empty in screenshot mode', async ()
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, SOLO_QUEUE_SAVE_DEBOUNCE_MS + 30));
     });
-    expect(snapshots.get).not.toHaveBeenCalled();
-    expect(snapshots.set).not.toHaveBeenCalled();
-    expect(sessions.get).not.toHaveBeenCalled();
-    expect(sessions.clear).not.toHaveBeenCalled();
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(snapshots.get).toHaveBeenCalledWith({ userId: 'viewer-a', authSessionId: '' });
+    expect(sessions.get).toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'UPDATE_QUEUE',
+      payload: { queue: [{ uuid: 'saved-real-climb' }], currentClimbQueueItem: null },
+    });
   } finally {
     unmount();
     vi.unstubAllEnvs();

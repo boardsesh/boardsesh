@@ -14,12 +14,8 @@ import type { StartupScreen } from '../settings/types';
  * notification pushes over whatever tab is showing, onboarding pushes the
  * first-board picker over it, and a post-login return href is read first.
  *
- * Screenshot captures always start on Home: they have an explicit Home
- * readiness contract before navigating to each capture, and a value left on a
- * simulator must not move it.
  */
 export function getAppEntryTab(): StartupScreen {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return 'home';
   return normaliseStartupScreen(getSetting('startupScreen'));
 }
 

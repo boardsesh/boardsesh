@@ -13,6 +13,14 @@ import {
   resetDriveModeForTests,
 } from '../../../components/play-drawer/drive-mode-store';
 
+const transport = vi.hoisted(() => ({ javascript: false }));
+vi.mock('../../ble/transport-runtime', () => ({
+  bluetoothTransport: () => (transport.javascript ? { widgetCommandDelivery: 'javascript' } : undefined),
+}));
+beforeEach(() => {
+  transport.javascript = false;
+});
+
 type QueueNavigateEvent = {
   action: 'next' | 'previous';
   currentIndex: number;
@@ -800,15 +808,21 @@ describe('LiveActivityBridge session-presence gating', () => {
     );
   });
 
-  // Screenshot builds run on a simulator, whose sandbox APNs token prod
-  // rejects and deletes, so every party-authorised widget tap would 401.
-  it('keeps a screenshot build off the party path even inside a session', () => {
+  it('routes widget commands through JS only for an explicitly installed external transport', () => {
+    transport.javascript = true;
+    renderBridge();
+    expect(widget.useLiveActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ isSessionActive: true, isPartySession: false }),
+    );
+  });
+
+  it('preserves party authorization regardless of retired capture flags', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     try {
       renderBridge();
 
       expect(widget.useLiveActivity).toHaveBeenCalledWith(
-        expect.objectContaining({ isSessionActive: true, isPartySession: false }),
+        expect.objectContaining({ isSessionActive: true, isPartySession: true }),
       );
     } finally {
       vi.unstubAllEnvs();

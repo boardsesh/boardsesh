@@ -1,10 +1,7 @@
+import { PlayerScene } from '../../dev/stories/PlayerScene';
 import { StyleSheet, View } from 'react-native';
-import type { SessionUser } from '@boardsesh/shared-schema';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
-import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
 import type { StoryModule } from '../../dev/stories/types';
-import { setPlayerBoardControl } from '../../lib/player-buttons-preference';
-import { setSetting } from '../../settings';
 import { spacing } from '../../theme/tokens';
 import { BusyWallQuestionGroup } from './BusyWallQuestionGroup';
 import { resolveBusyWallQuestion, type BusyWallQuestionInput } from './busy-wall-question';
@@ -16,41 +13,6 @@ import { resolveBusyWallQuestion, type BusyWallQuestionInput } from './busy-wall
 // also the place to check the first row's spacing with ⏮ and ⏭ live.
 
 const noop = () => {};
-
-const CREW: SessionUser[] = [
-  { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
-  { id: 'story-test2', username: 'Test2', isLeader: false, userId: 'story-test2-user', connectionState: 'CONNECTED' },
-];
-
-const ROUTE = '/climbs?screenshotOpenFirst=1';
-// A real crew always has a climb up: the drawer opens the first climb solo
-// (which puts it up), then the crew arrives.
-const CREW_JOINS_AFTER_MS = 6000;
-
-/** A crew of two, this phone holding the board, and ⏮ ⏭ drawn live. */
-function crew(player: NonNullable<ScenarioOverrides['player']>): ScenarioOverrides {
-  return {
-    queue: { isSharedSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
-    player: { selfHoldsBoard: true, previousNextEnabled: true, ...player },
-  };
-}
-
-const QUESTION = crew({
-  wallPill: 'browsing',
-  wallLit: 'notLit',
-  busyWall: { holderName: 'Test2', climbName: 'Crimp Ladder' },
-});
-
-// Always drive the wall pinned off: with it on, this phone's link would drive
-// the wall and the question would never be asked.
-const withWallButton = () => {
-  setSetting('alwaysDrive', false);
-  setPlayerBoardControl('wallButton');
-};
-const withBulb = () => {
-  setSetting('alwaysDrive', false);
-  setPlayerBoardControl('lightbulb');
-};
 
 const question = (overrides: Partial<BusyWallQuestionInput> = {}) =>
   resolveBusyWallQuestion({
@@ -89,25 +51,22 @@ const stories: StoryModule = {
       ),
     },
     question: {
-      name: 'Real drawer: Test2 just put up another climb (wall button)',
-      overrides: QUESTION,
-      prepare: withWallButton,
-      route: ROUTE,
+      name: 'Another climber is on the wall',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} state="busy" />,
     },
     questionBulb: {
-      name: 'Real drawer: the same question, Board control set to the bulb',
-      overrides: QUESTION,
-      prepare: withBulb,
-      route: ROUTE,
+      name: 'Busy wall with lightbulb control',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} state="busy" boardControl="lightbulb" />,
     },
-    // #7017 bug 1: the first row's five slots stay evenly spaced on the wall's
-    // climb with ⏮ and ⏭ both live.
     wallClimb: {
-      name: 'Real drawer: the wall’s climb, this phone holding it, ⏮ ⏭ live',
-      overrides: crew({ wallPill: null, wallLit: 'lit' }),
-      prepare: withWallButton,
-      route: ROUTE,
-      overridesDelayMs: CREW_JOINS_AFTER_MS,
+      name: 'The wall climb',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} state="lit" />,
     },
   },
 };

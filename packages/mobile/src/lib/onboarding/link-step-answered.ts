@@ -4,7 +4,6 @@ import { getPreference, setPreference } from '../preference-store';
 const STORAGE_KEY = 'onboardingLinkStepAnswered';
 
 export async function hasAnsweredLinkStep(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return true;
   try {
     return (await getPreference<boolean>(STORAGE_KEY)) === true;
   } catch {

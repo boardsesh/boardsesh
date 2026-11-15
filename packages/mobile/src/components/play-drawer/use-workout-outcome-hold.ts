@@ -73,9 +73,7 @@ export function useWorkoutOutcomeHold({
       const left = previousLive;
       // Keeps a hold already made for this climb, so Strict Mode's second run
       // of this render (and of the updater) leaves the same single hold.
-      // Wall-clock, not `nowMs()`: this times the grace against the taps'
-      // `Date.now()` and the swap's timer, and screenshot mode freezes `nowMs()`,
-      // which would end every hold the moment it starts.
+      // Time the grace period against the taps' wall clock and the swap's timer.
       setHold((current) => (current?.target === left ? current : { target: left, wallLeftAtMs: Date.now() }));
     }
   }

@@ -124,12 +124,8 @@ export type NudgeDecisionInput = {
  * surface does this (`hasUnseenChangelog`, `hasSeenTip`, `OnboardingGate`), and
  * this flag is baked on for the App Store capture matrix.
  */
-function isScreenshotMode(): boolean {
-  return process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-}
 
 export function shouldShowNudge(input: NudgeDecisionInput): boolean {
-  if (isScreenshotMode()) return false;
   if (!input.offlineEngineEnabled) return false;
   // The board is already downloaded, downloading, or armed — there is nothing
   // to suggest.

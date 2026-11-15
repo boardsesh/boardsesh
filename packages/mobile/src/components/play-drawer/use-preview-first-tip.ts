@@ -140,7 +140,6 @@ export function usePreviewFirstTip({
     listTipShowing: revealTipShowing || quickActionsTipShowing,
     playerBusy,
     slotInView,
-    screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
   };
   const visible =
     openClaim !== 'refused' && shouldShowPreviewFirstTip({ ...gate, state, claimedThisOpen: openClaim === 'claimed' });

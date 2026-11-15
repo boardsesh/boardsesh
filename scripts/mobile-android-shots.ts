@@ -1,3 +1,4 @@
+import { migrateCaptureRoute } from './lib/retired-capture';
 /// <reference types="node" />
 
 /**
@@ -58,6 +59,7 @@ import {
   listeningPids,
   portInUse,
   metroLogOffset,
+  waitForMetroLogLine,
   metroLogPathForPort,
   shotsMetroWatch,
   stopMetro,
@@ -71,6 +73,8 @@ import {
   assertStoryId,
   resolveMetroLogPath,
   settleAfterStory,
+  buildStoryEnv,
+  isStoryRootReadyLine,
 } from './lib/mobile-stories';
 import {
   connectDevClient,
@@ -97,19 +101,13 @@ const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MAESTRO_DIR = join(ROOT_DIR, 'packages', 'mobile', '.maestro');
 const DEFAULT_OUT_DIR = join(ROOT_DIR, '.boardsesh', 'android-screenshots');
 
-// Friendly screen names -> deep-link routes (the screenshot-mode params are app
-// code; see packages/mobile/src/lib/screenshot-mode.ts and the .maestro flows).
+// Ordinary application routes. Capture-specific aliases migrate to view stories.
 const SCREEN_ROUTES: Record<string, string> = {
   home: 'home',
   climbs: 'climbs',
   discover: 'discover',
   profile: 'profile',
   record: 'record',
-  'board-view': 'climbs?screenshotOpenFirst=1',
-  'board-sheet': 'climbs?screenshotOpenBoardSheet=1',
-  'session-detail': 'profile?screenshotTab=sessions',
-  logbook: 'profile?screenshotTab=logbook',
-  progress: 'profile?screenshotTab=progress',
 };
 
 type ShotsCommand = 'run' | 'screenshot' | 'navigate' | 'shutdown';
@@ -270,6 +268,7 @@ export function parseShotsArgs(argv: readonly string[]): ShotsOptions {
     }
   }
 
+  migrateCaptureRoute(options);
   applyStoryOptions(options);
   return options;
 }
@@ -529,6 +528,12 @@ function blockUntilExit(metro: ChildProcess): Promise<void> {
 }
 
 async function runFullPipeline(options: ShotsOptions): Promise<number> {
+  if (options.flow)
+    throw new Error(
+      'Visual flows now use isolated views. Use vp run mobile:screenshots -- --flow ' +
+        options.flow +
+        ' (or --story for one view).',
+    );
   const toolchain = ensureAndroidSdk();
   applyAndroidPath(toolchain.env);
   const env = process.env;
@@ -546,9 +551,12 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   installDevClient(adbBinary, serial, apk);
   applyCleanAndroidStatusBar(serial);
 
-  const metroEnv = options.screenshotMode
-    ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
-    : { ...process.env };
+  const storyMode = Boolean(options.story || options.to?.startsWith('dev/stories/'));
+  const metroEnv = storyMode
+    ? buildStoryEnv(process.env)
+    : options.screenshotMode
+      ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
+      : { ...process.env };
   const watch = shotsMetroWatch(options);
   // Same log as mobile-ios-shots: this port's own file, so `screenshot` reads this
   // Metro's lines and not another session's 8081 Metro sharing TMPDIR.
@@ -567,7 +575,13 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
     session = startMetroForDevClient(metroEnv, { watch, logPath: metroLogPath });
     connectShotsDevClient(adbBinary, serial, options.backend);
 
-    if (options.screenshotMode) {
+    if (storyMode) {
+      const storyOffset = metroLogOffset(metroLogPath);
+      launchDevClient(adbBinary, serial);
+      if (!waitForMetroLogLine(isStoryRootReadyLine, storyOffset, 120, metroLogPath)) {
+        throw new Error('Isolated story root did not become ready within 120 seconds');
+      }
+    } else if (options.screenshotMode) {
       if (launchDevClientToHome(adbBinary, serial, { logPrefix: LOG, metroLogPath })) {
         console.log(`${LOG} App reached home.`);
       } else {

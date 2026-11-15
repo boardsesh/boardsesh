@@ -48,9 +48,4 @@ describe('hasUnseenOfflineSpotlight', () => {
     spies.loadNudgeState.mockResolvedValue(withNudgeDismissed(emptyNudgeState(), 'whats_new', 'forever', 1));
     await expect(hasUnseenOfflineSpotlight()).resolves.toBe(false);
   });
-
-  it('never lights the pill in a screenshot run', async () => {
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-    await expect(hasUnseenOfflineSpotlight()).resolves.toBe(false);
-  });
 });

@@ -8,7 +8,7 @@ import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseAllDocuments } from 'yaml';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
-import { resolveScreenshotCppBoard } from '../../packages/mobile/src/lib/screenshot-cpp-board-identity';
+import { resolveScreenshotCppBoard } from '../../packages/mobile/src/dev/integration/screenshot-cpp-board-identity';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../../packages/shared/climb-filters/src/filter-state';
 import {
   buildScreenshotEnv,

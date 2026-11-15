@@ -36,7 +36,10 @@ export type { ClimbListRowMenuHandle } from './ClimbListRowMenu.types';
 /** Which control opened the menu, and so gets screen-reader focus back. */
 type MenuSource = 'row' | 'more';
 
-type MenuSnapshot = Pick<ClimbListRowMenuProps, 'rows' | 'menuKey' | 'preview' | 'title' | 'previewOverlayColor'> & {
+type MenuSnapshot = Pick<
+  ClimbListRowMenuProps,
+  'rows' | 'menuKey' | 'preview' | 'title' | 'previewOverlayColor' | 'onPresented'
+> & {
   anchor: MenuAnchorRect;
   generation: number;
   viewport: ReturnType<typeof Dimensions.get>;
@@ -101,7 +104,7 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
       retireActiveMenu?.();
       retireActiveMenu = retire;
       const request = ++revision.current;
-      const { rows, menuKey, preview, title, previewOverlayColor } = current.current;
+      const { rows, menuKey, preview, title, previewOverlayColor, onPresented } = current.current;
       const generation = getCredentialGeneration();
       const viewport = Dimensions.get('window');
       // The overlay sits under the keyboard's window, so the lower actions would
@@ -131,6 +134,7 @@ function LiftedClimbListRowMenu(props: ClimbListRowMenuProps) {
             preview,
             title,
             previewOverlayColor,
+            onPresented,
             generation,
             viewport,
             anchor: { x, y, width, height },
@@ -273,8 +277,15 @@ function LiftedRowMenu({
   const layout = getLiftedRowMenuLayout({ anchor, viewport, insets, menuHeight });
   useAnnounceBodyFocus(headerRef, true);
   useEffect(() => {
-    progress.value = reduceMotion ? 1 : withSpring(1, springs.gentle);
-  }, [progress, reduceMotion]);
+    const onPresented = snapshot.onPresented;
+    if (reduceMotion) {
+      progress.value = 1;
+      onPresented?.();
+    } else
+      progress.value = withSpring(1, springs.gentle, (complete) => {
+        if (complete && onPresented) runOnJS(onPresented)();
+      });
+  }, [progress, reduceMotion, snapshot.onPresented]);
   useEffect(() => {
     const unsubscribe = subscribeToCredentialChanges(retire);
     if (snapshot.generation !== getCredentialGeneration()) retire();

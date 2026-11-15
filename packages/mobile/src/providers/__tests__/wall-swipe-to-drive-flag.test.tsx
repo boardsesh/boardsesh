@@ -47,21 +47,6 @@ describe('the wall-swipe-to-drive flag', () => {
     expect(wallSwipeToDriveOffered(false)).toBe(false);
   });
 
-  it('never offers it in screenshot mode', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.stubGlobal('__DEV__', true);
-    expect(wallSwipeToDriveOffered(true)).toBe(false);
-  });
-
-  it('offers driving only to explicitly opted-in fake-Bluetooth captures', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_DRIVING', '1');
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
-    expect(wallSwipeToDriveOffered(undefined)).toBe(true);
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '0');
-    expect(wallSwipeToDriveOffered(true)).toBe(false);
-  });
-
   it('a screenshot opt-in never overrides the normal store rollout flag', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_DRIVING', '1');

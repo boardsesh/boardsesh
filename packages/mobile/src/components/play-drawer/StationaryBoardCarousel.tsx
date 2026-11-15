@@ -16,6 +16,7 @@ type Props = {
   boardBox: ViewStyle;
   zoomStyle: AnimatedStyle<ViewStyle>;
   onUnavailable: () => void;
+  onCurrentArtReadinessChange?: (readiness: BoardArtReadiness) => void;
 };
 
 /** One photograph and one native compositor; the header still rides the pager.
@@ -32,6 +33,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   boardBox,
   zoomStyle,
   onUnavailable,
+  onCurrentArtReadinessChange,
 }: Props) {
   const { anchorPage, translateX, slideWidth } = pager;
   const stationaryMotion = pager.stationaryMotion;
@@ -48,7 +50,20 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
     () => ({ previousFrames, nextFrames, centerPage, pagePosition }),
     [previousFrames, nextFrames, centerPage, pagePosition],
   );
-  const identity = JSON.stringify([centerPage, boardProps.frames, previousFrames, nextFrames]);
+  const identity = JSON.stringify([
+    centerPage,
+    boardProps.frames,
+    previousFrames,
+    nextFrames,
+    boardProps.boardName,
+    boardProps.layoutId,
+    boardProps.sizeId,
+    boardProps.setIds,
+    boardProps.mirrored,
+    boardProps.renderWidth,
+    boardProps.fieldColorOverride,
+    boardProps.renderStyleOverride,
+  ]);
   const readiness = useRef({ identity, generation: 0, art: 'loading' as BoardArtReadiness, gpu: false });
   if (readiness.current.identity !== identity) {
     readiness.current = { identity, generation: readiness.current.generation + 1, art: 'loading', gpu: false };
@@ -71,6 +86,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
         : readiness.current.art === 'ready' && readiness.current.gpu
           ? 'ready'
           : 'loading';
+    onCurrentArtReadinessChange?.(state);
     runOnUI((nextState: BoardArtReadiness) => {
       'worklet';
       pageArt.value = {
@@ -80,7 +96,7 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
         [centerPage + 1]: nextFrames === null ? 'ready' : nextState,
       };
     })(state);
-  }, [generation, centerPage, previousFrames, nextFrames, pageArt]);
+  }, [generation, centerPage, previousFrames, nextFrames, pageArt, onCurrentArtReadinessChange]);
   useLayoutEffect(() => {
     publishReadiness();
     return () => {

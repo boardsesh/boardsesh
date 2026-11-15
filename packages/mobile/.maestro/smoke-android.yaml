@@ -22,7 +22,7 @@ name: e2e gate smoke android
 # locale nor the recorded data can move them.
 #
 # The orchestrator checks a second, independent signal after this flow: each
-# screen pings it with a content count (src/components/ScreenshotSmokeMarker.tsx).
+# screen pings it with a content count (src/components/ContentRenderObserver.tsx).
 
 # Home: the signed-in feed, with at least one real session card.
 - extendedWaitUntil:
@@ -57,7 +57,7 @@ name: e2e gate smoke android
     timeout: 60000
 
 # Open the first climb: the play drawer with the holds overlay painted.
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1&screenshotBoardIndex=0
+- openLink: com.boardsesh.app://dev/integration/open-first-climb
 - extendedWaitUntil:
     visible:
       id: 'play-drawer-board-overlay'

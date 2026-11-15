@@ -12,7 +12,8 @@ import { hapticSelection } from '../../../lib/haptics';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { getDefaultTargetGrade, toRailGrades } from './generator-controls';
-import { WorkoutBlockCard } from './WorkoutBlockCard';
+import { WorkoutBlockCardView } from './WorkoutBlockCard';
+import { useWorkoutPresentation, type WorkoutPresentation } from './workout-presentation';
 import {
   MAX_WORKOUT_BLOCKS,
   addBlock,
@@ -35,7 +36,7 @@ import {
 // survives it, and could hand a new block an id that is already in use.
 const makeBlockId = () => randomUUID();
 
-type WorkoutBlockListProps = {
+export type WorkoutBlockListProps = {
   boardName: BoardName | null;
   /** Which size filters the board offers. Keep its identity stable: the cards are memoised. */
   sizeFilters: SizeFilterAvailability;
@@ -51,17 +52,22 @@ type WorkoutBlockListProps = {
  * Which card is open is this list's own state, not part of the selection, so
  * opening one never rebuilds the preview.
  */
-export function WorkoutBlockList({
+export function WorkoutBlockList(props: WorkoutBlockListProps) {
+  const presentation = useWorkoutPresentation();
+  return <WorkoutBlockListView {...props} presentation={presentation} />;
+}
+export function WorkoutBlockListView({
+  presentation,
   boardName,
   sizeFilters,
   selection,
   onChange,
   onRevealBlock,
-}: WorkoutBlockListProps) {
+}: WorkoutBlockListProps & { presentation: WorkoutPresentation }) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
   const railGrades = useMemo(() => toRailGrades(boardName), [boardName]);
-  // Screenshot mode starts with a block; show it open.
+  // An initially supplied plan opens its first block.
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(() => selection.blocks[0]?.id ?? null);
   // The card to scroll into view on its next layout, once it has opened.
   const pendingRevealIdRef = useRef<string | null>(null);
@@ -141,7 +147,8 @@ export function WorkoutBlockList({
           const target = block.kind === 'warmUp' ? warmUpTarget(blocks, position) : null;
           const coolDownFrom = block.kind === 'warmUp' ? coolDownSource(blocks, position) : null;
           return (
-            <WorkoutBlockCard
+            <WorkoutBlockCardView
+              presentation={presentation}
               key={block.id}
               block={block}
               position={position + 1}

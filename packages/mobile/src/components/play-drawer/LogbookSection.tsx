@@ -149,7 +149,7 @@ export const LogbookSection = memo(function LogbookSection({
 
   if (hasEntries) {
     // Read on every render rather than memoised, so the labels cannot go stale
-    // across midnight. `nowMs()` keeps screenshot captures on the frozen clock.
+    // across midnight.
     const dayKeys = ledgerDayKeys(nowMs());
     const dayLabelOptions = {
       ...dayKeys,

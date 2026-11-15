@@ -199,13 +199,6 @@ describe('usePreviewFirstTip', () => {
     act(() => retirePreviewFirstTip());
     expect(result.current.visible).toBe(false);
   });
-
-  it('never shows in screenshot mode', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    const { result } = await renderTip();
-    expect(result.current.visible).toBe(false);
-    expect(result.current.deciding).toBe(false);
-  });
 });
 
 describe('resolvePreviewFirstTipInput', () => {

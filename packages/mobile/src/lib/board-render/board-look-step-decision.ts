@@ -25,7 +25,6 @@ export const BOARD_LOOK_STEP_BLOCKED_TOP_SEGMENTS: ReadonlySet<string> = new Set
 export type BoardLookStepInput = {
   /** Auth + fonts resolved and the splash hidden. */
   ready: boolean;
-  screenshotMode: boolean;
   /**
    * False while the AsyncStorage-backed render settings are still hydrating.
    *
@@ -97,7 +96,6 @@ export function isSettledBoardLookReason(reason: BoardLookStepReason): boolean {
 export function explainBoardLookStep(input: BoardLookStepInput): BoardLookStepVerdict {
   if (!input.ready) return { decision: 'wait', reason: 'not_ready' };
   // Store captures must reach the app, not our onboarding.
-  if (input.screenshotMode) return { decision: 'none', reason: 'screenshot' };
 
   if (!input.settingsLoaded) return { decision: 'wait', reason: 'settings_loading' };
   // They have already answered this question, in Settings or in a past step.

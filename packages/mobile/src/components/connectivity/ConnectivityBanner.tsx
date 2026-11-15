@@ -97,7 +97,7 @@ export function ConnectivityBanner() {
   const ready = launchReady && flagsResolved;
   // Screenshot builds never show it: a store screenshot must not carry a "server
   // trouble" card, and the capture rig has no backend to reach anyway.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return null;
+
   if (!ready || !enabled) return null;
   return <ConnectivityBannerContent />;
 }

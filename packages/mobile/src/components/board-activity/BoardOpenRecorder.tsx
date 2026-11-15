@@ -57,7 +57,6 @@ export function BoardOpenRecorder(): null {
     // Screenshot builds drive the active board themselves to stage captures.
     // Recording those would reorder the store-shot account's board list between
     // runs. Inlined so it dead-strips from normal builds.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
 
     const key = `${userId}:${boardUuid}`;
     if (lastRecordedKey === key) return;

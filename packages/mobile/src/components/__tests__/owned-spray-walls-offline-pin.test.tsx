@@ -155,11 +155,11 @@ describe('OwnedSprayWallsOfflinePin across a sign-out', () => {
     expect(state.ledger).toEqual({ userId: 'user-me', wallUuids: ['wall-a'] });
   });
 
-  it('does nothing in a screenshot capture, whose requests are replayed', () => {
+  it('keeps owned-wall pinning independent of retired capture flags', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     try {
       render(createElement(OwnedSprayWallsOfflinePin));
-      expect(enableBoardsOffline).not.toHaveBeenCalled();
+      expect(enableBoardsOffline).toHaveBeenCalledWith([myWall], { trigger: 'owned-wall', source: 'owned_wall' });
     } finally {
       vi.unstubAllEnvs();
     }

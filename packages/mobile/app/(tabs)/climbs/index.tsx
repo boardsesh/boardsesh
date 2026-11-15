@@ -1,4 +1,5 @@
-import { clearScreenshotDriveRequest, requestScreenshotDrive } from '../../../src/lib/screenshot-driving';
+import { ClimbsEmptyState } from '../../../src/components/climbs/ClimbsEmptyState';
+import { ClimbsView } from '../../../src/components/climbs/ClimbsView';
 import { scheduleIdleTask } from '../../../src/lib/schedule-idle-task';
 import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
 import { useHorizontalSafeArea } from '../../../src/hooks/use-horizontal-safe-area';
@@ -11,7 +12,7 @@ import { usePullRefresh } from '../../../src/hooks/use-pull-refresh';
 import { useTabReselect } from '../../../src/hooks/use-tab-reselect';
 import { useLiveClimbFilters, type ClimbFilterSelection } from '../../../src/hooks/use-live-climb-filters';
 import type { WindowAnchorPoint } from '../../../src/components/navigation/AnchoredPopover.types';
-import { memo, useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,13 +20,12 @@ import {
   Keyboard,
   Platform,
   useWindowDimensions,
-  type ColorValue,
   type LayoutChangeEvent,
 } from 'react-native';
-import { FlashList, type FlashListRef, type ViewToken } from '@shopify/flash-list';
+import { type FlashListRef, type ViewToken } from '@shopify/flash-list';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack, useFocusEffect, useIsFocused, useRouter, useLocalSearchParams } from 'expo-router';
+import { Stack, useFocusEffect, useIsFocused, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { Climb, BoardName } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -59,7 +59,6 @@ import {
   type ClimbRowSurface,
 } from '../../../src/components/climb-row-layout';
 import {
-  ClimbListThumbnailSizeContext,
   climbListColumnsForRoom,
   climbListHasRoomForTwoColumns,
   climbListThumbnailSize,
@@ -92,7 +91,6 @@ import {
   type ClimbTypeFilter,
 } from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
-import { SearchEmptyRecovery } from '../../../src/components/search/SearchEmptyRecovery';
 import { GradeRangeRail, type GradeRailChange } from '../../../src/components/grade';
 import { buildGradeRailStops } from '../../../src/lib/grade-stops';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
@@ -111,8 +109,7 @@ import { useTheme, useAppColorScheme } from '../../../src/providers/theme-provid
 import { selectByVariant } from '../../../src/theme/variants';
 import { useIsSharedSession, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
-import { setSetting, useSetting } from '../../../src/settings';
-import { climbToQueueItem } from '../../../src/lib/climb-to-queue-item';
+import { useSetting } from '../../../src/settings';
 import { ClimbListTickDisplayProvider } from '../../../src/providers/climb-list-tick-display-provider';
 import { randomUUID } from 'expo-crypto';
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
@@ -122,7 +119,6 @@ import { useDeviceLayout } from '../../../src/hooks/use-device-layout';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useClimbListFavorites } from '../../../src/hooks/use-climb-list-favorites';
-import { useScreenshotClimbStatsPrefetch } from '../../../src/hooks/use-screenshot-climb-stats-prefetch';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import {
   climbSearchScrollKey,
@@ -136,34 +132,19 @@ import { useConnectivity } from '../../../src/lib/connectivity/use-connectivity'
 import { offlineReasonFor, type OfflineQueryReason } from '../../../src/hooks/use-offline-query-state';
 import { useOfflineCatalogState } from '../../../src/offline/use-offline-catalog-state';
 import { OfflineCatalogCta } from '../../../src/components/offline/OfflineCatalogCta';
-import { OfflineState } from '../../../src/components/OfflineState';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { useFetchCachedSearchClimbsCount } from '../../../src/lib/graphql/hooks/search-climbs-count-query';
 import { useStoredUserId } from '../../../src/hooks/use-current-user-id';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { useFrozenSearchBasis } from '../../../src/lib/playlists/use-frozen-search-basis';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
-import {
-  buildScreenshotWallSeed,
-  publishScreenshotWallClimbs,
-} from '../../../src/lib/board-presence/screenshot-wall-seed';
-import { resolveScreenshotBoard, screenshotCppClimbListTestId } from '../../../src/lib/screenshot-board-selection';
-import { useScreenshotBoards } from '../../../src/hooks/use-screenshot-boards';
-import { selectScreenshotClimb, selectScreenshotGradeRange } from '../../../src/lib/screenshot-climb-selection';
-import { DEFAULT_FILTERS } from '../../../src/lib/climb-filter-types';
-import { loadGradeDisplayFormat, setGradeDisplayFormatPreference } from '../../../src/lib/grade-format-preference';
-import { loadPersonalGradesPreference, setPersonalGradesPreference } from '../../../src/lib/personal-grades-preference';
-import {
-  loadBoardseshGradesPreference,
-  setBoardseshGradesPreference,
-} from '../../../src/lib/boardsesh-grades-preference';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
 import { shouldShowUnsetWallEmptyState } from '../../../src/lib/spray/unset-wall-empty-state';
 import { useSprayWallIsArchived } from '../../../src/lib/spray/use-spray-wall-archive';
 import { SprayWallArchivedBanner } from '../../../src/components/spray-wall/SprayWallArchivedBanner';
 import { NO_BOARD_PICKER_HREF } from '../../../src/lib/boards/first-board-mode';
 import { FollowedAuthorsUnavailableError } from '../../../src/lib/followed-authors-error';
-import { useActiveBoard, useSetActiveBoard } from '../../../src/lib/graphql/use-active-board';
+import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
 import { drivesWithoutBluetooth } from '../../../src/lib/boards/board-lighting';
 import { OnboardingTipBanner } from '../../../src/components/onboarding/OnboardingTipBanner';
 import { FirstConnectCard, useFirstConnectCardExpected } from '../../../src/components/onboarding/FirstConnectCard';
@@ -193,7 +174,6 @@ import { normalizeSearchName } from '../../../src/lib/search-name';
 import { track } from '../../../src/lib/analytics';
 import { spacing } from '../../../src/theme/tokens';
 import { timing } from '../../../src/theme/animations';
-import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMarker';
 
 const PAGE_SIZE = 30;
 // Any part of a row on screen counts: this feeds pagination and thumbnail
@@ -274,73 +254,10 @@ function ClimbListInner() {
   const nativeRootHeader = useNativeRootHeader();
   const router = useRouter();
   const isFocused = useIsFocused();
-  // Screenshot mode opens the first climb's board view via this deep-link param
-  // (see the auto-open effect below). Absent on the plain `/climbs` list shot.
-  // screenshotBoardIndex picks which followed board to render (default [0]); the
-  // second board-view shot passes 1 to render myBoards[1].
-  // screenshotOpenPreview / screenshotOpenWallPreview land the same first climb
-  // in the drawer's two wall-state shots — browsing, and on the wall.
-  // screenshotOpenClimbActions lifts the first row's climb menu, the same
-  // presentation a hold or its ellipsis opens (the help flow's 11-climb-actions
-  // shot).
-  const {
-    screenshotOpenFirst,
-    screenshotDrive,
-    screenshotClimbId,
-    screenshotMinGrade,
-    screenshotMaxGrade,
-    screenshotBoardIndex,
-    screenshotCppScene,
-    screenshotOpenFilters,
-    screenshotOpenBoardSheet,
-    screenshotOpenPreview,
-    screenshotOpenWallPreview,
-    screenshotOpenClimbActions,
-  } = useLocalSearchParams<{
-    screenshotOpenFirst?: string;
-    screenshotDrive?: string;
-    screenshotClimbId?: string;
-    screenshotMinGrade?: string;
-    screenshotMaxGrade?: string;
-    screenshotBoardIndex?: string;
-    screenshotCppScene?: string;
-    screenshotOpenFilters?: string;
-    screenshotOpenBoardSheet?: string;
-    screenshotOpenPreview?: string;
-    screenshotOpenWallPreview?: string;
-    screenshotOpenClimbActions?: string;
-  }>();
-  const [screenshotGradesReadyFor, setScreenshotGradesReadyFor] = useState<string | null>(null);
-  const screenshotGradeSetupKey =
-    screenshotClimbId ??
-    (screenshotMinGrade !== undefined ? `grade:${screenshotMinGrade}:${screenshotMaxGrade ?? ''}` : undefined);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || screenshotGradeSetupKey === undefined) return;
-    let cancelled = false;
-    void (async () => {
-      await Promise.all([
-        setGradeDisplayFormatPreference('v-grade'),
-        setPersonalGradesPreference(false),
-        setBoardseshGradesPreference(false),
-      ]);
-      const [format, personal, boardsesh] = await Promise.all([
-        loadGradeDisplayFormat(),
-        loadPersonalGradesPreference(),
-        loadBoardseshGradesPreference(),
-      ]);
-      if (!cancelled && format === 'v-grade' && personal === false && boardsesh === false)
-        setScreenshotGradesReadyFor(screenshotGradeSetupKey);
-    })().catch(() => {
-      console.log('[screenshot] WARN capture grade preferences did not settle');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [screenshotGradeSetupKey]);
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
   const { t: tSession } = useTranslation('session');
-  const { getClimbActions, openAddToPlaylist, openBoardSheet, openPlayDrawer } = useDrawerHost();
+  const { getClimbActions, openAddToPlaylist, openBoardSheet } = useDrawerHost();
   // The grade row is hidden until the Grade chip opens it. Then it stays, across
   // opening a climb, search, Filters and app launches, until the chip hides it.
   const [gradeRowShown, setGradeRowShown] = useSetting('gradeRowShown');
@@ -613,20 +530,6 @@ function ClimbListInner() {
   );
   const dismissQuickActionsTip = useCallback(() => setQuickActionsTipArmed(false), []);
 
-  // Screenshot mode: a second board-view shot renders a different wall via
-  // ?screenshotBoardIndex=1 — slot 1 of SCREENSHOT_BOARDS, resolved by name so it
-  // stays the same board as the account's follows change. The auto-activator sets
-  // slot 0 on boot for every other shot. All of this dead-strips in normal builds
-  // (the gate is inlined).
-  const setActiveBoard = useSetActiveBoard();
-  const screenshotBoards = useScreenshotBoards(isAuthenticated && !!screenshotBoardIndex);
-  const screenshotTargetBoard = useMemo(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotBoardIndex) return null;
-    const index = Number.parseInt(screenshotBoardIndex, 10);
-    if (!Number.isInteger(index) || index < 0) return null;
-    return resolveScreenshotBoard(screenshotBoards, index);
-  }, [screenshotBoardIndex, screenshotBoards]);
-
   const boardName = activeBoard?.boardType ?? '';
   const layoutId = activeBoard?.layoutId ?? 0;
   const sizeId = activeBoard?.sizeId ?? 0;
@@ -649,7 +552,7 @@ function ClimbListInner() {
   // 'missing' (offer the download) vs 'queued' (already asked for) vs null.
   const offlineCatalog = useOfflineCatalogState(activeBoard);
 
-  const { data: gradesData, isSuccess: gradesLoaded, isPlaceholderData: gradesPlaceholder } = useGrades(boardName);
+  const { data: gradesData } = useGrades(boardName);
   const gradesRef = useRef(gradesData);
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
@@ -713,39 +616,6 @@ function ClimbListInner() {
 
   // Search is "ready" once this board's restore has landed — gate queries on it.
   const searchReady = hasBoardConfig && restoredKey === boardKey;
-  const screenshotSearchRequestKey =
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && screenshotClimbId?.trim() && activeBoard
-      ? `${activeBoard.uuid}:${filterScopeKey}:${screenshotCppScene ?? ''}:${screenshotClimbId}`
-      : null;
-  const screenshotSearchResetRef = useRef<string | null>(null);
-  const [screenshotSearchResetFor, setScreenshotSearchResetFor] = useState<string | null>(null);
-  useEffect(() => {
-    // A reused simulator may restore filters that exclude the requested real
-    // climb. Clear only after restoration, once for this exact board/request.
-    if (!screenshotSearchRequestKey) {
-      screenshotSearchResetRef.current = null;
-      if (screenshotSearchResetFor !== null) setScreenshotSearchResetFor(null);
-      return;
-    }
-    if (
-      !searchReady ||
-      (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) ||
-      screenshotSearchResetRef.current === screenshotSearchRequestKey
-    )
-      return;
-    screenshotSearchResetRef.current = screenshotSearchRequestKey;
-    handleClearName();
-    replaceSearch(DEFAULT_CLIMB_FILTER_STATE, '', DEFAULT_CLIMB_BOARD_FILTER_STATE);
-    setScreenshotSearchResetFor(screenshotSearchRequestKey);
-  }, [
-    screenshotSearchRequestKey,
-    screenshotSearchResetFor,
-    searchReady,
-    screenshotTargetBoard,
-    activeBoard,
-    handleClearName,
-    replaceSearch,
-  ]);
   const searchReadyRef = useRef(searchReady);
   searchReadyRef.current = searchReady;
   // Where the open Filters sheet came from, for `Climb Filters Closed`.
@@ -841,22 +711,6 @@ function ClimbListInner() {
       ),
     [boardName, layoutId, sizeId, setIds, angle, name, queryFilters, queryBoardFilters, personalGrades],
   );
-  const screenshotDefaultSearchInput = useMemo(
-    () =>
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && boardConfig
-        ? mergeBoardFilters(
-            toClimbSearchInput(DEFAULT_CLIMB_FILTER_STATE, boardConfig, { page: 0, pageSize: PAGE_SIZE }, { name: '' }),
-            DEFAULT_CLIMB_BOARD_FILTER_STATE,
-          )
-        : null,
-    [boardConfig],
-  );
-  const screenshotDefaultSearchReady =
-    screenshotSearchResetFor === screenshotSearchRequestKey &&
-    screenshotDefaultSearchInput !== null &&
-    name === '' &&
-    climbSearchScrollKey(searchInput, false) === climbSearchScrollKey(screenshotDefaultSearchInput, false);
-
   const {
     data: searchPages,
     isLoading: isClimbsLoading,
@@ -1105,11 +959,6 @@ function ClimbListInner() {
   // heart subscribes to per-uuid.
   useClimbListFavorites({ boardName, angle, climbUuids: visibleClimbUuids });
 
-  // Screenshot mode only (dead-stripped otherwise): ask for the whole loaded
-  // page's canonical stats in one batch, so a recorded capture covers every
-  // climb the replay can mount rather than only the rows FlashList had drawn.
-  useScreenshotClimbStatsPrefetch({ boardName, layoutId, angle, climbUuids: visibleClimbUuids });
-
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
     return refetch();
@@ -1339,263 +1188,6 @@ function ClimbListInner() {
     },
     [activateClimbListClimb, searchBasis, boardName, layoutId, sizeId, setIds],
   );
-
-  // Screenshot mode: when a specific board index is requested, switch the active
-  // board to it first; the open-first effect below waits until it's active.
-  // Retained deep-link screens keep their old params: only the focused screen
-  // may choose the board, including while an asynchronous storage write waits.
-  useEffect(() => {
-    // The regular campaign's command controller commits the board before route
-    // replacement. Old params can remain focused during that handoff; they must
-    // not compete with its selection. CPP and legacy deep links keep their path.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_PRIMARY_BOARD_URL && !process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL) return;
-    if (!isFocused || !screenshotTargetBoard || activeBoard?.uuid === screenshotTargetBoard.uuid) return;
-    let cancelled = false;
-    void setActiveBoard(screenshotTargetBoard, () => !cancelled);
-    return () => {
-      cancelled = true;
-    };
-  }, [isFocused, screenshotTargetBoard, activeBoard, setActiveBoard]);
-
-  // Screenshot mode: deterministically open the first climb's play drawer (the
-  // board-view shot) instead of a Maestro coordinate tap, which can't match RN
-  // rows on this iOS build and was capturing the climb list twice. Gated on the
-  // deep-link param so the plain `/climbs` list shot is untouched; fires once the
-  // board's results land. Keyed by the active board's uuid (not a one-shot bool)
-  // so a SECOND board-view shot on a different board re-fires. Dead-strips in
-  // normal builds.
-  const screenshotOpenedForBoardRef = useRef<string | null>(null);
-  useEffect(() => {
-    // Opening the player blurs this screen. Keep its consumed identity across
-    // that blur so closing the player does not immediately open it again.
-    if (!isFocused) return;
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || (!screenshotOpenFirst && screenshotClimbId === undefined)) {
-      screenshotOpenedForBoardRef.current = null;
-      return;
-    }
-    // When a specific board is requested, wait until it's the active board.
-    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    const captureIdentity = `${activeBoard?.uuid}:${screenshotCppScene ?? ''}:${screenshotClimbId ?? 'first'}:${screenshotDrive ?? ''}`;
-    if (!activeBoard || screenshotOpenedForBoardRef.current === captureIdentity) return;
-    const requestedClimb = selectScreenshotClimb(
-      visibleClimbs,
-      screenshotClimbId,
-      activeBoard,
-      searchInput,
-      searchReady &&
-        !isPlaceholderData &&
-        !isClimbsLoading &&
-        (screenshotClimbId === undefined ||
-          (screenshotDefaultSearchReady && screenshotGradesReadyFor === screenshotClimbId)),
-    );
-    if (!requestedClimb) return;
-    screenshotOpenedForBoardRef.current = captureIdentity;
-    if (screenshotDrive === '1' && activeBoard.boardType !== 'spray') {
-      requestScreenshotDrive(activeBoard.uuid, requestedClimb.uuid);
-    } else {
-      clearScreenshotDriveRequest();
-    }
-    handleClimbPress(requestedClimb);
-  }, [
-    isFocused,
-    screenshotOpenFirst,
-    screenshotDrive,
-    screenshotClimbId,
-    screenshotGradesReadyFor,
-    screenshotDefaultSearchReady,
-    screenshotCppScene,
-    searchReady,
-    isPlaceholderData,
-    isClimbsLoading,
-    searchInput,
-    visibleClimbs,
-    handleClimbPress,
-    screenshotTargetBoard,
-    activeBoard,
-  ]);
-
-  // Screenshot mode: deterministically open the board-presence "now on the wall"
-  // sheet (the onboarding hero shot) once the active board resolves, instead of a
-  // coordinate tap. Gated on the deep-link param so normal `/climbs` is untouched;
-  // dead-strips in normal builds.
-  const screenshotBoardSheetOpenedRef = useRef(false);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenBoardSheet) return;
-    if (!activeBoard || screenshotBoardSheetOpenedRef.current) return;
-    screenshotBoardSheetOpenedRef.current = true;
-    openBoardSheet();
-  }, [screenshotOpenBoardSheet, activeBoard, openBoardSheet]);
-
-  // Screenshot mode: seed the iPad Wall display kiosk from this board's real
-  // climbs (published to a module store the board-presence provider's seed client
-  // serves). Reusing the same climbs the board-view shot lights guarantees the
-  // seeded frames light the real holds for whatever board the capture user
-  // follows — no board-specific hardcoded frames that would render dark. Runs on
-  // the plain `/climbs` list (no deep-link param) so the seed is ready before the
-  // flow reaches the Wall display; dead-strips in normal builds.
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
-    if (!activeBoard || !searchReady || visibleClimbs.length === 0) return;
-    publishScreenshotWallClimbs(
-      buildScreenshotWallSeed(visibleClimbs, activeBoard.angle ?? null, activeBoard),
-      null,
-      activeBoard.uuid,
-    );
-  }, [activeBoard, searchReady, visibleClimbs]);
-
-  // Screenshot mode: open the first climb in one of the drawer's two wall-state
-  // shots. `screenshotOpenPreview` is the browse latch — the Browsing pill, the
-  // viewfinder brackets and the commit row — which is the same landing as a
-  // deep-link preview. `screenshotOpenWallPreview` adds `previewIsWallClimb`
-  // so the drawer says the displayed climb IS the lit one (the On-the-wall pill,
-  // no commit to offer). Declared AFTER the wall-seed effect above so the kiosk
-  // seed — which publishes this same first climb at index 0 — is already in the
-  // module store when the drawer reads board presence for the driver's face.
-  // Dead-strips in normal builds.
-  const screenshotPreviewOpenedRef = useRef(false);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && screenshotCppScene)
-      screenshotPreviewOpenedRef.current = false;
-  }, [screenshotCppScene]);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotCppScene) return;
-    if (
-      screenshotOpenFilters &&
-      (!searchReady || (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid))
-    )
-      return;
-    if (screenshotOpenFilters) openFilters();
-    else hideFilters();
-  }, [
-    screenshotCppScene,
-    screenshotOpenFilters,
-    searchReady,
-    screenshotTargetBoard,
-    activeBoard,
-    openFilters,
-    hideFilters,
-  ]);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
-    if (!screenshotOpenPreview && !screenshotOpenWallPreview) return;
-    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    if (!activeBoard || !searchReady || isPlaceholderData || screenshotPreviewOpenedRef.current) return;
-    const firstClimb = visibleClimbs[0];
-    if (!firstClimb) return;
-    screenshotPreviewOpenedRef.current = true;
-    // The drawer only claims "Browsing" while a swipe genuinely stays view-only,
-    // which for a preview with no suggestion source means nothing drives the
-    // wall: Always drive the wall off. The capture device is a throwaway
-    // simulator, so writing the setting is the honest way to reach the state —
-    // faking the chrome instead would ship a store screenshot of a promise the
-    // app doesn't keep.
-    if (screenshotOpenPreview) {
-      setSetting('alwaysDrive', false);
-      // That same setting is what triggers the one-shot "you're browsing" card.
-      // It is real product behaviour on a real first run, but a store screenshot
-      // is a portrait of the steady state, not of a climber's first five seconds
-      // — so the capture device starts already told.
-      setSetting('browseNoticeSeen', true);
-    }
-    openPlayDrawer(firstClimb, {
-      previewQueueItem: climbToQueueItem(firstClimb),
-      previewIsWallClimb: Boolean(screenshotOpenWallPreview),
-    });
-  }, [
-    screenshotOpenPreview,
-    screenshotOpenWallPreview,
-    screenshotTargetBoard,
-    activeBoard,
-    searchReady,
-    isPlaceholderData,
-    visibleClimbs,
-    openPlayDrawer,
-  ]);
-
-  // CPP-only setup uses the live selection action after genuine board/grades
-  // arrive. Latching the route prevents the later native Reset from reapplying.
-  const screenshotGradeAppliedRef = useRef<string | null>(null);
-  const [screenshotGradeNameClearedFor, setScreenshotGradeNameClearedFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (screenshotCppScene !== 'search-grade') {
-      screenshotGradeAppliedRef.current = null;
-      if (screenshotGradeNameClearedFor !== null) setScreenshotGradeNameClearedFor(null);
-      return;
-    }
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !showFilters) return;
-    const range = selectScreenshotGradeRange(
-      screenshotMinGrade,
-      screenshotMaxGrade,
-      grades,
-      activeBoard,
-      screenshotTargetBoard,
-      searchInput,
-      searchReady && gradesLoaded && !gradesPlaceholder && screenshotGradesReadyFor === screenshotGradeSetupKey,
-      gradeStops,
-    );
-    if (!range) return;
-    const identity = `${activeBoard!.uuid}:${filterScopeKey}:${screenshotCppScene}:${range.minGrade}:${range.maxGrade}`;
-    if (screenshotGradeAppliedRef.current === identity) return;
-    if (screenshotGradeNameClearedFor !== identity) {
-      // The sheet's filter Reset can retain a saved name. Clear its real text
-      // and pending debounce, then wait for the empty-name query to settle.
-      handleSheetClearName();
-      setScreenshotGradeNameClearedFor(identity);
-      return;
-    }
-    if (name !== '' || isPlaceholderData || isClimbsLoading) return;
-    screenshotGradeAppliedRef.current = identity;
-    handleLiveFilterSelectionChange({ ...DEFAULT_FILTERS, ...range }, {});
-  }, [
-    screenshotCppScene,
-    screenshotMinGrade,
-    screenshotMaxGrade,
-    showFilters,
-    name,
-    grades,
-    activeBoard,
-    screenshotTargetBoard,
-    searchInput,
-    searchReady,
-    isPlaceholderData,
-    isClimbsLoading,
-    gradesLoaded,
-    gradesPlaceholder,
-    screenshotGradesReadyFor,
-    screenshotGradeSetupKey,
-    screenshotGradeNameClearedFor,
-    filterScopeKey,
-    gradeStops,
-    handleLiveFilterSelectionChange,
-    handleSheetClearName,
-  ]);
-
-  // Screenshot mode: lift the first row's climb menu. Maestro's accessibility
-  // tree on this iOS build doesn't expose the rows, so there is nothing to hold,
-  // and a coordinate moves with the list header; the param names the row
-  // instead and the row opens its own menu (`ClimbListRow`'s
-  // `screenshotOpenMenu`). Same shape as the preview latch above: one shot,
-  // gated on the active board plus settled results so the menu opens over a
-  // list that has rows in it rather than skeletons. Gated on placeholder data
-  // too: on a board or filter swap `visibleClimbs[0]` is still the PREVIOUS
-  // board's climb while placeholder data shows, and a one-shot latch would lift
-  // the wrong row and never correct itself. Dead-strips in normal builds.
-  const [screenshotMenuClimbUuid, setScreenshotMenuClimbUuid] = useState<string | null>(null);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotOpenClimbActions) return;
-    if (screenshotTargetBoard && activeBoard?.uuid !== screenshotTargetBoard.uuid) return;
-    if (!activeBoard || !searchReady || isPlaceholderData || screenshotMenuClimbUuid !== null) return;
-    const firstClimb = visibleClimbs[0];
-    if (firstClimb) setScreenshotMenuClimbUuid(firstClimb.uuid);
-  }, [
-    screenshotOpenClimbActions,
-    screenshotTargetBoard,
-    activeBoard,
-    searchReady,
-    isPlaceholderData,
-    screenshotMenuClimbUuid,
-    visibleClimbs,
-  ]);
 
   // Row actions ignore stale placeholder rows, same as handleClimbPress. The
   // right swipe is Play next: the top of Up next, so a climber with a long queue
@@ -2216,11 +1808,9 @@ function ClimbListInner() {
         showMoreButton
         // Grid cells fill the row height FlashList gives them.
         fillCell={listColumns > 1}
-        screenshotOpenMenu={screenshotMenuClimbUuid !== null && climb.uuid === screenshotMenuClimbUuid}
       />
     ),
     [
-      screenshotMenuClimbUuid,
       listColumns,
       boardName,
       layoutId,
@@ -2371,327 +1961,169 @@ function ClimbListInner() {
   const offlineCatalogQueued = offlineNoCatalog && offlineCatalog === 'queued';
 
   return (
-    <View testID="climbs-screen" style={[styles.container, { backgroundColor: systemColors.background }]}>
-      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-        <ScreenshotSmokeMarker route="/climbs" count={visibleClimbs.length} />
-      ) : null}
+    <>
       <Stack.Screen options={stackOptions} />
-      <View
-        // `scrollIndicatorInsets` (used below to keep the scrollbar clear of the
-        // floating chrome) is iOS-only — on Android it's silently ignored, so the
-        // list's native scrollbar thumb starts at y=0 and gets drawn *underneath*
-        // the opaque Material app bar (which sits above it via zIndex), making it
-        // look like the scrollbar vanishes into the filter chrome. Fixed on
-        // Material by actually clipping the list's frame below the measured chrome
-        // height instead of relying on the (non-functional) inset. On Liquid Glass
-        // this wrapper is still a full-bleed absolute fill (top: 0) — the same area
-        // a flex:1 child of `styles.container` would cover — so the frame + inset
-        // still let the list visibly scroll underneath the blurred header, which
-        // iOS honours.
-        style={listClipStyle}
-        onLayout={handleListClipLayout}
-        testID={
-          process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-          searchReady &&
-          !isBoardResolving &&
-          !isClimbsLoading &&
-          !isClimbsError &&
-          !isPlaceholderData &&
-          !isRefetching &&
-          !pullRefresh.refreshing &&
-          !isFetchingNextPage &&
-          visibleClimbs.length > 0
-            ? 'climbs-capture-settled'
-            : undefined
-        }
+      <ClimbListTickDisplayProvider
+        boardName={boardName ? (boardName as BoardName) : null}
+        climbUuids={visibleClimbUuids}
       >
-        {/* The no-board branches above unmount the list; it comes back at rest. */}
-        <ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />
-        {/* The rows' thumbnail cell: 88×112 in two columns, 76×96 in one. Wraps
-            the list and its prewarm only, so sheets opened from a row keep the
-            one-column card. */}
-        <ClimbListThumbnailSizeContext.Provider value={listThumbnailSize}>
-          <ClimbListTickDisplayProvider
-            boardName={boardName ? (boardName as BoardName) : null}
-            climbUuids={visibleClimbUuids}
-          >
-            <ClimbProgressProvider targets={progressTargets}>
-              <FlashList
-                // Remounted when the column count changes. FlashList keeps its
-                // measured layouts when it swaps between its grid and linear
-                // layout managers, so the grid's row-height floor (`minHeight`,
-                // 128pt in two columns) survived into one column and left rows
-                // 16pt too tall after a rotation to portrait.
-                key={`climb-list-${listColumns}-columns`}
-                ref={climbListRef}
-                onLoad={handleListLoad}
-                testID={screenshotCppClimbListTestId({
-                  captureEnabled:
-                    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,
-                  scene: screenshotCppScene,
-                  activeBoard,
-                  targetUuid: screenshotTargetBoard?.uuid,
-                  searchReady,
-                  loading: isClimbsLoading,
-                  resolving: isBoardResolving,
-                  placeholder: isPlaceholderData,
-                  firstClimb: visibleClimbs[0],
-                })}
-                // Screen readers skip the tint, so announce the stale rows as loading.
-                accessibilityState={{ busy: isPlaceholderData }}
-                data={visibleClimbs}
-                renderItem={renderClimbItem}
-                // Two on a list at least 900pt wide (a regular-width iPad), unless
-                // the climber chose one column. Rows are self-contained cells
-                // (separator, highlight, swipe and ⋮ all inside the row), and
-                // pagination and prewarm count climbs, not rows, so nothing below
-                // reads an index as a row.
-                numColumns={listColumns}
-                keyExtractor={keyExtractor}
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.5}
-                onViewableItemsChanged={handleViewableItemsChanged}
-                viewabilityConfig={CLIMB_LIST_VIEWABILITY}
-                // UIKit supplies the navigation-bar inset; measured supplementary
-                // controls supply the remaining padding. Other paths own their inset.
-                contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-                // The scroll reset on a new search targets the inset top, a negative
-                // offset. React Native clamps a programmatic scroll at 0 unless told the
-                // list may be scrolled past its content bounds.
-                scrollToOverflowEnabled={nativeRootHeader}
-                {...scrollEdge.list?.listProps}
-                onScroll={handleListScroll}
-                onCommitLayoutEffect={handleListCommitLayout}
-                contentContainerStyle={filterInTopChrome ? undefined : { paddingTop: searchBarHeight }}
-                scrollIndicatorInsets={filterInTopChrome ? undefined : { top: searchBarHeight }}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                refreshControl={
-                  // Background refetches keep the list current without opening UIKit's pull spinner.
-                  <RefreshControl
-                    refreshing={pullRefresh.refreshing}
-                    onRefresh={pullRefresh.onRefresh}
-                    tintColor={brandColors.primary}
-                    // Under the UIKit header the filter chips are pinned over the top of
-                    // the list, where the spinner appears. Draw it below them. Android
-                    // and the other chromes keep the default position.
-                    progressViewOffset={nativeRootHeader ? searchBarHeight : undefined}
-                  />
-                }
-                ListHeaderComponent={listHeader}
-                ListFooterComponent={listFooter}
-                ListEmptyComponent={
-                  showInitialSkeletons ? (
+        <ClimbProgressProvider targets={progressTargets}>
+          <ClimbsView
+            listRef={climbListRef}
+            clipStyle={listClipStyle}
+            onClipLayout={handleListClipLayout}
+            thumbnailSize={listThumbnailSize}
+            placeholder={isPlaceholderData}
+            listProps={{
+              onLoad: handleListLoad,
+              accessibilityState: { busy: isPlaceholderData },
+              data: visibleClimbs,
+              renderItem: renderClimbItem,
+              numColumns: listColumns,
+              keyExtractor,
+              onEndReached: handleEndReached,
+              onEndReachedThreshold: 0.5,
+              onViewableItemsChanged: handleViewableItemsChanged,
+              viewabilityConfig: CLIMB_LIST_VIEWABILITY,
+              contentInsetAdjustmentBehavior: nativeRootHeader ? 'automatic' : 'never',
+              scrollToOverflowEnabled: nativeRootHeader,
+              ...scrollEdge.list?.listProps,
+              onScroll: handleListScroll,
+              onCommitLayoutEffect: handleListCommitLayout,
+              contentContainerStyle: filterInTopChrome ? undefined : { paddingTop: searchBarHeight },
+              scrollIndicatorInsets: filterInTopChrome ? undefined : { top: searchBarHeight },
+              keyboardShouldPersistTaps: 'handled',
+              keyboardDismissMode: 'interactive',
+              refreshControl: (
+                <RefreshControl
+                  refreshing={pullRefresh.refreshing}
+                  onRefresh={pullRefresh.onRefresh}
+                  tintColor={brandColors.primary}
+                  progressViewOffset={nativeRootHeader ? searchBarHeight : undefined}
+                />
+              ),
+              ListHeaderComponent: listHeader,
+              ListFooterComponent: listFooter,
+              ListEmptyComponent: (
+                <ClimbsEmptyState
+                  status={
+                    showInitialSkeletons
+                      ? 'loading'
+                      : climbSearchError instanceof FollowedAuthorsUnavailableError
+                        ? 'authors-sync'
+                        : isClimbsError && !noUsableConnection
+                          ? 'error'
+                          : offlineFilterUnavailable
+                            ? 'offline-filter'
+                            : offlineCatalogMissing
+                              ? 'offline-missing'
+                              : offlineCatalogQueued
+                                ? 'offline-queued'
+                                : isUnsetWall
+                                  ? 'unset-wall'
+                                  : isEmpty
+                                    ? 'empty'
+                                    : null
+                  }
+                  loadingContent={
                     <ClimbListSkeletonRows
                       count={INITIAL_SKELETON_ROW_COUNT}
                       columns={listColumns}
                       supportsMirroring={rowsTrackDirections}
                     />
-                  ) : climbSearchError instanceof FollowedAuthorsUnavailableError ? (
-                    <View style={styles.emptyContainer}>
-                      <Text variant="subheadline" style={styles.emptySubtitle}>
-                        {t('authors.syncNeeded')}
-                      </Text>
-                      <Button title={t('authors.retry')} onPress={() => void refetch()} />
-                    </View>
-                  ) : isClimbsError && !noUsableConnection ? (
-                    <OfflineState reason="error" onRetry={handleRefresh} />
-                  ) : offlineFilterUnavailable ? (
-                    <View style={styles.emptyContainer}>
-                      {/* The glyph carries the same blame as the title: a wifi-slash over
-                "needs our server" would contradict itself. */}
-                      <Icon
-                        name={
-                          offlineFilterReason === 'backend_unreachable' ? 'server.unreachable' : 'offline.unavailable'
-                        }
-                        size={48}
-                        color={systemColors.tertiaryLabel}
-                      />
-                      {/* "Needs a signal" is a lie when the phone has four bars and we
-                are the ones who are down, or when the climber chose Offline
-                mode. Literal keys — the i18n linter rejects a computed one. */}
-                      <Text variant="headline" style={styles.emptyTitle}>
-                        {offlineFilterReason === 'backend_unreachable'
-                          ? t('mobile.emptyState.offlineFilter.titleServer')
-                          : offlineFilterReason === 'offline_mode'
-                            ? t('mobile.emptyState.offlineFilter.titleOfflineMode')
-                            : t('mobile.emptyState.offlineFilter.title')}
-                      </Text>
-                      <Text variant="subheadline" style={styles.emptySubtitle}>
-                        {t('mobile.emptyState.offlineFilter.subtitle')}
-                      </Text>
-                      <Button
-                        title={t('mobile.emptyState.offlineFilter.cta')}
-                        variant="outlined"
-                        onPress={handleClearNonGradeFilters}
-                        style={styles.emptyCta}
-                      />
-                    </View>
-                  ) : offlineCatalogMissing ? (
-                    <View style={styles.emptyContainer}>
-                      <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
-                      <Text variant="headline" style={styles.emptyTitle}>
-                        {t('mobile.emptyState.offlineNoCatalog.title')}
-                      </Text>
-                      <Text variant="subheadline" style={styles.emptySubtitle}>
-                        {t('mobile.emptyState.offlineNoCatalog.subtitle')}
-                      </Text>
-                      <OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />
-                    </View>
-                  ) : offlineCatalogQueued ? (
-                    <View style={styles.emptyContainer}>
-                      <Icon name="offline.download" size={48} color={systemColors.tertiaryLabel} />
-                      <Text variant="headline" style={styles.emptyTitle}>
-                        {t('mobile.emptyState.offlineCatalogQueued.title')}
-                      </Text>
-                      <Text variant="subheadline" style={styles.emptySubtitle}>
-                        {t('mobile.emptyState.offlineCatalogQueued.subtitle', { name: activeBoard?.name ?? '' })}
-                      </Text>
-                    </View>
-                  ) : isUnsetWall ? (
-                    <View style={styles.emptyContainer}>
-                      <Icon name="add" size={48} color={systemColors.tertiaryLabel} />
-                      <Text variant="headline" style={styles.emptyTitle}>
-                        {t('mobile.emptyState.unsetWall.title')}
-                      </Text>
-                      <Text variant="subheadline" style={styles.emptySubtitle}>
-                        {t('mobile.emptyState.unsetWall.subtitle')}
-                      </Text>
-                      {canCreateClimb ? (
-                        <Button
-                          title={t('mobile.emptyState.unsetWall.cta')}
-                          variant="outlined"
-                          onPress={handleCreateClimb}
-                          style={styles.emptyCta}
-                        />
-                      ) : null}
-                    </View>
-                  ) : isEmpty ? (
-                    <SearchEmptyRecovery
-                      query={name}
-                      boardName={activeBoard?.name ?? boardName}
-                      angle={angle}
-                      tokens={recoveryFilterTokens}
-                      lockedDimensions={lockedDimensions}
-                      onOpenFilters={handleOpenFiltersFromEmpty}
-                    />
-                  ) : null
-                }
+                  }
+                  offlineFilterReason={offlineFilterReason}
+                  boardName={activeBoard?.name ?? boardName}
+                  angle={angle}
+                  query={name}
+                  tokens={recoveryFilterTokens}
+                  lockedDimensions={lockedDimensions}
+                  canCreateClimb={canCreateClimb}
+                  onRetry={climbSearchError instanceof FollowedAuthorsUnavailableError ? refetch : handleRefresh}
+                  onClearFilters={handleClearNonGradeFilters}
+                  onCreate={handleCreateClimb}
+                  onOpenFilters={handleOpenFiltersFromEmpty}
+                  downloadAction={<OfflineCatalogCta board={activeBoard} style={styles.emptyCta} />}
+                />
+              ),
+            }}
+            listReset={<ScrollEdgeListReset key={`scroll-edge-${listColumns}-columns`} edge={scrollEdge.list} />}
+            listEffects={
+              <>
+                <PlayBoardPrewarmHost />
+                {hasBoardConfig && !isPlaceholderData && rowsShowThumbnail ? (
+                  <ClimbListThumbnailPrewarmWindow
+                    store={visibleRowsStore}
+                    climbs={visibleClimbs}
+                    boardName={boardName as BoardName}
+                    layoutId={layoutId}
+                    sizeId={sizeId}
+                    setIds={setIds}
+                    climbsPerRow={listColumns}
+                  />
+                ) : null}
+              </>
+            }
+            chrome={
+              <ClimbTopChrome
+                // With the chip row on, the active filters live in the token row and the
+                // tab itself names the screen, so the centre title is dropped entirely —
+                // the redundant "All climbs" label added nothing.
+                title={showFilterChips ? undefined : searchTitle}
+                boardName={boardName}
+                canCreate={canCreateClimb}
+                onCreate={handleCreateClimb}
+                onOpenBoardDetail={handleOpenBoardDetail}
+                showBoardBadge={showRevealTip}
+                anchorBoardButton
+                onHeightChange={handleChromeHeightChange}
+                onCloseGrade={handleCloseGrade}
+                onDismissGradePopover={handleDismissGradePopover}
+                activeFilterCount={filtersBadgeCount}
+                onOpenFilters={handleOpenFilters}
+                filterSummary={filterSummaryProp}
+                gradeBound={gradeBound}
+                grades={grades}
+                lastUsedGradeId={lastUsedGrade}
+                gradeRailVisible={gradeRowVisible}
+                gradeRecenterKey={gradeRecenterKey}
+                gradeChip={gradeChip}
+                onOpenGrade={handleOpenGrade}
+                onGradeChange={handleGradeRailChange}
+                filterChrome={filterChrome}
+                showPersistentChips={filterInTopChrome}
+                scrollEdge={scrollEdge.backdrop}
               />
-            </ClimbProgressProvider>
-          </ClimbListTickDisplayProvider>
-          {/* Renders nothing. Not for placeholder rows: they belong to the previous
-            search and are about to be replaced. Not with thumbnails switched off
-            either: a hidden thumbnail starts no thumbnail-only rendering work. */}
-          <PlayBoardPrewarmHost />
-          {hasBoardConfig && !isPlaceholderData && rowsShowThumbnail ? (
-            <ClimbListThumbnailPrewarmWindow
-              store={visibleRowsStore}
-              climbs={visibleClimbs}
-              boardName={boardName as BoardName}
-              layoutId={layoutId}
-              sizeId={sizeId}
-              setIds={setIds}
-              climbsPerRow={listColumns}
-            />
-          ) : null}
-        </ClimbListThumbnailSizeContext.Provider>
-      </View>
-
-      {/* Placed before the chrome so the tint sits under it. See PlaceholderTint. */}
-      <PlaceholderTint active={isPlaceholderData} color={systemColors.background} />
-
-      <ClimbTopChrome
-        // With the chip row on, the active filters live in the token row and the
-        // tab itself names the screen, so the centre title is dropped entirely —
-        // the redundant "All climbs" label added nothing.
-        title={showFilterChips ? undefined : searchTitle}
-        boardName={boardName}
-        canCreate={canCreateClimb}
-        onCreate={handleCreateClimb}
-        onOpenBoardDetail={handleOpenBoardDetail}
-        showBoardBadge={showRevealTip}
-        anchorBoardButton
-        onHeightChange={handleChromeHeightChange}
-        onCloseGrade={handleCloseGrade}
-        onDismissGradePopover={handleDismissGradePopover}
-        activeFilterCount={filtersBadgeCount}
-        onOpenFilters={handleOpenFilters}
-        filterSummary={filterSummaryProp}
-        gradeBound={gradeBound}
-        grades={grades}
-        lastUsedGradeId={lastUsedGrade}
-        gradeRailVisible={gradeRowVisible}
-        gradeRecenterKey={gradeRecenterKey}
-        gradeChip={gradeChip}
-        onOpenGrade={handleOpenGrade}
-        onGradeChange={handleGradeRailChange}
-        filterChrome={filterChrome}
-        showPersistentChips={filterInTopChrome}
-        scrollEdge={scrollEdge.backdrop}
-      />
-
-      {showFilters ? (
-        <ClimbFilterSheet
-          key={filterScopeKey}
-          onDismiss={handleDismissFilters}
-          boardConfig={boardConfig}
-          currentFilters={filters}
-          currentBoardFilters={boardFilters}
-          searchName={name}
-          lastUsedGradeId={lastUsedGrade}
-          onSelectionChange={handleLiveFilterSelectionChange}
-          onNameChange={handleSheetNameChange}
-          onClearName={handleSheetClearName}
-          recentFilters={recentFilters}
-          onApplyRecent={handleApplyRecentFilter}
-          lockedDimensions={lockedDimensions}
-        />
-      ) : null}
-    </View>
+            }
+            overlays={
+              showFilters ? (
+                <ClimbFilterSheet
+                  key={filterScopeKey}
+                  onDismiss={handleDismissFilters}
+                  boardConfig={boardConfig}
+                  currentFilters={filters}
+                  currentBoardFilters={boardFilters}
+                  searchName={name}
+                  lastUsedGradeId={lastUsedGrade}
+                  onSelectionChange={handleLiveFilterSelectionChange}
+                  onNameChange={handleSheetNameChange}
+                  onClearName={handleSheetClearName}
+                  recentFilters={recentFilters}
+                  onApplyRecent={handleApplyRecentFilter}
+                  lockedDimensions={lockedDimensions}
+                />
+              ) : null
+            }
+          />
+        </ClimbProgressProvider>
+      </ClimbListTickDisplayProvider>
+    </>
   );
 }
 
 function keyExtractor(item: Climb) {
   return item.uuid;
 }
-
-// How long the previous search's rows must stand in before they are tinted. A
-// search that lands inside half a second (a local SQLite read, most server round
-// trips) swaps rows with no dim at all, so the dim never reads as a flash; only a
-// genuinely slow search gets it.
-const PLACEHOLDER_TINT_DELAY_MS = 500;
-
-/**
- * A background-coloured tint over the list while the previous search's rows
- * stand in for a slow one. A tint rather than opacity on a wrapper: group opacity
- * over a scrolling list renders it offscreen every frame. Touch-transparent so
- * the list still scrolls (stale-row taps are ignored in the row handlers). Owns
- * its delay timer, so the timer re-renders only this view, never the list.
- */
-const PlaceholderTint = memo(function PlaceholderTint({ active, color }: { active: boolean; color: ColorValue }) {
-  const [isDelayElapsed, setIsDelayElapsed] = useState(false);
-  // Read by the effect so a fast search (never tinted, so still false) schedules
-  // no state update on the way out, without re-running the effect on the flip.
-  const isDelayElapsedRef = useRef(isDelayElapsed);
-  isDelayElapsedRef.current = isDelayElapsed;
-  useEffect(() => {
-    if (!active) {
-      if (isDelayElapsedRef.current) setIsDelayElapsed(false);
-      return;
-    }
-    const handle = setTimeout(() => setIsDelayElapsed(true), PLACEHOLDER_TINT_DELAY_MS);
-    return () => clearTimeout(handle);
-  }, [active]);
-  if (!active || !isDelayElapsed) return null;
-  return (
-    <View
-      testID="climb-list-placeholder-tint"
-      pointerEvents="none"
-      style={[StyleSheet.absoluteFill, styles.placeholderTint, { backgroundColor: color }]}
-    />
-  );
-});
 
 /**
  * Placeholder rows for this list. `count` is how many rows of the default

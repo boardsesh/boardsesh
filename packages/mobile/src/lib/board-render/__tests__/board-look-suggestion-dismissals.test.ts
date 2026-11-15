@@ -97,16 +97,6 @@ describe('board-look suggestion dismissals', () => {
     });
   });
 
-  it('reports DISMISSED in screenshot mode', async () => {
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-
-    expect(await loadBoardLookSuggestionDismissals()).toEqual({
-      increaseContrast: true,
-      grayscale: true,
-      differentiateWithoutColor: true,
-    });
-  });
-
   it('ignores a stored payload that is not the shape it wrote', async () => {
     store.values.set('boardLookSuggestionDismissals', JSON.stringify({ grayscale: 'yes', bogus: true }));
 

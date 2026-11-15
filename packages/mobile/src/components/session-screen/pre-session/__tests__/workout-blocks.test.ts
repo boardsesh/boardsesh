@@ -150,24 +150,13 @@ describe('timed block types', () => {
     expect(addBlockTypes(false)).toBe(addBlockTypes(false));
   });
 
-  // The store captures run dev builds in screenshot mode; they keep today's
-  // chips, and a tester's flag cannot put the timed ones in.
-  it('stay off in screenshot mode unless the capture opens on a timed block', async () => {
+  it('does not let retired capture flags change production availability', () => {
     vi.stubGlobal('__DEV__', true);
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    expect(timedWorkoutBlocksOffered(false)).toBe(true);
+    vi.stubGlobal('__DEV__', false);
     expect(timedWorkoutBlocksOffered(false)).toBe(false);
-    expect(timedWorkoutBlocksOffered(true)).toBe(false);
-
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'fourByFour');
-    vi.resetModules();
-    const reloaded = await import('../workout-blocks');
-    expect(reloaded.timedWorkoutBlocksOffered(false)).toBe(true);
-
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_WORKOUT', 'volume');
-    vi.resetModules();
-    const untimed = await import('../workout-blocks');
-    expect(untimed.timedWorkoutBlocksOffered(false)).toBe(false);
-    expect(untimed.timedWorkoutBlocksOffered(true)).toBe(false);
+    expect(timedWorkoutBlocksOffered(true)).toBe(true);
   });
 
   it('build their defaults at the grade asked for', () => {

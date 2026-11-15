@@ -1,10 +1,10 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useImperativeHandle } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import type { AppMenuHandle } from '../AppMenu.types';
 import { Icon } from '../Icon';
 import { StaticPressableSurface } from '../PressableSurface';
-import { ClimbMenu } from './ClimbActionsMenu';
+import { ClimbMenu } from './ClimbMenu';
 import type { ClimbListRowMenuProps } from './ClimbListRowMenu.types';
 
 /**
@@ -16,10 +16,12 @@ export function FallbackClimbListRowMenu(props: ClimbListRowMenuProps) {
   const { systemColors } = useTheme();
   const menuRef = useRef<AppMenuHandle | null>(null);
   const openMenu = useCallback(() => menuRef.current?.open(), []);
+  useImperativeHandle(props.ref, () => ({ open: openMenu }), [openMenu]);
   return (
     <>
       <ClimbMenu
         rows={props.rows}
+        onPresented={props.onPresented}
         menuKey={props.menuKey}
         menuRef={menuRef}
         style={props.bodyStyle}

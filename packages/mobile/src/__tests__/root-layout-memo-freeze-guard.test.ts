@@ -30,7 +30,7 @@ import { describe, expect, it } from 'vitest';
 // launch-ready-through-database.test.tsx renders them through the real
 // provider. This file only keeps RootLayout from reintroducing the prop.
 
-const layoutSource = readFileSync(new URL('../../app/_layout.tsx', import.meta.url), 'utf8');
+const layoutSource = readFileSync(new URL('../application-root.tsx', import.meta.url), 'utf8');
 
 /**
  * Names declared in RootLayout that may appear below the provider, because

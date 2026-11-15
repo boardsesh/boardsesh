@@ -128,8 +128,6 @@ export function useWorkoutOneTap(
 
   /** The logger this tap goes to, or null when the tap guard or a spent hold drops it. */
   const claimTap = useCallback((): OneTapLogger | null => {
-    // Wall-clock, not `nowMs()`: screenshot mode freezes that, and a frozen
-    // clock would drop every tap after the first.
     const tappedAtMs = Date.now();
     // Held for the climb the wall left, and the swap is late: the climber is on
     // the next climb by now, and it has no Fell / Sent.
@@ -262,8 +260,6 @@ function useOneTapLogger(
           quality: null,
           difficulty: null,
           comment: '',
-          // The app clock, so a screenshot capture dates the go at its frozen now,
-          // the same instant the rest timer reads it against.
           climbedAtIso: nowDate().toISOString(),
           baseAscensionistCount,
           gradeName: null,

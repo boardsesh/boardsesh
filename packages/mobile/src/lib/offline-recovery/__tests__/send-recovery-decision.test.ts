@@ -7,7 +7,7 @@ const READY: SendRecoveryInput = {
   ready: true,
   schemaReady: true,
   recoveredCount: 3,
-  screenshotMode: false,
+
   launchedByDeepLink: false,
   topSegment: '(tabs)',
   onboardingSeen: true,
@@ -62,9 +62,5 @@ describe('decideSendRecovery', () => {
   // notice, and the note stays owed in the database for the next launch.
   it('yields to the QA prompt instead of stacking on top of it', () => {
     expect(decideSendRecovery({ ...READY, topSegment: 'qa' })).toBe('none');
-  });
-
-  it('stays out of App Store screenshots', () => {
-    expect(decideSendRecovery({ ...READY, screenshotMode: true })).toBe('none');
   });
 });

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 // A release toast would then sit under the tab bar with nothing failing, so pin
 // the mount point in the root layout: inside the provider, and only once.
 describe('root layout toast offset publisher', () => {
-  const layoutSource = readFileSync(join(__dirname, '../../../app/_layout.tsx'), 'utf8');
+  const layoutSource = readFileSync(join(__dirname, '../../application-root.tsx'), 'utf8');
 
   it('mounts ToastOffsetPublisher once, inside BottomChromeMetricsProvider', () => {
     const open = layoutSource.indexOf('<BottomChromeMetricsProvider>');

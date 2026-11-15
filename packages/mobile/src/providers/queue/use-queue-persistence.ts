@@ -76,7 +76,7 @@ type UseQueuePersistenceParams = {
  *
  * Returns `restored`: the cold-start restore has landed for this scope (the
  * provider's `QueueRestoredContext`). It turns true in the same render as a
- * restored climb, and stays false in screenshot mode, where nothing restores.
+ * restored climb.
  */
 export function useQueuePersistence({
   authenticatedUserId,
@@ -178,9 +178,7 @@ export function useQueuePersistence({
   // solo queue snapshot hydrates the reducer. The gate flag below keeps the
   // save effect from clobbering a stored snapshot with the initial empty state.
   useEffect(() => {
-    // Capture sessions start from the fixture, never a user's saved queue/session.
-    // Leave the stored bytes untouched so normal launches still restore them.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;
+    if (!ownerReady) return;
     let cancelled = false;
     const generation = getCredentialGeneration();
     const isCurrent = () => !cancelled && generation === getCredentialGeneration();
@@ -294,7 +292,6 @@ export function useQueuePersistence({
   // as the clear when the user empties the queue or a session teardown resets
   // it; the debounce coalesces mutation bursts (swipes, clear-queue removals).
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return undefined;
     if (!ownerReady || hydratedScope !== hydrationScope || sessionId !== null || !activeBoardSettled) return undefined;
     const snapshotGeneration = getQueueSnapshotGeneration();
     const generation = getCredentialGeneration();

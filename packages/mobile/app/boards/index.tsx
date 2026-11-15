@@ -1,79 +1,83 @@
-import { PressableSurface } from '../../src/components/PressableSurface';
-import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
-import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
-import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useTranslation } from 'react-i18next';
-import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
-import {
-  useMyBoards,
-  usePopularBoardConfigs,
-  useNearbyBoards,
-  useProfile,
-  useDeleteBoard,
-  useUnfollowBoard,
-  usePinBoard,
-} from '../../src/lib/graphql/hooks';
-import {
-  useActiveBoard,
-  useClearActiveBoardIfCurrentGeneration,
-  getActiveBoardWriteGeneration,
-} from '../../src/lib/graphql/use-active-board';
-import { useDeviceLocation } from '../../src/lib/use-device-location';
-import { useAuth } from '../../src/providers/auth-provider';
-import { useToast } from '../../src/providers/toast-provider';
-import { useQueueActions } from '../../src/providers/queue-provider';
-import { useConfirm } from '../../src/providers/dialog-provider';
-import { useTheme } from '../../src/providers/theme-provider';
-import { hapticSelection } from '../../src/lib/haptics';
-import { Text } from '../../src/components/Text';
-import { Icon } from '../../src/components/Icon';
-import { Button } from '../../src/components/Button';
+import type BottomSheet from '@expo/ui/community/bottom-sheet';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
-import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
-import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
-import { BoardModeCard, type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
-import { userBoardsToItems, popularConfigToItem } from '../../src/components/board-discovery/board-items';
-import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
 import {
   boardCardAction,
   hoistActiveBoard,
   type BoardCardAction,
 } from '../../src/components/board-discovery/board-card-actions';
-import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
+import { popularConfigToItem, userBoardsToItems } from '../../src/components/board-discovery/board-items';
+import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
+import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
-import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
-import { deriveLocalOnly, pickerNoticeKey } from '../../src/lib/boards/local-only';
-import { useStoredUserId } from '../../src/hooks/use-current-user-id';
-import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards } from '../../src/settings';
-import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
-import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
-import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
-import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
-import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { type ModeCardState } from '../../src/components/board-discovery/BoardModeCard';
+import {
+  BoardSelectorView,
+  BoardSelectorSection as Section,
+} from '../../src/components/board-discovery/BoardSelectorView';
+import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
+import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
+import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
+import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
+import { Button } from '../../src/components/Button';
+import { Icon } from '../../src/components/Icon';
 import { OfflineCatalogCta } from '../../src/components/offline/OfflineCatalogCta';
-import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
+import { PressableSurface } from '../../src/components/PressableSurface';
+import { Text } from '../../src/components/Text';
+import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
+import { useStoredUserId } from '../../src/hooks/use-current-user-id';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
-import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
-import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
 import {
   BUILDER_PRESET_PARAM_VALUE,
   isFirstBoardMode,
   isNoBoardEntry,
   type FirstBoardEntry,
 } from '../../src/lib/boards/first-board-mode';
-import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
+import { deriveLocalOnly, pickerNoticeKey } from '../../src/lib/boards/local-only';
+import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
+import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
+import {
+  useDeleteBoard,
+  useMyBoards,
+  useNearbyBoards,
+  usePinBoard,
+  usePopularBoardConfigs,
+  useProfile,
+  useUnfollowBoard,
+} from '../../src/lib/graphql/hooks';
+import { MY_BOARDS_WITH_IMPORTS_INPUT } from '../../src/lib/graphql/query-keys';
+import {
+  getActiveBoardWriteGeneration,
+  useActiveBoard,
+  useClearActiveBoardIfCurrentGeneration,
+} from '../../src/lib/graphql/use-active-board';
+import { hapticSelection } from '../../src/lib/haptics';
+import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-board-picker-tracking';
-import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
-import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
-import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
 import { openAppSettings } from '../../src/lib/open-app-settings';
+import { unfinishedSprayWallRoute } from '../../src/lib/spray/spray-import-progress';
+import { useSprayImportProgress } from '../../src/lib/spray/use-spray-import-progress';
+import { useSprayLabelOptions } from '../../src/lib/spray/use-spray-label-options';
+import { useDeviceLocation } from '../../src/lib/use-device-location';
+import { useConfirmBoardDownload } from '../../src/offline/use-confirm-board-download';
+import { useDownloadedScopeKeys } from '../../src/offline/use-downloaded-scope-keys';
+import { useOfflineCatalogState } from '../../src/offline/use-offline-catalog-state';
+import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
+import { useAuth } from '../../src/providers/auth-provider';
+import { useConfirm } from '../../src/providers/dialog-provider';
+import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
+import { useQueueActions } from '../../src/providers/queue-provider';
+import { useTheme } from '../../src/providers/theme-provider';
+import { useToast } from '../../src/providers/toast-provider';
+import { forgetOfflineBoard, offlineBoardKeyForBoard, useOfflineBoards } from '../../src/settings';
 import { spacing } from '../../src/theme/tokens';
 
 // Module-level so an absent board list keeps a stable identity: offline
@@ -1004,157 +1008,77 @@ export default function BoardSelection() {
   }
 
   return (
-    <>
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={styles.flex}
-        contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
-        showsVerticalScrollIndicator={false}
-      >
-        {activeBoard?.boardType === 'spray' ? (
-          <PressableSurface onPress={onActiveBoardDetails} accessibilityRole="button" style={styles.manageRow}>
-            <Text variant="body" color={brandColors.primary} style={styles.manageRowLabel}>
-              {t('mobile.boardDetail.activeSprayDetails', { name: activeBoard.name })}
-            </Text>
-            <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-        ) : null}
-        {showFirstBoardChoice ? (
-          <>
-            <FirstBoardChoice
-              gymState={nearbySearch}
-              nearbyResults={nearbySection}
-              onGym={onFirstBoardGym}
-              onOwn={onFirstBoardOwn}
-              onScan={onFirstBoardScan}
-              onFindGymOnMap={onFirstBoardGymMap}
-              onOpenSettings={onOpenLocationSettings}
-              onRetryNearby={onRetryNearby}
-              nearbyBoardType={nearbyBoardType}
-              onShowAllNearby={showAllNearby}
-              onAddSprayWall={offerSprayWall ? onFirstBoardSprayWall : undefined}
-            />
-            {/* A new account can already have boards: one it built on the web,
-                or one it followed before a sign-out cleared the active board.
-                No Popular setups here: each of those cards builds a NEW public
-                board, which is how a gym climber ends up with a duplicate of
-                their gym's wall. My own board covers the home-wall case. */}
-            {myBoardsSection}
-          </>
-        ) : (
-          <>
-            {fromOnboarding ? (
-              <Text variant="subheadline" style={styles.onboardingHeader}>
-                {t('mobile.onboardingPrompt')}
-              </Text>
-            ) : null}
-
-            {/* Mode cards */}
-            <View style={styles.modeRow}>
-              <BoardModeCard
-                icon="location"
-                label={t('mobile.discovery.findNearby')}
-                sublabel={
-                  nearbySearch === 'location_off'
-                    ? t('mobile.discovery.locationDenied')
-                    : nearbySearch === 'found'
-                      ? t('mobile.discovery.nearbyShowing')
-                      : undefined
-                }
-                state={nearbyState}
-                onPress={onModeFindNearby}
-              />
-              <BoardModeCard icon="bluetooth" label={t('mobile.discovery.bluetooth')} onPress={onModeBluetooth} />
-              <BoardModeCard icon="pin" label={t('mobile.discovery.findGym')} onPress={onModeFindGym} />
-              {/* The tile is 84 dp wide (68 dp of text): "Create board" truncated in
-                  en-US and in all three other locales. The `+` glyph and the row's
-                  context carry the noun here; the full-width CTAs keep it. */}
-              <BoardModeCard icon="plus" label={t('mobile.discovery.createTile')} onPress={onModeCreate} />
-              {/* Next to "Create board", because that is the question it answers: the
-                  other tile is for a catalogue board you pick a layout for, this one
-                  is for a wall you photograph. */}
-              <BoardModeCard icon="camera" label={t('mobile.discovery.addWallTile')} onPress={onModeAddWall} />
-            </View>
-
-            {/* Find nearby's answer when it has no list to show. Not while it
-                searches: the tile's own spinner says that. */}
-            {nearbySearch !== 'searching' ? (
-              <NearbySearchStatus
-                state={nearbySearch}
-                onFindGymOnMap={onModeFindGym}
-                onOpenSettings={onOpenLocationSettings}
-                onRetryNearby={onRetryNearby}
-                boardType={nearbyBoardType}
-                onShowAll={showAllNearby}
-              />
-            ) : null}
-
-            {nearbySection}
-            {myBoardsSection}
-
-            {popularItems.length > 0 ? (
-              <Section title={t('mobile.discovery.popularTitle')}>
-                <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
-              </Section>
-            ) : null}
-
-            {myBoardItems.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text variant="headline" style={styles.emptyTitle}>
-                  {t('mobile.emptyTitle')}
-                </Text>
-                <Text variant="subheadline" style={styles.emptySubtitle}>
-                  {t('mobile.emptySubtitle')}
-                </Text>
-                <Button title={t('mobile.discovery.create')} onPress={onModeCreate} style={styles.emptyCta} />
-              </View>
-            ) : null}
-          </>
-        )}
-      </ScrollView>
-
-      <BoardDetailSheet
-        board={detailBoard}
-        visible={detailBoard !== null}
-        onClose={closeBoardDetails}
-        onSetActive={onSetActiveFromDetails}
-      />
-
-      <BluetoothQuickstartSheet
-        ref={bluetoothSheetRef}
-        active={bluetoothActive}
-        onClose={onBluetoothSheetClosed}
-        onSelect={onScanSelectBoard}
-        onFindAtGym={onScanFindAtGym}
-        onOwnBoard={onScanOwnBoard}
-      />
-    </>
+    <BoardSelectorView
+      scrollBottomPadding={scrollBottomPadding}
+      activeSprayName={activeBoard?.boardType === 'spray' ? activeBoard.name : undefined}
+      onActiveBoardDetails={onActiveBoardDetails}
+      showFirstBoardChoice={showFirstBoardChoice}
+      fromOnboarding={fromOnboarding}
+      nearbySearch={nearbySearch}
+      nearbyState={nearbyState}
+      onModeFindNearby={onModeFindNearby}
+      onModeBluetooth={onModeBluetooth}
+      onModeFindGym={onModeFindGym}
+      onModeCreate={onModeCreate}
+      onModeAddWall={onModeAddWall}
+      myBoardsSection={myBoardsSection}
+      nearbySection={nearbySection}
+      hasBoards={myBoardItems.length > 0}
+      firstBoardChoice={
+        <FirstBoardChoice
+          gymState={nearbySearch}
+          nearbyResults={nearbySection}
+          onGym={onFirstBoardGym}
+          onOwn={onFirstBoardOwn}
+          onScan={onFirstBoardScan}
+          onFindGymOnMap={onFirstBoardGymMap}
+          onOpenSettings={onOpenLocationSettings}
+          onRetryNearby={onRetryNearby}
+          nearbyBoardType={nearbyBoardType}
+          onShowAllNearby={showAllNearby}
+          onAddSprayWall={offerSprayWall ? onFirstBoardSprayWall : undefined}
+        />
+      }
+      nearbyStatus={
+        nearbySearch !== 'searching' ? (
+          <NearbySearchStatus
+            state={nearbySearch}
+            onFindGymOnMap={onModeFindGym}
+            onOpenSettings={onOpenLocationSettings}
+            onRetryNearby={onRetryNearby}
+            boardType={nearbyBoardType}
+            onShowAll={showAllNearby}
+          />
+        ) : undefined
+      }
+      popularSection={
+        popularItems.length > 0 ? (
+          <Section title={t('mobile.discovery.popularTitle')}>
+            <BoardCarousel items={popularItems} onSelect={onSelectPopular} />
+          </Section>
+        ) : undefined
+      }
+      overlays={
+        <>
+          <BoardDetailSheet
+            board={detailBoard}
+            visible={detailBoard !== null}
+            onClose={closeBoardDetails}
+            onSetActive={onSetActiveFromDetails}
+          />
+          <BluetoothQuickstartSheet
+            ref={bluetoothSheetRef}
+            active={bluetoothActive}
+            onClose={onBluetoothSheetClosed}
+            onSelect={onScanSelectBoard}
+            onFindAtGym={onScanFindAtGym}
+            onOwnBoard={onScanOwnBoard}
+          />{' '}
+        </>
+      }
+    />
   );
 }
-
-function Section({
-  title,
-  trailing,
-  children,
-}: {
-  title: string;
-  /** Right-aligned section control (the "Your boards" Edit/Done toggle). */
-  trailing?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text variant="title3" style={styles.sectionTitle}>
-          {title}
-        </Text>
-        {trailing}
-      </View>
-      {children}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: {
     flex: 1,

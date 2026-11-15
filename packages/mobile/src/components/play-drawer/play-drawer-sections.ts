@@ -14,7 +14,6 @@ export function visiblePlayDrawerSections({
   boardseshGradeEnabled,
   description,
   boardName,
-  screenshotMode,
 }: {
   sections: PlayDrawerSectionsVisibility;
   order: readonly BelowFoldSectionId[];
@@ -23,13 +22,12 @@ export function visiblePlayDrawerSections({
   description: string | null | undefined;
   /** The board the displayed climb is drawn on. */
   boardName: BoardName;
-  screenshotMode: boolean;
 }): BelowFoldSectionId[] {
   return visibleSectionIds({ order, visible: sections }, (sectionId) => {
     // MoonBoard only: other boards are too dense for a list of holds to help,
     // and a switch left on from a MoonBoard session never shows it on them.
     if (sectionId === 'activeHolds') return isMoonboardBoardName(boardName);
-    if (sectionId === 'climberLogs') return isAuthenticated && !screenshotMode;
+    if (sectionId === 'climberLogs') return isAuthenticated;
     if (sectionId === 'setterNotes') return Boolean(getDisplayDescription(description));
     if (sectionId === 'boardseshGrade') return boardseshGradeEnabled;
     return true;

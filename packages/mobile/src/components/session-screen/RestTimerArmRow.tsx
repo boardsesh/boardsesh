@@ -7,7 +7,7 @@
 // a null session id and `RestTimerSessionSync` binds it when the session appears.
 // So this never has to wait for a session to exist.
 
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Card } from '../Card';
@@ -38,7 +38,6 @@ import { RestTimerCrewNote } from '../queue-control/RestTimerCrewNote';
  * or off does so for everyone, and a crewmate's clock turns it on here.
  */
 export function RestTimerArmRow() {
-  const { t } = useTranslation('session');
   const armed = useRestTimerArmed();
   const { sessionId } = useQueueSessionId();
 
@@ -57,6 +56,33 @@ export function RestTimerArmRow() {
   );
 
   return (
+    <RestTimerArmRowView
+      armed={armed}
+      onArm={handleArm}
+      note={<RestTimerCrewNote placement="armRow" />}
+      controls={
+        <>
+          <RestTimerLengthControl />
+          <RestTimerCadenceSection />
+          <RestTimerAutoAdvanceRow />
+        </>
+      }
+    />
+  );
+}
+export function RestTimerArmRowView({
+  armed,
+  onArm,
+  note,
+  controls,
+}: {
+  armed: boolean;
+  onArm: (armed: boolean) => void;
+  note?: ReactNode;
+  controls?: ReactNode;
+}) {
+  const { t } = useTranslation('session');
+  return (
     <Card>
       <View style={styles.cardBleed}>
         {/* No clock above the switch. This card is where you TURN THE TIMER ON;
@@ -67,18 +93,12 @@ export function RestTimerArmRow() {
             label={t('mobile.restTimer.armLabel')}
             description={t('mobile.restTimer.armDescription')}
             value={armed}
-            onValueChange={handleArm}
+            onValueChange={onArm}
           />
         </ShowcaseAnchorView>
         {/* In a crew the switch is the crew's (#5382): it turns the shared clock on or off. */}
-        <RestTimerCrewNote placement="armRow" />
-        {armed ? (
-          <View style={styles.controls}>
-            <RestTimerLengthControl />
-            <RestTimerCadenceSection />
-            <RestTimerAutoAdvanceRow />
-          </View>
-        ) : null}
+        {note}
+        {armed ? <View style={styles.controls}>{controls}</View> : null}
       </View>
     </Card>
   );

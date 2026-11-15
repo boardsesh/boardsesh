@@ -411,46 +411,6 @@ describe('QueueList authenticated account identity transitions', () => {
   });
 });
 
-// The showcase video's `queue-row-avatar` callout needs exactly one row to report
-// its avatar, and a shipped build must hand every row the same constant `false`
-// so a queue advance never re-renders a row over the anchor prop.
-describe('QueueList showcase avatar anchor', () => {
-  const longQueue = [makeItem('a'), makeItem('b'), makeItem('c'), makeItem('d'), makeItem('e')];
-
-  beforeEach(() => {
-    capturedRows.props = [];
-    session.set({ sessionId: 'session-1', profile: { id: 'me' } });
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('anchors only the first upcoming row in screenshot mode', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    renderList(longQueue);
-
-    // History (a), current (b), future (c, d, e).
-    expect(capturedRows.props).toHaveLength(5);
-    expect(capturedRows.props.map((props) => props.showcaseAvatarAnchor)).toEqual([
-      undefined,
-      undefined,
-      true,
-      false,
-      false,
-    ]);
-    expect((capturedRows.props[2].item as ClimbQueueItem).uuid).toBe('c');
-  });
-
-  it('anchors no row outside screenshot mode', () => {
-    renderList(longQueue);
-
-    expect(capturedRows.props).toHaveLength(5);
-    expect(capturedRows.props.every((props) => !props.showcaseAvatarAnchor)).toBe(true);
-    expect(capturedRows.props.slice(2).map((props) => props.showcaseAvatarAnchor)).toEqual([false, false, false]);
-  });
-});
-
 describe('QueueList bottom inset', () => {
   beforeEach(() => {
     insetProbe.localBottom = 0;

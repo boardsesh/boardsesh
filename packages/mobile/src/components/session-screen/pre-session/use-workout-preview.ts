@@ -14,7 +14,6 @@ import { MAX_SYNCED_QUEUE_ITEMS, type ClimbQueueItem } from '@boardsesh/queue';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '../../../providers/toast-provider';
-import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import { useSearchGradeSourceActive } from '../../../lib/graphql/hooks/search-grade-source';
 import { fetchGradePool } from './select-climbs-for-plan';
 import {
@@ -530,7 +529,7 @@ export function useWorkoutPreview(
     if (committedPreviewKeyRef.current !== currentPreviewKey || planRef.current.length === 0) return;
     const { poolDemands, poolTopUpTiers, exhaustedPoolKeys, refetchedPoolKeys } = dataRef.current;
     // Within each pool's tiers, so the climbs you have not sent stay first.
-    const pools = reshufflePools(dataRef.current.pools, poolTopUpTiers, screenshotModeRandom());
+    const pools = reshufflePools(dataRef.current.pools, poolTopUpTiers, Math.random);
     const avoided = getAvoidedClimbUuidsRef.current?.() ?? NO_AVOIDED_CLIMBS;
     const { items: nextItems, usedUuids } = selectItemsFromPools(
       planRef.current,

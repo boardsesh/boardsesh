@@ -144,11 +144,6 @@ describe('wall swipe peek', () => {
     expect(await shouldPlayWallSwipePeek()).toBe(false);
   });
 
-  it('never plays in screenshot mode', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(await shouldPlayWallSwipePeek()).toBe(false);
-  });
-
   it('reads a store failure as no peek', async () => {
     store.failReads = true;
     expect(await shouldPlayWallSwipePeek()).toBe(false);

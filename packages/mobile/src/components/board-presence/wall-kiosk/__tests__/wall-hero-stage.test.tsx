@@ -29,10 +29,6 @@ vi.mock('../../../BoardImageNative', () => ({
 vi.mock('../../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { background: '#000' } }),
 }));
-vi.mock('../../../../lib/board-presence/screenshot-wall-seed', () => ({
-  screenshotPublishedBoardKey: () => 'owned-board',
-}));
-
 import { WallHeroStage } from '../WallHeroStage';
 
 const boardConfig = {
@@ -69,16 +65,10 @@ describe('WallHeroStage board-art sizing', () => {
     pixelRatio.value = 2;
   });
 
-  it('hands the genuine kiosk paint marker to the renderer only during screenshot capture', () => {
+  it.each(['0', '1'])('renders the supplied climb with capture flag %s', (captureFlag) => {
     const climb = { climbUuid: 'real-climb', frames: 'p1r12', angle: 40, sentAt: '2026-10-13T12:00:00Z', seq: 1 };
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(renderStage(600, climb).paintedTestID).toBe(
-      'store-kiosk-painted-owned-board-real-climb-kilter-1-10-1-20-40',
-    );
-    expect(renderStage(600).paintedTestID).toBeUndefined();
-    expect(renderStage(600, { ...climb, frames: null }).paintedTestID).toBeUndefined();
-    expect(renderStage(600, { ...climb, angle: 25 }).paintedTestID).toBeUndefined();
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', captureFlag);
+    expect(renderStage(600, climb)).toMatchObject({ frames: climb.frames, boardName: boardConfig.boardName });
     expect(renderStage(600, climb).paintedTestID).toBeUndefined();
   });
 

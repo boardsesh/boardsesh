@@ -932,7 +932,8 @@ export const ClimbGradeView = React.memo(function ClimbGradeView({
   );
 });
 
-const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
+const LIVE_CLIMB_ROW_LEAVES: Required<ClimbRowLeaves> = {
+  Thumbnail: ClimbListThumbnail,
   Subtitle: LiveClimbSubtitle,
   Grade: LiveClimbGrade,
   AscentStatus: AscentStatusGlyph,
@@ -952,7 +953,19 @@ const LIVE_CLIMB_ROW_LEAVES: ClimbRowLeaves = {
  * With the thumbnail switched off the fragment is two blocks, and the text
  * column starts where the host's row does.
  */
-const ClimbListItemContent = React.memo(function ClimbListItemContent({
+const ClimbListItemContent = React.memo(function ClimbListItemContent(props: ClimbListItemContentProps) {
+  const storedDisplay = useClimbRowDisplay();
+  const leaves = useMemo(() => ({ ...LIVE_CLIMB_ROW_LEAVES, ...props.leaves }), [props.leaves]);
+  return <ClimbListItemContentView {...props} display={props.display ?? storedDisplay} leaves={leaves} />;
+});
+
+export type ClimbListItemContentViewProps = Omit<ClimbListItemContentProps, 'display' | 'leaves'> & {
+  display: ClimbRowDisplay;
+  leaves: Required<ClimbRowLeaves>;
+};
+
+/** The shared row layout with every store-backed leaf supplied by its caller. */
+export const ClimbListItemContentView = React.memo(function ClimbListItemContentView({
   readyBoardArtRef,
   climb,
   boardName,
@@ -969,8 +982,8 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   allowNameWrapping = true,
   knownAscentStatus = null,
   display,
-  leaves = LIVE_CLIMB_ROW_LEAVES,
-}: ClimbListItemContentProps) {
+  leaves,
+}: ClimbListItemContentViewProps) {
   const { t: tSession } = useTranslation('session');
   const { fontScale } = useWindowDimensions();
   const nameLines = climbRowNameLines(fontScale, allowNameWrapping);
@@ -979,15 +992,14 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     nameLines === 2
       ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
       : styles.climbName;
-  const Thumbnail = leaves.Thumbnail ?? ClimbListThumbnail;
+  const Thumbnail = leaves.Thumbnail;
   // 88×112 in a two-column Climbs list, 76×96 in every other host.
   const thumbnailSize = useClimbListThumbnailSize();
   const thumbnailContainerStyle = useMemo(() => [styles.thumbnailContainer, thumbnailSize], [thumbnailSize]);
-  const Progress = leaves.Progress ?? ClimbProgressLine;
+  const Progress = leaves.Progress;
   // The row's one subscription to the Climb list settings. Its snapshot keeps its
   // identity until a switch changes, so this never re-renders a row on its own.
-  const storedDisplay = useClimbRowDisplay();
-  const rowDisplay = display ?? storedDisplay;
+  const rowDisplay = display;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
   // Everything optional about the row is decided here, once: each piece is drawn
   // when the host can show it (a `show*` prop) AND the climber has it switched

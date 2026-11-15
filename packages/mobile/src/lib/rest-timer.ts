@@ -3,7 +3,7 @@
 // Revived from the abandoned PR #2770 (`fix/2569-mobile-rep-timer`), renamed
 // from "rep timer" to match the copy that branch already shipped ("Rest timer").
 // The one behavioural change: callers pass `nowMs` in, so the display can ride
-// `nowMs()` from ./clock (frozen in screenshot mode) instead of a raw clock.
+// `nowMs()` from ./clock instead of a raw clock.
 
 import { tickTimeMs } from '@boardsesh/profile-stats';
 

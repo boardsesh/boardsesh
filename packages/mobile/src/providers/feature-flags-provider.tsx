@@ -181,7 +181,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Donation links',
     policyControlled: true,
     description:
-      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On a phone the app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android and screenshot mode always get the unlinked text whatever this flag says. The Expo browser app ignores this flag and has its own, donation-links-web-kill. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
+      'POLICY-CONTROLLED: an on-device override is ignored in production builds, so this row does nothing on a store binary — PostHog decides. Turn the Acknowledgements support text into a tappable link to boardsesh.com/support. A POSITIVE rollout flag — unresolved reads as off, which renders the compliant unlinked text. On a phone the app only ever shows the link on an iPhone whose App Store storefront is USA (read natively); Android always gets the unlinked text whatever this flag says. The Expo browser app ignores this flag and has its own, donation-links-web-kill. Rolled out to everyone with no conditions. The -v2 suffix keeps older Android bundles, which read the old donation-links key and still carried an Android branch, off: never create that old key.',
   },
   {
     key: 'donation-links-web-kill',
@@ -268,13 +268,13 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'wall-swipe-to-drive',
     label: 'Swipe the wall button to drive',
     description:
-      "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here; screenshot mode ignores it.",
+      "Swipe the player's wall button left to drive the wall (#7113): connect, light the climb, and light every climb picked after it, in a crew too. With it on the button shows ‹‹ chevrons, the frost peeks in once (in up to 3 sessions), the screen-reader action \"Light every climb\" appears, and the board sheet gets a Light every climb row. It also gates Put on board's timed drive (2.7) and Always drive the wall's always-on drive: off, Put on board lights one climb, nothing drives the wall, and every pick is a preview. A POSITIVE rollout flag: unresolved or off is the button with no swipe. Dev builds read it as on unless it is set to off here.",
   },
   {
     key: 'wall-frost-motion',
     label: 'Moving frost on the driving wall button',
     description:
-      "While you drive the wall, the wall button's frost is drawn by a native GPU shader: its lights breathe slowly and slide to the next climb's holds on Next. iOS and Android 13+ builds with the native module; older Android versions, the web and older binaries keep the still frost. Reduce Motion keeps it still too. A POSITIVE rollout flag: unresolved or off is today's still frost. Dev builds read it as on unless it is set to off here; screenshot mode keeps it off so captures stay identical.",
+      "While you drive the wall, the wall button's frost is drawn by a native GPU shader: its lights breathe slowly and slide to the next climb's holds on Next. iOS and Android 13+ builds with the native module; older Android versions, the web and older binaries keep the still frost. Reduce Motion keeps it still too. A POSITIVE rollout flag: unresolved or off is today's still frost. Dev builds read it as on unless it is set to off here.",
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
@@ -655,7 +655,7 @@ export function useSharedSessionBrowseEnabled(): boolean {
 /**
  * The flag half of the timed workout blocks gate (#5380): whether
  * `workout-timed-blocks` is on. `timedWorkoutBlocksOffered` adds every dev build
- * and the screenshot-mode rule, so read the chips through that, not this alone.
+ * so read the chips through that, not this alone.
  *
  * A POSITIVE rollout flag, read strictly like `useBoardseshGradeEnabled`:
  * missing/undefined reads as OFF, which is the chips climbers have today. A
@@ -672,8 +672,7 @@ export function useWorkoutTimedBlocksFlag(): boolean {
  * sheet's row. A POSITIVE rollout flag read strictly: unresolved or off is
  * today's button, so the first frames of a cold open never offer a swipe a
  * flag then takes back. Dev builds read it as on unless a tester turns it off
- * on the Feature Flags screen. Explicit store hero captures opt in through
- * screenshot driving; other screenshot flows and E2E smokes keep it off.
+ * on the Feature Flags screen.
  */
 export function useWallSwipeToDriveEnabled(): boolean {
   return wallSwipeToDriveOffered(useFeatureFlag('wall-swipe-to-drive'));
@@ -683,30 +682,25 @@ export function useWallSwipeToDriveEnabled(): boolean {
  * The driving wall button's moving frost: the Metal-drawn lights that breathe
  * and glide to the next climb. A POSITIVE rollout flag read strictly, like
  * `wall-swipe-to-drive`: unresolved or off is today's still frost. Dev builds
- * read it as on unless a tester turns it off; screenshot mode keeps it off so
- * store captures and their baselines never catch a light mid-drift.
+ * read it as on unless a tester turns it off.
  */
 export function useWallFrostMotionEnabled(): boolean {
   return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
 }
 
 export function useGpuClimbOverlayEnabled(): boolean {
-  // Shipped on compatible native binaries. Old experiment overrides must not
-  // disable it; deterministic screenshot fixtures retain their PNG renderer.
-  return process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+  // Shipped on compatible native binaries. Surface and capability checks own
+  // eligibility; capture configuration does not change production rendering.
+  return true;
 }
 
 /** The rule behind `useWallFrostMotionEnabled`, for tests. */
 export function wallFrostMotionOffered(flag: boolean | string | undefined): boolean {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   return __DEV__ ? flag !== false : flag === true;
 }
 
 /** The rule behind `useWallSwipeToDriveEnabled`, for tests. */
 export function wallSwipeToDriveOffered(flag: boolean | string | undefined): boolean {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-    return process.env.EXPO_PUBLIC_SCREENSHOT_DRIVING === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
-  }
   return __DEV__ ? flag !== false : flag === true;
 }
 

@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, render, act } from '@testing-library/react';
-import { createElement } from 'react';
+import { renderHook, act } from '@testing-library/react';
 
 // Controllable requestAnimationFrame: the test decides when the scheduled frame
 // runs, and tracks cancellations so unmount/inactive cleanup is observable. A
@@ -52,24 +51,6 @@ describe('useDeferredUntilFrame', () => {
 
     flushFrame();
     expect(result.current).toBe(true);
-  });
-
-  it('is ready on the FIRST render in screenshot mode (before effects, no frame gate)', () => {
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-    // Probe records the hook's value during render — before any effect commits —
-    // so this catches a lazy-init miss that an effect-driven setReady would hide
-    // (act() flushing effects would make an effect-only path look ready too).
-    const renderValues: boolean[] = [];
-    function Probe() {
-      renderValues.push(useDeferredUntilFrame(true));
-      return null;
-    }
-    render(createElement(Probe));
-
-    // The very first recorded render is already ready (seeded by the lazy init),
-    // and nothing scheduled a frame.
-    expect(renderValues[0]).toBe(true);
-    expect(requestFrame).not.toHaveBeenCalled();
   });
 
   it('stays false while inactive and never schedules a frame', () => {

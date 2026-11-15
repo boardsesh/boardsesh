@@ -1,5 +1,6 @@
+import { HoldFilterView } from '../../../src/components/climbs/HoldFilterView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { useWindowDimensions, type LayoutChangeEvent } from 'react-native';
 import { useLocalSearchParams, useNavigation, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,9 +9,6 @@ import { getLayout } from '@boardsesh/board-constants/product-sizes';
 import { countFilteredHolds, parseHoldsFilter, toggleHoldFilterType } from '@boardsesh/climb-filters';
 import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
 import { HeaderTrailingButton } from '../../../src/components/HeaderActionButtons';
-import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
-import { InteractiveFilterBoard } from '../../../src/components/search/InteractiveFilterBoard';
-import { HoldFilterPicker } from '../../../src/components/search/HoldFilterPicker';
 import { HoldFilterHeatmapPanel } from '../../../src/components/search/heatmap/HoldFilterHeatmapPanel';
 import { useHoldFilterHeatmap } from '../../../src/components/search/heatmap/use-hold-filter-heatmap';
 import { parseHeatmapSearch } from '../../../src/components/search/heatmap/heatmap-search-input';
@@ -18,7 +16,6 @@ import { ActionButton } from '../../../src/components/drawer-action-bar/DrawerAc
 import { useTheme } from '../../../src/providers/theme-provider';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useActiveBoard } from '../../../src/lib/graphql/use-active-board';
-import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { getCreateBoardHolds, parseSetIdsParam } from '../../../src/lib/create-board-holds';
 import { useSprayWallToken } from '../../../src/lib/spray/use-spray-wall-token';
 import { emitHoldsFilterSelection } from '../../../src/lib/hold-filter-handoff';
@@ -66,20 +63,15 @@ export default function HoldFilterScreen() {
   const params = useLocalSearchParams<Params>();
   const navigation = useNavigation();
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  // A screenshot deep link (`://climbs/holds`) opens this route with none of the
-  // params the filter sheet pushes, which would render an empty board. In
-  // screenshot mode only, fall back to the wall the capture activated on boot;
-  // `null` in every normal build and whenever the route carried a board.
-  const screenshotBoard = useScreenshotBoardParams(params.boardName);
-  const boardName = (screenshotBoard?.boardName ?? params.boardName ?? '') as BoardName;
-  const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
-  const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
-  const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
-  const angle = Number(screenshotBoard?.angle ?? params.angle ?? 0);
+  const boardName = (params.boardName ?? '') as BoardName;
+  const layoutId = Number(params.layoutId ?? 0);
+  const sizeId = Number(params.sizeId ?? 0);
+  const setIds = params.setIds ?? '';
+  const angle = Number(params.angle ?? 0);
   // Matches the web `boardLayout` property: the layout NAME (web sends
   // `boardDetails.layout_name`), not the numeric id, so the hold-filter events
   // join cleanly with web across platforms. Falls back to '' for unknown ids.
@@ -224,65 +216,36 @@ export default function HoldFilterScreen() {
     });
   }, [navigation, filteredCount, handleClearAll, t]);
 
-  if (!boardHolds || !boardName) {
-    return (
-      <View style={[styles.loading, { backgroundColor: systemColors.background }]}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: systemColors.background }]}>
-      <View style={styles.boardSection}>
-        {/* Known follow-up (not in this PR): `BoardSearchConfig` doesn't carry a
-            `mirrored` flag today, so the board always renders un-mirrored here
-            and a mirrored search shows its hold rings on the opposite side. Wire
-            `mirrored` through `BoardSearchConfig` to fix it. */}
-        <InteractiveFilterBoard
-          boardName={boardName}
-          layoutId={layoutId}
-          sizeId={sizeId}
-          setIds={setIds}
-          boardWidth={boardHolds.boardWidth}
-          boardHeight={boardHolds.boardHeight}
-          holdTargets={boardHolds.holdTargets}
-          holdsFilter={holdsFilter}
-          onHoldTap={handleHoldTap}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-          underOverlay={heatmap.overlay}
-        />
-      </View>
-
-      <View onLayout={handleHeatmapPanelLayout}>
-        <HoldFilterHeatmapPanel heatmap={heatmap} boardName={boardName} nudgeBoard={heatmapNudgeBoard} />
-      </View>
-
-      <HoldFilterPicker
-        boardName={boardName}
-        selectedType={selectedType}
-        onSelectType={setSelectedType}
-        applyMode={applyMode}
-        onApplyModeChange={setApplyMode}
-        modeRowAccessory={heatmapToggle}
-      />
-    </View>
+    <HoldFilterView
+      board={
+        boardHolds && boardName
+          ? {
+              boardName,
+              layoutId,
+              sizeId,
+              setIds,
+              boardWidth: boardHolds.boardWidth,
+              boardHeight: boardHolds.boardHeight,
+              holdTargets: boardHolds.holdTargets,
+              holdsFilter,
+              onHoldTap: handleHoldTap,
+              renderWidth: boardRender.width,
+              renderHeight: boardRender.height,
+              underOverlay: heatmap.overlay,
+            }
+          : null
+      }
+      picker={{
+        boardName,
+        selectedType,
+        onSelectType: setSelectedType,
+        applyMode,
+        onApplyModeChange: setApplyMode,
+        modeRowAccessory: heatmapToggle,
+      }}
+      onHeatmapPanelLayout={handleHeatmapPanelLayout}
+      heatmapPanel={<HoldFilterHeatmapPanel heatmap={heatmap} boardName={boardName} nudgeBoard={heatmapNudgeBoard} />}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loading: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  boardSection: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

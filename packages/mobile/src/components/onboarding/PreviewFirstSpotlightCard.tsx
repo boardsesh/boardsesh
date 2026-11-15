@@ -36,7 +36,7 @@ function PreviewFirstSpotlightCardComponent({ style }: PreviewFirstSpotlightCard
 
   useEffect(() => {
     // A captured store screen never shows it, like the "New" pill.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
+
     let active = true;
     void loadPreviewFirstSpotlight().then(async (loaded) => {
       const now = Date.now();

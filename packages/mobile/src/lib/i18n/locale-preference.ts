@@ -12,7 +12,6 @@
 
 import { SUPPORTED_LOCALES, type Locale } from '@boardsesh/i18n';
 import { secureStorePreferences } from '../preferences/secure-store-adapter';
-import { SCREENSHOT_LOCALE_OVERRIDE } from '../screenshot-mode';
 import { detectDeviceLocale } from './config';
 import { LOCALE_OVERRIDE_KEY } from './locale-preference-key';
 
@@ -29,17 +28,11 @@ export function isLocaleOverride(value: unknown): value is LocaleOverride {
  * `'system'` follows the device; an explicit locale passes through.
  */
 export function resolveLanguage(override: LocaleOverride): Locale {
-  if (SCREENSHOT_LOCALE_OVERRIDE) {
-    return SCREENSHOT_LOCALE_OVERRIDE;
-  }
   return override === 'system' ? detectDeviceLocale() : override;
 }
 
 /** Read the persisted override, defaulting to `'system'` when absent/malformed. */
 export async function getStoredLocaleOverride(): Promise<LocaleOverride> {
-  if (SCREENSHOT_LOCALE_OVERRIDE) {
-    return SCREENSHOT_LOCALE_OVERRIDE;
-  }
   const stored = await secureStorePreferences.get<LocaleOverride>(LOCALE_OVERRIDE_KEY);
   return isLocaleOverride(stored) ? stored : 'system';
 }

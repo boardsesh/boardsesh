@@ -71,21 +71,6 @@ describe('shouldShowNudge — eligibility', () => {
     }
   });
 
-  it('suppresses every surface in screenshot mode', () => {
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-    for (const surface of [
-      'post_session',
-      'no_catalog',
-      'whats_new',
-      'board_card',
-      'onboarding',
-      'similar_climbs',
-      'hold_heatmap',
-    ] as NudgeSurface[]) {
-      expect(shouldShowNudge(input({ surface }))).toBe(false);
-    }
-  });
-
   it('suppresses when the offline engine is unavailable', () => {
     expect(shouldShowNudge(input({ offlineEngineEnabled: false }))).toBe(false);
   });

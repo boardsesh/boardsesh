@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { useMemo } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -59,10 +60,14 @@ export function AccessoryClimbThumbnail({
   climb,
   boardConfig,
   size = ACCESSORY_THUMBNAIL_SLOT_SIZE,
+  renderStyleOverride,
+  onArtReadinessChange,
 }: {
   climb: AccessoryThumbnailClimb;
   boardConfig: BoardConfig | null;
   size?: number;
+  renderStyleOverride?: ComponentProps<typeof BoardImageNative>['renderStyleOverride'];
+  onArtReadinessChange?: ComponentProps<typeof BoardImageNative>['onArtReadinessChange'];
 }) {
   'use no memo';
 
@@ -125,6 +130,8 @@ export function AccessoryClimbThumbnail({
   return (
     <View style={[styles.thumbnailSlot, { width: size, height: size }]}>
       <BoardImageNative
+        renderStyleOverride={renderStyleOverride}
+        onArtReadinessChange={onArtReadinessChange}
         frames={climb.frames}
         boardName={renderBoard.boardName as BoardName}
         layoutId={renderBoard.layoutId}

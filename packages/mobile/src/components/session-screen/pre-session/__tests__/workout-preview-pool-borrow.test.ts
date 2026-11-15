@@ -127,9 +127,9 @@ describe('borrowScaleFor', () => {
     expect(borrowScaleFor(GRADES)).toBe(GRADES);
   });
 
-  it('borrows nothing in a screenshot capture, whose recordings hold no nearby grade', () => {
+  it('ignores retired capture flags when borrowing grades', () => {
     process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-    expect(borrowScaleFor(GRADES)).toEqual([]);
+    expect(borrowScaleFor(GRADES)).toBe(GRADES);
   });
 });
 

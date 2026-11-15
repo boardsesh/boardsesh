@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { BetaLink } from '@boardsesh/shared-schema';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import type { BetaLink } from '@boardsesh/shared-schema';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const collapse = vi.hoisted(() => ({ expanded: true }));
 const links = vi.hoisted(() => ({
@@ -29,6 +29,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
     return { videos: links.videos, isLoading: links.isLoading, isLoadingMore: false, loadMore: vi.fn() };
   },
 }));
+vi.mock('../../play-drawer/BetaVideoCardView', () => ({ BETA_CARD_COMPACT_HEIGHT: 96 }));
 vi.mock('../../play-drawer/BetaVideoCard', () => ({
   BETA_CARD_COMPACT_HEIGHT: 96,
   BetaVideoCard: ({ link }: { link: BetaLink }) =>

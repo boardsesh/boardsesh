@@ -12,6 +12,7 @@ export type ClimbFilterSurfaceHandle = BottomSheetMethods & {
 };
 export type ClimbFilterSurfaceProps = {
   model: ClimbFilterFormModel;
+  onPresented?: () => void;
   title: string;
   subtitle?: string;
   closeLabel: string;

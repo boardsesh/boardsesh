@@ -20,11 +20,13 @@ const LocaleContext = createContext<LocalePreference | null>(null);
 
 type I18nProviderProps = {
   children: ReactNode;
+  initialLocale?: LocaleOverride;
+  persistPreferences?: boolean;
 };
 
-export function I18nProvider({ children }: I18nProviderProps) {
+export function I18nProvider({ children, initialLocale, persistPreferences = true }: I18nProviderProps) {
   const [isReady, setIsReady] = useState(false);
-  const [localePreference, setLocalePreferenceState] = useState<LocaleOverride>('system');
+  const [localePreference, setLocalePreferenceState] = useState<LocaleOverride>(initialLocale ?? 'system');
   const resolvedLanguage = resolveLanguage(localePreference);
 
   useEffect(() => {
@@ -40,7 +42,7 @@ export function I18nProvider({ children }: I18nProviderProps) {
   useEffect(() => {
     let cancelled = false;
     async function hydrate() {
-      const stored = await getStoredLocaleOverride();
+      const stored = initialLocale ?? (await getStoredLocaleOverride());
       if (cancelled) return;
       setLocalePreferenceState(stored);
       const language = resolveLanguage(stored);
@@ -60,16 +62,20 @@ export function I18nProvider({ children }: I18nProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialLocale]);
 
-  const setLocalePreference = useCallback((next: LocaleOverride) => {
-    setLocalePreferenceState(next);
-    void i18n.changeLanguage(resolveLanguage(next));
-    void setStoredLocaleOverride(next).catch(() => {
-      // Keep the in-memory choice on a write failure so the session reflects
-      // the pick; reverting would visibly snap the selection back.
-    });
-  }, []);
+  const setLocalePreference = useCallback(
+    (next: LocaleOverride) => {
+      setLocalePreferenceState(next);
+      void i18n.changeLanguage(resolveLanguage(next));
+      if (persistPreferences)
+        void setStoredLocaleOverride(next).catch(() => {
+          // Keep the in-memory choice on a write failure so the session reflects
+          // the pick; reverting would visibly snap the selection back.
+        });
+    },
+    [persistPreferences],
+  );
 
   const localeValue = useMemo<LocalePreference>(
     () => ({ localePreference, setLocalePreference }),

@@ -34,7 +34,6 @@ import {
   type OAuthSignInResult,
   type RegistrationResult,
 } from '../lib/auth';
-import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
 import { getAnalyticsIdentity, isAnalyticsPinnedToAPerson, reset as resetAnalytics, track } from '../lib/analytics';
 import { resetOfflineUsageSignal } from '../offline/offline-usage-signal';
 import { clearRelayReceipt } from '../lib/relay-receipt';
@@ -774,72 +773,6 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           updateNativeSessionDegraded(false);
           pendingAuthTransportRestartRef.current = false;
           setIsSessionUnavailable(false);
-          // Screenshot build: sign in programmatically here, before the loading gate
-          // clears, so the app renders straight into /home — the login screen never
-          // mounts. No form is shown, so there's no Maestro timing race and no iOS
-          // "Save Password?" dialog. Inert in normal builds (dead-strips when
-          // EXPO_PUBLIC_SCREENSHOT_MODE is unset — the comparison stays inlined here so the
-          // release minifier folds it in place rather than across a module boundary).
-          if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-            // Diagnostics land in Metro's stdout (which the capture orchestrator tees to
-            // a log it polls), so a silent sign-in failure is no longer invisible in CI.
-            if (SCREENSHOT_USER_EMAIL && SCREENSHOT_USER_PASSWORD) {
-              // Retried in-app because a transient network failure here (seen in CI as
-              // `status=null error=network`) otherwise burns one of the orchestrator's
-              // full 120-second relaunch cycles just to attempt the same call again.
-              for (let attempt = 1; attempt <= 3; attempt += 1) {
-                const screenshotSignIn = await authSignInWithCredentials(
-                  SCREENSHOT_USER_EMAIL,
-                  SCREENSHOT_USER_PASSWORD,
-                );
-                if (!isAuthTransitionCurrent(transitionEpoch)) return;
-                if (screenshotSignIn.success) {
-                  const screenshotSession = await resolveAuthSession();
-                  if (!isAuthTransitionCurrent(transitionEpoch)) return;
-                  if (screenshotSession.status === 'authenticated') {
-                    if (Platform.OS !== 'web' && !isAuthCredentialGenerationCurrent(screenshotSession.generation)) {
-                      return;
-                    }
-                    console.info('[screenshot] auto sign-in succeeded; rendering straight into home');
-                    await handleResolvedAuthenticatedTransition(transitionEpoch, screenshotSession);
-                  } else if (screenshotSession.status === 'unavailable') {
-                    if (Platform.OS === 'web') {
-                      reportError(screenshotSession.error);
-                      setIsSessionUnavailable(true);
-                    } else if (isAuthCredentialGenerationCurrent(screenshotSession.generation)) {
-                      // Match the ordinary native token-read policy even in the
-                      // screenshot harness: a keychain failure is not a confirmed
-                      // logout and must not run cleanup or use the web-only retry
-                      // route.
-                      reportHandledError(screenshotSession.error, {
-                        tags: { source: 'auth-session', auth_stage: screenshotSession.stage },
-                      });
-                      updateNativeSessionDegraded(false);
-                      setIsAuthenticated(false);
-                      setIsSessionUnavailable(false);
-                    }
-                  }
-                  return;
-                }
-                console.warn(
-                  `[screenshot] auto sign-in FAILED (attempt ${attempt}/3) — ` +
-                    `status=${screenshotSignIn.status ?? 'null'} error=${screenshotSignIn.error}` +
-                    ` (emailLen=${SCREENSHOT_USER_EMAIL.length} passwordLen=${SCREENSHOT_USER_PASSWORD.length})`,
-                );
-                // Bad credentials (4xx) will not get better; only retry what can
-                // heal — network failures (status null) and transient 5xx.
-                if (screenshotSignIn.status !== null && screenshotSignIn.status < 500) break;
-                if (attempt < 3) {
-                  await new Promise((resolveDelay) => setTimeout(resolveDelay, attempt * 2000));
-                }
-              }
-            } else {
-              console.warn(
-                `[screenshot] auto sign-in SKIPPED — credentials not inlined into the bundle` +
-                  ` (emailSet=${Boolean(SCREENSHOT_USER_EMAIL)} passwordSet=${Boolean(SCREENSHOT_USER_PASSWORD)})`,
-              );
-            }
-          }
           await handleSignedOutTransition(transitionEpoch);
           return;
         }

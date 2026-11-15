@@ -1,18 +1,19 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { formatGrade } from '@boardsesh/play-view';
 import type { Climb } from '@boardsesh/queue';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
+import { useState, type ComponentProps, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
 import type { StoryModule } from '../../dev/stories/types';
 import { useTheme } from '../../providers/theme-provider';
-import { BluetoothContext, useBluetoothContext } from '../../providers/bluetooth-provider';
-import { QueueDataContext, useQueueData } from '../../providers/queue/queue-contexts';
-import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { Avatar } from '../Avatar';
+import { NativeHeaderActionContext, NativeTitleMaxWidthContext } from '../chrome/native-header-action-context';
+import type { WallGlowInput } from '../play-drawer/use-wall-glow';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
-import { BoardHeldCapsule, HeldClimbCapsule } from './BoardHeldCapsule';
-import { WallStatusCapsule } from './WallStatusCapsule';
+import { BoardHeldCapsuleView, HeldClimbCapsuleView } from './BoardHeldCapsuleView';
+import { WallStatusCapsuleView, type WallStatusCapsuleProps } from './WallStatusCapsuleView';
 
 // The Climbs header's status capsules: a face, then the climb's name, with
 // "20m ago" under it on a stale capsule (#7281). Drawn inside the native header
@@ -26,8 +27,43 @@ import { WallStatusCapsule } from './WallStatusCapsule';
 const TITLE_SLOT_WIDTH = 210;
 
 const noop = () => {};
-const noConnection = async () => false;
-const noDisconnect = async () => {};
+const GLOW: WallGlowInput = {
+  key: 'header-held-climb',
+  boardWidth: 100,
+  boardHeight: 150,
+  holds: [
+    { x: 30, y: 8, color: '#FF00FF' },
+    { x: 75, y: 16, color: '#4DF5FD' },
+    { x: 50, y: 30, color: '#FFA500' },
+    { x: 25, y: 55, color: '#4DF5FD' },
+    { x: 70, y: 75, color: '#FFA500' },
+    { x: 40, y: 100, color: '#4DF5FD' },
+    { x: 65, y: 125, color: '#00DD00' },
+  ],
+};
+const emptyHeldProps: Pick<
+  ComponentProps<typeof BoardHeldCapsuleView>,
+  'onPress' | 'onLongPress' | 'accessibilityActions' | 'onAccessibilityAction' | 'accessibilityHint'
+> = {
+  onPress: noop,
+  onLongPress: noop,
+  accessibilityActions: undefined,
+  onAccessibilityAction: noop,
+  accessibilityHint: '',
+};
+function WallCapsule(props: WallStatusCapsuleProps) {
+  return (
+    <WallStatusCapsuleView
+      {...props}
+      formattedGrade={formatGrade(props.climb.grade, 'v-grade', props.boardName)}
+      senderIsYou={false}
+      senderPending={false}
+      statsDetail="1,862 sends"
+      onPress={noop}
+      avatar={<Avatar name={props.climb.sentByDisplayName} size={24} />}
+    />
+  );
+}
 
 const wallClimb = (over: Partial<BoardPresenceClimb> = {}): BoardPresenceClimb => ({
   climbUuid: 'story-wall-climb',
@@ -73,7 +109,10 @@ function TitleSlot({ children, narrow = false }: { children: ReactNode; narrow?:
 function HeldClimb({ ledless }: { ledless: boolean }) {
   const { brandColors } = useTheme();
   return (
-    <HeldClimbCapsule
+    <HeldClimbCapsuleView
+      grade="V4"
+      sendsDetail="1,862 sends"
+      glow={ledless ? null : GLOW}
       climb={heldClimb}
       ledless={ledless}
       toneColor={ledless ? brandColors.primary : brandColors.warning}
@@ -86,37 +125,11 @@ function HeldClimb({ ledless }: { ledless: boolean }) {
   );
 }
 
-/** Story-local transport/queue inputs; rendering the real capsule never writes hardware. */
 function EmptyHeldCapsule({ ledless }: { ledless: boolean }) {
-  const bluetooth = useBluetoothContext();
-  const queue = useQueueData();
-  const storyBluetooth = useMemo(
-    () => ({
-      ...bluetooth,
-      isConnected: !ledless,
-      loading: false,
-      ledless,
-      virtualWallHeld: ledless,
-      canDriveWall: true,
-      connect: noConnection,
-      connectAfterBoardSwitch: noConnection,
-      disconnect: noDisconnect,
-      takeVirtualWall: noop,
-      releaseVirtualWall: noop,
-    }),
-    [bluetooth, ledless],
-  );
-  const emptyQueue = useMemo(() => ({ ...queue, currentClimbQueueItem: null }), [queue]);
   return (
-    <BluetoothContext.Provider value={storyBluetooth}>
-      <QueueDataContext.Provider value={emptyQueue}>
-        <TitleSlot>
-          <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <BoardHeldCapsule ledless={ledless} />
-          </View>
-        </TitleSlot>
-      </QueueDataContext.Provider>
-    </BluetoothContext.Provider>
+    <TitleSlot>
+      <BoardHeldCapsuleView {...emptyHeldProps} ledless={ledless} localConnected={!ledless} />
+    </TitleSlot>
   );
 }
 
@@ -134,7 +147,7 @@ function InteractiveWallCapsule() {
             <NativeTitleMaxWidthContext.Provider value={narrow ? 80 : TITLE_SLOT_WIDTH}>
               <View style={[styles.titleSlot, narrow && styles.narrowTitleSlot]}>
                 {dismissed ? null : (
-                  <WallStatusCapsule
+                  <WallCapsule
                     climb={wallClimb({ name: 'Swans A-Swimming', seq: sequence })}
                     boardName="tension"
                     presentation={
@@ -215,12 +228,12 @@ const stories: StoryModule = {
         <>
           <StoryVariant label="On the wall, named sender">
             <TitleSlot>
-              <WallStatusCapsule climb={wallClimb()} boardName="kilter" />
+              <WallCapsule climb={wallClimb()} boardName="kilter" />
             </TitleSlot>
           </StoryVariant>
           <StoryVariant label="On the wall, anonymous sender, long name">
             <TitleSlot>
-              <WallStatusCapsule
+              <WallCapsule
                 climb={wallClimb({ sentByDisplayName: null, name: 'Kiel Training 1:4 variant (hard start)' })}
                 boardName="kilter"
               />
@@ -228,7 +241,7 @@ const stories: StoryModule = {
           </StoryVariant>
           <StoryVariant label="Last on the wall, disconnected 20 minutes ago">
             <TitleSlot>
-              <WallStatusCapsule
+              <WallCapsule
                 climb={wallClimb()}
                 boardName="kilter"
                 presentation={{ kind: 'history', ageLabel: '20m', ageByline: '20m ago' }}
@@ -247,7 +260,7 @@ const stories: StoryModule = {
           </StoryVariant>
           <StoryVariant label="You're driving, no climb up">
             <TitleSlot>
-              <BoardHeldCapsule ledless={false} />
+              <BoardHeldCapsuleView {...emptyHeldProps} ledless={false} localConnected />
             </TitleSlot>
           </StoryVariant>
         </>

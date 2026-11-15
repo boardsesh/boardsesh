@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { createElement, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logbook';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   native: true,
@@ -151,8 +151,8 @@ vi.mock('../LogbookChipRow', () => ({
 }));
 vi.mock('../LogbookFacetRail', () => ({ LogbookFacetRail: () => null }));
 
-import { LogbookTab } from '../LogbookTab';
 import { createScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import { LogbookTab } from '../LogbookTab';
 
 function renderHeader(controls: ReactNode, onHeightChange: (height: number) => void) {
   state.measure = onHeightChange;
@@ -316,15 +316,10 @@ describe('Logbook composed profile header', () => {
       expect(getByTestId('composed-header')).toBeTruthy();
     },
   );
-  it('scopes CPP logbook queries on the server and leaves ordinary logbooks unrestricted', () => {
+  it('keeps ordinary logbook scope independent of capture configuration', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
-    const { rerender } = render(<LogbookTab userId="me" screenshotBoardType="moonboard" />);
-    expect(state.feedInputs.at(-1)).toMatchObject({ boardType: 'moonboard' });
-    rerender(<LogbookTab userId="me" screenshotBoardType="spray" />);
-    expect(state.feedInputs.at(-1)).toMatchObject({ boardType: 'spray' });
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
-    rerender(<LogbookTab userId="me" screenshotBoardType="kilter" />);
+    render(<LogbookTab userId="me" />);
     expect(state.feedInputs.at(-1)).not.toHaveProperty('boardType');
   });
 });

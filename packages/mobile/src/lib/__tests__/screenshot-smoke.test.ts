@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { countLitHolds, reportScreenshotSmokeContent, reportScreenshotSmokeError } from '../screenshot-smoke';
+import {
+  countLitHolds,
+  reportScreenshotSmokeContent,
+  reportScreenshotSmokeError,
+} from '../../dev/integration/screenshot-smoke';
 
 const SMOKE_URL = 'http://localhost:19870/smoke';
 

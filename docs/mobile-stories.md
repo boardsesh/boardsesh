@@ -1,183 +1,79 @@
-# Mobile stories
+# Mobile view stories
 
-A dev-only harness for the React Native app (`packages/mobile`), in the spirit of Storybook.
-A story is one screen state you can open by id, screenshot in about two seconds, and edit with
-hot reload. It exists so an agent (or you) can check a UI change without logging in, starting
-a session or finding a second phone.
-
-Storybook for React Native was ruled out: `@storybook/react-native` needs
-`@gorhom/bottom-sheet` as a peer, which is banned from the native app (#3167).
-
-## Two kinds of story
-
-**Component story.** Draws a component at `dev/stories/<id>`, inside the real app's providers
-(theme, i18n, query client, board, presence). Use it for UI whose states are cheap to build
-from props: a pill, a callout, a commit row. One story can lay every state out on one screen
-with `StoryVariant`, so one screenshot shows them all.
-
-**Scenario story.** Fakes a few live values on top of the real app, then opens a real route.
-Use it for whole screens whose state is hard to reach by hand. `crew-browse--crew-flag-on`
-pretends a second climber is in your session and opens the real play drawer, so you see the
-crew browse mode without a crew.
+Screenshots render the same prop-driven view components as the app, with fixed data supplied by a story. Production screen containers own authentication, queries, pagination, mutations and navigation. Keep fixture data, forced states and capture parameters out of those containers.
 
 ## Open a story
 
-The route is `dev/stories/<id>`; the index of every story is `dev/stories`.
-
-```bash
-# Boot once, in the background. Pick a free port: other sessions usually hold 8081.
-BOARDSESH_METRO_PORT=8091 SCREENSHOT_USER_PASSWORD=<prod test pw> vp run mobile:ios-shots
-
-# Shoot a story. It waits for the story's ready line instead of a fixed sleep.
-BOARDSESH_METRO_PORT=8091 vp run mobile:ios-shots -- screenshot --story crew-browse--pills
-BOARDSESH_METRO_PORT=8091 vp run mobile:ios-shots -- screenshot --story crew-browse--pills --theme light
-BOARDSESH_METRO_PORT=8091 vp run mobile:ios-shots -- screenshot --story crew-browse--crew-flag-on
+```sh
+vp run mobile:ios-shots -- --story climbs--populated --theme dark --shutdown
+vp run mobile:android-shots -- --story climbs--populated --variant material --shutdown
 ```
 
-The Android tool takes the same `--story`, `--theme` and `--variant` flags. Details on ports,
-the `.app` copy and the Metro log: `docs/ios-simulator-screenshots.md`.
+These commands boot Metro with `EXPO_PUBLIC_STORY_MODE=1`. The root chooses the story application before importing the production application. It mounts fonts, translation, theme, safe areas, gestures, native navigation and sheet/dialog infrastructure. It does **not** mount authentication, database, queries, sync, queues, BLE or network providers. Appearance changes are in memory and do not update user preferences.
 
-Query parameters on the route:
+The route `dev/stories/<id>` also selects that isolated root in a dev bundle. For a fresh capture, use the commands above so the production root cannot initialize before the router resolves the link. A production bundle does not load story modules.
 
-| Parameter | Values                           | Effect                                                       |
-| --------- | -------------------------------- | ------------------------------------------------------------ |
-| `theme`   | `dark`, `light`, `system`        | Switches the whole app, like Settings. Persists on the sim.  |
-| `variant` | `liquidGlass`, `material`, `auto` | The Material look on iOS, for checking Android parity.      |
-| `shot`    | any value                        | A new value re-logs the ready line of the story on screen.   |
+Visual capture runners preserve `--render-mode aura|classic|default` in the story deep link. Ad hoc links can use `?renderMode=classic`; the default is Aura. Requested Aura captures wait for renderer capability and fail if the installed binary would fall back to classic.
 
-The shots scripts add `shot=<timestamp>` to every `--story` capture, so shooting the story
-already on screen again (after an edit, or with another `--theme`) still gets a fresh
-`[stories] ready` line instead of waiting out the 15 s timeout.
+Story IDs are `<filename>--<key>`, kebab-cased: `Climbs.stories.tsx` with `populated` becomes `climbs--populated`. A bare filename ID selects its first declared story. The index at `dev/stories` lists all stories. Only the requested module is evaluated for a direct story link.
 
-Only the focused story applies its `theme` and `variant` parameters. Earlier story routes can
-stay mounted in the navigation stack; they stop writing appearance preferences while blurred,
-so opening a dark Material story after a light Liquid Glass story settles on the new choice.
-Focused parameter or preference changes are checked again, and returning to an earlier story
-reapplies its parameters. Leaving a story keeps the current appearance; blur does not reset it.
-Missing or invalid parameters leave that preference alone, and matching preferences avoid a write.
-
-The iOS dev client previously entered a render loop when stacked stories requested conflicting
-appearances. These captures show the error and the dark Material story settling with focus ownership.
-
-| Before | After |
-| --- | --- |
-| ![Conflicting story appearance loop](images/story-appearance-loop-before.png) | ![Focused dark Material story](images/story-appearance-loop-after.png) |
-
-Stories only exist in a dev bundle (the simulator dev client, `vp run dev:mobile`). A store
-build or OTA update sends `dev/stories/*` home.
-
-## Story ids
-
-`<file>--<key>`, kebab-cased. In `CrewBrowse.stories.tsx`, the key `crewFlagOn` is
-`crew-browse--crew-flag-on`. A bare file id (`crew-browse`) opens the story declared first in
-that file; the index lists stories sorted by id. Two stories with the same id fail at load,
-naming both files.
-
-`dev/stories/reset` clears scenario overrides, goes back to the index and logs
-`[stories] ready reset`.
+| Parameter | Values | Behavior |
+| --- | --- | --- |
+| `theme` | `dark`, `light`, `system` | In-memory theme |
+| `variant` | `liquidGlass`, `material`, `auto` | Native presentation variant |
+| `locale` | Supported app locale | In-memory translation instance |
+| `shot` | Unique nonce | Remounts the story and its readiness checks |
 
 ## Write a story
 
-Put `<Name>.stories.tsx` next to the component. Every such file under `packages/mobile/src` is
-found automatically; there is no list to update.
+Place `<Name>.stories.tsx` next to the view. Metro discovers these files automatically.
 
 ```tsx
 import type { StoryModule } from '../../dev/stories/types';
-import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
+import { ClimbsView } from './ClimbsView';
+import { populatedClimbsProps } from '../../dev/fixtures/climbs';
 
 const stories: StoryModule = {
-  title: 'Play drawer / Crew browse',
+  title: 'Climbs',
   stories: {
-    pills: {
-      name: 'Wall-state pill, every state',
-      render: () => (
-        <>
-          <StoryVariant label="browsing">
-            <StorySurface>
-              <WallStatePill state="browsing" onPress={() => {}} />
-            </StorySurface>
-          </StoryVariant>
-        </>
-      ),
-    },
-    crewFlagOn: {
-      name: 'Real drawer, crew of two',
-      overrides: { queue: { isSharedSession: true, sessionId: 'story-crew-session' } },
-      route: '/climbs?screenshotOpenFirst=1',
+    populated: {
+      name: 'Popular climbs',
+      layout: 'fullscreen',
+      tab: 'climbs',
+      render: () => <ClimbsView {...populatedClimbsProps} />,
     },
   },
 };
-
 export default stories;
 ```
 
-- `render` runs inside the real providers, so hooks like `useTheme` and `useTranslation` work.
-- `layout: 'fullscreen'` drops the caption and padding.
-- A component story can take `overrides` too, for a component that reads them from context.
-  They go on when the story comes into focus and come off when it leaves, unless a newer story
-  has replaced them by then. A component story without `overrides` clears any scenario's, so a
-  component draws the same whatever you opened before it.
-- A scenario's `route` can carry the screenshot-mode params
-  (`climbs?screenshotOpenFirst=1`, `?screenshotOpenPreview=1`); see
-  `packages/mobile/src/lib/screenshot-mode.ts`. Run Metro in screenshot mode
-  (`mobile:ios-shots` does) so the onboarding, consent and QA gates stay out of the way.
+Set `tab` on fullscreen tab stories to mount the production tab navigator, native headers, tablet rail and foldable split shell. The public story URL redirects internally while retaining its story ID and capture readiness.
 
-## Scenario overrides
+Use ordinary props and local state for interactions. A view can read theme, translations and layout; it must not require fake auth/query/board providers. Extract shared chrome into a view with explicit props too. Fixtures belong under `src/dev/fixtures` or in the story module, never in the production screen.
 
-`ScenarioOverrides` (`packages/mobile/src/dev/stories/scenario-overrides.ts`) is the list of
-live values a story can fake. Each field patches one context value the real provider computes;
-anything left out keeps the real value.
+## Capture readiness
 
-| Field                    | Patches                                                      |
-| ------------------------ | ------------------------------------------------------------ |
-| `queue.isSharedSession`  | `useIsSharedSession()`: whether gestures browse first (#4281) |
-| `queue.isCrewSession`    | `useIsCrewSession()`: whether only the wall holder's rest timer may move the wall. Follows `isSharedSession` when left out |
-| `queue.sessionId`        | `useQueueSessionId()` and `useQueueSessionControls()`       |
-| `queue.sessionUsers`     | The roster in `useQueueLiveStats()`, and `sessionMemberUserIds` in `useQueueSessionControls()` (from each member's `userId`) |
+The harness waits for native layout and two animation frames before reporting readiness. Stories with board artwork, images, opening sheets or asynchronously prepared view state must set `readiness: 'explicit'` and call the supplied `onReady` only after that content is ready. Pass `onError` to required asset loading so a missing image fails the capture.
 
-Some readers keep the real session, so judge what they draw from the real app:
+```tsx
+render: ({ onReady, onError }) => (
+  <BoardStory onAssetsReady={onReady} onAssetError={onError} />
+),
+readiness: 'explicit',
+```
 
-| Reader                                   | Why it isn't patched                                         |
-| ---------------------------------------- | ------------------------------------------------------------ |
-| `BluetoothProvider` (`useQueue()`)       | Reads the full `QueueContext`, which is left alone on purpose |
-| `QueueBottomAccessory` (`useQueue()`)    | Same: the persistent queue bar shows the real session        |
-| `LiveActivityBridge` (`useQueue()`)      | Same: patching it would start a Live Activity under a fake id |
-| `BoardAdapterWrapper`                    | Sits above `DevScenarioOverrides`; ticks go to the real session |
+Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay.
 
-The fake session id exists only on the phone. Anything that sends it to the server fails, so
-judge the screen, not the network calls behind it.
+`mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 
-To fake something new, add a field to `ScenarioOverrides` and patch its context in
-`DevScenarioOverrides.tsx`. That provider sits inside `MobileBoardPresenceProvider`, below the
-queue and presence providers, so it can patch either.
+## Integration smoke remains separate
 
-Scenario overrides stay on after the story navigates away. They clear when another story
-replaces them (a scenario, or a component story with or without `overrides`), on
-`dev/stories/reset`, on the index's reset row, or on a reload. Opening the index alone leaves
-them on.
+The `smoke` flow opens the real Home, Profile and Climbs screens and the real play drawer against recorded backend responses. `src/dev/integration` owns dev-only login/bootstrap and content reporting. A generic `ContentRenderObserverProvider` observes markers mounted inside rendered content; production defaults to no observer. Tests must not emit success merely because a query returned rows.
 
-## How it stays out of production
+The integration bootstrap uses public auth APIs, ordinary test-device preferences and a consent boundary before the production root loads. Theme and locale are injected through provider props. Smoke board setup selects exactly one recorded owned board through the ordinary activation action. Integration video recorders separately inject a simulator transport before app startup and use real board, query, queue and session actions; they do not seed provider state or fake backend responses. Production components do not read capture environment variables. Missing recorded responses remain smoke failures. View stories do not prove authentication, backend, pagination, sync, BLE or native Live Activity behavior. Simulator video transport proves encoded application writes and session interactions, not physical radio or LED behavior.
 
-`packages/mobile/src/dev/stories/load.ts` is the only door. The story screens, the registry and
-every story file are loaded through a `require` behind `__DEV__`, which Metro folds to `false`
-in a production bundle before it collects dependencies. Two checks hold this:
+Layout measurement uses the generic `LayoutObserverProvider`. Without an observer, anchors are inert and add no wrapper. Story and integration roots install the dev reporter, which retains the `[showcase-anchor]` geometry protocol used by showcase video recording.
 
-- `story-harness-prod-exclusion.test.ts`: app code imports the harness only through `load.ts`
-  (a type-only `import type` is fine, judged per statement), never imports a `*.stories` file,
-  and every `require` in `load.ts` sits behind `__DEV__`.
-- `vp run check:mobile-bundle`: exports both platforms and fails if `[stories] ready` (the story
-  screens) or `[stories] registry` (the registry, which pulls in every story file) is in the
-  bundle.
+## Checks
 
-The one piece that ships is `DevScenarioOverrides`, which production swaps for a pass-through.
-
-## Log lines
-
-The story screens log through Metro, which is how the shots scripts know when to capture:
-
-- `[stories] ready <id>`: a component story has painted. `dev/stories/reset` logs
-  `[stories] ready reset`.
-- `[stories] registry <n> stories`: the registry loaded (once per bundle).
-- `[stories] scenario <id> -> <route>`: a scenario applied its overrides and navigated.
-- `[stories] missing <id> (did you mean …)`: no such story.
-- `[stories] scenario overrides {…}` / `cleared`: the override store changed.
+Run `vp run typecheck:mobile`, `vp run test:mobile` and `vp run check:mobile-bundle`. The production-exclusion checks ensure app imports enter through dev-gated loaders and the exported bundle contains no story registry/readiness sentinels. Native screenshots still require a simulator or emulator; Linux bundle checks do not prove a screen painted on-device.

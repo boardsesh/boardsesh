@@ -1,5 +1,9 @@
 # Homepage showcase video: recording the app footage
 
+Video recording remains an integration flow against real application state and live backend responses. The dev bootstrap injects a simulator Bluetooth transport before application providers mount; production adapters and screens contain no capture flags. Historical setup links in the recipe registry are translated by the recorder into `/dev/integration/video` commands, which select exact owned boards and activate loaded query results through ordinary application actions. Every command must report its matching nonce ready before the next link runs. Grade filters are opened through their real control.
+
+The simulator transport cannot adopt native connections or persist its transient peripheral identity. Widget actions are delivered through JavaScript because simulator APNs tokens cannot authorize production session commands. Shared sessions, queue changes, timing, teardown, measured anchors and video encoding retain the existing real application paths. These recordings exercise integration behavior; isolated view stories remain the capture path for deterministic stills.
+
 The homepage showcase video is three pieces that share one contract
 (`scripts/lib/showcase-video/contract.ts`):
 
@@ -7,9 +11,7 @@ The homepage showcase video is three pieces that share one contract
    `--platform android`, an Android emulator) and writes the app
    footage: a 30 fps JPEG sequence per take plus where each callout target sat
    on screen.
-2. The mobile app, in screenshot mode, logs those callout positions
-   (`useShowcaseAnchor`) and fakes a Bluetooth board so a session has a wall
-   to light.
+2. The dev integration root observes generic layout anchors and injects a simulator Bluetooth transport so normal session controls can run.
 3. **`vp run video:render`** lays the footage into `marketing/showcase-video/`
    and encodes its targets: the homepage hero, social masters, a Reels / ad
    cut, an Apple App Preview and a Play promo (see [Targets](#targets)).

@@ -37,9 +37,6 @@ import {
   type KeepAwakeTracking,
 } from './download-keep-awake';
 
-// Inlined at build time, like every other screenshot-mode gate.
-const SCREENSHOT_MODE = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-
 /** What `Offline Board Download Completed` / `Failed` say about one download. */
 export type DownloadTelemetry = {
   /** The screen was held awake for this download at some point in this app session. */
@@ -296,7 +293,6 @@ function evaluate(now: number = Date.now()): void {
       isForeground,
       msSinceProgress,
       heldMs,
-      screenshotMode: SCREENSHOT_MODE,
     });
   settleHold(nextActive ? scopeKey : null, now);
 

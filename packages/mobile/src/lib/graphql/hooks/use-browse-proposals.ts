@@ -20,7 +20,6 @@ import {
 } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal, ProposalConnection, ProposalStatus } from '@boardsesh/shared-schema';
 import { PROPOSALS_QUERY_KEY } from '../query-keys';
-import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 /** Proposals per page. Matches the notifications feed's page size. */
 export const PROPOSALS_PAGE_SIZE = 20;
@@ -89,12 +88,9 @@ export function useBrowseProposals({ boardType, status, enabled = true }: UseBro
     // short page (the last one, or one thinned by a permission filter) would
     // otherwise skip rows.
     getNextPageParam: (lastPage, allPages) =>
-      screenshotModeNextPageParam(
-        lastPage.browseProposals.hasMore
-          ? allPages.reduce((total, page) => total + page.browseProposals.proposals.length, 0)
-          : undefined,
-        allPages.length,
-      ),
+      lastPage.browseProposals.hasMore
+        ? allPages.reduce((total, page) => total + page.browseProposals.proposals.length, 0)
+        : undefined,
     staleTime: PROPOSALS_STALE_TIME_MS,
   });
 }

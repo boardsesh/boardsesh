@@ -2,7 +2,6 @@ import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { GeneratorGradeScale, PlannedClimbSlot, WorkoutStageFilters } from '@boardsesh/playlist-generator';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
-import { screenshotModeRandom } from '../../../lib/screenshot-mode';
 import type { RandomSource } from '../../../lib/seeded-random';
 import {
   biasCanSkipSent,
@@ -165,16 +164,8 @@ export function borrowedGrade(grades: GeneratorGradeScale, grade: number, step: 
   return grades[position + step]?.difficulty_id ?? null;
 }
 
-/**
- * The grade scale a preview borrows along: `grades`, or none in a screenshot
- * capture. Captures replay recorded SearchClimbs answers by their exact
- * variables, and where a grade came back short (Woods, and MoonBoard at the
- * recorded grade) a nearby grade's search, and the stats of the climbs it
- * would show, have no answer and fail the capture. To show borrowed rows in
- * captures, remove this and re-record the set.
- */
 export function borrowScaleFor(grades: GeneratorGradeScale): GeneratorGradeScale {
-  return process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? NO_GRADES : grades;
+  return grades;
 }
 
 /** `slot` at each grade it may borrow from, nearest first: every step of `steps`, by default `BORROW_GRADE_STEPS`. */
@@ -269,9 +260,7 @@ export type WorkoutPreviewData = {
  * Fisher–Yates in place. Randomized across calls so two builds at the same grade
  * differ.
  *
- * `random` is injected so screenshot mode can hand in a seeded generator and get
- * the same order every capture — see `screenshotModeRandom`. Everything else
- * takes the default and stays genuinely random.
+ * `random` allows repeatable caller-supplied ordering; production uses Math.random.
  */
 export function shuffleInPlace<T>(items: T[], random: RandomSource = Math.random): T[] {
   for (let i = items.length - 1; i > 0; i--) {
@@ -290,8 +279,7 @@ function tierOf(climbUuid: string, topUpTiers: TopUpTiers): number {
  * `climbs` shuffled within each tier, the first tier first, as a new array. A
  * shuffle then mixes the climbs you have not sent among themselves and never
  * puts a sent one ahead of them. With no top-ups it is one plain shuffle that
- * draws from `random` exactly as `shuffleInPlace` does, so a screenshot capture
- * keeps its seeded order.
+ * draws from `random` exactly as `shuffleInPlace` does.
  */
 export function shuffleByTier(
   climbs: readonly Climb[],
@@ -434,7 +422,7 @@ function reuseCachedPool(built: BuiltPools, key: string, demand: number, cache: 
 /** Puts a pool just fetched for `demand` into `built` under `key`, replacing what was there. */
 function storeFetchedPool(built: BuiltPools, key: string, fetched: GradePool, demand: number): void {
   // Shuffle here (not in the fetcher) so a refetch-on-refresh reshuffles.
-  built.pools.set(key, shuffleByTier(fetched.climbs, fetched.topUpTiers, screenshotModeRandom()));
+  built.pools.set(key, shuffleByTier(fetched.climbs, fetched.topUpTiers, Math.random));
   built.poolDemands.set(key, demand);
   if (fetched.topUpTiers.size > 0) built.poolTopUpTiers.set(key, fetched.topUpTiers);
   else built.poolTopUpTiers.delete(key);
@@ -828,11 +816,9 @@ export async function refreshSlotInState(
   // Within either, the earliest tier left wins, so a sent climb comes up last.
   const usedOrAvoided = avoidClimbUuids.size > 0 ? new Set([...state.usedUuids, ...avoidClimbUuids]) : state.usedUuids;
   const pickFresh = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
-    pickRandomUnused(pool, usedOrAvoided, screenshotModeRandom(), topUpTiers);
+    pickRandomUnused(pool, usedOrAvoided, Math.random, topUpTiers);
   const pickAvoided = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
-    usedOrAvoided === state.usedUuids
-      ? null
-      : pickRandomUnused(pool, state.usedUuids, screenshotModeRandom(), topUpTiers);
+    usedOrAvoided === state.usedUuids ? null : pickRandomUnused(pool, state.usedUuids, Math.random, topUpTiers);
   // At the planned grade an avoided climb still beats borrowing.
   const pickPreferred = (pool: readonly Climb[], topUpTiers: TopUpTiers): Climb | null =>
     pickFresh(pool, topUpTiers) ?? pickAvoided(pool, topUpTiers);
@@ -856,7 +842,7 @@ export async function refreshSlotInState(
       // Superseded while it fetched: its pool may be cut short, and the maps below
       // are shared with the state a newer build reads its cache from.
       if (ctx.isCurrent?.() === false) return { state, changed: false };
-      const refreshedPool = shuffleByTier(refetched.climbs, refetched.topUpTiers, screenshotModeRandom());
+      const refreshedPool = shuffleByTier(refetched.climbs, refetched.topUpTiers, Math.random);
       pools.set(poolKey, refreshedPool);
       // Every state from buildPoolsReusing carries poolDemands. Without it the
       // next rebuild sees no entry and refetches this pool, which is safe.

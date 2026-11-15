@@ -23,7 +23,14 @@ import {
   Row,
   Text,
 } from '@expo/ui/jetpack-compose';
-import { clickable, defaultMinSize, fillMaxSize, padding, selectable } from '@expo/ui/jetpack-compose/modifiers';
+import {
+  clickable,
+  defaultMinSize,
+  fillMaxSize,
+  padding,
+  selectable,
+  onGloballyPositioned,
+} from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
@@ -108,7 +115,16 @@ export function AppMenu(props: AppMenuProps) {
             <DropdownMenuItem
               enabled={!action.isDisabled}
               elementColors={{ textColor: itemColor, disabledTextColor: disabledColor }}
-              modifiers={action.showCheck ? [selectable(true, pick)] : undefined}
+              modifiers={[
+                ...(action.showCheck ? [selectable(true, pick)] : []),
+                ...(index === 0 && props.onPresented
+                  ? [
+                      onGloballyPositioned(({ width, height }) => {
+                        if (expanded && width > 0 && height > 0) props.onPresented?.();
+                      }),
+                    ]
+                  : []),
+              ]}
               onClick={pick}
             >
               {action.showCheck ? (

@@ -102,11 +102,7 @@ import { toClimbQueueItem } from '../lib/queue-conversion';
 import { getPlaylistRenderBoardTarget } from '../lib/playlists/playlist-climb-render-board';
 import { resolveCommittableQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track, registerRenderSuperProperties } from '../lib/analytics';
-import {
-  requestedBoardRenderMode,
-  resolveEffectiveRenderSettings,
-  useBoardRenderSettings,
-} from '../lib/board-render-settings';
+import { resolveEffectiveRenderSettings, useBoardRenderSettings } from '../lib/board-render-settings';
 import {
   getBoardseshRendererSupport,
   getBoardseshSupportRevision,
@@ -930,57 +926,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // does not itself TRIGGER the capability probe. In practice that never
   // matters: a board is always rendering (list thumbnails, the play view)
   // well before a climb becomes "active" here, and that render is what starts
-  // the probe. `renderSettingsPending` below covers the cold-start window
-  // where it hasn't answered yet.
-  const { settings: boardRenderSettings, loaded: boardRenderSettingsLoaded } = useBoardRenderSettings();
+  // the probe.
+  const { settings: boardRenderSettings } = useBoardRenderSettings();
   const boardseshSupportTick = useSyncExternalStore(
     subscribeToBoardseshSupport,
     getBoardseshSupportRevision,
     getBoardseshSupportRevision,
   );
-  const { effectiveRenderSettings, renderSettingsPending } = useMemo(() => {
+  const effectiveRenderSettings = useMemo(() => {
     void boardseshSupportTick;
-    const rendererSupport = getBoardseshRendererSupport();
-    return {
-      effectiveRenderSettings: resolveEffectiveRenderSettings(boardRenderSettings, rendererSupport === true),
-      // "We cannot yet say which drawing this climber is looking at." Two
-      // sources, both cold-start-only and both self-clearing:
-      //  - the climber's own stored settings haven't come back from
-      //    AsyncStorage, so a stored `boardsesh` still reads as `default`;
-      //  - the mode being asked for IS `boardsesh` but the capability probe
-      //    has not answered (`null`), which resolves to `classic` for safety.
-      // Reported on `Board Render Failed` and the board-look step events, so a
-      // render whose mode is still unresolved would be filed under the wrong
-      // drawing — the screenshot log below waits this out for the same reason.
-      renderSettingsPending:
-        !boardRenderSettingsLoaded ||
-        (rendererSupport === null && requestedBoardRenderMode(boardRenderSettings) === 'aura'),
-    };
-  }, [boardRenderSettings, boardRenderSettingsLoaded, boardseshSupportTick]);
-  // Screenshot builds: state which drawing the capture is actually going to get.
-  // The probe can veto Aura on a binary too old to draw it, and the fallback is
-  // silent — without this line a whole store set comes back in the classic look
-  // and nobody notices until the listing is live.
-  // `findScreenshotRenderProblems` (scripts/mobile-screenshots.ts) reads this out
-  // of the captured log and fails the run. Dead-strips in normal builds.
-  //
-  // Deduped on the message rather than latched to the first one: if anything ever
-  // moved the resolved mode after the first settled frame, latching would leave
-  // the log describing a drawing the capture didn't use, and the gate reads every
-  // one of these lines — so a late change has to be able to produce a second.
-  const lastLoggedRenderMode = useRef<string | null>(null);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return;
-    if (renderSettingsPending) return;
-    const probe = getBoardseshRendererSupport();
-    const message =
-      `[screenshot] render mode: ${effectiveRenderSettings.mode} ` +
-      `(requested ${requestedBoardRenderMode(boardRenderSettings)}, ` +
-      `probe ${probe === null ? 'unanswered' : probe ? 'ok' : 'unavailable'})`;
-    if (message === lastLoggedRenderMode.current) return;
-    lastLoggedRenderMode.current = message;
-    console.log(message);
-  }, [effectiveRenderSettings, renderSettingsPending, boardRenderSettings]);
+    return resolveEffectiveRenderSettings(boardRenderSettings, getBoardseshRendererSupport() === true);
+  }, [boardRenderSettings, boardseshSupportTick]);
 
   // Registered as PostHog super properties so every board-render event —
   // `Board Render Failed`, the board-look step pair — reads the same resolved

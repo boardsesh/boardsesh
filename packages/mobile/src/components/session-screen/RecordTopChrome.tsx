@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { NativeStackNavigationOptions } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -47,26 +47,11 @@ type RecordTopChromeProps = {
 };
 
 /** Session actions only. Board configuration and lights belong to Climbs. */
-export function RecordTopChrome({
-  title,
-  onEditTitle,
-  onHeightChange,
-  scrollEdge,
-  onShare,
-  onEndSession,
-  exitVariant = 'end',
-}: RecordTopChromeProps) {
+export function RecordTopChrome(props: RecordTopChromeProps) {
+  const { onShare } = props;
   const { t } = useTranslation('session');
-  const { brandColors, systemColors, variant, radii } = useTheme();
   const nativeRootHeader = useNativeRootHeader();
   const glassCapability = useGlassCapability();
-  const topBar = topBarFor(variant);
-  const isLeaveExit = exitVariant === 'leave';
-  const exitLabel = isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession');
-  const exitActionLabel = isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop');
-  const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
-  const editLabel = t('mobile.session.editTitleAria');
-
   // On iPhone Duo's side rail the account and invite are native bar items. A
   // horizontal bar keeps the glass avatar (round photo, initials) and invite.
   const nativeBarItems = useNativeRootBarItems();
@@ -89,6 +74,45 @@ export function RecordTopChrome({
     return barItemsFactory(items);
   }, [nativeBarItems, onRail, accountItem, inviteLabel, onShare]);
 
+  return (
+    <RecordTopChromeView
+      {...props}
+      nativeRootHeader={nativeRootHeader}
+      glassCapability={glassCapability}
+      leftItems={leftItems}
+      materialAvatar={<UserAvatarToolbarAction variant="material" />}
+      glassAvatar={<UserAvatarToolbarAction variant="glass" />}
+    />
+  );
+}
+export function RecordTopChromeView({
+  title,
+  onEditTitle,
+  onHeightChange,
+  scrollEdge,
+  onShare,
+  onEndSession,
+  exitVariant = 'end',
+  nativeRootHeader,
+  glassCapability,
+  leftItems,
+  materialAvatar,
+  glassAvatar,
+}: RecordTopChromeProps & {
+  nativeRootHeader: boolean;
+  glassCapability: boolean;
+  leftItems?: NativeStackNavigationOptions['unstable_headerLeftItems'];
+  materialAvatar: ReactNode;
+  glassAvatar: ReactNode;
+}) {
+  const { t } = useTranslation('session');
+  const { brandColors, systemColors, variant, radii } = useTheme();
+  const topBar = topBarFor(variant);
+  const isLeaveExit = exitVariant === 'leave';
+  const exitLabel = isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession');
+  const exitActionLabel = isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop');
+  const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
+  const editLabel = t('mobile.session.editTitleAria');
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const exitAction = onEndSession ? (
     <PressableSurface
@@ -124,7 +148,7 @@ export function RecordTopChrome({
     // inset after the avatar as every other tab's.
     return (
       <MaterialTopAppBar onHeightChange={onHeightChange} scrollEdge={scrollEdge}>
-        <UserAvatarToolbarAction variant="material" />
+        {materialAvatar}
         <MaterialAppBarTitle
           title={title}
           onPress={onEditTitle}
@@ -154,7 +178,7 @@ export function RecordTopChrome({
 
   const leftActions = (
     <GlassActionToolbar actionCount={onShare ? 2 : 1}>
-      <UserAvatarToolbarAction variant="glass" />
+      {glassAvatar}
       {onShare ? (
         <GlassToolbarAction testID="session-invite" onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
           <Icon maxFontSizeMultiplier={1} name="person.badge.plus" size={topBar.glyphSize} color={systemColors.label} />

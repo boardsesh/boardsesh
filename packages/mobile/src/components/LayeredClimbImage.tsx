@@ -29,6 +29,7 @@ type LayeredClimbImageProps = {
   onOverlayDisplay?: (loadKey: string | null) => void;
   /** Every current background and overlay has received native onDisplay. */
   onArtDisplayed?: (loadKey: string | null) => void;
+  onArtError?: (error: unknown) => void;
   /** Whether this exact mounted stack has displayed every required native layer. */
   onArtReadinessChange?: (ready: boolean) => void;
   /** False only for an empty climb or an explicitly unavailable holds overlay. */
@@ -214,6 +215,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   onOverlayLoad,
   onOverlayDisplay,
   onArtDisplayed,
+  onArtError,
   onArtReadinessChange,
   overlayRequired = true,
   retainDisplayedOverlayFor,
@@ -538,6 +540,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           // backgrounds for the list, native-res for the play view — so
           // there's nothing large to downscale; the CALayer scales to fit.
           allowDownscaling={false}
+          onError={(event) => onArtError?.(event)}
           onLoad={() => noteBoardArtInMemory(backgroundImageUri(path))}
           onDisplay={() => {
             noteBoardArtInMemory(backgroundImageUri(path));
@@ -658,7 +661,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
             onOverlayDisplay?.(emittingLoadKey);
             reportArtDisplayedRef.current();
           }}
-          onError={(event) => onOverlayError?.(event, overlayLoadKey ?? null)}
+          onError={(event) => {
+            onOverlayError?.(event, overlayLoadKey ?? null);
+            onArtError?.(event);
+          }}
         />
       )}
       {aboveOverlay ? (

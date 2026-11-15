@@ -1,5 +1,9 @@
 # Help page clips
 
+Current capture setup: showcase and tutorial recorders use the dev integration bootstrap with an injected simulator Bluetooth transport and ordinary live application controls. Deterministic stills use `vp run mobile:ios-shots -- --story player--lit`; see [Mobile view stories](mobile-stories.md). Generic layout observation preserves the `[showcase-anchor]` protocol.
+
+The manual gesture descriptions below remain useful. Their old `screenshotDrive` query commands are historical: use the actual Connect/Put on board/Drive controls when recording manually. Automated showcase recipes translate their legacy board-selection links at the recorder boundary.
+
 Short silent screen recordings for the `/help` topic pages, for the gestures a
 still cannot teach: a long press that raises a sheet, a swipe that reveals row
 actions, a drag across the board. Everything else stays a

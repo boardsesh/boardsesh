@@ -1,12 +1,11 @@
 import { StyleSheet, View } from 'react-native';
-import type { SessionUser } from '@boardsesh/shared-schema';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
-import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
 import type { StoryModule } from '../../dev/stories/types';
-import { setSetting } from '../../settings';
 import { spacing } from '../../theme/tokens';
 import { WallControlButton } from './WallControlButton';
-import { WallStatePill } from './WallStatePill';
+import { WallStatePillView as WallStatePill } from './WallStatePillView';
+import { PlayerScene } from '../../dev/stories/PlayerScene';
+import { ClimbsStory } from '../climbs/Climbs.stories';
 import { resolveWallControl, type WallControlModel, type WallControlState, type WallHolder } from './wall-control';
 
 // Browsing in a crew session (#4281): the back chip in the drawer header (the
@@ -64,34 +63,6 @@ function storyModel(
   });
 }
 
-const CREW: SessionUser[] = [
-  { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
-  { id: 'story-sam', username: 'Sam', isLeader: false, userId: 'story-sam-user', connectionState: 'CONNECTED' },
-];
-
-const IN_A_CREW: ScenarioOverrides = {
-  queue: { isSharedSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
-};
-
-// What a crew looks like today with `shared-session-browse` off: the session has
-// two people, but the gate never arms, so every tap takes the wall. It is still a
-// crew, so only the wall holder's rest timer may advance it.
-const IN_A_CREW_FLAG_OFF: ScenarioOverrides = {
-  queue: { isSharedSession: false, isCrewSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
-};
-
-// In a crew, browsing comes from the session. Pin Always drive the wall off so a
-// simulator where it was turned on doesn't drive the wall over the crew
-// behaviour these stories draw.
-const asCrewClimber = () => {
-  setSetting('alwaysDrive', false);
-};
-
-// A real crew always has a climb up. The drawer scenarios open the first climb
-// solo (which commits it and lights the wall), then the crew arrives, so a swipe
-// browses away from a climb the back chip can return to.
-const CREW_JOINS_AFTER_MS = 6000;
-
 const stories: StoryModule = {
   title: 'Play drawer / Crew browse',
   stories: {
@@ -103,7 +74,13 @@ const stories: StoryModule = {
             <StoryVariant key={backTarget} label={`back to ${backTarget}`}>
               <StorySurface>
                 <View style={styles.pillRow}>
-                  <WallStatePill state="browsing" backTarget={backTarget} onPress={noop} />
+                  <WallStatePill
+                    driver={null}
+                    driverName="Sam"
+                    state="browsing"
+                    backTarget={backTarget}
+                    onPress={noop}
+                  />
                 </View>
               </StorySurface>
             </StoryVariant>
@@ -132,24 +109,22 @@ const stories: StoryModule = {
       ),
     },
     crewFlagOn: {
-      name: 'Real drawer, crew of two, flag on',
-      overrides: IN_A_CREW,
-      prepare: asCrewClimber,
-      route: '/climbs?screenshotOpenFirst=1',
-      overridesDelayMs: CREW_JOINS_AFTER_MS,
+      name: 'Crew of two, browsing',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} state="crew" />,
     },
     crewFlagOff: {
-      name: 'Real drawer, crew of two, flag off (today)',
-      overrides: IN_A_CREW_FLAG_OFF,
-      prepare: asCrewClimber,
-      route: '/climbs?screenshotOpenFirst=1',
-      overridesDelayMs: CREW_JOINS_AFTER_MS,
+      name: 'Crew of two, driving',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <PlayerScene {...controls} state="lit" />,
     },
     crewList: {
-      name: 'Climb list, crew of two, flag on',
-      overrides: IN_A_CREW,
-      prepare: asCrewClimber,
-      route: '/climbs',
+      name: 'Climb list',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <ClimbsStory {...controls} scene="populated" />,
     },
   },
 };

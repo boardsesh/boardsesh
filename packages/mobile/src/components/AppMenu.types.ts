@@ -40,6 +40,8 @@ export type AppMenuAction = {
 
 type AppMenuSharedProps = {
   actions: AppMenuAction[];
+  /** Native popup content has been positioned on screen. */
+  onPresented?: () => void;
   /** Called with the index of the tapped action, matching `actions` order. Never fires for a disabled row. */
   onSelectIndex: (index: number) => void;
   /** Caps the anchor's width (iOS: SwiftUI `frame`; Android: best-effort RN clip). */

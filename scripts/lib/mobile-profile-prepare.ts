@@ -282,7 +282,7 @@ export function injectProfileTemplates(checkout: string): void {
   }).code;
   writeFileSync(join(mobile, 'app.config.profile-original.cjs'), compiledOriginal);
   cpSync(join(PROFILE_TEMPLATES, 'app.config.ts.template'), originalConfig);
-  const rootLayout = join(mobile, 'app/_layout.tsx');
+  const rootLayout = join(mobile, 'src/application-root.tsx');
   const rootSource = readFileSync(rootLayout, 'utf8');
   if (!rootSource.includes("import { ObserveRoot } from 'expo-observe';"))
     throw new Error('Profiling ObserveRoot import contract changed; review the new source before injection');
@@ -292,7 +292,7 @@ export function injectProfileTemplates(checkout: string): void {
     rootLayout,
     `import '../src/lib/profiling/mobile-cpu-profile';\n${rootSource.replace(
       "import { ObserveRoot } from 'expo-observe';",
-      "import { ObserveRoot } from '../src/lib/profiling/observe-root';",
+      "import { ObserveRoot } from './lib/profiling/observe-root';",
     )}`,
   );
   const packagePath = join(mobile, 'package.json');

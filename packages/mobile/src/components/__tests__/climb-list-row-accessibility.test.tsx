@@ -1,3 +1,4 @@
+vi.mock('../climb-actions/ClimbMenu', () => import('../../../test/climb-menu-stub'));
 // @vitest-environment jsdom
 vi.mock('../climb-actions/ClimbActionsMenu', () => import('../../../test/climb-menu-stub'));
 vi.mock('../PressableSurface', () => {

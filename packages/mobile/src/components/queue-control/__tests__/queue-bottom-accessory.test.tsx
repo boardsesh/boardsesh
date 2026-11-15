@@ -62,30 +62,15 @@ describe('QueueBottomAccessory', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('binds the CPP marker to the actual solo head and withdraws it from retained/shared content', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+  it.each(['0', '1'])('keeps native accessory content independent of retired capture mode %s', (mode) => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', mode);
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost/cpp');
     const { container, rerender } = render(<QueueBottomAccessory />);
-    expect(container.querySelector('[data-testid="cpp-accessory-climb-c1"]')).not.toBeNull();
+    expect(container.querySelector('[data-native-row]')?.getAttribute('data-climb-name')).toBe('Tea Magic');
+    expect(container.querySelector('[data-testid]')).toBeNull();
     cfg.currentClimbQueueItem = null;
     rerender(<QueueBottomAccessory />);
     expect(container.querySelector('[data-native-row]')).not.toBeNull();
-    expect(container.querySelector('[data-testid]')).toBeNull();
-    cfg.currentClimbQueueItem = { climb: { uuid: 'primary-2', name: 'Actual primary' } } as unknown as ClimbQueueItem;
-    rerender(<QueueBottomAccessory />);
-    expect(container.querySelector('[data-testid="cpp-accessory-climb-primary-2"]')).not.toBeNull();
-    cfg.sessionId = 'genuine-shared-session';
-    rerender(<QueueBottomAccessory />);
-    expect(container.querySelector('[data-testid]')).toBeNull();
-  });
-
-  it.each([
-    ['0', 'http://localhost/cpp'],
-    ['1', ''],
-  ])('adds no CPP marker outside its capture scope', (mode, url) => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', mode);
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', url);
-    const { container } = render(<QueueBottomAccessory />);
     expect(container.querySelector('[data-testid]')).toBeNull();
   });
 

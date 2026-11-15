@@ -75,6 +75,9 @@ describe('spray render surfaces', () => {
         if (!IMPORTS_RENDER_DATA.test(source)) continue;
 
         const relative = repoRelative(file);
+        // Isolated stories render supplied geometry; they neither load nor follow
+        // the signed-in user's spray registry. Keep every production surface checked.
+        if (relative.startsWith('src/dev/') || relative.endsWith('.stories.tsx')) continue;
         if (relative in EXEMPT) continue;
         if (source.includes('useSprayWallToken')) continue;
 

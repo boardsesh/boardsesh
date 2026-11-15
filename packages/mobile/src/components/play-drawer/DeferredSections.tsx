@@ -203,7 +203,6 @@ export const DeferredSections = memo(function DeferredSections({
         boardseshGradeEnabled,
         description: climb.description,
         boardName,
-        screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       }),
     [sections, order, isAuthenticated, boardseshGradeEnabled, climb.description, boardName],
   );

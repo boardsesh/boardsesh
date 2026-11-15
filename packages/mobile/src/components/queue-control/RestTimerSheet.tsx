@@ -1,3 +1,10 @@
+import {
+  RestTimerLengthSettingView,
+  RestTimerAutoAdvanceSettingView,
+  RestTimerLockScreenRowView,
+  RestTimerCadenceSettingView,
+  RestTimerSheetView,
+} from './RestTimerSheetViews';
 // The rest timer's options sheet (#5378) — everything the pill can't say in one
 // row, plus the live clock so it never reads as a dead settings page while the
 // rest carries on underneath.
@@ -13,20 +20,7 @@
 // thumb zone, because it is the only part you press without reading.
 
 import { useCallback, useMemo } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { ModalSheet } from '../ModalSheet';
-import { Text } from '../Text';
-import { Button } from '../Button';
-import { SwitchRow } from '../SwitchRow';
-import { SectionHeader } from '../SectionHeader';
-import { SegmentedControl } from '../SegmentedControl';
-import { makeSelectHandler } from '../SegmentedControl.logic';
-import type { SegmentOption } from '../SegmentedControl.types';
-import { ScrollableTabs } from '../navigation/ScrollableTabs';
-import { TickDestructiveRow } from '../tick/TickDestructiveRow';
-import { TICK_ACTION_MAX_FONT_SCALE, TICK_GUTTER, tickActionHeight } from '../tick/tick-sheet-metrics';
-import { useTheme } from '../../providers/theme-provider';
+
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useSessionTimerDriver } from '../../hooks/use-session-timer-driver';
 import { useSetting } from '../../settings';
@@ -37,10 +31,9 @@ import { hapticMedium } from '../../lib/haptics';
 import { type RestTimerMode } from '../../lib/rest-timer';
 import { changeRestTimerMode } from '../../lib/rest-timer-mode-change';
 import { disarmRestTimer, pauseRestTimer, resetRestTimer, resumeRestTimer } from '../../lib/rest-timer-store';
-import { spacing } from '../../theme/tokens';
+
 import { RestTimerHeroClock } from './RestTimerPill';
-import { RestLengthPicker } from './RestLengthPicker';
-import { formatRestLength, hasRestLength } from './rest-length.logic';
+
 import { RestTimerWorkoutPacingRow } from './RestTimerWorkoutPacingRow';
 import {
   useCrewRestConfig,
@@ -49,7 +42,6 @@ import {
 } from '../../hooks/use-effective-rest-pacing';
 import { editCrewRestPacing } from '../../lib/crew-rest-cadence';
 import { RestTimerCrewNote } from './RestTimerCrewNote';
-import { restTimerCrewAutoAdvanceDescription } from './RestTimerPacerCaption';
 
 /**
  * What the three rest controls below show (length, cadence, auto-advance) and
@@ -131,38 +123,9 @@ export function RestTimerLengthControl({ inset = true }: { inset?: boolean } = {
 }
 
 function RestTimerLengthSetting({ inset }: { inset: boolean }) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
   const { targetSeconds, setTargetSeconds } = useRestPacingControls();
 
-  return (
-    // `inset={false}` cancels a caller-owned card gutter. The Record card now
-    // cancels its gutter once around the whole group and uses the default here.
-    <View style={inset ? null : styles.cardBleed}>
-      {/* Label and value on ONE row: this is a field, not a section. A caption
-          stacked over a lone pill left a third of the row empty and read as a
-          heading for a group of one. `body` in `label` rather than the grey
-          uppercase caption, for the same reason — it names the value beside it. */}
-      {/* The picker draws this row itself and opens its slider on a full-width
-          line under it — a slider sharing the row got only the pill's width. */}
-      <View style={styles.lengthBlock}>
-        <RestLengthPicker
-          label={
-            <Text variant="body" color={systemColors.label} style={styles.lengthLabel}>
-              {t('mobile.restTimer.targetLabel')}
-            </Text>
-          }
-          value={targetSeconds}
-          onChange={setTargetSeconds}
-        />
-      </View>
-      {hasRestLength(targetSeconds) ? null : (
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupFootnote}>
-          {t('mobile.restTimer.lengthOffFootnote')}
-        </Text>
-      )}
-    </View>
-  );
+  return <RestTimerLengthSettingView inset={inset} targetSeconds={targetSeconds} setTargetSeconds={setTargetSeconds} />;
 }
 
 /**
@@ -191,40 +154,22 @@ export function RestTimerAutoAdvanceRow() {
 }
 
 function RestTimerAutoAdvanceSetting() {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
   const { autoAdvance, setAutoAdvance, targetSeconds } = useRestPacingControls();
   // The scheduler's own rule (lib/session-timer/driver-rule.ts), so the switch
   // can never say yes where the scheduler would refuse.
   const { blockedReason: driverBlockedReason, role, pacerDisplayName } = useSessionTimerDriver();
   const followsCrewClock = useCrewRestConfig() !== null;
 
-  const blockedReason =
-    driverBlockedReason !== null && !followsCrewClock
-      ? t('mobile.restTimer.autoAdvanceBlocked')
-      : hasRestLength(targetSeconds)
-        ? null
-        : t('mobile.restTimer.autoAdvanceNeedsLength');
-  const crewDescription = followsCrewClock ? restTimerCrewAutoAdvanceDescription(role, pacerDisplayName, t) : null;
-
   return (
-    <View style={styles.autoAdvanceGroup}>
-      <SwitchRow
-        label={t('mobile.restTimer.autoAdvance')}
-        // Short enough to read at a glance. The "only while the app is open"
-        // caveat lives in the group footnote below: SwitchRow includes both its
-        // label and description in the accessible name.
-        description={blockedReason ?? crewDescription ?? t('mobile.restTimer.autoAdvanceHint')}
-        value={autoAdvance}
-        onValueChange={setAutoAdvance}
-        disabled={blockedReason !== null}
-      />
-      {blockedReason === null ? (
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupFootnote}>
-          {t('mobile.restTimer.autoAdvanceFootnote')}
-        </Text>
-      ) : null}
-    </View>
+    <RestTimerAutoAdvanceSettingView
+      autoAdvance={autoAdvance}
+      setAutoAdvance={setAutoAdvance}
+      targetSeconds={targetSeconds}
+      driverBlockedReason={driverBlockedReason}
+      role={role}
+      pacerDisplayName={pacerDisplayName}
+      followsCrewClock={followsCrewClock}
+    />
   );
 }
 
@@ -235,21 +180,11 @@ function RestTimerAutoAdvanceSetting() {
  * switch would promise something nothing does.
  */
 export function RestTimerLockScreenRow() {
-  const { t } = useTranslation('session');
   const [showOnLockScreen, setShowOnLockScreen] = useSetting('restTimerShowOnLockScreen');
 
   if (!sessionPresenceSupportsRestTimer) return null;
 
-  return (
-    <View style={styles.lockScreenGroup}>
-      <SwitchRow
-        label={t('mobile.restTimer.showOnLockScreen')}
-        description={t('mobile.restTimer.showOnLockScreenHint')}
-        value={showOnLockScreen}
-        onValueChange={setShowOnLockScreen}
-      />
-    </View>
-  );
+  return <RestTimerLockScreenRowView showOnLockScreen={showOnLockScreen} setShowOnLockScreen={setShowOnLockScreen} />;
 }
 
 /**
@@ -277,26 +212,11 @@ export function RestTimerCadenceSection({ inset = true }: { inset?: boolean } = 
 }
 
 function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
-  const { fontScale } = useWindowDimensions();
   const { mode, targetSeconds, takeCrewPacing } = useRestPacingControls();
   // Only whether it is armed: the full state emits on every tick, pause and
   // reset, and this block sits on the Record card as well as the sheet.
   const armed = useRestTimerArmed();
   const { sessionId } = useQueueSessionId();
-
-  const fixedWindowLabel = hasRestLength(targetSeconds)
-    ? t('mobile.restTimer.modeEvery', { length: formatRestLength(targetSeconds) })
-    : t('mobile.restTimer.modeOnTheMinute');
-
-  const options = useMemo<SegmentOption<RestTimerMode>[]>(
-    () => [
-      { key: 'afterTick', label: t('mobile.restTimer.modeAfterTick') },
-      { key: 'onTheMinute', label: fixedWindowLabel },
-    ],
-    [fixedWindowLabel, t],
-  );
 
   const handleSelect = useCallback(
     (nextMode: RestTimerMode) => {
@@ -309,27 +229,9 @@ function RestTimerCadenceSetting({ inset }: { inset: boolean }) {
     },
     [armed, mode, sessionId, takeCrewPacing],
   );
-  // Match the iOS segmented control's large-text fallback. Paper's fixed-width
-  // Android segments ellipsize the cadence labels when the text grows.
-  const usesScrollingTabs = fontScale > 1.3;
-  const CadenceControl = usesScrollingTabs ? ScrollableTabs : SegmentedControl;
-  const handleScrollingSelect = useMemo(() => makeSelectHandler(handleSelect), [handleSelect]);
 
   return (
-    <View style={inset ? null : styles.cardBleed}>
-      <SectionHeader title={t('mobile.restTimer.modeLabel')} />
-      <View style={styles.cadenceContent}>
-        <CadenceControl
-          options={options}
-          selectedKey={mode}
-          onSelect={usesScrollingTabs ? handleScrollingSelect : handleSelect}
-          accessibilityLabel={t('mobile.restTimer.modeAria')}
-        />
-        <Text variant="footnote" color={systemColors.secondaryLabel}>
-          {mode === 'afterTick' ? t('mobile.restTimer.modeAfterTickHint') : t('mobile.restTimer.modeOnTheMinuteHint')}
-        </Text>
-      </View>
-    </View>
+    <RestTimerCadenceSettingView inset={inset} mode={mode} targetSeconds={targetSeconds} onSelect={handleSelect} />
   );
 }
 
@@ -338,11 +240,7 @@ type RestTimerSheetProps = {
   onClose: () => void;
 };
 
-const REST_TIMER_SNAP_POINTS = ['90%'];
-
 export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
-  const { t } = useTranslation('session');
-  const { fontScale } = useWindowDimensions();
   const { isRunning, anchorMs } = useRestTimerState();
 
   // `afterTick` before the first tick: armed and nominally running, but with no
@@ -350,13 +248,6 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   // MOUNTED and dimmed rather than disappearing, so the column under the
   // climber's thumb doesn't jump the moment they log a climb.
   const waitingForFirstTick = isRunning && anchorMs === null;
-
-  // Memoized: `Button` is a native host, so a fresh style object every render is
-  // a fresh prop on both of them. Same shared height, 2:1 split and Dynamic Type
-  // cap as TickActionBar (48pt, labels stop at 1.3x) — two different native
-  // controls left to measure themselves land about 7pt apart and the row reads
-  // crooked. Pinned buttons render at `.regular` control size so both fill the pin.
-  const transportStyles = useMemo(() => transportButtonStyles(tickActionHeight(fontScale)), [fontScale]);
 
   const handleTogglePause = useCallback(() => {
     hapticMedium();
@@ -375,122 +266,20 @@ export function RestTimerSheet({ visible, onClose }: RestTimerSheetProps) {
   }, [onClose]);
 
   return (
-    // A bounded scroll body keeps the final action reachable at accessibility
-    // sizes and on short screens. Content-fitting proposes an unbounded height
-    // to the native host, so adding a ScrollView alone cannot bound its viewport.
-    <ModalSheet visible={visible} snapPoints={REST_TIMER_SNAP_POINTS} scrollable onClose={onClose} enablePanDownToClose>
-      {/* No container `gap`: each block owns its own rhythm (SectionHeader brings
-          the section's top padding, each control its own inset), and a blanket
-          gap on top of those produced the ladder of unequal seams the old sheet
-          had. */}
-      <View style={styles.content}>
-        {/* The rest keeps running while this is open, so the sheet shows it. Its
-            own leaf — the 1 Hz tick stops here and never reaches this form. */}
-        <RestTimerHeroClock />
-
-        {/* A crew's clock is everyone's: say so before the controls that change it. */}
-        <RestTimerCrewNote placement="sheet" />
-
-        {/* Rest, then cadence, then what happens when it runs out — the order
-            you set them up in. The auto-advance switch carries no section
-            heading: it names itself, and a caption over a single switch is a
-            heading for a group of one. */}
-        <RestTimerLengthControl />
-
-        <RestTimerCadenceSection />
-
-        <RestTimerAutoAdvanceRow />
-
-        <RestTimerLockScreenRow />
-
-        {/* Transport last, in the thumb zone. Tonal Reset rather than a text
-            button: same silhouette as Pause, one emphasis step down, so it stops
-            reading as a link floating beside a button. */}
-        <View style={styles.transportRow}>
-          <Button
-            title={isRunning ? t('mobile.restTimer.pause') : t('mobile.restTimer.resume')}
-            icon={isRunning ? 'pause' : 'play.fill'}
-            onPress={handleTogglePause}
-            disabled={waitingForFirstTick}
-            variant="filled"
-            size="large"
-            maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
-            style={transportStyles.primary}
-          />
-          <Button
-            title={t('mobile.restTimer.reset')}
-            icon="refresh"
-            onPress={handleReset}
-            disabled={waitingForFirstTick}
-            variant="tonal"
-            size="large"
-            maxFontSizeMultiplier={TICK_ACTION_MAX_FONT_SCALE}
-            style={transportStyles.secondary}
-          />
-        </View>
-
-        {/* The one way to turn the timer off from wherever you happen to be. A
-            STOP glyph, not a clock: the clock is the same glyph as the pill that
-            opened this sheet, so it read as "set a timer" — the opposite. */}
-        <View style={styles.destructiveGroup}>
-          <TickDestructiveRow label={t('mobile.restTimer.turnOff')} icon="end.session" onPress={handleTurnOff} />
-        </View>
-
-        {/* Nothing below the destructive row: ModalSheet's footerless branch
-            already composes the window inset into the body. */}
-      </View>
-    </ModalSheet>
+    <RestTimerSheetView
+      visible={visible}
+      onClose={onClose}
+      isRunning={isRunning}
+      waitingForFirstTick={waitingForFirstTick}
+      onTogglePause={handleTogglePause}
+      onReset={handleReset}
+      onTurnOff={handleTurnOff}
+      clock={<RestTimerHeroClock />}
+      crewNote={<RestTimerCrewNote placement="sheet" />}
+      length={<RestTimerLengthControl />}
+      cadence={<RestTimerCadenceSection />}
+      autoAdvance={<RestTimerAutoAdvanceRow />}
+      lockScreen={<RestTimerLockScreenRow />}
+    />
   );
 }
-
-/** The transport row's two buttons: one shared height, and the 2:1 split that
- *  makes Pause the bigger object. Mirrors `tickButtonStyles` in TickActionBar. */
-function transportButtonStyles(height: number) {
-  return {
-    primary: { flex: 2, height },
-    secondary: { flex: 1, height },
-  };
-}
-
-const styles = StyleSheet.create({
-  content: {
-    paddingTop: spacing[2],
-  },
-  // Cancels a caller-owned card gutter; each child re-applies TICK_GUTTER.
-  cardBleed: {
-    marginHorizontal: -spacing[4],
-  },
-  lengthBlock: {
-    paddingHorizontal: TICK_GUTTER,
-    paddingTop: spacing[1],
-  },
-  // Explanatory line under a group, aligned to the label seam the SwitchRow and
-  // SectionHeader both use.
-  lengthLabel: {
-    flexShrink: 1,
-  },
-  groupFootnote: {
-    paddingHorizontal: TICK_GUTTER,
-    paddingTop: spacing[1],
-  },
-  cadenceContent: {
-    paddingHorizontal: TICK_GUTTER,
-    gap: spacing[2],
-  },
-  autoAdvanceGroup: {
-    marginTop: spacing[4],
-  },
-  lockScreenGroup: {
-    marginTop: spacing[4],
-  },
-  transportRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: TICK_GUTTER,
-    marginTop: spacing[6],
-  },
-  destructiveGroup: {
-    marginTop: spacing[8],
-  },
-});

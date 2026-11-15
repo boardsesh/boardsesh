@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-const anchorCalls = vi.hoisted(() => ({ names: [] as string[] }));
+const anchorCalls = vi.hoisted(() => ({ names: [] as string[], enabled: false }));
 // The stack's frame: a phone's whole window, or an iPad's content beside the sidebar.
 const stackFrame = vi.hoisted(() => ({ width: 402 }));
 
@@ -37,6 +37,7 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 62, right: 0, bottom: 0, left: 0 }),
 }));
 vi.mock('../../../lib/showcase-anchor', () => ({
+  useLayoutObserverEnabled: () => anchorCalls.enabled,
   useShowcaseAnchor: (name: string) => {
     anchorCalls.names.push(name);
     return { ref: undefined, onLayout: () => undefined };
@@ -51,13 +52,13 @@ afterEach(() => {
 });
 
 async function loadAnchor(screenshotMode: boolean) {
-  vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode ? '1' : '');
+  anchorCalls.enabled = screenshotMode;
   vi.resetModules();
   return (await import('../NativeTrailingItemShowcaseAnchor')).NativeTrailingItemShowcaseAnchor;
 }
 
 describe('NativeTrailingItemShowcaseAnchor', () => {
-  it('logs an untouchable 44pt box where history sits in the bar, in screenshot mode', async () => {
+  it('logs an untouchable 44pt box where history sits in the bar, with a layout observer', async () => {
     const Anchor = await loadAnchor(true);
     const { container } = render(<Anchor name="board-history-button" positionFromEnd={1} />);
     const box = container.querySelector('[data-box]');
@@ -83,7 +84,7 @@ describe('NativeTrailingItemShowcaseAnchor', () => {
     expect(JSON.parse(box?.getAttribute('data-box') ?? '{}')).toMatchObject({ left: 930 - 16 - 44 - 57 });
   });
 
-  it('renders nothing outside screenshot mode', async () => {
+  it('renders nothing without a layout observer', async () => {
     const Anchor = await loadAnchor(false);
     const { container } = render(<Anchor name="board-history-button" positionFromEnd={1} />);
     expect(container.innerHTML).toBe('');

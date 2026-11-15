@@ -12,11 +12,11 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, act, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { router } from 'expo-router';
+import { createElement, type ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type PlaylistItem = {
   uuid: string;
@@ -162,8 +162,8 @@ vi.mock('expo-router', () => ({
   },
 }));
 vi.mock('../../../../src/lib/connectivity/use-connectivity', () => ({ useConnectivity: () => connectivityState }));
-vi.mock('../../../../src/components/OfflineState', () => ({
-  OfflineState: () => createElement('div', { 'data-offline-state': true }),
+vi.mock('../../../../src/components/OfflineStateView', () => ({
+  OfflineStateView: () => createElement('div', { 'data-offline-state': true }),
 }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
@@ -742,7 +742,7 @@ describe('DiscoverLibrary owned playlists in a screenshot capture', () => {
     vi.unstubAllEnvs();
   });
 
-  it('waits for the capture to bind its board instead of asking for every board\u2019s playlists', () => {
+  it('uses the ordinary unscoped query when no board is selected', () => {
     // A capture boots with no stored board and binds one a moment later. The
     // recorded fixture set holds only board-filtered pages.
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
@@ -751,7 +751,7 @@ describe('DiscoverLibrary owned playlists in a screenshot capture', () => {
     renderHub();
 
     expect(userPlaylistsOptions.length).toBeGreaterThan(0);
-    for (const options of userPlaylistsOptions) expect(options.token).toBeNull();
+    for (const options of userPlaylistsOptions) expect(options.token).toBe('token');
   });
 
   it('asks for the bound board\u2019s playlists once the capture has one', () => {

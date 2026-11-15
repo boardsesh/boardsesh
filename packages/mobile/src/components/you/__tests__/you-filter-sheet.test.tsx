@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ComponentProps, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UnifiedTimeframeType } from '@boardsesh/profile-stats';
 
@@ -63,17 +63,12 @@ function renderSheet() {
   return { props, close, ...render(createElement(YouFilterSheet, props)) };
 }
 
-describe('YouFilterSheet screenshot diagnostics', () => {
+describe('YouFilterSheet callbacks', () => {
   it('keeps normal callbacks silent and forwards filter and close actions', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const { props, close, getByRole, getByTestId } = renderSheet();
     expect(sheetHost.props?.ref).toBe(props.sheetRef);
-    act(() => {
-      sheetHost.props?.onChange(0);
-      sheetHost.props?.onChange(-1);
-      sheetHost.props?.onFullyDismissed();
-    });
     fireEvent.click(getByRole('button', { name: 'mobile.filter.allBoards' }));
     fireEvent.click(getByTestId('timeframe'));
     fireEvent.click(getByTestId('close'));
@@ -83,25 +78,12 @@ describe('YouFilterSheet screenshot diagnostics', () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it('logs only invoked callbacks in screenshot mode and keeps handlers stable', () => {
+  it('ignores retired capture flags while forwarding the selected board', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.spyOn(Date, 'now').mockReturnValue(5678);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const { props, rerender } = renderSheet();
-    const initialCallbacks = sheetHost.props!;
+    const { props, getByRole } = renderSheet();
+    fireEvent.click(getByRole('button', { name: 'mobile.filter.allBoards' }));
+    expect(props.onSelectBoard).toHaveBeenCalledExactlyOnceWith('all');
     expect(log).not.toHaveBeenCalled();
-    rerender(createElement(YouFilterSheet, { ...props, selectedBoard: 'kilter' }));
-    expect(sheetHost.props?.onChange).toBe(initialCallbacks.onChange);
-    expect(sheetHost.props?.onFullyDismissed).toBe(initialCallbacks.onFullyDismissed);
-    act(() => {
-      sheetHost.props?.onChange(0);
-      sheetHost.props?.onChange(-1);
-      sheetHost.props?.onFullyDismissed();
-    });
-    expect(log.mock.calls).toEqual([
-      ['[showcase-profile-filter] {"event":"change","index":0,"timestampMs":5678}'],
-      ['[showcase-profile-filter] {"event":"change","index":-1,"timestampMs":5678}'],
-      ['[showcase-profile-filter] {"event":"fully-dismissed","timestampMs":5678}'],
-    ]);
   });
 });

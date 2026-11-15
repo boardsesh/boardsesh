@@ -63,12 +63,7 @@ export function updateConsentState(update: Partial<MobileConsentSnapshot>): void
       ('accountId' in update && update.accountId !== snapshot.accountId))
   )
     update = { ...update, sdkReady: false };
-  if (
-    'record' in update &&
-    needsPrompt(update.record ?? null) &&
-    !(update.killed ?? snapshot.killed) &&
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1'
-  )
+  if ('record' in update && needsPrompt(update.record ?? null) && !(update.killed ?? snapshot.killed))
     update = { ...update, settled: false };
   if (snapshot.killed && update.killed === false && needsPrompt(snapshot.record))
     update = { ...update, settled: false };
@@ -97,7 +92,7 @@ export function isConsentAuthorityGranted(): boolean {
   // Reading the shared cookie can synchronously invalidate account authority.
   // Evaluate the updated snapshot after that observation, including pending denial.
   readBrowserConsent?.();
-  if (snapshot.killed || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
+  if (snapshot.killed) return false;
   return (
     snapshot.loaded &&
     snapshot.settled &&

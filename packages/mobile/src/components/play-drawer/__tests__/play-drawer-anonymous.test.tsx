@@ -3063,7 +3063,7 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
   };
 
   it.each(['normal', 'legacy-cpp', 'selected-cpp'] as const)(
-    'isolates a restored shared-session mirror only for new explicit CPP selections (%s)',
+    'mirrors the restored shared session regardless of retired capture flags (%s)',
     (mode) => {
       const previousMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
       const previousCommands = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
@@ -3083,9 +3083,8 @@ describe('PlayDrawer — the mirror toggle and the wall', () => {
           (lastActionBarProps().onMirror as () => void)();
         });
         // mirrorCurrentClimb is the provider's setQueueMirrored dispatch path.
-        expect(queueActions.mirrorCurrentClimb).toHaveBeenCalledTimes(mode === 'selected-cpp' ? 0 : 1);
-        if (mode !== 'selected-cpp')
-          expect(queueActions.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-current');
+        expect(queueActions.mirrorCurrentClimb).toHaveBeenCalledTimes(1);
+        expect(queueActions.mirrorCurrentClimb).toHaveBeenCalledWith(true, 'queue-item-current');
       } finally {
         if (previousMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
         else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = previousMode;

@@ -200,27 +200,29 @@ export function AppMenu(props: AppMenuProps) {
 
   return (
     <Menu visible={visible} onDismiss={() => setVisible(false)} anchor={anchor}>
-      {resolved.map((action, index) => (
-        // Composite key: scope entries can share a display name (two gyms named
-        // the same), so the label alone isn't unique — pair it with the position.
-        <Fragment key={`${index}-${action.label}`}>
-          {/* A menu group divider. Not an item, so it takes no index. */}
-          {action.dividerBefore ? <Divider /> : null}
-          <Menu.Item
-            title={action.label}
-            leadingIcon={action.showCheck ? 'check' : undefined}
-            disabled={action.isDisabled}
-            titleStyle={{
-              color: action.isDisabled ? disabledColor : action.isDestructive ? (m3.error as string) : labelColor,
-            }}
-            onPress={() => {
-              if (!isMenuActionSelectable(resolved, index)) return;
-              setVisible(false);
-              onSelectIndex(index);
-            }}
-          />
-        </Fragment>
-      ))}
+      <View onLayout={visible ? props.onPresented : undefined}>
+        {resolved.map((action, index) => (
+          // Composite key: scope entries can share a display name (two gyms named
+          // the same), so the label alone isn't unique — pair it with the position.
+          <Fragment key={`${index}-${action.label}`}>
+            {/* A menu group divider. Not an item, so it takes no index. */}
+            {action.dividerBefore ? <Divider /> : null}
+            <Menu.Item
+              title={action.label}
+              leadingIcon={action.showCheck ? 'check' : undefined}
+              disabled={action.isDisabled}
+              titleStyle={{
+                color: action.isDisabled ? disabledColor : action.isDestructive ? (m3.error as string) : labelColor,
+              }}
+              onPress={() => {
+                if (!isMenuActionSelectable(resolved, index)) return;
+                setVisible(false);
+                onSelectIndex(index);
+              }}
+            />
+          </Fragment>
+        ))}
+      </View>
     </Menu>
   );
 }

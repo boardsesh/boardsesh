@@ -93,9 +93,6 @@ const offlineSyncFetch: GraphQLFetch = (query, variables) => getOfflineSyncHttpC
  * Screenshot captures replay recorded responses, and a write nobody recorded
  * fails the capture; the captured flows never need the server's copy either.
  */
-function isScreenshotCapture(): boolean {
-  return process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-}
 
 /** Without the offline database (flag off, web without the engine): straight to the server, best effort. */
 async function sendDirectly(input: RecordSessionWorkoutInput): Promise<SessionWorkoutWriteOutcome> {
@@ -220,8 +217,7 @@ function currentContent(
 
 /**
  * Queue the run for `sessionId` at its next revision. Does nothing for a
- * session id the server never minted (stories, fakes, daily cards), in a
- * screenshot capture, when the store holds no run for the session, or when the
+ * session id the server never minted, when the store holds no run for the session, or when the
  * last copy still waiting already holds everything. Never throws: losing a
  * write costs the session screens their workout, never the climb.
  *
@@ -232,7 +228,7 @@ export async function enqueueSessionWorkoutWrite(
   sessionId: string | null | undefined,
   { queryClient, queueItems }: SessionWorkoutWriteOptions,
 ): Promise<SessionWorkoutWriteOutcome> {
-  if (!isServerSessionId(sessionId) || isScreenshotCapture()) return 'skipped';
+  if (!isServerSessionId(sessionId)) return 'skipped';
   const record = getWorkoutRunState();
   if (record?.sessionId !== sessionId) return 'skipped';
   if (queueItems && queueItems.length > 0) {
@@ -281,7 +277,7 @@ export async function enqueueEndedSessionWorkout(
   record: WorkoutRunRecord,
   { queryClient, ownerUserId }: Pick<SessionWorkoutWriteOptions, 'queryClient'> & { ownerUserId: string | null },
 ): Promise<SessionWorkoutWriteOutcome> {
-  if (!isServerSessionId(record.sessionId) || isScreenshotCapture()) return 'skipped';
+  if (!isServerSessionId(record.sessionId)) return 'skipped';
   const content = buildSessionWorkoutContent(record);
   if (!content) {
     noteSkippedWrite('no-plan', 'ended');

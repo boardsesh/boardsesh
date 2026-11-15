@@ -14,8 +14,7 @@ import { nowMs } from './clock';
 // This is the ONLY place under packages/mobile allowed to import
 // `formatTickRelativeTime` from `@boardsesh/profile-stats` directly — every
 // component that shows recency calls this wrapper instead, so `nowMs()`
-// (the screenshot-mode frozen clock, see lib/clock.ts) reaches every relative
-// timestamp through one door. Enforced by
+// from lib/clock.ts reaches every relative timestamp through one door. Enforced by
 // `src/__tests__/relative-time-uses-frozen-clock.test.ts`.
 export function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '';

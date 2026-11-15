@@ -21,7 +21,6 @@ import {
   type WorkoutStageKind,
   type WorkoutType,
 } from '@boardsesh/playlist-generator';
-import { SCREENSHOT_WORKOUT } from '../../../lib/screenshot-mode';
 
 /**
  * One block's climb filters. A workout block's options carry copies of these
@@ -51,26 +50,16 @@ export const MAX_WORKOUT_BLOCKS = 5;
 // from its chip.
 const UNTIMED_WORKOUT_TYPES: readonly WorkoutType[] = ['volume', 'pyramid', 'ladder', 'gradeFocus'];
 
-function isTimedWorkoutType(type: WorkoutBlockType): boolean {
-  return type !== 'warmUp' && TIMED_WORKOUT_TYPES.includes(type);
-}
-
 /**
  * Whether the chips offer the timed types (on the minute, 4x4, limit) until they
  * launch (#5380): in every dev build, and in a store build where the
  * `workout-timed-blocks` flag is on (testers, through PostHog or the Feature
  * Flags screen). `flagEnabled` is that flag, read by the component through
  * `useWorkoutTimedBlocksFlag`; it is off by default, so an OTA that reaches store
- * binaries shows climbers today's chips. Screenshot mode runs dev builds too
- * (the store captures and the E2E smokes), so there they show only when the
- * capture opens on a timed block, and the store shots keep today's chips.
+ * binaries shows climbers today's chips.
  */
 export function timedWorkoutBlocksOffered(flagEnabled: boolean): boolean {
-  if (!__DEV__ && !flagEnabled) return false;
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-    return SCREENSHOT_WORKOUT !== null && isTimedWorkoutType(SCREENSHOT_WORKOUT);
-  }
-  return true;
+  return __DEV__ || flagEnabled;
 }
 
 // Both lists stay the same arrays between renders, so a caller can pass them as

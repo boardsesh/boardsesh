@@ -1,21 +1,13 @@
-import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
-import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { SESSION_NAME_MAX_LENGTH, type SessionDetail } from '@boardsesh/shared-schema';
+import type { SessionDetail } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { Sheet } from '../Sheet';
 import type { SessionPreview } from '../../lib/graphql/operations';
-import { Text } from '../Text';
-import { SheetTopBar } from '../SheetTopBar';
-import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
 import { track } from '../../lib/analytics';
 import { hapticSuccess } from '../../lib/haptics';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { SessionTitleSheetView } from './SessionTitleSheetView';
 
 type SessionTitleSheetProps = {
   /** Controlled visibility. */
@@ -37,10 +29,7 @@ type SessionTitleSheetProps = {
  * a toast would render behind the native sheet.
  */
 export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: SessionTitleSheetProps) {
-  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
-  const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
   const queryClient = useQueryClient();
   const updateSession = useUpdateSession();
 
@@ -90,66 +79,22 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
     );
   }, [sessionId, name, updateSession, queryClient, onClose]);
 
-  const header = (
-    <SheetTopBar
-      title={t('mobile.session.renameTitle')}
-      leading={{ kind: 'cancel', onPress: onClose, accessibilityLabel: tCommon('comment.cancel') }}
-      trailing={{
-        kind: 'confirm',
-        label: t('mobile.session.renameSave'),
-        onPress: handleSave,
-        loading: updateSession.isPending,
-        disabled: !sessionId,
-        prominent: true,
-      }}
+  return (
+    <SessionTitleSheetView
+      visible={visible}
+      name={name}
+      isPending={updateSession.isPending}
+      saveDisabled={!sessionId}
+      errorMessage={
+        updateSession.isError
+          ? updateSession.error instanceof Error && updateSession.error.message.includes('creator')
+            ? t('mobile.session.renameNotAllowed')
+            : t('mobile.session.renameError')
+          : null
+      }
+      onChangeName={handleChange}
+      onSave={handleSave}
+      onClose={onClose}
     />
   );
-
-  // The header makes the Sheet wrap its body in a column padded by the keyboard
-  // overlap, so the field stays above the keyboard without padding of our own. `androidContentSized`
-  // keeps that wrapper content-fitted on Android, where a flex-1 column inside
-  // a content-sized host collapses to zero height.
-  return (
-    <Sheet visible={visible} enableDynamicSizing androidContentSized onClose={onClose} header={header}>
-      <View style={styles.body}>
-        <BottomSheetTextInput
-          value={name}
-          onChangeText={handleChange}
-          placeholder={t('creation.form.sessionNamePlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          maxLength={SESSION_NAME_MAX_LENGTH}
-          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-          returnKeyType="done"
-          autoFocus
-          onSubmitEditing={handleSave}
-        />
-        {updateSession.isError ? (
-          <Text variant="footnote" color={brandColors.error} style={styles.error}>
-            {/* The server rejects non-creators; "try again" would mislead them. */}
-            {updateSession.error instanceof Error && updateSession.error.message.includes('creator')
-              ? t('mobile.session.renameNotAllowed')
-              : t('mobile.session.renameError')}
-          </Text>
-        ) : null}
-      </View>
-    </Sheet>
-  );
 }
-
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    body: {
-      paddingHorizontal: spacing[4],
-      paddingTop: spacing[3],
-      gap: spacing[3],
-    },
-    input: {
-      borderRadius: borderRadius.lg,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[3],
-      fontSize: textStyles.callout.fontSize,
-    },
-    error: {
-      marginTop: -spacing[1],
-    },
-  });

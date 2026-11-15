@@ -749,6 +749,7 @@ describe('mobile profile preparation and workload eligibility', () => {
       mobile = join(checkout, 'packages/mobile');
     mkdirSync(join(mobile, 'plugins'), { recursive: true });
     mkdirSync(join(mobile, 'app'));
+    mkdirSync(join(mobile, 'src'), { recursive: true });
     mkdirSync(join(mobile, 'modules/live-activity/ios'), { recursive: true });
     symlinkSync(join(ROOT, 'packages/mobile/node_modules'), join(mobile, 'node_modules'), 'dir');
     writeFileSync(
@@ -770,7 +771,7 @@ describe('mobile profile preparation and workload eligibility', () => {
       `export default () => ({name:'Boardsesh',slug:'boardsesh',ios:{bundleIdentifier:'com.boardsesh.app',entitlements:{'com.apple.security.application-groups':['group.com.boardsesh.app']}},android:{package:'com.boardsesh.app'},plugins:[],extra:{eas:{projectId:'project',observe:{endpointUrl:'https://o.expo.dev'}}}});`,
     );
     writeFileSync(
-      join(mobile, 'app/_layout.tsx'),
+      join(mobile, 'src/application-root.tsx'),
       "import { ObserveRoot } from 'expo-observe';\nexport default function Layout() { return null; }",
     );
     writeFileSync(
@@ -814,7 +815,7 @@ describe('mobile profile preparation and workload eligibility', () => {
       'expo-app-metrics',
     ]);
     expect(readFileSync(join(mobile, 'src/lib/observe-bootstrap.ts'), 'utf8')).toContain('setObserveRuntime(null)');
-    expect(readFileSync(join(mobile, 'app/_layout.tsx'), 'utf8')).not.toContain("from 'expo-observe'");
+    expect(readFileSync(join(mobile, 'src/application-root.tsx'), 'utf8')).not.toContain("from 'expo-observe'");
     const plugin = createRequire(join(mobile, 'plugins/with-mobile-profile.cjs'))('./with-mobile-profile.cjs') as (
       configuration: object,
     ) => object;

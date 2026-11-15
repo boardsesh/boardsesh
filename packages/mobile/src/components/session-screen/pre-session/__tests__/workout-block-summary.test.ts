@@ -27,6 +27,7 @@ vi.mock('../../../Text', () => ({ Text: () => null }));
 vi.mock('../../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({}) }));
 vi.mock('../../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../../providers/theme-provider', () => ({ useTheme: () => ({}) }));
+vi.mock('../workout-presentation', () => ({ useWorkoutPresentation: () => ({}) }));
 vi.mock('../WorkoutBlockFields', () => ({ WorkoutBlockFields: () => null, warmUpLengthLabel: () => 'warm-up' }));
 
 import { blockSummary } from '../WorkoutBlockCard';

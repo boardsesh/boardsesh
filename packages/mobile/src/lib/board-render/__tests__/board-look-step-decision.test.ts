@@ -11,7 +11,7 @@ import {
 function eligible(overrides: Partial<BoardLookStepInput> = {}): BoardLookStepInput {
   return {
     ready: true,
-    screenshotMode: false,
+
     settingsLoaded: true,
     storedMode: 'default',
     stepSeen: false,
@@ -54,10 +54,6 @@ describe('decideBoardLookStep', () => {
   });
 
   describe('never shows', () => {
-    it('in screenshot mode', () => {
-      expect(decideBoardLookStep(eligible({ screenshotMode: true }))).toBe('none');
-    });
-
     it('to a climber who already chose Classic', () => {
       expect(decideBoardLookStep(eligible({ storedMode: 'classic' }))).toBe('none');
     });
@@ -112,7 +108,6 @@ describe('decideBoardLookStep', () => {
     }
 
     it.each([
-      ['screenshot mode', { screenshotMode: true }],
       ['an explicit mode choice', { storedMode: 'classic' as const }],
       ['a blocked route', { topSegment: 'onboarding' }],
       ['an unusable renderer', { boardseshRendererAvailable: false }],
@@ -129,7 +124,6 @@ describe('explainBoardLookStep', () => {
   it.each([
     ['never_asked', {}, 'show'],
     ['not_ready', { ready: false }, 'wait'],
-    ['screenshot', { screenshotMode: true }, 'none'],
     ['settings_loading', { settingsLoaded: false }, 'wait'],
     ['look_chosen', { storedMode: 'classic' as const }, 'none'],
     ['blocked_segment', { topSegment: 'boards' }, 'none'],

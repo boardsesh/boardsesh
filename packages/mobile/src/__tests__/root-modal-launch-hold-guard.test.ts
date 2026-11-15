@@ -25,7 +25,7 @@ import { describe, expect, it } from 'vitest';
 // this guard updated alongside it.
 
 const APP_DIR = new URL('../../app/', import.meta.url);
-const layoutSource = readFileSync(new URL('_layout.tsx', APP_DIR), 'utf8');
+const layoutSource = readFileSync(new URL('../src/application-root.tsx', APP_DIR), 'utf8');
 
 /** Presentations iOS shows as a separate view controller over the presenting one. */
 const SEPARATE_VIEW_CONTROLLER_PRESENTATIONS = [

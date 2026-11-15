@@ -1,4 +1,5 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useIsFocused } from 'expo-router';
+import { useNavigationEntryOverride } from '../src/providers/navigation-entry-provider';
 import { getAppEntryHref } from '../src/lib/app-entry-route';
 
 /**
@@ -7,5 +8,7 @@ import { getAppEntryHref } from '../src/lib/app-entry-route';
  * Explicit tab routes (join -> Record, deep links) keep their own target.
  */
 export default function MobileHome() {
-  return <Redirect href={getAppEntryHref()} />;
+  const focused = useIsFocused();
+  const entryOverride = useNavigationEntryOverride();
+  return focused ? <Redirect href={entryOverride ?? getAppEntryHref()} /> : null;
 }

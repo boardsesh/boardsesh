@@ -187,16 +187,13 @@ describe('YouScreen (own profile)', () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])('logs a screenshot filter press with ref available=%s', (available) => {
+  it.each([true, false])('opens filters when available without capture telemetry (ref=%s)', (available) => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.spyOn(Date, 'now').mockReturnValue(1234);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     ctrl.filterSheetAvailable = available;
     const { container } = render(<YouScreen />);
     fireEvent.click(container.querySelector('[data-tab="progress"]')!);
-    expect(log).toHaveBeenCalledExactlyOnceWith(
-      `[showcase-profile-filter] ${JSON.stringify({ event: 'press', refAvailable: available, timestampMs: 1234 })}`,
-    );
+    expect(log).not.toHaveBeenCalled();
     expect(ctrl.snapToIndex).toHaveBeenCalledTimes(available ? 1 : 0);
     if (available) expect(ctrl.snapToIndex).toHaveBeenCalledWith(0);
   });

@@ -734,9 +734,8 @@ they launch: `timedWorkoutBlocksOffered(flagEnabled)` in `workout-blocks.ts` is
 mobile catalog, off by default and listed on the tester Feature Flags screen (see
 `docs/feature-flags.md` → "Mobile flags"), so a release bundle, and with it every OTA,
 shows the five chips climbers have today unless PostHog or a tester's override turns it
-on. Screenshot mode runs dev builds too (the store captures, the E2E smokes), so there the
-flag is ignored and the timed chips show only when `EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a
-timed type, and the store shots keep today's chips. `workoutBlockTypes(offered)` is the
+on. View stories inject their offered block types and workout state. Integration smokes
+use the ordinary dev-build gate. `workoutBlockTypes(offered)` is the
 block card's chip list, `addBlockTypes(offered)` the mid-session sheet's; both are pure, and
 `WorkoutBlockFields` and `AddWorkoutBlockSheet` read the flag with
 `useWorkoutTimedBlocksFlag` and hand it in. The launch removes the flag and the gate. The Record tab's "Add a block" never steps onto a timed type

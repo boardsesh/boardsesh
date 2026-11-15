@@ -197,7 +197,7 @@ vi.mock('../Icon', () => ({
 vi.mock('../ClimbPlaylistChips', () => ({ ClimbPlaylistChips: () => null }));
 
 import { favoritesStore } from '@boardsesh/climb-actions';
-import { ClimbListItemContent } from '../ClimbListItemContent';
+import { ClimbListItemContent, ClimbListItemContentView, type ClimbRowLeaves } from '../ClimbListItemContent';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { resetClimbRowDisplayForTests, setClimbRowField } from '../../lib/climb-row-display-preference';
 import { ClimbListThumbnailSizeContext, climbListThumbnailSize } from '../climb-list-thumbnail-metrics';
@@ -1601,6 +1601,39 @@ describe('multi-frame route pips', () => {
     expect(pip).toBeTruthy();
     expect(pip?.getAttribute('data-style')).not.toContain('absolute');
     expect(pip?.parentElement?.textContent).toContain(baseClimb.name);
+    expect(thumbnailRender).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClimbListItemContentView', () => {
+  it('renders injected leaves without consulting the live grade or thumbnail adapters', () => {
+    resolveGrade.mockClear();
+    thumbnailRender.mockClear();
+    const none = () => null;
+    const leaves: Required<ClimbRowLeaves> = {
+      Thumbnail: () => <span>Injected board art</span>,
+      Grade: () => <span>Injected grade</span>,
+      Subtitle: none,
+      AscentStatus: none,
+      Favorite: none,
+      Progress: none,
+      PlaylistChips: none,
+    };
+    const rendered = render(
+      <ClimbListItemContentView
+        climb={baseClimb}
+        boardName="kilter"
+        layoutId={1}
+        sizeId={7}
+        setIds="1,20"
+        angle={40}
+        display={DEFAULT_CLIMB_ROW_DISPLAY}
+        leaves={leaves}
+      />,
+    );
+    expect(rendered.getByText('Injected board art')).toBeTruthy();
+    expect(rendered.getByText('Injected grade')).toBeTruthy();
+    expect(resolveGrade).not.toHaveBeenCalled();
     expect(thumbnailRender).not.toHaveBeenCalled();
   });
 });

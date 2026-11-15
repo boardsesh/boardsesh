@@ -17,7 +17,7 @@ vi.mock('expo-localization', () => ({
  */
 const CATALOGUE_IMPORT_TIMEOUT_MS = 30_000;
 
-describe('screenshot locale override', () => {
+describe('device locale stays independent of capture configuration', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -27,14 +27,14 @@ describe('screenshot locale override', () => {
   });
 
   it(
-    'uses the bundled screenshot locale in screenshot mode',
+    'ignores capture configuration in ordinary device detection',
     async () => {
       vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
       vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_LOCALE', 'es');
 
       const { detectDeviceLocale } = await import('../config');
 
-      expect(detectDeviceLocale()).toBe('es');
+      expect(detectDeviceLocale()).toBe('fr');
     },
     CATALOGUE_IMPORT_TIMEOUT_MS,
   );

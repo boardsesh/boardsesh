@@ -24,7 +24,6 @@ const STORAGE_KEY = 'resetZoomHintUsed';
 export async function hasUsedResetZoom(): Promise<boolean> {
   // Screenshot mode reports used, so a captured board is never covered by the
   // extended pill. Mirrors `hasSeenBoardLookStep`.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return true;
   try {
     return (await getPreference<boolean>(STORAGE_KEY)) === true;
   } catch {

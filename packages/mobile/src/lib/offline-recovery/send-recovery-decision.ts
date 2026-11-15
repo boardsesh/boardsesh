@@ -30,7 +30,6 @@ export type SendRecoveryInput = {
    * `undefined` while the read is still in flight — never treat that as none.
    */
   recoveredCount: number | null | undefined;
-  screenshotMode: boolean;
   /** The cold start came in through a deep link, so the climber has intent elsewhere. */
   launchedByDeepLink: boolean;
   topSegment: string | undefined;
@@ -65,7 +64,6 @@ export function decideSendRecovery(input: SendRecoveryInput): SendRecoveryDecisi
   if (input.recoveredCount === undefined) return 'wait';
   if (input.onboardingSeen === undefined) return 'wait';
 
-  if (input.screenshotMode) return 'none';
   if (input.recoveredCount === null || input.recoveredCount < 1) return 'none';
   if (input.launchedByDeepLink) return 'none';
   // The first-run walkthrough always wins a cold start. `none`, not `wait`: the

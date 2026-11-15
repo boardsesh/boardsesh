@@ -701,13 +701,11 @@ describe('ConsentGate regions', () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  it('never looks up the region in screenshot mode', async () => {
+  it('does not let capture environment flags bypass the production consent gate', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     render(<ConsentGate />);
     await flushEffects();
 
-    expect(region.lookup).not.toHaveBeenCalled();
-    expect(regionDefault.apply).not.toHaveBeenCalled();
-    expect(router.push).not.toHaveBeenCalled();
+    expect(region.lookup).toHaveBeenCalled();
   });
 });

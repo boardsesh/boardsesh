@@ -3,6 +3,12 @@ name: showcase take - native MoonBoard grade filter
 ---
 # The deep link opens the native filter sheet on the selected MoonBoard.
 # Show its loaded grade controls; do not invent a result count or benchmark.
+- runFlow:
+    when:
+      notVisible: '${SHOWCASE_FILTER_CLOSE}'
+    commands:
+      - tapOn: '${SHOWCASE_FILTER_BUTTON}'
+      - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
 - assertVisible:
     id: 'climb-filter-column'

@@ -1,55 +1,31 @@
 import type { ReactNode } from 'react';
-import type { ScenarioOverrides } from './scenario-overrides';
 
 /**
- * A component story: draws something on the story screen, inside the real app's
- * providers (theme, i18n, query client, board, presence). Use it for leaf UI
- * whose states are cheap to build from props.
+ * A component story receives data and callbacks as view props, with only
+ * presentation providers (theme, i18n, native navigation, sheets and portals).
  */
+export type StoryRenderControls = {
+  /** Call only after required images/board art and the intended view state have painted. */
+  onReady: () => void;
+  /** Asset or render failures must fail the capture, not produce an empty screenshot. */
+  onError: (error: unknown) => void;
+};
+
 export type ComponentStory = {
   /** Shown in the story index and above the canvas. */
   name: string;
-  render: () => ReactNode;
-  /**
-   * Live values to fake while this story is on screen, for a component that
-   * reads them from context instead of props. Applied on focus, cleared on blur
-   * unless a newer story replaced them. Left out, the story clears any
-   * scenario's overrides, so it draws the same whatever ran before it.
-   */
-  overrides?: ScenarioOverrides;
+  render: (controls: StoryRenderControls) => ReactNode;
+  /** Asset-heavy stories explicitly report readiness; other stories wait for layout. */
+  readiness?: 'layout' | 'explicit';
   /** `padded` (default) scrolls the canvas under a caption; `fullscreen` draws edge to edge. */
   layout?: 'padded' | 'fullscreen';
+  /** Mount inside the app’s real tab navigator with this tab selected. */
+  tab?: 'home' | 'record' | 'discover' | 'profile' | 'climbs';
+  /** False for a pushed view whose Material tab bar sits in flow. */
+  tabRoot?: boolean;
 };
 
-/**
- * A scenario story: fakes a few live values on top of the real app, then opens a
- * real route. Use it for whole screens whose state is hard to reach by hand, such
- * as a crew session with nobody else around.
- *
- * The overrides stay on after navigating away, until another story (scenario
- * or component) replaces them or `dev/stories/reset` clears them.
- */
-export type ScenarioStory = {
-  name: string;
-  overrides: ScenarioOverrides;
-  /** The real route to open, e.g. `/climbs?screenshotOpenFirst=1`. */
-  route: string;
-  /**
-   * Runs before the overrides go on, for device state the screen reads from
-   * settings rather than context (`setSetting('alwaysDrive', false)`). It
-   * persists on the simulator, so pin every setting the story depends on.
-   */
-  prepare?: () => void | Promise<void>;
-  /**
-   * Open the route as the app really is, then turn the overrides on this many
-   * milliseconds later. For a state the real app reaches in two steps: a crew
-   * session always has a climb up, so the crew scenario opens a climb solo
-   * (which puts it on the wall) and only then becomes a crew.
-   */
-  overridesDelayMs?: number;
-};
-
-export type Story = ComponentStory | ScenarioStory;
+export type Story = ComponentStory;
 
 /** The default export of a `*.stories.tsx` file. */
 export type StoryModule = {
@@ -71,7 +47,3 @@ export type RegisteredStory = {
   /** Declaration order across all files; a bare module id opens its file's lowest. */
   order: number;
 };
-
-export function isScenarioStory(story: Story): story is ScenarioStory {
-  return 'route' in story;
-}

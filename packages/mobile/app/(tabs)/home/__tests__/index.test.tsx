@@ -130,7 +130,6 @@ vi.mock('../../../../src/components/feed/HomeTopChrome', () => ({
 }));
 vi.mock('../../../../src/components/OfflineState', () => ({ OfflineState: () => null }));
 vi.mock('../../../../src/components/session-screen/InviteSheet', () => ({ InviteSheet: () => null }));
-vi.mock('../../../../src/components/ScreenshotSmokeMarker', () => ({ ScreenshotSmokeMarker: () => null }));
 vi.mock('../../../../src/components/home/HomeCustomizeSheet', () => ({
   HomeCustomizeSheet: ({ visible }: { visible: boolean }) => {
     recorded.customizeSheet.push(visible);

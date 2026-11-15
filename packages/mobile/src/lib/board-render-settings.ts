@@ -10,7 +10,6 @@ import {
   type BoardseshRenderSettings,
 } from '@boardsesh/board-look';
 import { getPreference, removePreference, setPreference } from './preference-store';
-import { SCREENSHOT_RENDER_MODE } from './screenshot-mode';
 
 /**
  * The look's tuning — every constant, every default and `resolveVeilOpacity` —
@@ -415,17 +414,6 @@ function compactBoardRenderSettings(settings: BoardRenderSettings): Record<strin
 
 export async function loadBoardRenderSettings(): Promise<BoardRenderSettings> {
   if (hasLoaded) return currentSettings;
-  // Screenshot builds pin the drawing instead of reading a preference, so a store
-  // set can't come back in the wrong look because a default moved or a stale
-  // preference file survived an install. `sanitizeBoardRenderSettings` still runs,
-  // so an unusable EXPO_PUBLIC_SCREENSHOT_RENDER_MODE falls back to the app
-  // default rather than reaching the Rust renderer as a config it ignores.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-    currentSettings = sanitizeBoardRenderSettings({ mode: SCREENSHOT_RENDER_MODE });
-    hasLoaded = true;
-    notify();
-    return currentSettings;
-  }
   const stored = await getPreference<unknown>(STORAGE_KEY);
   // A concurrent write landed while the read was in flight — it is newer than
   // whatever the disk held, so keep it.

@@ -69,7 +69,7 @@ export function SendRecoveryGate() {
     const sharedInput = {
       ready,
       schemaReady,
-      screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+
       topSegment: topSegmentRef.current,
     } satisfies Omit<SendRecoveryInput, 'launchedByDeepLink' | 'onboardingSeen' | 'recoveredCount'>;
 

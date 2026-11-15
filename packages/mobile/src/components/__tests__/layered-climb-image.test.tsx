@@ -62,6 +62,27 @@ import { LayeredClimbImage } from '../LayeredClimbImage';
 import { BoardArtVisibilityContext } from '../board-art-visibility-context';
 
 describe('LayeredClimbImage', () => {
+  it('reports background and overlay decode failures without swallowing overlay recovery', () => {
+    const onArtError = vi.fn();
+    const onOverlayError = vi.fn();
+    const { getAllByTestId } = render(
+      createElement(LayeredClimbImage, {
+        overlayUri: 'file:///holds.png',
+        overlayLoadKey: 'attempt-1',
+        backgroundPaths: ['/board.webp'],
+        onArtError,
+        onOverlayError,
+      }),
+    );
+    const layers = getAllByTestId('expo-image');
+    fireEvent.error(layers[0]);
+    expect(onArtError).toHaveBeenCalledOnce();
+    expect(onOverlayError).not.toHaveBeenCalled();
+    fireEvent.error(layers[1]);
+    expect(onArtError).toHaveBeenCalledTimes(2);
+    expect(onOverlayError).toHaveBeenCalledWith({ error: 'mock image failure' }, 'attempt-1');
+  });
+
   beforeEach(() => {
     // The expo-image mock records every mounted overlay's onLoad; tests that
     // replay queued native events index into this list, so it must start empty

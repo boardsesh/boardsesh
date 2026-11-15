@@ -136,6 +136,26 @@ describe('story helpers', () => {
   });
 });
 
+describe('story capture errors', () => {
+  it('reports a view failure even if the same log batch includes an earlier ready event', () => {
+    expect(
+      findStoryLogEvent(
+        '[stories] ready sample--loaded\n[stories] error sample--loaded Missing asset',
+        'sample--loaded',
+      ),
+    ).toEqual({ kind: 'error', line: '[stories] error sample--loaded Missing asset' });
+  });
+  it('reports root setup failures for any requested story', () => {
+    expect(findStoryLogEvent('[stories] error root Font unavailable', 'sample--loaded')).toEqual({
+      kind: 'error',
+      line: '[stories] error root Font unavailable',
+    });
+  });
+  it("ignores another story's failure", () => {
+    expect(findStoryLogEvent('[stories] error other--loaded Missing asset', 'sample--loaded')).toBeNull();
+  });
+});
+
 describe('Metro log helpers', () => {
   it('keeps the CI log name on 8081 and gives other ports their own log', () => {
     expect(metroLogPathForPort(8081)).toBe(METRO_LOG_PATH);

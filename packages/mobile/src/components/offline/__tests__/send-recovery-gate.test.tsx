@@ -157,16 +157,6 @@ describe('SendRecoveryGate', () => {
     expect(pushMock).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalled();
   });
-
-  it('stays out of App Store screenshots', async () => {
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-
-    render(<SendRecoveryGate />);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(readNoticeMock).not.toHaveBeenCalled();
-    expect(pushMock).not.toHaveBeenCalled();
-  });
 });
 
 // #5654: this gate sat frozen at "not ready" from 2.2.0 until the wiring fix, so

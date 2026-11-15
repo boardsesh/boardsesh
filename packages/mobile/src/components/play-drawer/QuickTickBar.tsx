@@ -103,13 +103,19 @@ function RevealedDetails({ children }: { children: ReactNode }) {
   );
 }
 
-export const QuickTickBar = React.memo(function QuickTickBar({
+export const QuickTickBar = React.memo(function QuickTickBar(props: QuickTickBarProps) {
+  const angles = useBoardAngleOptions(toBoardName(props.form.boardName) ?? undefined);
+  return <QuickTickBarView {...props} angles={angles} />;
+});
+
+export const QuickTickBarView = React.memo(function QuickTickBarView({
   form,
   showNote = true,
   showDate = true,
   showAngle = true,
   detailsDisclosure,
-}: QuickTickBarProps) {
+  angles,
+}: QuickTickBarProps & { angles: number[] }) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   // Resolved through the provider, never the static palette: these sheets sit
@@ -137,7 +143,6 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     onClimbedAtChange,
     onFutureAdjusted,
   } = form;
-  const angles = useBoardAngleOptions(toBoardName(boardName) ?? undefined);
   const boardHasAngleRow = shouldShowAngleRow(boardName, angles);
 
   // Unfolding unmounts the row TalkBack was on, so hand focus to the first row

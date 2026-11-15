@@ -141,7 +141,7 @@ vi.mock('../../providers/toast-provider', () => ({ useToast: () => ({ showToast:
 vi.mock('../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {}, brandColors: {} }) }));
 
 import { AppUpdatesCard } from '../AppUpdatesCard';
-import { appReleaseLabel, screenshotReleaseScenario } from '../AppUpdatesCard.logic';
+import { appReleaseLabel } from '../AppUpdatesCard.logic';
 
 function expandOptions() {
   fireEvent.click(screen.getByLabelText('mobile.changelog.updates.options'));
@@ -340,37 +340,5 @@ describe('App updates card', () => {
     expect(screen.queryByText('Check now')).toBeNull();
     expect(container.querySelector('[data-icon="info"]')).toBeTruthy();
     expect(container.querySelector('[data-icon="success"]')).toBeNull();
-  });
-  it('renders the readonly preview fixture without changing running report identity', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO', 'preview');
-    expect(screenshotReleaseScenario()).toBe('preview');
-    renderCard();
-    expect(screen.getByText('mobile.changelog.updates.preview')).toBeTruthy();
-    expect(screen.queryByLabelText('mobile.changelog.updates.testPreview')).toBeNull();
-    fireEvent.click(screen.getByLabelText('mobile.changelog.updates.finishTesting'));
-    expect(state.push).not.toHaveBeenCalled();
-    expect((screen.getByLabelText('mobile.changelog.updates.finishTesting') as HTMLButtonElement).disabled).toBe(true);
-    expandOptions();
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.getByText('mobile.settings.earlyUpdates.testingBody')).toBeTruthy();
-    fireEvent.click(screen.getByText('qa.pick.productionTitle'));
-    expect(state.returnToOwnTrack).not.toHaveBeenCalled();
-    expect(state.context.branch).toBeNull();
-    expect(state.context.automaticCanary).toBe(false);
-  });
-  it('requires screenshot mode for fixtures and does not change report identity', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO', 'canary');
-    expect(screenshotReleaseScenario()).toBeNull();
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    state.earlyOffered = false;
-    state.surfingAvailable = false;
-    renderCard();
-    expandOptions();
-    expect(screen.getByText('mobile.changelog.updates.canary')).toBeTruthy();
-    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
-    fireEvent.click(screen.getByText('qa.pick.productionTitle'));
-    expect(state.returnToOwnTrack).not.toHaveBeenCalled();
-    expect(state.context.automaticCanary).toBe(false);
   });
 });

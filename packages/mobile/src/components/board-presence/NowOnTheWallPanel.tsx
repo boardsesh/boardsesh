@@ -1,3 +1,7 @@
+import { WallStatTile as StatTile, WallHardestSendRow as HardestSendRow } from './WallPanelStatsViews';
+import { WallHeroContentView, WallHistoryContentView } from './WallPanelRowViews';
+import { NowOnTheWallPanelView } from './NowOnTheWallPanelView';
+import { styles } from './wall-panel-styles';
 import { PressableSurface } from '../PressableSurface';
 // Now-on-the-wall panel — the board-presence "now on the wall" content, factored
 // out of BoardSheet so it can render either inside the native BottomSheetModal
@@ -24,12 +28,9 @@ import {
   type Ref,
   type ComponentProps,
 } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View, type ColorValue } from 'react-native';
+import { FlatList, RefreshControl, View, type ColorValue } from 'react-native';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { ShowcaseAnchorView } from '../../lib/showcase-anchor';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
-import { screenshotPublishedBoardKey } from '../../lib/board-presence/screenshot-wall-seed';
-import { screenshotCppWallHeroTestId } from '../../lib/screenshot-board-selection';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import {
@@ -41,24 +42,17 @@ import {
   useBoardPresenceFeed,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type {
-  BoardName,
-  BoardPresenceClimb,
-  BoardPresenceHardestSend,
-  Climb,
-  UserBoard,
-} from '@boardsesh/shared-schema';
+import type { BoardName, BoardPresenceClimb, Climb, UserBoard } from '@boardsesh/shared-schema';
 import { Text } from '../Text';
 import { GymWallSwitcher } from './GymWallSwitcher';
-import { SwitchBoardFooter } from './SwitchBoardFooter';
+
 import { SprayWallActions } from '../board-discovery/SprayWallActions';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
 import { useGymBoards } from '../../lib/graphql/hooks/use-gym-boards';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ClimbListRow, type ClimbListRowRenderContentArgs } from '../ClimbListRow';
-import { PressableAvatar } from '../PressableAvatar';
-import { BoardDriverAvatar } from './BoardDriverAvatar';
+
 import { BoardLiveSessionsBlock } from '../live-sessions/BoardLiveSessionsBlock';
 import { WallDisplayEntry } from './WallDisplayEntry';
 import { AccessoryClimbThumbnail } from '../queue-control/AccessoryClimbThumbnail';
@@ -72,7 +66,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useDisplayGrade } from '../../hooks/use-display-grade';
 import { offlineAwareRequest } from '../../lib/graphql/offline-request';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
-import { boardPresenceClimbToClimb, wallDriverForClimb } from '../../lib/board-presence/presence-climb';
+import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
 import {
   createPlaylistSuggestionSource,
   getQueueBoardKey,
@@ -81,8 +75,8 @@ import {
 } from '@boardsesh/queue';
 import { toQueueClimb } from '../../lib/climb-types';
 import { formatRelativeTime } from '../../lib/format-relative-time';
-import { withAlpha } from '../../theme/colors';
-import { spacing, borderRadius } from '../../theme/tokens';
+
+import { spacing } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 
 const ACTION_CLIMB_CACHE_LIMIT = 50;
@@ -94,12 +88,6 @@ type HistoryViewabilityChange = Parameters<
 >[0];
 
 // Like ShowcaseAnchorView, the capture-only hook is chosen once per JS bundle.
-// Ordinary builds add neither an active-board subscriber nor a capture host.
-const useCppActiveBoard =
-  process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
-    ? useActiveBoard
-    : () => ({ data: null });
-
 type BoardSheetRowBoard = {
   boardName: BoardName;
   layoutId: number;
@@ -302,22 +290,6 @@ function NowOnTheWallPanelComponent(
   const { history, stats } = useBoardPresenceFeed();
   const { refresh } = useBoardPresenceActions();
   const { boardId: boardPresenceBoardId, boardUuid: boardPresenceBoardUuid } = useBoardPresenceControls();
-  const { data: currentActiveBoard } = useCppActiveBoard();
-  const cppWallHeroTestID = screenshotCppWallHeroTestId({
-    captureEnabled: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && !!process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL,
-    column: variant === 'column',
-    publishedBoardUuid:
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL
-        ? screenshotPublishedBoardKey()
-        : null,
-    activeBoard: currentActiveBoard,
-    panelConfig: boardConfig,
-    climbUuid: currentClimb?.climbUuid,
-  });
-
-  // Pull-to-refresh: a manual catch-up for when a user notices the wall feed is
-  // stale. `refresh()` is fire-and-forget (the durable history merges back in
-  // via context), so show the spinner briefly, then clear it.
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const durableRefreshRef = useRef<(() => void) | undefined>(undefined);
@@ -844,9 +816,9 @@ function NowOnTheWallPanelComponent(
             viewerUserId={viewerUserId}
           />
         ) : null}
-        {/* Showcase anchors (screenshot mode): the board sheet only, never the
+        {/* Layout observation: the board sheet only, never the
             iPad kiosk column or the Wall display, so one panel reports each name. */}
-        <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'} testID={cppWallHeroTestID}>
+        <ShowcaseAnchorView name="now-on-wall" enabled={variant === 'sheet'}>
           {canUseInteractiveRows && rowBoard && currentClimb ? (
             <InteractiveHeroRow
               climb={currentClimb}
@@ -955,7 +927,6 @@ function NowOnTheWallPanelComponent(
     );
   }, [
     currentClimb,
-    cppWallHeroTestID,
     boardConfig,
     stats,
     visibleHistory.length,
@@ -1048,101 +1019,60 @@ function NowOnTheWallPanelComponent(
   );
 
   return (
-    <>
-      <View style={[styles.header, { borderBottomColor: systemColors.separator, paddingTop: headerTopPadding }]}>
-        {onClose ? (
-          <PressableSurface
-            onPress={handleClose}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.boardPresence.close')}
-            style={styles.headerAction}
-          >
-            <Icon name="chevron.down" size={20} color={systemColors.secondaryLabel} />
-          </PressableSurface>
+    <NowOnTheWallPanelView
+      variant={variant}
+      boardLabel={boardLabel}
+      headerTopPadding={headerTopPadding}
+      footerBottomPadding={footerBottomPadding}
+      onClose={onClose ? handleClose : undefined}
+      canSwitchGymWall={canSwitchGymWall}
+      gymWallsExpanded={gymWallsExpanded}
+      onToggleGymWalls={toggleGymWalls}
+      onSwitchBoard={handleSwitchBoard}
+      list={
+        variant === 'sheet' ? (
+          <BottomSheetFlatList
+            data={combinedHistory}
+            keyExtractor={boardHistoryEntryKey}
+            renderItem={renderHistoryItem}
+            ListHeaderComponent={listHeader ?? undefined}
+            ListEmptyComponent={listEmpty ?? undefined}
+            ListFooterComponent={listFooter ?? undefined}
+            // `loadOlder` already no-ops once `hasMore` is false, but skipping the
+            // prop entirely once there's nothing left avoids FlatList re-evaluating
+            // the end-reached threshold on every scroll frame for no reason. The
+            // handler itself is additionally gated on a real user scroll — see
+            // `hasUserScrolledRef` above.
+            onEndReached={hasMore ? handleEndReached : undefined}
+            onEndReachedThreshold={0.6}
+            onScrollBeginDrag={handleScrollBeginDrag}
+            onViewableItemsChanged={handleMenuViewableItemsChanged}
+            viewabilityConfig={MENU_VIEWABILITY_CONFIG}
+            contentContainerStyle={listContentContainerStyle}
+            refreshControl={refreshControl}
+          />
         ) : (
-          <View pointerEvents="none" style={styles.headerAction} />
-        )}
-        <Text variant="title3" color={systemColors.label} numberOfLines={1} style={styles.headerTitle}>
-          {boardLabel ?? t('mobile.boardPresence.title')}
-        </Text>
-        {canSwitchGymWall ? (
-          // Mirrors the close control on the left, in the slot that was already
-          // a dead spacer holding the title centred — so the switch costs no
-          // vertical space at all. A transfer glyph, not a caret: this moves you
-          // to another board rather than revealing more of this one.
-          <PressableSurface
-            onPress={toggleGymWalls}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: gymWallsExpanded }}
-            accessibilityLabel={t('mobile.boardPresence.gymWalls.headerSwitcherAria', {
-              board: boardLabel ?? '',
-            })}
-            accessibilityHint={t(
-              gymWallsExpanded
-                ? 'mobile.boardPresence.gymWalls.headerSwitcherHintClose'
-                : 'mobile.boardPresence.gymWalls.headerSwitcherHintOpen',
-            )}
-            style={styles.headerAction}
-          >
-            <Icon
-              name="transfer"
-              size={20}
-              color={gymWallsExpanded ? brandColors.primary : systemColors.secondaryLabel}
-            />
-          </PressableSurface>
-        ) : (
-          <View pointerEvents="none" style={styles.headerAction} />
-        )}
-      </View>
-
-      {variant === 'sheet' ? (
-        <BottomSheetFlatList
-          data={combinedHistory}
-          keyExtractor={boardHistoryEntryKey}
-          renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader ?? undefined}
-          ListEmptyComponent={listEmpty ?? undefined}
-          ListFooterComponent={listFooter ?? undefined}
-          // `loadOlder` already no-ops once `hasMore` is false, but skipping the
-          // prop entirely once there's nothing left avoids FlatList re-evaluating
-          // the end-reached threshold on every scroll frame for no reason. The
-          // handler itself is additionally gated on a real user scroll — see
-          // `hasUserScrolledRef` above.
-          onEndReached={hasMore ? handleEndReached : undefined}
-          onEndReachedThreshold={0.6}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onViewableItemsChanged={handleMenuViewableItemsChanged}
-          viewabilityConfig={MENU_VIEWABILITY_CONFIG}
-          contentContainerStyle={listContentContainerStyle}
-          refreshControl={refreshControl}
-        />
-      ) : (
-        <FlatList
-          data={combinedHistory}
-          keyExtractor={boardHistoryEntryKey}
-          renderItem={renderHistoryItem}
-          ListHeaderComponent={listHeader ?? undefined}
-          ListEmptyComponent={listEmpty ?? undefined}
-          ListFooterComponent={listFooter ?? undefined}
-          onEndReached={hasMore ? handleEndReached : undefined}
-          onEndReachedThreshold={0.6}
-          onScrollBeginDrag={handleScrollBeginDrag}
-          onViewableItemsChanged={handleMenuViewableItemsChanged}
-          viewabilityConfig={MENU_VIEWABILITY_CONFIG}
-          // Fill the bounded height between the header and the switch-board footer
-          // (the inline column and the full-screen tab both render in a flex parent).
-          style={styles.fillList}
-          contentContainerStyle={listContentContainerStyle}
-          refreshControl={refreshControl}
-        />
-      )}
-
-      {variant === 'column' ? (
-        <SwitchBoardFooter boardLabel={boardLabel} onPress={handleSwitchBoard} bottomPadding={footerBottomPadding} />
-      ) : null}
-    </>
+          <FlatList
+            data={combinedHistory}
+            keyExtractor={boardHistoryEntryKey}
+            renderItem={renderHistoryItem}
+            ListHeaderComponent={listHeader ?? undefined}
+            ListEmptyComponent={listEmpty ?? undefined}
+            ListFooterComponent={listFooter ?? undefined}
+            onEndReached={hasMore ? handleEndReached : undefined}
+            onEndReachedThreshold={0.6}
+            onScrollBeginDrag={handleScrollBeginDrag}
+            onViewableItemsChanged={handleMenuViewableItemsChanged}
+            viewabilityConfig={MENU_VIEWABILITY_CONFIG}
+            // Fill the bounded height between the header and the switch-board footer
+            // (the inline column and the full-screen tab both render in a flex parent).
+            style={styles.fillList}
+            contentContainerStyle={listContentContainerStyle}
+            refreshControl={refreshControl}
+          />
+        )
+      }
+    />
   );
 }
 
@@ -1168,7 +1098,7 @@ type InteractiveRowActionProps = {
   menuClimb?: Climb;
 };
 
-type HeroContentProps = Omit<HeroProps, 'climb' | 'surfaceColor'> & {
+export type HeroContentProps = Omit<HeroProps, 'climb' | 'surfaceColor'> & {
   climb: BoardPresenceClimb;
   renderClimb: Climb;
   thumbnailSize?: number;
@@ -1183,72 +1113,14 @@ type HeroContentProps = Omit<HeroProps, 'climb' | 'surfaceColor'> & {
   pressableAvatar?: boolean;
 };
 
-function NowOnTheWallHeroContent({
-  climb,
-  renderClimb,
-  boardConfig,
-  labelColor,
-  secondaryColor,
-  accentColor,
-  formattedGrade,
-  gradeColor,
-  thumbnailSize,
-  isActionLoading = false,
-  pressableAvatar = true,
-}: HeroContentProps) {
-  const { t } = useTranslation('session');
-  const litBy = climb.sentByDisplayName?.trim() || null;
-  const setter = climb.setter?.trim();
-
+function NowOnTheWallHeroContent(props: HeroContentProps) {
   return (
-    <>
-      <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} size={thumbnailSize} />
-      <View style={styles.heroBody}>
-        <View style={styles.heroNameRow}>
-          <Text
-            testID={`board-current-${climb.climbUuid}-${climb.sentByUserId ?? 'anonymous'}`}
-            variant="headline"
-            color={labelColor}
-            numberOfLines={1}
-            style={styles.heroName}
-          >
-            {climb.name ?? ''}
-          </Text>
-          {formattedGrade ? (
-            <Text variant="headline" style={[styles.heroGrade, { color: gradeColor }]}>
-              {formattedGrade}
-            </Text>
-          ) : null}
-          {isActionLoading ? (
-            <ActivityIndicator
-              size="small"
-              accessibilityLabel={t('mobile.boardPresence.actionLoading')}
-              style={styles.actionSpinner}
-            />
-          ) : null}
-        </View>
-        {setter ? (
-          <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
-            {t('mobile.boardPresence.setByLine', { setter })}
-          </Text>
-        ) : null}
-        {litBy ? (
-          <View style={styles.heroDriverRow}>
-            <BoardDriverAvatar
-              size={20}
-              userId={pressableAvatar ? climb.sentByUserId : null}
-              uri={climb.sentByAvatarUrl}
-              name={litBy}
-              status="connected"
-              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: litBy })}
-            />
-            <Text variant="caption1" color={accentColor} numberOfLines={1} style={styles.heroDriverName}>
-              {litBy}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </>
+    <WallHeroContentView
+      {...props}
+      thumbnail={
+        <AccessoryClimbThumbnail climb={props.renderClimb} boardConfig={props.boardConfig} size={props.thumbnailSize} />
+      }
+    />
   );
 }
 
@@ -1380,95 +1252,20 @@ type HistoryRowProps = {
   gradeColor: string;
 };
 
-type HistoryRowContentProps = HistoryRowProps & {
+export type HistoryRowContentProps = HistoryRowProps & {
   renderClimb: Climb;
   isActionLoading?: boolean;
   /** See HeroContentProps.pressableAvatar — off inside an interactive row. */
   pressableAvatar?: boolean;
 };
 
-function HistoryRowContent({
-  climb,
-  renderClimb,
-  boardConfig,
-  labelColor,
-  secondaryColor,
-  formattedGrade,
-  gradeColor,
-  isActionLoading = false,
-  pressableAvatar = true,
-}: HistoryRowContentProps) {
-  const { t } = useTranslation('session');
-  const driver = wallDriverForClimb(climb, t('mobile.boardPresence.unnamedClimber'));
-  const isKilterImport = climb.source === 'kilter';
-  // Kilter imports only arrive while someone has the app open, so the history
-  // has gaps; the time on each row is what makes them readable (#6012). It
-  // rides on the first caption line (the Kilter source line, else the sender
-  // row) and gets a line of its own only when the row has neither. Computed
-  // at render: the rows are memoized, so it can lag while the sheet stays open.
-  const sentAgo = formatRelativeTime(climb.sentAt);
-  const sourceLine = isKilterImport
-    ? [t('mobile.boardPresence.kilterHistorySource'), sentAgo].filter(Boolean).join(' · ')
-    : driver
-      ? ''
-      : sentAgo;
-  const senderTime = !isKilterImport && driver ? sentAgo : '';
-
+function HistoryRowContent(props: HistoryRowContentProps) {
   return (
-    <>
-      <AccessoryClimbThumbnail climb={renderClimb} boardConfig={boardConfig} />
-      <View style={styles.historyBody}>
-        <Text
-          testID={`board-history-${climb.climbUuid}-${climb.seq}`}
-          variant="subheadline"
-          color={labelColor}
-          numberOfLines={1}
-          style={styles.historyName}
-        >
-          {climb.name ?? ''}
-        </Text>
-        {sourceLine ? (
-          <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
-            {sourceLine}
-          </Text>
-        ) : null}
-        {driver ? (
-          <View style={styles.historyDriverRow}>
-            {/* Past send — no Bluetooth glyph (nobody's driving it now); just a
-                pressable face for attribution. */}
-            <BoardDriverAvatar
-              size={18}
-              userId={pressableAvatar ? climb.sentByUserId : null}
-              uri={climb.sentByAvatarUrl}
-              name={driver.avatarName}
-              status="none"
-              accessibilityLabel={t('mobile.boardPresence.drivenByA11y', { name: driver.label })}
-            />
-            <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historyDriverName}>
-              {driver.label}
-            </Text>
-            {/* Its own Text so a long name truncates before the time does. */}
-            {senderTime ? (
-              <Text variant="caption1" color={secondaryColor} numberOfLines={1} style={styles.historySentAgo}>
-                {`· ${senderTime}`}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-      {formattedGrade ? (
-        <Text variant="headline" style={[styles.historyGrade, { color: gradeColor }]}>
-          {formattedGrade}
-        </Text>
-      ) : null}
-      {isActionLoading ? (
-        <ActivityIndicator
-          size="small"
-          accessibilityLabel={t('mobile.boardPresence.actionLoading')}
-          style={styles.actionSpinner}
-        />
-      ) : null}
-    </>
+    <WallHistoryContentView
+      {...props}
+      thumbnail={<AccessoryClimbThumbnail climb={props.renderClimb} boardConfig={props.boardConfig} />}
+      sentAgo={formatRelativeTime(props.climb.sentAt)}
+    />
   );
 }
 
@@ -1578,261 +1375,4 @@ const HistoryRow = memo(function HistoryRowInner({
       />
     </View>
   );
-});
-
-type StatTileProps = {
-  value: string;
-  label: string;
-  surfaceColor: ColorValue;
-  labelColor: ColorValue;
-  valueColor: ColorValue;
-};
-
-function StatTile({ value, label, surfaceColor, labelColor, valueColor }: StatTileProps) {
-  return (
-    <View style={[styles.statTile, { backgroundColor: surfaceColor }]}>
-      <Text variant="title3" color={valueColor} numberOfLines={1}>
-        {value}
-      </Text>
-      <Text variant="caption1" color={labelColor} numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-type HardestSendRowProps = {
-  hardestSend: BoardPresenceHardestSend;
-  labelColor: ColorValue;
-  secondaryColor: ColorValue;
-  surfaceColor: ColorValue;
-  crownColor: string;
-  formattedGrade: string;
-  gradeColor: string;
-};
-
-function HardestSendRow({
-  hardestSend,
-  labelColor,
-  secondaryColor,
-  surfaceColor,
-  crownColor,
-  formattedGrade,
-  gradeColor,
-}: HardestSendRowProps) {
-  const { t } = useTranslation('session');
-  const climberName = hardestSend.sentByDisplayName?.trim();
-
-  return (
-    <View style={[styles.hardestSendRow, { backgroundColor: surfaceColor }]}>
-      <View style={styles.hardestAvatar}>
-        <PressableAvatar
-          userId={hardestSend.sentByUserId}
-          uri={hardestSend.sentByAvatarUrl}
-          name={climberName}
-          size={34}
-        />
-        <View style={[styles.crownBadge, { backgroundColor: withAlpha(crownColor, 0.18) }]}>
-          <Icon name="crown.fill" size={11} color={crownColor} />
-        </View>
-      </View>
-      <View style={styles.hardestBody}>
-        <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
-          {t('mobile.boardPresence.hardestSendLabel')}
-        </Text>
-        <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.hardestName}>
-          {hardestSend.name ?? ''}
-        </Text>
-        {climberName ? (
-          <Text variant="caption1" color={secondaryColor} numberOfLines={1}>
-            {t('mobile.boardPresence.sentByLine', { name: climberName })}
-          </Text>
-        ) : null}
-      </View>
-      <Text variant="headline" style={[styles.historyGrade, { color: gradeColor }]}>
-        {formattedGrade}
-      </Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing[3],
-    paddingBottom: spacing[3],
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    marginHorizontal: spacing[2],
-    textAlign: 'center',
-  },
-  fillList: {
-    flex: 1,
-  },
-  hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    margin: spacing[4],
-    padding: spacing[3],
-    borderRadius: borderRadius.lg,
-  },
-  heroInteractiveContainer: {
-    margin: spacing[4],
-    borderRadius: borderRadius.lg,
-  },
-  heroInteractiveRow: {
-    padding: spacing[3],
-    borderRadius: borderRadius.lg,
-  },
-  heroBody: {
-    flex: 1,
-    gap: 2,
-  },
-  heroNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  heroName: {
-    flex: 1,
-  },
-  heroDriverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    // Headroom for the badge that pokes ~2pt past the avatar's top-right corner.
-    paddingTop: 2,
-  },
-  heroDriverName: {
-    flexShrink: 1,
-  },
-  heroGrade: {
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-  },
-  sectionHeader: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[2],
-  },
-  statsBlock: {
-    paddingBottom: spacing[2],
-  },
-  statTiles: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
-    paddingHorizontal: spacing[4],
-  },
-  statTile: {
-    flexGrow: 1,
-    flexBasis: '47%',
-    paddingVertical: spacing[3],
-    paddingHorizontal: spacing[3],
-    borderRadius: borderRadius.md,
-    gap: 2,
-  },
-  hardestSendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    marginHorizontal: spacing[4],
-    marginTop: spacing[2],
-    paddingVertical: spacing[3],
-    paddingHorizontal: spacing[3],
-    borderRadius: borderRadius.md,
-  },
-  hardestAvatar: {
-    width: 42,
-    height: 42,
-    justifyContent: 'flex-end',
-  },
-  crownBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hardestBody: {
-    flex: 1,
-    gap: 2,
-  },
-  hardestName: {
-    fontWeight: '600',
-  },
-  historyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  historyInteractiveRow: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  historyBody: {
-    flex: 1,
-    gap: 2,
-  },
-  historyName: {
-    fontWeight: '600',
-  },
-  historyDriverRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  historyDriverName: {
-    flexShrink: 1,
-  },
-  historySentAgo: {
-    flexShrink: 0,
-    // Pulls back half of the row's gap so "Name · 2 minutes ago" reads with
-    // the same spacing as the single-Text Kilter line.
-    marginLeft: -spacing[1],
-  },
-  historyGrade: {
-    fontVariant: ['tabular-nums'],
-    fontWeight: '700',
-    minWidth: 40,
-    textAlign: 'right',
-  },
-  actionSpinner: {
-    width: 20,
-    height: 20,
-  },
-  empty: {
-    alignItems: 'center',
-    gap: spacing[2],
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[8],
-  },
-  emptyTitle: {
-    textAlign: 'center',
-  },
-  emptyBody: {
-    textAlign: 'center',
-  },
-  historyFooter: {
-    paddingVertical: spacing[5],
-    alignItems: 'center',
-  },
 });

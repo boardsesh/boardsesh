@@ -180,15 +180,15 @@ describe('enqueueSessionWorkoutWrite', () => {
     ]);
   });
 
-  it('never sends for a story or fake session, nor in a screenshot capture', async () => {
+  it('skips malformed session IDs while real writes ignore retired capture flags', async () => {
     prepareWorkoutRun('story-summary-workout', run, climbs);
     expect(await enqueueSessionWorkoutWrite('story-summary-workout', { queryClient })).toBe('skipped');
 
     prepareWorkoutRun(SESSION_ID, run, climbs);
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('skipped');
+    expect(await enqueueSessionWorkoutWrite(SESSION_ID, { queryClient })).toBe('queued');
 
-    expect(await queued()).toEqual([]);
+    expect(await queued()).toHaveLength(1);
     expect(mocks.request).not.toHaveBeenCalled();
   });
 

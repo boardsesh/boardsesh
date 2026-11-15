@@ -1,3 +1,4 @@
+import { CollapsingTopChromeView } from './CollapsingTopChromeView';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import type { ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
 import { type ReactElement, type ReactNode, isValidElement, useMemo, useState } from 'react';
@@ -26,10 +27,9 @@ import {
 import { AngleToolbarAction } from './AngleToolbarAction';
 import { LightbulbToolbarAction } from './LightbulbToolbarAction';
 import { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';
-import { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
-import { NativeRootHeader } from './NativeRootHeader';
+
 import { NativeHeaderActionContext } from './native-header-action-context';
-import { MaterialTopAppBar } from './MaterialTopAppBar';
+
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { iconMap } from '../icon-map';
 import { BOARD_HISTORY_ITEM_ID, barItemsFactory, symbolBarItem, type RootBarItem } from './root-bar-items';
@@ -97,7 +97,7 @@ type CollapsingTopChromeProps = {
   /** Suppress the bluetooth lightbulb in the right toolbar — e.g. the active-session
    *  header, which keeps only the stop control on the right. */
   hideLight?: boolean;
-  /** Report the board glyph to the showcase-video recorder (screenshot mode). Only
+  /** Report the board glyph to the layout observer. Only
    *  the Climbs chrome sets it, so one tab logs the `board-history-button` rect. */
   anchorBoardButton?: boolean;
   /** Extra controls rendered below the islands row (e.g. the Climbs search row).
@@ -162,18 +162,25 @@ export function CollapsingTopChrome({
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
     return (
-      <MaterialTopAppBar onHeightChange={onHeightChange} scrollEdge={scrollEdge}>
-        <UserAvatarToolbarAction variant="material" />
-        <BoardSwitcherButton
-          title={materialTitle}
-          onPress={onOpenBoardSwitcher}
-          accessibilityHint={boardPillAccessibilityHint}
-          badge={boardBadge}
-          showcaseAnchor={anchorBoardButton}
-        />
-        <MaterialAngleAction />
-        <MaterialLightbulbAction />
-      </MaterialTopAppBar>
+      <CollapsingTopChromeView
+        presentation="material"
+        onHeightChange={onHeightChange}
+        scrollEdge={scrollEdge}
+        materialActions={
+          <>
+            <UserAvatarToolbarAction variant="material" />
+            <BoardSwitcherButton
+              title={materialTitle}
+              onPress={onOpenBoardSwitcher}
+              accessibilityHint={boardPillAccessibilityHint}
+              badge={boardBadge}
+              showcaseAnchor={anchorBoardButton}
+            />
+            <MaterialAngleAction />
+            <MaterialLightbulbAction />
+          </>
+        }
+      />
     );
   }
 
@@ -281,7 +288,8 @@ export function CollapsingTopChrome({
 
   if (nativeHeader)
     return (
-      <NativeRootHeader
+      <CollapsingTopChromeView
+        presentation="native"
         leftActions={leftActions}
         leftActionsStandalone={leftActionCount === 1}
         centerContent={centerContent}
@@ -303,11 +311,12 @@ export function CollapsingTopChrome({
         onHeightChange={onHeightChange}
       >
         {children}
-      </NativeRootHeader>
+      </CollapsingTopChromeView>
     );
 
   return (
-    <CollapsingLargeTitleHeader
+    <CollapsingTopChromeView
+      presentation="floating"
       centerTitle={centerTitle}
       centerContent={centerContent}
       onHeightChange={onHeightChange}
@@ -315,7 +324,7 @@ export function CollapsingTopChrome({
       rightActions={rightActions}
     >
       {children}
-    </CollapsingLargeTitleHeader>
+    </CollapsingTopChromeView>
   );
 }
 
@@ -580,7 +589,8 @@ function CollapsingNativeBarHeader({
 
   return (
     <>
-      <NativeRootHeader
+      <CollapsingTopChromeView
+        presentation="native"
         leftItems={leftItems}
         leftActions={
           onRail ? undefined : (
@@ -605,7 +615,7 @@ function CollapsingNativeBarHeader({
         onHeightChange={onHeightChange}
       >
         {children}
-      </NativeRootHeader>
+      </CollapsingTopChromeView>
       {barAngle ? anglePicker : null}
       {historyAnchored ? <NativeTrailingItemShowcaseAnchor name="board-history-button" positionFromEnd={1} /> : null}
     </>

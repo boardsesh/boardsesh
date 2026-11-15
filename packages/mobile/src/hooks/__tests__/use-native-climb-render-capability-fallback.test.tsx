@@ -197,6 +197,42 @@ describe('useNativeClimbRender marker-capability fallback', () => {
     _setNativeModuleForTests(nativeModule as unknown as Parameters<typeof _setNativeModuleForTests>[0]);
   });
 
+  it('renders an explicit complete style independently from stored marker preferences', async () => {
+    const { sanitizeBoardRenderSettings } = await import('../../lib/board-render-settings');
+    const style: import('../../lib/board-render-style').BoardRenderStyle = {
+      settings: sanitizeBoardRenderSettings({ mode: 'classic' }),
+      holds: { overrides: { HAND: '#123456' }, shapes: { FOOT: 'diamond' }, brushThickness: 1.25, shapeSize: 1.75 },
+    };
+    nativeModule.renderHoldsOverlay.mockResolvedValue('file:///explicit-style.png');
+    const explicit = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES, renderStyleOverride: style }));
+    await waitFor(() => expect(explicit.result.current.overlayUri).toBe('file:///explicit-style.png'));
+    const [configJson, explicitKey] = nativeModule.renderHoldsOverlay.mock.calls[0];
+    const config = JSON.parse(configJson) as {
+      stroke_width_multiplier: number;
+      shape_size_multiplier: number;
+      hold_state_map: Record<string, { color: string; shape?: string }>;
+      render_mode?: string;
+    };
+    expect(config.render_mode).toBeUndefined();
+    expect(config.stroke_width_multiplier).toBe(1.25 * getBoardStrokeWidthMultiplier('kilter'));
+    expect(config.shape_size_multiplier).toBe(1.75);
+    expect(Object.values(config.hold_state_map).some((state) => state.color === '#123456')).toBe(true);
+    expect(Object.values(config.hold_state_map).some((state) => state.shape === 'diamond')).toBe(true);
+    expect(
+      Object.values(config.hold_state_map).some((state) => state.color === '#ff0000' || state.shape === 'square'),
+    ).toBe(false);
+    explicit.unmount();
+    const normal = renderHook(() => useNativeClimbRender({ ...BASE, frames: FRAMES }));
+    await waitFor(() => expect(normal.result.current.overlayUri).toBeTruthy());
+    expect(nativeModule.renderHoldsOverlay.mock.calls.at(-1)?.[1]).not.toBe(explicitKey);
+    expect(markerOverrides).toMatchObject({
+      colors: { HAND: '#ff0000' },
+      shapes: { HAND: 'square' },
+      brushThickness: 2,
+      shapeSize: 1.5,
+    });
+  });
+
   it('re-renders with colours only instead of leaving the overlay blank', async () => {
     const refusedKey = cacheKeyFor(FULL_SIGNATURE);
     const fallbackKey = cacheKeyFor(COLOR_ONLY_SIGNATURE);

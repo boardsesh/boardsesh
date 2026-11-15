@@ -19,7 +19,7 @@ import { getPreference, removePreference, setPreference } from './preference-sto
  * either, so the session that plays it plays no replay. Everyone else, a
  * newcomer or a climber 2.6 showed fewer than three, gets the normal three.
  * Never once a swipe has driven the wall (that key is kept from 2.6: they know
- * the gesture), never in screenshot mode, never with a screen reader on.
+ * the gesture), never with a screen reader on.
  *
  * Built like `reset-zoom-hint.ts`: AsyncStorage rather than SecureStore, since
  * this is a device-local UI marker and the keychain outlives an uninstall.
@@ -97,19 +97,16 @@ async function hintStillOwed(): Promise<boolean> {
 }
 
 /**
- * Whether the window peek should play now. False in screenshot mode (a captured
- * button never carries a half-wiped frost), after this session's peek, once the
+ * Whether the window peek should play now. False after this session's peek, once the
  * swipe has been used, or after three sessions.
  */
 export async function shouldPlayWallSwipePeek(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   if (peekedThisSession) return false;
   return hintStillOwed();
 }
 
 /** Whether the replay should play now: owed, not played this session, and the hint still owed. */
 export async function shouldPlayWallSwipeReplay(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   if (replayedThisSession || !replayAsked) return false;
   return hintStillOwed();
 }

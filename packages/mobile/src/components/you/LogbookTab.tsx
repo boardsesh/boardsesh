@@ -1,75 +1,70 @@
-import { ReadableColumn } from '../ReadableColumn';
-import { useNativeRootHeader } from '../../hooks/use-native-root-header';
-import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
-import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
-import { PressableSurface } from '../PressableSurface';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet, useWindowDimensions } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { useTranslation } from 'react-i18next';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
 import {
-  toAscentFeedInput,
   DEFAULT_LOGBOOK_FILTERS,
   buildLogbookListRows,
   dedupeLogbookItems,
-  shouldShowLogbookDividers,
-  pickBestGroupEntry,
-  sumGroupTries,
   logbookDayKey,
   logbookSortKeyOf,
+  pickBestGroupEntry,
+  shouldShowLogbookDividers,
+  sumGroupTries,
+  toAscentFeedInput,
   type LogbookFilterState,
-  type LogbookSortState,
   type LogbookListRow,
+  type LogbookSortState,
 } from '@boardsesh/logbook';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { getLayoutDisplayName } from '@boardsesh/profile-stats';
+import type { Grade } from '@boardsesh/shared-schema';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useGradeFormat } from '../../hooks/use-grade-format';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
+import { type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { useToday } from '../../hooks/use-today';
 import { track } from '../../lib/analytics';
+import { createFilterPickerHandoffId } from '../../lib/filter-picker-handoff-id';
+import { buildGradeRailStops } from '../../lib/grade-stops';
+import { useGrades, useUserAscentsFeed, useUserGroupedAscentsFeed } from '../../lib/graphql/hooks';
+import { hapticSelection } from '../../lib/haptics';
+import { useLogbookPinnedChips } from '../../lib/logbook-pinned-chips-store';
+import { subscribeToLogbookSetterSelection } from '../../lib/logbook-setter-handoff';
+import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
+import { useScopedRouter } from '../../lib/routing/scoped-navigation';
+import { normalizeSearchName } from '../../lib/search-name';
+import { tickToClimb } from '../../lib/tick-to-climb';
+import { useConfirm } from '../../providers/dialog-provider';
+import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useFeatureFlag } from '../../providers/feature-flags-provider';
+import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
+import { useTheme } from '../../providers/theme-provider';
+import { borderRadius, opacity, spacing } from '../../theme/tokens';
+import { ReadableColumn } from '../ReadableColumn';
 import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { Button } from '../Button';
-import { ActivityIndicator } from '../ActivityIndicator';
 import { FilterTokenRow } from '../search/FilterTokenRow';
-import { LogbookRow } from './LogbookRow';
+import { BoardLinkPrompt } from './BoardLinkPrompt';
+import { LogbookChipRow } from './LogbookChipRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
-import { BoardLinkPrompt } from './BoardLinkPrompt';
-import { LogbookFilterSheet } from './LogbookFilterSheet';
 import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
-import { LogbookChipRow } from './LogbookChipRow';
 import { LogbookFacetRail } from './LogbookFacetRail';
+import { LogbookFilterSheet } from './LogbookFilterSheet';
+import { LogbookRow } from './LogbookRow';
+import { LogbookView } from './LogbookView';
 import {
   buildLogbookFilterTokens,
   countLogbookFilters,
   logbookBoardLabel,
   type LogbookRailKind,
 } from './logbook-capsules';
-import { useLogbookSearch } from './use-logbook-search';
 import { useLogbookBoardOptions } from './use-logbook-board-options';
-import { useUserAscentsFeed, useUserGroupedAscentsFeed, useGrades } from '../../lib/graphql/hooks';
-import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
-import { useToday } from '../../hooks/use-today';
-import { useGradeFormat } from '../../hooks/use-grade-format';
-import { OfflineState } from '../OfflineState';
-import type { Grade } from '@boardsesh/shared-schema';
-import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
-import { tickToClimb } from '../../lib/tick-to-climb';
-import { renderBoardToPlaylistConfig } from '../../lib/playlists/board-details-for-playlist';
-import { buildGradeRailStops } from '../../lib/grade-stops';
-import { useLogbookPinnedChips } from '../../lib/logbook-pinned-chips-store';
-import { subscribeToLogbookSetterSelection } from '../../lib/logbook-setter-handoff';
-import { createFilterPickerHandoffId } from '../../lib/filter-picker-handoff-id';
-import { useScopedRouter } from '../../lib/routing/scoped-navigation';
-import { getLayoutDisplayName } from '@boardsesh/profile-stats';
-import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useFeatureFlag } from '../../providers/feature-flags-provider';
-import { useConfirm } from '../../providers/dialog-provider';
-import { normalizeSearchName } from '../../lib/search-name';
-import { hapticSelection } from '../../lib/haptics';
-import { opacity, spacing, borderRadius } from '../../theme/tokens';
-import { useTheme } from '../../providers/theme-provider';
+import { useLogbookSearch } from './use-logbook-search';
 
 const SEARCH_DEBOUNCE_MS = 300;
 // How long a setter push blocks another one if its picks never come back (a
@@ -90,8 +85,6 @@ type LogbookChangeSurface = 'capsule' | 'rail' | 'sheet' | 'token' | 'setter_pic
 
 type LogbookTabProps = {
   userId: string | undefined;
-  /** CPP captures scope the genuine server feed to the advertised board family. */
-  screenshotBoardType?: string;
   /** Measured chrome height — the fixed toolbar insets its top by this so it
    *  rests below the floating chrome and results scroll beneath the toolbar. */
   topInset?: number;
@@ -210,14 +203,7 @@ function logbookEntries(rows: LogbookListRow<LogbookGroupUnit>[]): LogbookGroupU
   return entries;
 }
 
-export function LogbookTab({
-  userId,
-  topInset = 0,
-  viewerIsOwner = true,
-  renderHeader,
-  screenshotBoardType,
-  scrollEdge,
-}: LogbookTabProps) {
+export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderHeader, scrollEdge }: LogbookTabProps) {
   const nativeRootHeader = useNativeRootHeader();
   // On the Profile tab the Android nav bar hides as this list scrolls down; each
   // sub-tab is its own scroll source, so switching sub-tabs never reads as a jump.
@@ -228,7 +214,7 @@ export function LogbookTab({
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
   const { t, i18n } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   // One grade scale for the grade capsule's label, the inline rail and the sheet.
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
   const { gradeFormat } = useGradeFormat();
@@ -245,7 +231,7 @@ export function LogbookTab({
   const { fontScale } = useWindowDimensions();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
   // Day-granular: rolls over on focus and on foreground, so "Last 7 days" and
-  // "This month" move with the calendar. Frozen in screenshot mode.
+  // "This month" move with the calendar.
   const today = useToday();
   const locale = i18n.language;
 
@@ -428,16 +414,8 @@ export function LogbookTab({
   // calendar day change, so the React Query key (and the FlashList data
   // identity downstream) is stable between unrelated re-renders.
   const feedInput = useMemo(() => {
-    const cppBoardTypes =
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-      process.env.EXPO_PUBLIC_SCREENSHOT_CPP_URL &&
-      screenshotBoardType &&
-      ['kilter', 'tension', 'moonboard', 'spray'].includes(screenshotBoardType)
-        ? [screenshotBoardType]
-        : undefined;
-    // `today` (the screenshot-aware day clock) anchors the rolling date windows.
-    return toAscentFeedInput({ filters, sort, name, boardTypes: cppBoardTypes, now: today });
-  }, [filters, sort, name, screenshotBoardType, today]);
+    return toAscentFeedInput({ filters, sort, name, now: today });
+  }, [filters, sort, name, today]);
 
   // Gate on `hydrated` so the feed fetches once with the restored prefs rather
   // than once with defaults then again after persistence loads.
@@ -860,174 +838,68 @@ export function LogbookTab({
   );
 
   return (
-    <View style={styles.flex}>
-      <ReadableColumn style={styles.flex}>
-        {hasComposedHeader ? null : controls}
-        {/* UIKit supplies its title inset to the full-height scroll view. Material
-            uses an opaque header, so its entire results frame starts below it. */}
-        <View
-          pointerEvents={headerMeasured ? 'auto' : 'none'}
-          accessibilityElementsHidden={!headerMeasured}
-          importantForAccessibility={headerMeasured ? 'auto' : 'no-hide-descendants'}
-          style={[
-            styles.flex,
-            hasComposedHeader && !nativeRootHeader && { paddingTop: headerHeight, overflow: 'hidden' },
-            !headerMeasured && styles.unmeasuredContent,
-          ]}
-        >
-          {!userId ? (
-            <View style={[styles.centered, { paddingTop: scrollHeaderInset }]}>
-              <ActivityIndicator size="large" />
-            </View>
-          ) : offline.isBlocked && offline.reason ? (
-            <View style={[styles.centered, { paddingTop: scrollHeaderInset }]}>
-              <OfflineState reason={offline.reason} errorTitle={t('mobile.logbook.errorTitle')} onRetry={handleRetry} />
-            </View>
-          ) : feed.isPending ? (
-            <View style={[styles.centered, { paddingTop: scrollHeaderInset }]}>
-              <ActivityIndicator size="large" />
-            </View>
-          ) : feed.isError ? (
-            <View style={[styles.errorContainer, { paddingTop: scrollHeaderInset }]}>
-              <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.errorTitle}>
-                {t('mobile.logbook.errorTitle')}
-              </Text>
-              <Text variant="subheadline" style={styles.errorBody}>
-                {t('mobile.logbook.errorBody')}
-              </Text>
-              <PressableSurface
-                onPress={handleRetry}
-                disabled={feed.isRefetching}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.logbook.retry')}
-                style={({ pressed }) => [
-                  styles.retryButton,
-                  { borderColor: brandColors.primary },
-                  feed.isRefetching && styles.retryButtonDisabled,
-                  pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
-                ]}
-              >
-                <Text variant="footnote" color={brandColors.primary}>
-                  {t('mobile.logbook.retry')}
-                </Text>
-              </PressableSurface>
-            </View>
-          ) : (
-            <>
-              <ScrollEdgeListReset edge={scrollEdge} />
-              <FlashList
-                testID="logbook-screen"
-                data={listRows}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                getItemType={getRowType}
-                {...scrollEdge?.listProps}
-                onScroll={handleScroll}
-                // The native controls are measured after this list mounts. Keeping
-                // a row anchored would scroll away the padding added for them.
-                maintainVisibleContentPosition={hasComposedHeader && nativeRootHeader ? { disabled: true } : undefined}
-                contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-                onEndReached={handleEndReached}
-                onEndReachedThreshold={0.5}
-                contentContainerStyle={{ paddingTop: scrollHeaderInset, paddingBottom }}
-                scrollIndicatorInsets={{ top: scrollHeaderInset }}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={feed.isRefetching}
-                    onRefresh={handleRefresh}
-                    tintColor={brandColors.primary}
-                  />
-                }
-                ListFooterComponent={
-                  feed.isFetchingNextPage ? (
-                    <View style={styles.footer}>
-                      <ActivityIndicator size="small" />
-                    </View>
-                  ) : null
-                }
-                ListEmptyComponent={
-                  <View style={styles.empty}>
-                    <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {isFiltered
-                        ? t('mobile.logbook.emptyFiltered')
-                        : viewerIsOwner
-                          ? t('mobile.logbook.empty')
-                          : t('mobile.logbook.emptyOther')}
-                    </Text>
-                    {isFiltered ? (
-                      <View style={styles.emptyAction}>
-                        <Button
-                          title={t('mobile.logbook.clearFilters')}
-                          onPress={handleClearFilters}
-                          variant="tonal"
-                          size="medium"
-                        />
-                      </View>
-                    ) : null}
-                    {/* Unfiltered only: a logbook emptied by a filter says nothing about
-                  whether a board account is linked. */}
-                    <BoardLinkPrompt key={userId} viewerIsOwner={viewerIsOwner} hasNoSends={!isFiltered} />
-                  </View>
-                }
-              />
-            </>
-          )}
-        </View>
-      </ReadableColumn>
-
-      {/* Render after the results so the native header observes the main scroll view. */}
-      {renderHeader?.(controls, setHeaderHeight)}
-
-      {viewerIsOwner ? (
-        <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
-      ) : null}
-
-      {chooser && !chooserEmptied ? (
-        <LogbookEntryChooserSheet
-          entries={visibleChooserEntries}
-          intent={chooser.intent}
-          onPick={handleChooserPick}
-          onDeleteAll={handleChooserDeleteAll}
-          onDismiss={closeChooser}
-        />
-      ) : null}
-
-      {filterSheetOpen ? (
-        <LogbookFilterSheet
-          onDismiss={handleCloseFilters}
-          filters={filters}
-          sort={sort}
-          name={name}
-          viewerIsOwner={viewerIsOwner}
-          grades={grades ?? EMPTY_GRADES}
-          boardOptions={boardOptions}
-          matchCount={matchCount}
-          today={today}
-          onChangeFilters={handleSheetFilters}
-          onChangeSort={handleSheetSort}
-          onNameChange={handleNameChange}
-          onClearName={clearName}
-          onReset={handleReset}
-          onOpenSetters={handleOpenSetters}
-          initialSection={sheetSection}
-        />
-      ) : null}
-    </View>
+    <LogbookView
+      userId={userId}
+      viewerIsOwner={viewerIsOwner}
+      hasComposedHeader={hasComposedHeader}
+      controls={controls}
+      header={renderHeader?.(controls, setHeaderHeight)}
+      headerMeasured={headerMeasured}
+      nativeRootHeader={nativeRootHeader}
+      headerHeight={headerHeight}
+      scrollHeaderInset={scrollHeaderInset}
+      paddingBottom={paddingBottom}
+      offline={offline}
+      isFiltered={isFiltered}
+      listRows={listRows}
+      renderItem={renderItem}
+      scrollEdge={scrollEdge}
+      handleScroll={handleScroll}
+      handleRetry={handleRetry}
+      handleRefresh={handleRefresh}
+      handleEndReached={handleEndReached}
+      handleClearFilters={handleClearFilters}
+      feed={feed}
+      boardLinkPrompt={<BoardLinkPrompt key={userId} viewerIsOwner={viewerIsOwner} hasNoSends={!isFiltered} />}
+      overlays={
+        <>
+          {viewerIsOwner ? (
+            <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
+          ) : null}
+          {chooser && !chooserEmptied ? (
+            <LogbookEntryChooserSheet
+              entries={visibleChooserEntries}
+              intent={chooser.intent}
+              onPick={handleChooserPick}
+              onDeleteAll={handleChooserDeleteAll}
+              onDismiss={closeChooser}
+            />
+          ) : null}
+          {filterSheetOpen ? (
+            <LogbookFilterSheet
+              onDismiss={handleCloseFilters}
+              filters={filters}
+              sort={sort}
+              name={name}
+              viewerIsOwner={viewerIsOwner}
+              grades={grades ?? EMPTY_GRADES}
+              boardOptions={boardOptions}
+              matchCount={matchCount}
+              today={today}
+              onChangeFilters={handleSheetFilters}
+              onChangeSort={handleSheetSort}
+              onNameChange={handleNameChange}
+              onClearName={clearName}
+              onReset={handleReset}
+              onOpenSetters={handleOpenSetters}
+              initialSection={sheetSection}
+            />
+          ) : null}{' '}
+        </>
+      }
+    />
   );
 }
-
-function keyExtractor(row: LogbookListRow<LogbookGroupUnit>) {
-  return row.key;
-}
-
-// Divider vs entry recycling pools — FlashList must never recycle a divider
-// into a climb row or vice versa.
-function getRowType(row: LogbookListRow<LogbookGroupUnit>) {
-  return row.type;
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1, minHeight: 0 },
   unmeasuredContent: { opacity: 0 },

@@ -39,7 +39,6 @@ export function OfflineDownloadPill() {
     activity !== null &&
     !hidden &&
     !sheetVisible &&
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' &&
     !pathname.startsWith('/boards') &&
     !pathname.startsWith('/play');
 

@@ -1,3 +1,4 @@
+import { BoardSheetView } from './BoardSheetView';
 // Board sheet — "now on the wall" (the board-presence primary surface).
 //
 // A native BottomSheetModal (`@expo/ui/community/bottom-sheet`) sibling of
@@ -27,13 +28,12 @@
 // so the inline iPad column never double-fires it.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
-import { useTheme } from '../../providers/theme-provider';
-import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
+
 import type { BoardConfig, ClimbActionsTarget } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
@@ -41,8 +41,6 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import type { BoardSheetClimbAction, NowOnTheWallPanelHandle } from './NowOnTheWallPanel';
 import type { SprayDetailRowKey } from '../board-discovery/spray-detail-rows';
-import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
-import { useIosSheetBackgroundStyle } from '../use-ios-sheet-background-style';
 
 export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 
@@ -111,8 +109,6 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   },
   ref,
 ) {
-  const { sheet, sheetSurface } = useTheme();
-  const iosBackgroundStyle = useIosSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
   const panelRef = useRef<NowOnTheWallPanelHandle>(null);
 
@@ -156,8 +152,6 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       itemCount: visibleHistory.length,
     });
   }, [isPresented, visibleHistory.length]);
-
-  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
   // Let the native sheet draw its own material wherever it can.
   //
   // This used to pass the colour unconditionally, which was meant to darken the
@@ -168,17 +162,6 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   //
   // iOS shares the same background rule as every other sheet. Elsewhere,
   // preserve this panel's existing opaque Material/Reduce Transparency surface.
-  const surfaceMode = useEffectiveSurfaceMode();
-  const backgroundStyle = useMemo(
-    () =>
-      Platform.OS === 'ios'
-        ? iosBackgroundStyle
-        : surfaceMode === 'glass' || surfaceMode === 'blur'
-          ? undefined
-          : { backgroundColor: sheetSurface },
-    [iosBackgroundStyle, surfaceMode, sheetSurface],
-  );
-
   const invalidatePanelActions = useCallback(() => {
     panelRef.current?.invalidatePendingActions();
   }, []);
@@ -237,24 +220,9 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     },
     [managedOnChange],
   );
-  const sheetDismissProps = useMemo(() => ({ onFullyDismissed: managed.onFullyDismissed }), [managed.onFullyDismissed]);
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      // Height is driven by explicit snapPoints, so disable dynamic content
-      // sizing — it doesn't play well with a BottomSheetFlatList (no bounded
-      // content height to measure).
-      enableDynamicSizing={false}
-      enablePanDownToClose
-      onChange={handleSheetChange}
-      {...sheetDismissProps}
-      handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={backgroundStyle}
-      style={styles.sheet}
-    >
+    <BoardSheetView ref={sheetRef} onChange={handleSheetChange} onFullyDismissed={managed.onFullyDismissed}>
       {isPresented ? (
         <NowOnTheWallPanel
           ref={panelRef}
@@ -275,22 +243,6 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
           onOpenActions={onOpenActions}
         />
       ) : null}
-    </BottomSheetModal>
+    </BoardSheetView>
   );
-});
-
-const styles = StyleSheet.create({
-  sheet: {
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 16,
-      },
-    }),
-  },
 });

@@ -57,7 +57,7 @@ import { GradeFilterControl } from './GradeFilterControl';
 // reads as a matched set (M3 docked/inline height).
 const MATERIAL_CONTROL_HEIGHT = 48;
 
-type ClimbTopChromeProps = {
+export type ClimbTopChromeProps = {
   /** Optional persistent plain centre title (the legacy filter summary, e.g.
    *  "V4–V6 · Quality"). Omitted when the persistent filter chips carry the filter
    *  state — the centre then reads empty (the redundant "All climbs" label is
@@ -71,7 +71,7 @@ type ClimbTopChromeProps = {
   /** Show a brand-coloured dot on the board button — the one-time onboarding cue
    *  pointing a new user at the "now on the wall" sheet. */
   showBoardBadge?: boolean;
-  /** Report the board button to the showcase-video recorder (screenshot mode),
+  /** Report the board button to the layout observer,
    *  on both variants: the glass board glyph and the Material board switcher. */
   anchorBoardButton?: boolean;
   onHeightChange: (height: number) => void;
@@ -141,7 +141,7 @@ function ClimbTopChromeComponent({
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors, variant } = useTheme();
+  const { variant } = useTheme();
   const { data: activeBoard } = useActiveBoard();
   const glassGradeRail = useFloatingHeaderControls();
   // The centre slot: the climb on the wall, the "You have the board" capsule, or
@@ -301,6 +301,132 @@ function ClimbTopChromeComponent({
     () => (materialCreateInMenu ? { label: createLabel, onPress: onCreate } : undefined),
     [materialCreateInMenu, createLabel, onCreate],
   );
+  return (
+    <ClimbTopChromeView
+      title={title}
+      boardName={boardName}
+      canCreate={canCreate}
+      onCreate={onCreate}
+      onOpenBoardDetail={onOpenBoardDetail}
+      showBoardBadge={showBoardBadge}
+      anchorBoardButton={anchorBoardButton}
+      onHeightChange={onHeightChange}
+      onCloseGrade={onCloseGrade}
+      onDismissGradePopover={onDismissGradePopover}
+      activeFilterCount={activeFilterCount}
+      onOpenFilters={onOpenFilters}
+      filterSummary={filterSummary}
+      gradeBound={gradeBound}
+      grades={grades}
+      lastUsedGradeId={lastUsedGradeId}
+      gradeRailVisible={gradeRailVisible}
+      gradeRecenterKey={gradeRecenterKey}
+      gradeChip={gradeChip}
+      onOpenGrade={onOpenGrade}
+      onGradeChange={onGradeChange}
+      filterChrome={filterChrome}
+      showPersistentChips={showPersistentChips}
+      scrollEdge={scrollEdge}
+      glassGradeRail={glassGradeRail}
+      materialCreateInMenu={materialCreateInMenu}
+      wallCapsule={wallCapsule}
+      materialLeading={
+        <>
+          <UserAvatarToolbarAction variant="material" />
+          <MaterialAngleAction />
+        </>
+      }
+      materialTrailing={
+        <ClimbListBoardActions
+          material
+          onOpenHistory={onOpenBoardDetail}
+          badge={showBoardBadge}
+          showcaseAnchor={anchorBoardButton}
+          createRow={materialCreateRow}
+        />
+      }
+      glassHeader={(children) => (
+        <CollapsingTopChrome
+          materialTitle={tCommon('mobile.nav.climbs')}
+          centerTitle={title}
+          // The tab names the screen: the iOS native header draws no "Climbs" title.
+          titleHidden
+          // "On the wall" status — a compact capsule in the centre islands slot (where
+          // the title used to sit) while the wall's climb is trusted and not hidden, or
+          // "You have the board"; otherwise undefined, so the centre falls back to the
+          // title.
+          centerContent={wallCapsule}
+          canCreate={canCreate}
+          onCreate={onCreate}
+          createAccessibilityLabel={t('mobile.create.fab.ariaLabel')}
+          onOpenBoardSwitcher={onOpenBoardDetail}
+          boardBadge={showBoardBadge}
+          anchorBoardButton={anchorBoardButton}
+          boardControls={{
+            content: (
+              <ClimbListBoardActions
+                onOpenHistory={onOpenBoardDetail}
+                badge={showBoardBadge}
+                showcaseAnchor={anchorBoardButton}
+              />
+            ),
+            actionCount: climbListBoardActionCount(activeBoard),
+          }}
+          climbListBarActions={climbListBarActions}
+          onHeightChange={onHeightChange}
+          scrollEdge={scrollEdge}
+          hideLight
+        >
+          {children}
+        </CollapsingTopChrome>
+      )}
+    />
+  );
+}
+
+export type ClimbTopChromeViewProps = ClimbTopChromeProps & {
+  glassGradeRail: boolean;
+  materialCreateInMenu: boolean;
+  wallCapsule?: ReactNode;
+  materialLeading: ReactNode;
+  materialTrailing: ReactNode;
+  /** Supplies native/floating chrome with presentation-only controls. */
+  glassHeader: (children: ReactNode) => ReactNode;
+};
+
+/** Shared Material controls and Liquid Glass filter content, with no live board state. */
+export function ClimbTopChromeView({
+  boardName,
+  canCreate,
+  onCreate,
+  onHeightChange,
+  onCloseGrade,
+  activeFilterCount = 0,
+  onOpenFilters,
+  filterSummary,
+  gradeBound,
+  grades = [],
+  lastUsedGradeId,
+  gradeRailVisible = false,
+  gradeRecenterKey,
+  gradeChip,
+  onOpenGrade,
+  onGradeChange,
+  filterChrome,
+  showPersistentChips = false,
+  scrollEdge,
+  glassGradeRail,
+  materialCreateInMenu,
+  wallCapsule,
+  materialLeading,
+  materialTrailing,
+  glassHeader,
+}: ClimbTopChromeViewProps) {
+  const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
+  const { systemColors, variant } = useTheme();
+  const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
+  const createLabel = t('mobile.create.fab.ariaLabel');
   const gradeRail =
     gradeRailVisible && gradeBound && onGradeChange ? (
       <GradeRangeRail
@@ -405,8 +531,7 @@ function ClimbTopChromeComponent({
           </>
         }
       >
-        <UserAvatarToolbarAction variant="material" />
-        <MaterialAngleAction />
+        {materialLeading}
         {/* The title slot, empty as on iOS: the tab names the screen and ⋮ switches
           boards. The climb on the wall sits in it as a compact pill while presence
           trusts it. TalkBack reads the screen's name from the header under it in
@@ -430,59 +555,13 @@ function ClimbTopChromeComponent({
             accessibilityLabel={createLabel}
           />
         ) : null}
-        <ClimbListBoardActions
-          material
-          onOpenHistory={onOpenBoardDetail}
-          badge={showBoardBadge}
-          showcaseAnchor={anchorBoardButton}
-          createRow={materialCreateRow}
-        />
+        {materialTrailing}
       </MaterialTopAppBar>
     );
   }
 
-  // Liquid-glass variant: the shared chrome (left/right glass islands over the
-  // progressive blur) with the filter chips as its below-row content. The native
-  // header draws no title; off it, an optional filter summary can sit in the
-  // centre via `centerTitle`.
-  //
-  // `hideLight`: the climbs tab suppresses the toolbar BLE lightbulb. Board-LED
-  // control already lives on the queue bar / current-climb pill
-  // (BoardControlIndicator); a second bulb in the top-right island reads like a
-  // list/filter affordance next to the filter chips and confused users. Discover
-  // and the other chromes keep their bulb.
-  return (
-    <CollapsingTopChrome
-      materialTitle={tCommon('mobile.nav.climbs')}
-      centerTitle={title}
-      // The tab names the screen: the iOS native header draws no "Climbs" title.
-      titleHidden
-      // "On the wall" status — a compact capsule in the centre islands slot (where
-      // the title used to sit) while the wall's climb is trusted and not hidden, or
-      // "You have the board"; otherwise undefined, so the centre falls back to the
-      // title.
-      centerContent={wallCapsule}
-      canCreate={canCreate}
-      onCreate={onCreate}
-      createAccessibilityLabel={t('mobile.create.fab.ariaLabel')}
-      onOpenBoardSwitcher={onOpenBoardDetail}
-      boardBadge={showBoardBadge}
-      anchorBoardButton={anchorBoardButton}
-      boardControls={{
-        content: (
-          <ClimbListBoardActions
-            onOpenHistory={onOpenBoardDetail}
-            badge={showBoardBadge}
-            showcaseAnchor={anchorBoardButton}
-          />
-        ),
-        actionCount: climbListBoardActionCount(activeBoard),
-      }}
-      climbListBarActions={climbListBarActions}
-      onHeightChange={onHeightChange}
-      scrollEdge={scrollEdge}
-      hideLight
-    >
+  return glassHeader(
+    <>
       {/* Persistent filter chips sit right under the header on every glass path,
           so filtering is always glanceable. */}
       {filterChrome}
@@ -496,7 +575,7 @@ function ClimbTopChromeComponent({
           {gradeRail}
         </View>
       ) : null}
-    </CollapsingTopChrome>
+    </>,
   );
 }
 

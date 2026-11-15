@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
@@ -44,14 +44,18 @@ type BoardSummaryCardProps = {
  * The static card contains sibling pressables, so each action owns its whole
  * row and long board names can wrap without shrinking either touch target.
  */
-export function BoardSummaryCard({
+export function BoardSummaryCard(props: BoardSummaryCardProps) {
+  return <BoardSummaryCardView {...props} thumbnail={props.board ? <BoardThumbnail board={props.board} /> : null} />;
+}
+export function BoardSummaryCardView({
+  thumbnail,
   onBrowseClimbs,
   onChangeBoard,
   onRetry,
   hasNoBoard,
   isRestoreError,
   board,
-}: BoardSummaryCardProps) {
+}: BoardSummaryCardProps & { thumbnail: ReactNode }) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { t: tClimbs } = useTranslation('climbs');
@@ -82,9 +86,7 @@ export function BoardSummaryCard({
             accessibilityLabel={[t('mobile.session.browseClimbs'), summary].filter(Boolean).join(', ')}
             style={styles.navigationRow}
           >
-            <View style={styles.iconColumn}>
-              <BoardThumbnail board={board} />
-            </View>
+            <View style={styles.iconColumn}>{thumbnail}</View>
             <View style={styles.textColumn}>
               <Text variant="headline" color={systemColors.label}>
                 {t('mobile.session.browseClimbs')}

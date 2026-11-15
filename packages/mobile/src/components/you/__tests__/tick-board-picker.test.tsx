@@ -8,9 +8,6 @@ import { TickBoardPicker } from '../TickBoardPicker';
 
 const request = vi.hoisted(() => vi.fn());
 vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request }) }));
-vi.mock('../../../lib/screenshot-mode', () => ({
-  screenshotModeNextPageParam: (offset: number | undefined) => offset,
-}));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),

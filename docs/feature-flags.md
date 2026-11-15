@@ -338,9 +338,8 @@ diagnostic) applies on native. The whole surface lives in three files:
   `packages/mobile/src/components/session-screen/pre-session/workout-blocks.ts`:
   every dev build, or a store build with the flag on, gets 8 type chips on the
   Record tab's block card and 7 in the in-session "Add a block" sheet instead of
-  5 and 4. Screenshot mode ignores the flag and keeps its own rule (the timed
-  chips show only when `EXPO_PUBLIC_SCREENSHOT_WORKOUT` names a timed type), so
-  a tester's override never reaches a store capture. The helpers stay pure and
+  5 and 4. View stories inject the offered block types without reading feature
+  flags or persisted tester overrides. The helpers stay pure and
   take the flag as an argument; `WorkoutBlockFields` and `AddWorkoutBlockSheet`
   read it through `useWorkoutTimedBlocksFlag` and pass it down. Unresolved reads
   as off, which is the 5 chips climbers have today; a tester's chips appear when

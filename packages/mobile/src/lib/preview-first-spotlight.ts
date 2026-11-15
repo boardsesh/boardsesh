@@ -70,7 +70,6 @@ export async function dismissPreviewFirstSpotlight(record: PreviewFirstSpotlight
  * `hasUnseenChangelog`.
  */
 export async function hasUnseenPreviewFirstSpotlight(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   const record = await loadPreviewFirstSpotlight();
   return !record.dismissed && record.shownAt === null;
 }

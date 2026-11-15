@@ -46,6 +46,9 @@ vi.mock('../climb-actions/ClimbActionsMenu', () => ({
       onAccessibilityAction: menuState.onAction,
     };
   },
+}));
+
+vi.mock('../climb-actions/ClimbMenu', () => ({
   ClimbMenu: ({ children, rows }: { children?: ReactNode; rows: unknown[] }) =>
     rows.length > 0 ? createElement('div', { 'data-native-menu': true }, children) : children,
 }));

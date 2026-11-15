@@ -41,7 +41,7 @@ const trackedPaths = [
   'scripts/lib/screenshot-presentation.ts',
   'app-stores/presentation/en-US.json',
   'packages/mobile/.maestro/app-store-cpp.yaml',
-  'packages/mobile/src/lib/screenshot-climb-selection.ts',
+  'packages/mobile/src/dev/integration/screenshot-climb-selection.ts',
   'packages/mobile/src/components/LayeredClimbImage.tsx',
   'packages/mobile/src/components/play-drawer/SwipeBoardCarousel.tsx',
   'packages/mobile/app/(tabs)/climbs/index.tsx',
@@ -421,7 +421,7 @@ describe('original native replay provenance', () => {
   });
   it.each([
     'packages/mobile/src/components/ScreenshotSmokeMarker.tsx',
-    'packages/mobile/src/lib/screenshot-climb-selection.ts',
+    'packages/mobile/src/dev/integration/screenshot-climb-selection.ts',
     'packages/mobile/src/components/LayeredClimbImage.tsx',
     'packages/mobile/app.config.ts',
     'scripts/lib/screenshot-presentation.ts',

@@ -26,6 +26,7 @@ export type BoardShareVisibility = Exclude<SprayWallVisibility, 'private'> | 'in
 type BoardShareSheetProps = {
   visible: boolean;
   onDismiss: () => void;
+  onPresented?: () => void;
   onFullyDismissed?: () => void;
   /**
    * The share URL, already built. `null` only while an invite link is on its
@@ -70,6 +71,7 @@ const QR_TILE_BACKGROUND = '#FFFFFF';
 export function BoardShareSheet({
   visible,
   onDismiss,
+  onPresented,
   onFullyDismissed,
   shareUrl,
   wallName,
@@ -115,6 +117,7 @@ export function BoardShareSheet({
 
   return (
     <ModalSheet
+      onPresented={onPresented}
       visible={visible}
       onClose={onDismiss}
       onFullyDismissed={onFullyDismissed}

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the secure-store adapter (the seam) rather than expo-secure-store.
 const getMock = vi.fn();
@@ -73,21 +73,6 @@ describe('changelog seen storage', () => {
     it('is never unseen when the changelog is empty (no latest entry)', () => {
       expect(hasUnseenChangelog(null, null)).toBe(false);
       expect(hasUnseenChangelog(null, '2026-06-19T11:30:00.000Z')).toBe(false);
-    });
-
-    describe('in screenshot mode', () => {
-      const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
-      beforeEach(() => {
-        process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-      });
-      afterEach(() => {
-        if (originalScreenshotMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
-        else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = originalScreenshotMode;
-      });
-
-      it('never reports unseen so captured screens omit the pill', () => {
-        expect(hasUnseenChangelog('2026-06-19T11:30:00.000Z', null)).toBe(false);
-      });
     });
   });
 });

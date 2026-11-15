@@ -1,14 +1,13 @@
-import { Fragment, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Component, Fragment, useCallback, useEffect, useMemo, useState, type ReactNode, type ErrorInfo } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { router, Stack, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
+import { Redirect, router, Stack, useIsFocused, useLocalSearchParams, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/Text';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { STORIES } from './registry';
-import { findStory } from './registry-core';
-import { getScenarioOverrides, setScenarioOverrides, subscribeScenarioOverrides } from './scenario-overrides';
-import { isScenarioStory, type ComponentStory, type RegisteredStory, type ScenarioStory } from './types';
+import { loadStory, loadStories, storyModuleIds } from './registry';
+import type { ComponentStory, RegisteredStory, StoryRenderControls } from './types';
+import { useStoryRendererReady } from '../fixtures/board-render-style';
 import { useStoryAppearance } from './use-story-appearance';
 
 const HIDDEN_HEADER = { headerShown: false } as const;
@@ -24,65 +23,109 @@ function logReady(id: string): void {
 }
 
 /**
- * `dev/stories/<id>`: draws a component story, or applies a scenario and opens its route.
+ * `dev/stories/<id>`: draws a view with injected props.
  *
  * `?shot=<nonce>` is set by the shots scripts on every `--story` capture. A new
  * value re-runs the story's effects, so re-shooting the story already on screen
  * (after an edit, or with another `--theme`) logs its line again.
  */
-export function StoryScreen() {
-  const params = useLocalSearchParams<{ id: string; theme?: string; variant?: string; shot?: string }>();
-  const id = firstParam(params.id) ?? '';
+export function StoryScreen({
+  inTab = false,
+  defaultStoryId,
+  tab,
+}: {
+  inTab?: boolean;
+  defaultStoryId?: string;
+  tab?: ComponentStory['tab'];
+}) {
+  const params = useLocalSearchParams<{
+    id?: string;
+    storyId?: string;
+    theme?: string;
+    variant?: string;
+    locale?: string;
+    renderMode?: string;
+    shot?: string;
+  }>();
+  const id = firstParam(params.storyId) ?? firstParam(params.id) ?? defaultStoryId ?? '';
   const shot = firstParam(params.shot) ?? '';
   useStoryAppearance(firstParam(params.theme), firstParam(params.variant));
 
-  if (id === 'reset') return <ResetScenario shot={shot} />;
-  const entry = findStory(STORIES, id);
+  const entry = loadStory(id);
+  if (inTab && entry?.story.tab && entry.story.tab !== tab) return null;
   if (!entry) return <MissingStory id={id} shot={shot} />;
-  if (isScenarioStory(entry.story)) {
-    return <OpenScenario key={entry.id} entry={entry} story={entry.story} shot={shot} />;
+  if (entry.story.tab && !inTab) {
+    return (
+      <Redirect
+        href={{
+          pathname: `/dev/story-tabs/${entry.story.tab}` as `/dev/story-tabs/${string}`,
+          params: { ...params, id: undefined, storyId: entry.id },
+        }}
+      />
+    );
   }
-  return <ComponentStoryCanvas key={entry.id} entry={entry} story={entry.story} shot={shot} />;
+  return (
+    <StoryCaptureBoundary key={`${entry.id}:${shot}`} id={entry.id}>
+      <ComponentStoryCanvas entry={entry} story={entry.story} shot={shot} inTab={inTab} />
+    </StoryCaptureBoundary>
+  );
 }
 
-function ComponentStoryCanvas({ entry, story, shot }: { entry: RegisteredStory; story: ComponentStory; shot: string }) {
+function ComponentStoryCanvas({
+  entry,
+  story,
+  shot,
+  inTab,
+}: {
+  entry: RegisteredStory;
+  story: ComponentStory;
+  shot: string;
+  inTab: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const { systemColors } = useTheme();
-  const overrides = story.overrides ?? null;
-
-  // Every story sets the whole override state while it is on screen: one
-  // without overrides clears a scenario's, so a component draws the same
-  // whatever was opened before it. Applied on focus, so going back to this story
-  // re-applies them. On blur, clear only our own: a newer story may already
-  // have replaced them.
-  useFocusEffect(
-    useCallback(() => {
-      // A scenario still waiting to turn its overrides on must not land on top.
-      cancelDelayedOverrides();
-      setScenarioOverrides(overrides);
-      return () => {
-        if (overrides !== null && getScenarioOverrides() === overrides) setScenarioOverrides(null);
-      };
-    }, [overrides]),
+  const focused = useIsFocused();
+  const rendererReady = useStoryRendererReady();
+  const [laidOut, setLaidOut] = useState(false);
+  const [contentReady, setContentReady] = useState(story.readiness !== 'explicit');
+  const [failed, setFailed] = useState(false);
+  const controls = useMemo<StoryRenderControls>(
+    () => ({
+      onReady: () => setContentReady(true),
+      onError: (error: unknown) => {
+        setFailed(true);
+        // eslint-disable-next-line no-console
+        console.error(`[stories] error ${entry.id} ${error instanceof Error ? error.message : String(error)}`);
+      },
+    }),
+    [entry.id],
   );
+  const onLayout = useCallback(() => setLaidOut(true), []);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => logReady(entry.id));
-    return () => cancelAnimationFrame(frame);
-  }, [entry.id, shot]);
+    if (!focused || !laidOut || !contentReady || !rendererReady || failed) return;
+    let finalFrame: number | undefined;
+    const frame = requestAnimationFrame(() => {
+      finalFrame = requestAnimationFrame(() => logReady(entry.id));
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (finalFrame !== undefined) cancelAnimationFrame(finalFrame);
+    };
+  }, [entry.id, shot, focused, laidOut, contentReady, rendererReady, failed]);
 
   if (story.layout === 'fullscreen') {
     return (
-      <View style={[styles.fill, { backgroundColor: systemColors.background }]}>
-        <Stack.Screen options={HIDDEN_HEADER} />
-        {story.render()}
+      <View onLayout={onLayout} style={[styles.fill, { backgroundColor: systemColors.background }]}>
+        {!inTab && <Stack.Screen options={HIDDEN_HEADER} />}
+        {story.render(controls)}
       </View>
     );
   }
 
   return (
-    <View style={[styles.fill, { backgroundColor: systemColors.background }]}>
-      <Stack.Screen options={HIDDEN_HEADER} />
+    <View onLayout={onLayout} style={[styles.fill, { backgroundColor: systemColors.background }]}>
+      {!inTab && <Stack.Screen options={HIDDEN_HEADER} />}
       <ScrollView
         contentContainerStyle={[
           styles.canvas,
@@ -95,65 +138,39 @@ function ComponentStoryCanvas({ entry, story, shot }: { entry: RegisteredStory; 
           </Text>
           <Text variant="headline">{story.name}</Text>
         </View>
-        {story.render()}
+        {story.render(controls)}
       </ScrollView>
     </View>
   );
 }
 
-// A delayed scenario outlives the screen that started it (the route replaces
-// it), so its timer lives here, and the next scenario or a reset cancels it.
-let delayedOverridesTimer: ReturnType<typeof setTimeout> | null = null;
+class StoryCaptureBoundary extends Component<{ id: string; children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
 
-function cancelDelayedOverrides(): void {
-  if (delayedOverridesTimer !== null) clearTimeout(delayedOverridesTimer);
-  delayedOverridesTimer = null;
-}
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
 
-function OpenScenario({ entry, story, shot }: { entry: RegisteredStory; story: ScenarioStory; shot: string }) {
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await story.prepare?.();
-      if (cancelled) return;
-      cancelDelayedOverrides();
-      const { overrides, overridesDelayMs, route } = story;
-      if (overridesDelayMs) {
-        setScenarioOverrides(null);
-        delayedOverridesTimer = setTimeout(() => {
-          delayedOverridesTimer = null;
-          setScenarioOverrides(overrides);
-        }, overridesDelayMs);
-      } else {
-        setScenarioOverrides(overrides);
-      }
-      // eslint-disable-next-line no-console
-      console.log(`[stories] scenario ${entry.id} -> ${route}`);
-      router.replace(route as Href);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [entry.id, story, shot]);
-  return <StoryMessage title={`Opening ${entry.id}`} body={story.route} />;
-}
+  componentDidCatch(error: Error, _details: ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error(`[stories] error ${this.props.id} ${error.message}`);
+  }
 
-function ResetScenario({ shot }: { shot: string }) {
-  useEffect(() => {
-    cancelDelayedOverrides();
-    setScenarioOverrides(null);
-    router.replace('/dev/stories' as Href);
-    logReady('reset');
-  }, [shot]);
-  return <StoryMessage title="Clearing scenario overrides" body="" />;
+  render() {
+    return this.state.error ? (
+      <StoryMessage title="Story failed" body={this.state.error.message} />
+    ) : (
+      this.props.children
+    );
+  }
 }
 
 function MissingStory({ id, shot }: { id: string; shot: string }) {
   const nearby = useMemo(() => {
     const needle = id.split('--')[0] ?? id;
-    return STORIES.filter((entry) => entry.id.includes(needle))
-      .slice(0, 8)
-      .map((entry) => entry.id);
+    return storyModuleIds()
+      .filter((moduleId) => moduleId.includes(needle))
+      .slice(0, 8);
   }, [id]);
   useEffect(() => {
     // eslint-disable-next-line no-console
@@ -189,14 +206,13 @@ function StoryMessage({ title, body }: { title: string; body: string }) {
   );
 }
 
-/** `dev/stories`: every story, grouped by file, plus a reset for scenario overrides. */
+/** `dev/stories`: every view story, grouped by file. */
 export function StoryIndexScreen() {
   const insets = useSafeAreaInsets();
   const { systemColors } = useTheme();
-  const overrides = useSyncExternalStore(subscribeScenarioOverrides, getScenarioOverrides, getScenarioOverrides);
   const groups = useMemo(() => {
     const byTitle = new Map<string, RegisteredStory[]>();
-    for (const entry of STORIES) {
+    for (const entry of loadStories()) {
       const group = byTitle.get(entry.title) ?? [];
       group.push(entry);
       byTitle.set(entry.title, group);
@@ -214,21 +230,6 @@ export function StoryIndexScreen() {
         ]}
       >
         <Text variant="largeTitle">Stories</Text>
-        {overrides ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              cancelDelayedOverrides();
-              setScenarioOverrides(null);
-            }}
-            style={[styles.row, { backgroundColor: systemColors.secondaryBackground }]}
-          >
-            <Text variant="body">Scenario overrides are on. Tap to clear.</Text>
-            <Text variant="footnote" color={systemColors.secondaryLabel}>
-              {JSON.stringify(overrides)}
-            </Text>
-          </Pressable>
-        ) : null}
         {groups.map(([title, entries]) => (
           <Fragment key={title}>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupTitle}>
@@ -243,7 +244,7 @@ export function StoryIndexScreen() {
               >
                 <Text variant="body">{entry.story.name}</Text>
                 <Text variant="footnote" color={systemColors.secondaryLabel}>
-                  {isScenarioStory(entry.story) ? `${entry.id} · opens ${entry.story.route}` : entry.id}
+                  {entry.id}
                 </Text>
               </Pressable>
             ))}

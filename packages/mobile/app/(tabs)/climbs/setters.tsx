@@ -10,7 +10,6 @@ import {
   type SetterPickerItem,
 } from '../../../src/components/filter-sheet/SetterPickerList';
 import { useHeaderActions } from '../../../src/hooks/use-header-actions';
-import { useScreenshotBoardParams } from '../../../src/hooks/use-screenshot-board-params';
 import { useSearchClimbsCount, useSetterStats } from '../../../src/lib/graphql/hooks';
 import { withSetterSelection } from '../../../src/lib/climb-count-preview-input';
 import { emitSetterFilterSelection } from '../../../src/lib/setter-filter-handoff';
@@ -88,17 +87,11 @@ export default function SettersFilterScreen() {
   const { t } = useTranslation('climbs');
   const handoffId = params.handoffId ?? '';
 
-  // A screenshot deep link (`://climbs/setters`) opens this route with none of
-  // the params the filter sheet pushes, which would leave the setter query
-  // disabled and the list empty. In screenshot mode only, fall back to the wall
-  // the capture activated on boot; `null` in every normal build and whenever the
-  // route carried a board.
-  const screenshotBoard = useScreenshotBoardParams(params.boardName);
-  const boardName = (screenshotBoard?.boardName ?? params.boardName ?? '') as BoardName;
-  const layoutId = Number(screenshotBoard?.layoutId ?? params.layoutId ?? 0);
-  const sizeId = Number(screenshotBoard?.sizeId ?? params.sizeId ?? 0);
-  const setIds = screenshotBoard?.setIds ?? params.setIds ?? '';
-  const angle = Number(screenshotBoard?.angle ?? params.angle ?? 0);
+  const boardName = (params.boardName ?? '') as BoardName;
+  const layoutId = Number(params.layoutId ?? 0);
+  const sizeId = Number(params.sizeId ?? 0);
+  const setIds = params.setIds ?? '';
+  const angle = Number(params.angle ?? 0);
 
   const [selectedSetters, setSelectedSetters] = useState<string[]>(() => parseSelectedSetters(params.setters));
   // Mirror of the latest selection so the focus-effect cleanup hands back the

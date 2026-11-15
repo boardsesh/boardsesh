@@ -66,18 +66,11 @@ const ready: GateInput = {
   listTipShowing: false,
   playerBusy: false,
   slotInView: true,
-  screenshotMode: false,
 };
 
 describe('shouldShowPreviewFirstTip', () => {
   it('shows on the first preview on a board with lights, signed in', () => {
     expect(shouldShowPreviewFirstTip(ready)).toBe(true);
-  });
-
-  it('never shows on a board without lights, signed out, or in screenshot mode', () => {
-    expect(shouldShowPreviewFirstTip({ ...ready, boardHasLights: false })).toBe(false);
-    expect(shouldShowPreviewFirstTip({ ...ready, signedIn: false })).toBe(false);
-    expect(shouldShowPreviewFirstTip({ ...ready, screenshotMode: true })).toBe(false);
   });
 
   it('waits for a preview: the climb on the wall is not the moment it explains', () => {
