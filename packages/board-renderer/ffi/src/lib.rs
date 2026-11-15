@@ -2,6 +2,44 @@ use board_renderer_core::renderer::render_overlay;
 use board_renderer_core::types::RenderConfig;
 use std::slice;
 
+/// Prepare the experimental GPU story's immutable layout atlas.
+/// Returns 0 on success, -1 for invalid input, -2 for unsupported/budgeted layouts.
+/// The result is owned by the caller and freed with `board_renderer_free`.
+///
+/// # Safety
+/// Input must identify readable bytes, and output pointers must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn board_renderer_prepare_gpu_atlas(
+    config_json: *const u8,
+    config_json_len: u32,
+    out_data: *mut *mut u8,
+    out_len: *mut u32,
+) -> i32 {
+    if config_json.is_null() || out_data.is_null() || out_len.is_null() {
+        return -1;
+    }
+    unsafe {
+        *out_data = std::ptr::null_mut();
+        *out_len = 0;
+    }
+    let bytes = unsafe { slice::from_raw_parts(config_json, config_json_len as usize) };
+    let Ok(config) = serde_json::from_slice::<RenderConfig>(bytes) else {
+        return -1;
+    };
+    match board_renderer_core::aura::gpu_atlas::prepare(&config) {
+        Ok(bytes) => {
+            let mut bytes = bytes.into_boxed_slice();
+            unsafe {
+                *out_data = bytes.as_mut_ptr();
+                *out_len = bytes.len() as u32;
+            }
+            std::mem::forget(bytes);
+            0
+        }
+        Err(_) => -2,
+    }
+}
+
 /// Render a board overlay from a JSON config string.
 ///
 /// Returns 0 on success, -1 on JSON parse error, -2 on render error.
@@ -93,6 +131,47 @@ mod tests {
             "hold_state_map": {}
         }"#
         .to_string()
+    }
+
+    #[test]
+    fn gpu_atlas_rejects_invalid_input_and_resets_output() {
+        let mut output = std::ptr::dangling_mut::<u8>();
+        let mut length = 42;
+        let invalid = b"invalid";
+        let result = unsafe {
+            board_renderer_prepare_gpu_atlas(
+                invalid.as_ptr(),
+                invalid.len() as u32,
+                &mut output,
+                &mut length,
+            )
+        };
+        assert_eq!(result, -1);
+        assert!(output.is_null());
+        assert_eq!(length, 0);
+    }
+
+    #[test]
+    fn gpu_atlas_roundtrip_uses_matching_allocator() {
+        let json = minimal_config_json().replace(
+            "\"frames\": \"\"",
+            "\"render_mode\": \"aura\", \"frames\": \"\"",
+        );
+        let mut output = std::ptr::null_mut();
+        let mut length = 0;
+        let result = unsafe {
+            board_renderer_prepare_gpu_atlas(
+                json.as_ptr(),
+                json.len() as u32,
+                &mut output,
+                &mut length,
+            )
+        };
+        assert_eq!(result, 0);
+        assert!(length > 4);
+        unsafe {
+            board_renderer_free(output, length);
+        }
     }
 
     #[test]
