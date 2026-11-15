@@ -198,6 +198,8 @@ describe('canonical browser bootstrap routes', () => {
   it.each([
     `${BROWSER_PROOF_COOKIE_PREFIX}${'a'.repeat(64)}.2=orphan`,
     `${BROWSER_PROOF_COOKIE_PREFIX}malformed=x`,
+    `__Host-boardsesh.expired-binding.${'a'.repeat(64)}=orphan`,
+    '__Host-boardsesh.expired-binding-malformed=orphan',
     `${BROWSER_CORRELATION_COOKIE}=bad`,
     '__Secure-next-auth.session-token=a; next-auth.session-token=b',
     '__Secure-next-auth.session-token.1=gap',

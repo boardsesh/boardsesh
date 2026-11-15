@@ -5,18 +5,23 @@ const fixture = vi.hoisted(() => ({
   coordinator: false,
   provider: false,
   preflight: vi.fn(),
+  signIn: vi.fn(),
   legacy: vi.fn(),
   session: vi.fn(),
 }));
 vi.mock('next-auth/react', () => ({ signIn: fixture.legacy, getSession: fixture.session }));
 vi.mock('../browser-coordinator-readiness', () => ({ publicBrowserCoordinatorReady: () => fixture.coordinator }));
 vi.mock('../provider-security-readiness', () => ({ publicProviderSecurityReady: () => fixture.provider }));
-vi.mock('../browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: fixture.preflight }));
+vi.mock('../browser-coordinator-client', () => ({
+  readCanonicalBrowserCoordinator: fixture.preflight,
+  signInCanonicalBrowserCoordinator: fixture.signIn,
+}));
 import { registerCanonicalBrowserOrigin, getCanonicalBrowserOrigin } from '../canonical-browser-origin';
 import { signInWithSessionIntent } from '../web-session-events';
 
 const origin = 'https://www.provider-intent.example.test';
 const authorization = 'https://accounts.google.com/o/oauth2/v2/auth?state=actual-state';
+const cursor = { bindingId: 'a'.repeat(64), version: 3 };
 const cleanups: Array<() => void> = [];
 let held: boolean;
 let navigate: ReturnType<typeof vi.fn>;
@@ -31,6 +36,10 @@ beforeEach(() => {
   held = false;
   fixture.preflight.mockReset().mockImplementation(async () => {
     expect(held).toBe(false);
+  });
+  fixture.signIn.mockReset().mockImplementation(async () => {
+    expect(held).toBe(false);
+    return { ...cursor };
   });
   fixture.legacy.mockReset().mockResolvedValue({ ok: true, status: 200, error: undefined, url: null });
   fixture.session.mockReset().mockResolvedValue(null);
@@ -50,6 +59,7 @@ beforeEach(() => {
     expect(held).toBe(true);
     expect(options?.keepalive).toBe(false);
     expect(options?.redirect).toBe('error');
+    if (href(input).endsWith('/browser-coordinator/observe')) return Response.json({ status: 'ready', cursor });
     if (href(input).endsWith('/acknowledge')) return Response.json({ outcome: 'none' });
     if (href(input).endsWith('/csrf')) return Response.json({ csrfToken: 'actual-csrf' });
     return Response.json({ url: authorization });
@@ -78,10 +88,11 @@ describe('shared WWW provider sign-in wrapper', () => {
   it('joins actual static-origin preflight, WWW lock, ACK/CSRF/start and navigation without a naked session read', async () => {
     qualify();
     expect(await signInWithSessionIntent('google', { callbackUrl: '/settings' })).toBeUndefined();
-    expect(fixture.preflight).toHaveBeenCalledExactlyOnceWith(origin, expect.any(AbortSignal));
+    expect(fixture.signIn).toHaveBeenCalledExactlyOnceWith(origin, expect.any(AbortSignal));
+    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(lock).toHaveBeenCalledOnce();
     expect(navigate).toHaveBeenCalledExactlyOnceWith(authorization);
-    expect(send).toHaveBeenCalledTimes(3);
+    expect(send).toHaveBeenCalledTimes(4);
     expect(fixture.legacy).not.toHaveBeenCalled();
     expect(fixture.session).not.toHaveBeenCalled();
   });
@@ -108,6 +119,8 @@ describe('shared WWW provider sign-in wrapper', () => {
       providerSecurityOperationKey: key,
     });
     expect(navigate).toHaveBeenCalledOnce();
+    expect(fixture.preflight).toHaveBeenCalledOnce();
+    expect(fixture.signIn).not.toHaveBeenCalled();
     expect(fixture.legacy).not.toHaveBeenCalled();
   });
   it.each(['coordinator', 'provider'] as const)('refuses partially qualified %s without fallback', async (gate) => {
@@ -179,12 +192,11 @@ describe('shared WWW provider sign-in wrapper', () => {
     resolveNetwork(Response.json({ url: authorization }));
     expect(await operation).toMatchObject({ ok: false, status: 503 });
     expect(held).toBe(false);
-    expect(send).toHaveBeenCalledTimes(3);
+    expect(send).toHaveBeenCalledTimes(4);
     expect(fixture.legacy).not.toHaveBeenCalled();
     expect(fixture.session).not.toHaveBeenCalled();
   });
-  it('keeps the existing credential call contract intact', async () => {
-    qualify();
+  it('keeps the existing credential call contract intact with both public gates false', async () => {
     await signInWithSessionIntent('credentials', {
       redirect: false,
       email: 'owned@example.test',
@@ -197,5 +209,25 @@ describe('shared WWW provider sign-in wrapper', () => {
     });
     expect(send).not.toHaveBeenCalled();
     expect(fixture.session).toHaveBeenCalledOnce();
+  });
+  it.each([
+    [true, false],
+    [false, true],
+    [true, true],
+  ])('refuses qualified credentials without a selected password publisher (%s/%s)', async (coordinator, provider) => {
+    fixture.coordinator = coordinator;
+    fixture.provider = provider;
+    expect(
+      await signInWithSessionIntent('credentials', {
+        redirect: false,
+        email: 'owned@example.test',
+        password: 'supplied-password',
+      }),
+    ).toMatchObject({ ok: false, status: 503 });
+    expect(fixture.legacy).not.toHaveBeenCalled();
+    expect(fixture.session).not.toHaveBeenCalled();
+    expect(fixture.preflight).not.toHaveBeenCalled();
+    expect(fixture.signIn).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,7 @@ export const browserBindingCursorSchema = z.object({ bindingId: z.string().regex
 export type BrowserBindingCursor = z.infer<typeof browserBindingCursorSchema>;
 export const browserCoordinatorCommandSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('read') }).strict(),
+  z.object({ operation: z.literal('signin') }).strict(),
   z
     .object({
       operation: z.literal('prepare'),
@@ -58,7 +59,7 @@ export const browserCoordinatorReplySchema = z
     ...envelope,
     type: z.literal('result'),
     requestId: identifier,
-    operation: z.enum(['read', 'prepare', 'renew']),
+    operation: z.enum(['read', 'prepare', 'renew', 'signin']),
     result: browserCoordinatorResultSchema,
   })
   .strict();

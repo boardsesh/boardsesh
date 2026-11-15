@@ -3,6 +3,7 @@ import { connectBrowserCoordinatorClient } from '../browser-coordinator-channel'
 import { browserCoordinatorPort, mountCanonicalBrowserCoordinator } from '../browser-coordinator-dom';
 import { BROWSER_COORDINATOR_LOCK } from '../browser-coordinator-v1';
 import { BROWSER_RENEWAL_BROWSER_PATHS } from '../browser-renewal-browser-v1';
+import { EXPIRED_BROWSER_BINDING_BROWSER_PATHS } from '../expired-browser-binding-browser-v1';
 
 const canonical = 'https://www.boardsesh.test';
 const app = 'https://app.boardsesh.test';
@@ -74,6 +75,216 @@ function fixture() {
   return { browser, owner, peer, host, send, locks, posted, connect };
 }
 describe('actual browser coordinator platform adapter', () => {
+  it.each(['oversize', 'identity', 'wrong-status', 'wrong-content-type'] as const)(
+    'refuses explicit sign-in %s metadata before any commit',
+    async (fault) => {
+      const current = fixture();
+      const prepared = {
+        status: 'prepared',
+        operationKey: 'c'.repeat(64),
+        sourceCursor: ready.cursor,
+        targetCursor: { bindingId: 'b'.repeat(64), version: 0 },
+      };
+      const body = JSON.stringify(fault === 'identity' ? { ...prepared, userId: 'private-user' } : prepared);
+      current.send.mockResolvedValueOnce(
+        new Response(fault === 'oversize' ? body + ' '.repeat(8_193) : body, {
+          status: fault === 'wrong-status' ? 409 : 200,
+          headers: { 'Content-Type': fault === 'wrong-content-type' ? 'text/plain' : 'application/json' },
+        }),
+      );
+      const client = await current.connect();
+      cleanup.push(() => client.close());
+      expect(await client.request({ operation: 'signin' })).toEqual({ status: 'unavailable' });
+      expect(current.send).toHaveBeenCalledOnce();
+      expect(client.cursor()).toBeNull();
+    },
+  );
+  it('accepts exactly 8192 bytes of ready prepare metadata and still observes installation', async () => {
+    const current = fixture();
+    const body = JSON.stringify(ready);
+    current.send
+      .mockResolvedValueOnce(
+        new Response(body.padEnd(8_192, ' '), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json(ready));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'signin' })).toEqual(ready);
+    expect(current.send).toHaveBeenCalledTimes(2);
+  });
+  it('keeps explicit sign-in prepare, commit, confirm and exact final observation under one lock', async () => {
+    const current = fixture();
+    const target = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+    const prepared = {
+      status: 'prepared',
+      operationKey: 'c'.repeat(64),
+      sourceCursor: ready.cursor,
+      targetCursor: target.cursor,
+    };
+    current.send
+      .mockResolvedValueOnce(Response.json(prepared))
+      .mockResolvedValueOnce(Response.json(target))
+      .mockResolvedValueOnce(Response.json(target))
+      .mockResolvedValueOnce(Response.json(target));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'signin' })).toEqual(target);
+    expect(current.send.mock.calls.map(([url]) => (url as URL).pathname)).toEqual([
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.prepare,
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.commit,
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.confirm,
+      '/api/internal/auth/browser-coordinator/observe',
+    ]);
+    expect(current.locks).toHaveBeenCalledOnce();
+    expect(current.locks.mock.calls[0][0]).toBe(BROWSER_COORDINATOR_LOCK);
+    for (const [, options] of current.send.mock.calls)
+      expect(options).toMatchObject({ credentials: 'include', keepalive: false, cache: 'no-store', redirect: 'error' });
+    expect(JSON.parse(current.send.mock.calls[0][1]?.body as string)).toEqual({});
+    const control = {
+      operationKey: prepared.operationKey,
+      sourceCursor: prepared.sourceCursor,
+      targetCursor: prepared.targetCursor,
+    };
+    for (const index of [1, 2]) expect(JSON.parse(current.send.mock.calls[index][1]?.body as string)).toEqual(control);
+  });
+  it.each(['current', 'recovered'] as const)(
+    'observes exact installation after a %s ready prepare without commit or confirm',
+    async (kind) => {
+      const current = fixture();
+      const target =
+        kind === 'current' ? ready : ({ status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const);
+      current.send.mockResolvedValueOnce(Response.json(target)).mockResolvedValueOnce(Response.json(target));
+      const client = await current.connect();
+      cleanup.push(() => client.close());
+      expect(await client.request({ operation: 'signin' })).toEqual(target);
+      expect(current.send.mock.calls.map(([url]) => (url as URL).pathname)).toEqual([
+        EXPIRED_BROWSER_BINDING_BROWSER_PATHS.prepare,
+        '/api/internal/auth/browser-coordinator/observe',
+      ]);
+      expect(current.locks).toHaveBeenCalledOnce();
+    },
+  );
+  it.each(['commit-binding', 'confirm-version', 'observe-binding', 'ready-observe-version'] as const)(
+    'refuses a mismatched %s without borrowing a later selection',
+    async (mismatch) => {
+      const current = fixture();
+      const target = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+      const changed = mismatch.endsWith('version')
+        ? { ...target, cursor: { ...target.cursor, version: 1 } }
+        : { ...target, cursor: { bindingId: 'd'.repeat(64), version: 0 } };
+      current.send.mockResolvedValueOnce(
+        Response.json(
+          mismatch === 'ready-observe-version'
+            ? target
+            : {
+                status: 'prepared',
+                operationKey: 'c'.repeat(64),
+                sourceCursor: ready.cursor,
+                targetCursor: target.cursor,
+              },
+        ),
+      );
+      if (mismatch === 'ready-observe-version') current.send.mockResolvedValueOnce(Response.json(changed));
+      else {
+        current.send.mockResolvedValueOnce(Response.json(mismatch === 'commit-binding' ? changed : target));
+        if (mismatch !== 'commit-binding')
+          current.send.mockResolvedValueOnce(Response.json(mismatch === 'confirm-version' ? changed : target));
+        if (mismatch === 'observe-binding') current.send.mockResolvedValueOnce(Response.json(changed));
+      }
+      const client = await current.connect();
+      cleanup.push(() => client.close());
+      expect(await client.request({ operation: 'signin' })).toEqual({ status: 'conflict' });
+      expect(client.cursor()).toBeNull();
+      expect(current.send).toHaveBeenCalledTimes(
+        mismatch === 'commit-binding' || mismatch === 'ready-observe-version'
+          ? 2
+          : mismatch === 'confirm-version'
+            ? 3
+            : 4,
+      );
+    },
+  );
+  it('does not retry an unknown commit and uses only a later explicit prepare for recovery', async () => {
+    const current = fixture();
+    const target = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+    current.send
+      .mockResolvedValueOnce(
+        Response.json({
+          status: 'prepared',
+          operationKey: 'c'.repeat(64),
+          sourceCursor: ready.cursor,
+          targetCursor: target.cursor,
+        }),
+      )
+      .mockResolvedValueOnce(new Response('truncated', { headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(Response.json(target))
+      .mockResolvedValueOnce(Response.json(target));
+    const client = await current.connect();
+    cleanup.push(() => client.close());
+    expect(await client.request({ operation: 'signin' })).toEqual({ status: 'unavailable' });
+    expect(await client.request({ operation: 'signin' })).toEqual(target);
+    expect(current.send.mock.calls.map(([url]) => (url as URL).pathname)).toEqual([
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.prepare,
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.commit,
+      EXPIRED_BROWSER_BINDING_BROWSER_PATHS.prepare,
+      '/api/internal/auth/browser-coordinator/observe',
+    ]);
+  });
+  it.each([
+    ['prepare', 'abort'],
+    ['commit', 'abort'],
+    ['confirm', 'abort'],
+    ['prepare', 'timeout'],
+    ['commit', 'timeout'],
+    ['confirm', 'timeout'],
+  ] as const)('retains the actual lock through a %s body after %s', async (phase, reason) => {
+    if (reason === 'timeout') vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const current = fixture();
+    const target = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+    const prepared = {
+      status: 'prepared',
+      operationKey: 'c'.repeat(64),
+      sourceCursor: ready.cursor,
+      targetCursor: target.cursor,
+    };
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    current.send.mockImplementation(async () => Response.json(target));
+    if (phase !== 'prepare') current.send.mockResolvedValueOnce(Response.json(prepared));
+    if (phase === 'confirm') current.send.mockResolvedValueOnce(Response.json(target));
+    current.send.mockResolvedValueOnce(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            body = controller;
+          },
+        }),
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const first = await current.connect(),
+      second = await current.connect();
+    cleanup.push(
+      () => first.close(),
+      () => second.close(),
+    );
+    const controller = new AbortController();
+    const pending = first.request({ operation: 'signin' }, controller.signal);
+    await flush();
+    const count = phase === 'prepare' ? 1 : phase === 'commit' ? 2 : 3;
+    expect(current.send).toHaveBeenCalledTimes(count);
+    if (reason === 'abort') controller.abort();
+    else await vi.advanceTimersByTimeAsync(15_000);
+    expect(await pending).toEqual({ status: 'unavailable' });
+    const later = second.request({ operation: 'read' });
+    await flush();
+    expect(current.send).toHaveBeenCalledTimes(count);
+    body.enqueue(new TextEncoder().encode(JSON.stringify(phase === 'prepare' ? prepared : target)));
+    body.close();
+    expect(await later).toEqual(target);
+    expect(current.send).toHaveBeenCalledTimes(count + 1);
+  });
   it('keeps prepare, physical commit body and installed-proof observation under one lock', async () => {
     const current = fixture();
     const future = { ...ready, cursor: { ...ready.cursor, version: 1 } };

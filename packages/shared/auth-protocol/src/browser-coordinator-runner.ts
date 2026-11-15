@@ -19,6 +19,9 @@ export interface BrowserCoordinatorTransport {
   observe(context: CoordinatorRequestContext): Promise<unknown>;
   /** Unmounted seam. Only a canonical lock owner may initialize a missing binding. */
   initialize?(context: CoordinatorRequestContext): Promise<void>;
+  /** Explicit user action only; its complete prepare/commit/confirm/observe
+   * transport runs inside the same canonical physical-network lock. */
+  signIn?(context: CoordinatorRequestContext): Promise<unknown>;
   prepare?(
     command: Extract<BrowserCoordinatorCommand, { operation: 'prepare' }>,
     context: CoordinatorRequestContext,
@@ -43,6 +46,7 @@ export function createBrowserCoordinatorRunner(options: BrowserCoordinatorRunner
   const { transport, withExclusiveLock, schedule, timeoutMs } = options;
   const observe = transport.observe.bind(transport);
   const initialize = transport.initialize?.bind(transport);
+  const signIn = transport.signIn?.bind(transport);
   const prepare = transport.prepare?.bind(transport);
   const renew = transport.renew?.bind(transport);
   return async (input: BrowserCoordinatorCommand, signal?: AbortSignal): Promise<BrowserCoordinatorResult> => {
@@ -74,6 +78,8 @@ export function createBrowserCoordinatorRunner(options: BrowserCoordinatorRunner
             observed = browserCoordinatorObservationSchema.parse(await observe(context));
           }
           reply = observed.status === 'missing-binding' ? { status: 'unavailable' } : observed;
+        } else if (command.operation === 'signin') {
+          reply = await signIn?.(context);
         } else if (command.operation === 'prepare') {
           reply = await prepare?.(command, context);
         } else {
@@ -94,7 +100,7 @@ export function createBrowserCoordinatorRunner(options: BrowserCoordinatorRunner
         const result = browserCoordinatorResultSchema.parse(reply);
         if (
           result.status === 'ready' &&
-          command.operation !== 'read' &&
+          command.operation === 'prepare' &&
           (result.cursor.bindingId !== command.expectedCursor.bindingId ||
             result.cursor.version !== command.expectedCursor.version)
         )

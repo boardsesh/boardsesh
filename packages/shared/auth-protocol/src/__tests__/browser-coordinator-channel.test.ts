@@ -94,6 +94,60 @@ function fixture(
 }
 
 describe('shared www/app coordinator MessageChannel transport', () => {
+  it('adopts a different binding only through the explicit sign-in command', async () => {
+    const next = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+    let calls = 0;
+    const current = fixture(async () => (++calls === 1 ? ready : next));
+    const client = await current.connect();
+    expect(await client.request({ operation: 'read' })).toEqual(ready);
+    expect(await client.request({ operation: 'read' })).toEqual({ status: 'conflict' });
+    expect(client.cursor()).toEqual(cursor);
+    expect(await client.request({ operation: 'signin' })).toEqual(next);
+    expect(client.cursor()).toEqual(next.cursor);
+    client.close();
+  });
+  it('keeps same-binding versions monotonic even during explicit sign-in', async () => {
+    let calls = 0;
+    const current = fixture(async () =>
+      ++calls === 1 ? ready : { status: 'ready', cursor: { ...cursor, version: 1 } },
+    );
+    const client = await current.connect();
+    await client.request({ operation: 'read' });
+    expect(await client.request({ operation: 'signin' })).toEqual({ status: 'conflict' });
+    expect(client.cursor()).toEqual(cursor);
+    client.close();
+  });
+  it.each(['signin', 'read-conflict', 'cancelled'] as const)(
+    'does not let an earlier sign-in reply override a later %s settlement',
+    async (later) => {
+      const earlier = deferred<BrowserCoordinatorResult>();
+      const newest = deferred<BrowserCoordinatorResult>();
+      const target = { status: 'ready', cursor: { bindingId: 'b'.repeat(64), version: 0 } } as const;
+      let calls = 0;
+      const current = fixture(async () => {
+        calls += 1;
+        if (calls === 1) return ready;
+        if (calls === 2) return earlier.promise;
+        return later === 'cancelled' ? newest.promise : target;
+      });
+      const client = await current.connect();
+      await client.request({ operation: 'read' });
+      const old = client.request({ operation: 'signin' });
+      const cancellation = new AbortController();
+      const next = client.request({ operation: later === 'read-conflict' ? 'read' : 'signin' }, cancellation.signal);
+      if (later === 'cancelled') {
+        await flush();
+        cancellation.abort();
+        expect(await next).toEqual({ status: 'unavailable' });
+      } else expect(await next).toEqual(later === 'signin' ? target : { status: 'conflict' });
+      earlier.resolve({ status: 'ready', cursor: { bindingId: 'c'.repeat(64), version: 0 } });
+      expect(await old).toEqual({ status: 'conflict' });
+      expect(client.cursor()).toEqual(later === 'signin' ? target.cursor : cursor);
+      newest.resolve(target);
+      await flush();
+      client.close();
+    },
+  );
   it.each([www, app])('uses an isolated transferred channel for %s and returns metadata only', async (origin) => {
     const current = fixture(undefined, origin);
     const client = await current.connect();

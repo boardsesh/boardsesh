@@ -198,6 +198,7 @@ describe('owned credential writer CI boundary', () => {
     for (const file of [
       'browser-renewal-credential-writer.proof.ts',
       'expired-browser-binding-credential-writer.proof.ts',
+      'public-expired-browser-binding.proof.ts',
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
       'anonymous-provider-http.proof.ts',

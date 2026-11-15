@@ -17,6 +17,11 @@ import {
   BROWSER_RENEWAL_BROWSER_PATHS,
   browserRenewalBrowserPreparationReplySchema,
 } from './browser-renewal-browser-v1';
+import {
+  EXPIRED_BROWSER_BINDING_BROWSER_PATHS,
+  expiredBrowserBindingBrowserControlSchema,
+  expiredBrowserBindingBrowserPreparationReplySchema,
+} from './expired-browser-binding-browser-v1';
 
 /** Browser-only platform I/O shared by www and Expo web; no React or storage. */
 export function browserCoordinatorPort(port: MessagePort): CoordinatorPort {
@@ -158,6 +163,18 @@ export function createCanonicalBrowserCoordinatorFrame(options: {
   };
   return {
     ...api,
+    async signIn(signal?: AbortSignal) {
+      // Connect and read without requiring a readable proof. A primary refusal
+      // remains inert; only this explicit command can replace an expired binding.
+      const observed = await api.read(signal);
+      if (observed.status === 'unavailable' || closed || signal?.aborted || !client)
+        return { status: 'unavailable' } as const;
+      try {
+        return await client.request({ operation: 'signin' }, signal);
+      } catch {
+        return { status: 'unavailable' } as const;
+      }
+    },
     async renew(signal?: AbortSignal) {
       // Connect/read before entering the renew runner's navigator lock. Calling
       // another locking read from inside that span would deadlock the frame.
@@ -262,6 +279,23 @@ export function mountCanonicalBrowserCoordinator(options: {
       body: JSON.stringify(body),
     });
   };
+  const signInRequest = (
+    operation: keyof typeof EXPIRED_BROWSER_BINDING_BROWSER_PATHS,
+    body: unknown,
+    context: CoordinatorRequestContext,
+  ) => {
+    if (context.signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
+    return send(new URL(EXPIRED_BROWSER_BINDING_BROWSER_PATHS[operation], canonicalOrigin), {
+      method: 'POST',
+      credentials: context.credentials,
+      cache: context.cache,
+      keepalive: context.keepalive,
+      redirect: 'error',
+      signal: context.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  };
   const run = createBrowserCoordinatorRunner({
     withExclusiveLock: (operation, signal) =>
       owner.navigator.locks.request(BROWSER_COORDINATOR_LOCK, { mode: 'exclusive', signal }, operation),
@@ -272,6 +306,38 @@ export function mountCanonicalBrowserCoordinator(options: {
       initialize: async (context) => {
         const result = await metadata(await request('initialize', context), context);
         if (result.status !== 'ready') throw new Error('COORDINATOR_UNAVAILABLE');
+      },
+      async signIn(context) {
+        const response = await signInRequest('prepare', {}, context);
+        const prepared = expiredBrowserBindingBrowserPreparationReplySchema.parse(await controlJson(response, context));
+        if (prepared.status !== 'prepared' && prepared.status !== 'ready') return prepared;
+        if (response.status !== 200) return { status: 'unavailable' };
+        const target = prepared.status === 'prepared' ? prepared.targetCursor : prepared.cursor;
+        if (prepared.status === 'prepared') {
+          const control = expiredBrowserBindingBrowserControlSchema.parse({
+            operationKey: prepared.operationKey,
+            sourceCursor: prepared.sourceCursor,
+            targetCursor: prepared.targetCursor,
+          });
+          const committed = await metadata(await signInRequest('commit', control, context), context);
+          if (committed.status !== 'ready')
+            return committed.status === 'missing-binding' ? { status: 'unavailable' } : committed;
+          if (committed.cursor.bindingId !== target.bindingId || committed.cursor.version !== target.version)
+            return { status: 'conflict' };
+          const confirmed = await metadata(await signInRequest('confirm', control, context), context);
+          if (confirmed.status !== 'ready')
+            return confirmed.status === 'missing-binding' ? { status: 'unavailable' } : confirmed;
+          if (confirmed.cursor.bindingId !== target.bindingId || confirmed.cursor.version !== target.version)
+            return { status: 'conflict' };
+        }
+        // Even a ready prepare/recovered ACK cannot prove that its correlation
+        // cookie physically arrived. Observe exact primary state under this lock.
+        const installed = await metadata(await request('observe', context), context);
+        if (installed.status !== 'ready')
+          return installed.status === 'missing-binding' ? { status: 'unavailable' } : installed;
+        if (installed.cursor.bindingId !== target.bindingId || installed.cursor.version !== target.version)
+          return { status: 'conflict' };
+        return { status: 'ready', cursor: installed.cursor };
       },
       async renew(command, context) {
         const response = await renewalRequest('prepare', { expectedCursor: command.expectedCursor }, context);

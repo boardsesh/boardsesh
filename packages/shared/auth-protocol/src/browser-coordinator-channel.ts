@@ -72,11 +72,14 @@ export function connectBrowserCoordinatorClient(options: {
     let connected = false;
     let closed = false;
     let currentCursor: BrowserBindingCursor | null = null;
+    let nextRequestOrder = 0;
+    let lastSettledRequestOrder = 0;
     const issued = new Set<string>();
     const pending = new Map<
       string,
       {
         readonly operation: BrowserCoordinatorCommand['operation'];
+        readonly order: number;
         readonly expectedCursor?: BrowserBindingCursor;
         readonly finish: (result: BrowserCoordinatorResult) => void;
       }
@@ -114,6 +117,7 @@ export function connectBrowserCoordinatorClient(options: {
           return Promise.resolve(unavailable());
         }
         issued.add(requestId);
+        const order = ++nextRequestOrder;
         return new Promise<BrowserCoordinatorResult>((finish) => {
           let settled = false;
           let cancelTimeout = () => {};
@@ -131,11 +135,13 @@ export function connectBrowserCoordinatorClient(options: {
             cancelTimeout();
             signal?.removeEventListener('abort', abort);
             pending.delete(requestId);
+            lastSettledRequestOrder = Math.max(lastSettledRequestOrder, order);
             finish(result);
           };
           pending.set(requestId, {
             operation: command.operation,
-            ...(command.operation === 'read' ? {} : { expectedCursor: Object.freeze({ ...command.expectedCursor }) }),
+            order,
+            ...('expectedCursor' in command ? { expectedCursor: Object.freeze({ ...command.expectedCursor }) } : {}),
             finish: complete,
           });
           signal?.addEventListener('abort', abort, { once: true });
@@ -174,6 +180,12 @@ export function connectBrowserCoordinatorClient(options: {
       }
       const result = reply.data.result;
       if (result.status === 'ready') {
+        // A later settled or cancelled command may have moved the physical
+        // browser selection, even when that command could not publish ready.
+        if (request.order < lastSettledRequestOrder) {
+          request.finish({ status: 'conflict' });
+          return;
+        }
         if (
           request.expectedCursor &&
           (request.expectedCursor.bindingId !== result.cursor.bindingId ||
@@ -183,7 +195,8 @@ export function connectBrowserCoordinatorClient(options: {
           request.finish({ status: 'conflict' });
           return;
         }
-        if (compareBrowserBindingCursor(currentCursor, result.cursor) !== 'current') {
+        const relation = compareBrowserBindingCursor(currentCursor, result.cursor);
+        if (relation === 'stale' || (relation === 'different-binding' && request.operation !== 'signin')) {
           request.finish({ status: 'conflict' });
           return;
         }
