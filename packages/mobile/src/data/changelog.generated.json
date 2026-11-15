@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-15T20:26:32.855Z",
+  "generatedAt": "2026-11-15T21:30:40.171Z",
   "entries": [
+    {
+      "prNumber": 7556,
+      "category": "new",
+      "title": "Android climbers get a steady wall with softer climb transitions and an expanding glow when setting holds.",
+      "mergedAt": "2026-11-15T21:23:35Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7556"
+    },
     {
       "prNumber": 7554,
       "category": "fixed",
