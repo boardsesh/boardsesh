@@ -13,6 +13,7 @@ import {
 import type { FollowConnection, UserSearchConnection, VoteSummary } from '@boardsesh/shared-schema';
 
 const requestMock = vi.hoisted(() => vi.fn());
+const requestSignals = vi.hoisted(() => [] as AbortSignal[]);
 vi.mock('../../../local-user-id', () => ({ readLocalUserId: async () => 'me' }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: 'me', isLoading: false }),
@@ -20,7 +21,17 @@ vi.mock('../../../../hooks/use-current-user-id', () => ({
 vi.mock('../../../../db', () => ({ getDatabaseHandle: () => null }));
 
 vi.mock('../../client', () => ({
-  getHttpClient: () => ({ request: requestMock }),
+  getHttpClient: () => ({
+    request: (document: unknown, variables?: unknown) => {
+      if (document !== null && typeof document === 'object' && 'document' in document) {
+        const options = document as { document: unknown; variables?: unknown; signal: AbortSignal };
+        requestSignals.push(options.signal);
+        return requestMock(options.document, options.variables);
+      }
+      return requestMock(document, variables);
+    },
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
 }));
 
 import { useBulkVoteSummaries, useFollowers, useSearchUsers, useToggleUserFollow } from '../use-social';
@@ -73,9 +84,30 @@ function makeSearchConnection(offset: number): UserSearchConnection {
 
 beforeEach(() => {
   requestMock.mockReset();
+  requestSignals.length = 0;
 });
 
 describe('useFollowers', () => {
+  it('cancels its original native request on unmount and never publishes its late rows', async () => {
+    let complete!: (response: { followers: FollowConnection }) => void;
+    requestMock.mockImplementation(
+      () => new Promise<{ followers: FollowConnection }>((resolve) => (complete = resolve)),
+    );
+    const { queryClient, Wrapper } = makeWrapper();
+    const { unmount } = renderHook(() => useFollowers('profile-user'), { wrapper: Wrapper });
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(1));
+    expect(requestSignals[0].aborted).toBe(false);
+    expect(queryClient.getQueryCache().getAll()[0].queryKey).toEqual(['followers', 'profile-user']);
+
+    unmount();
+    expect(requestSignals[0].aborted).toBe(true);
+    await act(async () => {
+      complete({ followers: makeFollowConnection(0) });
+    });
+    expect(queryClient.getQueryData(['followers', 'profile-user'])).toBeUndefined();
+    queryClient.clear();
+  });
+
   it('advances offset pagination by the accumulated user count', async () => {
     requestMock.mockImplementation((_query: unknown, variables: { input: { offset: number } }) =>
       Promise.resolve({ followers: makeFollowConnection(variables.input.offset) }),
