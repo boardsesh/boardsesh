@@ -5,6 +5,7 @@ import type { ImportProgressEvent, ImportResult, StrippedAuroraExportData } from
 import { authenticatedFetch } from './auth-interceptor';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL } from './env';
+import type { RestOperation, RestReadOutcome, RestGetPath } from './rest-operation';
 
 const CHUNK_SIZE = 500;
 const KILTER_REDIRECT_URL = 'com.boardsesh.app://board-credentials/kilter';
@@ -142,6 +143,50 @@ export async function getAuroraCredentials(): Promise<AuroraCredentialsResponse>
 export async function getAuroraUnsyncedCounts(): Promise<UnsyncedCounts> {
   const response = await requestJson<{ counts: UnsyncedCounts }>('/api/aurora-credentials/unsynced');
   return response.counts;
+}
+
+/** These two reads transfer only the original physical response guard. The
+ * compatibility helpers and all mutation/import transports remain separate. */
+async function readAuroraWithReceipt<T, Result>(
+  operation: RestOperation,
+  path: RestGetPath,
+  project: (response: T) => Result,
+): Promise<RestReadOutcome<Result>> {
+  const delivery = await operation.getJson<T>(path);
+  const assertCurrent = delivery.assertCurrent;
+  try {
+    assertCurrent();
+    if (!delivery.response.ok) {
+      const payload = delivery.body.kind === 'json' ? (delivery.body.value as { error?: string; code?: string }) : {};
+      assertCurrent();
+      throw new BoardAccountError(errorCodeForResponse(delivery.response, payload));
+    }
+    if (delivery.body.kind === 'decode-error') throw delivery.body.error;
+    const result = project(delivery.body.value);
+    assertCurrent();
+    return { ok: true, result, assertCurrent };
+  } catch (error) {
+    assertCurrent();
+    return { ok: false, error, assertCurrent };
+  }
+}
+
+export function getAuroraCredentialsWithReceipt(
+  operation: RestOperation,
+): Promise<RestReadOutcome<AuroraCredentialsResponse>> {
+  return readAuroraWithReceipt<AuroraCredentialsResponse, AuroraCredentialsResponse>(
+    operation,
+    '/api/aurora-credentials',
+    (response) => response,
+  );
+}
+
+export function getAuroraUnsyncedCountsWithReceipt(operation: RestOperation): Promise<RestReadOutcome<UnsyncedCounts>> {
+  return readAuroraWithReceipt<{ counts: UnsyncedCounts }, UnsyncedCounts>(
+    operation,
+    '/api/aurora-credentials/unsynced',
+    (response) => response.counts,
+  );
 }
 
 export async function saveAuroraCredential(input: {
