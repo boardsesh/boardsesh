@@ -10022,7 +10022,11 @@ export type SaveMoonBoardClimbInput = {
  * overwriting each other.
  */
 export type SaveSprayWallLedSetupInput = {
+  /** 0–255 minutes; 0 turns auto-off off. */
+  autoOffMinutes?: InputMaybe<Scalars['Int']['input']>;
   boardUuid: Scalars['ID']['input'];
+  /** 1–255. */
+  brightness?: InputMaybe<Scalars['Int']['input']>;
   controllerType?: InputMaybe<Scalars['String']['input']>;
   /** Local HTTP address or stable WLED Bluetooth target matching controllerType. */
   controllerUrl?: InputMaybe<Scalars['String']['input']>;
@@ -11966,7 +11970,11 @@ export type SprayWallKeptDecisionInput = {
  */
 export type SprayWallLedSetup = {
   __typename?: 'SprayWallLedSetup';
+  /** Minutes after the wall was last lit before the controller turns it off; 0 never does. */
+  autoOffMinutes: Scalars['Int']['output'];
   boardUuid: Scalars['ID']['output'];
+  /** WLED master brightness, 1–255, the same on every phone that lights the wall. */
+  brightness: Scalars['Int']['output'];
   /** The driver for this controller. `wled` (local HTTP) or `wled-ble` (stable Bluetooth controller ID). */
   controllerType: Scalars['String']['output'];
   /** A local HTTP base address or wled-ble:wled-<hardware ID>; empty until selected. */
@@ -20816,7 +20824,9 @@ export type SprayWallLedSetupResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SprayWallLedSetup'] = ResolversParentTypes['SprayWallLedSetup'],
 > = ResolversObject<{
+  autoOffMinutes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   boardUuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  brightness?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   controllerType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   controllerUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   enabled?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;

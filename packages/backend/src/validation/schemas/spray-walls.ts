@@ -446,6 +446,8 @@ export const SaveSprayWallLedSetupInputSchema = z
     controllerType: z.enum(['wled', 'wled-ble'], { error: 'Unsupported LED controller type' }).nullish(),
     controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
     enabled: z.boolean().nullish(),
+    brightness: z.number().int().min(1).max(255).nullish(),
+    autoOffMinutes: z.number().int().min(0).max(255).nullish(),
     layout: SprayWallLedLayoutSchema.nullish(),
   })
   .strict()
@@ -466,8 +468,13 @@ export const SaveSprayWallLedSetupInputSchema = z
     }
   })
   .refine(
-    ({ controllerType, controllerUrl, enabled, layout }) =>
-      controllerType != null || controllerUrl != null || enabled != null || layout != null,
+    ({ controllerType, controllerUrl, enabled, brightness, autoOffMinutes, layout }) =>
+      controllerType != null ||
+      controllerUrl != null ||
+      enabled != null ||
+      brightness != null ||
+      autoOffMinutes != null ||
+      layout != null,
     'Nothing to save: send at least one field',
   );
 

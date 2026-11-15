@@ -1,0 +1,2 @@
+ALTER TABLE "spray_wall_led_setups" ADD COLUMN "brightness" integer DEFAULT 64 NOT NULL;--> statement-breakpoint
+ALTER TABLE "spray_wall_led_setups" ADD COLUMN "auto_off_minutes" integer DEFAULT 0 NOT NULL;
