@@ -148,11 +148,6 @@
       "default": "./src/browser-renewal-v1.ts"
     },
     "./browser-renewal-browser-v1": "./src/browser-renewal-browser-v1.ts",
-    "./browser-password-v1": {
-      "types": "./src/browser-password-v1.ts",
-      "import": "./src/browser-password-v1.ts",
-      "default": "./src/browser-password-v1.ts"
-    },
     "./expired-browser-binding-browser-v1": {
       "types": "./src/expired-browser-binding-browser-v1.ts",
       "import": "./src/expired-browser-binding-browser-v1.ts",
@@ -162,6 +157,16 @@
       "types": "./src/expired-browser-binding-v1.ts",
       "import": "./src/expired-browser-binding-v1.ts",
       "default": "./src/expired-browser-binding-v1.ts"
+    },
+    "./browser-password-v1": {
+      "types": "./src/browser-password-v1.ts",
+      "import": "./src/browser-password-v1.ts",
+      "default": "./src/browser-password-v1.ts"
+    },
+    "./browser-password-browser-v1": {
+      "types": "./src/browser-password-browser-v1.ts",
+      "import": "./src/browser-password-browser-v1.ts",
+      "default": "./src/browser-password-browser-v1.ts"
     }
   },
   "scripts": {

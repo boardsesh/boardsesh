@@ -13,9 +13,13 @@ const QUERY_FIELDS = new Set(['query_string', 'http.query', 'url.query', 'http.f
 const RECOVERY_FIELDS = new Set(['token', 'confirmationtoken', 'email', 'password', 'confirmpassword', 'recipient']);
 /** Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request. */
 const SECRET_FIELD = /^(?:token|confirmationToken|password|confirmPassword|oauth_query)$/i;
-const CUSTODY_COOKIE_PREFIXES = ['__host-boardsesh.browser-renewal', '__host-boardsesh.expired-binding'];
+const CUSTODY_COOKIE_PREFIXES = [
+  '__host-boardsesh.browser-renewal',
+  '__host-boardsesh.expired-binding',
+  '__host-boardsesh.password-signin',
+];
 const CUSTODY_COOKIE_ASSIGNMENT =
-  /(__Host-boardsesh\.(?:browser-renewal|expired-binding)[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
+  /(__Host-boardsesh\.(?:browser-renewal|expired-binding|password-signin)[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
 
 function decodedName(name: string): string {
   const characters: string[] = [];
