@@ -37,11 +37,4 @@ describe('the wall-frost-motion flag', () => {
     expect(wallFrostMotionOffered(undefined)).toBe(true);
     expect(wallFrostMotionOffered(false)).toBe(false);
   });
-
-  it('never moves in screenshot mode, whatever the flag says', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    vi.stubGlobal('__DEV__', true);
-    expect(wallFrostMotionOffered(true)).toBe(false);
-    expect(wallFrostMotionOffered(undefined)).toBe(false);
-  });
 });

@@ -71,13 +71,13 @@ describe('useDonationLinksAllowed for an admin (QA)', () => {
     expect(await renderAllowed()).toBe(false);
   });
 
-  it('still hides it in screenshot mode', async () => {
+  it('keeps admin eligibility independent of retired capture flags', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     platformMock.OS = 'ios';
     flagsMock['donation-links-v2'] = true;
     adminMock.isAdmin = true;
 
-    expect(await renderAllowed()).toBe(false);
+    expect(await renderAllowed()).toBe(true);
   });
 
   it('keeps a non-admin AU iPhone on the unlinked text', async () => {
@@ -120,21 +120,20 @@ describe('useDonationLinksAllowed', () => {
     expect(await renderAllowed()).toBe(false);
   });
 
-  it('hides links in screenshot mode, even in the US storefront with the flag on', async () => {
+  it('keeps US eligibility independent of retired capture flags', async () => {
     platformMock.OS = 'ios';
     flagsMock['donation-links-v2'] = true;
     storefrontMock = { getCountryCode: vi.fn().mockResolvedValue('USA') };
 
     const { useDonationLinksAllowed } = await loadDonationLinks();
     const { result, rerender } = renderHook(() => useDonationLinksAllowed());
-    // Reach the allowed state first, so the false below is the screenshot guard
-    // answering and not a first frame that has not read the storefront yet.
+    // Resolve storefront eligibility before changing the retired capture flag.
     await waitFor(() => expect(result.current).toBe(true));
 
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     rerender();
 
-    expect(result.current).toBe(false);
+    expect(result.current).toBe(true);
   });
 
   it('hides links on iOS when the storefront module is missing (every binary shipped today)', async () => {
@@ -267,11 +266,11 @@ describe('useDonationLinksAllowed', () => {
     await waitFor(() => expect(result.current).toBe(true));
   });
 
-  it('hides links in the Expo browser app in screenshot mode', async () => {
+  it('keeps browser eligibility independent of retired capture flags', async () => {
     platformMock.OS = 'web';
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
 
-    expect(await renderAllowed()).toBe(false);
+    expect(await renderAllowed()).toBe(true);
   });
 
   it('points at the website, not a payment provider', async () => {

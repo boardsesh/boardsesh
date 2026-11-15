@@ -53,8 +53,7 @@ const BENCHMARK_SORT = 'ascents';
  * quality-sorted pool, the optional ascent, rating, tall, wide and benchmark
  * filters, and the tier's personal flags. Signed out those flags are never
  * sent (the server ignores them without a user). A filter that is off adds
- * no key, so the default request stays the one the screenshot fixtures
- * recorded. The tier defaults to the first one the filters search.
+ * no key. The tier defaults to the first one the filters search.
  *
  * Benchmarks only sorts by ascents instead (`BENCHMARK_SORT`).
  */
@@ -162,7 +161,7 @@ export async function fetchGradePool(grade: number, ctx: PreviewFetchContext, de
   // tier came back short (Woods, and MoonBoard at the recorded grade) a second
   // tier has no answer and fails the capture, so a capture reads the first tier
   // only. To show top-ups in captures, remove this and re-record the set.
-  const tiers = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? allTiers.slice(0, 1) : allTiers;
+  const tiers = allTiers;
   const benchmarksOnly = ctx.filters?.onlyBenchmarks === true;
   const climbs: Climb[] = [];
   const seenUuids = new Set<string>();

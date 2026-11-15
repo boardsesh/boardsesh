@@ -13,17 +13,15 @@ import type { GeneratorOptions, WarmUpStageType, WorkoutBlockSpec } from '@board
 import { SegmentedControl } from '../../SegmentedControl';
 import { Text } from '../../Text';
 import { GradeSingleSelectRail } from '../../grade';
-import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
 import { ShowcaseAnchorView } from '../../../lib/showcase-anchor';
 import { workoutStageName } from '../../../lib/workout-run-readout';
 import { Chip, GroupedSteppers, generatorControlStyles, workoutStepperRows } from './generator-controls';
-import { WorkoutBlockFilters } from './WorkoutBlockFilters';
-import { useWorkoutTimedBlocksFlag } from '../../../providers/feature-flags-provider';
+import { WorkoutBlockFiltersView } from './WorkoutBlockFilters';
+import { useWorkoutPresentation, type WorkoutPresentation } from './workout-presentation';
 import {
   blockType,
-  timedWorkoutBlocksOffered,
   workoutBlockTypes,
   type SizeFilterAvailability,
   type WorkoutBlockType,
@@ -45,7 +43,7 @@ export function warmUpLengthLabel(warmUpType: WarmUpStageType, t: Translate): st
   }
 }
 
-type WorkoutBlockFieldsProps = {
+export type WorkoutBlockFieldsProps = {
   block: WorkoutBlockSpec;
   boardName: BoardName | null;
   railGrades: readonly Grade[];
@@ -70,7 +68,12 @@ type WorkoutBlockFieldsProps = {
   onFiltersChange: (patch: Partial<WorkoutFilters>) => void;
 };
 
-export function WorkoutBlockFields({
+export function WorkoutBlockFields(props: WorkoutBlockFieldsProps) {
+  const presentation = useWorkoutPresentation();
+  return <WorkoutBlockFieldsView {...props} presentation={presentation} />;
+}
+export function WorkoutBlockFieldsView({
+  presentation,
   block,
   boardName,
   railGrades,
@@ -85,9 +88,9 @@ export function WorkoutBlockFields({
   onTypeChange,
   onBlockChange,
   onFiltersChange,
-}: WorkoutBlockFieldsProps) {
+}: WorkoutBlockFieldsProps & { presentation: WorkoutPresentation }) {
   const { t } = useTranslation('session');
-  const timedBlocksOffered = timedWorkoutBlocksOffered(useWorkoutTimedBlocksFlag());
+  const { timedBlocksOffered } = presentation;
   const blockTypes = blockTypesProp ?? workoutBlockTypes(timedBlocksOffered);
   const selectedType = blockType(block);
 
@@ -98,7 +101,7 @@ export function WorkoutBlockFields({
           const label = workoutStageName(type, t);
           const selected = selectedType === type;
           return (
-            // Only the selected chip reports (screenshot mode); a pass-through elsewhere.
+            // Only the selected chip exposes this optional instrumentation anchor.
             <ShowcaseAnchorView key={type} name="workout-type" enabled={selected}>
               <Chip
                 label={label}
@@ -117,6 +120,7 @@ export function WorkoutBlockFields({
 
       {block.kind === 'warmUp' ? (
         <WarmUpFields
+          formatGradeByDifficultyId={presentation.formatGradeByDifficultyId}
           warmUpType={block.warmUpType}
           boardName={boardName}
           targetGrade={warmUpTargetGrade}
@@ -134,7 +138,8 @@ export function WorkoutBlockFields({
         />
       )}
 
-      <WorkoutBlockFilters
+      <WorkoutBlockFiltersView
+        isAuthenticated={presentation.isAuthenticated}
         filters={filters}
         boardName={boardName}
         sizeFilters={sizeFilters}
@@ -193,6 +198,7 @@ function WorkoutFields({ options, boardName, railGrades, onBlockChange }: Workou
 }
 
 type WarmUpFieldsProps = {
+  formatGradeByDifficultyId: WorkoutPresentation['formatGradeByDifficultyId'];
   warmUpType: WarmUpStageType;
   boardName: BoardName | null;
   targetGrade: number | null;
@@ -203,6 +209,7 @@ type WarmUpFieldsProps = {
 };
 
 function WarmUpFields({
+  formatGradeByDifficultyId,
   warmUpType,
   boardName,
   targetGrade,
@@ -213,7 +220,6 @@ function WarmUpFields({
 }: WarmUpFieldsProps) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { formatGradeByDifficultyId } = useGradeFormat();
   const lengthOptions = useMemo(
     () => WARM_UP_LENGTHS.map((length) => ({ key: length, label: warmUpLengthLabel(length, t) })),
     [t],

@@ -119,7 +119,6 @@ describe('shouldKeepScreenAwake', () => {
     isForeground: true,
     msSinceProgress: 1_000,
     heldMs: 0,
-    screenshotMode: false,
   };
 
   it('holds while a download the person started is running in the foreground', () => {
@@ -146,10 +145,6 @@ describe('shouldKeepScreenAwake', () => {
   it('releases at the ten-minute cap however lively the download is', () => {
     expect(shouldKeepScreenAwake({ ...holding, heldMs: KEEP_AWAKE_MAX_HOLD_MS - 1 })).toBe(true);
     expect(shouldKeepScreenAwake({ ...holding, heldMs: KEEP_AWAKE_MAX_HOLD_MS })).toBe(false);
-  });
-
-  it('never holds in screenshot mode', () => {
-    expect(shouldKeepScreenAwake({ ...holding, screenshotMode: true })).toBe(false);
   });
 
   it('treats a wall clock that moved backwards as fresh progress', () => {

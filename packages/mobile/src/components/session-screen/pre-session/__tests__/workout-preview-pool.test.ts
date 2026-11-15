@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
 
 // Monotonic uuids so each generated queue item is distinct (the real
@@ -28,7 +28,6 @@ import {
   type PreviewSlot,
   type WorkoutPreviewData,
 } from '../workout-preview-pool';
-import { screenshotModeRandom } from '../../../../lib/screenshot-mode';
 import { mulberry32 } from '../../../../lib/seeded-random';
 
 function makeClimb(uuid: string): Climb {
@@ -524,31 +523,10 @@ describe('shuffleInPlace', () => {
     expect([...shuffleInPlace(deck(), mulberry32(7))].sort()).toEqual(deck());
   });
 
-  describe('in screenshot mode', () => {
-    const originalScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
-
-    afterEach(() => {
-      if (originalScreenshotMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
-      else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = originalScreenshotMode;
-    });
-
-    it('lands on ONE pinned order, so the workout shot is byte-stable across replays', () => {
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-      // Pinned to SCREENSHOT_RANDOM_SEED. If this changes, the committed fixture
-      // set no longer covers the climbs the generator picks, and every replay
-      // asks the backend for stats nobody recorded — move the seed only with a
-      // re-record.
-      expect(shuffleInPlace(deck(), screenshotModeRandom())).toEqual(['f', 'c', 'h', 'a', 'd', 'g', 'e', 'b']);
-      // …and again, from a generator made fresh.
-      expect(shuffleInPlace(deck(), screenshotModeRandom())).toEqual(['f', 'c', 'h', 'a', 'd', 'g', 'e', 'b']);
-    });
-
-    it('picks the same refresh candidate every run', () => {
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
-      const pool = deck().map((uuid) => makeClimb(uuid));
-      const picked = () => pickRandomUnused(pool, new Set(), screenshotModeRandom())?.uuid;
-      expect(picked()).toBe(picked());
-    });
+  it('picks the same refresh candidate with an explicitly seeded source', () => {
+    const pool = deck().map((uuid) => makeClimb(uuid));
+    const picked = () => pickRandomUnused(pool, new Set(), mulberry32(4242))?.uuid;
+    expect(picked()).toBe(picked());
   });
 });
 

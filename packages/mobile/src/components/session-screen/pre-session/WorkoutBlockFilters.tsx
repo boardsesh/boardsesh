@@ -177,7 +177,7 @@ function skipTriedDescription(filters: WorkoutFilters, isAuthenticated: boolean,
   return t('mobile.session.preGeneratorSkipTriedDescription');
 }
 
-type WorkoutBlockFiltersProps = {
+export type WorkoutBlockFiltersProps = {
   filters: WorkoutFilters;
   /** The board the block's climbs come from: Benchmarks only shows where it has benchmarks. */
   boardName: BoardName | null;
@@ -186,7 +186,17 @@ type WorkoutBlockFiltersProps = {
   onFiltersChange: (patch: Partial<WorkoutFilters>) => void;
 };
 
-export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFiltersChange }: WorkoutBlockFiltersProps) {
+export function WorkoutBlockFilters(props: WorkoutBlockFiltersProps) {
+  const { isAuthenticated } = useAuth();
+  return <WorkoutBlockFiltersView {...props} isAuthenticated={isAuthenticated} />;
+}
+export function WorkoutBlockFiltersView({
+  filters,
+  boardName,
+  sizeFilters,
+  onFiltersChange,
+  isAuthenticated,
+}: WorkoutBlockFiltersProps & { isAuthenticated: boolean }) {
   const { t } = useTranslation('session');
   const { systemColors, variant, m3 } = useTheme();
   // The climb bias and the skip switches read your logbook, so they need an
@@ -194,7 +204,6 @@ export function WorkoutBlockFilters({ filters, boardName, sizeFilters, onFilters
   // show Any picked with the others off, and the switches show off. Skip what
   // I've tried is off under Attempted and Sent, which pick tried or sent
   // climbs, and Skip what I've sent under Sent.
-  const { isAuthenticated } = useAuth();
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   const { tall: showTallClimbsFilter, wide: showWideClimbsFilter } = sizeFilters;
   const showBenchmarksFilter = offersBenchmarksOnly(boardName, filters);

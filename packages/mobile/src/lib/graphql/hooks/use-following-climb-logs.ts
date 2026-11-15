@@ -20,15 +20,13 @@ import { followingClimbLogsQueryKey } from '../query-keys';
  * No `placeholderData`: a new climb or a new account must never show the rows
  * the previous key held.
  *
- * Off in screenshot mode, so store captures need no recorded response for it.
  *
  * Callers branch on `isLoading` or `fetchStatus`, never `isPending`: a disabled
  * query stays `pending` forever. `isIdle` says "this hook is not asking".
  */
 export function useFollowingClimbLogs(boardName: string, climbUuid: string | null, options?: { enabled?: boolean }) {
   const { userId: viewerId } = useStoredUserId(true);
-  const enabled =
-    (options?.enabled ?? true) && !!viewerId && !!climbUuid && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+  const enabled = (options?.enabled ?? true) && !!viewerId && !!climbUuid;
   const query = useHttpQuery({
     queryKey: followingClimbLogsQueryKey(viewerId, boardName, climbUuid),
     queryFn: (_context, operation) =>

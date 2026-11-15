@@ -39,7 +39,6 @@ export async function markChangelogSeen(date: string): Promise<void> {
  * the pill (folds to a dead branch and strips in normal builds).
  */
 export function hasUnseenChangelog(latestDate: string | null, lastSeen: string | null): boolean {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   if (!latestDate) return false;
   if (!lastSeen) return true;
   return latestDate > lastSeen;

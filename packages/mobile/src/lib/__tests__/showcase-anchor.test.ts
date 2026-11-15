@@ -1,238 +1,76 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, renderHook } from '@testing-library/react';
+import { resolve } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, renderHook } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
-
-// Records every View the wrapper renders, so a test can read the props it got.
-const renderedViews = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 vi.mock('react-native', () => ({
-  View: (props: { children?: ReactNode; collapsable?: boolean }) => {
-    renderedViews.props.push(props);
-    return createElement('div', { 'data-testid': 'anchor-view' }, props.children);
-  },
+  View: ({ children }: { children: ReactNode }) => createElement('div', { 'data-testid': 'anchor-view' }, children),
 }));
-
-type ShowcaseAnchorModule = typeof import('../showcase-anchor');
-
-async function loadShowcaseAnchor(screenshotMode: boolean): Promise<ShowcaseAnchorModule> {
-  vi.resetModules();
-  if (screenshotMode) vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-  return import('../showcase-anchor');
-}
-
-const CONTRACT_PATH = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../../../scripts/lib/showcase-video/contract.ts',
-);
-
-function layoutEvent(currentTarget: unknown = null): LayoutChangeEvent {
-  return {
-    currentTarget,
-    nativeEvent: { layout: { x: 0, y: 0, width: 0, height: 0 } },
-  } as unknown as LayoutChangeEvent;
-}
-
-/** A host view whose on-screen rect the test moves around. */
-function fakeView(rect: { x: number; y: number; width: number; height: number }) {
-  return {
-    rect,
-    measureInWindow: vi.fn((callback: (x: number, y: number, width: number, height: number) => void) => {
-      callback(rect.x, rect.y, rect.width, rect.height);
-    }),
-  };
-}
-
-let logSpy: ReturnType<typeof vi.spyOn>;
-
-beforeEach(() => {
-  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-  renderedViews.props = [];
-});
-
+import {
+  LayoutObserverProvider,
+  ShowcaseAnchorView,
+  useShowcaseAnchor,
+  SHOWCASE_ANCHOR_NAMES,
+  SHOWCASE_ANCHOR_LOG_PREFIX,
+  formatShowcaseAnchorLine,
+  type LayoutObservation,
+} from '../showcase-anchor';
+import { reportLayoutObservation } from '../../dev/integration/layout-reporting';
+const layout = {} as LayoutChangeEvent;
 afterEach(() => {
-  vi.unstubAllEnvs();
+  cleanup();
   vi.useRealTimers();
-  logSpy.mockRestore();
+  vi.restoreAllMocks();
 });
-
-describe('showcase anchor contract', () => {
-  it('uses the same anchor names and log prefix as the recorder contract', async () => {
-    const contract = readFileSync(CONTRACT_PATH, 'utf8');
-    const namesBlock = contract.match(/export const SHOWCASE_ANCHOR_NAMES = \[([^\]]*)\] as const;/);
-    const prefix = contract.match(/export const SHOWCASE_ANCHOR_LOG_PREFIX = '([^']*)';/);
-    expect(namesBlock, 'SHOWCASE_ANCHOR_NAMES not found in the contract').not.toBeNull();
-    expect(prefix, 'SHOWCASE_ANCHOR_LOG_PREFIX not found in the contract').not.toBeNull();
-    const contractNames = [...(namesBlock?.[1] ?? '').matchAll(/'([^']+)'/g)].map((match) => match[1]);
-
-    const { SHOWCASE_ANCHOR_NAMES, SHOWCASE_ANCHOR_LOG_PREFIX } = await loadShowcaseAnchor(false);
-    expect([...SHOWCASE_ANCHOR_NAMES]).toEqual(contractNames);
-    expect(SHOWCASE_ANCHOR_LOG_PREFIX).toBe(prefix?.[1]);
-  });
-
-  it('formats the line the recorder parses, and nothing for an unlaid rect', async () => {
-    const { formatShowcaseAnchorLine } = await loadShowcaseAnchor(false);
-    expect(formatShowcaseAnchorLine('board-surface', 24, 118.333, 132, 32)).toBe(
+describe('layout observer and showcase contract', () => {
+  it('preserves recorder names and exact numeric log protocol', () => {
+    const contract = readFileSync(
+      resolve(import.meta.dirname, '../../../../../scripts/lib/showcase-video/contract.ts'),
+      'utf8',
+    );
+    const names = contract.match(/export const SHOWCASE_ANCHOR_NAMES = \[([^\]]*)\] as const;/)?.[1] ?? '';
+    expect([...names.matchAll(/'([^']+)'/g)].map((match) => match[1])).toEqual([...SHOWCASE_ANCHOR_NAMES]);
+    expect(contract).toContain(`export const SHOWCASE_ANCHOR_LOG_PREFIX = '${SHOWCASE_ANCHOR_LOG_PREFIX}'`);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    reportLayoutObservation({ name: 'board-surface', x: 24, y: 118.333, width: 132, height: 32 });
+    expect(log).toHaveBeenCalledWith(
       '[showcase-anchor] {"name":"board-surface","x":24,"y":118.3,"width":132,"height":32}',
     );
-    expect(formatShowcaseAnchorLine('board-surface', 0, 0, 0, 32)).toBeNull();
-    expect(formatShowcaseAnchorLine('board-surface', Number.NaN, 0, 10, 10)).toBeNull();
+    expect(formatShowcaseAnchorLine('board-surface', 0, 0, 0, 1)).toBeNull();
   });
-});
-
-describe('useShowcaseAnchor outside screenshot mode', () => {
-  it('returns one frozen no-op without calling any hook', async () => {
-    const { useShowcaseAnchor } = await loadShowcaseAnchor(false);
-    // Called bare, outside a component: it would throw if it used a hook.
-    const first = useShowcaseAnchor('board-surface');
-    const second = useShowcaseAnchor('invite-qr', true);
-    expect(first).toEqual({ ref: undefined, onLayout: undefined });
-    expect(second).toBe(first);
-    expect(Object.isFrozen(first)).toBe(true);
-  });
-
-  it('renders ShowcaseAnchorView children untouched', async () => {
-    const { ShowcaseAnchorView } = await loadShowcaseAnchor(false);
-    const child = 'row';
-    expect(ShowcaseAnchorView({ name: 'play-next', testID: 'capture-only-host', children: child })).toBe(child);
-  });
-});
-
-describe('useShowcaseAnchor in screenshot mode', () => {
-  it('identifies the actual existing hero host once without an empty or duplicate readiness view', async () => {
-    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
-    const child = createElement('span', null, 'Actual wall climb');
-    const { container } = render(
-      createElement(ShowcaseAnchorView, {
-        name: 'now-on-wall',
-        enabled: false,
-        testID: 'cpp-wall-hero-owned-climb',
-        children: child,
-      }),
-    );
-    expect(container.textContent).toBe('Actual wall climb');
-    expect(container.querySelectorAll('span')).toHaveLength(1);
-    expect(renderedViews.props).toHaveLength(1);
-    expect(renderedViews.props[0]).toMatchObject({
-      testID: 'cpp-wall-hero-owned-climb',
-      collapsable: false,
-      children: child,
-    });
-    expect(renderedViews.props[0].onLayout).toBeUndefined();
-  });
-  it('logs the measured rect on layout, re-measures once the sheet settles, and skips repeats', async () => {
-    vi.useFakeTimers();
-    const { useShowcaseAnchor, SHOWCASE_ANCHOR_SETTLE_DELAYS_MS } = await loadShowcaseAnchor(true);
-    const { result } = renderHook(() => useShowcaseAnchor('invite-qr'));
-    const view = fakeView({ x: 100, y: 900, width: 200, height: 200 });
-
-    result.current.ref?.(view);
-    result.current.onLayout?.(layoutEvent());
-    expect(logSpy).toHaveBeenLastCalledWith(
-      '[showcase-anchor] {"name":"invite-qr","x":100,"y":900,"width":200,"height":200}',
-    );
-
-    // The sheet springs up with a transform: no new layout, only the timers see it.
-    view.rect.y = 420;
-    vi.advanceTimersByTime(SHOWCASE_ANCHOR_SETTLE_DELAYS_MS[0]);
-    expect(logSpy).toHaveBeenLastCalledWith(
-      '[showcase-anchor] {"name":"invite-qr","x":100,"y":420,"width":200,"height":200}',
-    );
-    vi.advanceTimersByTime(SHOWCASE_ANCHOR_SETTLE_DELAYS_MS[1]);
-    expect(view.measureInWindow).toHaveBeenCalledTimes(3);
-    expect(logSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('falls back to the layout event target when no ref is attached', async () => {
-    const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
-    const { result } = renderHook(() => useShowcaseAnchor('profile-board-filter'));
-    result.current.onLayout?.(layoutEvent(fakeView({ x: 300, y: 80, width: 90, height: 48 })));
-    expect(logSpy).toHaveBeenLastCalledWith(
-      '[showcase-anchor] {"name":"profile-board-filter","x":300,"y":80,"width":90,"height":48}',
-    );
-  });
-
-  it('keeps identity across renders and hands back no-op props when disabled', async () => {
-    const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
-    const { result, rerender } = renderHook(({ enabled }) => useShowcaseAnchor('queue-row-avatar', enabled), {
-      initialProps: { enabled: true },
-    });
-    const enabledProps = result.current;
-    rerender({ enabled: true });
-    expect(result.current).toBe(enabledProps);
-    expect(enabledProps.onLayout).toBeTypeOf('function');
-
-    rerender({ enabled: false });
-    expect(result.current).toEqual({ ref: undefined, onLayout: undefined });
-  });
-
-  it('logs the same rect again after the view detaches and comes back', async () => {
-    const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
-    const { result } = renderHook(() => useShowcaseAnchor('invite-qr'));
-    const view = fakeView({ x: 100, y: 420, width: 200, height: 200 });
-
-    result.current.ref?.(view);
-    result.current.onLayout?.(layoutEvent());
-    result.current.onLayout?.(layoutEvent());
-    expect(logSpy).toHaveBeenCalledTimes(1);
-
-    // The sheet closes (ref detaches) and reopens at the very same rect.
-    result.current.ref?.(null);
-    result.current.ref?.(view);
-    result.current.onLayout?.(layoutEvent());
-    expect(logSpy).toHaveBeenCalledTimes(2);
-    expect(logSpy).toHaveBeenLastCalledWith(
-      '[showcase-anchor] {"name":"invite-qr","x":100,"y":420,"width":200,"height":200}',
-    );
-  });
-
-  it('wraps an enabled ShowcaseAnchorView in a measured, non-collapsable View', async () => {
-    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
-    const { getByTestId, getByText } = render(
-      createElement(ShowcaseAnchorView, { name: 'play-next', children: createElement('span', null, 'Play next') }),
-    );
-
-    expect(getByTestId('anchor-view').textContent).toBe('Play next');
-    expect(getByText('Play next')).toBeTruthy();
-    expect(renderedViews.props).toHaveLength(1);
-    expect(renderedViews.props[0]).toMatchObject({ collapsable: false });
-    expect(renderedViews.props[0].onLayout).toBeTypeOf('function');
-    expect(renderedViews.props[0].ref).toBeTypeOf('function');
-
-    const onLayout = renderedViews.props[0].onLayout as (event: LayoutChangeEvent) => void;
-    onLayout(layoutEvent(fakeView({ x: 24, y: 610, width: 360, height: 52 })));
-    expect(logSpy).toHaveBeenLastCalledWith(
-      '[showcase-anchor] {"name":"play-next","x":24,"y":610,"width":360,"height":52}',
-    );
-  });
-
-  it('renders a disabled ShowcaseAnchorView without a wrapper', async () => {
-    const { ShowcaseAnchorView } = await loadShowcaseAnchor(true);
+  it('returns the same inert props and adds no wrapper without an observer', () => {
+    const { result } = renderHook(() => [useShowcaseAnchor('board-surface'), useShowcaseAnchor('invite-qr')]);
+    expect(result.current[0]).toBe(result.current[1]);
+    expect(result.current[0]).toEqual({ ref: undefined, onLayout: undefined });
     const { queryByTestId, getByText } = render(
-      createElement(ShowcaseAnchorView, {
-        name: 'play-next',
-        enabled: false,
-        children: createElement('span', null, 'Preview'),
-      }),
+      createElement(ShowcaseAnchorView, { name: 'play-next', children: 'Child' }),
     );
-
-    expect(getByText('Preview')).toBeTruthy();
     expect(queryByTestId('anchor-view')).toBeNull();
-    expect(renderedViews.props).toHaveLength(0);
+    expect(getByText('Child')).toBeTruthy();
   });
-
-  it('stops re-measuring once the view unmounts', async () => {
+  it('reports initial and settled geometry, suppresses duplicates and cancels on unmount', () => {
     vi.useFakeTimers();
-    const { useShowcaseAnchor } = await loadShowcaseAnchor(true);
-    const { result, unmount } = renderHook(() => useShowcaseAnchor('board-surface'));
-    const view = fakeView({ x: 16, y: 60, width: 32, height: 32 });
-    result.current.ref?.(view);
-    result.current.onLayout?.(layoutEvent());
+    const observe = vi.fn<(rect: LayoutObservation) => void>();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(LayoutObserverProvider, { onLayoutObserved: observe, children });
+    const { result, unmount } = renderHook(() => useShowcaseAnchor('invite-qr'), { wrapper });
+    let top = 900;
+    const measureInWindow = vi.fn((done: (x: number, y: number, width: number, height: number) => void) =>
+      done(100, top, 200, 200),
+    );
+    result.current.ref?.({ measureInWindow });
+    result.current.onLayout?.(layout);
+    top = 420;
+    vi.advanceTimersByTime(250);
+    expect(observe.mock.calls.map(([rect]) => rect.y)).toEqual([900, 420]);
+    vi.advanceTimersByTime(450);
+    expect(observe).toHaveBeenCalledTimes(2);
+    result.current.onLayout?.(layout);
     unmount();
+    const before = measureInWindow.mock.calls.length;
     vi.runAllTimers();
-    expect(view.measureInWindow).toHaveBeenCalledTimes(1);
+    expect(measureInWindow).toHaveBeenCalledTimes(before);
   });
 });

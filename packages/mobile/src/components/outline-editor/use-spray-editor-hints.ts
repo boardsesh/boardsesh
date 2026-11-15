@@ -199,7 +199,7 @@ export type SprayEditorHints = {
  * has taught nothing. Doing the thing before the hint ever appears counts too,
  * so a climber who finds long press on their own is never told about it.
  *
- * `enabled` is false in screenshot mode and on a read-only wall: no hint
+ * `enabled` is false on a read-only wall: no hint
  * shows, the "?" replay does nothing, and nothing is written.
  */
 export function useSprayEditorHints({

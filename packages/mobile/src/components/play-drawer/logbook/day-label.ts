@@ -15,8 +15,7 @@ export type LedgerDayKeys = {
 
 /**
  * The local day keys the ledger's session keys are compared against. Takes
- * "now" as a number so callers hand it `nowMs()` from `lib/clock`, which keeps
- * screenshot captures on the frozen clock.
+ * "now" as a number so callers can share one instant from `lib/clock`.
  *
  * Yesterday is one CALENDAR day back, not 24 hours: on the day the clocks
  * change, 24 hours before a just-past-midnight "now" can land two days back.

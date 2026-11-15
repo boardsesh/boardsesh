@@ -7,6 +7,7 @@ import {
   UI_VARIANT_KEY,
   isUiVariantPreference,
   type UiVariantPreference,
+  type KeyValueStorage,
 } from '@boardsesh/key-value-storage';
 import {
   iosSystemColors,
@@ -19,7 +20,6 @@ import {
   tertiaryGroupedBackgroundFallback,
   type MaterialSurfaceContainers,
 } from '../theme/colors';
-import { iosDarkColors, iosLightColors } from '../theme/ios-colors';
 import { textStylesByVariant, type TextVariant, type TypeStyle } from '../theme/typography';
 import { buildPaperTheme } from '../theme/paper-theme';
 import { NeutralRippleInkContext } from '../theme/neutral-ripple-context';
@@ -50,11 +50,6 @@ import {
 import { variantFeatures, type VariantFeatures } from '../theme/variants/variant-features';
 import { secureStorePreferences } from '../lib/preferences/secure-store-adapter';
 import { assertNever } from '../lib/assert-never';
-import {
-  SCREENSHOT_THEME_OVERRIDE,
-  SCREENSHOT_VARIANT_PREFERENCE,
-  screenshotModeStaticColor,
-} from '../lib/screenshot-mode';
 import { syncDocumentAppearance } from '../lib/theme/document-appearance';
 
 type ColorScheme = 'light' | 'dark';
@@ -253,20 +248,7 @@ function resolveSystemColors(colorScheme: ColorScheme, variant: UiVariant): Reso
       };
     case 'liquidGlass': {
       if (Platform.OS === 'ios' && iosSystemColors) {
-        // PlatformColor values adapt automatically on iOS — return as-is,
-        // except `separator`: it's a translucent native tone that composites
-        // against whatever paints behind it, and resolves against the native
-        // trait collection ThemeProvider only syncs from a post-mount effect
-        // (see `screenshotModeStaticColor`'s docstring). Screenshot mode
-        // swaps it for the opaque static hairline so it can't still be
-        // settling on the very first captured frame.
-        return {
-          ...(iosSystemColors as ResolvedSystemColors),
-          separator: screenshotModeStaticColor<string | OpaqueColorValue>(
-            iosSystemColors.separator,
-            colorScheme === 'dark' ? iosDarkColors.separator : iosLightColors.separator,
-          ),
-        };
+        return iosSystemColors as ResolvedSystemColors;
       }
       // Android: resolve from the single source of truth for fallback colors.
       const fallback = colorScheme === 'dark' ? androidFallbackColors.dark : androidFallbackColors.light;
@@ -304,29 +286,21 @@ function resolveBrandColors(colorScheme: ColorScheme): ResolvedBrandColors {
 
 type ThemeProviderProps = {
   children: ReactNode;
+  initialTheme?: ThemeOverride;
+  initialVariant?: UiVariantPreference;
+  /** Null keeps appearance in memory, for previews and embedded surfaces. */
+  preferences?: KeyValueStorage | null;
 };
 
-export function ThemeProvider({ children }: ThemeProviderProps) {
+export function ThemeProvider({
+  children,
+  initialTheme = Platform.OS === 'web' ? 'dark' : 'system',
+  initialVariant = 'auto',
+  preferences = secureStorePreferences,
+}: ThemeProviderProps) {
   const deviceColorScheme = useColorScheme();
-  // Native starts on `system`, matching the OS. Web starts dark so a fresh
-  // browser session matches the deployed app's dark shell before preference
-  // hydration completes. A saved light/dark/system choice still replaces this
-  // launch default once IndexedDB resolves. Screenshot mode remains pinned to
-  // its explicit fixture value so captures cannot flip mid-run.
-  const [themeOverride, setThemeOverrideState] = useState<ThemeOverride>(
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'
-      ? SCREENSHOT_THEME_OVERRIDE
-      : Platform.OS === 'web'
-        ? 'dark'
-        : 'system',
-  );
-  // `'auto'` until SecureStore hydrates — same value as a brand-new user, so the
-  // first paint resolves to the platform default (Liquid Glass on iOS 26,
-  // Material elsewhere) via the synchronous capability check, no flash. Locked
-  // in screenshot mode for the same reason as the theme override.
-  const [uiVariantPreference, setUiVariantPreferenceState] = useState<UiVariantPreference>(
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? SCREENSHOT_VARIANT_PREFERENCE : 'auto',
-  );
+  const [themeOverride, setThemeOverrideState] = useState<ThemeOverride>(initialTheme);
+  const [uiVariantPreference, setUiVariantPreferenceState] = useState<UiVariantPreference>(initialVariant);
   // Guards the hydration effect against stomping a user choice that lands
   // before the SecureStore read resolves (a tap on a settings toggle can
   // beat the keychain read on a cold launch).
@@ -334,12 +308,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const hasUserChosenVariantRef = useRef(false);
 
   useEffect(() => {
-    // Screenshot mode pins the theme + variant to fixed values, so skip the
-    // SecureStore reads entirely — otherwise a saved override could flip the
-    // look between the first paint and the capture.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
+    if (preferences === null) return;
     let cancelled = false;
-    secureStorePreferences
+    preferences
       .get<ThemeOverride>(THEME_OVERRIDE_KEY)
       .then((value) => {
         if (cancelled || hasUserChosenRef.current) return;
@@ -350,7 +321,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         // Keep the platform launch default rather than crashing: dark on web,
         // system-following on native.
       });
-    secureStorePreferences
+    preferences
       .get<UiVariantPreference>(UI_VARIANT_KEY)
       .then((value) => {
         if (cancelled || hasUserChosenVariantRef.current) return;
@@ -362,7 +333,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [preferences]);
 
   // Drive the native Appearance so the override actually flips iOS
   // `PlatformColor` (which follows the native trait collection, not our JS
@@ -381,32 +352,38 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     return deviceColorScheme === 'dark' ? 'dark' : 'light';
   }, [themeOverride, deviceColorScheme]);
 
-  const setThemeOverride = useCallback(async (next: ThemeOverride) => {
-    hasUserChosenRef.current = true;
-    setThemeOverrideState(next);
-    try {
-      await secureStorePreferences.set(THEME_OVERRIDE_KEY, next);
-    } catch (error) {
-      // Storage write failed (rare); leave the in-memory state on the user's
-      // pick so the session reflects it, and log so we notice if this happens
-      // consistently. Reverting on write failure would be worse — the toggle
-      // would visibly snap back, which the user reads as a broken UI.
-      // eslint-disable-next-line no-console
-      console.warn('[theme-provider] Failed to persist theme override', error);
-    }
-  }, []);
+  const setThemeOverride = useCallback(
+    async (next: ThemeOverride) => {
+      hasUserChosenRef.current = true;
+      setThemeOverrideState(next);
+      try {
+        await preferences?.set(THEME_OVERRIDE_KEY, next);
+      } catch (error) {
+        // Storage write failed (rare); leave the in-memory state on the user's
+        // pick so the session reflects it, and log so we notice if this happens
+        // consistently. Reverting on write failure would be worse — the toggle
+        // would visibly snap back, which the user reads as a broken UI.
+        // eslint-disable-next-line no-console
+        console.warn('[theme-provider] Failed to persist theme override', error);
+      }
+    },
+    [preferences],
+  );
 
-  const setUiVariant = useCallback(async (next: UiVariantPreference) => {
-    hasUserChosenVariantRef.current = true;
-    setUiVariantPreferenceState(next);
-    try {
-      await secureStorePreferences.set(UI_VARIANT_KEY, next);
-    } catch (error) {
-      // See setThemeOverride — keep the in-memory pick on write failure.
-      // eslint-disable-next-line no-console
-      console.warn('[theme-provider] Failed to persist UI variant', error);
-    }
-  }, []);
+  const setUiVariant = useCallback(
+    async (next: UiVariantPreference) => {
+      hasUserChosenVariantRef.current = true;
+      setUiVariantPreferenceState(next);
+      try {
+        await preferences?.set(UI_VARIANT_KEY, next);
+      } catch (error) {
+        // See setThemeOverride — keep the in-memory pick on write failure.
+        // eslint-disable-next-line no-console
+        console.warn('[theme-provider] Failed to persist UI variant', error);
+      }
+    },
+    [preferences],
+  );
 
   // 'auto' follows the platform aesthetic: Liquid Glass on every iPhone (the blur
   // fallback covers iOS < 26), Material on Android. Read Platform.OS inside the memo

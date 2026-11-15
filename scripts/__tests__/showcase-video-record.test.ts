@@ -1103,12 +1103,12 @@ describe('capture session cleanup before a cold launch', () => {
     expect(closeSession).not.toHaveBeenCalled();
   });
 
-  it('keeps teardown in the live JS context when screenshot mode skips persisted restore', () => {
+  it('keeps teardown in the live JS context without production screenshot persistence guards', () => {
     const persistence = readFileSync(
       new URL('../../packages/mobile/src/providers/queue/use-queue-persistence.ts', import.meta.url),
       'utf8',
     );
-    expect(persistence).toContain("if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !ownerReady) return;");
+    expect(persistence).not.toContain('EXPO_PUBLIC_SCREENSHOT_MODE');
     const recorder = readFileSync(new URL('../showcase-video-record.ts', import.meta.url), 'utf8');
     const cleanup = recorder.slice(
       recorder.indexOf('async function endSession('),

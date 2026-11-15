@@ -43,6 +43,7 @@ type DevicePickerSheetProps = {
   devices: DiscoveredDevice[];
   onSelect: (deviceId: string) => void;
   onDismiss: () => void;
+  onPresented?: () => void;
   /**
    * Take the wall with no Bluetooth, for the "this wall has no lights" offer
    * after a scan that finds nothing. Omitted where no such action exists; the
@@ -100,6 +101,7 @@ export function DevicePickerSheet({
   devices,
   onSelect,
   onDismiss,
+  onPresented,
   isScanning,
   resolvedBoards,
   currentBoardConfig,
@@ -411,6 +413,7 @@ export function DevicePickerSheet({
   // and the hints scroll together.
   return (
     <ModalSheet
+      onPresented={onPresented}
       ref={sheetRef}
       visible={visible}
       snapPoints={SNAP_POINTS}

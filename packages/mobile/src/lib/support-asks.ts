@@ -6,7 +6,7 @@
  * Both sit behind the same two gates:
  *
  * - `useDonationLinksAllowed()` — the store rules (US iPhones and the Expo
- *   browser app only; never Android, never screenshot mode). See
+ *   browser app only; never Android). See
  *   donation-links.ts.
  * - The climber's own "Show support asks" switch in Settings › General, on by
  *   default. Off hides the row and the card.

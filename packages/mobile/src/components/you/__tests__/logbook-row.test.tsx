@@ -28,10 +28,10 @@ vi.mock('../../PressableSurface', () => {
       );
   return { PressableSurface: surface('animated'), StaticPressableSurface: surface('static') };
 });
-import { createElement, type ReactNode } from 'react';
-import { act, fireEvent, render } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
+import { act, fireEvent, render } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbActionsTarget } from '../../../providers/drawer-host-provider';
 
 // The swipeable's props and the row's accessibility surface are captured via
@@ -70,6 +70,10 @@ vi.mock('../../climb-actions/ClimbActionsMenu', () => ({
       onAccessibilityAction: menuState.onAction,
     };
   },
+  ClimbMenu: ({ children, rows }: { children?: ReactNode; rows: unknown[] }) =>
+    rows.length > 0 ? createElement('div', { 'data-native-menu': true }, children) : children,
+}));
+vi.mock('../../climb-actions/ClimbMenu', () => ({
   ClimbMenu: ({ children, rows }: { children?: ReactNode; rows: unknown[] }) =>
     rows.length > 0 ? createElement('div', { 'data-native-menu': true }, children) : children,
 }));

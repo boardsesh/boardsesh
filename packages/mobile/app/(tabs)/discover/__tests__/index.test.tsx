@@ -12,11 +12,13 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, act, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { variantFeatures } from '../../../../src/theme/variants/variant-features';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, fireEvent, render as renderDom, waitFor } from '@testing-library/react';
+import { assertNativeTextChildren, renderWithNativeTextCheck as render } from '../../../../test/native-text-contract';
 import { router } from 'expo-router';
+import { createElement, type ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type PlaylistItem = {
   uuid: string;
@@ -162,8 +164,8 @@ vi.mock('expo-router', () => ({
   },
 }));
 vi.mock('../../../../src/lib/connectivity/use-connectivity', () => ({ useConnectivity: () => connectivityState }));
-vi.mock('../../../../src/components/OfflineState', () => ({
-  OfflineState: () => createElement('div', { 'data-offline-state': true }),
+vi.mock('../../../../src/components/OfflineStateView', () => ({
+  OfflineStateView: () => createElement('div', { 'data-offline-state': true }),
 }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
@@ -181,7 +183,7 @@ vi.mock('react-native-reanimated', () => ({
 }));
 
 vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-native-view': true }, children),
   ScrollView: ({
     children,
     refreshControl,
@@ -234,6 +236,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
     variant: chromeState.variant,
+    features: variantFeatures[chromeState.variant ?? 'liquidGlass'],
     systemColors: {
       separator: 'theme-separator',
       secondaryLabel: 'theme-secondary-label',
@@ -450,6 +453,42 @@ vi.mock('../../../../src/components/chrome', () => ({
 }));
 
 import DiscoverLibrary from '../index';
+import { View } from 'react-native';
+import { Text } from '../../../../src/components/Text';
+
+describe('native text host contract', () => {
+  it.each([' ', 'unwrapped text', 0])('rejects raw %j inside nested fragments', (rawText) => {
+    const { container } = renderDom(
+      <View>
+        <>
+          <>{rawText}</>
+        </>
+      </View>,
+    );
+    expect(() => assertNativeTextChildren(container)).toThrow('Text strings must be rendered within a <Text>');
+  });
+
+  it('accepts text inside Text through fragments', () => {
+    const { getByText } = render(
+      <View>
+        <>
+          <Text>Pinned climbs</Text>
+        </>
+      </View>,
+    );
+    expect(getByText('Pinned climbs')).toBeTruthy();
+  });
+
+  it('rejects raw text beside a route root through fragments', () => {
+    const { container } = renderDom(
+      <>
+        <View />
+        <> </>
+      </>,
+    );
+    expect(() => assertNativeTextChildren(container)).toThrow('Text strings must be rendered within a <Text>');
+  });
+});
 
 // The hub calls useQueryClient(); give it a real client so cache writes/reads
 // behave. Surface the client so the create test can read ['userPlaylists'].
@@ -742,7 +781,7 @@ describe('DiscoverLibrary owned playlists in a screenshot capture', () => {
     vi.unstubAllEnvs();
   });
 
-  it('waits for the capture to bind its board instead of asking for every board\u2019s playlists', () => {
+  it('uses the ordinary unscoped query when no board is selected', () => {
     // A capture boots with no stored board and binds one a moment later. The
     // recorded fixture set holds only board-filtered pages.
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
@@ -751,7 +790,7 @@ describe('DiscoverLibrary owned playlists in a screenshot capture', () => {
     renderHub();
 
     expect(userPlaylistsOptions.length).toBeGreaterThan(0);
-    for (const options of userPlaylistsOptions) expect(options.token).toBeNull();
+    for (const options of userPlaylistsOptions) expect(options.token).toBe('token');
   });
 
   it('asks for the bound board\u2019s playlists once the capture has one', () => {

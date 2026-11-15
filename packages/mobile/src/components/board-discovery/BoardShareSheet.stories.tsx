@@ -13,17 +13,20 @@ function OpenShareSheet({
   visibility,
   subject,
   posterUrl,
+  onReady,
 }: {
   shareUrl: string;
   wallName: string;
   visibility: BoardShareVisibility;
   subject?: 'wall' | 'board';
   posterUrl?: string;
+  onReady: () => void;
 }) {
   const [visible, setVisible] = useState(true);
   return (
     <BoardShareSheet
       visible={visible}
+      onPresented={onReady}
       onDismiss={() => setVisible(false)}
       shareUrl={shareUrl}
       wallName={wallName}
@@ -39,8 +42,10 @@ const stories: StoryModule = {
   stories: {
     sprayUnlisted: {
       name: 'Unlisted Spraywall, with Print a poster',
-      render: () => (
+      readiness: 'explicit',
+      render: ({ onReady }) => (
         <OpenShareSheet
+          onReady={onReady}
           shareUrl={`https://www.boardsesh.com/b/garage-spray/40/list?wall=${WALL_UUID}`}
           wallName="Garage Spraywall"
           visibility="unlisted"
@@ -50,8 +55,10 @@ const stories: StoryModule = {
     },
     homeBoardPublic: {
       name: 'Public home board, with Print a poster',
-      render: () => (
+      readiness: 'explicit',
+      render: ({ onReady }) => (
         <OpenShareSheet
+          onReady={onReady}
           shareUrl="https://www.boardsesh.com/b/the-garage"
           wallName="The Garage"
           visibility="public"
@@ -62,8 +69,10 @@ const stories: StoryModule = {
     },
     homeBoardInvite: {
       name: 'Invite-only home board, no poster',
-      render: () => (
+      readiness: 'explicit',
+      render: ({ onReady }) => (
         <OpenShareSheet
+          onReady={onReady}
           shareUrl="https://www.boardsesh.com/b/the-garage?invite=Ab3_dE-fGhIjKlMnOpQrSt"
           wallName="The Garage"
           visibility="invite"

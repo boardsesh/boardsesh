@@ -3,6 +3,11 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
+import {
+  applyFixtureOverlay,
+  validateFixtureOverlayReference,
+  type FixtureOverlayReference,
+} from './screenshot-fixture-overlay';
 import { assertCppNegativeFixtureFiles } from './cpp-native-background-coverage';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -17,6 +22,7 @@ export interface FixtureSnapshotReference {
   sha256: string;
   bytes: number;
   files: number;
+  overlay?: FixtureOverlayReference;
 }
 
 export function snapshotHash(bytes: Buffer): string {
@@ -61,6 +67,7 @@ export function validateFixtureSnapshotReference(parsed: unknown): FixtureSnapsh
     throw new Error('Invalid fixture snapshot reference');
   }
   publicHttpsUrl(reference.url);
+  if (reference.overlay !== undefined) validateFixtureOverlayReference(reference.overlay);
   return reference as FixtureSnapshotReference;
 }
 
@@ -88,7 +95,7 @@ export async function fetchFixtureSnapshotReference(
 }
 
 export function fixtureSnapshotDirectory(reference = readFixtureSnapshotReference(), cacheRoot = CACHE_ROOT): string {
-  return join(cacheRoot, reference.sha256);
+  return join(cacheRoot, reference.overlay ? `${reference.sha256}-${reference.overlay.sha256}` : reference.sha256);
 }
 
 export function decodeFixtureSnapshot(bytes: Buffer, reference: FixtureSnapshotReference): Map<string, Buffer> {
@@ -166,7 +173,15 @@ export async function ensureScreenshotFixtures(
     decodeFixtureSnapshot(compressed, reference);
     writeAtomic(archive, compressed);
   }
-  const files = decodeFixtureSnapshot(compressed, reference);
+  const baseline = decodeFixtureSnapshot(compressed, reference);
+  const files = reference.overlay
+    ? applyFixtureOverlay(
+        baseline,
+        reference.sha256,
+        readFileSync(join(REPO_ROOT, validateFixtureOverlayReference(reference.overlay).path)),
+        reference.overlay,
+      )
+    : baseline;
   const directory = fixtureSnapshotDirectory(reference, cacheRoot);
   for (const [path, bytes] of files) {
     const filename = join(directory, path);

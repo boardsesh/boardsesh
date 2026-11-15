@@ -14,7 +14,7 @@ import {
 import {
   screenshotCppBoardMatches,
   type ScreenshotCppBoardIdentity,
-} from '../../packages/mobile/src/lib/screenshot-cpp-board-identity';
+} from '../../packages/mobile/src/dev/integration/screenshot-cpp-board-identity';
 
 // Ready text per app locale. Only the store-captured locales (en-US, es, fr, de)
 // carry one; a locale without store screenshots yet falls back to readyText.

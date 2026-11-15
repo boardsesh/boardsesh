@@ -217,7 +217,7 @@ export class ConsentPostHog extends PostHog {
 // Live only in non-dev builds with a key configured. Preview (TestFlight /
 // internal) and production builds are both `!__DEV__`, so telemetry flows from
 // them; local Metro dev never sends.
-export const isAnalyticsEnabled = !!apiKey && !isDevBuild() && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+export const isAnalyticsEnabled = !!apiKey && !isDevBuild();
 
 let client: PostHog | null = null;
 let initAttempted = false;

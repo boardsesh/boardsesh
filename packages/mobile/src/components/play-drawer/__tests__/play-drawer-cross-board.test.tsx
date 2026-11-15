@@ -17,7 +17,7 @@
 // the current art.
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { render as renderInitial, act, renderHook } from '@testing-library/react';
-import { Children, createElement, isValidElement, useEffect, useRef, type ReactNode } from 'react';
+import { Children, Fragment, createElement, isValidElement, useEffect, useRef, type ReactNode } from 'react';
 import { DeferredBoard } from '../DeferredBoard';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
@@ -174,10 +174,15 @@ vi.mock('react-native', () => ({
     if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
     // Identify the measured board viewport by its content: its resting gutter
     // now belongs inside the full-width carousel, not on this container.
-    const containsBoard = Children.toArray(children).some(
-      (child) => isValidElement(child) && child.type === DeferredBoard,
-    );
-    if (onLayout && containsBoard) recorded.boardLayout = onLayout;
+    // PlayStageView receives the board and its overlays through a fragment.
+    // React Native flattens it; Children.toArray alone does not.
+    const containsBoard = (nodes: ReactNode): boolean =>
+      Children.toArray(nodes).some(
+        (child) =>
+          isValidElement<{ children?: ReactNode }>(child) &&
+          (child.type === DeferredBoard || (child.type === Fragment && containsBoard(child.props.children))),
+      );
+    if (onLayout && containsBoard(children)) recorded.boardLayout = onLayout;
     // Geometry telemetry has a ref-bearing wrapper without a style, too. The
     // title header remains the unreffed measurement this suite drives.
     else if (onLayout && !style && ref == null) recorded.headerLayout = onLayout;

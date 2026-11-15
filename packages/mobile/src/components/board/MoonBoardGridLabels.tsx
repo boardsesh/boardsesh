@@ -7,6 +7,7 @@ import { moonBoardGridLabelsImageKey } from '../../lib/board-details';
 
 type MoonBoardGridLabelsProps = {
   layoutId: number;
+  visible?: boolean;
   /**
    * The scheme the board's own art resolved in (`useNativeClimbRender`), so the
    * labels and the stack under them always switch to their dark copies together.
@@ -30,9 +31,10 @@ type MoonBoardGridLabelsProps = {
 export const MoonBoardGridLabels = React.memo(function MoonBoardGridLabels({
   layoutId,
   colorScheme,
+  visible,
 }: MoonBoardGridLabelsProps) {
   const [showGridLabels] = useSetting('moonboardGridLabels');
-  if (!showGridLabels) return null;
+  if (!(visible ?? showGridLabels)) return null;
   const labelArtSource = bundledBoardArtSource(moonBoardGridLabelsImageKey(layoutId), colorScheme);
   if (labelArtSource === null) return null;
   return (

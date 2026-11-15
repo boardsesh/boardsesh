@@ -251,7 +251,7 @@ runs:
         SCREENSHOT_DEV_CLIENT: '1'
         # These reach the running app through Metro's env, not a rebuild: the
         # orchestrator passes them on as `--render-mode`/`--boards`, which
-        # screenshot-mode.ts reads at JS-bundle time. The capture gate compares
+        # the story root and dev integration bootstrap consume. The capture gate compares
         # what the app drew against what the run asked for, so a legitimate
         # retarget needs both sides to agree.
         SCREENSHOT_RENDER_MODE: ${{ inputs.render-mode }}

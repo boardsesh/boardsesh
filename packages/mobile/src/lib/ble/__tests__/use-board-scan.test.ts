@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import {
   reactNativePermissionHarness,
   resetReactNativePermissionHarness,
@@ -352,7 +352,7 @@ describe('useBoardScan', () => {
     expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
   });
 
-  it('finishes empty without touching the radio in a fake-Bluetooth screenshot build', async () => {
+  it('scans real boards when both retired screenshot flags are set', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
     try {
@@ -361,10 +361,13 @@ describe('useBoardScan', () => {
         await result.current.start();
       });
 
-      expect(result.current.status).toBe('done');
-      expect(result.current.serials).toEqual([]);
-      expect(mockBleManager.state).not.toHaveBeenCalled();
-      expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+      expect(result.current.status).toBe('scanning');
+      expect(mockBleManager.state).toHaveBeenCalled();
+      expect(mockBleManager.startDeviceScan).toHaveBeenCalledOnce();
+      act(() => {
+        scanCallback()(null, { id: 'real-board', name: 'Kilter Board#123@3' });
+      });
+      expect(result.current.serials).toEqual(['123']);
     } finally {
       vi.unstubAllEnvs();
     }

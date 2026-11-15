@@ -36,7 +36,6 @@ export type QaGateInput = {
    * for the launch that cleared a live override. `wait` covers each.
    */
   surfingReady: boolean;
-  screenshotMode: boolean;
   /** The cold start came in through a deep link, so the user has intent elsewhere. */
   launchedByDeepLink: boolean;
   topSegment: string | undefined;
@@ -104,7 +103,6 @@ export function decideQaGate(input: QaGateInput): QaGateDecision {
   // and all three are `wait`.
   if (!input.surfingReady) return 'wait';
 
-  if (input.screenshotMode) return 'none';
   if (!input.isTester) return 'none';
   // Not a build that can load a branch: the prompt would offer something the
   // binary cannot act on.

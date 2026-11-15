@@ -1,18 +1,17 @@
-import { memo, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { toBoardName } from '@boardsesh/board-config';
+import { getLayoutName, getProductSize } from '@boardsesh/board-constants/product-sizes';
+import { TICK_BOARD_OPTIONS, type TickBoardOption, type TickBoardOptionsResponse } from '@boardsesh/graphql/operations';
 import { BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TICK_BOARD_OPTIONS, type TickBoardOption, type TickBoardOptionsResponse } from '@boardsesh/graphql/operations';
-import { getLayoutName, getProductSize } from '@boardsesh/board-constants/product-sizes';
-import { toBoardName } from '@boardsesh/board-config';
+import { StyleSheet, View } from 'react-native';
 import { getHttpClient } from '../../lib/graphql/client';
-import { screenshotModeNextPageParam } from '../../lib/screenshot-mode';
 import { useTheme } from '../../providers/theme-provider';
-import { Text } from '../Text';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
-import { ActivityIndicator } from '../ActivityIndicator';
+import { Text } from '../Text';
 
 type Choice = TickBoardOption | null;
 const choiceKey = (board: Choice) => board?.uuid ?? 'none';
@@ -71,8 +70,6 @@ export function TickBoardPicker({
   onSelect: (board: Choice) => void;
   onBack: () => void;
 }) {
-  const { t } = useTranslation('you');
-  const { systemColors, spacing } = useTheme();
   const query = useInfiniteQuery({
     queryKey: ['tickBoardOptions', tickUuid],
     initialPageParam: 0,
@@ -84,8 +81,7 @@ export function TickBoardPicker({
           offset: pageParam,
         })
       ).tickBoardOptions,
-    getNextPageParam: (lastPage, pages, lastOffset) =>
-      screenshotModeNextPageParam(lastPage.hasMore ? lastOffset + 20 : undefined, pages.length),
+    getNextPageParam: (lastPage, _pages, lastOffset) => (lastPage.hasMore ? lastOffset + 20 : undefined),
   });
   const choices = useMemo<Choice[]>(() => {
     const boards = new Map<string, TickBoardOption>();
@@ -98,12 +94,6 @@ export function TickBoardPicker({
         ? (query.data.pages[0]?.currentBoard?.uuid ?? 'none')
         : undefined
       : (selection?.uuid ?? 'none');
-  const renderItem = useCallback(
-    ({ item }: { item: Choice }) => (
-      <BoardChoiceRow board={item} selected={choiceKey(item) === selectedUuid} onSelect={onSelect} />
-    ),
-    [onSelect, selectedUuid],
-  );
   const loadMore = useCallback(() => {
     if (query.hasNextPage && !query.isFetching && !query.isFetchNextPageError) void query.fetchNextPage();
   }, [query.hasNextPage, query.isFetching, query.isFetchNextPageError, query.fetchNextPage]);
@@ -111,6 +101,50 @@ export function TickBoardPicker({
     if (query.isFetchNextPageError) void query.fetchNextPage();
     else void query.refetch();
   }, [query.isFetchNextPageError, query.fetchNextPage, query.refetch]);
+  return (
+    <TickBoardPickerView
+      choices={choices}
+      selectedUuid={selectedUuid}
+      onSelect={onSelect}
+      onBack={onBack}
+      isFetching={query.isFetching}
+      isError={query.isError}
+      isPending={query.isPending}
+      onLoadMore={loadMore}
+      onRetry={retry}
+    />
+  );
+}
+export type TickBoardPickerViewProps = {
+  choices: Choice[];
+  selectedUuid: string | undefined;
+  onSelect: (board: Choice) => void;
+  onBack: () => void;
+  isFetching: boolean;
+  isError: boolean;
+  isPending: boolean;
+  onLoadMore: () => void;
+  onRetry: () => void;
+};
+export function TickBoardPickerView({
+  choices,
+  selectedUuid,
+  onSelect,
+  onBack,
+  isFetching,
+  isError,
+  isPending,
+  onLoadMore,
+  onRetry,
+}: TickBoardPickerViewProps) {
+  const { t } = useTranslation('you');
+  const { systemColors, spacing } = useTheme();
+  const renderItem = useCallback(
+    ({ item }: { item: Choice }) => (
+      <BoardChoiceRow board={item} selected={choiceKey(item) === selectedUuid} onSelect={onSelect} />
+    ),
+    [onSelect, selectedUuid],
+  );
   return (
     <View style={styles.body}>
       <PressableSurface
@@ -125,17 +159,17 @@ export function TickBoardPicker({
         data={choices}
         keyExtractor={choiceKey}
         renderItem={renderItem}
-        onEndReached={loadMore}
+        onEndReached={onLoadMore}
         onEndReachedThreshold={0.2}
         style={styles.list}
         ListFooterComponent={
           <View style={{ padding: spacing[3] }}>
-            {query.isFetching ? <ActivityIndicator /> : null}
-            {query.isError ? (
-              <PressableSurface onPress={retry} accessibilityRole="button">
+            {isFetching ? <ActivityIndicator /> : null}
+            {isError ? (
+              <PressableSurface onPress={onRetry} accessibilityRole="button">
                 <Text>{t('mobile.logbook.boardRetry')}</Text>
               </PressableSurface>
-            ) : !query.isPending && choices.length === 1 ? (
+            ) : !isPending && choices.length === 1 ? (
               <Text color={systemColors.secondaryLabel}>{t('mobile.logbook.boardEmpty')}</Text>
             ) : null}
           </View>

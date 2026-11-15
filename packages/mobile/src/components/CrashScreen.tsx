@@ -18,7 +18,6 @@ import {
   waitForOtaUpdatesIdle,
   waitForOtaReloadReceipt,
 } from '../lib/qa/qa-surf';
-import { reportScreenshotSmokeError } from '../lib/screenshot-smoke';
 
 const errorStyles = StyleSheet.create({
   container: {
@@ -136,10 +135,6 @@ export function CrashScreen({ error, retry }: ErrorBoundaryProps) {
     if (reportedRef.current !== error) {
       reportedRef.current = error;
       reportError(error);
-      // The E2E gate's smoke fails on this ping (docs/mobile-e2e-gate.md): iOS
-      // Maestro cannot see this screen, so the screen says it mounted. Inlined
-      // so a normal build strips it.
-      if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') reportScreenshotSmokeError(error);
       // Module-level track() works without AnalyticsProvider (it drives the same
       // lazily-built PostHog client), so the crash screen is observable. Tag the
       // OTA cohort so a broken-bundle spike is sliceable by update id / channel.

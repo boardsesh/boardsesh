@@ -695,33 +695,22 @@ it('keeps cached artwork ready after StrictMode replays slot layout effects', as
 });
 
 describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (screenshotMode) => {
-  it('exposes the painted-overlay descendant only in screenshot mode and preserves the normal board group', () => {
+  it('preserves the normal board group and readiness regardless of capture flags', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', screenshotMode);
-    const { getByTestId, queryByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
+    const { getByTestId } = render(createElement(SwipeBoardCarousel, baseProps));
     measure(350, 500);
     const board = getByTestId('board-current');
     const { pageArt } = recorded.swipeOptions.mock.calls.at(-1)![0] as {
-      pageArt?: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
+      pageArt: SharedValue<Readonly<Record<number, BoardArtReadiness>>>;
     };
-    if (screenshotMode === '1') {
-      expect(pageArt).toBeUndefined();
-      expect(board.parentElement?.dataset.accessible).toBe('false');
-      expect(board.parentElement?.dataset.importantForAccessibility).toBe('no');
-      expect(board.dataset.overlayTestid).toBe('play-drawer-board-overlay');
-      expect(queryByTestId('play-drawer-board-accessibility')).toBeNull();
-    } else {
-      expect(pageArt?.value).toEqual({});
-      // One fixed stand-in is the accessibility element, the size of the board.
-      // The boards themselves change places on a swipe and are hidden from it.
-      const standIn = getByTestId('play-drawer-board-accessibility');
-      expect(standIn.dataset.accessible).toBe('true');
-      expect(standIn.dataset.importantForAccessibility).toBeUndefined();
-      // It takes touches, or exploring by touch with a screen reader on cannot find the board.
-      expect(standIn.dataset.pointerEvents).toBeUndefined();
-      expectDimensions(standIn, 250, 500);
-      expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBe('no-hide-descendants');
-      expect(board.dataset.overlayTestid).toBeUndefined();
-    }
+    expect(pageArt.value).toEqual({});
+    const standIn = getByTestId('play-drawer-board-accessibility');
+    expect(standIn.dataset.accessible).toBe('true');
+    expect(standIn.dataset.importantForAccessibility).toBeUndefined();
+    expect(standIn.dataset.pointerEvents).toBeUndefined();
+    expectDimensions(standIn, 250, 500);
+    expect(board.parentElement?.parentElement?.dataset.importantForAccessibility).toBe('no-hide-descendants');
+    expect(board.dataset.overlayTestid).toBeUndefined();
   });
 
   it('mounts one current image before geometry, then enables gestures without remounting it', async () => {
@@ -752,15 +741,9 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     await nextFrame();
     expectDimensions(getByTestId('board-next'), 250, 500);
     expect(getByTestId('board-current').dataset.renderWidth).toBe('750');
-    if (screenshotMode === '0') {
-      expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ renderWidth: 750 }));
-      // The image and the zoom wrapper both carry explicit dimensions. The slot
-      // around them fills the container and centres them.
-      expectDimensions(getByTestId('board-current').parentElement!, 250, 500);
-      expectDimensions(getByTestId('board-next').parentElement!, 250, 500);
-    } else {
-      expect(recorded.prefetch).not.toHaveBeenCalled();
-    }
+    expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ renderWidth: 750 }));
+    expectDimensions(getByTestId('board-current').parentElement!, 250, 500);
+    expectDimensions(getByTestId('board-next').parentElement!, 250, 500);
   });
 
   it('uses supplied positive geometry on the first frame and resizes without remounting', () => {
@@ -813,30 +796,6 @@ describe.each(['0', '1'])('SwipeBoardCarousel layout (screenshot mode %s)', (scr
     expectDimensions(getByTestId('board-next'), 200, 400);
     expect(currentImage.dataset.renderWidth).toBe('600');
   });
-});
-
-it("keeps screenshot mode's plain board mounted across a step, so the wall photo never drops", async () => {
-  vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-  const props = { ...baseProps, prevFrames: null, currentFrames: 'a', nextFrames: 'b' };
-  const { getByTestId, queryAllByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
-  measure(350, 500);
-  await nextFrame();
-  const plainBoard = getByTestId('board-a');
-  expect(plainBoard.dataset.overlayTestid).toBe('play-drawer-board-overlay');
-
-  // A swipe forward. The plain board changes climb by a prop; it is not one of the pages.
-  rerender(
-    createElement(SwipeBoardCarousel, {
-      ...props,
-      prevFrames: 'a',
-      currentFrames: 'b',
-      nextFrames: 'c',
-      centerPage: 1,
-    }),
-  );
-
-  const current = queryAllByTestId('board-b').filter((board) => board.dataset.overlayTestid);
-  expect(current).toEqual([plainBoard]);
 });
 
 it('contains a wide board and updates climbs without remounting the current image', () => {
@@ -1036,4 +995,56 @@ it.each([false, true])('passes the host ground to all displayed boards and prefe
     expect(props.fieldColorOverride).toBe('#1C1C1E');
   }
   expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ fieldColorOverride: '#1C1C1E' }));
+});
+
+it('exposes a smoke marker outside hidden artwork only after the current holds paint', () => {
+  const props = { ...baseProps, currentFrames: 'p1145r15', containerSize: { width: 350, height: 500 } };
+  const { queryByTestId, getByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+  const latestCurrent = () =>
+    recorded.boardProps.mock.calls.filter(([board]) => board.frames === props.currentFrames).at(-1)![0] as {
+      onArtReadinessChange: (readiness: BoardArtReadiness) => void;
+    };
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  const previousReport = latestCurrent().onArtReadinessChange;
+  act(() => previousReport('ready'));
+  const marker = getByTestId('play-drawer-board-overlay');
+  expect(marker.closest('[data-important-for-accessibility="no-hide-descendants"]')).toBeNull();
+  rerender(createElement(SwipeBoardCarousel, { ...props, mirrored: true }));
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  act(() => previousReport('ready'));
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  act(() => latestCurrent().onArtReadinessChange('failed'));
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  act(() => latestCurrent().onArtReadinessChange('ready'));
+  expect(queryByTestId('play-drawer-board-overlay')).not.toBeNull();
+});
+
+it('waits for both GPU presentation and board art before exposing the marker', () => {
+  recorded.motionNative = true;
+  const props = {
+    ...baseProps,
+    layoutId: 8,
+    currentFrames: 'p4131r42',
+    containerSize: { width: 350, height: 500 },
+  };
+  const { queryByTestId, rerender } = render(createElement(SwipeBoardCarousel, props));
+  const first = latestStationaryBoard();
+  act(() => first.onArtReadinessChange('ready'));
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  act(() => first.onGpuTransitionStateChange('ready'));
+  expect(queryByTestId('play-drawer-board-overlay')).not.toBeNull();
+
+  rerender(createElement(SwipeBoardCarousel, { ...props, mirrored: true }));
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  act(() => {
+    first.onGpuTransitionStateChange('ready');
+    first.onArtReadinessChange('ready');
+  });
+  expect(queryByTestId('play-drawer-board-overlay')).toBeNull();
+  const mirrored = latestStationaryBoard();
+  act(() => {
+    mirrored.onGpuTransitionStateChange('ready');
+    mirrored.onArtReadinessChange('ready');
+  });
+  expect(queryByTestId('play-drawer-board-overlay')).not.toBeNull();
 });

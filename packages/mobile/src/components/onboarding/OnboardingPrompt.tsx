@@ -1,49 +1,16 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SheetTopBar } from '../SheetTopBar';
-import { OnboardingCard } from './OnboardingCard';
-import { ONBOARDING_PROMPT_CARD } from '../../lib/onboarding/onboarding-cards';
-import { useOnboardingCopy } from '../../lib/onboarding/use-onboarding-copy';
+import { hapticSelection } from '../../lib/haptics';
 import {
   trackStepViewed,
   trackTourCompleted,
   trackTourDismissed,
   trackTourStarted,
 } from '../../lib/onboarding/onboarding-analytics';
-import { hapticSelection } from '../../lib/haptics';
-import { spacing } from '../../theme/tokens';
+import { ONBOARDING_PROMPT_CARD } from '../../lib/onboarding/onboarding-cards';
+import { OnboardingPromptView, type OnboardingPromptViewProps } from './OnboardingPromptView';
 import { useBlockBack } from './use-block-back';
-
-type OnboardingPromptProps = {
-  /** Illustration glyph tint. */
-  iconColor: string;
-  /** Body/subtext colour. */
-  bodyColor: string;
-  /** Opaque background under the reading text. */
-  backgroundColor: string;
-  /** The only way on — continue to the board step. */
-  onContinue: () => void;
-};
-
-/**
- * First-run framing screen. A single value-promise card (live board history)
- * whose one action, the top bar's trailing confirm, carries on to the board step. Following a named board is the
- * action that turns board history on, so the promise and the thing that delivers
- * it sit one tap apart.
- *
- * **There is no exit** (issue #4961). The quiet "Look around first" secondary
- * used to drop the climber on Home with no board bound — where every screen is
- * an empty state and the promise this card just made never lands. Android
- * hardware back is swallowed too; `gestureEnabled: false` on the route only
- * closes the iOS half.
- *
- * Variant-agnostic: the route resolves the palette from the active UI variant
- * and injects it, so one component serves both the HIG and Material skins.
- */
-export function OnboardingPrompt({ iconColor, bodyColor, backgroundColor, onContinue }: OnboardingPromptProps) {
-  const copy = useOnboardingCopy();
-  const insets = useSafeAreaInsets();
+export function OnboardingPrompt(props: Omit<OnboardingPromptViewProps, 'onImageDisplayed' | 'onImageError'>) {
+  const { onContinue } = props;
   const startedAtRef = useRef<number>(Date.now());
   // Tracks whether the user chose a button. Android back is now swallowed, but a
   // nav-away (a deep link arriving mid-step) can still unmount this without an
@@ -77,40 +44,5 @@ export function OnboardingPrompt({ iconColor, bodyColor, backgroundColor, onCont
     onContinue();
   }, [onContinue]);
 
-  // The route hides the native header (a transparentModal), so the step draws
-  // its own top bar. No leading action: this step has no exit (see above).
-  return (
-    <View
-      style={[
-        styles.root,
-        { backgroundColor, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, spacing[4]) },
-      ]}
-      accessibilityViewIsModal
-    >
-      <SheetTopBar
-        title=""
-        trailing={{ kind: 'forward', label: copy.continueLabel, onPress: handleContinue, prominent: true }}
-      />
-      <View style={styles.cardArea}>
-        <OnboardingCard
-          icon={ONBOARDING_PROMPT_CARD.icon}
-          image={ONBOARDING_PROMPT_CARD.image}
-          title={copy.title}
-          body={copy.body}
-          footnote={copy.footnote}
-          iconColor={iconColor}
-          bodyColor={bodyColor}
-        />
-      </View>
-    </View>
-  );
+  return <OnboardingPromptView {...props} onContinue={handleContinue} />;
 }
-
-const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  cardArea: {
-    flex: 1,
-  },
-});

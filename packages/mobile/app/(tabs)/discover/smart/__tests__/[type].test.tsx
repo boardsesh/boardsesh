@@ -300,21 +300,16 @@ describe('SmartPlaylistDetail queue replacement wiring', () => {
     expect(smartMocks.activationOptions?.previewOnly).toBe(false);
     expect(smartMocks.activationOptions?.honorPlaylistLoadSetting).toBe(true);
   });
-  it('scopes CPP smart-playlist requests to the active wall and keeps ordinary requests unchanged', () => {
+  it('keeps smart-list scope independent of visual capture settings', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
-    const { rerender } = render(<SmartPlaylistDetail />);
-    expect(smartMocks.queryOptions).toMatchObject({
-      boardName: 'spray',
-      boardUuid: 'spray-liz',
-      sizeId: 17,
-      angle: 40,
-      pageSize: 10,
-    });
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
-    rerender(<SmartPlaylistDetail />);
+    render(<SmartPlaylistDetail />);
     expect(smartMocks.queryOptions).not.toHaveProperty('boardName');
     expect(smartMocks.queryOptions).not.toHaveProperty('boardUuid');
+    expect(smartMocks.queryOptions).not.toHaveProperty('pageSize');
+    expect(smartMocks.queryOptions).toMatchObject({
+      activeBoardInput: { activeBoardName: 'spray', activeSizeId: 17, activeAngle: 40 },
+    });
   });
 });
 

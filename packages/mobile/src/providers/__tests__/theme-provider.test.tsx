@@ -80,6 +80,25 @@ describe('ThemeProvider', () => {
     platform.os = 'android';
   });
 
+  it('keeps preview appearance in memory without reading or writing user preferences', async () => {
+    const { result } = renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <ThemeProvider initialTheme="dark" initialVariant="material" preferences={null}>
+          {children}
+        </ThemeProvider>
+      ),
+    });
+    expect(result.current.colorScheme).toBe('dark');
+    expect(getMock).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.setThemeOverride('light');
+      await result.current.setUiVariant('liquidGlass');
+    });
+    expect(result.current.colorScheme).toBe('light');
+    expect(result.current.variant).toBe('liquidGlass');
+    expect(setMock).not.toHaveBeenCalled();
+  });
+
   describe('resolved colorScheme (without persistence)', () => {
     it('defaults a fresh web session to dark without calling native Appearance', async () => {
       platform.os = 'web';

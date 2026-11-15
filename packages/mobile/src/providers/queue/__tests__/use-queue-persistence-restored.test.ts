@@ -138,14 +138,11 @@ describe('useQueuePersistence: restored', () => {
     expect(result.current.state.currentClimbQueueItem?.uuid).toBe('queue-put-up');
   });
 
-  it('stays false in screenshot mode, where nothing restores', async () => {
+  it('restores the real queue regardless of retired capture flags', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     storage.snapshot = savedQueue(makeItem('queue-restored'));
     const { result } = renderHook(() => useRestoreHarness([]));
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(result.current.restored).toBe(false);
-    expect(result.current.state.currentClimbQueueItem).toBeNull();
+    await waitFor(() => expect(result.current.restored).toBe(true));
+    expect(result.current.state.currentClimbQueueItem?.uuid).toBe('queue-restored');
   });
 });

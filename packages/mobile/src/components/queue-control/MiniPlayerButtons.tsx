@@ -225,12 +225,6 @@ export function useMiniPlayerMirrorToggle({
       return;
     }
     if (!queueItemUuid || headItem?.uuid !== queueItemUuid || headItem.climb.uuid !== climb.uuid) return;
-    if (
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' &&
-      process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS?.includes('screenshotClimbId=') === true &&
-      shared
-    )
-      return;
     const mirrored = !(headItem.climb.mirrored === true);
     hapticSelection();
     track(SHARED_EVENTS.MirrorClimb, {

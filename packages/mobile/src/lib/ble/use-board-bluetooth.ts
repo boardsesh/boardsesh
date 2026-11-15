@@ -2096,14 +2096,13 @@ export function useBoardBluetooth({
         // Kilter-built box (`Kilter Board`) has none, so we remember its BLE
         // peripheral id and reconnect by matching that on the next scan.
         // Without a full config there is no usable key (the reconnect comparison
-        // against currentConfigKey could never match). A fake-Bluetooth
-        // screenshot build's pretend board (screenshot-fake-adapter.ts) is never
-        // remembered: persisting it would leave the install reconnecting to a
-        // peripheral that doesn't exist. Inlined so it folds away elsewhere.
-        const isScreenshotFakeBoard =
-          process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1';
+        // against currentConfigKey could never match).
         let rememberedConfigKey: string | null = null;
-        if (!isScreenshotFakeBoard && layoutId !== undefined && sizeId !== undefined) {
+        if (
+          !('persistConnection' in adapter && adapter.persistConnection === false) &&
+          layoutId !== undefined &&
+          sizeId !== undefined
+        ) {
           const configKey = boardConfigKey(boardName, layoutId, sizeId, boardUuid);
           if (parsedSerial) {
             rememberConnectedBoard({ configKey, serial: parsedSerial });

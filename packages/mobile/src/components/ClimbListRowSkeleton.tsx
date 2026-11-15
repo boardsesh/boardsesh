@@ -3,6 +3,7 @@ import { useClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { ClimbRowReservedLine } from './ClimbRowReservedLine';
 import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 import type { TextVariant } from './Text';
+import type { ClimbRowDisplay } from '../lib/climb-row-display';
 import { useClimbRowDisplay } from '../lib/climb-row-display-preference';
 import { useTheme } from '../providers/theme-provider';
 import { borderRadius, spacing } from '../theme/tokens';
@@ -56,13 +57,18 @@ function SkeletonTextLine({
  * row, so it has that row's thumbnail or none, its lines, its height and its
  * separator, and nothing shifts when the climbs land.
  */
-export function ClimbListRowSkeleton({
+export function ClimbListRowSkeleton(props: ClimbListRowSkeletonProps) {
+  const display = useClimbRowDisplay();
+  return <ClimbListRowSkeletonView {...props} display={display} />;
+}
+
+export function ClimbListRowSkeletonView({
+  display,
   showPlaylistChips = false,
   showProgress = false,
   supportsMirroring = false,
-}: ClimbListRowSkeletonProps) {
+}: ClimbListRowSkeletonProps & { display: ClimbRowDisplay }) {
   const { systemColors } = useTheme();
-  const display = useClimbRowDisplay();
   const { fontScale } = useWindowDimensions();
   const { textStyles } = useTheme();
   // The size of the rows it stands in for: 88×112 in a two-column Climbs list.

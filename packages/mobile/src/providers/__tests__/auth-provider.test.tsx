@@ -80,11 +80,6 @@ vi.mock('../../components/AppLoadingSplash', () => ({
   AppLoadingSplash: () => 'app-loading-splash',
 }));
 
-vi.mock('../../lib/screenshot-mode', () => ({
-  SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
-  SCREENSHOT_USER_PASSWORD: 'screenshot-password',
-}));
-
 vi.mock('../../lib/onboarding/onboarding-storage', () => ({
   clearLinkEmptyPromptDismissal: linkEmptyDismissalMocks.clear,
   resumeLinkEmptyDismissalWrites: linkEmptyDismissalMocks.resume,
@@ -2435,9 +2430,9 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(setOnForcedSignOutMock).toHaveBeenLastCalledWith(null);
   });
 
-  it('sets the screenshot login scope before authenticated children mount', async () => {
+  it('sets a bootstrapped login scope before authenticated children mount', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    getAuthTokenMock.mockResolvedValueOnce(null).mockResolvedValue('screenshot-jwt');
+    getAuthTokenMock.mockResolvedValue('bootstrapped-jwt');
     authSignInWithCredentialsMock.mockResolvedValue({ success: true });
     const observedOwners: Array<{ userId: string; authSessionId: string } | null> = [];
     const OwnerProbe = () => {
@@ -2455,7 +2450,7 @@ describe('AuthProvider forced sign-out registration', () => {
     );
 
     await waitFor(() => expect(observedOwners).not.toHaveLength(0));
-    expect(authSignInWithCredentialsMock).toHaveBeenCalledWith('screenshots@example.com', 'screenshot-password');
+    expect(authSignInWithCredentialsMock).not.toHaveBeenCalled();
     expect(observedOwners[0]).toEqual({ userId: 'user-1', authSessionId: 'login-1' });
   });
 
@@ -3031,10 +3026,10 @@ describe('AuthProvider native degraded sessions', () => {
     expect(reportHandledErrorMock).not.toHaveBeenCalled();
   });
 
-  it('keeps screenshot-mode follow-up token-read failures on the native login path', async () => {
+  it('keeps startup token-read failures on the native login path', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    const keychainError = new Error('screenshot keychain relocked');
-    getAuthTokenMock.mockResolvedValueOnce(null).mockRejectedValueOnce(keychainError);
+    const keychainError = new Error('startup keychain relocked');
+    getAuthTokenMock.mockRejectedValue(keychainError);
     authSignInWithCredentialsMock.mockResolvedValue({ success: true });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 

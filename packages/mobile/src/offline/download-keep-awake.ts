@@ -114,13 +114,10 @@ export type KeepAwakeDecisionInput = {
   msSinceProgress: number | null;
   /** What this download has already spent of the cap: earlier stretches as charged, plus the open one. */
   heldMs: number;
-  /** `EXPO_PUBLIC_SCREENSHOT_MODE`: a capture run never holds the lock. */
-  screenshotMode: boolean;
 };
 
 /** Should the screen be held awake right now? Every condition has to hold. */
 export function shouldKeepScreenAwake(input: KeepAwakeDecisionInput): boolean {
-  if (input.screenshotMode) return false;
   if (!input.userStartedDownloadInFlight || !input.isForeground) return false;
   if (input.msSinceProgress === null || input.msSinceProgress >= KEEP_AWAKE_PROGRESS_STALE_MS) return false;
   return input.heldMs < KEEP_AWAKE_MAX_HOLD_MS;

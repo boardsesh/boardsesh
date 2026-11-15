@@ -7,6 +7,7 @@ export type ClimbListRowMenuHandle = { open: () => void };
 export type ClimbListRowMenuProps = {
   ref?: Ref<ClimbListRowMenuHandle>;
   onBeforeOpen?: () => void;
+  onPresented?: () => void;
   /** Only the main climb list offers both triggers. */
   enabled: boolean;
   rows: PlayDrawerMenuRow[];

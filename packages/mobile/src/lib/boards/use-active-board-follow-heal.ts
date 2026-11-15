@@ -132,7 +132,6 @@ export function useActiveBoardFollowHeal(): void {
     // Screenshot builds drive the active board to stage captures; following it
     // would change the store-shot account's board list between runs. Inlined so
     // it dead-strips from normal builds.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
 
     const healKey = `${viewerId}:${boardUuid}`;
     if (startedHealKeys.has(healKey)) return;

@@ -19,6 +19,7 @@ const native = vi.hoisted(() => ({
   modal: null as Record<string, unknown> | null,
   form: null as Record<string, unknown> | null,
   capture: vi.fn(),
+  positioned: null as ((bounds: { width: number; height: number }) => void) | null,
 }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -41,6 +42,10 @@ vi.mock('@expo/ui/jetpack-compose/modifiers', () => ({
   height: () => ({}),
   padding: () => ({}),
   weight: () => ({}),
+  onGloballyPositioned: (callback: (bounds: { width: number; height: number }) => void) => {
+    native.positioned = callback;
+    return {};
+  },
 }));
 vi.mock('@expo/ui/jetpack-compose', () => {
   const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
@@ -70,7 +75,7 @@ vi.mock('../ClimbFilterForm.android', () => ({
   }),
 }));
 import { ClimbFilterSurface } from '../ClimbFilterSurface.android';
-function setup() {
+function setup(overrides: Partial<ClimbFilterSurfaceProps> = {}) {
   const ref = createRef<ClimbFilterSurfaceHandle>();
   const onChange = vi.fn();
   const props: ClimbFilterSurfaceProps = {
@@ -82,6 +87,7 @@ function setup() {
     onClosePress: vi.fn(),
     onReset: vi.fn(),
     onChange,
+    ...overrides,
   };
   const view = render(<ClimbFilterSurface ref={ref} {...props} />);
   return { ref, onChange, view };
@@ -90,12 +96,47 @@ beforeEach(() => {
   vi.clearAllMocks();
   native.modal = null;
   native.form = null;
+  native.positioned = null;
   native.hide.mockResolvedValue(undefined);
   native.expand.mockResolvedValue(undefined);
   native.partialExpand.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 describe('native Android filter sheet', () => {
+  it.each([0, 1])('reports presentation only after the measured anchor %i finishes animating', async (index) => {
+    let finishAnimation: () => void = () => {};
+    const animation = new Promise<void>((resolve) => {
+      finishAnimation = resolve;
+    });
+    native.partialExpand.mockReturnValue(animation);
+    native.expand.mockReturnValue(animation);
+    const onPresented = vi.fn();
+    const { ref } = setup({ onPresented });
+    act(() => ref.current?.snapToIndex(index));
+    await act(async () => native.positioned?.({ width: 400, height: 720 }));
+    expect(index > 0 ? native.expand : native.partialExpand).toHaveBeenCalledOnce();
+    expect(onPresented).not.toHaveBeenCalled();
+    await act(async () => finishAnimation());
+    expect(onPresented).toHaveBeenCalledOnce();
+    await act(async () => native.positioned?.({ width: 400, height: 720 }));
+    expect(onPresented).toHaveBeenCalledOnce();
+  });
+  it('does not report a dismissed presentation when its animation settles late', async () => {
+    let finishAnimation: () => void = () => {};
+    native.partialExpand.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishAnimation = resolve;
+      }),
+    );
+    const onPresented = vi.fn();
+    const { ref } = setup({ onPresented });
+    act(() => ref.current?.present());
+    await act(async () => native.positioned?.({ width: 400, height: 720 }));
+    await act(async () => ref.current?.dismiss());
+    await act(async () => finishAnimation());
+    expect(onPresented).not.toHaveBeenCalled();
+  });
+
   it('waits for its coordinator, then opens at the partial anchor', () => {
     const { ref, onChange, view } = setup();
     expect(view.queryByTestId('native-sheet')).toBeNull();

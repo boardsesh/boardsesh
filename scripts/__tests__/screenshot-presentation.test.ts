@@ -1,3 +1,5 @@
+import { cppStorySourceSha256, createCppStoryCapture } from '../lib/cpp-story-provenance';
+import { cppStoryCaptures } from '../lib/mobile-visual-stories';
 /// <reference types="node" />
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -358,6 +360,47 @@ describe('CPP trio board labels', () => {
 });
 
 describe('store screenshot presentation', () => {
+  it('frames CPP view stories with explicit source and pixel provenance', async () => {
+    const input = directory();
+    const output = directory();
+    const device = 'iphone-16-pro';
+    const size = ACCEPTED_SIZES[device][0];
+    const pixels = Buffer.alloc(size.width * size.height * 3, 57);
+    randomBytes(size.width * 64 * 3).copy(pixels);
+    const raw = await sharp(pixels, { raw: { ...size, channels: 3 } })
+      .png()
+      .toBuffer();
+    for (const capture of cppStoryCaptures(readCppPage('spray'), 'phone'))
+      writeFileSync(join(input, capture.name + '.png'), raw);
+    const storyCapture = createCppStoryCapture(
+      {
+        target: 'spray',
+        sourceSha256: cppStorySourceSha256(),
+        locale: 'en-US',
+        device,
+        theme: 'dark',
+        variant: 'liquidGlass',
+        renderMode: 'classic',
+      },
+      input,
+    );
+    writeFileSync(join(input, 'cpp-capture.json'), JSON.stringify(storyCapture));
+    const saved = await frameDirectory({ platform: 'ios', cpp: 'spray', device, locale: 'en-US', input, output });
+    expect(saved).toHaveLength(9);
+    // The general presentation reader intentionally returns only image metadata;
+    // the CPP publication gate reads and validates its own provenance envelope.
+    const manifest = JSON.parse(
+      readFileSync(join(output, PRESENTATION_MANIFEST), 'utf8'),
+    ) as import('../lib/screenshot-presentation').PresentationManifest;
+    expect(manifest.cpp?.storyCapture).toEqual(storyCapture);
+    expect(manifest.cpp).not.toHaveProperty('fixtureSha256');
+    storyCapture.captures[0].storyId = 'player--kilter';
+    writeFileSync(join(input, 'cpp-capture.json'), JSON.stringify(storyCapture));
+    await expect(
+      frameDirectory({ platform: 'ios', cpp: 'spray', device, locale: 'en-US', input, output }),
+    ).rejects.toThrow('provenance changed');
+  }, 30_000);
+
   it('maps every device in the actual store capture matrix', () => {
     for (const device of IOS_STORE_SCREENSHOT_DEVICES) {
       expect(Object.keys(screenshotCaptions('ios', deviceSlug(device.name))).length).toBeGreaterThan(0);

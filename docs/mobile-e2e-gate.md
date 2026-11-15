@@ -38,10 +38,10 @@ Each screen is judged twice over:
   `play-drawer-board-overlay`). Never text, so neither the locale nor the
   recorded data can move an assertion.
 - **Both platforms read the app's own pings.** iOS Maestro on this build cannot
-  match the app's elements, so in screenshot mode each smoke-visited screen
-  mounts a `ScreenshotSmokeMarker` inside its content and that marker tells the
+  match the app's elements, so each smoke-visited view mounts a generic `ContentRenderMarker` inside its
+  content. The dev integration root observes that marker and tells the
   orchestrator "this route rendered, with N rows" (N recorded ascents for profile, N lit holds for the board).
-  The root crash screen sends an error ping. On iOS this is the assertion; on
+  The dev integration error boundary sends an error ping. On iOS this is the assertion; on
   Android it is a second signal.
 
 The orchestrator (`vp run mobile:screenshots -- --flow smoke`) fails the run
@@ -54,22 +54,21 @@ when:
   Android, SpringBoard's exit line on iOS);
 - the replay backend logged a miss, or a batched operation got no recorded
   coverage;
-- the board never logged its render line, or the app ran on the wrong clock;
 - the device log reader died, so later crashes cannot be ruled out.
 
-The gate rereads device crash and render evidence after waiting for content
+The gate rereads device crash evidence after waiting for content
 pings. A crash during that wait fails the same attempt.
 
 It takes no screenshots and writes nothing under `app-stores/`.
 
 ## What it does NOT prove
 
-The smokes run **dev-mode JS, in screenshot mode, against recorded data**. That
+The smokes run **dev-mode JS, with a dev integration bootstrap, against recorded data**. That
 buys determinism and costs coverage. A green gate says nothing about:
 
-- **Sign-in and token refresh.** Screenshot mode signs in automatically against
+- **Sign-in and token refresh.** The integration bootstrap signs in through the public auth API against
   the replay backend's synthetic session. No login screen ever mounts.
-- **Onboarding.** Screenshot mode suppresses the tour.
+- **Onboarding.** Test-device preferences mark the tour as seen.
 - **Network errors.** The recorded backend always answers, instantly.
 - **Offline sync.** Nothing goes offline, and the outbox never drains.
 - **Writes.** No tick is logged, no climb is saved, nothing is queued.
@@ -110,7 +109,7 @@ For a red smoke, the note is the failure class:
 | never reached home | Auto sign-in or the bundle load never finished | The Metro log tail in the job log |
 | flow assertion failed | Android only: a testID did not appear in time | Maestro's output and `maestro-tests/` in the artifact |
 | screen rendered no content | A ping is missing or its count is 0 | The summary names the route |
-| capture log check failed | No board render line, or the wrong clock | The job log |
+| capture log check failed | The device log reader stopped before crash checks completed | The job log |
 | setup failed | The run never launched the app | The first `FAILED` line in the job log |
 
 The smoke's own section of the job summary lists each attempt, its class, its
@@ -269,8 +268,8 @@ it read an empty webhook and never fired.
 - `.github/actions/ios-screenshot-shard`: the iOS shard, shared with
   `mobile-screenshots-ios.yml`.
 - `packages/mobile/.maestro/smoke-android.yaml`, `smoke.yaml`: the flows.
-- `packages/mobile/src/components/ScreenshotSmokeMarker.tsx`,
-  `packages/mobile/src/lib/screenshot-smoke.ts`: the app's pings.
+- `packages/mobile/src/components/ContentRenderObserver.tsx`: neutral content observations.
+- `packages/mobile/src/dev/integration/smoke.tsx` and `screenshot-smoke.ts`: dev-only pings.
 - `scripts/lib/mobile-smoke.ts`: ping assertions, crash detection, failure
   classes.
 - `scripts/mobile-e2e-gate-verdict.ts`: the verdict.

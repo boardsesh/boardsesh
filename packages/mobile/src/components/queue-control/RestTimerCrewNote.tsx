@@ -16,11 +16,17 @@ import { useCrewRestStatus } from '../../hooks/use-effective-rest-pacing';
 import { TICK_GUTTER } from '../tick/tick-sheet-metrics';
 import { spacing } from '../../theme/tokens';
 
-export function RestTimerCrewNote({ placement }: { placement: 'sheet' | 'armRow' }) {
+export function RestTimerCrewNoteView({
+  placement,
+  status,
+  isCrewSession,
+}: {
+  placement: 'sheet' | 'armRow';
+  status: ReturnType<typeof useCrewRestStatus>;
+  isCrewSession: boolean;
+}) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const status = useCrewRestStatus();
-  const isCrewSession = useIsCrewSession();
 
   const note =
     status === 'unsupported'
@@ -57,3 +63,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[2],
   },
 });
+
+export function RestTimerCrewNote(props: { placement: 'sheet' | 'armRow' }) {
+  return <RestTimerCrewNoteView {...props} status={useCrewRestStatus()} isCrewSession={useIsCrewSession()} />;
+}

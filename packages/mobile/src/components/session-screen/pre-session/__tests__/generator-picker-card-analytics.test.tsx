@@ -32,7 +32,11 @@ vi.mock('@boardsesh/climb-filters', () => ({
   getMinRatingPickerValue: (value: number | null | undefined) => (value != null && value > 0 ? value : null),
 }));
 vi.mock('../WorkoutBlockList', () => ({
-  WorkoutBlockList: (props: { selection: unknown; sizeFilters: unknown; onChange: (selection: unknown) => void }) => {
+  WorkoutBlockListView: (props: {
+    selection: unknown;
+    sizeFilters: unknown;
+    onChange: (selection: unknown) => void;
+  }) => {
     blockList.latest = props;
     return null;
   },

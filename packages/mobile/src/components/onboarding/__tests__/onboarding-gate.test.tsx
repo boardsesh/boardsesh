@@ -808,7 +808,7 @@ describe('OnboardingGate', () => {
       expect(evaluations()).toEqual([expect.objectContaining({ outcome: 'would_present' })]);
     });
 
-    it('never arms in a screenshot build, which never decides on purpose', async () => {
+    it('keeps the normal decision active even with an old capture flag', async () => {
       vi.useFakeTimers();
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
       render(<OnboardingGate />);
@@ -816,7 +816,7 @@ describe('OnboardingGate', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(ONBOARDING_GATE_STALL_MS * 2);
       });
-      expect(evaluations()).toEqual([]);
+      expect(evaluations()).not.toEqual([]);
     });
   });
   // #5654, Marco's call: a brand-new account with no board gets the board picker

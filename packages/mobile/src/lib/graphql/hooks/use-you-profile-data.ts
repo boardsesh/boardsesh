@@ -70,10 +70,7 @@ export function useYouProfileData(userId: string | undefined) {
         gradeFormat,
         profileStats: profileStatsQuery.data ?? null,
         comparisonMode,
-        // `nowMs()` returns the screenshot-mode frozen clock when set (see
-        // lib/clock.ts), so timeframe filtering, the activity heatmap window,
-        // and the period comparison card all agree on one "now" per render —
-        // same as the real wall clock did before this was threaded through.
+        // Use one instant for timeframe filters, heatmaps and comparison cards.
         now: dayjs(nowMs()),
       }),
     [allBoardsTicks, selectedBoard, timeframe, fromDate, toDate, gradeFormat, profileStatsQuery.data, comparisonMode],

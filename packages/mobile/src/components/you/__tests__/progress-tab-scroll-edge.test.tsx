@@ -37,8 +37,7 @@ vi.mock('../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-loading': 'true' }),
 }));
-vi.mock('../../OfflineState', () => ({ OfflineState: () => createElement('div', { 'data-offline': 'true' }) }));
-vi.mock('../../ScreenshotSmokeMarker', () => ({ ScreenshotSmokeMarker: () => null }));
+vi.mock('../../OfflineStateView', () => ({ OfflineStateView: () => createElement('div', { 'data-offline': 'true' }) }));
 vi.mock('../ProfileBetaShelf', () => ({ ProfileBetaShelf: () => null }));
 vi.mock('../BoardLinkPrompt', () => ({ BoardLinkPrompt: () => null }));
 vi.mock('../ProfileBoardOverview', () => ({ ProfileBoardOverview: () => null, ProfileBoardRow: () => null }));
@@ -71,8 +70,8 @@ vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: {}, brandColors: {}, colorScheme: 'dark' }),
 }));
 
-import { ProgressTab } from '../ProgressTab';
 import { createScrollEdgeBackdrop, type ScrollEdgeBackdrop } from '../../../hooks/use-scroll-edge-backdrop';
+import { ProgressTab } from '../ProgressTab';
 
 type ProgressData = ComponentProps<typeof ProgressTab>['data'];
 

@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useRef, type ComponentProps, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
@@ -60,7 +60,16 @@ type WorkoutPreviewRowProps = {
  * swipe/drag/edit baggage from `QueueItemRow`, since the preview is a read-and-
  * tweak surface, not the live queue.
  */
-function WorkoutPreviewRowComponent({
+const renderLiveClimbContent = (props: ComponentProps<typeof ClimbListItemContent>) => (
+  <ClimbListItemContent {...props} />
+);
+function WorkoutPreviewRowComponent(props: WorkoutPreviewRowProps) {
+  const rowDisplay = useClimbRowDisplay();
+  return <WorkoutPreviewRowView {...props} rowDisplay={rowDisplay} renderContent={renderLiveClimbContent} />;
+}
+export const WorkoutPreviewRowView = memo(function WorkoutPreviewRowView({
+  rowDisplay,
+  renderContent,
   item,
   board,
   isActive,
@@ -71,7 +80,10 @@ function WorkoutPreviewRowComponent({
   plannedGrade = null,
   onPress,
   onRefresh,
-}: WorkoutPreviewRowProps) {
+}: WorkoutPreviewRowProps & {
+  rowDisplay: ReturnType<typeof useClimbRowDisplay>;
+  renderContent: (props: ComponentProps<typeof ClimbListItemContent>) => ReactNode;
+}) {
   const { systemColors, brandColors, opacity } = useTheme();
   const { t: sessionT } = useTranslation('session');
   const { t: climbsT } = useTranslation('climbs');
@@ -79,7 +91,6 @@ function WorkoutPreviewRowComponent({
   // What the climber has switched on for climb rows. The row visual reads it for
   // itself; this row needs it for the two things it adds around that visual:
   // the label it speaks, and where its separator starts.
-  const rowDisplay = useClimbRowDisplay();
   // Blocked while this row spins, or while another row holds the single refresh
   // slot. Only this row shows a spinner; the rest dim to read as "busy, wait".
   const refreshBlocked = isRefreshing || refreshDisabled;
@@ -130,17 +141,17 @@ function WorkoutPreviewRowComponent({
         .filter(Boolean)
         .join(', ')
     : climbName;
-  const climbVisual = climb ? (
-    <ClimbListItemContent
-      climb={climb}
-      boardName={board.boardName}
-      layoutId={board.layoutId}
-      sizeId={board.sizeId}
-      setIds={board.setIds}
-      angle={board.angle}
-      knownAscentStatus={knownStatus}
-    />
-  ) : null;
+  const climbVisual = climb
+    ? renderContent({
+        climb,
+        boardName: board.boardName,
+        layoutId: board.layoutId,
+        sizeId: board.sizeId,
+        setIds: board.setIds,
+        angle: board.angle,
+        knownAscentStatus: knownStatus,
+      })
+    : null;
   // A borrowed row stacks the caption under the climb, starting under its name.
   const climbContent = climbVisual ? (
     borrowedCaption ? (
@@ -224,7 +235,7 @@ function WorkoutPreviewRowComponent({
       />
     </View>
   );
-}
+});
 
 // Memoized: the preview lists (pre-session and the add-block sheet) re-render on
 // every preview rebuild and refresh-state change. Each prop is referentially

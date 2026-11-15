@@ -10,7 +10,10 @@ import { describe, expect, it } from 'vitest';
 
 const MOBILE_DIR = join(__dirname, '..', '..', '..', '..');
 const HARNESS_DIR = join(MOBILE_DIR, 'src', 'dev', 'stories');
+const FIXTURE_DIR = join(MOBILE_DIR, 'src', 'dev', 'fixtures');
 const HARNESS_DOOR = join(HARNESS_DIR, 'load');
+const INTEGRATION_DIR = join(MOBILE_DIR, 'src', 'dev', 'integration');
+const INTEGRATION_DOOR = join(INTEGRATION_DIR, 'load');
 
 function sourceFiles(directory: string): string[] {
   const files: string[] = [];
@@ -53,9 +56,17 @@ function moduleReferences(source: string): ModuleReference[] {
 function reachesHarness(file: string, specifier: string): boolean {
   if (specifier.startsWith('.')) {
     const target = resolve(dirname(file), specifier).replace(/\.tsx?$/, '');
-    return (target === HARNESS_DIR || target.startsWith(HARNESS_DIR + sep)) && target !== HARNESS_DOOR;
+    return (
+      ((target === HARNESS_DIR || target.startsWith(HARNESS_DIR + sep)) && target !== HARNESS_DOOR) ||
+      ((target === INTEGRATION_DIR || target.startsWith(INTEGRATION_DIR + sep)) && target !== INTEGRATION_DOOR) ||
+      target === FIXTURE_DIR ||
+      target.startsWith(FIXTURE_DIR + sep)
+    );
   }
-  return /(^|\/)dev\/stories(\/|$)/.test(specifier) && !/(^|\/)dev\/stories\/load$/.test(specifier);
+  return (
+    /(^|\/)dev\/(stories|fixtures|integration)(\/|$)/.test(specifier) &&
+    !/(^|\/)dev\/(stories|integration)\/load$/.test(specifier)
+  );
 }
 
 /**
@@ -92,9 +103,9 @@ describe('harnessImportOffences', () => {
   it('allows type-only imports and exports, typeof import(), and load.ts', () => {
     const source = [
       "import type { StoryModule } from '../dev/stories/types';",
-      "export type { ScenarioOverrides } from '../dev/stories/scenario-overrides';",
+      "export type { StoryRenderControls } from '../dev/stories/types';",
       "type Screens = typeof import('../dev/stories/screens');",
-      "import { DevScenarioOverridesHost } from '../dev/stories/load';",
+      "import { loadStoryRoot } from '../dev/stories/load';",
       "import { loadStoryScreens } from '../dev/stories/load.ts';",
     ].join('\n');
     expect(harnessImportOffences(file, source)).toEqual([]);
@@ -130,7 +141,7 @@ describe('harnessImportOffences', () => {
     expect(harnessImportOffences(devFile, "import { STORIES } from './stories/registry';")).toEqual([
       './stories/registry',
     ]);
-    expect(harnessImportOffences(devFile, "import { DevScenarioOverridesHost } from './stories/load';")).toEqual([]);
+    expect(harnessImportOffences(devFile, "import { loadStoryRoot } from './stories/load';")).toEqual([]);
   });
 
   it('flags any import of a *.stories file', () => {
@@ -156,7 +167,13 @@ describe('story harness stays out of production code paths', () => {
     const offenders: string[] = [];
     for (const file of [...sourceFiles(join(MOBILE_DIR, 'app')), ...sourceFiles(join(MOBILE_DIR, 'src'))]) {
       // The harness and story files are dev-only themselves.
-      if (file.startsWith(HARNESS_DIR + sep) || /\.stories\.tsx?$/.test(file)) continue;
+      if (
+        file.startsWith(HARNESS_DIR + sep) ||
+        file.startsWith(INTEGRATION_DIR + sep) ||
+        file.startsWith(FIXTURE_DIR + sep) ||
+        /\.stories\.tsx?$/.test(file)
+      )
+        continue;
       for (const specifier of harnessImportOffences(file, readFileSync(file, 'utf8'))) {
         offenders.push(`${relative(MOBILE_DIR, file)} imports ${specifier}`);
       }
@@ -164,8 +181,22 @@ describe('story harness stays out of production code paths', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('production components never read screenshot configuration', () => {
+    const offenders: string[] = [];
+    for (const file of [...sourceFiles(join(MOBILE_DIR, 'app')), ...sourceFiles(join(MOBILE_DIR, 'src'))]) {
+      if (file.includes(`${sep}dev${sep}`) || /\.stories\.tsx?$/.test(file)) continue;
+      const source = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      if (/EXPO_PUBLIC_SCREENSHOT_/.test(source)) offenders.push(relative(MOBILE_DIR, file));
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('every require in load.ts is behind __DEV__', () => {
-    const source = readFileSync(join(HARNESS_DIR, 'load.ts'), 'utf8');
+    const source = [HARNESS_DIR, INTEGRATION_DIR]
+      .map((directory) => readFileSync(join(directory, 'load.ts'), 'utf8'))
+      .join('\n');
     const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     const statements = code.split(';').filter((statement) => statement.includes('require('));
     expect(statements.length).toBeGreaterThan(0);

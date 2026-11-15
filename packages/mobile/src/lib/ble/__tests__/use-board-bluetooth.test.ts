@@ -3799,37 +3799,34 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
   });
 
   it.each([
-    ['a MoonBoard', 'moonboard', { deviceId: 'screenshot-fake-board', deviceName: 'MoonBoard' }],
-    [
-      'an Aurora board with a serial',
-      'kilter',
-      { deviceId: 'screenshot-fake-board', deviceName: 'Kilter Board#123@3' },
-    ],
-  ] as const)(
-    'never remembers %s connected in a fake-Bluetooth screenshot build',
-    async (_label, boardName, connection) => {
-      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
-      try {
-        const fakeAdapter = makeFakeAdapter({ requestAndConnect: vi.fn().mockResolvedValue(connection) });
-        vi.mocked(createBluetoothAdapter).mockReturnValue(
-          fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
-        );
+    ['a MoonBoard', 'moonboard', { deviceId: 'real-board', deviceName: 'MoonBoard' }],
+    ['an Aurora board with a serial', 'kilter', { deviceId: 'real-board', deviceName: 'Kilter Board#123@3' }],
+  ] as const)('remembers %s when both retired screenshot flags are set', async (_label, boardName, connection) => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
+    try {
+      const fakeAdapter = makeFakeAdapter({ requestAndConnect: vi.fn().mockResolvedValue(connection) });
+      vi.mocked(createBluetoothAdapter).mockReturnValue(
+        fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+      );
 
-        const { result } = renderHook(() => useBoardBluetooth({ boardName, layoutId: 1, sizeId: 1 }));
-        await act(async () => {
-          await result.current.connect();
-        });
+      const { result } = renderHook(() => useBoardBluetooth({ boardName, layoutId: 1, sizeId: 1 }));
+      await act(async () => {
+        await result.current.connect();
+      });
 
-        expect(result.current.isConnected).toBe(true);
-        expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).not.toHaveBeenCalled();
-        expect(result.current.reconnectSerialForCurrentBoard).toBeNull();
-        expect(result.current.reconnectDeviceIdForCurrentBoard).toBeNull();
-      } finally {
-        vi.unstubAllEnvs();
-      }
-    },
-  );
+      expect(result.current.isConnected).toBe(true);
+      expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith(
+        boardName === 'moonboard'
+          ? { configKey: 'moonboard::1::1::', deviceId: 'real-board' }
+          : { configKey: 'kilter::1::1::', serial: '123' },
+      );
+      expect(result.current.reconnectSerialForCurrentBoard).toBe(boardName === 'kilter' ? '123' : null);
+      expect(result.current.reconnectDeviceIdForCurrentBoard).toBe(boardName === 'moonboard' ? 'real-board' : null);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   it('persists the board on a successful connect', async () => {
     const fakeAdapter = makeFakeAdapter();

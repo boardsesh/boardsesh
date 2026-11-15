@@ -10,7 +10,7 @@ import {
   SWIPE_FRICTION,
   SWIPE_ACTIVATION_OFFSET,
 } from './swipe-action-model';
-import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, type ReactNode, type MutableRefObject } from 'react';
 import {
   View,
   Platform,
@@ -236,6 +236,7 @@ function PlaylistSwipeAction({
 }
 
 export type ClimbListRowRenderContentArgs = {
+  readyBoardArtRef?: MutableRefObject<ReadyBoardArtSource | null>;
   climb: Climb;
   boardName: BoardName;
   layoutId: number;
@@ -244,7 +245,7 @@ export type ClimbListRowRenderContentArgs = {
   angle: number;
 };
 
-type ClimbListRowProps = {
+export type ClimbListRowProps = {
   climb: Climb;
   boardName: BoardName;
   layoutId: number;
@@ -301,16 +302,52 @@ type ClimbListRowProps = {
    * an unrelated climb list on the same screen.
    */
   testID?: string;
-  /**
-   * Screenshot mode only: lift this row's menu once it has rows, as a hold or
-   * the ⋮ does. The Climbs list sets it on its first row for the help flow's
-   * climb-actions shot (`screenshotOpenClimbActions`), since Maestro can't see
-   * the rows to hold one. Ignored in normal builds.
-   */
-  screenshotOpenMenu?: boolean;
+  /** Open the lifted actions menu after the row has laid out. */
+  openMenuRequest?: string;
+  onMenuPresented?: () => void;
 };
 
-const ClimbListRow = React.memo(function ClimbListRow({
+const ClimbListRow = React.memo(function ClimbListRow(props: ClimbListRowProps) {
+  const quickActionsEnabled = useClimbRowField('quickActions');
+  const thumbnailEnabled = useClimbRowField('thumbnail');
+  const { unsupported, onOpenActions, climb, boardName, layoutId, sizeId, setIds, angle } = props;
+  const menuTarget = useMemo(
+    () => (unsupported ? null : (onOpenActions?.(climb) ?? null)),
+    [unsupported, onOpenActions, climb, boardName, layoutId, sizeId, setIds, angle],
+  );
+  const menu = useClimbMenu(menuTarget);
+  const { showPlaylistChips, showProgress, showFavorite } = props;
+  const renderLiveContent = useCallback(
+    (args: ClimbListRowRenderContentArgs) => (
+      <ClimbListItemContent
+        {...args}
+        showPlaylistChips={showPlaylistChips}
+        showProgress={showProgress}
+        showFavorite={showFavorite}
+      />
+    ),
+    [showPlaylistChips, showProgress, showFavorite],
+  );
+  return (
+    <ClimbListRowView
+      {...props}
+      quickActionsEnabled={quickActionsEnabled}
+      thumbnailEnabled={thumbnailEnabled || props.renderContent !== undefined}
+      renderContent={props.renderContent ?? renderLiveContent}
+      menu={menu}
+    />
+  );
+});
+
+export type ClimbListRowViewProps = Omit<ClimbListRowProps, 'renderContent'> & {
+  renderContent: NonNullable<ClimbListRowProps['renderContent']>;
+  quickActionsEnabled: boolean;
+  thumbnailEnabled: boolean;
+  menu: ReturnType<typeof useClimbMenu>;
+};
+
+/** Row gestures and rendering; no account, preferences, or menu subscriptions. */
+export const ClimbListRowView = React.memo(function ClimbListRowView({
   climb,
   boardName,
   layoutId,
@@ -320,7 +357,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
   onPress,
   onPlayNext,
   onOpenPlaylist,
-  onOpenActions,
   selected,
   unsupported,
   renderContent,
@@ -329,20 +365,19 @@ const ClimbListRow = React.memo(function ClimbListRow({
   separatorStyle,
   showSeparator = true,
   fillCell = false,
-  showPlaylistChips = false,
-  showProgress = false,
-  showFavorite = false,
   showMoreButton = false,
   testID = 'climb-row',
-  screenshotOpenMenu = false,
-}: ClimbListRowProps) {
+  openMenuRequest,
+  onMenuPresented,
+  quickActionsEnabled,
+  thumbnailEnabled,
+  menu,
+}: ClimbListRowViewProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors: brand } = useTheme();
-  const quickActionsEnabled = useClimbRowField('quickActions');
   // A host that draws its own content draws its own thumbnail too, so the row
   // around it keeps the geometry of a row that has one.
-  const thumbnailEnabled = useClimbRowField('thumbnail');
-  const hasThumbnail = thumbnailEnabled || renderContent !== undefined;
+  const hasThumbnail = thumbnailEnabled;
   // 88pt in a two-column Climbs list, 76pt everywhere else: where the separator starts.
   const thumbnailSize = useClimbListThumbnailSize();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
@@ -388,11 +423,6 @@ const ClimbListRow = React.memo(function ClimbListRow({
   readyScopeRef.current = { boardName, layoutId, sizeId, setIds };
   const unsupportedRef = useRef(unsupported);
   unsupportedRef.current = unsupported;
-  const menuTarget = useMemo(
-    () => (unsupported ? null : (onOpenActions?.(climb) ?? null)),
-    [unsupported, onOpenActions, climb, boardName, layoutId, sizeId, setIds, angle],
-  );
-  const menu = useClimbMenu(menuTarget);
 
   const handleRowPress = useCallback(() => {
     if (unsupportedRef.current) return;
@@ -505,13 +535,12 @@ const ClimbListRow = React.memo(function ClimbListRow({
     disarm();
   }, [disarm]);
   const openLiftedMenu = useCallback(() => rowMenuRef.current?.open(), []);
-  // Dead-strips in normal builds. The menu opens once its rows exist; a second
-  // open while it is up is a no-op.
-  const screenshotMenuReady = screenshotOpenMenu && menu.rows.length > 0;
+  const menuReady = openMenuRequest !== undefined && menu.rows.length > 0;
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || !screenshotMenuReady) return;
-    openLiftedMenu();
-  }, [screenshotMenuReady, openLiftedMenu]);
+    if (!menuReady) return;
+    const frame = requestAnimationFrame(openLiftedMenu);
+    return () => cancelAnimationFrame(frame);
+  }, [menuReady, openMenuRequest, openLiftedMenu]);
   const longPressGesture = useLongPressGesture({
     enabled: Platform.OS === 'ios' && showMoreButton && menu.rows.length > 0,
     minDuration: 400,
@@ -557,22 +586,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
     [dragArmedRef, pressTrailingAction, playlistActionLabel],
   );
 
-  const rowContent = renderContent ? (
-    renderContent({ climb, boardName, layoutId, sizeId, setIds, angle })
-  ) : (
-    <ClimbListItemContent
-      readyBoardArtRef={readyBoardArtRef}
-      climb={climb}
-      boardName={boardName}
-      layoutId={layoutId}
-      sizeId={sizeId}
-      setIds={setIds}
-      angle={angle}
-      showPlaylistChips={showPlaylistChips}
-      showProgress={showProgress}
-      showFavorite={showFavorite}
-    />
-  );
+  const rowContent = renderContent({ climb, boardName, layoutId, sizeId, setIds, angle, readyBoardArtRef });
   const rowBody = (
     <View
       ref={rowFocusRef}
@@ -636,6 +650,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
           <ClimbListRowMenu
             ref={rowMenuRef}
             onBeforeOpen={prepareLiftedMenu}
+            onPresented={onMenuPresented}
             enabled={showMoreButton}
             rows={menu.rows}
             menuKey={menu.menuKey}

@@ -1,3 +1,4 @@
+import type { BoardRenderStyle } from '../lib/board-render-style';
 import { useCallback, useEffect, useMemo, useState, useRef, useSyncExternalStore } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import {
@@ -236,6 +237,8 @@ type NativeClimbRenderParams = {
    * store.
    */
   renderSettingsOverride?: BoardRenderSettings;
+  /** Complete per-surface drawing; takes precedence over individual preview overrides. */
+  renderStyleOverride?: BoardRenderStyle;
   /**
    * Draw under a DIFFERENT set of hold role colours than the climber's stored
    * ones — the colour-vision palette rail, whose cards each show the same climb
@@ -469,11 +472,7 @@ export function ensureBoardseshSupportProbed(): void {
     // `getNativeModule` retries across renders and only latches its failure
     // after exhausting the budget. Once it HAS given up there will never be a
     // binary to ask, so leaving the answer at `null` strands every consumer
-    // that waits for one — notably queue-provider, whose `renderSettingsPending`
-    // gate holds back the resolved render mode (and the screenshot gate's log
-    // line) for the whole session. (That is reachable only now that the app
-    // default asks for the Boardsesh drawing: before, an unresolved answer
-    // simply meant classic.) Deferred through the probe slot for the same
+    // that waits for one. Deferred through the probe slot for the same
     // reason the real probe is: a synchronous store notification here would
     // fire during render.
     if (moduleLoadAttempted) {
@@ -1861,6 +1860,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
+    renderStyleOverride,
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
@@ -1876,9 +1876,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   } = params;
   const {
     overrides: storedHoldColorOverrides,
-    shapes: holdShapeOverrides,
-    brushThickness,
-    shapeSize,
+    shapes: storedHoldShapeOverrides,
+    brushThickness: storedBrushThickness,
+    shapeSize: storedShapeSize,
     renderSignature: storedHoldRenderSignature,
   } = useHoldColorOverrides();
 
@@ -1888,18 +1888,29 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // cache key rather than painting palette pixels under the stored colours' key.
   // `{}` is a real value ("the board's own palette"), so the test is against
   // `undefined` rather than a truthiness check on an object that may be empty.
-  const holdColorOverrides = holdColorOverride ?? storedHoldColorOverrides;
+  const holdColorOverrides = renderStyleOverride?.holds.overrides ?? holdColorOverride ?? storedHoldColorOverrides;
+  const holdShapeOverrides = renderStyleOverride?.holds.shapes ?? storedHoldShapeOverrides;
+  const brushThickness = renderStyleOverride?.holds.brushThickness ?? storedBrushThickness;
+  const shapeSize = renderStyleOverride?.holds.shapeSize ?? storedShapeSize;
   const holdRenderSignature = useMemo(
     () =>
-      holdColorOverride === undefined
+      renderStyleOverride === undefined && holdColorOverride === undefined
         ? storedHoldRenderSignature
         : buildHoldRenderOverrideSignature({
-            colors: holdColorOverride,
+            colors: holdColorOverrides,
             shapes: holdShapeOverrides,
             brushThickness,
             shapeSize,
           }),
-    [holdColorOverride, storedHoldRenderSignature, holdShapeOverrides, brushThickness, shapeSize],
+    [
+      renderStyleOverride,
+      holdColorOverride,
+      holdColorOverrides,
+      storedHoldRenderSignature,
+      holdShapeOverrides,
+      brushThickness,
+      shapeSize,
+    ],
   );
 
   // Collapse a multi-frame route/circuit string to one static union snapshot —
@@ -1968,7 +1979,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // in the cache key rather than painting preset pixels under the stored
   // settings' key.
   const { settings: storedRenderSettings } = useBoardRenderSettings();
-  const baseRenderSettings = renderSettingsOverride ?? storedRenderSettings;
+  const baseRenderSettings = renderStyleOverride?.settings ?? renderSettingsOverride ?? storedRenderSettings;
   // A mark-style override asks for the Aura drawing with that mark, whatever
   // mode the climber picked: the heatmap's fill has no classic counterpart. The
   // capability probe below still decides whether the binary can draw it.
@@ -1994,7 +2005,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // board. A preview card's bundle and a heatmap's mark override are asking for
   // one specific drawing, so the wall's look never applies to them.
   const boardRenderDefault = useBoardRenderDefault(boardName, layoutId, {
-    hasSettingsOverride: renderSettingsOverride !== undefined,
+    hasSettingsOverride: renderStyleOverride !== undefined || renderSettingsOverride !== undefined,
     hasMarkStyleOverride: markStyleOverride !== undefined,
   });
   // Two native renders per launch, so only for someone whose settings — or

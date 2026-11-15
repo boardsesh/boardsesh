@@ -1,33 +1,33 @@
-import { useNativeRootHeader } from '../../hooks/use-native-root-header';
-import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
-import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, StyleSheet } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { useTranslation } from 'react-i18next';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { SessionFeedItem, SessionFeedTickHighlight, SocialEntityType } from '@boardsesh/shared-schema';
-import { Text } from '../Text';
-import { Icon } from '../Icon';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { FlashList } from '@shopify/flash-list';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { RefreshControl, StyleSheet, View } from 'react-native';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useHideOnScroll } from '../../hooks/use-hide-on-scroll';
+import { useNativeRootHeader } from '../../hooks/use-native-root-header';
+import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
+import { ScrollEdgeListReset, type ScrollEdgeBackdrop } from '../../hooks/use-scroll-edge-backdrop';
+import { nowMs } from '../../lib/clock';
+import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
+import { useBulkVoteSummaries, useSessionGroupedFeed } from '../../lib/graphql/hooks';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
+import { navigateToSessionFeedItem } from '../../lib/session-feed-navigation';
+import { useTheme } from '../../providers/theme-provider';
+import { borderRadius, spacing } from '../../theme/tokens';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { Button } from '../Button';
 import { Card } from '../Card';
-import { ActivityIndicator } from '../ActivityIndicator';
+import { Icon } from '../Icon';
 import { OfflineState } from '../OfflineState';
+import { useSessionWorkoutHeadlines } from '../session/workout/use-session-workout-view';
+import { Text } from '../Text';
+import { CommentSheet } from './CommentSheet';
+import { FeedSectionLabel } from './FeedSectionLabel';
 import { SessionFeedCard } from './SessionFeedCard';
 import { SessionsFeedHeader } from './SessionsFeedHeader';
-import { FeedSectionLabel } from './FeedSectionLabel';
-import { useSessionWorkoutHeadlines } from '../session/workout/use-session-workout-view';
-import { CommentSheet } from './CommentSheet';
-import { bucketSessionsByRecency, dedupeSessionsById, type FeedRecencyBucket } from '../../lib/feed-time-buckets';
-import { useSessionGroupedFeed, useBulkVoteSummaries } from '../../lib/graphql/hooks';
-import { navigateToSessionFeedItem } from '../../lib/session-feed-navigation';
-import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
-import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
-import { spacing, borderRadius } from '../../theme/tokens';
-import { useTheme } from '../../providers/theme-provider';
-import { nowMs } from '../../lib/clock';
 
 type FeedRow = { type: 'header'; bucket: FeedRecencyBucket } | { type: 'session'; item: SessionFeedItem };
 type CommentTarget = { entityId: string; entityType: SocialEntityType };
@@ -207,19 +207,6 @@ export function SessionsTab({ userId, topInset = 0, scrollEdge }: SessionsTabPro
     },
     [router],
   );
-
-  // Screenshot mode: open the most recent session's detail once the feed lands,
-  // so the session-detail shot is deterministic (Maestro can't tap a session card
-  // on this iOS build). This tab only mounts via the `screenshotTab=sessions`
-  // deep-link param, so it never disturbs the default profile shot. Fires once.
-  const screenshotSessionOpenedRef = useRef(false);
-  useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' || screenshotSessionOpenedRef.current) return;
-    const firstSession = sessions[0];
-    if (!firstSession) return;
-    screenshotSessionOpenedRef.current = true;
-    handleOpenSession(firstSession);
-  }, [sessions, handleOpenSession]);
 
   const handleEndReached = useCallback(() => {
     if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();

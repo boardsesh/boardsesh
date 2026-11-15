@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveScreenshotCppBoard, screenshotCppBoardMatches } from '../screenshot-cpp-board-identity';
+import {
+  resolveScreenshotCppBoard,
+  screenshotCppBoardMatches,
+} from '../../dev/integration/screenshot-cpp-board-identity';
 
 const correct = {
   uuid: 'verified-board',
@@ -32,23 +35,6 @@ describe('verified CPP native board identity', () => {
       correct,
     );
     expect(resolveScreenshotCppBoard([wrong], correct.name, { ...identity, uuid: correct.uuid })).toBeNull();
-  });
-
-  it('resolves screenshotBoardIndex using the same command identity and never positional fallback', async () => {
-    vi.resetModules();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_CPP_URL', 'http://localhost:19870/cpp');
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_BOARDS', `${correct.name}|${correct.name}`);
-    vi.stubEnv(
-      'EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS',
-      JSON.stringify({
-        'hero-2': { selector: correct.name, identity: { ...identity, uuid: correct.uuid }, route: '/climbs' },
-      }),
-    );
-    const { resolveScreenshotBoard } = await import('../screenshot-board-selection');
-    expect(resolveScreenshotBoard([wrong, correct], 1)).toBe(correct);
-    expect(resolveScreenshotBoard([wrong], 1)).toBeNull();
-    expect(resolveScreenshotBoard([wrong, correct], 0)).toBeNull();
   });
 
   it('keeps spray wall aliases bound to their verified real UUID', () => {

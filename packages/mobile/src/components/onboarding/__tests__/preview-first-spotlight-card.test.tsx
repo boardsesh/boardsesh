@@ -123,11 +123,10 @@ describe('PreviewFirstSpotlightCard', () => {
     expect(screen.queryByRole('heading')).toBeNull();
   });
 
-  it('never shows on a captured store screen', async () => {
+  it('uses saved spotlight state regardless of retired capture flags', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     render(createElement(PreviewFirstSpotlightCard));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(secure.get).not.toHaveBeenCalled();
-    expect(screen.queryByRole('heading')).toBeNull();
+    expect((await screen.findByRole('heading')).textContent).toBe(copy.title);
+    expect(secure.get).toHaveBeenCalled();
   });
 });

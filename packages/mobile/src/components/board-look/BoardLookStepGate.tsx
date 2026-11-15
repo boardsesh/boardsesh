@@ -72,7 +72,7 @@ export function BoardLookStepGate({
 
   const preflight = decideBoardLookStep({
     ready: ready && tourDecided,
-    screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+
     settingsLoaded,
     storedMode: settings.mode,
     // Optimistic stand-ins: a `show` here only means "not ruled out yet".
@@ -124,7 +124,7 @@ export function BoardLookStepGate({
 
   const verdict = explainBoardLookStep({
     ready: ready && tourDecided,
-    screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+
     settingsLoaded,
     storedMode: settings.mode,
     stepSeen,

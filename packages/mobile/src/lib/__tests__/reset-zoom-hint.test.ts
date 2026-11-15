@@ -38,13 +38,6 @@ describe('reset-zoom hint marker', () => {
     expect(await hasUsedResetZoom()).toBe(false);
   });
 
-  it('suppresses the hint in screenshot mode', async () => {
-    // A captured board must never carry the extended pill across it.
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(await hasUsedResetZoom()).toBe(true);
-    expect(store.get).not.toHaveBeenCalled();
-  });
-
   it('writes the marker under a stable key', async () => {
     await markResetZoomUsed();
     expect(store.set).toHaveBeenCalledWith('resetZoomHintUsed', true);

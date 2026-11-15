@@ -1,27 +1,16 @@
-import { InlineSheetError } from '../InlineSheetError';
-import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
-import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
-import { PressableSurface } from '../PressableSurface';
+import { type RefObject, useRef, useState } from 'react';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { useTranslation } from 'react-i18next';
+import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
-import { type RefObject, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
-import { useTranslation } from 'react-i18next';
-import type { SocialEntityType } from '@boardsesh/shared-schema';
-import { Text } from '../Text';
 import { PressableAvatar } from '../PressableAvatar';
-import { Icon } from '../Icon';
-import { Sheet } from '../Sheet';
-import { ActivityIndicator } from '../ActivityIndicator';
 import { useComments, useAddComment } from '../../lib/graphql/hooks';
 import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { hapticLight } from '../../lib/haptics';
-import { spacing, borderRadius } from '../../theme/tokens';
-import { useTheme } from '../../providers/theme-provider';
-import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { CommentSheetView, type CommentSheetComment } from './CommentSheetView';
 
 type CommentSheetProps = {
   sheetRef: RefObject<BottomSheet | null>;
@@ -44,10 +33,7 @@ export function CommentSheet({
   canComment = true,
   onClose,
 }: CommentSheetProps) {
-  const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('you');
-  const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
   const privacy = usePublicationAudience(entityId ?? '', !!entityId);
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
@@ -141,109 +127,29 @@ export function CommentSheet({
   };
 
   return (
-    <Sheet
-      ref={sheetRef}
-      snapPoints={MEDIUM_LARGE_SNAP_POINTS}
-      scrollable
+    <CommentSheetView
+      sheetRef={sheetRef}
+      comments={comments}
+      loading={commentsQuery.isPending && !!entityId}
+      canComment={canComment}
+      draft={draft}
+      isPending={addComment.isPending}
+      submitError={submitError}
+      errorVisible={!!entityId}
+      errorScope={`${entityType}:${entityId ?? ''}`}
+      audiencePicker={<PublicationAudiencePicker privacy={privacy} disabled={addComment.isPending} />}
+      renderAvatar={renderCommentAvatar}
+      renderAudienceControl={renderCommentAudience}
+      formatTime={formatRelativeTime}
+      onChangeDraft={changeDraft}
+      onSubmit={submit}
       onClose={close}
-      footer={
-        canComment ? (
-          <View>
-            <PublicationAudiencePicker privacy={privacy} disabled={addComment.isPending} />
-            <View style={styles.composer}>
-              <BottomSheetTextInput
-                style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-                placeholder={t('mobile.comments.placeholder')}
-                placeholderTextColor={systemColors.tertiaryLabel}
-                value={draft}
-                onChangeText={changeDraft}
-                multiline
-              />
-              <PressableSurface
-                onPress={submit}
-                disabled={draft.trim().length === 0 || addComment.isPending}
-                style={styles.send}
-                accessibilityRole="button"
-              >
-                <Icon
-                  name="send.fill"
-                  size={22}
-                  color={draft.trim().length > 0 ? brandColors.primary : systemColors.tertiaryLabel}
-                />
-              </PressableSurface>
-            </View>
-            <InlineSheetError message={submitError} visible={!!entityId} scope={`${entityType}:${entityId ?? ''}`} />
-          </View>
-        ) : (
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.signInPrompt}>
-            {tCommon('comment.signInPrompt')}
-          </Text>
-        )
-      }
-    >
-      <Text variant="title3" style={styles.title}>
-        {t('mobile.comments.title')}
-      </Text>
-      {commentsQuery.isPending && entityId ? (
-        <View style={styles.centered}>
-          <ActivityIndicator />
-        </View>
-      ) : comments.length === 0 ? (
-        <Text variant="subheadline" style={styles.empty}>
-          {t('mobile.comments.empty')}
-        </Text>
-      ) : (
-        comments.map((comment) => (
-          <View key={comment.uuid} style={styles.commentRow}>
-            <PressableAvatar
-              userId={comment.userId}
-              uri={comment.userAvatarUrl}
-              name={comment.userDisplayName}
-              size={32}
-            />
-            <View style={styles.commentBody}>
-              <View style={styles.commentMeta}>
-                <Text variant="subheadline" style={styles.commentName}>
-                  {comment.userDisplayName ?? t('mobile.unknownName')}
-                </Text>
-                <Text variant="caption2" color={systemColors.secondaryLabel}>
-                  {formatRelativeTime(comment.createdAt)}
-                </Text>
-              </View>
-              <Text variant="subheadline">{comment.body}</Text>
-              <ContentAudienceControl entityType="comment" entityId={comment.uuid} />
-            </View>
-          </View>
-        ))
-      )}
-    </Sheet>
+    />
   );
 }
-
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    title: { paddingHorizontal: spacing[4], paddingTop: spacing[2], paddingBottom: spacing[3] },
-    centered: { paddingVertical: spacing[10], alignItems: 'center' },
-    empty: { paddingHorizontal: spacing[4], paddingVertical: spacing[6], opacity: 0.6 },
-    commentRow: {
-      flexDirection: 'row',
-      gap: spacing[3],
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[2],
-    },
-    commentBody: { flex: 1, gap: 2 },
-    commentMeta: { flexDirection: 'row', alignItems: 'baseline', gap: spacing[2] },
-    commentName: { fontWeight: '600' },
-    composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing[2] },
-    input: {
-      flex: 1,
-      minHeight: 40,
-      maxHeight: 120,
-      borderRadius: borderRadius.lg,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-      fontSize: textStyles.subheadline.fontSize,
-    },
-    send: { paddingBottom: spacing[2] },
-    signInPrompt: { paddingVertical: spacing[2], textAlign: 'center' },
-  });
+const renderCommentAvatar = (comment: CommentSheetComment) => (
+  <PressableAvatar userId={comment.userId} uri={comment.userAvatarUrl} name={comment.userDisplayName} size={32} />
+);
+const renderCommentAudience = (comment: CommentSheetComment) => (
+  <ContentAudienceControl entityType="comment" entityId={comment.uuid} />
+);

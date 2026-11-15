@@ -8,10 +8,10 @@ describe('player route animation', () => {
   });
 
   it('uses the platform policy on the actual initial play route', () => {
-    const layout = readFileSync(new URL('../../../app/_layout.tsx', import.meta.url), 'utf8');
+    const layout = readFileSync(new URL('../../application-root.tsx', import.meta.url), 'utf8');
     const registration = layout.match(/<Stack\.Screen\s+name="play"[\s\S]*?\/>/)?.[0];
     expect(registration).toBeDefined();
     expect(registration).toMatch(/animation:\s*getPlayerRouteAnimation\(\s*Platform\.OS\s*,?\s*\)/);
-    expect(layout).toContain("import { getPlayerRouteAnimation } from '../src/lib/player-route-animation'");
+    expect(layout).toContain("import { getPlayerRouteAnimation } from './lib/player-route-animation'");
   });
 });

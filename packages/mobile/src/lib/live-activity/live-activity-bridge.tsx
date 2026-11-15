@@ -2,6 +2,7 @@ import { AppState } from 'react-native';
 import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBoardCapabilities, toBoardName, boardSupportsMirroring } from '@boardsesh/board-config';
+import { bluetoothTransport } from '../ble/transport-runtime';
 import { nativeBleSupportsBoard } from '../ble/adapter-factory';
 import { trackBoardConnectTapped } from '../analytics-board-connect';
 import { captureToSentry } from '../sentry';
@@ -190,15 +191,7 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
       boardConnection === 'connectedByMe' &&
       getBoardCapabilities(boardName).nativeBoardControl &&
       nativeBleSupportsBoard(boardName),
-    // Screenshot builds only: drive widget Next/Prev through the local path.
-    // A party session makes the App Intent authorise each tap with the Live
-    // Activity's APNs push token, and a simulator's token is a sandbox one that
-    // prod's production APNs rejects as BadDeviceToken, after which the backend
-    // deletes it and every tap is a 401. The local path still updates the
-    // activity and hands the move to JS, which sends the same queue mutation
-    // over the session socket. Inlined comparison so it dead-strips (see
-    // screenshot-mode.ts).
-    isPartySession: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? false : sessionId !== null,
+    isPartySession: bluetoothTransport()?.widgetCommandDelivery !== 'javascript' && sessionId !== null,
     boardConnection,
     holderDisplayName,
     bulbOpensApp,

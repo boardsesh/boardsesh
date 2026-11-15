@@ -257,7 +257,7 @@ runs:
       run: |
         set -euo pipefail
         # Empty inputs mean "whatever the app pins" — Aura, and the store walls
-        # from screenshot-mode.ts — so these flags only appear when a run
+        # configured by the story/dev integration roots — flags appear when a run
         # deliberately retargets. An array, because a board list has spaces in it.
         retarget=()
         if [ -n "$CPP_TARGET" ]; then

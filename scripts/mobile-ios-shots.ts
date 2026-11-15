@@ -1,3 +1,4 @@
+import { migrateCaptureRoute } from './lib/retired-capture';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 /// <reference types="node" />
 
@@ -91,6 +92,8 @@ import {
   assertStoryId,
   resolveMetroLogPath,
   settleAfterStory,
+  buildStoryEnv,
+  isStoryRootReadyLine,
 } from './lib/mobile-stories';
 import {
   DEFAULT_USER_EMAIL,
@@ -127,8 +130,7 @@ const LAUNCHER_URL_KEY = 'DEV_CLIENT_DEFAULT_LAUNCHER_URL';
 const BUNDLE_REQUEST_TIMEOUT_SECONDS = 20;
 const MAESTRO_INSTALL_HINT = 'install it (https://maestro.mobile.dev)';
 
-// Friendly screen names -> deep-link routes (the screenshot-mode params are app
-// code; see packages/mobile/src/lib/screenshot-mode.ts and the .maestro flows).
+// Ordinary application routes. Capture-specific aliases migrate to view stories.
 // Kept in sync with scripts/mobile-android-shots.ts.
 const SCREEN_ROUTES: Record<string, string> = {
   home: 'home',
@@ -136,11 +138,6 @@ const SCREEN_ROUTES: Record<string, string> = {
   discover: 'discover',
   profile: 'profile',
   record: 'record',
-  'board-view': 'climbs?screenshotOpenFirst=1',
-  'board-sheet': 'climbs?screenshotOpenBoardSheet=1',
-  'session-detail': 'profile?screenshotTab=sessions',
-  logbook: 'profile?screenshotTab=logbook',
-  progress: 'profile?screenshotTab=progress',
 };
 
 // Routes that push async board art / detail screens with no animation hook for
@@ -302,6 +299,7 @@ export function parseShotsArgs(argv: readonly string[]): ShotsOptions {
     }
   }
 
+  migrateCaptureRoute(options);
   applyStoryOptions(options);
   return options;
 }
@@ -619,7 +617,7 @@ function screenshotEnvOptions(options: ShotsOptions): ScreenshotOptions {
     theme: 'dark',
     workout: null,
     // null on both: an ad-hoc dev shot gets the same pinned Aura look and store
-    // walls a store capture does, straight from screenshot-mode.ts. Point it
+    // walls configured by the dev integration bootstrap. Point it
     // somewhere else with EXPO_PUBLIC_SCREENSHOT_BOARDS in the environment.
     renderMode: null,
     boards: null,
@@ -754,6 +752,12 @@ function blockUntilExit(metro: ChildProcess): Promise<void> {
 }
 
 async function runFullPipeline(options: ShotsOptions): Promise<number> {
+  if (options.flow)
+    throw new Error(
+      'Visual flows now use isolated views. Use vp run mobile:screenshots -- --flow ' +
+        options.flow +
+        ' (or --story for one view).',
+    );
   assertDarwinWithSimctl();
 
   const appPath = resolveShotsAppPath(options);
@@ -768,9 +772,12 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
   if (portInUse(METRO_PORT)) {
     throw new Error(`port ${METRO_PORT} is already in use; stop it (another Metro would serve the wrong bundle).`);
   }
-  const metroEnv = options.screenshotMode
-    ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
-    : { ...process.env };
+  const storyMode = Boolean(options.story || options.to?.startsWith('dev/stories/'));
+  const metroEnv = storyMode
+    ? buildStoryEnv(process.env)
+    : options.screenshotMode
+      ? buildScreenshotEnv(screenshotEnvOptions(options), process.env, null)
+      : { ...process.env };
   const watch = shotsMetroWatch(options);
   const metroLogPath = options.metroLog ?? metroLogPathForPort(METRO_PORT);
   console.log(
@@ -800,7 +807,11 @@ async function runFullPipeline(options: ShotsOptions): Promise<number> {
       confirmSchemeDialog(device.udid, process.env);
     }
 
-    if (options.screenshotMode) {
+    if (storyMode) {
+      if (!waitForMetroLogLine(isStoryRootReadyLine, bundleOffset, 120, metroLogPath)) {
+        throw new Error('Isolated story root did not become ready within 120 seconds');
+      }
+    } else if (options.screenshotMode) {
       if (waitForHomeReady(baseline, 0, 240, undefined, metroLogPath)) {
         console.log(`${LOG} App reached home.`);
       } else {

@@ -1,3 +1,6 @@
+# Deprecated live-route commands: retained only as the capture filename inventory.
+# Use vp run mobile:screenshots -- --flow <name>; its story runner ignores these commands.
+# Do not execute this file directly with Maestro.
 appId: ${APP_ID}
 name: onboarding illustrations android
 ---

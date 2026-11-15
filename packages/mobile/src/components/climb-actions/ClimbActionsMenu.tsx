@@ -12,7 +12,7 @@ import {
 } from 'react';
 import type { AccessibilityActionEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { buildPlayDrawerMenuRows, type ClimbMenuGroups } from '../play-drawer/play-drawer-menu-rows';
+import { buildPlayDrawerMenuRows } from '../play-drawer/play-drawer-menu-rows';
 import {
   boardConfigsMatch,
   useDrawerHost,
@@ -31,21 +31,7 @@ import { getClimbActionPresenters, openPresentedClimbAction } from './climb-acti
 import { buildClimbMenuItems } from './climb-menu-items';
 import { useClimbActions, type ClimbActionId } from './use-climb-actions';
 
-const LIST_GROUPS: ClimbMenuGroups = [
-  ['playNext', 'queue', 'replayFromHere'],
-  ['playlist', 'favorite', 'tick', 'editEntry', 'share'],
-  ['betaVideo', 'edit', 'fork', 'openInApp'],
-  ['report', 'delete'],
-];
-const ALL_BUTTONS_HIDDEN = {
-  playNext: true,
-  tick: true,
-  favorite: true,
-  share: true,
-  queue: true,
-  mirror: true,
-  angle: true,
-};
+import { LIST_GROUPS, ALL_BUTTONS_HIDDEN } from './climb-list-menu-options';
 
 type Selection = { target: ClimbActionsTarget; id: ClimbActionId; nonce: number; credentialGeneration: number };
 

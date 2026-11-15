@@ -115,7 +115,6 @@ export function QaTesterGate() {
       userId,
       surfingBuild,
       surfingReady,
-      screenshotMode: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
       topSegment: topSegmentRef.current,
       runningPrNumber,
       briefSeenKey: getSetting('qaBriefSeenKey'),

@@ -1,17 +1,9 @@
-import { useEffect, useState } from 'react';
-import type { SessionUser } from '@boardsesh/shared-schema';
-import type { ScenarioOverrides } from '../../dev/stories/scenario-overrides';
+import { RestTimerScene } from '../../dev/stories/RestTimerScene';
+
 import type { StoryModule } from '../../dev/stories/types';
 import { StorySurface, StoryVariant } from '../../dev/stories/StoryCanvas';
-import { nowMs } from '../../lib/clock';
 import type { RestTimerStagePacing } from '../../lib/rest-timer-pacing';
-import {
-  applyRestTimerStagePacing,
-  armRestTimer,
-  disarmRestTimer,
-  noteRestTimerTick,
-} from '../../lib/rest-timer-store';
-import { RestTimerSheet } from './RestTimerSheet';
+
 import { RestTimerWorkoutPacingRow } from './RestTimerWorkoutPacingRow';
 
 // "Set by your workout" (#5380, #6231). The timed blocks are not offered yet, so
@@ -87,61 +79,33 @@ const COOL_DOWN: RestTimerStagePacing = {
   stagePacing: { mode: 'afterTick', restSeconds: 30, advanceOn: 'tick' },
 };
 
-const CREW: SessionUser[] = [
-  { id: 'story-me', username: 'You', isLeader: true, connectionState: 'CONNECTED' },
-  { id: 'story-sam', username: 'Sam', isLeader: false, userId: 'story-sam-user', connectionState: 'CONNECTED' },
-];
-
-// Sam holds the wall, so this phone's timer must not move it, stage or not.
-const PASSENGER_IN_A_CREW: ScenarioOverrides = {
-  queue: { isSharedSession: false, isCrewSession: true, sessionId: 'story-crew-session', sessionUsers: CREW },
-};
-
-function StagePacedSheet({ stage }: { stage: RestTimerStagePacing }) {
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const startedAtMs = nowMs();
-    applyRestTimerStagePacing(stage, startedAtMs, 'none');
-    // A pre-session arm (no session id): the story app has no session, and the
-    // session sync turns off an arm whose session is gone.
-    armRestTimer(stage.mode, startedAtMs, null);
-    noteRestTimerTick(new Date(startedAtMs - 20_000).toISOString(), stage.mode, startedAtMs, {
-      status: 'send',
-      queueItemUuid: null,
-    });
-    return () => {
-      disarmRestTimer();
-      applyRestTimerStagePacing(null, nowMs(), 'none');
-    };
-  }, [stage]);
-
-  return <RestTimerSheet visible={visible} onClose={() => setVisible(false)} />;
-}
-
 const stories: StoryModule = {
   title: 'Rest timer / Set by your workout',
   stories: {
     sheetFourByFour: {
       name: 'Rest timer sheet, 4x4 between reps (0:45)',
-      render: () => <StagePacedSheet stage={FOUR_BY_FOUR} />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <RestTimerScene onReady={onReady} stage={FOUR_BY_FOUR} />,
     },
     sheetFourByFourSetEnd: {
       name: 'Rest timer sheet, 4x4 after a set’s last rep (0:30 set rest)',
-      render: () => <StagePacedSheet stage={FOUR_BY_FOUR_SET_END} />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <RestTimerScene onReady={onReady} stage={FOUR_BY_FOUR_SET_END} />,
     },
     sheetLimit: {
       name: 'Rest timer sheet, limit bouldering',
-      render: () => <StagePacedSheet stage={LIMIT} />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <RestTimerScene onReady={onReady} stage={LIMIT} />,
     },
     sheetOnTheMinute: {
       name: 'Rest timer sheet, on the minute every 0:15',
-      render: () => <StagePacedSheet stage={ON_THE_MINUTE} />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <RestTimerScene onReady={onReady} stage={ON_THE_MINUTE} />,
     },
     sheetPassenger: {
       name: 'Rest timer sheet, limit bouldering, crew passenger',
-      overrides: PASSENGER_IN_A_CREW,
-      render: () => <StagePacedSheet stage={LIMIT} />,
+      readiness: 'explicit',
+      render: ({ onReady }) => <RestTimerScene onReady={onReady} role="passenger" stage={LIMIT} />,
     },
     rows: {
       name: 'The workout row, every timed block',

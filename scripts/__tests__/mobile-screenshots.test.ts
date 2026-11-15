@@ -23,6 +23,7 @@ import {
   queueButtonReadinessSelector,
   buildScreenshotSessionEnv,
   collectScreenshots,
+  clearNativeCaptureThumbnails,
   deviceSlug,
   findFrozenClockProblems,
   findOrCreateIosDevice,
@@ -935,14 +936,11 @@ describe('findScreenshotRenderProblems', () => {
     expect(summariseScreenshotRender(log)[1]).toBe('[screenshot] render mode: aura (requested aura, probe ok)');
   });
 
-  // The gate asserts the app asked for the run's mode, so this constant has to be
-  // the same value screenshot-mode.ts falls back to. Read as text rather than
-  // imported: that module is bundled for React Native and pulling it into a node
-  // test would drag its dependency graph along for one string.
-  it('pins its idea of the app default to what screenshot-mode.ts actually falls back to', () => {
-    const source = readFileSync('packages/mobile/src/lib/screenshot-mode.ts', 'utf8');
-    const fallback = source.match(/EXPO_PUBLIC_SCREENSHOT_RENDER_MODE\?\.trim\(\) \|\| '([a-z]+)'/)?.[1];
-    expect(fallback, 'screenshot-mode.ts must keep a literal render-mode fallback').toBeTruthy();
+  // Read the native root as text: importing it in Node would load native modules.
+  it('pins the capture default to the isolated story root renderer default', () => {
+    const source = readFileSync('packages/mobile/src/dev/stories/StoryRoot.tsx', 'utf8');
+    const fallback = source.match(/EXPO_PUBLIC_STORY_RENDER_MODE \?\? '([a-z]+)'/)?.[1];
+    expect(fallback, 'StoryRoot must keep a literal render-mode fallback').toBeTruthy();
     expect(fallback).toBe(DEFAULT_SCREENSHOT_RENDER_MODE);
   });
 });
@@ -1022,6 +1020,20 @@ describe('findDuplicateScreenshotGroups', () => {
 });
 
 describe('writeCapturedScreenshots', () => {
+  it.each([null, []])('saves Android captures without store locales: %s', (locales) => {
+    const root = mkdtempSync(join(tmpdir(), 'android-story-captures-'));
+    try {
+      const capture = join(root, 'capture');
+      mkdirSync(capture);
+      writeFileSync(join(capture, '01-climbs.png'), 'captured pixels');
+      const saved = collectScreenshots(capture, 'android', 'Pixel 2', locales, false, join(root, 'stores'));
+      expect(saved).toEqual([join(root, 'stores/google/screenshots/pixel-2/01-climbs.png')]);
+      expect(readFileSync(saved[0], 'utf8')).toBe('captured pixels');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each(['ios', 'android'] as const)('rejects an empty %s capture before framing previous raw images', (platform) => {
     const root = mkdtempSync(join(tmpdir(), 'screenshot-empty-capture-'));
     try {
@@ -2166,5 +2178,24 @@ describe('bounded iOS Maestro invocation', () => {
       ),
     ).toThrow('lease rejected');
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('native capture cache isolation', () => {
+  it('removes prior thumbnails while preserving unrelated app-group state', () => {
+    const root = mkdtempSync(join(tmpdir(), 'native-capture-cache-'));
+    try {
+      const cache = join(root, 'thumbnails');
+      mkdirSync(cache);
+      writeFileSync(join(cache, 'prior-classic.webp'), 'stale board pixels');
+      writeFileSync(join(cache, 'cache-version'), '6');
+      writeFileSync(join(root, 'session.json'), 'keep');
+      clearNativeCaptureThumbnails(root);
+      expect(readdirSync(cache)).toEqual(['cache-version']);
+      expect(readFileSync(join(root, 'session.json'), 'utf8')).toBe('keep');
+      clearNativeCaptureThumbnails(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

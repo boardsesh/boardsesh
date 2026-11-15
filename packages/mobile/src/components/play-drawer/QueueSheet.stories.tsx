@@ -1,95 +1,169 @@
-import { useCallback, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { PressableSurface } from '../PressableSurface';
-import { Text } from '../Text';
-import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useQueueActions, useQueueData } from '../../providers/queue-provider';
-import { QueueDataContext } from '../../providers/queue/queue-contexts';
-import { useSearchClimbs } from '../../lib/graphql/hooks';
+import { useStorySheetPresentation } from '../../dev/stories/use-story-sheet-presentation';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
+import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
+import { StoryClimbArtObserverProvider, renderStoryClimbContent } from '../../dev/stories/StoryClimbRow';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import type { StoryModule } from '../../dev/stories/types';
-import { QueueSheet, type QueueSheetHandle } from './QueueSheet';
-import { useQueueSheetHandlers } from './use-queue-sheet-handlers';
-import { glassSize } from '../../theme/layout';
+import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
+import { QueueItemRowView, type QueueItemRowProps } from '../QueueItemRowView';
+import { QueueListView, type QueueListRow } from './QueueListView';
+import { QueueListBodyView } from './QueueListBodyView';
+import { QueueSheetHeader } from './QueueSheetHeader';
+import { QueueSheetView } from './QueueSheetView';
 
-const STORY_BOARD = { boardName: 'kilter' as const, layoutId: 8, sizeId: 25, setIds: '26,27,28,29', angle: 35 };
+import { useVisibleArtReadiness } from '../../dev/stories/use-visible-art-readiness';
 
-/** Real native presenters; duplicate occurrences make a history row without a server. */
-function HistoryTickStory() {
-  const liveQueue = useQueueData();
-  const { setCurrentClimb } = useQueueActions();
-  const { openLogAscent, openPlayDrawer, getClimbActions } = useDrawerHost();
-  const queueRef = useRef<QueueSheetHandle>(null);
-  const { data: sampleClimbs } = useSearchClimbs({
-    boardName: 'kilter',
-    layoutId: 8,
-    sizeId: 25,
-    setIds: '26,27,28,29',
-    angle: 35,
-    page: 0,
-    pageSize: 30,
-    sortBy: 'ascents',
-    sortOrder: 'desc',
-    boulders: true,
-    crossAngleStats: false,
-  });
-  const sampleClimb = sampleClimbs?.climbs[0];
-  const current = useMemo(() => (sampleClimb ? climbToQueueItem(sampleClimb) : undefined), [sampleClimb]);
-  const storyQueue = useMemo(() => {
-    if (!current) return liveQueue;
-    const history = { ...current, uuid: 'story-queue-tick-history' };
-    const playing = { ...current, uuid: 'story-queue-tick-current' };
-    return { ...liveQueue, queue: [history, playing], currentClimbQueueItem: playing, historyCount: 1 };
-  }, [current, liveQueue]);
-  const closeQueue = useCallback(() => queueRef.current?.dismiss(), []);
-  const dismissQueueAndWait = useCallback(
-    () => queueRef.current?.dismissAndWait() ?? Promise.resolve({ status: 'dismissed' as const }),
+const assetId = (row: QueueListRow) =>
+  row.type === 'off-queue' ? row.climb.uuid : 'item' in row ? (row.item.climb?.uuid ?? null) : null;
+const noop = () => {};
+const menu = {
+  rows: [],
+  onSelectIndex: noop,
+  menuKey: 'story-queue',
+  accessibilityActions: [],
+  onAccessibilityAction: noop,
+};
+const StoryRow = memo(function StoryRow(props: QueueItemRowProps) {
+  return <QueueItemRowView {...props} hasThumbnail menu={menu} ContentComponent={renderStoryClimbContent} />;
+});
+
+function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & { empty?: boolean }) {
+  const { board: STORY_BOARD, climbs } = useStoryBoardFixture();
+  const initialQueue = useMemo(() => climbs.slice(0, 3).map((climb) => climbToQueueItem(climb)), [climbs]);
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const managed = useStorySheetPresentation(sheetRef);
+  const presented = managed.presented;
+  const [artReady, setArtReady] = useState(empty);
+  const markArtReady = useCallback(() => setArtReady(true), []);
+  const art = useVisibleArtReadiness(assetId, markArtReady);
+  useEffect(() => {
+    if (presented && artReady) onReady();
+  }, [presented, artReady, onReady]);
+  const insets = useSafeAreaInsets();
+  const [queue, setQueue] = useState(empty ? [] : initialQueue);
+  const [current, setCurrent] = useState<ClimbQueueItem | null>(
+    empty ? null : initialQueue[Math.min(1, initialQueue.length - 1)],
+  );
+  const [editing, setEditing] = useState(false);
+  const [history, setHistory] = useState(true);
+  const [fullHistory, setFullHistory] = useState(false);
+  const [selected, setSelected] = useState(new Set<string>());
+  const [dragging, setDragging] = useState(false);
+  const toggleSelected = useCallback(
+    (uuid: string) =>
+      setSelected((previous) => {
+        const next = new Set(previous);
+        if (next.has(uuid)) next.delete(uuid);
+        else next.add(uuid);
+        return next;
+      }),
     [],
   );
-  const handlers = useQueueSheetHandlers({
-    setCurrentClimb,
-    openPlayDrawer,
-    getClimbActions,
-    openLogAscent,
-    storedBoardConfig: STORY_BOARD,
-    sessionId: null,
-    requestCloseQueueSheet: closeQueue,
-    dismissQueueSheetAndWait: dismissQueueAndWait,
-  });
-  const openQueue = useCallback(() => queueRef.current?.present(), []);
+  const remove = useCallback(
+    (uuid: string) => setQueue((previous) => previous.filter((item) => item.uuid !== uuid)),
+    [],
+  );
+  const reorder = useCallback(
+    (_uuid: string, oldIndex: number, newIndex: number) =>
+      setQueue((previous) => {
+        const next = [...previous];
+        const [item] = next.splice(oldIndex, 1);
+        next.splice(newIndex, 0, item);
+        return next;
+      }),
+    [],
+  );
   return (
-    <View>
-      <Text>{current ? current.climb.name : 'Loading a sample climb…'}</Text>
-      <Text>Toggle history in the queue, then tap Tick. The sample uses Kilter layout 8 at 35°.</Text>
-      <PressableSurface
-        style={styles.action}
-        accessibilityLabel="Open queue with history"
-        onPress={openQueue}
-        disabled={!current}
-      >
-        <Text>Open queue with history</Text>
-      </PressableSurface>
-      <QueueDataContext.Provider value={storyQueue}>
-        <QueueSheet
-          ref={queueRef}
-          board={STORY_BOARD}
-          onClose={closeQueue}
-          onClimbPress={handlers.handleClimbPress}
-          onOpenActions={handlers.handleOpenActions}
-          onSuggestionPress={handlers.handleSuggestionPress}
-          onTickHistory={handlers.handleTickHistory}
-        />
-      </QueueDataContext.Provider>
-    </View>
+    <QueueSheetView
+      ref={sheetRef}
+      isDragging={dragging}
+      onChange={managed.onChange}
+      onFullyDismissed={managed.onFullyDismissed}
+    >
+      <StoryClimbArtObserverProvider onDisplayed={art.onDisplayed} onError={onError}>
+        <View style={{ flex: 1 }} onLayout={managed.onLayout}>
+          <QueueListBodyView
+            header={
+              <QueueSheetHeader
+                isEditMode={editing}
+                showHistory={history}
+                selectedCount={selected.size}
+                queueCount={Math.max(0, queue.length - 2)}
+                viewOnlyMode={queue.length === 0}
+                onToggleEditMode={() => setEditing((previous) => !previous)}
+                onToggleHistory={() => setHistory((previous) => !previous)}
+                onClose={managed.handle.dismiss}
+                onClearAll={() => setQueue([])}
+              />
+            }
+            list={
+              <QueueListView
+                onViewableItemsChanged={art.onViewableItemsChanged}
+                queue={queue}
+                currentItem={current}
+                historyCount={empty || initialQueue.length < 2 ? 0 : 1}
+                board={STORY_BOARD}
+                isEditMode={editing}
+                showHistory={history}
+                showFullHistory={fullHistory}
+                selectedItems={selected}
+                playlistSuggestionSource={null}
+                active
+                onToggleSelect={toggleSelected}
+                onClimbPress={setCurrent}
+                onRemove={remove}
+                onShowFullHistory={() => setFullHistory(true)}
+                onTickHistory={noop}
+                onSuggestionPress={noop}
+                reorderQueue={reorder}
+                onDraggingChange={setDragging}
+                presentation="sheet"
+                rowDisplay={DEFAULT_CLIMB_ROW_DISPLAY}
+                showAddedBy={false}
+                viewerUserId={null}
+                boardContinuationClimbs={[]}
+                RowComponent={StoryRow}
+                ContentComponent={renderStoryClimbContent}
+              />
+            }
+            isEditMode={editing}
+            selectedCount={selected.size}
+            bottomInset={insets.bottom}
+            onRemove={() => {
+              setQueue((previous) => previous.filter((item) => !selected.has(item.uuid)));
+              setSelected(new Set());
+            }}
+          />
+        </View>
+      </StoryClimbArtObserverProvider>
+    </QueueSheetView>
   );
 }
-
 const stories: StoryModule = {
-  title: 'Queue / Tick above the queue',
+  title: 'Queue',
   stories: {
-    historyTick: { name: 'Tick above the native queue', render: () => <HistoryTickStory /> },
+    'up-next': {
+      name: 'Up next',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <QueueStory {...controls} />,
+    },
+    historyTick: {
+      name: 'History and up next',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <QueueStory {...controls} />,
+    },
+    empty: {
+      name: 'Empty queue',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <QueueStory {...controls} empty />,
+    },
   },
 };
 export default stories;
-
-const styles = StyleSheet.create({ action: { minHeight: glassSize.inline, justifyContent: 'center' } });

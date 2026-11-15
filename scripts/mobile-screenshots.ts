@@ -1,3 +1,4 @@
+import { createCppStoryCapture, cppStorySourceSha256 } from './lib/cpp-story-provenance';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screenshot-maestro';
 /// <reference types="node" />
@@ -129,12 +130,15 @@ import {
   stopReadinessServer,
   waitForHomeReady,
   waitForMetro,
+  metroLogOffset,
+  waitForMetroLogLine,
   waitForPortToClose,
 } from './lib/metro-dev-server';
 import {
   connectDevClient,
   installDevClient,
   launchDevClientToHome,
+  launchDevClient,
   startMetroForDevClient,
   stopDevClientSession,
   type DevClientSession,
@@ -189,7 +193,21 @@ import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, set
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
-} from '../packages/mobile/src/lib/screenshot-board-matching';
+} from '../packages/mobile/src/dev/integration/screenshot-board-matching';
+
+import {
+  buildStoryEnv,
+  isStoryRootReadyLine,
+  settleAfterStory,
+  storyRoute,
+  type StoryVariant,
+} from './lib/mobile-stories';
+import {
+  readVisualStoryCaptures,
+  cppStoryCaptures,
+  storyForCaptureName,
+  type VisualStoryCapture,
+} from './lib/mobile-visual-stories';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -407,7 +425,7 @@ export interface ScreenshotOptions {
   /**
    * `|`-separated board selectors, in slot order — slot 0 is the board every
    * board-backed shot sits on, slot 1 the second board-view's wall. `null` leaves
-   * the app's defaults (see `screenshot-mode.ts`) in place.
+   * the integration defaults (see `src/dev/integration/config.ts`) in place.
    */
   boards: string | null;
   /** Prebuilt/cached app artifact to install; iOS can build one when null. */
@@ -812,9 +830,9 @@ export function buildScreenshotEnv(
   const env: NodeJS.ProcessEnv = {
     ...baseEnv,
     EXPO_PUBLIC_SCREENSHOT_MODE: '1',
-    // Baked at JS-bundle time; theme-provider locks to it in screenshot mode.
+    // Passed to the dev integration root as presentation props.
     EXPO_PUBLIC_SCREENSHOT_THEME: options.theme,
-    // The app auto-signs-in with these on boot (see screenshot-mode.ts), so the
+    // The dev integration bootstrap signs in with these on boot, so the
     // Maestro flow never types into the login form — which pops iOS's
     // "Save Password?" dialog over every shot and blocks the board picker.
     // `||`, not `??`: CI passes these through as EMPTY on a replay run (the
@@ -832,7 +850,7 @@ export function buildScreenshotEnv(
   if (options.flow === 'smoke') {
     // Only the smoke gets this, so a store capture makes exactly the requests it
     // always has. With it set, each smoke-visited screen reports its content
-    // count and the crash screen reports itself (src/lib/screenshot-smoke.ts).
+    // count and the crash screen reports itself (src/dev/integration/screenshot-smoke.ts).
     env.EXPO_PUBLIC_SCREENSHOT_SMOKE_URL = `http://localhost:${SCREENSHOT_READY_PORT}/smoke`;
   }
   const wallControlCapture =
@@ -1273,7 +1291,7 @@ export function findDuplicateScreenshotGroups(captureDir: string): string[][] {
 
 /**
  * The app's screenshot default when `--render-mode` is not passed. Kept in step
- * with `SCREENSHOT_RENDER_MODE` in `packages/mobile/src/lib/screenshot-mode.ts`;
+ * with the renderer fallback in `packages/mobile/src/dev/stories/StoryRoot.tsx`;
  * asserting against it is what catches a bundle that never picked the env up.
  */
 export const DEFAULT_SCREENSHOT_RENDER_MODE = 'aura';
@@ -1337,7 +1355,7 @@ export function findScreenshotRenderProblems(
   }
   // The roster the app logged alongside a miss, so the failing run says what to
   // use instead. Carried separately because the app logs it on its own line —
-  // see the truncation note in screenshot-board-selection.ts.
+  // see the truncation note in dev/integration/screenshot-board-matching.ts.
   if (boardProblems.length > 0) {
     for (const line of lines) {
       const roster = line.match(BOARD_ROSTER_LINE);
@@ -1387,11 +1405,7 @@ function reportScreenshotRenderProblems(logText: string, options: ScreenshotOpti
   return false;
 }
 
-/**
- * The frozen-clock line the app logs once at boot
- * (`screenshot-board-auto-activator.tsx`), as it reaches the capture log —
- * Metro's tee on iOS, logcat on Android.
- */
+/** Legacy frozen-clock evidence retained for historical capture-log validation. */
 const FROZEN_CLOCK_LINE = /\[screenshot\] clock: frozen at (\S+)/;
 const LIVE_CLOCK_LINE = /\[screenshot\] clock: live/;
 
@@ -1849,7 +1863,7 @@ export function collectScreenshots(
 ): string[] {
   const storeRoot = join(outputRoot, STORE_BY_PLATFORM[platform], ...(cpp ? ['cpp', cpp] : []));
   const saved: string[] = [];
-  for (const storeLocale of appStoreLocales ?? ['']) {
+  for (const storeLocale of appStoreLocales?.length ? appStoreLocales : ['']) {
     const shard = join(storeLocale, deviceSlug(deviceName));
     const output = join(storeRoot, 'screenshots', shard);
     if (!framed) {
@@ -1979,12 +1993,11 @@ interface SmokeAttemptInput {
  * code the platform runner hands back.
  */
 function judgeSmokeAttempt(input: SmokeAttemptInput): number {
-  const { nativeCrashes, captureLog, pings, logStreamAlive } = collectSmokeObservations({
+  const { nativeCrashes, pings, logStreamAlive } = collectSmokeObservations({
     ...input,
     readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH)),
     waitForPings: waitForSmokePings,
   });
-  const flowRan = input.maestroStatus === 0;
   const pingProblems = findSmokePingProblems(pings, SMOKE_ROUTES);
 
   let backendProblems: string[] = [];
@@ -1999,19 +2012,12 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
     );
   }
 
-  // Only worth reading once the flow got to the end: a run that died earlier
-  // never opened the board, and "no render line" would bury the real reason.
-  const captureLogProblems = !logStreamAlive
-    ? ['the device log stream died: native crashes and render errors cannot be ruled out.']
-    : flowRan
-      ? [
-          ...findScreenshotRenderProblems(captureLog, {
-            renderMode: input.options.renderMode,
-            requireRenderLine: true,
-          }),
-          ...(input.backendSession ? findFrozenClockProblems(captureLog, input.backendSession.frozenNow) : []),
-        ]
-      : [];
+  // Rendered content and errors are observed inside the real view tree through
+  // smoke pings. The removed screenshot renderer diagnostics are not evidence
+  // for this integration flow; native crash detection still requires its log.
+  const captureLogProblems = logStreamAlive
+    ? []
+    : ['the device log stream died: native crashes and render errors cannot be ruled out.'];
 
   const failureClass = classifySmokeFailure({
     nativeCrashes,
@@ -3829,7 +3835,7 @@ export function buildAndroidMaestroArgs(
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const boards = context.boards ?? context.capture?.boards.join('|') ?? env.EXPO_PUBLIC_SCREENSHOT_BOARDS;
-  // Match screenshot-mode.ts: missing or blank selectors use its two default boards.
+  // Match dev/integration/config.ts: blank selectors use the two default boards.
   const boardCount = boards?.split('|').filter((selector) => selector.trim().length > 0).length || 2;
   return [
     '--device',
@@ -4519,6 +4525,300 @@ export function screenshotFixtureReference(options: ScreenshotOptions): string {
     : FIXTURE_SNAPSHOT_REFERENCE;
 }
 
+/** Only derived thumbnail pixels in this simulator's app group are disposable. */
+export function clearNativeCaptureThumbnails(container: string): void {
+  const directory = join(container, 'thumbnails');
+  if (!existsSync(directory)) return;
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.webp')) rmSync(join(directory, entry.name));
+  }
+}
+
+function endNativeActivityCapture(deviceId: string, captureDir: string): void {
+  const flow = join(captureDir, 'end-native-activity.yaml');
+  writeFileSync(
+    flow,
+    `appId: ${APP_ID}\n---\n- openLink: com.boardsesh.app://dev/stories/native-live-activity?end=1&shot=${Date.now()}\n- tapOn:\n    text: Open\n    optional: true\n`,
+  );
+  const offset = metroLogOffset(METRO_LOG_PATH);
+  const status = runIosScreenshotMaestro(['--device', deviceId, 'test', flow], { deviceId, cpp: false, captureDir });
+  if (
+    status !== 0 ||
+    !waitForMetroLogLine((line) => line.includes('[stories] native ended'), offset, 15, METRO_LOG_PATH)
+  )
+    throw new Error('Native activity cleanup was not confirmed');
+}
+
+/** Wait for the real native thumbnail cache, then expand ActivityKit before capturing pixels. */
+function prepareNativeActivityCapture(deviceId: string, board: string, offset: number, captureDir: string): void {
+  const line = waitForMetroLogLine(
+    (candidate) =>
+      candidate.includes(`[stories] native started ${board} `) ||
+      candidate.includes('[stories] error native-live-activity'),
+    offset,
+    30,
+    METRO_LOG_PATH,
+  );
+  const filename = line?.match(/\[stories\] native started [a-z0-9-]+ ([A-Za-z0-9-]+-classic\.webp)/)?.[1];
+  if (!filename) throw new Error(line ?? 'Native activity did not initialize');
+  const container = runCapture('xcrun', ['simctl', 'get_app_container', deviceId, APP_ID, 'group.com.boardsesh.app']);
+  if (container.status !== 0 || !container.stdout.trim())
+    throw new Error('Native activity app-group container unavailable');
+  const thumbnail = join(container.stdout.trim(), 'thumbnails', filename);
+  const deadline = Date.now() + 30000;
+  while ((!existsSync(thumbnail) || statSync(thumbnail).size === 0) && Date.now() < deadline)
+    runCapture('sleep', ['0.25']);
+  if (!existsSync(thumbnail) || statSync(thumbnail).size === 0)
+    throw new Error(`Native activity thumbnail did not load: ${filename}`);
+  const flow = join(captureDir, 'expand-native-activity.yaml');
+  writeFileSync(
+    flow,
+    [
+      `appId: ${APP_ID}`,
+      '---',
+      '- pressKey: home',
+      '- longPressOn:',
+      '    point: "50%,3%"',
+      '- waitForAnimationToEnd:',
+      '    timeout: 5000',
+    ].join('\n') + '\n',
+  );
+  if (runIosScreenshotMaestro(['--device', deviceId, 'test', flow], { deviceId, cpp: true, captureDir }) !== 0)
+    throw new Error('Could not expand the native Live Activity');
+}
+
+/** Visual captures load only injected view props; the smoke runner retains real application providers. */
+function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android'): number {
+  if (!commandExists(platform === 'ios' ? 'xcrun' : 'adb')) {
+    if (platform === 'ios') {
+      console.log(`${LOG} Skipped: iOS simulator tooling is unavailable.`);
+      return 0;
+    }
+    throw new Error('Android platform tooling (adb) is unavailable');
+  }
+  if (!commandExists('maestro')) throw new Error(`Maestro not found. ${MAESTRO_INSTALL_HINT}`);
+  if (portInUse(METRO_PORT)) throw new Error(`Metro port ${METRO_PORT} is already occupied`);
+  const iosDevices =
+    platform === 'ios'
+      ? resolveIosScreenshotDevices(options.devices, options.orientation).filter(
+          (device) => !options.cpp || !isDuoScreenshotDevice(device),
+        )
+      : [];
+  const androidId = platform === 'android' ? resolveAndroidDeviceId() : null;
+  if (platform === 'android' && !androidId) throw new Error('No ready Android emulator');
+  const appPath =
+    platform === 'ios' ? resolveAppPath(options) : ensureAndroidApk({ appPath: options.appPath ?? undefined });
+  const localeTargets =
+    platform === 'ios'
+      ? resolveAppStoreLocaleTargets(options.appLocales)
+      : [{ appLocale: 'en-US' as const, appStoreLocales: [] }];
+  const variant = (options.variant ?? (platform === 'ios' ? 'liquidGlass' : 'material')) as StoryVariant;
+  const storySourceSha256 = options.cpp ? cppStorySourceSha256() : undefined;
+  const metroEnv = buildStoryEnv(process.env);
+  const metro = startMetro(metroEnv);
+  let nativeBackend: ScreenshotBackendSession | null = null;
+  try {
+    if (!waitForMetro()) throw new Error('Story Metro did not become ready');
+    prewarmMetroBundle(platform);
+    const devices =
+      platform === 'ios'
+        ? iosDevices.map((descriptor) => ({ descriptor, device: findOrCreateIosDevice(descriptor) }))
+        : [{ descriptor: null, device: { udid: androidId!, name: androidDeviceName(options), state: 'Booted' } }];
+    for (const { descriptor, device } of devices) {
+      const captureDir = mkdtempSync(join(tmpdir(), 'boardsesh-view-stories-'));
+      let succeeded = false;
+      let hingeLog: string | null = null;
+      let nativeActivityStarted = false;
+      try {
+        if (descriptor) {
+          bootDevice(device);
+          if (usesDuoStoreFlow(options, descriptor)) hingeLog = prepareDuoHinge(device.udid);
+          applyCleanStatusBar(device.udid);
+          if (runCapture('xcrun', ['simctl', 'install', device.udid, appPath]).status !== 0)
+            throw new Error('Story app install failed');
+          runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
+        } else {
+          installDevClient('adb', device.udid, appPath);
+          connectDevClient('adb', device.udid, []);
+          applyCleanAndroidStatusBar(device.udid);
+        }
+        const rootOffset = metroLogOffset(METRO_LOG_PATH);
+        if (descriptor) {
+          if (runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0)
+            throw new Error('Story app launch failed');
+        } else launchDevClient('adb', device.udid);
+        if (!waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH))
+          throw new Error('Isolated story root did not become ready within 120 seconds');
+        for (const localeTarget of localeTargets) {
+          const passes: Array<{ captures: VisualStoryCapture[]; inner: boolean }> = [];
+          if (options.cpp && options.cpp !== 'all') {
+            passes.push({
+              captures: cppStoryCaptures(
+                readCppPage(options.cpp),
+                descriptor && isIpadScreenshotDevice(descriptor) ? 'ipad' : 'phone',
+              ),
+              inner: false,
+            });
+          } else if (descriptor && usesDuoStoreFlow(options, descriptor)) {
+            passes.push({ captures: readVisualStoryCaptures(join(MAESTRO_DIR, 'app-store-duo.yaml')), inner: false });
+            passes.push({ captures: readVisualStoryCaptures(join(MAESTRO_DIR, DUO_INNER_FLOW_FILE)), inner: true });
+          } else if (descriptor && options.flow === 'app-store-campaign' && !isIpadScreenshotDevice(descriptor)) {
+            passes.push({
+              captures: IOS_CAMPAIGN_CAPTURE_NAMES.map((filename) => ({
+                name: filename.replace(/\.png$/, ''),
+                storyId: storyForCaptureName(filename),
+              })),
+              inner: false,
+            });
+          } else {
+            const flow = descriptor ? iosSourceFlowFile(options, descriptor) : flowFileForPlatform(options, 'android');
+            passes.push({ captures: readVisualStoryCaptures(flow), inner: false });
+          }
+          for (const pass of passes) {
+            if (hingeLog) setDuoPose(device.udid, pass.inner ? 'open' : 'closed', hingeLog);
+            for (const capture of pass.captures) {
+              if (capture.nativeActivityBoard && !descriptor)
+                throw new Error('Native Live Activity captures require iOS');
+              if (capture.nativeActivityBoard && !nativeBackend)
+                nativeBackend = startScreenshotBackend({ ...options, fixtures: 'replay' });
+              if (capture.nativeActivityBoard) {
+                // End the activity and stop its process before evicting pixels:
+                // endSession alone does not cancel native thumbnail tasks.
+                endNativeActivityCapture(device.udid, captureDir);
+                if (runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]).status !== 0)
+                  throw new Error('Could not stop the previous native thumbnail producer');
+                const container = runCapture('xcrun', [
+                  'simctl',
+                  'get_app_container',
+                  device.udid,
+                  APP_ID,
+                  'group.com.boardsesh.app',
+                ]);
+                if (container.status !== 0 || !container.stdout.trim())
+                  throw new Error('Native activity app-group container unavailable');
+                clearNativeCaptureThumbnails(container.stdout.trim());
+                const restartOffset = metroLogOffset(METRO_LOG_PATH);
+                if (
+                  runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID], simulatorLaunchEnv()).status !== 0 ||
+                  !waitForMetroLogLine(isStoryRootReadyLine, restartOffset, 120, METRO_LOG_PATH)
+                )
+                  throw new Error('Story root did not restart for a fresh native capture');
+              }
+              const route = capture.nativeActivityBoard
+                ? `dev/stories/native-live-activity?board=${capture.nativeActivityBoard}&server=${encodeURIComponent(`http://localhost:${nativeBackend!.port}`)}&shot=${Date.now()}`
+                : `${storyRoute({ id: capture.storyId, theme: options.theme, variant, renderMode: options.renderMode ?? 'aura' })}&locale=${localeTarget.appLocale}`;
+              const flowFile = join(captureDir, 'navigate-story.yaml');
+              writeFileSync(
+                flowFile,
+                [
+                  `appId: ${descriptor ? APP_ID : ANDROID_DEV_PACKAGE}`,
+                  '---',
+                  ...(descriptor
+                    ? [`- setOrientation: ${pass.inner ? 'LANDSCAPE_LEFT' : descriptor.orientation}`]
+                    : []),
+                  `- openLink: com.boardsesh.app://${route}`,
+                  '- tapOn:',
+                  '    text: Open',
+                  '    optional: true',
+                ].join('\n') + '\n',
+              );
+              const offset = metroLogOffset(METRO_LOG_PATH);
+              const args = ['--device', device.udid, 'test', flowFile];
+              const status = descriptor
+                ? runIosScreenshotMaestro(args, { deviceId: device.udid, cpp: false, captureDir })
+                : runInherit('maestro', args, process.env, captureDir);
+              if (status !== 0) throw new Error(`Story navigation failed for ${capture.storyId}`);
+              if (capture.nativeActivityBoard) {
+                nativeActivityStarted = true;
+                prepareNativeActivityCapture(device.udid, capture.nativeActivityBoard, offset, captureDir);
+              } else settleAfterStory(capture.storyId, METRO_LOG_PATH, offset, 0, LOG);
+              const path = join(captureDir, `${capture.name}.png`);
+              if (descriptor) {
+                const captureStatus = hingeLog
+                  ? captureDuoDisplay(device.udid, pass.inner ? 'open' : 'closed', path)
+                  : runCapture('xcrun', ['simctl', 'io', device.udid, 'screenshot', path]).status;
+                if (captureStatus !== 0) throw new Error(`Native screenshot failed for ${capture.name}`);
+                if (hingeLog && !pngIsLit(path)) throw new Error(`Duo display is dark for ${capture.name}`);
+              } else {
+                const descriptor = openSync(path, 'w');
+                try {
+                  const result = spawnSync('adb', ['-s', device.udid, 'exec-out', 'screencap', '-p'], {
+                    stdio: ['ignore', descriptor, 'inherit'],
+                  });
+                  if (result.status !== 0) throw new Error(`Android screenshot failed for ${capture.name}`);
+                } finally {
+                  closeSync(descriptor);
+                }
+              }
+              if (
+                capture.nativeActivityBoard &&
+                runCapture('vp', ['exec', 'tsx', 'scripts/assert-native-island-capture.ts', path]).status !== 0
+              )
+                throw new Error('The native screenshot does not contain the expanded Dynamic Island');
+              if (!existsSync(path) || statSync(path).size < 1000) throw new Error(`Empty screenshot: ${capture.name}`);
+            }
+          }
+          if (descriptor && !hingeLog && normalizeCapturedIosScreenshots(captureDir, descriptor) !== 0)
+            throw new Error('Screenshot orientation normalization failed');
+          const duplicates = findDuplicateScreenshotGroups(captureDir);
+          if (duplicates.length)
+            throw new Error(`Duplicate screenshots: ${duplicates.map((group) => group.join(' = ')).join('; ')}`);
+          if (options.cpp && options.cpp !== 'all') {
+            writeFileSync(
+              join(captureDir, 'cpp-capture.json'),
+              JSON.stringify(
+                createCppStoryCapture(
+                  {
+                    target: options.cpp,
+                    sourceSha256: storySourceSha256!,
+                    locale: localeTarget.appLocale,
+                    device: deviceSlug(device.name),
+                    theme: options.theme,
+                    variant,
+                    renderMode: options.renderMode ?? 'aura',
+                  },
+                  captureDir,
+                ),
+              ),
+            );
+          }
+          const saved = collectScreenshots(
+            captureDir,
+            platform,
+            device.name,
+            localeTarget.appStoreLocales,
+            options.flow === 'app-store' || options.flow === 'app-store-campaign' || !!options.cpp,
+            options.cpp ? OUTPUT_ROOT : outputRootForFlow(options.flow),
+            options.cpp && options.cpp !== 'all' ? options.cpp : undefined,
+          );
+          if (!saved.length) throw new Error('No story captures were saved');
+          console.log(`${LOG} Saved ${saved.length} view screenshots for ${device.name} / ${localeTarget.appLocale}`);
+        }
+        succeeded = true;
+      } finally {
+        if (descriptor && nativeActivityStarted) {
+          try {
+            endNativeActivityCapture(device.udid, captureDir);
+          } catch (error) {
+            console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
+        if (!succeeded) preserveFailedRunArtifacts(captureDir);
+        rmSync(captureDir, { recursive: true, force: true });
+        if (descriptor) {
+          if (hingeLog) setDuoPose(device.udid, 'closed', hingeLog);
+          clearStatusBar(device.udid);
+          if (options.shutdown) runCapture('xcrun', ['simctl', 'shutdown', device.udid]);
+        } else clearAndroidStatusBar(device.udid);
+      }
+    }
+    return 0;
+  } finally {
+    stopMetro(metro);
+    stopScreenshotBackend(nativeBackend);
+  }
+}
+
 function runPlatform(
   originalOptions: ScreenshotOptions,
   platform: 'ios' | 'android',
@@ -4537,6 +4837,7 @@ function runPlatform(
       .map((board) => board.selector)
       .join('|');
   try {
+    if (options.flow !== 'smoke') return runVisualStories(options, platform);
     return platform === 'ios' ? runIos(options) : runAndroid(options);
   } catch (error) {
     console.error(`${LOG} FAILED: ${error instanceof Error ? error.message : String(error)}`);

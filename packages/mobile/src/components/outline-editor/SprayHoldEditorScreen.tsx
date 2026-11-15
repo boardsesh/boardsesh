@@ -80,7 +80,7 @@ import { SprayHoverPreview } from './SprayHoverPreview';
 import { SprayPencilSurface } from './SprayPencilSurface';
 import { SprayTabletChrome } from './SprayTabletChrome';
 import { SprayToolRail } from './SprayToolRail';
-import { SprayEditorKeyScope } from './SprayEditorKeyScope';
+import { SprayEditorView, SprayEditorPhoneChromeView } from './SprayEditorView';
 import { SprayPencilPalette } from './SprayPencilPalette';
 import { pencilPaletteCentre } from './pencil-palette-layout';
 import {
@@ -108,13 +108,7 @@ import { SprayEditorLoading, type SprayEditorLoadingPhoto } from './SprayEditorL
 import { SprayScanBand, SCAN_BAND_HEIGHT } from './SprayScanBand';
 import { SprayHoldSpotlight } from './SprayHoldSpotlight';
 import { SprayPublishSweep, PUBLISH_SWEEP_MS } from './SprayPublishSweep';
-import {
-  fitSprayPhoto,
-  SPRAY_BAR_GUTTER,
-  SPRAY_BAR_HEIGHT,
-  SPRAY_BAR_TOTAL_HEIGHT,
-  SPRAY_EDITOR_MAX_SCALE,
-} from './spray-photo-frame';
+import { fitSprayPhoto, SPRAY_BAR_GUTTER, SPRAY_BAR_HEIGHT, SPRAY_EDITOR_MAX_SCALE } from './spray-photo-frame';
 import { photoSignatureLapsed, sprayFullResolutionPhoto } from './spray-full-photo';
 import { discardSprayFullPhoto, ensureSprayFullPhotoCached } from '../../lib/spray/spray-photo-cache';
 import { useSprayAddShape, type SprayAddShape } from './use-spray-add-shape';
@@ -179,9 +173,6 @@ const REVEAL_FADE_MS = 150;
 const CELEBRATION_MS = PUBLISH_SWEEP_MS + 250;
 /** The same, with Reduce Motion: long enough to read the checkmark. */
 const CELEBRATION_REDUCED_MS = 450;
-
-/** Screenshot captures never show a hint over the wall. */
-const SCREENSHOT_MODE = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
 
 const NO_POINTS: number[] = [];
 const NO_HOLD_TARGETS: BoardHoldTarget[] = [];
@@ -910,7 +901,7 @@ export function SprayHoldEditorScreen({
   };
 
   const hints = useSprayEditorHints({
-    enabled: viewerCanEdit && !SCREENSHOT_MODE,
+    enabled: viewerCanEdit,
     hasMaybes: showMaybes && counts.maybes > 0,
   });
   const recordHint = hints.record;
@@ -3135,7 +3126,7 @@ export function SprayHoldEditorScreen({
   const navigation = useNavigation();
   const headerActionsShown = !tablet && boardShowing && viewerCanEdit;
   const headerPrimaryDisabled = !canEdit || primaryBlocked || counts.on === 0;
-  const headerHelp = SCREENSHOT_MODE ? undefined : hints.replay;
+  const headerHelp = hints.replay;
   // `pressPrimary` follows the save mutation's result, a new object every
   // render, so the header gets a forwarder with one identity instead.
   const pressPrimaryRef = useRef(pressPrimary);
@@ -3240,253 +3231,252 @@ export function SprayHoldEditorScreen({
   // has to be an ancestor of every view a touch lands on (see
   // `SprayEditorKeyScope`). Read-only, it registers no shortcut.
   return (
-    <SprayEditorKeyScope
-      style={[styles.container, { backgroundColor: systemColors.background, marginTop: headerInset }]}
-      contentStyle={styles.content}
+    <SprayEditorView
+      headerInset={headerInset}
       onLayout={handleAreaLayout}
       commands={viewerCanEdit ? shortcutCommands : NO_SHORTCUT_COMMANDS}
       onShortcut={handleShortcut}
       onPencilGesture={handlePencilGesture}
-    >
-      {boardRender.width > 0 ? (
-        <View testID="spray-hold-editor-board" style={[styles.boardSlot, { height: boardViewport.height }]}>
-          <InteractiveFilterBoard
-            backgroundPhotoUrl={wall.photoUrl}
-            fullResolutionPhoto={fullResolutionPhoto}
-            onFullResolutionPhotoError={handleFullPhotoError}
-            boardName={SPRAY_BOARD_NAME}
-            layoutId={layoutId}
-            sizeId={layoutId}
-            setIds=""
-            boardWidth={wall.photoWidth}
-            boardHeight={wall.photoHeight}
-            holdTargets={NO_HOLD_TARGETS}
-            renderWidth={boardRender.width}
-            renderHeight={boardRender.height}
-            renderInTransform={renderInTransform}
-            renderAboveBoard={renderAboveBoard}
-            resetZoomStyle={resetZoomStyle}
-            controlRef={boardControlRef}
-            maxScale={SPRAY_EDITOR_MAX_SCALE}
-            pinchPans
-            viewport={boardViewport}
-          />
-        </View>
-      ) : null}
-
-      {banner ? (
-        <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
-          <SprayEditorBanner {...banner} accessory={bannerAccessory} />
-        </View>
-      ) : null}
-
-      {hint && hintLine ? (
-        <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
-          <OnboardingTipBanner
-            solid
-            text={hintLine}
-            dismissLabel={t('sprayEditor.hints.dismiss')}
-            onDismiss={() => hints.dismiss(hint)}
-          />
-        </View>
-      ) : null}
-
-      {tablet ? (
-        <SprayTabletChrome
-          railSide={railSide}
-          landscape={landscape}
-          insets={insets}
-          rail={
-            <SprayToolRail
-              side={railSide}
-              onSideChange={setRailSide}
-              windowWidth={area.width}
-              leftInset={insets.left}
-              rightInset={insets.right}
-              locked={!canEdit}
-              canUndo={canUndo}
-              canRedo={canRedo}
-              onUndo={handleUndo}
-              onRedo={handleRedo}
-              mode={modeForTool(tool)}
-              onModeChange={handleModeChange}
-              maybeControls={capabilities.canReviewCandidates && counts.maybes > 0}
-              showMaybes={showMaybes}
-              onToggleMaybes={handleToggleMaybes}
-              onKeepMaybes={handleKeepMaybes}
-              pencilToggleAvailable={pencil.toggleAvailable}
-              pencilOnly={pencil.pencilOnly}
-              onTogglePencilOnly={pencil.togglePencilOnly}
-              onFit={handleFitWall}
-              onMore={toggleMenu}
-              moreExpanded={menuOpen && canEdit}
-              onHelp={viewerCanEdit && !SCREENSHOT_MODE ? hints.replay : undefined}
+      board={
+        boardRender.width > 0 ? (
+          <View testID="spray-hold-editor-board" style={[styles.boardSlot, { height: boardViewport.height }]}>
+            <InteractiveFilterBoard
+              backgroundPhotoUrl={wall.photoUrl}
+              fullResolutionPhoto={fullResolutionPhoto}
+              onFullResolutionPhotoError={handleFullPhotoError}
+              boardName={SPRAY_BOARD_NAME}
+              layoutId={layoutId}
+              sizeId={layoutId}
+              setIds=""
+              boardWidth={wall.photoWidth}
+              boardHeight={wall.photoHeight}
+              holdTargets={NO_HOLD_TARGETS}
+              renderWidth={boardRender.width}
+              renderHeight={boardRender.height}
+              renderInTransform={renderInTransform}
+              renderAboveBoard={renderAboveBoard}
+              resetZoomStyle={resetZoomStyle}
+              controlRef={boardControlRef}
+              maxScale={SPRAY_EDITOR_MAX_SCALE}
+              pinchPans
+              viewport={boardViewport}
             />
-          }
-          menu={
-            menuOpen && canEdit ? (
-              <SprayEditorMenu
+          </View>
+        ) : null
+      }
+      banner={
+        banner ? (
+          <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
+            <SprayEditorBanner {...banner} accessory={bannerAccessory} />
+          </View>
+        ) : null
+      }
+      hint={
+        hint && hintLine ? (
+          <View pointerEvents="box-none" style={[styles.bannerSlot, bannerInsets]}>
+            <OnboardingTipBanner
+              solid
+              text={hintLine}
+              dismissLabel={t('sprayEditor.hints.dismiss')}
+              onDismiss={() => hints.dismiss(hint)}
+            />
+          </View>
+        ) : null
+      }
+      chrome={
+        tablet ? (
+          <SprayTabletChrome
+            railSide={railSide}
+            landscape={landscape}
+            insets={insets}
+            rail={
+              <SprayToolRail
+                side={railSide}
+                onSideChange={setRailSide}
+                windowWidth={area.width}
+                leftInset={insets.left}
+                rightInset={insets.right}
+                locked={!canEdit}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                mode={modeForTool(tool)}
+                onModeChange={handleModeChange}
+                maybeControls={capabilities.canReviewCandidates && counts.maybes > 0}
+                showMaybes={showMaybes}
+                onToggleMaybes={handleToggleMaybes}
+                onKeepMaybes={handleKeepMaybes}
+                pencilToggleAvailable={pencil.toggleAvailable}
+                pencilOnly={pencil.pencilOnly}
+                onTogglePencilOnly={pencil.togglePencilOnly}
+                onFit={handleFitWall}
+                onMore={toggleMenu}
+                moreExpanded={menuOpen && canEdit}
+                onHelp={viewerCanEdit ? hints.replay : undefined}
+              />
+            }
+            menu={
+              menuOpen && canEdit ? (
+                <SprayEditorMenu
+                  counts={counts}
+                  showMaybes={showMaybes}
+                  canReviewMaybes={capabilities.canReviewCandidates}
+                  includeMaybeRows={false}
+                  onKeepMaybes={handleKeepMaybes}
+                  onToggleMaybes={handleToggleMaybes}
+                  onStartOver={handleStartOver}
+                  onPreviewHoldsOnly={openHoldsOnlyPreview}
+                  onClose={closeMenu}
+                />
+              ) : null
+            }
+            inspector={
+              selectedHold && selectedRole && tool === 'edit' && canEdit ? (
+                <SprayHoldInspector
+                  role={selectedRole}
+                  source={selectedHold.source}
+                  confidence={selectedHold.confidence}
+                  canShrink={shrinkTo != null}
+                  canGrow={growTo != null}
+                  onShrink={handleShrink}
+                  onGrow={handleGrow}
+                  onTrace={handleStartTrace}
+                  onRefine={handleStartRefine}
+                  onJoin={handleStartJoin}
+                  onSwitchOff={handleSwitchSelectedOff}
+                  onSwitchOn={handleSwitchSelectedOn}
+                  onDelete={handleDelete}
+                  canStep={readingOrder.length > 1}
+                  onPrevious={handleSelectPrevious}
+                  onNext={handleSelectNext}
+                  onClose={handlePutDown}
+                />
+              ) : null
+            }
+            dock={
+              <>
+                {undoToastNode}
+                {cornersFinishNode}
+                {refineBarNode}
+              </>
+            }
+            counts={counts}
+            showMaybes={showMaybes}
+            celebrating={celebrating}
+            locked={!canEdit}
+            primaryLabel={primaryLabel}
+            primaryLoading={committing}
+            primaryDisabled={headerPrimaryDisabled}
+            onPrimary={pressPrimary}
+          />
+        ) : (
+          <SprayEditorPhoneChromeView
+            bottomInset={insets.bottom}
+            onDockLayout={handleDockLayout}
+            dock={
+              <>
+                {undoToastNode}
+
+                {selectedHold && selectedRole && tool === 'edit' && canEdit ? (
+                  <SprayHoldChipBar
+                    role={selectedRole}
+                    canShrink={shrinkTo != null}
+                    canGrow={growTo != null}
+                    onShrink={handleShrink}
+                    onGrow={handleGrow}
+                    onSwitchOff={handleSwitchSelectedOff}
+                    onSwitchOn={handleSwitchSelectedOn}
+                    onDelete={handleDelete}
+                  />
+                ) : null}
+
+                {cornersFinishNode}
+                {refineBarNode}
+              </>
+            }
+            bottomBar={
+              <SprayEditorBottomBar
+                canUndo={canUndo}
+                canRedo={canRedo}
+                mode={modeForTool(tool)}
+                onModeChange={handleModeChange}
+                locked={!canEdit}
+                bottomInset={insets.bottom}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+              />
+            }
+            counts={
+              <SprayCountCapsule
                 counts={counts}
                 showMaybes={showMaybes}
-                canReviewMaybes={capabilities.canReviewCandidates}
-                includeMaybeRows={false}
-                onKeepMaybes={handleKeepMaybes}
-                onToggleMaybes={handleToggleMaybes}
-                onStartOver={handleStartOver}
-                onPreviewHoldsOnly={openHoldsOnlyPreview}
-                onClose={closeMenu}
+                celebrating={celebrating}
+                locked={!canEdit}
+                onPress={toggleMenu}
+                expanded={menuOpen && canEdit}
               />
-            ) : null
-          }
-          inspector={
-            selectedHold && selectedRole && tool === 'edit' && canEdit ? (
-              <SprayHoldInspector
-                role={selectedRole}
-                source={selectedHold.source}
-                confidence={selectedHold.confidence}
-                canShrink={shrinkTo != null}
-                canGrow={growTo != null}
-                onShrink={handleShrink}
-                onGrow={handleGrow}
-                onTrace={handleStartTrace}
-                onRefine={handleStartRefine}
-                onJoin={handleStartJoin}
-                onSwitchOff={handleSwitchSelectedOff}
-                onSwitchOn={handleSwitchSelectedOn}
-                onDelete={handleDelete}
-                canStep={readingOrder.length > 1}
-                onPrevious={handleSelectPrevious}
-                onNext={handleSelectNext}
-                onClose={handlePutDown}
-              />
-            ) : null
-          }
-          dock={
-            <>
-              {undoToastNode}
-              {cornersFinishNode}
-              {refineBarNode}
-            </>
-          }
-          counts={counts}
-          showMaybes={showMaybes}
-          celebrating={celebrating}
-          locked={!canEdit}
-          primaryLabel={primaryLabel}
-          primaryLoading={committing}
-          primaryDisabled={headerPrimaryDisabled}
-          onPrimary={pressPrimary}
-        />
-      ) : (
-        <>
-          {/* One column docked just above the bottom bar: the undo toast on top,
-              the chip bar for the picked hold (or Corners' Finish) under it, so the
-              two stack instead of overlapping however many rows the chips wrap to. */}
-          <View
-            pointerEvents="box-none"
-            onLayout={handleDockLayout}
-            style={[styles.dock, { bottom: insets.bottom + SPRAY_BAR_GUTTER * 2 + SPRAY_BAR_TOTAL_HEIGHT }]}
-          >
-            {undoToastNode}
-
-            {selectedHold && selectedRole && tool === 'edit' && canEdit ? (
-              <SprayHoldChipBar
-                role={selectedRole}
-                canShrink={shrinkTo != null}
-                canGrow={growTo != null}
-                onShrink={handleShrink}
-                onGrow={handleGrow}
-                onSwitchOff={handleSwitchSelectedOff}
-                onSwitchOn={handleSwitchSelectedOn}
-                onDelete={handleDelete}
-              />
-            ) : null}
-
-            {cornersFinishNode}
-            {refineBarNode}
-          </View>
-
-          <SprayEditorBottomBar
+            }
+            menu={
+              menuOpen && canEdit ? (
+                <SprayEditorMenu
+                  counts={counts}
+                  showMaybes={showMaybes}
+                  canReviewMaybes={capabilities.canReviewCandidates}
+                  onKeepMaybes={handleKeepMaybes}
+                  onToggleMaybes={handleToggleMaybes}
+                  onStartOver={handleStartOver}
+                  onPreviewHoldsOnly={openHoldsOnlyPreview}
+                  onClose={closeMenu}
+                  style={styles.menuDown}
+                />
+              ) : null
+            }
+          />
+        )
+      }
+      palette={
+        pencilPalette && tablet && canEdit ? (
+          <SprayPencilPalette
+            centre={pencilPaletteCentre({
+              x: pencilPalette.x,
+              y: pencilPalette.y,
+              areaWidth: area.width,
+              areaHeight: area.height,
+            })}
+            tool={tool}
+            addShape={addShape}
             canUndo={canUndo}
             canRedo={canRedo}
-            mode={modeForTool(tool)}
-            onModeChange={handleModeChange}
-            locked={!canEdit}
-            bottomInset={insets.bottom}
+            onMark={handleMarkTool}
+            onDraw={handlePaletteDraw}
+            onCorners={handlePaletteCorners}
             onUndo={handleUndo}
             onRedo={handleRedo}
+            onClose={closePencilPalette}
           />
-
-          {/* Last of the phone chrome, so the wall-wide menu it opens draws over
-              the banner: the counts at top-left, the menu dropping down from
-              them. The reset-zoom control has the top-right corner. */}
-          <View pointerEvents="box-none" style={styles.topStrip}>
-            <SprayCountCapsule
-              counts={counts}
-              showMaybes={showMaybes}
-              celebrating={celebrating}
-              locked={!canEdit}
-              onPress={toggleMenu}
-              expanded={menuOpen && canEdit}
-            />
-            {menuOpen && canEdit ? (
-              <SprayEditorMenu
-                counts={counts}
-                showMaybes={showMaybes}
-                canReviewMaybes={capabilities.canReviewCandidates}
-                onKeepMaybes={handleKeepMaybes}
-                onToggleMaybes={handleToggleMaybes}
-                onStartOver={handleStartOver}
-                onPreviewHoldsOnly={openHoldsOnlyPreview}
-                onClose={closeMenu}
-                style={styles.menuDown}
-              />
-            ) : null}
-          </View>
-        </>
-      )}
-
-      {pencilPalette && tablet && canEdit ? (
-        <SprayPencilPalette
-          centre={pencilPaletteCentre({
-            x: pencilPalette.x,
-            y: pencilPalette.y,
-            areaWidth: area.width,
-            areaHeight: area.height,
-          })}
-          tool={tool}
-          addShape={addShape}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          onMark={handleMarkTool}
-          onDraw={handlePaletteDraw}
-          onCorners={handlePaletteCorners}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onClose={closePencilPalette}
-        />
-      ) : null}
-
-      {/* Last, so it draws over the chrome as well as the board: it is only up
-          while a finger is on the wall, and it takes no touches. */}
-      {loupeContent && boardRender.width > 0 ? (
-        <SprayLoupe
-          feed={loupeFeed}
-          magnificationSV={loupeMagnificationSV}
-          // The board's clip is its viewport, which fills the editor from its
-          // top-left: the overlays' points are the editor's own.
-          clipOffsetX={0}
-          clipOffsetY={0}
-          hostWidth={area.width}
-          hostHeight={area.height}
-          topSafe={LOUPE_TOP_SAFE}
-          renderWidth={boardRender.width}
-          renderHeight={boardRender.height}
-        >
-          {loupeContent}
-        </SprayLoupe>
-      ) : null}
-    </SprayEditorKeyScope>
+        ) : null
+      }
+      loupe={
+        loupeContent && boardRender.width > 0 ? (
+          <SprayLoupe
+            feed={loupeFeed}
+            magnificationSV={loupeMagnificationSV}
+            // The board's clip is its viewport, which fills the editor from its
+            // top-left: the overlays' points are the editor's own.
+            clipOffsetX={0}
+            clipOffsetY={0}
+            hostWidth={area.width}
+            hostHeight={area.height}
+            topSafe={LOUPE_TOP_SAFE}
+            renderWidth={boardRender.width}
+            renderHeight={boardRender.height}
+          >
+            {loupeContent}
+          </SprayLoupe>
+        ) : null
+      }
+    />
   );
 }
 
@@ -3622,12 +3612,6 @@ function rejectionMessage(reason: StrokeRejection, t: Translate): string {
 export { confirmDiscardSprayEdits, type SprayDiscardStrings } from './spray-discard-guard';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    alignItems: 'center',
-  },
   boardSlot: {
     alignSelf: 'stretch',
     alignItems: 'center',
@@ -3650,23 +3634,8 @@ const styles = StyleSheet.create({
   },
   // The phone's top row: the count capsule at the left, stopping short of the
   // reset-zoom control's corner at the right.
-  topStrip: {
-    position: 'absolute',
-    top: spacing[2],
-    left: spacing[2],
-    right: spacing[2] * 2 + glassSize.capsule,
-    alignItems: 'flex-start',
-    gap: spacing[2],
-  },
   menuDown: {
     alignSelf: 'flex-start',
-  },
-  dock: {
-    position: 'absolute',
-    left: spacing[4],
-    right: spacing[4],
-    alignItems: 'center',
-    gap: spacing[2],
   },
   // The ring layer while a hold is refined: still there for context, but behind the area.
   refineDimmed: {

@@ -1,17 +1,18 @@
-import { MEDIUM_LARGE_SNAP_POINTS } from '../sheet-snap-points';
+import { QueueSheetView } from './QueueSheetView';
+
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StyleSheet, View } from 'react-native';
+
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueListBody, type QueueListBodyHandle } from './QueueListBody';
 import type { QueueItemRowBoard } from '../QueueItemRow';
 import { useQueueData } from '../../providers/queue-provider';
-import { useTheme } from '../../providers/theme-provider';
+
 import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
 import { sanitizeQueueSnapshot } from '../../lib/queue-privacy';
-import { useSheetBackgroundStyle } from '../use-sheet-background-style';
+
 import { useLogAscentSheetHost } from '../tick/use-log-ascent-sheet-host';
 import type { QueueHistoryTickHandler } from './use-queue-sheet-handlers';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
@@ -51,8 +52,6 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   { board, onClose, onDismissed, onClimbPress, onOpenActions, onSuggestionPress, onTickHistory },
   ref,
 ) {
-  const { sheet } = useTheme();
-  const sheetBackgroundStyle = useSheetBackgroundStyle();
   const sheetRef = useRef<BottomSheetModal>(null);
   const bodyRef = useRef<QueueListBodyHandle>(null);
   const resetTickRef = useRef<() => void>(() => {});
@@ -78,8 +77,6 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   // isPresented so the imperative-open path and the coordinator's re-present
   // path both read active.
   const [isActive, setIsActive] = useState(false);
-
-  const snapPoints = MEDIUM_LARGE_SNAP_POINTS;
 
   // Both QueueSheet instances (root + /play copy, PR #3337) stay mounted the whole
   // session. Freeze the hidden one's queue data to a referentially stable snapshot
@@ -199,47 +196,17 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
   );
 
   return (
-    <BottomSheetModal
+    <QueueSheetView
       ref={sheetRef}
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      // Freeze the sheet pan while a row is being dragged so scroll-to-expand
-      // never fights the reorder gesture.
-      enableContentPanningGesture={!isDragging}
-      enableHandlePanningGesture={!isDragging}
+      isDragging={isDragging}
       onChange={handleSheetChange}
       onFullyDismissed={managed.onFullyDismissed}
-      handleIndicatorStyle={sheet.handleStyle}
-      backgroundStyle={sheetBackgroundStyle}
-      style={styles.sheet}
     >
-      {Platform.OS === 'android' ? (
-        // Expo's Android sheet uses a separate dialog window. Its RN content
-        // needs its own gesture root so row recognizers receive
-        // the native pointer stream (#5923).
-        <GestureHandlerRootView style={styles.gestureRoot}>{sheetContent}</GestureHandlerRootView>
-      ) : (
-        sheetContent
-      )}
-    </BottomSheetModal>
+      {sheetContent}
+    </QueueSheetView>
   );
 });
 
 const styles = StyleSheet.create({
   content: { flex: 1 },
-  gestureRoot: { flex: 1 },
-  sheet: {
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 16,
-      },
-    }),
-  },
 });

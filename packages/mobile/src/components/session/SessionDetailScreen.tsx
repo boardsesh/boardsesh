@@ -1,38 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
-import { FlashList } from '@shopify/flash-list';
-import { useTranslation } from 'react-i18next';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
-import type { SessionDetailTick, SessionFeedParticipant, SocialEntityType } from '@boardsesh/shared-schema';
 import { formatTickAbsoluteTime } from '@boardsesh/profile-stats';
-import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { ActivityIndicator } from '../ActivityIndicator';
-import { SectionHeader } from '../SectionHeader';
-import { CommentSheet } from '../you/CommentSheet';
-import { SessionSummaryCard, SessionNotesCard } from './SessionSummaryCard';
-import { SessionEditSheet } from './SessionEditSheet';
-import { SessionAnalyticsSection } from './SessionAnalyticsSection';
-import { SessionBetaCarousel } from './SessionBetaCarousel';
-import { SessionLeaderboard } from './SessionLeaderboard';
-import { SessionClimbsListItem } from './SessionClimbsListItem';
-import { useSessionWorkoutView } from './workout/use-session-workout-view';
-import {
-  buildWorkoutClimbRows,
-  workoutClimbsRowKey,
-  workoutClimbsRowType,
-  type WorkoutClimbsRow,
-  type WorkoutClimbsRows,
-} from './workout/workout-climb-rows';
-import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/graphql/hooks';
-import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
+import type { SessionDetailTick, SessionFeedParticipant, SocialEntityType } from '@boardsesh/shared-schema';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { getSoleBoardType } from '../../lib/grade-label';
+import { useBulkVoteSummaries, useProfile, useSessionDetail } from '../../lib/graphql/hooks';
+import { useTickListActivation } from '../../lib/playlists/use-tick-list-activation';
+import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
 import { spacing } from '../../theme/tokens';
 import { useVariantValue } from '../../theme/variants';
-import { useTheme } from '../../providers/theme-provider';
-import { getSoleBoardType } from '../../lib/grade-label';
-import { canEditSessionDetail, isDailySessionId } from '../../lib/session-edit-permissions';
+import { SectionHeader } from '../SectionHeader';
+import { CommentSheet } from '../you/CommentSheet';
+import { SessionAnalyticsSection } from './SessionAnalyticsSection';
+import { SessionBetaCarousel } from './SessionBetaCarousel';
+import { SessionClimbsListItem } from './SessionClimbsListItem';
+import { SessionDetailView } from './SessionDetailView';
+import { SessionEditSheet } from './SessionEditSheet';
+import { SessionLeaderboard } from './SessionLeaderboard';
+import { SessionNotesCard, SessionSummaryCard } from './SessionSummaryCard';
+import { useSessionWorkoutView } from './workout/use-session-workout-view';
+import { buildWorkoutClimbRows, type WorkoutClimbsRow, type WorkoutClimbsRows } from './workout/workout-climb-rows';
 
 const EMPTY_TICKS: SessionDetailTick[] = [];
 
@@ -51,7 +41,6 @@ function plainTickRows(ticks: SessionDetailTick[]): WorkoutClimbsRows {
 export default function SessionDetailScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
   const navigation = useNavigation();
   const bottomChrome = useBottomChromeMetrics();
   // Session detail is a pushed route without queue/accessory chrome. Use the
@@ -147,24 +136,16 @@ export default function SessionDetailScreen() {
     });
   }, [navigation, headerTitle]);
 
-  if (isPending) {
+  if (isPending || !session)
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </View>
+      <SessionDetailView
+        loading={isPending}
+        found={!!session}
+        rows={climbRows.rows}
+        renderItem={renderItem}
+        paddingBottom={paddingBottom}
+      />
     );
-  }
-
-  if (!session) {
-    return (
-      <View style={styles.centered}>
-        <Icon name="history" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" color={systemColors.secondaryLabel} style={styles.notFound}>
-          {t('mobileDetail.notFound')}
-        </Text>
-      </View>
-    );
-  }
 
   const header = (
     <View>
@@ -193,44 +174,33 @@ export default function SessionDetailScreen() {
   );
 
   return (
-    // testID anchors the store-screenshot flows: it only exists once the session
-    // has loaded and the detail is on screen (the loading / not-found states
-    // above render without it), so Maestro can wait for the real recap.
-    <View testID="session-detail-screen" style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
-      <FlashList
-        data={climbRows.rows}
-        renderItem={renderItem}
-        keyExtractor={workoutClimbsRowKey}
-        getItemType={workoutClimbsRowType}
-        ListHeaderComponent={header}
-        // The stack header is transparent + blurred on iOS, so let the list
-        // inset its content below it (and the status bar) rather than draw under.
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom }}
-      />
+    <SessionDetailView
+      loading={false}
+      found
+      rows={climbRows.rows}
+      renderItem={renderItem}
+      header={header}
+      paddingBottom={paddingBottom}
+      overlays={
+        <>
+          <CommentSheet
+            sheetRef={commentSheetRef}
+            entityId={commentTarget?.entityId ?? null}
+            entityType={commentTarget?.entityType ?? 'session'}
+            onClose={() => setCommentTarget(null)}
+          />
 
-      <CommentSheet
-        sheetRef={commentSheetRef}
-        entityId={commentTarget?.entityId ?? null}
-        entityType={commentTarget?.entityType ?? 'session'}
-        onClose={() => setCommentTarget(null)}
-      />
-
-      {canEdit ? (
-        <SessionEditSheet
-          visible={editVisible}
-          sessionId={session.sessionId}
-          currentName={session.sessionName ?? null}
-          currentNotes={session.notes ?? null}
-          onClose={closeEdit}
-        />
-      ) : null}
-    </View>
+          {canEdit ? (
+            <SessionEditSheet
+              visible={editVisible}
+              sessionId={session.sessionId}
+              currentName={session.sessionName ?? null}
+              currentNotes={session.notes ?? null}
+              onClose={closeEdit}
+            />
+          ) : null}
+        </>
+      }
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing[3], paddingHorizontal: spacing[8] },
-  notFound: { textAlign: 'center' },
-});

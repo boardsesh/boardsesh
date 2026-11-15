@@ -1,12 +1,10 @@
-import { memo, useCallback } from 'react';
-import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
-import { useTranslation } from 'react-i18next';
 import { betaLinkIdentity } from '@boardsesh/shared-schema';
-import { HorizontalScrollSection } from '../HorizontalScrollSection';
-import { BetaVideoCard, BETA_CARD_COMPACT_HEIGHT } from '../play-drawer/BetaVideoCard';
-import { useUserBetaLinks } from '../../lib/graphql/hooks';
+import { memo, useCallback } from 'react';
 import { useBetaShelfCollapse } from '../../lib/beta-shelf-collapse';
-import { screenshotModeLoadMore } from '../../lib/screenshot-mode';
+import { useUserBetaLinks } from '../../lib/graphql/hooks';
+import { scopedRouter as router } from '../../lib/routing/scoped-navigation';
+import { BetaVideoCard } from '../play-drawer/BetaVideoCard';
+import { ProfileBetaShelfView } from './ProfileBetaShelfView';
 
 type ProfileBetaShelfProps = {
   /** The climber whose beta videos to show (own id on the You tab). */
@@ -20,7 +18,6 @@ type ProfileBetaShelfProps = {
  * Renders nothing for climbers with no beta so it never wastes profile space.
  */
 export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: ProfileBetaShelfProps) {
-  const { t } = useTranslation('you');
   // Deliberately not gated on `expanded`: this shelf hides itself entirely when
   // the climber has no beta, so skipping the query while collapsed would strip
   // the header too and leave no way to unfold it again. That protection leans on
@@ -34,25 +31,19 @@ export const ProfileBetaShelf = memo(function ProfileBetaShelf({ userId }: Profi
     router.push({ pathname: '/users/[userId]/beta', params: { userId } });
   }, [userId]);
 
-  // Nothing to show and the first page has settled — keep the profile clean.
-  if (!isLoading && videos.length === 0) return null;
-
-  const hasVideos = videos.length > 0;
-
   return (
-    <HorizontalScrollSection
-      title={t('mobile.profile.betaShelf.title')}
-      actionLabel={hasVideos ? t('mobile.profile.betaShelf.seeAll') : undefined}
-      onActionPress={hasVideos ? handleSeeAll : undefined}
-      loading={isLoading && !hasVideos}
+    <ProfileBetaShelfView
+      count={videos.length}
+      isLoading={isLoading}
       isLoadingMore={isLoadingMore}
-      onEndReached={screenshotModeLoadMore(loadMore)}
-      minHeight={BETA_CARD_COMPACT_HEIGHT}
-      disclosure={{ expanded, onToggle: toggle }}
+      expanded={expanded}
+      onToggle={toggle}
+      onLoadMore={loadMore}
+      onSeeAll={handleSeeAll}
     >
       {videos.map((video) => (
         <BetaVideoCard key={betaLinkIdentity(video.betaLink.link)} link={video.betaLink} size="compact" />
       ))}
-    </HorizontalScrollSection>
+    </ProfileBetaShelfView>
   );
 });

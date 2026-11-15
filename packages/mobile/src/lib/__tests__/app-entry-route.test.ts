@@ -75,15 +75,10 @@ describe('ordinary app entry', () => {
     expect(getAppEntryTab()).toBe(normaliseStartupScreen('profile'));
   });
 
-  it('preserves the screenshot orchestrator Home readiness contract', () => {
+  it.each(['home', 'climbs'] as const)('opens the chosen %s tab regardless of capture flags', (startupScreen) => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    expect(getAppEntryTab()).toBe('home');
-    expect(getAppEntryHref()).toBe('/(tabs)/home');
-  });
-
-  it('starts screenshot captures on Home even when the simulator was left on Climbs', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    setSetting('startupScreen', 'climbs');
-    expect(getAppEntryTab()).toBe('home');
+    setSetting('startupScreen', startupScreen);
+    expect(getAppEntryTab()).toBe(startupScreen);
+    expect(getAppEntryHref()).toBe(`/(tabs)/${startupScreen}`);
   });
 });

@@ -69,11 +69,11 @@ describe('FeatureFlagsProvider', () => {
     }
   });
 
-  it('retains deterministic PNGs for screenshot fixtures', () => {
+  it('keeps GPU availability independent of capture configuration', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     try {
       const { result } = renderHook(() => useGpuClimbOverlayEnabled());
-      expect(result.current).toBe(false);
+      expect(result.current).toBe(true);
     } finally {
       vi.unstubAllEnvs();
     }

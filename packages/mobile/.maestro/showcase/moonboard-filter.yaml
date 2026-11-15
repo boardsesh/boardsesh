@@ -3,6 +3,12 @@ name: showcase take - native MoonBoard grade filter
 ---
 # A complete genuine sheet keeps the successful path. One real Close/reopen
 # may recover a collapsed native host; incomplete controls still fail the take.
+- runFlow:
+    when:
+      notVisible: '${SHOWCASE_FILTER_CLOSE}'
+    commands:
+      - tapOn: '${SHOWCASE_FILTER_BUTTON}'
+      - waitForAnimationToEnd
 - evalScript: ${http.get(SHOWCASE_SIGNAL_URL + '/mark/flow-start')}
 - waitForAnimationToEnd:
     timeout: 30000

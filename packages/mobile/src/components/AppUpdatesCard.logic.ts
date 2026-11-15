@@ -36,10 +36,3 @@ export function translateAppReleaseLabel(
       return t('mobile.changelog.updates.native');
   }
 }
-
-/** Only supplies a card view model; actual update operations and reports keep their real identity. */
-export function screenshotReleaseScenario(): 'regular' | 'canary' | 'preview' | null {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1') return null;
-  const scenario = process.env.EXPO_PUBLIC_SCREENSHOT_RELEASE_SCENARIO;
-  return scenario === 'regular' || scenario === 'canary' || scenario === 'preview' ? scenario : null;
-}

@@ -2,7 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { Column, Icon, IconButton, ModalBottomSheet, Row, Text, TextButton } from '@expo/ui/jetpack-compose';
 import type { ModalBottomSheetRef } from '@expo/ui/jetpack-compose';
-import { fillMaxWidth, height, padding, weight } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, height, padding, weight, onGloballyPositioned } from '@expo/ui/jetpack-compose/modifiers';
 import { ComposeHost } from './ComposeHost.android';
 import { ClimbFilterForm, type ClimbFilterFormHandle } from './ClimbFilterForm.android';
 import { useTheme } from '../providers/theme-provider';
@@ -16,6 +16,7 @@ export const ClimbFilterSurface = forwardRef<ClimbFilterSurfaceHandle, ClimbFilt
   function ClimbFilterSurface(
     {
       model,
+      onPresented,
       title,
       subtitle,
       closeLabel,
@@ -34,6 +35,7 @@ export const ClimbFilterSurface = forwardRef<ClimbFilterSurfaceHandle, ClimbFilt
     const formRef = useRef<ClimbFilterFormHandle>(null);
     const [presentation, setPresentation] = useState<{ generation: number; expanded: boolean } | null>(null);
     const generationRef = useRef(0);
+    const observedPresentationRef = useRef<number | null>(null);
     const openRef = useRef(false);
     const mountedRef = useRef(true);
     const closingRef = useRef(false);
@@ -128,7 +130,39 @@ export const ClimbFilterSurface = forwardRef<ClimbFilterSurfaceHandle, ClimbFilt
           properties={{ shouldDismissOnBackPress: true, shouldDismissOnClickOutside: true }}
         >
           {/* A full-window content bound supplies both Material partial and expanded anchors. */}
-          <Column modifiers={[fillMaxWidth(), height(windowHeight * 0.9)]}>
+          <Column
+            modifiers={[
+              ...(onPresented
+                ? [
+                    onGloballyPositioned(({ width, height }) => {
+                      if (width <= 0 || height <= 0 || observedPresentationRef.current === presentation.generation)
+                        return;
+                      const handle = nativeRef.current;
+                      if (!handle) return;
+                      observedPresentationRef.current = presentation.generation;
+                      // Layout happens before Compose's entrance animation. Await
+                      // the native command for the intended anchor before reporting it.
+                      void Promise.resolve()
+                        .then(() => (presentation.expanded ? handle.expand() : handle.partialExpand()))
+                        .then(() => {
+                          if (
+                            mountedRef.current &&
+                            openRef.current &&
+                            !closingRef.current &&
+                            presentation.generation === generationRef.current
+                          )
+                            onPresented();
+                        })
+                        .catch((error: unknown) => {
+                          if (__DEV__) console.warn('[filters] native presentation unavailable', error);
+                        });
+                    }),
+                  ]
+                : []),
+              fillMaxWidth(),
+              height(windowHeight * 0.9),
+            ]}
+          >
             <Row
               modifiers={[fillMaxWidth(), padding(spacing[2], 0, spacing[2], spacing[2])]}
               verticalAlignment="center"

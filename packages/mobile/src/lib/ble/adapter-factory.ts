@@ -1,3 +1,4 @@
+import { bluetoothTransport } from './transport-runtime';
 import { Platform } from 'react-native';
 import {
   boardBleNative,
@@ -11,7 +12,6 @@ import {
   nativeBleSupportsConnectionAdoption,
   nativeBleSupportsPreparedConnections,
 } from './native-ios-adapter';
-import { loadScreenshotFakeAdapter } from './screenshot-fake-adapter-loader';
 import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
 
 // Returns the BluetoothAdapter implementation appropriate for the current
@@ -32,21 +32,13 @@ import type { BleAdapterOptions, BluetoothAdapter, BoardScanFamily, DevicePicker
 // binaries such a board stays on RNBleAdapter, which keeps the Swift encoder
 // from ever seeing its configuration.
 //
-// A screenshot build with EXPO_PUBLIC_SCREENSHOT_FAKE_BLE=1 gets a fake adapter
-// that connects to a pretend board, because the simulator has no Bluetooth (see
-// screenshot-fake-adapter.ts). The raw env comparison is inlined on purpose so
-// the branch folds away in every other build (see ../screenshot-mode.ts); the
-// loader requires the fake adapter behind the same gate, so Metro drops that
-// module from those builds too (see screenshot-fake-adapter-loader.ts).
 export function createBluetoothAdapter(
   devicePicker: DevicePickerFn,
   scanFamily: BoardScanFamily,
   options?: BleAdapterOptions,
 ): BluetoothAdapter {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
-    const FakeAdapter = loadScreenshotFakeAdapter();
-    if (FakeAdapter) return new FakeAdapter(scanFamily, options);
-  }
+  const transport = bluetoothTransport();
+  if (transport) return transport.createAdapter(devicePicker, scanFamily, options);
   const nativeCanServe = !options?.preferWriteWithResponse || nativeBleSupportsBoard(options.boardName);
   if (Platform.OS === 'ios' && boardBleNative && nativeCanServe) {
     return new NativeIosBleAdapter(devicePicker, scanFamily, options);
@@ -82,10 +74,7 @@ export function isNativeIosBleAdapter(adapter: BluetoothAdapter): adapter is Nat
 export function subscribeNativeBleConnected(
   listener: (payload: NativeBleConnectedEvent) => void,
 ): { remove: () => void } | null {
-  // The fake-Bluetooth screenshot build has no native connection to adopt.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
-    return null;
-  if (!boardBleNative || !nativeBleSupportsConnectionAdoption()) return null;
+  if (bluetoothTransport() || !boardBleNative || !nativeBleSupportsConnectionAdoption()) return null;
   return boardBleNative.addListener('connected', listener);
 }
 
@@ -94,8 +83,7 @@ export function subscribeNativeBleConnected(
  * older iOS binaries, and on any native error.
  */
 export async function getNativeBleConnectedDevice(): Promise<NativeBleConnectedDevice | null> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
-    return null;
+  if (bluetoothTransport()) return null;
   const native = boardBleNative;
   if (!native || typeof native.getConnectedDevice !== 'function') return null;
   try {
@@ -121,9 +109,7 @@ export async function getNativeBleConnectedDevice(): Promise<NativeBleConnectedD
  * and would otherwise go on offering a "Tap to reconnect" that can only fail.
  */
 export async function forgetNativeKeptBoard(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
-    return false;
-  }
+  if (bluetoothTransport()) return false;
   const native = boardBleNative;
   if (Platform.OS !== 'ios' || !native || typeof native.disconnectKeepingBoard !== 'function') return false;
   try {

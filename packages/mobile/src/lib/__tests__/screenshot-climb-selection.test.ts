@@ -5,7 +5,7 @@ import {
   screenshotLocalMirrorTestId,
   selectScreenshotGradeRange,
   screenshotWallKioskPaintedTestId,
-} from '../screenshot-climb-selection';
+} from '../../dev/integration/screenshot-climb-selection';
 import { buildCountPreviewInput } from '../climb-count-preview-input';
 import { DEFAULT_FILTERS } from '../climb-filter-types';
 

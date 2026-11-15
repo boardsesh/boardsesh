@@ -8,7 +8,6 @@ import {
 import type { ClimbLogsInput } from '@boardsesh/shared-schema';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
-import { screenshotModeNextPageParam } from '../../screenshot-mode';
 import { climbLogsPreviewQueryKey, climbLogsQueryKey } from '../query-keys';
 
 type ClimbLogsPage = GetClimbLogsQueryResponse['climbLogs'];
@@ -101,8 +100,7 @@ export function useClimbLogs({
         limit: PAGE_SIZE,
         cursor: pageParam,
       }),
-    getNextPageParam: (lastPage, allPages) =>
-      screenshotModeNextPageParam(lastPage.hasMore ? (lastPage.cursor ?? undefined) : undefined, allPages.length),
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? (lastPage.cursor ?? undefined) : undefined),
     enabled: enabled && !!viewerId && !!climbUuid,
     staleTime: 60_000,
   });
@@ -113,7 +111,6 @@ export function useClimbLogs({
  * at every angle. Feeds the card's fall-through rows when nobody followed has
  * logged the climb.
  *
- * Off in screenshot mode, so store captures need no recorded response for it.
  */
 export function useClimbLogsPreview({
   boardName,
@@ -136,7 +133,7 @@ export function useClimbLogsPreview({
         limit: PREVIEW_SIZE,
       }),
     select: (page) => page.items,
-    enabled: enabled && !!viewerId && !!climbUuid && process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1',
+    enabled: enabled && !!viewerId && !!climbUuid,
     staleTime: 5 * 60_000,
   });
 }

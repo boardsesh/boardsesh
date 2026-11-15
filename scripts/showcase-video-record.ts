@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { integrationVideoLink, integrationVideoWaitSteps } from './lib/showcase-video/integration';
 /// <reference types="node" />
 
 /**
@@ -412,12 +414,15 @@ function writeNavigationFlow(
   platform: ShowcasePlatform = 'ios',
 ): string {
   const steps: string[] = [`appId: ${platform === 'android' ? SHOWCASE_ANDROID_PACKAGE : APP_ID}`, '---'];
-  for (const link of links) {
+  for (const recipeLink of links) {
+    const command = randomUUID();
+    const link = integrationVideoLink(recipeLink, command);
     if (!SAFE_ROUTE.test(link)) throw new Error(`Unsafe deep link in the take registry: ${link}`);
     steps.push(`- openLink: "${APP_SCHEME}://${link}"`);
     // iOS asks "Open in 'Boardsesh'?" now and then; Android opens the link directly.
     if (platform === 'ios') steps.push('- tapOn:', "    text: 'Open'", '    optional: true');
     steps.push('- waitForAnimationToEnd');
+    if (link.startsWith('dev/integration/video?')) steps.push(...integrationVideoWaitSteps(command));
   }
   steps.push(
     '- extendedWaitUntil:',
@@ -524,6 +529,7 @@ function metroEnv(
   base.SCREENSHOT_USER_PASSWORD = credentials.password;
   const env = buildScreenshotEnv(screenshotOptions(args, null), base, args.locales[0]);
   env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE = '1';
+  env.EXPO_PUBLIC_RECORDING_MODE = '1';
   return env;
 }
 

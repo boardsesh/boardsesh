@@ -292,7 +292,6 @@ describe('requests per settled climb for the Climber logs card', () => {
     ['the follow snapshot is still loading', () => (viewer.follows = undefined)],
     ['the climb is only swiped past', () => (viewer.settled = false)],
     ['nobody is signed in', () => ((viewer.signedIn = false), (viewer.userId = undefined))],
-    ['a store capture is running', () => vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1')],
   ])('sends nothing at all when %s', async (_label, arrange) => {
     viewer.follows = ['friend-0'];
     arrange();
@@ -310,6 +309,14 @@ describe('requests per settled climb for the Climber logs card', () => {
     const { afterScroll } = await openThenScroll();
 
     expect(afterScroll.everyone).toBe(0);
+  });
+
+  it('keeps live requests enabled with retired capture flags', async () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    viewer.follows = ['friend-0'];
+    server.followedClimbers = 1;
+    const { afterScroll } = await openThenScroll();
+    expect(afterScroll).toEqual({ following: 1, everyone: 0 });
   });
 
   it('asks once per climb however often the drawer re-renders', async () => {

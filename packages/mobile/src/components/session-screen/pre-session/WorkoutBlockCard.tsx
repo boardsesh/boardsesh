@@ -1,3 +1,4 @@
+import { useWorkoutPresentation, type WorkoutPresentation } from './workout-presentation';
 // One workout block on the Record tab: a header with its number, its type, a
 // ⋯ menu to move or remove it and a disclosure chevron, then its fields and its
 // own climb filters while open. Warm-ups and workouts share this card, so every block reads the same.
@@ -12,13 +13,12 @@ import { Card } from '../../Card';
 import { PressableSurface } from '../../PressableSurface';
 import { SectionDisclosureChevron } from '../../SectionDisclosureChevron';
 import { Text } from '../../Text';
-import { useGradeFormat } from '../../../hooks/use-grade-format';
 import { hapticSelection } from '../../../lib/haptics';
 import { workoutStageName } from '../../../lib/workout-run-readout';
 import { formatRestLength } from '../../queue-control/rest-length.logic';
 import { useTheme } from '../../../providers/theme-provider';
 import { spacing } from '../../../theme/tokens';
-import { WorkoutBlockFields, warmUpLengthLabel } from './WorkoutBlockFields';
+import { WorkoutBlockFieldsView, warmUpLengthLabel } from './WorkoutBlockFields';
 import {
   DEFAULT_WORKOUT_FILTERS,
   blockType,
@@ -143,7 +143,7 @@ function blockSettingsSummary(
   return parts;
 }
 
-type WorkoutBlockCardProps = {
+export type WorkoutBlockCardProps = {
   block: WorkoutBlock;
   /** 1-based place in the workout. */
   position: number;
@@ -172,7 +172,12 @@ type WorkoutBlockCardProps = {
   onCardLayout: (blockId: string, cardView: ViewInstance) => void;
 };
 
-export const WorkoutBlockCard = memo(function WorkoutBlockCard({
+export const WorkoutBlockCard = memo(function WorkoutBlockCard(props: WorkoutBlockCardProps) {
+  const presentation = useWorkoutPresentation();
+  return <WorkoutBlockCardView {...props} presentation={presentation} />;
+});
+export const WorkoutBlockCardView = memo(function WorkoutBlockCardView({
+  presentation,
   block,
   position,
   canMoveUp,
@@ -192,10 +197,10 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
   onMove,
   onRemove,
   onCardLayout,
-}: WorkoutBlockCardProps) {
+}: WorkoutBlockCardProps & { presentation: WorkoutPresentation }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { formatGradeByDifficultyId } = useGradeFormat();
+  const { formatGradeByDifficultyId } = presentation;
   const cardRef = useRef<ViewInstance>(null);
   const blockId = block.id;
   const title = t('mobile.session.preGeneratorBlockTitle', { position });
@@ -360,7 +365,8 @@ export const WorkoutBlockCard = memo(function WorkoutBlockCard({
 
         {expanded ? (
           <View style={styles.body}>
-            <WorkoutBlockFields
+            <WorkoutBlockFieldsView
+              presentation={presentation}
               block={block}
               boardName={boardName}
               railGrades={railGrades}

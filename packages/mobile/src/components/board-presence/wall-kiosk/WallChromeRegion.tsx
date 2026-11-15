@@ -1,18 +1,15 @@
+import { WallIdleRecoveryView } from './WallIdleRecoveryView';
+import { WallChromeRegionView } from './WallChromeRegionView';
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useTranslation } from 'react-i18next';
 import type { BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { WallStateStrip, type WallStateMode } from './WallStateStrip';
 import { WallIdentityBlock } from './WallIdentityBlock';
 import { WallScrubber } from './WallScrubber';
-import { Text } from '../../Text';
-import { useTheme } from '../../../providers/theme-provider';
 import { useDisplayGrade } from '../../../hooks/use-display-grade';
 import { useActiveBoard } from '../../../lib/graphql/use-active-board';
 import { boardHasLights } from '../../../lib/boards/board-lighting';
 import { useSprayWallLedsEnabled } from '../../../lib/spray/use-spray-wall-leds-enabled';
 import { formatRelativeTime } from '../../../lib/format-relative-time';
-import { borderRadius, spacing } from '../../../theme/tokens';
 import type { WallKioskRegion } from './wall-kiosk-layout';
 import { resolveWallKioskBandColumns, type WallKioskTypeScale } from './wall-kiosk-type';
 import type { WallPreviewState } from './useWallPreview';
@@ -32,46 +29,17 @@ function WallIdleRecovery({
   typeScale: WallKioskTypeScale;
   boardName?: string;
 }) {
-  const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
-  // Same source as WallStateStrip's idle line so the two can't disagree about
-  // whether anything on this wall lights up: a light kit, a wall device, or this
-  // phone's LED setup on a spray wall.
   const { data: activeBoard } = useActiveBoard();
   const sprayLedsEnabled = useSprayWallLedsEnabled(activeBoard?.boardType, activeBoard?.layoutId);
-  const ledless = !boardHasLights(activeBoard) && !sprayLedsEnabled;
-
-  const name = lastLitClimb?.name?.trim() || '';
-  // BoardPresenceClimb carries no Boardsesh grade today, so `resolveGrade` falls
-  // back to the legacy label + colour — lights up once the backend stamps them.
-  const resolvedGrade = resolveGrade({ difficulty: lastLitClimb?.grade ?? '' }, boardName);
-  const grade = lastLitClimb?.grade ? resolvedGrade.label : null;
-  const gradeColor = resolvedGrade.color;
-  const lastLine = { fontSize: typeScale.metaFontSize, lineHeight: typeScale.metaLineHeight };
-  const hintLine = { fontSize: Math.round(typeScale.metaFontSize * 0.85) };
-
   return (
-    <View style={styles.idleRoot}>
-      {lastLitClimb ? (
-        <Text style={lastLine}>
-          <Text color={systemColors.secondaryLabel} style={lastLine}>
-            {t('mobile.boardPresence.kiosk.lastOnWall')}:{' '}
-          </Text>
-          <Text color={systemColors.label} style={[styles.idleName, lastLine]}>
-            {name}
-          </Text>
-          {grade ? <Text style={[styles.idleGrade, lastLine, { color: gradeColor }]}> {grade}</Text> : null}
-          <Text color={systemColors.secondaryLabel} style={lastLine}>
-            {' '}
-            · {formatRelativeTime(lastLitClimb.sentAt)}
-          </Text>
-        </Text>
-      ) : null}
-      <Text color={systemColors.secondaryLabel} style={hintLine}>
-        {ledless ? t('mobile.boardPresence.kiosk.idleHintNoLeds') : t('mobile.boardPresence.kiosk.idleHint')}
-      </Text>
-    </View>
+    <WallIdleRecoveryView
+      lastLitClimb={lastLitClimb}
+      typeScale={typeScale}
+      ledless={!boardHasLights(activeBoard) && !sprayLedsEnabled}
+      resolvedGrade={resolveGrade({ difficulty: lastLitClimb?.grade ?? '' }, boardName)}
+      relativeTime={lastLitClimb ? formatRelativeTime(lastLitClimb.sentAt) : ''}
+    />
   );
 }
 
@@ -96,7 +64,6 @@ type WallChromeRegionProps = {
  * to read from the mat (setter, angle, Lit-by / Sent-by avatars) are not drawn.
  */
 function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth, boardName }: WallChromeRegionProps) {
-  const { systemColors } = useTheme();
   const { displayedClimb, liveClimb, isPreviewing, stepsBack, previewTimestamp, lastLitClimb } = preview;
   const bandColumns = region === 'band' ? resolveWallKioskBandColumns(bandWidth) : 1;
 
@@ -124,116 +91,15 @@ function WallChromeRegionComponent({ region, mode, preview, typeScale, bandWidth
     );
   const scrubber = <WallScrubber preview={preview} />;
 
-  const surface = [styles.surface, { backgroundColor: systemColors.elevatedSurface }];
-
-  if (region === 'rail') {
-    return (
-      <View style={[surface, styles.rail]}>
-        <View style={styles.railTop}>
-          {stateStrip}
-          {identity}
-        </View>
-        {scrubber}
-      </View>
-    );
-  }
-
-  if (bandColumns === 3) {
-    return (
-      <View style={[surface, styles.bandRow]}>
-        <View style={styles.bandPrimaryThree}>{identity}</View>
-        <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandStateThree}>{stateStrip}</View>
-        <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandControlsThree}>{scrubber}</View>
-      </View>
-    );
-  }
-
-  if (bandColumns === 2) {
-    return (
-      <View style={[surface, styles.bandRow]}>
-        <View style={styles.bandLeft}>
-          {stateStrip}
-          {identity}
-        </View>
-        <View style={[styles.bandSeparator, { backgroundColor: systemColors.separator }]} />
-        <View style={styles.bandRight}>{scrubber}</View>
-      </View>
-    );
-  }
-
   return (
-    <View style={[surface, styles.bandStacked]}>
-      {stateStrip}
-      {identity}
-      {scrubber}
-    </View>
+    <WallChromeRegionView
+      region={region}
+      bandWidth={bandWidth}
+      stateStrip={stateStrip}
+      identity={identity}
+      scrubber={scrubber}
+    />
   );
 }
 
 export const WallChromeRegion = memo(WallChromeRegionComponent);
-
-const styles = StyleSheet.create({
-  surface: {
-    flex: 1,
-    borderRadius: borderRadius.lg,
-    padding: spacing[4],
-    overflow: 'hidden',
-  },
-  rail: {
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-  },
-  railTop: {
-    gap: spacing[3],
-  },
-  bandRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: spacing[4],
-  },
-  bandLeft: {
-    flex: 0.55,
-    gap: spacing[3],
-    justifyContent: 'flex-start',
-  },
-  bandSeparator: {
-    width: StyleSheet.hairlineWidth,
-    alignSelf: 'stretch',
-  },
-  bandRight: {
-    flex: 0.45,
-    justifyContent: 'center',
-    gap: spacing[4],
-  },
-  bandPrimaryThree: {
-    flex: 0.46,
-    gap: spacing[3],
-    justifyContent: 'flex-start',
-  },
-  bandStateThree: {
-    flex: 0.26,
-    gap: spacing[3],
-    justifyContent: 'center',
-  },
-  bandControlsThree: {
-    flex: 0.28,
-    justifyContent: 'center',
-  },
-  bandStacked: {
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    gap: spacing[3],
-  },
-  idleRoot: {
-    gap: spacing[2],
-  },
-  idleName: {
-    fontWeight: '700',
-  },
-  idleGrade: {
-    fontWeight: '800',
-    fontVariant: ['tabular-nums'],
-  },
-});

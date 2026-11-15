@@ -471,7 +471,7 @@ describe('MiniPlayerLeadingButtons', () => {
       expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
     });
 
-    it("never flips a crew's climb from a screenshot capture that picks its own climb", () => {
+    it('mirrors the current crew climb regardless of retired capture flags', () => {
       const previousMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
       const previousCommands = process.env.EXPO_PUBLIC_SCREENSHOT_CPP_COMMANDS;
       process.env.EXPO_PUBLIC_SCREENSHOT_MODE = '1';
@@ -480,7 +480,7 @@ describe('MiniPlayerLeadingButtons', () => {
         queue.sessionId = 'session-1';
         const { getByLabelText } = renderButtons(['mirror'], { climbBoard: tension });
         fireEvent.click(getByLabelText('playView.actionBar.mirrorAria'));
-        expect(queue.mirrorCurrentClimb).not.toHaveBeenCalled();
+        expect(queue.mirrorCurrentClimb).toHaveBeenCalledOnce();
       } finally {
         if (previousMode === undefined) delete process.env.EXPO_PUBLIC_SCREENSHOT_MODE;
         else process.env.EXPO_PUBLIC_SCREENSHOT_MODE = previousMode;

@@ -38,12 +38,7 @@ import {
   createMobileBoardPresenceClient,
   type MobileBoardPresenceClient,
 } from '../lib/board-presence/board-presence-client';
-import {
-  createScreenshotBoardPresenceClient,
-  SCREENSHOT_SEED_BOARD_ID,
-  screenshotPublishedBoardKey,
-  subscribeScreenshotPublishedBoardKey,
-} from '../lib/board-presence/screenshot-wall-seed';
+
 import { getWsClient } from '../lib/graphql/ws-client';
 import {
   captureAuthCredentialGeneration,
@@ -55,7 +50,6 @@ import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDis
 import { fetchBoardByUuid } from '../lib/graphql/hooks/fetch-board-by-uuid';
 import { useActiveBoard } from '../lib/graphql/use-active-board';
 import { boardUuidOrNull } from '../lib/boards/board-identity';
-import { DevScenarioOverridesHost } from '../dev/stories/load';
 
 /** Board config needed to find-or-bind the shared board on first sighting. */
 export type ResolveBoardArgs = {
@@ -212,15 +206,6 @@ type BoardPresenceControlsValue = {
 
 const BoardPresenceControlsContext = createContext<BoardPresenceControlsValue | null>(null);
 
-// Screenshot builds swap in a seed client that serves canned real climbs (no
-// graphql-ws), so the kiosk lights up in the simulator; the branch dead-strips
-// in normal builds. `EXPO_PUBLIC_SCREENSHOT_MODE` is inlined at build time, so
-// this is a launch constant — which is also why the offline gate below can
-// treat "seed transport" as a fixed fact rather than a render input.
-const USES_SEED_TRANSPORT = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
-const readNoScreenshotBoardKey = (): null => null;
-const subscribeNoScreenshotBoardKey = (): (() => void) => () => {};
-
 /**
  * The uuid a uuid binding may present with `resolvedBoardId`, or null.
  *
@@ -238,9 +223,7 @@ async function uuidForResolvedBoard(
   resolvedBoardId: number,
   isStillCurrent: () => boolean,
 ): Promise<string | null> {
-  // The seed transport answers every uuid with one sentinel id, so there is no
-  // numeric id to compare against in a screenshot build.
-  if (USES_SEED_TRANSPORT || args.boardId == null || args.boardId === resolvedBoardId) return args.boardUuid;
+  if (args.boardId == null || args.boardId === resolvedBoardId) return args.boardUuid;
   try {
     const canonicalUuid = boardUuidOrNull((await fetchBoardByUuid(args.boardUuid))?.uuid);
     // Null: the survivor is not this viewer's to link, as across owners.
@@ -295,14 +278,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // kept (constant true here) so consumers and the outside-provider fallback can
   // still branch on provider availability.
   const enabled = true;
-  // Screenshot mode: bind a sentinel board on boot so the iPad Wall display
-  // kiosk renders live (its `isWallLive` gate is `boardId !== null`) with the
-  // seeded feed below, instead of the empty "Connect a board" state. The simulator
-  // has no Bluetooth to set a real boardId. Dead-strips in normal builds (inlined
-  // gate), which keep the null start.
-  const [boardId, setBoardId] = useState<number | null>(
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? SCREENSHOT_SEED_BOARD_ID : null,
-  );
+  const [boardId, setBoardId] = useState<number | null>(null);
   const [boardUuid, setBoardUuid] = useState<string | null>(null);
   const credentialGeneration = useSyncExternalStore(
     subscribeAuthCredentialGenerationChanges,
@@ -312,14 +288,6 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   const [bindingGeneration, setBindingGeneration] = useState(credentialGeneration);
   const visibleBoardId = bindingGeneration === credentialGeneration ? boardId : null;
   const visibleBoardUuid = bindingGeneration === credentialGeneration ? boardUuid : null;
-  const publishedScreenshotBoardUuid = useSyncExternalStore(
-    USES_SEED_TRANSPORT ? subscribeScreenshotPublishedBoardKey : subscribeNoScreenshotBoardKey,
-    USES_SEED_TRANSPORT ? screenshotPublishedBoardKey : readNoScreenshotBoardKey,
-    readNoScreenshotBoardKey,
-  );
-  // The simulator uses one sentinel numeric ID. Its real published UUID gives
-  // existing readers a new scope when boards change, clearing prior-wall history.
-  const readerBoardUuid = USES_SEED_TRANSPORT ? publishedScreenshotBoardUuid : visibleBoardUuid;
   // When a serial maps to several boards the user must pick which wall they're
   // at. We hold the candidates + serial here and surface a picker; binding waits
   // for the choice.
@@ -330,12 +298,8 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     credentialGeneration: number;
   } | null>(null);
 
-  // The injected transport, built once. `USES_SEED_TRANSPORT` is a module
-  // constant, so the empty dep list is exact rather than a lint exception.
-  const client = useMemo<MobileBoardPresenceClient | null>(
-    () => (USES_SEED_TRANSPORT ? createScreenshotBoardPresenceClient() : createMobileBoardPresenceClient(getWsClient)),
-    [],
-  );
+  // Keep the transport stable across provider renders.
+  const client = useMemo<MobileBoardPresenceClient | null>(() => createMobileBoardPresenceClient(getWsClient), []);
   const clientRef = useRef(client);
   clientRef.current = client;
 
@@ -368,7 +332,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     () => (client === null ? null : { ...client }),
     [client, credentialGeneration],
   );
-  const liveClient = offlineMode && !USES_SEED_TRANSPORT ? null : credentialScopedClient;
+  const liveClient = offlineMode ? null : credentialScopedClient;
 
   // A bound identity is cached by the exact resolver key. A same-key reconnect
   // can reuse it; a different serial/config/UUID must resolve independently.
@@ -805,10 +769,7 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     )
       return;
     previousCredentialGenerationRef.current = credentialGeneration;
-    if (USES_SEED_TRANSPORT) {
-      setBindingGeneration(credentialGeneration);
-      return;
-    }
+
     // Revalidate the last explicit wall intent after ordinary credential rotation.
     // The callbacks stay stable for BLE lifetimes; reset/switch can still retire this attempt.
     const intent = bindingIntentRef.current;
@@ -858,11 +819,11 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
-      <BoardPresenceProvider boardId={visibleBoardId} boardUuid={readerBoardUuid} client={liveClient}>
+      <BoardPresenceProvider boardId={visibleBoardId} boardUuid={visibleBoardUuid} client={liveClient}>
         <BoardPresenceForegroundSync />
         {/* Dev builds only: a story can fake a live value (a crew in the session)
             for everything below. A pass-through in production. docs/mobile-stories.md */}
-        <DevScenarioOverridesHost>{children}</DevScenarioOverridesHost>
+        {children}
       </BoardPresenceProvider>
       <BoardDisambiguationSheet
         visible={visibleDisambiguation !== null}

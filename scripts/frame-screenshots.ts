@@ -1,3 +1,4 @@
+import { assertCppStoryCapture, cppStorySourceSha256, type CppStoryCapture } from './lib/cpp-story-provenance';
 /// <reference types="node" />
 
 import {
@@ -839,6 +840,7 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
   const catalog = readCaptionCatalog(options.locale);
   const cppCapture = options.cpp
     ? (JSON.parse(readFileSync(join(input, 'cpp-capture.json'), 'utf8')) as {
+        kind?: string;
         target?: string;
         fixtureSha256?: string;
         verified?: boolean;
@@ -846,6 +848,13 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
     : undefined;
   if (options.cpp && cppCapture?.target !== options.cpp)
     throw new Error('CPP raw captures lack target and fixture provenance');
+  if (options.cpp && cppCapture?.kind === 'view-stories') {
+    assertCppStoryCapture(
+      cppCapture,
+      { target: options.cpp, locale: options.locale, device: options.device, sourceSha256: cppStorySourceSha256() },
+      input,
+    );
+  }
   const capturesByName = new Map(captures.map((capture) => [capture.name, capture.buffer]));
   mkdirSync(dirname(output), { recursive: true });
   const staging = mkdtempSync(join(dirname(output), '.framing-'));
@@ -858,7 +867,9 @@ export async function frameDirectory(options: FrameDirectoryOptions): Promise<st
           cpp: {
             target: options.cpp,
             manifestSha256: sha256Screenshot(readFileSync(CPP_MANIFEST_PATH)),
-            fixtureSha256: cppCapture?.fixtureSha256,
+            ...(cppCapture?.kind === 'view-stories'
+              ? { storyCapture: cppCapture as CppStoryCapture }
+              : { fixtureSha256: cppCapture?.fixtureSha256 }),
           },
         }
       : {}),

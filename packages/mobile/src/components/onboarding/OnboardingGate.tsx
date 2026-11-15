@@ -241,8 +241,6 @@ export function OnboardingGate() {
     mountedAtRef.current = Date.now();
     triggerRef.current = mountedThisProcess ? 'remount' : 'cold_start';
     mountedThisProcess = true;
-    // Screenshot builds never decide (below), so a stall there means nothing.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
 
     const stopWatchdog = startForegroundWatchdog({
       timeoutMs: ONBOARDING_GATE_STALL_MS,
@@ -284,10 +282,6 @@ export function OnboardingGate() {
 
   useEffect(() => {
     if (!ready || !boardResolved || !profileReady || !flagsResolved || decidedRef.current) return;
-    // Screenshot builds never auto-present the tour: the app-store flow needs to
-    // reach the tabs, and the onboarding-capture flow opens /onboarding itself.
-    // Nothing else auto-presents in a capture run either, so this stays `pending`.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
     decidedRef.current = true;
 
     let cancelled = false;

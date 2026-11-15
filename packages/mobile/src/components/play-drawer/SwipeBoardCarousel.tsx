@@ -30,9 +30,8 @@ import { centeredZoomViewport } from './zoom-viewport-clamp';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
-import { useShowcaseAnchor } from '../../lib/showcase-anchor';
-import { ScreenshotSmokeMarker } from '../ScreenshotSmokeMarker';
-import { countLitHolds } from '../../lib/screenshot-smoke';
+import { ContentRenderMarker } from '../ContentRenderObserver';
+import { countLitHolds } from '../../lib/lit-hold-count';
 import {
   clearPlayBoardPrewarm,
   getPlayOverlayWidth,
@@ -157,6 +156,7 @@ type CarouselBoardSlotProps = {
   overlayRenderWidth: number;
   fieldColorOverride?: string;
   zoomStyle: AnimatedStyle<ViewStyle>;
+  onCurrentArtReadinessChange?: (readiness: BoardArtReadiness) => void;
 };
 
 /**
@@ -190,9 +190,24 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   overlayRenderWidth,
   fieldColorOverride,
   zoomStyle,
+  onCurrentArtReadinessChange,
 }: CarouselBoardSlotProps) {
   const mountedRef = useRef(true);
+  const artIdentity = JSON.stringify([
+    frames,
+    frameOverride,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    boardWidth,
+    boardHeight,
+    mirrored,
+    overlayRenderWidth,
+    fieldColorOverride,
+  ]);
   const lastArtReadinessRef = useRef<BoardArtReadiness | undefined>(undefined);
+  const reportedArtRef = useRef<{ identity: string; readiness: BoardArtReadiness } | undefined>(undefined);
   const handleArtReadinessChange = useCallback(
     (readiness: BoardArtReadiness) => {
       lastArtReadinessRef.current = readiness;
@@ -229,6 +244,21 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
     // report before this slot's setup when a retained page changes frames.
     if (!frames) handleArtReadinessChange('ready');
   }, [frames, handleArtReadinessChange]);
+  const reportArtReadiness = useCallback(
+    (readiness: BoardArtReadiness) => {
+      handleArtReadinessChange(readiness);
+      if (!mountedRef.current) return;
+      reportedArtRef.current = { identity: artIdentity, readiness };
+      onCurrentArtReadinessChange?.(readiness);
+    },
+    [handleArtReadinessChange, artIdentity, onCurrentArtReadinessChange],
+  );
+  useLayoutEffect(() => {
+    // A retained neighbour can become current without repainting its image.
+    if (reportedArtRef.current?.identity === artIdentity) {
+      onCurrentArtReadinessChange?.(reportedArtRef.current.readiness);
+    }
+  }, [artIdentity, onCurrentArtReadinessChange]);
   const slotStyle = useAnimatedStyle(() => {
     const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value, slideWidth);
     // Opacity and transform only, and never zIndex. Two pages that are both
@@ -253,7 +283,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
             accessible={false}
             readyBoardArt={readyBoardArt}
             onReadyArtDisplayed={onReadyArtDisplayed}
-            onArtReadinessChange={handleArtReadinessChange}
+            onArtReadinessChange={reportArtReadiness}
             frames={frameOverride ?? frames}
             boardName={boardName}
             layoutId={layoutId}
@@ -295,8 +325,6 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
 });
 
 export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
-  capturePaintedTestID,
-  captureLocalMirrorTestID,
   containerSize: suppliedContainerSize,
   restingHorizontalInset = 0,
   fieldColorOverride,
@@ -328,7 +356,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   dismissRef,
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
-  const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
   const { settings: renderSettings } = useBoardRenderSettings();
   // A failed native scene stays on the image carousel for this board. Changing
   // climb must not immediately retry the same failed layout on every swipe.
@@ -338,7 +365,6 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     setFailedStationaryIdentity(stationaryIdentity);
   }, [stationaryIdentity]);
   const stationary =
-    !isScreenshotMode &&
     NativeMotionClimbOverlayGPU !== null &&
     boardName === 'kilter' &&
     layoutId === 8 &&
@@ -468,7 +494,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     isZoomedSV,
     // The static capture board cannot share readiness owned by retained slots.
     // Its capture markers still wait for actual image display.
-    pageArt: isScreenshotMode ? undefined : pageArt,
+    pageArt,
     scrollRef,
   });
 
@@ -502,10 +528,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     return () => cancelAnimationFrame(handle);
   }, [boardMeasured]);
 
-  const smokeLitHoldCount = useMemo(
-    () => (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? countLitHolds(currentFrames) : 0),
-    [currentFrames],
-  );
+  const litHoldCount = useMemo(() => countLitHolds(currentFrames), [currentFrames]);
   // Remembered so the climbs list can start the next climb's play-size render at
   // the tap, before this carousel has mounted and measured again.
   const measuredOverlayWidth = boardBox ? Math.round(boardBox.width * PixelRatio.get()) : null;
@@ -515,8 +538,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     // The board below now holds the render the tap started.
     clearPlayBoardPrewarm();
   }, [measuredOverlayWidth, boardName, layoutId, sizeId, setIds]);
-  // The lit climb, for the showcase video's callouts (screenshot mode only, like the plain board below).
-  const boardSurfaceAnchor = useShowcaseAnchor('board-surface');
+  // The lit climb anchors layout observation for the visible board.
 
   // Native contain-fit draws cached artwork before JS geometry is available.
   // Match the prewarmed overlay key where possible; only gesture readiness waits
@@ -525,6 +547,33 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
     measuredOverlayWidth ??
     getPlayOverlayWidth({ boardName, layoutId, sizeId, setIds }) ??
     (Number.isFinite(boardWidth) && boardWidth > 0 ? Math.max(1, Math.round(boardWidth)) : 1);
+
+  const currentArtIdentity = JSON.stringify([
+    centerPage,
+    currentFrames,
+    currentFrameOverride,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    boardWidth,
+    boardHeight,
+    mirrored,
+    overlayRenderWidth,
+    fieldColorOverride,
+  ]);
+  const [displayedArt, setDisplayedArt] = useState<{ identity: string; readiness: BoardArtReadiness } | null>(null);
+  const onCurrentArtReadinessChange = useCallback(
+    (readiness: BoardArtReadiness) => {
+      setDisplayedArt((previous) =>
+        previous?.identity === currentArtIdentity && previous.readiness === readiness
+          ? previous
+          : { identity: currentArtIdentity, readiness },
+      );
+    },
+    [currentArtIdentity],
+  );
+  const currentArtDisplayed = displayedArt?.identity === currentArtIdentity && displayedArt.readiness === 'ready';
 
   const renderSlot = (page: number, frames: string | null, isCurrent: boolean) => (
     <CarouselBoardSlot
@@ -552,88 +601,37 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       overlayRenderWidth={overlayRenderWidth}
       fieldColorOverride={fieldColorOverride}
       zoomStyle={animatedZoomStyle}
+      onCurrentArtReadinessChange={isCurrent ? onCurrentArtReadinessChange : undefined}
     />
   );
 
-  // Screenshot mode renders the current board in PLAIN (non-reanimated) Views.
-  // The swipe/zoom `Animated.View` wrappers promote the board to a render layer
-  // that Android's `adb screencap` (Maestro's capture) intermittently misses
-  // inside the play-drawer modal — the board-view shot came out blank ~half the
-  // time even with a redraw swipe. The transforms are identity at rest, so the
-  // static board is pixel-identical without them; the simpler board-presence
-  // sheet (no carousel) already captures reliably, confirming the carousel layer
-  // is the culprit. overlayTestID anchors on the painted holds overlay.
-  const currentBoard = isScreenshotMode ? (
-    <View
-      // One key for every climb, unlike the pages: this board changes climb by
-      // a prop, so the wall photo stays mounted across a swipe and only the
-      // holds are loaded again.
-      key="plain-current"
-      style={[styles.boardWrapper, imageBox]}
-      {...boardSurfaceAnchor}
-      {...boardAccessibility}
-      // Android groups an accessible board and hides its nested test IDs.
-      // In captures, expose the actual onLoad-gated overlay anchor instead.
-      accessible={false}
-      importantForAccessibility="no"
-    >
-      {/* Inlined, not `isScreenshotMode`: the strip must not lean on constant propagation. */}
-      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-        <ScreenshotSmokeMarker route="play-drawer" count={smokeLitHoldCount} />
-      ) : null}
-      <BoardImageNative
-        accessible={false}
-        readyBoardArt={readyBoardArt}
-        onReadyArtDisplayed={onReadyArtDisplayed}
-        frames={currentFrameOverride ?? currentFrames}
-        boardName={boardName}
-        layoutId={layoutId}
-        sizeId={sizeId}
-        setIds={setIds}
-        boardWidth={boardWidth}
-        boardHeight={boardHeight}
-        mirrored={mirrored}
-        renderWidth={overlayRenderWidth}
-        backgroundVariant="full"
-        fieldColorOverride={fieldColorOverride}
-        recyclingKey={currentFrames}
-        style={imageBox}
-        showGridLabels
-        overlayTestID="play-drawer-board-overlay"
-        paintedTestID={capturePaintedTestID}
-        paintedExtraTestID={captureLocalMirrorTestID}
-        // The one board a climber is actually looking at: `surface: 'play'`
-        // on render-failure telemetry, and the only surface that watches
-        // for an overlay that never paints. Never a neighbour.
-        playSurface
-      />
-    </View>
-  ) : (
-    renderSlot(centerPage, currentFrames, true)
-  );
+  const currentBoard = renderSlot(centerPage, currentFrames, true);
 
   return (
     <GestureDetector gesture={composedGesture}>
       <View style={styles.container} onLayout={handleLayout} testID="play-drawer-board-container">
+        {currentArtDisplayed && litHoldCount > 0 && (
+          <View testID="play-drawer-board-overlay" pointerEvents="none" style={styles.paintMarker} collapsable={false}>
+            <ContentRenderMarker route="play-drawer" count={litHoldCount} />
+          </View>
+        )}
         {/* What a screen reader lands on: one view the size of the board that
             never moves, is never remounted, and describes the current climb.
             It takes touches, so exploring by touch finds it. That is also why
             it is the first child: the boards come and go after it, and the
             view a touch began on must never be one that is put back into its
-            parent, which cancels the touch. Screenshot mode has its own, on
-            the plain board. */}
-        {isScreenshotMode ? null : (
+            parent, which cancels the touch. */}
+        {
           <View
             style={[styles.boardStandIn, imageBox]}
             testID="play-drawer-board-accessibility"
             {...boardAccessibility}
           />
-        )}
+        }
         {/* One keyed list, so the board that was a neighbour stays mounted when it
             becomes the current one. In page order, which lets a step add a board
             at one end and drop one at the other without moving the two that
-            stay. Screenshot mode's plain board is not on a layer the neighbours
-            can slide under, so there it goes first and they draw over it. */}
+            stay. */}
         {stationary ? (
           <StationaryBoardCarousel
             boardProps={{
@@ -667,13 +665,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             boardBox={imageBox}
             zoomStyle={animatedZoomStyle}
             onUnavailable={handleStationaryUnavailable}
+            onCurrentArtReadinessChange={onCurrentArtReadinessChange}
           />
-        ) : isScreenshotMode ? (
-          [
-            currentBoard,
-            neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
-            neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
-          ]
         ) : (
           [
             neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
@@ -683,10 +676,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         )}
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
-            while the renderer is idle, so those swipes are cache hits. Skipped
-            in screenshot mode, where the only render that matters is the one
-            board the capture is waiting on. */}
-        {isScreenshotMode || !boardMeasured ? null : (
+            while the renderer is idle, so those swipes are cache hits. */}
+        {!boardMeasured ? null : (
           <UpcomingBoardPrefetch
             frames={prefetchFrames}
             boardName={boardName}
@@ -719,6 +710,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 });
 
 const styles = StyleSheet.create({
+  paintMarker: { position: 'absolute', width: 1, height: 1 },
   container: {
     flex: 1,
     width: '100%',

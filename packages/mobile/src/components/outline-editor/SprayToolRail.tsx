@@ -60,7 +60,7 @@ type SprayToolRailProps = {
   /** The wall-wide menu (Start over). */
   onMore: () => void;
   moreExpanded: boolean;
-  /** Replays the hints. Omitted hides the "?" (screenshot mode). */
+  /** Replays the hints. Omitted hides the help action. */
   onHelp?: () => void;
 };
 

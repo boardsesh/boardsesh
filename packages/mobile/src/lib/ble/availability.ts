@@ -1,3 +1,4 @@
+import { bluetoothTransport } from './transport-runtime';
 import { State } from 'react-native-ble-plx';
 import { getBleManager } from './ble-manager';
 import {
@@ -18,18 +19,8 @@ function isTransientBleState(state: State): boolean {
 }
 
 export async function waitForBlePoweredOn(timeoutMs = DEFAULT_BLE_POWERED_ON_TIMEOUT_MS): Promise<boolean> {
-  // The fake-Bluetooth screenshot build (see screenshot-fake-adapter.ts) runs on
-  // a simulator whose radio reads Unsupported. Inlined so it folds away elsewhere.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1')
-    return true;
-
-  // Every caller is a scan or connect the climber started, so this is where an
-  // iOS phone that has never answered the Bluetooth question gets asked. The
-  // native ask shows the alert and waits for the answer; ble-plx below then
-  // starts with the answer known, so it shows nothing. A no (or no answer yet)
-  // ends here, before ble-plx exists: readBluetoothUnavailableReason reads why
-  // without it. Null (Android, web, an older binary): carry on as before, with
-  // no extra await, so those paths keep their exact timing.
+  const transport = bluetoothTransport();
+  if (transport) return transport.waitForPoweredOn(timeoutMs);
   let authorization = readBluetoothAuthorization();
   if (authorization === 'notDetermined') authorization = await requestBluetoothAuthorization();
   if (!allowsBluetoothUse(authorization)) return false;

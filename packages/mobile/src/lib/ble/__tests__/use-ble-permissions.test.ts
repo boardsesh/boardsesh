@@ -254,7 +254,7 @@ describe('requestOptionalNotificationPermission', () => {
   });
 });
 
-describe('requestBleRuntimePermissionStatus under fake Bluetooth', () => {
+describe('requestBleRuntimePermissionStatus ignores retired screenshot flags', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetReactNativePermissionHarness();
@@ -270,10 +270,17 @@ describe('requestBleRuntimePermissionStatus under fake Bluetooth', () => {
     expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalled();
   });
 
-  it('grants without a system dialog when both screenshot flags are 1', async () => {
+  it('honors Android denial when both retired screenshot flags are set', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_FAKE_BLE', '1');
-    expect(await requestBleRuntimePermissionStatus()).toBe('granted');
-    expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).not.toHaveBeenCalled();
+    reactNativePermissionHarness.permissionsAndroid.requestMultiple.mockResolvedValue({
+      BLUETOOTH_SCAN: 'granted',
+      BLUETOOTH_CONNECT: 'denied',
+    });
+    expect(await requestBleRuntimePermissionStatus()).toBe('denied');
+    expect(reactNativePermissionHarness.permissionsAndroid.requestMultiple).toHaveBeenCalledWith([
+      'BLUETOOTH_SCAN',
+      'BLUETOOTH_CONNECT',
+    ]);
   });
 });

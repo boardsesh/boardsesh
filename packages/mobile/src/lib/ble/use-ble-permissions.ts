@@ -1,3 +1,4 @@
+import { bluetoothTransport } from './transport-runtime';
 import { Platform, PermissionsAndroid } from 'react-native';
 import { androidApiLevel } from './android-location-permission';
 
@@ -58,11 +59,8 @@ export async function requestBleRuntimePermissions(options: BleRuntimePermission
 export async function requestBleRuntimePermissionStatus({
   requestNotificationPermission = false,
 }: BleRuntimePermissionOptions = {}): Promise<BleRuntimePermissionStatus> {
-  // The fake-Bluetooth screenshot build has nothing to ask permission for.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
-    return 'granted';
-  }
-
+  const transport = bluetoothTransport();
+  if (transport) return transport.requestPermissions();
   if (Platform.OS === 'ios') {
     // iOS has no runtime permission API for Bluetooth: the system alert appears
     // when the first Bluetooth manager is created, which waitForBlePoweredOn and

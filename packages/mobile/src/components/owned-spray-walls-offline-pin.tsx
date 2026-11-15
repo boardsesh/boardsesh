@@ -45,8 +45,7 @@ const ROSTER_STALE_TIME_MS = 10 * 60 * 1000;
  * Mounted once at the root beside `OfflineSyncBridge`. Renders nothing. Idle
  * while signed out, while offline (a cached roster is no evidence that
  * ownership changed), where offline downloads are off (Expo web, through the
- * `.web.tsx` twin and the flag), in screenshot captures (their requests are
- * replayed from a recording), and while a sign-out is wiping: the account's
+ * `.web.tsx` twin and the flag), and while a sign-out is wiping: the account's
  * roster is still cached then, and pinning into the wipe would re-enable its
  * walls and rewrite the record the sign-out is about to clear. Idle until the
  * launch has settled too: a pin starts a download cycle and an unpin a scope
@@ -62,12 +61,7 @@ export function OwnedSprayWallsOfflinePin(): null {
   const downloadsEnabled = useOfflineDownloadsEnabled();
   const isOffline = useIsOffline();
   const launchWritesReady = useLaunchWritesReady();
-  const active =
-    launchWritesReady &&
-    isAuthenticated &&
-    downloadsEnabled &&
-    !isOffline &&
-    process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+  const active = launchWritesReady && isAuthenticated && downloadsEnabled && !isOffline;
   const { userId } = useStoredUserId(active);
   const { data: boards } = useQuery({
     queryKey: OWNED_SPRAY_WALL_PIN_ROSTER_QUERY_KEY,

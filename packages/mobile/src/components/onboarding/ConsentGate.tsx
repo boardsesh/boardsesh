@@ -83,7 +83,6 @@ export function ConsentGate(): null {
   }, [isAuthenticated, authenticatedUserId, consent.authSettled, consent.accountId, consent.record?.analytics, killed]);
 
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
     if (!consent.loaded) return;
     const controller = getConsentCoordinator();
     if (!controller) return;
@@ -128,7 +127,7 @@ export function ConsentGate(): null {
   const recordNeedsPrompt = needsPrompt(consent.record);
   const [regionCheck, setRegionCheck] = useState(0);
   useEffect(() => {
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || !consent.loaded || killed) return;
+    if (!consent.loaded || killed) return;
     if (!recordNeedsPrompt && !recordIsRegionDefault) return;
     let cancelled = false;
     const answer = lookUpConsentRegion();
@@ -148,13 +147,7 @@ export function ConsentGate(): null {
   }, [consent.loaded, killed, recordNeedsPrompt, recordIsRegionDefault, regionCheck]);
 
   useEffect(() => {
-    if (
-      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ||
-      !consent.loaded ||
-      killed ||
-      (!recordIsRegionDefault && !recordNeedsPrompt)
-    )
-      return;
+    if (!consent.loaded || killed || (!recordIsRegionDefault && !recordNeedsPrompt)) return;
     const subscription = AppState.addEventListener('change', (state) => {
       if (state !== 'active' || !expireConsentRegionLookup()) return;
       // Hold capture until the fresh answer is in.
@@ -168,7 +161,7 @@ export function ConsentGate(): null {
     if (!launchReady || !consent.loaded) return;
     if (isAuthenticated) serverWaitStartedAtRef.current ??= Date.now();
     if (!flagsResolved) return;
-    if (killed || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+    if (killed) {
       updateConsentState({ settled: true });
       if (routeRef.current[0] === 'privacy-consent') router.dismiss();
       return;

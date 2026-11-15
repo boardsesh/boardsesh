@@ -266,9 +266,9 @@ describe('production-compiled analytics consent', () => {
     expect(trackScreen).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps screenshot mode out of analytics', () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+  it('keeps explicitly disabled runtimes out of analytics', () => {
     grantReadyAnalytics();
+    consentState.updateConsentState({ killed: true });
     const { result } = renderHook(useCompiledAnalyticsConsent);
     expect(result.current).toBe(false);
   });

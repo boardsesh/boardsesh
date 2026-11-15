@@ -8,11 +8,12 @@ import { SectionHeader } from '../../SectionHeader';
 import { spacing } from '../../../theme/tokens';
 import { sizeFilterAvailability } from './WorkoutBlockFilters';
 import { clearUnavailableSizeFilters, hasWorkoutBlocks, type GeneratorSelection } from './workout-blocks';
-import { WorkoutBlockList } from './WorkoutBlockList';
+import { WorkoutBlockListView } from './WorkoutBlockList';
+import { useWorkoutPresentation, type WorkoutPresentation } from './workout-presentation';
 
 export type { GeneratorSelection } from './workout-blocks';
 
-type GeneratorPickerCardProps = {
+export type GeneratorPickerCardProps = {
   boardName: BoardName | null;
   layoutId: number | null;
   sizeId: number | null;
@@ -31,15 +32,30 @@ type GeneratorPickerCardProps = {
  * Each block carries its own climb filters (min ascents, min rating, climb bias,
  * tall/wide), folded at the bottom of its card.
  */
-export function GeneratorPickerCard({
+export function GeneratorPickerCard(props: GeneratorPickerCardProps) {
+  const presentation = useWorkoutPresentation();
+  const { selection, onChange, boardName, angle } = props;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const handleChange = useCallback(
+    (next: GeneratorSelection) => {
+      if (!hasWorkoutBlocks(selectionRef.current) && hasWorkoutBlocks(next))
+        track(SHARED_EVENTS.WorkoutGeneratorOpened, { targetType: 'session', boardName, angle });
+      onChange(next);
+    },
+    [onChange, boardName, angle],
+  );
+  return <GeneratorPickerCardView {...props} presentation={presentation} onChange={handleChange} />;
+}
+export function GeneratorPickerCardView({
+  presentation,
   boardName,
   layoutId,
   sizeId,
-  angle,
   selection,
   onChange,
   onRevealBlock,
-}: GeneratorPickerCardProps) {
+}: GeneratorPickerCardProps & { presentation: WorkoutPresentation }) {
   const { t } = useTranslation('session');
 
   const { tall, wide } = sizeFilterAvailability(boardName, layoutId, sizeId);
@@ -53,32 +69,16 @@ export function GeneratorPickerCard({
     if (cleared !== selection) onChange(cleared);
   }, [selection, sizeFilters, onChange]);
 
-  // Adding the first block reveals the workout builder — the mobile analogue of
-  // web's `Workout Generator Opened`. Match web's exact payload
-  // (playlist-generator-drawer.tsx): `{ targetType, boardName, angle }`. The
-  // pre-session flow always feeds the session queue, so targetType is 'session';
-  // PostHog groups by exact prop name, so the keys must line up.
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
-  const handleBlocksChange = useCallback(
-    (next: GeneratorSelection) => {
-      if (!hasWorkoutBlocks(selectionRef.current) && hasWorkoutBlocks(next)) {
-        track(SHARED_EVENTS.WorkoutGeneratorOpened, { targetType: 'session', boardName, angle });
-      }
-      onChange(next);
-    },
-    [angle, boardName, onChange],
-  );
-
   return (
     <View>
       <SectionHeader title={t('mobile.session.preGeneratorLabel')} />
       <View style={styles.inset}>
-        <WorkoutBlockList
+        <WorkoutBlockListView
+          presentation={presentation}
           boardName={boardName}
           sizeFilters={sizeFilters}
           selection={selection}
-          onChange={handleBlocksChange}
+          onChange={onChange}
           onRevealBlock={onRevealBlock}
         />
       </View>

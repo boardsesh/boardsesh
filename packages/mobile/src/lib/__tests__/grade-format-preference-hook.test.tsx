@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 
@@ -87,5 +88,24 @@ describe('useGradeDisplayFormatPreference', () => {
 
     expect(first.result.current.gradeFormat).toBe('font');
     expect(second.result.current.gradeFormat).toBe('font');
+  });
+  it('uses an injected presentation format without reading or writing preferences', async () => {
+    const storage = await getAsyncStorage();
+    storage.getItem.mockClear();
+    const { GradeFormatProvider, useGradeFormat } = await import('../../hooks/use-grade-format');
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <GradeFormatProvider gradeFormat="font">{children}</GradeFormatProvider>
+    );
+    const { result } = renderHook(() => useGradeFormat(), { wrapper });
+    expect(result.current.gradeFormat).toBe('font');
+    expect(result.current.loaded).toBe(true);
+    expect(result.current.formatGradeByDifficultyId(18, 'kilter')).toBe('6B');
+    act(() => result.current.setGradeFormat('both'));
+    expect(result.current.gradeFormat).toBe('font');
+    expect(storage.getItem).not.toHaveBeenCalled();
+    const { useGradeDisplayFormatPreference } = await import('../grade-format-preference');
+    const saved = renderHook(() => useGradeDisplayFormatPreference());
+    await waitFor(() => expect(saved.result.current.loaded).toBe(true));
+    expect(saved.result.current.gradeFormat).toBe('v-grade');
   });
 });

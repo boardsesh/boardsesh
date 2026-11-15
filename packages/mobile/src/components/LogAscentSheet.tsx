@@ -1,29 +1,11 @@
-import { PublicationAudiencePicker } from './privacy/PublicationAudiencePicker';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
-// Bottom-sheet wrapper around the create-tick form. Used by every ticking entry
-// point — the play drawer's tick button, the persistent queue bar, the climb
-// detail screen — so the form, dismissal model (handle + pan-down + native
-// scrim tap), and keyboard handling stay identical across surfaces.
-//
-// The chrome is `ModalSheet`: it presents as a native modal above the play
-// drawer's own modal, supplies the scroll body (`scrollable`), pins the action
-// bar (`footer`), and clamps its single column to the active detent via the
-// same `useSheetColumnStyle` this file used to wire by hand (#3330).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, View, type LayoutChangeEvent, type ViewInstance } from 'react-native';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useEffect, useRef } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { getGradeColor } from '@boardsesh/board-constants/grade-colors';
-import type { TickStatus } from '@boardsesh/play-view';
 import { track } from '../lib/analytics';
-import { ModalSheet } from './ModalSheet';
-import { useCreateTickSnapPoints } from './use-create-tick-snap-points';
-import { TickActionBar, TickNoteField, TickSheetHeader, CREATE_TICK_SNAP_POINTS, useSwipeUpToOpen } from './tick';
-import type { ManagedSheetHandle, PresenterGroup } from '../providers/sheet-presentation-provider';
-import { QuickTickBar } from './play-drawer/QuickTickBar';
+import type { PresenterGroup } from '../providers/sheet-presentation-provider';
+import { QuickTickBar, type QuickTickBarProps } from './play-drawer/QuickTickBar';
 import { useQuickTickForm, type QuickTickDismissSnapshot } from './play-drawer/use-quick-tick-form';
-
-const SAVE_ICON = 'tick.outline' as const;
+import { LogAscentSheetView } from './LogAscentSheetView';
 
 type LogAscentSheetProps = {
   /** Only set when this host is physically inside another native sheet. */
@@ -94,48 +76,6 @@ function LogAscentSheetContent({
   sessionId,
   consensusGradeName,
 }: LogAscentSheetProps) {
-  const { t, i18n } = useTranslation('climbs');
-  const sheetRef = useRef<ManagedSheetHandle>(null);
-  const [expanded, setExpanded] = useState(false);
-  const compactNote = Platform.OS !== 'android' && !expanded;
-  // Android has one content-fitted state and no detent to reveal Angle and Date
-  // with (#7343), so a row folds them away and a swipe up opens them, the nearest
-  // thing to dragging the iOS sheet up. Separate from `expanded`:
-  // Android fires onChange(0) on open, and handleDetentChange would close
-  // anything sharing that state.
-  const [detailsOpen, setDetailsOpen] = useState(false);
-  const foldsDetails = Platform.OS === 'android';
-  const showDetails = foldsDetails ? detailsOpen : !compactNote;
-  const openDetails = useCallback(() => setDetailsOpen(true), []);
-  const detailsDisclosure = useMemo(
-    () => (foldsDetails ? { open: detailsOpen, onOpen: openDetails } : undefined),
-    [foldsDetails, detailsOpen, openDetails],
-  );
-  const swipeUpHandlers = useSwipeUpToOpen(foldsDetails && !detailsOpen, openDetails);
-  const { snapPoints, onHeaderLayout, onFooterLayout, onBodyLayout } = useCreateTickSnapPoints(
-    i18n?.resolvedLanguage,
-    compactNote,
-  );
-
-  const formFieldsRef = useRef<ViewInstance>(null);
-  // Include every field, including the audience picker, rather than just the
-  // first two rows. Re-measure unchanged intrinsic geometry after cache resets
-  // without remounting controls or the pinned note.
-  useEffect(() => {
-    formFieldsRef.current?.measure((_left, _top, _measuredWidth, height) => onBodyLayout(height));
-  }, [onBodyLayout]);
-  const handleFormFieldsLayout = useCallback(
-    (event: LayoutChangeEvent) => onBodyLayout(event.nativeEvent.layout.height),
-    [onBodyLayout],
-  );
-
-  const handleDetentChange = useCallback((index: number) => {
-    if (index >= 0) setExpanded(index > 0);
-  }, []);
-  const handleNoteFocus = useCallback(() => {
-    if (Platform.OS !== 'android' && !expanded) sheetRef.current?.snapToIndex(CREATE_TICK_SNAP_POINTS.length - 1);
-  }, [expanded]);
-
   // Tracks whether the open tick got saved, so handleClose below can tell a
   // completed save (TickLogged already covers it) apart from a genuine
   // abandon via the close button / pan-down / backdrop tap (none of which call
@@ -153,8 +93,6 @@ function LogAscentSheetContent({
   useEffect(() => {
     if (visible) {
       savedRef.current = false;
-      setExpanded(false);
-      setDetailsOpen(false);
     }
   }, [visible]);
 
@@ -188,114 +126,24 @@ function LogAscentSheetContent({
     fieldSnapshotRef,
   });
 
-  // The identity bar follows the picked grade the moment the climber picks one,
-  // and falls back to the community consensus before that.
-  const gradeColor = useMemo(
-    () => getGradeColor(form.resolvedGradeName ?? consensusGradeName ?? ''),
-    [form.resolvedGradeName, consensusGradeName],
+  const renderFields = useCallback(
+    (options: Omit<QuickTickBarProps, 'form'>) => <QuickTickBar form={form} {...options} />,
+    [form],
   );
-
-  // `logAscentAria` interpolates a *noun*, so the status has to be resolved to
-  // localised copy first — interpolating the raw `'send'` / `'flash'` enum left
-  // Spanish, French and German screen-reader users hearing English.
-  // Spelled out per key because the i18n linter rejects `t(variable)`.
-  const statusNouns: Record<TickStatus, string> = useMemo(
-    () => ({
-      flash: t('mobile.tick.status.flash'),
-      send: t('mobile.tick.status.send'),
-      attempt: t('mobile.tick.status.attempt'),
-    }),
-    [t],
-  );
-
-  // "Consensus" only once somebody has sent it (#5960 C7): before that, the
-  // grade a climb carries is its setter's, not a crowd's. And only at the angle
-  // the sheet opened at: the consensus and the send count are that angle's, so
-  // once the climber picks another one the subtitle names just the angle.
-  const subtitle =
-    consensusGradeName && baseAscensionistCount > 0 && form.angle === angle
-      ? t('mobile.tick.consensusMeta', { grade: consensusGradeName, angle: form.angle })
-      : t('mobile.tick.angleMeta', { angle: form.angle });
-
   return (
-    <ModalSheet
+    <LogAscentSheetView
       presenterGroup={presenterGroup}
       parentSheetId={parentSheetId}
       stacked={stacked}
-      ref={sheetRef}
       visible={visible}
       onClose={handleClose}
       onFullyDismissed={onFullyDismissed}
-      snapPoints={snapPoints}
-      onHeaderLayout={onHeaderLayout}
-      onFooterLayout={onFooterLayout}
-      onChange={handleDetentChange}
-      scrollable
-      footerSurface="flush"
-      // Android's ~50% partial state can't fit this form under a pinned footer
-      // (#4723), and a near-full single detent leaves ~310 dp of void below it
-      // (#4720). Size the sheet to the form on Android instead — see
-      // `androidContentSized` on `ModalSheet`.
-      androidContentSized
-      header={
-        // The header is what a climber grabs to pull a sheet up, so it swipes too.
-        // `collapsable={false}`: a flattened view would not receive the touches.
-        <View collapsable={false} testID="tick-sheet-swipe-header" {...swipeUpHandlers}>
-          <TickSheetHeader
-            title={climbName ?? t('mobile.tick.fallbackTitle')}
-            subtitle={subtitle}
-            gradeColor={gradeColor}
-            onClose={handleClose}
-            closeAccessibilityLabel={t('mobile.tick.closeAria')}
-          />
-        </View>
-      }
-      footer={
-        <TickActionBar
-          note={
-            <TickNoteField
-              value={form.comment}
-              onChangeText={form.onCommentChange}
-              placeholder={t('mobile.tick.notePlaceholder')}
-              accessibilityLabel={t('mobile.tick.noteAria')}
-              compact={compactNote}
-              onFocus={handleNoteFocus}
-            />
-          }
-          error={form.lastError}
-          secondary={{
-            title: t('mobile.tick.attempt'),
-            onPress: form.onAttempt,
-            disabled: form.isPending,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns.attempt }),
-          }}
-          primary={{
-            title: form.saveLabel,
-            onPress: form.onSave,
-            loading: form.isPending,
-            disabled: form.saveBlockedByGrade,
-            icon: SAVE_ICON,
-            accessibilityLabel: t('mobile.tick.logAscentAria', { status: statusNouns[form.ascentType] }),
-          }}
-        />
-      }
-    >
-      <View
-        ref={formFieldsRef}
-        onLayout={handleFormFieldsLayout}
-        testID="tick-form-fields"
-        collapsable={false}
-        {...swipeUpHandlers}
-      >
-        <QuickTickBar
-          form={form}
-          showNote={false}
-          showDate={showDetails}
-          showAngle={showDetails}
-          detailsDisclosure={detailsDisclosure}
-        />
-        <PublicationAudiencePicker privacy={form.privacy} disabled={form.isPending} />
-      </View>
-    </ModalSheet>
+      climbName={climbName}
+      angle={angle}
+      consensusGradeName={consensusGradeName}
+      baseAscensionistCount={baseAscensionistCount}
+      form={form}
+      renderFields={renderFields}
+    />
   );
 }

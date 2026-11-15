@@ -171,16 +171,6 @@ describe('useClimbLogs', () => {
     expect(result.current.hasNextPage).toBe(false);
   });
 
-  it('stops at one page in screenshot mode', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    mocks.request.mockResolvedValue(page(['log-1'], 'cursor-1'));
-    const { wrapper } = createHarness();
-    const { result } = renderHook(() => useClimbLogs(listArgs()), { wrapper });
-
-    await waitFor(() => expect(result.current.data).toBeDefined());
-    expect(result.current.hasNextPage).toBe(false);
-  });
-
   it.each([
     ['the caller turns it off', { enabled: false }, 'viewer'],
     ['there is no climb', { climbUuid: null }, 'viewer'],
@@ -231,11 +221,13 @@ describe('useClimbLogsPreview', () => {
     expect(client.getQueryData(['climbLogsPreview', 'viewer', 'kilter', 'c1'])).toBeDefined();
   });
 
-  it('stays silent in screenshot mode, so store captures need no recording for it', async () => {
+  it('does not let retired capture flags disable a live preview', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    mocks.request.mockResolvedValue(page(['log-1']));
     const { wrapper } = createHarness();
-    renderHook(() => useClimbLogsPreview(previewArgs), { wrapper });
-    await expectNoRequest();
+    const { result } = renderHook(() => useClimbLogsPreview(previewArgs), { wrapper });
+    await waitFor(() => expect(result.current.data?.map((log) => log.uuid)).toEqual(['log-1']));
+    expect(mocks.request).toHaveBeenCalledOnce();
   });
 
   it.each([

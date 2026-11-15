@@ -6,14 +6,14 @@ import { readScreenshotFixtureManifest } from './screenshot-backend';
 import {
   SCREENSHOT_WALL_SEED_COUNT,
   screenshotWallKioskPaintedTestId,
-} from '../../packages/mobile/src/lib/screenshot-climb-selection';
+} from '../../packages/mobile/src/dev/integration/screenshot-climb-selection';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../../packages/shared/climb-filters/src/filter-state';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
 import { canonicalJson, graphqlFixtureKey, normalizeDocument } from './screenshot-fixtures';
 import {
   matchScreenshotBoardCandidates,
   type ScreenshotBoardMatchingFields,
-} from '../../packages/mobile/src/lib/screenshot-board-matching';
+} from '../../packages/mobile/src/dev/integration/screenshot-board-matching';
 
 export interface IosCampaignPrimaryCapture {
   board: CppRecordedBoard & { setIds: string; hasLeds?: boolean };

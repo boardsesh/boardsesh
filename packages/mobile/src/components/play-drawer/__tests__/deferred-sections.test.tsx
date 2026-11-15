@@ -693,16 +693,6 @@ describe('DeferredSections', () => {
       ]);
     });
 
-    it('stays out of store captures', () => {
-      vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-      auth.isAuthenticated = true;
-      deferred.ready = true;
-      followedAuthors.result = follows('friend');
-      renderSections({ contentEnabled: true });
-
-      expect(screen.queryByTestId('climber-logs')).toBeNull();
-    });
-
     it('hands the card the three openers', () => {
       auth.isAuthenticated = true;
       deferred.ready = true;

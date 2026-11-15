@@ -153,7 +153,7 @@ export function showcaseFilterPatterns(catalog: ShowcaseFilterCatalog): Record<s
  * The seven walls the board takes sit on, in `SHOWCASE_BOARD_SLOTS` order
  * (kilter, tension, moonboard, woods, decoy, grasshopper, spray). Each entry
  * matches a board's name or layout name on the signed-in account (see
- * packages/mobile/src/lib/screenshot-board-selection.ts). Prod is the App Store
+ * packages/mobile/src/dev/integration/screenshot-board-matching.ts). Prod is the App Store
  * account's walls (the Kilter is Marco's own board, the App Store hero wall;
  * the spray wall's name is a placeholder until the account has the wall the
  * video shows); local is the seeded dev DB's, plus the MoonBoard the recorder

@@ -1,26 +1,28 @@
 // @vitest-environment jsdom
+import { buildStatisticsSummary } from '@boardsesh/profile-stats';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { HeaderHeightContext } from 'expo-router/react-navigation';
 import {
   createContext,
   createElement,
   useContext,
   useImperativeHandle,
-  type ReactNode,
   type ComponentProps,
+  type ReactNode,
   type Ref,
 } from 'react';
-import { render, fireEvent, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HeaderHeightContext } from 'expo-router/react-navigation';
-import { buildStatisticsSummary } from '@boardsesh/profile-stats';
-import { reportScreenshotSmokeContent } from '../../../lib/screenshot-smoke';
-
-vi.mock('../../../lib/screenshot-smoke', () => ({ reportScreenshotSmokeContent: vi.fn() }));
+import { ContentRenderObserverProvider } from '../../ContentRenderObserver';
+const reportContent = vi.fn();
 
 const scrollToOffset = vi.hoisted(() => vi.fn());
 const platform = vi.hoisted(() => ({ OS: 'android', select: (options: { android?: unknown }) => options.android }));
 const ThemeVariantContext = createContext<'liquidGlass' | 'material'>('liquidGlass');
 
-vi.mock('expo-router/react-navigation', () => ({ HeaderHeightContext: createContext<number | undefined>(undefined) }));
+vi.mock('expo-router/react-navigation', async () => {
+  const { createContext } = await import('react');
+  return { HeaderHeightContext: createContext<number | undefined>(undefined) };
+});
 vi.mock('react-native', () => ({
   Platform: platform,
   View: ({
@@ -142,8 +144,8 @@ vi.mock('../YouCharts', () => ({
   TotalAreaChart: () => null,
 }));
 
-import { ProgressTab } from '../ProgressTab';
 import { ProfileBoardRow } from '../ProfileBoardOverview';
+import { ProgressTab } from '../ProgressTab';
 
 type YouData = ComponentProps<typeof ProgressTab>['data'];
 const layoutInputs = [
@@ -401,21 +403,32 @@ describe('all-board profile overview', () => {
 describe('profile smoke content', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.mocked(reportScreenshotSmokeContent).mockClear();
+    reportContent.mockClear();
   });
 
   it('does not claim real content from an empty profile layout', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     const summary = buildStatisticsSummary({ totalDistinctClimbs: 0, layoutStats: [] });
-    render(<ProgressTab data={makeData({ statisticsSummary: summary })} topInset={0} />);
-    expect(reportScreenshotSmokeContent).toHaveBeenCalledWith('/profile', 0);
+    render(
+      <ContentRenderObserverProvider onContentRendered={reportContent}>
+        <ProgressTab data={makeData({ statisticsSummary: summary })} topInset={0} />
+      </ContentRenderObserverProvider>,
+    );
+    expect(reportContent).toHaveBeenCalledWith({ route: '/profile', count: 0 });
   });
 
   it('reports actual ascent content after a populated profile mounts', () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     const profileData = makeData();
-    render(<ProgressTab data={profileData} topInset={0} />);
-    expect(reportScreenshotSmokeContent).toHaveBeenCalledWith('/profile', profileData.statisticsSummary.totalAscents);
+    render(
+      <ContentRenderObserverProvider onContentRendered={reportContent}>
+        <ProgressTab data={profileData} topInset={0} />
+      </ContentRenderObserverProvider>,
+    );
+    expect(reportContent).toHaveBeenCalledWith({
+      route: '/profile',
+      count: profileData.statisticsSummary.totalAscents,
+    });
   });
 });
 

@@ -1,3 +1,4 @@
+import { cppStorySourceSha256, createCppStoryCapture, type CppStoryCapture } from '../lib/cpp-story-provenance';
 import { createHash } from 'node:crypto';
 import { cpSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,7 +28,7 @@ interface SourceMetadata {
 interface TestPresentation {
   version: number;
   locale: string;
-  cpp: { target: string; manifestSha256: string; fixtureSha256: string };
+  cpp: { target: string; manifestSha256: string; fixtureSha256?: string; storyCapture?: CppStoryCapture };
   files: Record<
     string,
     SourceMetadata & {
@@ -283,6 +284,44 @@ describe('versioned CPP source compatibility', () => {
 });
 
 describe('CPP screenshot upload integrity', () => {
+  it('accepts explicit story provenance and rejects missing sidecars or mixed recording claims', () => {
+    const root = createTree();
+    const sourceSha256 = cppStorySourceSha256();
+    for (const locale of cppStoreLocales)
+      for (const device of EXPECTED_APP_STORE_DEVICE_SLUGS) {
+        const base = join(root, 'app-stores/apple/cpp/kilter');
+        const raw = join(base, 'raw-screenshots', locale, device);
+        const path = join(base, 'screenshots', locale, device, 'presentation.json');
+        const presentation = JSON.parse(readFileSync(path, 'utf8')) as TestPresentation;
+        const storyCapture = createCppStoryCapture(
+          {
+            target: 'kilter',
+            sourceSha256,
+            locale: captionLocaleForStore('ios', locale),
+            device,
+            theme: 'dark',
+            variant: 'liquidGlass',
+            renderMode: 'classic',
+          },
+          raw,
+        );
+        delete presentation.cpp.fixtureSha256;
+        presentation.cpp.storyCapture = storyCapture;
+        writeFileSync(join(raw, 'cpp-capture.json'), JSON.stringify(storyCapture));
+        writeFileSync(path, JSON.stringify(presentation));
+      }
+    expect(assertCppScreenshots('kilter', root)).toBe(180);
+    mutatePresentation(root, (presentation) => {
+      presentation.cpp.fixtureSha256 = 'a'.repeat(64);
+    });
+    expect(() => assertCppScreenshots('kilter', root)).toThrow('cannot claim recorded');
+    mutatePresentation(root, (presentation) => {
+      delete presentation.cpp.fixtureSha256;
+    });
+    unlinkSync(join(firstFolder(root, 'raw-screenshots'), 'cpp-capture.json'));
+    expect(() => assertCppScreenshots('kilter', root)).toThrow();
+  });
+
   it('accepts all four complete targets across every locale and device', () => {
     const root = createTree(CPP_TARGETS);
     expect(assertCppScreenshots('all', root)).toBe(4 * 5 * 4 * 9);

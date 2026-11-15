@@ -176,8 +176,7 @@ export type ReplayCompatibilityEvidence = {
  * after `isNoMatch`, sometimes twice in one document (a session's highlights
  * and its grouped items), so the single-copy `matchesWithoutSelection` rule does
  * not fit. Replayed as null on every tick, which is what the drawer showed for
- * these climbs when the set was recorded. GetCrewFeed shares the session feed
- * fragment but has no pinned recording, so it needs no entry here.
+ * these climbs when the set was recorded. GetCrewFeed was recorded with the current fragment in the additive overlay.
  */
 const TICK_CHARACTERISTICS_OPERATIONS = new Set([
   'GetSessionDetail',
@@ -1466,21 +1465,10 @@ export const REPLAY_DEFAULT_RESPONSES: Readonly<Record<string, ReplayDefaultResp
     response: { data: { profile: null } },
     reason: 'the screenshots account is not an admin',
   },
-  // query GetSessionWorkouts / GetSessionWorkoutHeadlines —
-  // packages/shared/graphql/src/operations/session-workouts.ts (#6903). Session
-  // detail and every feed card ask them. The pinned set's sessions were
-  // recorded before workouts were stored on the server, so none of them has
-  // one: an empty list is the server's own answer for each, and every screen
-  // then draws the session as before. A recording made after a workout session
-  // records them, and the keyed lookup takes over; GetSessionWorkoutHeadlines
-  // then wants a BATCHED_OPERATIONS row (`sessionIds` → `sessionId`), since a
-  // feed page's id list changes with timing.
+  // Historical sessions predate server workouts. Crew headline batches now
+  // have genuine recordings in the pinned overlay and require exact coverage.
   GetSessionWorkouts: {
     response: { data: { sessionWorkouts: [] } },
-    reason: 'no recorded session followed a workout stored on the server',
-  },
-  GetSessionWorkoutHeadlines: {
-    response: { data: { sessionWorkoutHeadlines: [] } },
     reason: 'no recorded session followed a workout stored on the server',
   },
   // query GetPartnerAppsEnabled — packages/shared/graphql/src/operations/connected-apps.ts

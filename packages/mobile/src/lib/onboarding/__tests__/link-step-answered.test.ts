@@ -32,12 +32,6 @@ describe('link-step answer storage', () => {
     await expect(hasAnsweredLinkStep()).resolves.toBe(true);
   });
 
-  it('keeps screenshot mode quiet without reading storage', async () => {
-    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
-    await expect(hasAnsweredLinkStep()).resolves.toBe(true);
-    expect(preferences.get).not.toHaveBeenCalled();
-  });
-
   it('persists an explicit answer in the app preferences', async () => {
     await markLinkStepAnswered();
     expect(preferences.set).toHaveBeenCalledExactlyOnceWith('onboardingLinkStepAnswered', true);

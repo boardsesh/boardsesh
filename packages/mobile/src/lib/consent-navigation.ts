@@ -26,7 +26,7 @@ function destinationOf(path: string): string {
 
 /** Last incoming OS destination wins; the privacy step must remain the focused route. */
 export function deferConsentDestination(path: string): boolean {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' || getConsentSnapshot().settled) return false;
+  if (getConsentSnapshot().settled) return false;
   const destination = destinationOf(path);
   // In-app links (a bare path or the app's own scheme) to auth and to the
   // consent step itself are left alone. Judged on the route, so every spelling

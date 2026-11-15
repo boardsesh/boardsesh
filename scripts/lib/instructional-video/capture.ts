@@ -384,6 +384,7 @@ export async function captureTutorial(options: TutorialCaptureOptions): Promise<
       EXPO_PUBLIC_WS_URL: new URL('/graphql', backend).href.replace(/^http/, 'ws'),
       EXPO_PUBLIC_WEB_URL: backend.origin,
       EXPO_PUBLIC_SCREENSHOT_MODE: '1',
+      EXPO_PUBLIC_RECORDING_MODE: '1',
       EXPO_PUBLIC_SCREENSHOT_FAKE_BLE: '1',
       EXPO_PUBLIC_SCREENSHOT_THEME: 'dark',
       EXPO_PUBLIC_SCREENSHOT_LOCALE: 'en-US',

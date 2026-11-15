@@ -129,7 +129,6 @@ describe('play drawer section preferences', () => {
         boardseshGradeEnabled: true,
         description: 'Start left',
         boardName: 'moonboard' as const,
-        screenshotMode: false,
       }),
     ).not.toContain('activeHolds');
   });

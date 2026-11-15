@@ -22,7 +22,6 @@ const STORAGE_KEY = 'boardLookStepSeen';
 export async function hasSeenBoardLookStep(): Promise<boolean> {
   // Screenshot mode reports seen so a captured store screen is never covered,
   // mirroring `hasSeenTip`.
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return true;
   try {
     return (await getPreference<boolean>(STORAGE_KEY)) === true;
   } catch {

@@ -121,18 +121,19 @@ describe('Home sections', () => {
     expect(homeSectionsStore.getLayout().visible.feed).toBe(true);
   });
 
-  it('starts screenshot builds on the default Home and never saves their edits', async () => {
+  it('keeps saved Home preferences independent of retired capture flags', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     settings.values.set('homeSectionsV1', {
       version: 1,
       order: ['board', 'session', 'playlists', 'climbingNow', 'feed'],
       visible: { board: true, feed: false },
     });
-    const { HOME_SECTIONS, homeSectionsStore, focusedHomeLayout, isFocusedHomeLayout } = await loadHomeSections();
-    expect(homeSectionsStore.getLayout()).toEqual(HOME_SECTIONS.defaults);
+    const { homeSectionsStore, focusedHomeLayout, isFocusedHomeLayout } = await loadHomeSections();
+    expect(homeSectionsStore.getLayout().visible.feed).toBe(false);
+    expect(homeSectionsStore.getLayout().order[0]).toBe('board');
     homeSectionsStore.apply(focusedHomeLayout(homeSectionsStore.getLayout()));
-    // The edit shows for this launch, so a capture can show it, but nothing is written.
     expect(isFocusedHomeLayout(homeSectionsStore.getLayout())).toBe(true);
-    expect(settings.writes).toEqual([]);
+    expect(settings.writes).toHaveLength(1);
+    expect(settings.values.get('homeSectionsV1')).toEqual({ version: 1, ...homeSectionsStore.getLayout() });
   });
 });

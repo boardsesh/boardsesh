@@ -1,23 +1,18 @@
-import { useEffect, useMemo } from 'react';
-import { useRouter, type Href } from 'expo-router';
-import { useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { SessionDetail, SessionSummary } from '@boardsesh/shared-schema';
 import type {
   SessionWorkoutHeadlineResult,
   SessionWorkoutResult,
 } from '@boardsesh/graphql/operations/session-workouts';
-import type { StoryModule } from '../../../dev/stories/types';
+import { formatGrade } from '@boardsesh/play-view';
+import type { SessionDetail } from '@boardsesh/shared-schema';
+import { SessionDetailStory } from '../../../dev/fixtures/session-detail';
+import { SessionFeedStoryCard } from '../../../dev/fixtures/session-feed';
+import { SessionSummaryStory } from '../../../dev/fixtures/session-summary';
 import { StoryVariant } from '../../../dev/stories/StoryCanvas';
-import { Text } from '../../Text';
-import { SessionFeedCard } from '../../you/SessionFeedCard';
-import { useProfile } from '../../../lib/graphql/hooks';
-import { sessionSummaryQueryKey, sessionWorkoutsQueryKey } from '../../../lib/graphql/query-keys';
+import type { StoryModule } from '../../../dev/stories/types';
 import { getGradeLabel } from '../../../lib/grade-label';
-import { useGradeFormat } from '../../../hooks/use-grade-format';
-import { rememberEndedWorkout } from '../../../lib/ended-workout-store';
-import { nowMs } from '../../../lib/clock';
 import type { WorkoutRunRecord } from '../../../lib/workout-run-store';
-import { headlineView } from './session-workout-view-model';
+import { headlineView, localWorkoutView, serverWorkoutView } from './session-workout-view-model';
+import type { WorkoutRepOutcome } from './types';
 import {
   STORY_FEED_SESSION,
   STORY_SUMMARY,
@@ -25,16 +20,8 @@ import {
   STORY_WORKOUT,
   storyDetailTicks,
 } from './workout-story-fixtures';
-import type { WorkoutRepOutcome } from './types';
-
-// The workout through the real data path (#6903): the story puts server-shaped
-// answers (`sessionWorkouts`, `sessionDetail`, the summary) in the query cache
-// under story-only session ids, pinned so nothing refetches, and opens the real
-// routes, so `useSessionWorkoutView` picks and maps them as it does a live
-// answer. The workout is stamped with the signed-in climber's id, so it reads
-// as theirs. The saving story leaves the server empty and keeps a recap on the
-// phone instead, the fallback a just-ended session sees.
-
+const formatStoryGrade = (grade: string | null | undefined, board?: string | null) =>
+  formatGrade(grade, 'v-grade', board);
 const SERVER_SESSION_ID = 'story-server-workout';
 const PHONE_SESSION_ID = 'story-phone-workout';
 const REP: Record<WorkoutRepOutcome, 'FLASH' | 'SEND' | 'ATTEMPT'> = {
@@ -163,50 +150,6 @@ function detail(userId: string): SessionDetail {
   };
 }
 
-type CacheEntry = { key: QueryKey; data: unknown };
-
-/** Pins `entries` in the query cache, then opens `href`. Waits for the signed-in profile first. */
-function OpenWithCache({ build, href }: { build: (userId: string) => CacheEntry[]; href: string }) {
-  const queryClient = useQueryClient();
-  const router = useRouter();
-  const { data: profile } = useProfile();
-  const userId = profile?.id ?? null;
-  useEffect(() => {
-    if (!userId) return;
-    for (const { key, data } of build(userId)) {
-      queryClient.setQueryDefaults(key, { staleTime: Infinity, gcTime: Infinity, retry: false });
-      queryClient.setQueryData(key, data);
-    }
-    router.push(href as Href);
-  }, [queryClient, router, build, href, userId]);
-  return <Text variant="footnote">{userId ? 'Opening…' : 'Sign in to open this story.'}</Text>;
-}
-
-const summaryEntries = (userId: string): CacheEntry[] => [
-  {
-    key: sessionSummaryQueryKey(SERVER_SESSION_ID),
-    data: { sessionSummary: { ...STORY_SUMMARY, sessionId: SERVER_SESSION_ID } satisfies SessionSummary },
-  },
-  { key: sessionWorkoutsQueryKey(SERVER_SESSION_ID), data: [serverWorkout(userId)] },
-];
-
-const detailEntries = (userId: string): CacheEntry[] => [
-  { key: ['sessionDetail', SERVER_SESSION_ID], data: detail(userId) },
-  { key: sessionWorkoutsQueryKey(SERVER_SESSION_ID), data: [serverWorkout(userId)] },
-];
-
-const phoneEntries = (userId: string): CacheEntry[] => {
-  rememberEndedWorkout(phoneRecord(), nowMs(), userId);
-  return [
-    {
-      key: sessionSummaryQueryKey(PHONE_SESSION_ID),
-      data: { sessionSummary: { ...STORY_SUMMARY_UNSYNCED, sessionId: PHONE_SESSION_ID } satisfies SessionSummary },
-    },
-    // The server answers nothing for an owner with no synced tick.
-    { key: sessionWorkoutsQueryKey(PHONE_SESSION_ID), data: [] },
-  ];
-};
-
 const SERVER_HEADLINES: SessionWorkoutHeadlineResult[] = [
   {
     sessionId: 'one',
@@ -238,8 +181,7 @@ const SERVER_HEADLINES: SessionWorkoutHeadlineResult[] = [
 ];
 
 function FeedCards() {
-  const { formatGrade } = useGradeFormat();
-  const lines = useMemo(() => SERVER_HEADLINES.map((headline) => headlineView(headline, formatGrade)), [formatGrade]);
+  const lines = SERVER_HEADLINES.map((headline) => headlineView(headline, formatStoryGrade));
   return (
     <>
       {lines.map((line, index) => (
@@ -247,10 +189,8 @@ function FeedCards() {
           key={SERVER_HEADLINES[index]?.sessionId}
           label={`server headline: ${SERVER_HEADLINES[index]?.sessionId}`}
         >
-          <SessionFeedCard
+          <SessionFeedStoryCard
             session={{ ...STORY_FEED_SESSION, sessionId: `story-feed-${index}`, socialEntityId: `story-feed-${index}` }}
-            onOpenComments={() => {}}
-            onPress={() => {}}
             workoutHeadline={line}
           />
         </StoryVariant>
@@ -263,16 +203,43 @@ const stories: StoryModule = {
   title: 'Session / Workout from the server',
   stories: {
     summary: {
-      name: 'Summary: the workout as sessionWorkouts answers it (real route)',
-      render: () => <OpenWithCache build={summaryEntries} href={`/record/summary?sessionId=${SERVER_SESSION_ID}`} />,
+      name: 'Summary: the workout as sessionWorkouts answers it (injected view)',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => (
+        <SessionSummaryStory
+          {...controls}
+          summary={STORY_SUMMARY}
+          workout={serverWorkoutView(serverWorkout('story'), formatStoryGrade)}
+        />
+      ),
     },
     summaryFromPhone: {
-      name: 'Summary: nothing on the server yet, the phone’s recap (real route)',
-      render: () => <OpenWithCache build={phoneEntries} href={`/record/summary?sessionId=${PHONE_SESSION_ID}`} />,
+      name: 'Summary: nothing on the server yet, the phone’s recap (injected view)',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => (
+        <SessionSummaryStory
+          {...controls}
+          summary={STORY_SUMMARY_UNSYNCED}
+          workout={localWorkoutView(phoneRecord(), 'story', formatStoryGrade) ?? undefined}
+          pendingTicks={22}
+        />
+      ),
     },
     detail: {
-      name: 'Session detail: climbs grouped by the server’s tick uuids (real route)',
-      render: () => <OpenWithCache build={detailEntries} href={`/profile/session/${SERVER_SESSION_ID}`} />,
+      name: 'Session detail: climbs grouped by the server’s tick uuids (injected view)',
+      layout: 'fullscreen',
+      tab: 'home',
+      tabRoot: false,
+      readiness: 'explicit',
+      render: (controls) => (
+        <SessionDetailStory
+          {...controls}
+          session={detail('story')}
+          workout={serverWorkoutView(serverWorkout('story'), formatStoryGrade)}
+        />
+      ),
     },
     feed: {
       name: 'Feed cards from sessionWorkoutHeadlines answers',

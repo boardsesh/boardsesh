@@ -17,7 +17,9 @@ export function ClimbMenu({
   previewBackgroundColor,
   previewOverlayColor,
   menuRef,
+  onPresented,
 }: {
+  onPresented?: () => void;
   rows: PlayDrawerMenuRow[];
   menuKey: string;
   children?: ReactElement;
@@ -54,6 +56,7 @@ export function ClimbMenu({
     return (
       <AppMenu
         actions={rows}
+        onPresented={onPresented}
         onSelectIndex={select}
         trigger="longPress"
         menuKey={menuKey}

@@ -110,12 +110,11 @@ participant composite named `02-live-climb.png`.
 The [campaign fixture contract](../../docs/mobile-screenshot-fixtures.md#routes)
 describes the recorded state required by the extended flow.
 
-The board is drawn with **Aura**, the app's default look, and the wall is pinned by
-name — both by the screenshots build, which fails the capture rather than commit a
-set in the classic look or on a fallback wall. Retarget one run from the workflow's
-`render_mode` / `boards` dispatch inputs. Replay takes its ordered board selectors
-from the fixture manifest unless explicitly overridden; legacy runs fall back to
-`packages/mobile/src/lib/screenshot-mode.ts`.
+The board is drawn with **Aura**, the default isolated-story renderer.
+The workflow's `render_mode` reaches `StoryRoot.tsx` through each story URL;
+story IDs select matching board fixtures. `boards` selectors apply to live
+integration setup, whose defaults live in `src/dev/integration/config.ts`.
+A missing story or failed asset readiness stops the capture.
 
 ## What's New
 

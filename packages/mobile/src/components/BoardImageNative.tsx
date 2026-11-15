@@ -1,3 +1,4 @@
+import type { BoardRenderStyle } from '../lib/board-render-style';
 import React, {
   useCallback,
   useEffect,
@@ -156,6 +157,7 @@ type BoardImageNativeProps = {
    * without the other. Must be referentially stable; see `useNativeClimbRender`.
    */
   renderSettingsOverride?: BoardRenderSettings;
+  renderStyleOverride?: BoardRenderStyle;
   /**
    * Draw this preview's four hold roles in a different set of colours than the
    * climber's stored ones — the colour-vision palette rail, whose cards each
@@ -207,6 +209,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   paintedTestID,
   paintedExtraTestID,
   renderSettingsOverride,
+  renderStyleOverride,
   holdColorOverride,
   maxVeilOpacity,
   fieldColorOverride,
@@ -261,6 +264,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     renderWidth,
     backgroundVariant,
     renderSettingsOverride,
+    renderStyleOverride,
     holdColorOverride,
     maxVeilOpacity,
     fieldColorOverride,
@@ -422,10 +426,27 @@ const BoardImageNative = React.memo(function BoardImageNative({
         setGpuPaintedConfig(gpuConfigJson);
         if (bridging) setDisplayedArtIdentity(currentArtIdentity);
       }
-      onArtReadinessChange?.(!liveOverlay && overlayFailed ? 'failed' : ready && !bridging ? 'ready' : 'loading');
+      onArtReadinessChange?.(
+        missingBackgroundCount > 0 || (!liveOverlay && (overlayFailed || (frames.length > 0 && rendererUnavailable)))
+          ? 'failed'
+          : ready && !bridging
+            ? 'ready'
+            : 'loading',
+      );
     },
-    [onArtReadinessChange, overlayFailed, bridging, liveOverlay, currentArtIdentity, gpuConfigJson],
+    [
+      onArtReadinessChange,
+      overlayFailed,
+      missingBackgroundCount,
+      frames,
+      rendererUnavailable,
+      bridging,
+      liveOverlay,
+      currentArtIdentity,
+      gpuConfigJson,
+    ],
   );
+  const handleArtError = useCallback(() => onArtReadinessChange?.('failed'), [onArtReadinessChange]);
   const liveArtRef = useRef({ identity: currentArtIdentity, bridging, onReadyArtDisplayed });
   liveArtRef.current = { identity: currentArtIdentity, bridging, onReadyArtDisplayed };
   const pendingVisibleArtRef = useRef<{
@@ -473,9 +494,13 @@ const BoardImageNative = React.memo(function BoardImageNative({
   const gridLabels = useMemo(
     () =>
       showGridLabels && isMoonboardBoardName(boardName) && !mirrored ? (
-        <MoonBoardGridLabels layoutId={layoutId} colorScheme={artColorScheme} />
+        <MoonBoardGridLabels
+          layoutId={layoutId}
+          colorScheme={artColorScheme}
+          visible={renderStyleOverride?.gridLabels}
+        />
       ) : null,
-    [showGridLabels, boardName, layoutId, mirrored, artColorScheme],
+    [showGridLabels, boardName, layoutId, mirrored, artColorScheme, renderStyleOverride?.gridLabels],
   );
 
   return (
@@ -534,6 +559,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
           onOverlayMounted={onOverlayMounted}
           displayIdentity={currentArtIdentity}
           onArtReadinessChange={handleArtReadinessChange}
+          onArtError={handleArtError}
           overlayRequired={liveOverlay !== undefined || (!!frames && !overlayUnavailable)}
           onArtDisplayed={(loadKey) => {
             if (liveOverlay || !overlayUri || loadKey !== overlayLoadKey) return;

@@ -115,11 +115,12 @@ describe('useFollowingClimbLogs', () => {
     await expectNoRequest(result);
   });
 
-  it('stays silent in screenshot mode', async () => {
+  it('keeps the live request independent of retired capture flags', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     const { wrapper } = createHarness();
     const { result } = renderHook(() => useFollowingClimbLogs('kilter', 'c1'), { wrapper });
-    await expectNoRequest(result);
+    await waitFor(() => expect(result.current.data?.items[0].uuid).toBe('log-on-c1'));
+    expect(mocks.request).toHaveBeenCalledOnce();
   });
 
   it("never shows the previous climb's rows while the next climb loads", async () => {

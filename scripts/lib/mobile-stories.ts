@@ -18,6 +18,7 @@ import {
   METRO_LOG_PATH,
   METRO_PORT,
   metroLogPathForPort,
+  readMetroLogSince,
   waitForMetroLogLine,
 } from './metro-dev-server';
 import { sleepSeconds } from './exec';
@@ -27,7 +28,7 @@ export const STORY_VARIANTS = ['liquidGlass', 'material'] as const;
 export type StoryTheme = (typeof STORY_THEMES)[number];
 export type StoryVariant = (typeof STORY_VARIANTS)[number];
 
-/** How long to wait for the story's line before capturing anyway. */
+/** Maximum time for the requested story to report a completed paint. */
 export const STORY_READY_TIMEOUT_SECONDS = 15;
 /** Extra settle after the ready line, for entry animations and an async theme switch. */
 export const STORY_READY_SETTLE_SECONDS = 0.5;
@@ -38,6 +39,7 @@ export const STORY_READY_SETTLE_SECONDS = 0.5;
 const STORY_ID = /^[a-z0-9]+(?:--?[a-z0-9]+)*$/;
 
 export interface StoryTarget {
+  renderMode?: string | null;
   id: string;
   theme: StoryTheme | null;
   variant: StoryVariant | null;
@@ -59,6 +61,7 @@ export function storyRoute(target: StoryTarget, shot: number = Date.now()): stri
   const query = [
     target.theme ? `theme=${target.theme}` : null,
     target.variant ? `variant=${target.variant}` : null,
+    target.renderMode ? `renderMode=${encodeURIComponent(target.renderMode)}` : null,
     `shot=${shot}`,
   ].filter((part): part is string => part !== null);
   return `dev/stories/${target.id}?${query.join('&')}`;
@@ -92,7 +95,8 @@ export function applyStoryOptions(options: StoryShotOptions): void {
 export type StoryLogEvent =
   | { kind: 'ready'; storyId: string }
   | { kind: 'scenario'; storyId: string; route: string }
-  | { kind: 'missing'; line: string };
+  | { kind: 'missing'; line: string }
+  | { kind: 'error'; line: string };
 
 /** The first harness line about `id` in `logText`, or null. */
 export function findStoryLogEvent(logText: string, id: string): StoryLogEvent | null {
@@ -101,6 +105,9 @@ export function findStoryLogEvent(logText: string, id: string): StoryLogEvent | 
   const ready = new RegExp(`\\[stories\\] ready (${idPattern})(?![a-z0-9-])`);
   const scenario = new RegExp(`\\[stories\\] scenario (${idPattern}) -> (\\S+)`);
   const missing = new RegExp(`\\[stories\\] missing ${id}(?![a-z0-9-]).*`);
+  const error = new RegExp(`\\[stories\\] error (?:${idPattern}|root)(?![a-z0-9-]).*`);
+  const errorMatch = error.exec(logText);
+  if (errorMatch) return { kind: 'error', line: errorMatch[0] };
   for (const line of logText.split('\n')) {
     const readyMatch = ready.exec(line);
     if (readyMatch) return { kind: 'ready', storyId: readyMatch[1] };
@@ -133,24 +140,16 @@ export function resolveMetroLogPath(explicit: string | null, rootDir: string, po
   return existing[0] ?? METRO_LOG_PATH;
 }
 
-/**
- * After navigating to a story, wait for its harness line in the Metro log
- * (written after `offset`), then settle briefly. A scenario story opens a real
- * screen, so it gets the normal `fallbackSettleSeconds`. No line within the
- * timeout: warn and return so the caller still captures. A missing story throws
- * with the app's "did you mean" list.
- */
+/** A visual capture succeeds only after the requested view reports readiness. */
 export function settleAfterStory(
   id: string,
   logPath: string,
   offset: number,
-  fallbackSettleSeconds: number,
+  _fallbackSettleSeconds: number,
   logPrefix: string,
 ): void {
   if (!existsSync(logPath)) {
-    console.warn(`${logPrefix} No Metro log at ${logPath}; waiting the fixed ${fallbackSettleSeconds}s settle.`);
-    sleepSeconds(fallbackSettleSeconds);
-    return;
+    throw new Error(`${logPrefix} No Metro log at ${logPath}; cannot verify story ${id}. Pass --metro-log.`);
   }
   const line = waitForMetroLogLine(
     (candidate) => findStoryLogEvent(candidate, id) !== null,
@@ -160,21 +159,36 @@ export function settleAfterStory(
   );
   const event = line === null ? null : findStoryLogEvent(line, id);
   if (event === null) {
-    console.warn(
-      `${logPrefix} WARNING: no "[stories] ready ${id}" in ${logPath} after ${STORY_READY_TIMEOUT_SECONDS}s; ` +
-        `capturing anyway. (Wrong log? Set BOARDSESH_METRO_PORT to the port \`run\` used, ` +
-        `or pass --metro-log <its log> for a Metro started elsewhere.)`,
+    throw new Error(
+      `${logPrefix} Story ${id} did not report readiness within ${STORY_READY_TIMEOUT_SECONDS}s. ` +
+        `Check required assets and the Metro log at ${logPath}.`,
     );
-    return;
   }
   if (event.kind === 'missing') throw new Error(event.line.replace('[stories] missing', 'No story'));
+  if (event.kind === 'error') throw new Error(event.line);
   if (event.kind === 'scenario') {
-    console.log(
-      `${logPrefix} Scenario ${event.storyId} opened ${event.route}; settling ${fallbackSettleSeconds}s for it.`,
-    );
-    sleepSeconds(fallbackSettleSeconds);
-    return;
+    throw new Error(`Story ${id} redirects to ${event.route}; capture a view story with explicit readiness instead.`);
   }
-  console.log(`${logPrefix} Story ${event.storyId} is ready.`);
+  // The line poll returns the first match. Scan the whole capture interval so
+  // a later asset failure cannot be hidden by an earlier readiness marker.
+  const assertNoFailure = () => {
+    const latest = findStoryLogEvent(readMetroLogSince(offset, logPath), id);
+    if (latest?.kind === 'error') throw new Error(latest.line);
+  };
+  assertNoFailure();
   sleepSeconds(STORY_READY_SETTLE_SECONDS);
+  assertNoFailure();
+  console.log(`${logPrefix} Story ${event.storyId} is ready.`);
+}
+
+/** Story captures never inherit live-app fixture transports or test credentials. */
+export function buildStoryEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const storyEnv = Object.fromEntries(
+    Object.entries(baseEnv).filter(([key]) => !key.startsWith('EXPO_PUBLIC_SCREENSHOT_')),
+  );
+  return { ...storyEnv, EXPO_PUBLIC_STORY_MODE: '1' };
+}
+
+export function isStoryRootReadyLine(line: string): boolean {
+  return line.includes('[stories] root ready');
 }

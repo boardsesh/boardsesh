@@ -11,17 +11,6 @@ export function useDeferredAfterInteractions(active: boolean, resetKey?: string 
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Screenshot mode: mount heavy content synchronously (no defer) so it
-    // composites in the same frames as the open animation. The deferred mount
-    // lands at a variable time (idle callback, else the timeout fallback),
-    // and Android's `adb screencap` (Maestro) captured the play-drawer board-view
-    // blank ~half the time as a result — the carousel-free board-presence sheet,
-    // which renders synchronously, never flaked. Folds out of normal builds.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
-      setReady(active);
-      return;
-    }
-
     if (!active) {
       setReady(false);
       return;

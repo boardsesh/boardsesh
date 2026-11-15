@@ -26,31 +26,6 @@ export function AnalyticsScreenTracker(): null {
       lastPath.current = path;
       trackScreen(path);
     }
-    // Screenshot mode: tell the capture orchestrator we reached home directly (not
-    // via Metro's `$screen /home` log, which intermittently stops forwarding mid-run
-    // with ERR_STREAM_UNABLE_TO_PIPE). A few retried GETs to its readiness server —
-    // a single fire-and-forget fetch loses the signal to any transient hiccup, and
-    // this ping only matters when the Metro marker is already lost. The inlined
-    // guard dead-strips this in normal builds.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && path === '/home') {
-      const readyUrl = process.env.EXPO_PUBLIC_SCREENSHOT_READY_URL;
-      if (readyUrl) {
-        const pingUntilDelivered = async () => {
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            try {
-              const readinessResponse = await fetch(readyUrl);
-              if (readinessResponse.ok) return;
-            } catch {
-              // Retry below.
-            }
-            if (attempt < 2) {
-              await new Promise((resolveDelay) => setTimeout(resolveDelay, 2000));
-            }
-          }
-        };
-        void pingUntilDelivered();
-      }
-    }
   }, [segments, granted]);
 
   return null;

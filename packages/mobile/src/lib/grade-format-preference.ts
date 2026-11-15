@@ -92,20 +92,25 @@ function getServerSnapshot(): GradeFormatSnapshot {
   return SERVER_SNAPSHOT;
 }
 
-export function useGradeDisplayFormatPreference(): {
+const subscribeDisabled = () => () => {};
+export function useGradeDisplayFormatPreference(enabled = true): {
   gradeFormat: GradeDisplayFormat;
   loaded: boolean;
   setGradeFormat: (format: GradeDisplayFormat) => void;
 } {
-  const { gradeFormat, loaded } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { gradeFormat, loaded } = useSyncExternalStore(
+    enabled ? subscribe : subscribeDisabled,
+    enabled ? getSnapshot : getServerSnapshot,
+    getServerSnapshot,
+  );
 
   // Kick the one-time AsyncStorage load from an effect (not render/subscribe).
   // The promise singleton makes this idempotent across every mounted row.
   useEffect(() => {
     // Swallow load failures here — ensureGradeFormatLoaded already clears its
     // cached promise so a later mount retries; nothing to do at this call site.
-    ensureGradeFormatLoaded().catch(() => {});
-  }, []);
+    if (enabled) ensureGradeFormatLoaded().catch(() => {});
+  }, [enabled]);
 
   const setGradeFormat = useCallback((next: GradeDisplayFormat) => {
     void setGradeDisplayFormatPreference(next);

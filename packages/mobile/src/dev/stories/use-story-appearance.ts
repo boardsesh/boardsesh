@@ -4,8 +4,7 @@ import { isThemeOverride, isUiVariantPreference } from '@boardsesh/key-value-sto
 import { useTheme } from '../../providers/theme-provider';
 
 /**
- * Apply a focused story's appearance to the whole app and persist it, like
- * Settings. Stack routes can stay mounted on blur; they must stop reapplying
+ * Apply a focused story's appearance to the isolated root's in-memory theme. Stack routes can stay mounted on blur; they must stop reapplying
  * their own params when another story changes these shared preferences.
  */
 export function useStoryAppearance(themeParam: string | undefined, variantParam: string | undefined): void {

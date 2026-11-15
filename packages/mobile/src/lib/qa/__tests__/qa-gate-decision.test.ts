@@ -10,7 +10,6 @@ function productionTester(overrides: Partial<QaGateInput> = {}): QaGateInput {
     userId: 'user-a',
     surfingBuild: true,
     surfingReady: true,
-    screenshotMode: false,
     launchedByDeepLink: false,
     topSegment: '(tabs)',
     onboardingSeen: true,
@@ -81,15 +80,11 @@ describe('decideQaGate — waiting', () => {
   it('waits ahead of every other reason to stop', () => {
     // Order matters: a not-yet-known input must not be resolved as a decision
     // just because some later guard also happens to say "none".
-    expect(decideQaGate(productionTester({ ready: false, isTester: false, screenshotMode: true }))).toBe('wait');
+    expect(decideQaGate(productionTester({ ready: false, isTester: false }))).toBe('wait');
   });
 });
 
 describe('decideQaGate — reasons to stay quiet', () => {
-  it('never prompts in screenshot mode', () => {
-    expect(decideQaGate(productionTester({ screenshotMode: true }))).toBe('none');
-  });
-
   it('never prompts a non-tester', () => {
     expect(decideQaGate(productionTester({ isTester: false }))).toBe('none');
   });

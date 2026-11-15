@@ -22,7 +22,7 @@ async function reportAnonymousHealth(
   properties: ReturnType<typeof anonymousOtaStatusProperties> | ReturnType<typeof anonymousOtaLaunchProperties>,
 ): Promise<void> {
   const apiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
-  if (isDevBuild() || !apiKey || process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return;
+  if (isDevBuild() || !apiKey) return;
   const installId = await getPersistentAnonymousInstallId();
   // Missing secure randomness or persistence: a launch-only fallback would
   // inflate install adoption, so skip this health report.

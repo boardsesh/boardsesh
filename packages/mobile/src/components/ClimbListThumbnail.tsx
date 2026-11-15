@@ -1,3 +1,4 @@
+import type { BoardRenderStyle } from '../lib/board-render-style';
 import React, { useEffect, useRef, type MutableRefObject } from 'react';
 import { PixelRatio, View, StyleSheet } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -79,6 +80,9 @@ type ClimbListThumbnailProps = {
    * internal render width scales with `width` so the enlarged cell stays crisp.
    */
   size?: { width: number; height: number };
+  onArtDisplayed?: () => void;
+  renderStyleOverride?: BoardRenderStyle;
+  onArtError?: (error: unknown) => void;
 };
 
 /**
@@ -102,6 +106,9 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   setIds,
   mirrored,
   size,
+  onArtDisplayed,
+  renderStyleOverride,
+  onArtError,
 }: ClimbListThumbnailProps) {
   const { systemColors } = useTheme();
   const listCell = useClimbListThumbnailSize();
@@ -125,10 +132,17 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
     sizeId,
     setIds,
     filledStyle: true,
+    renderStyleOverride,
     renderWidth: size
       ? sizedThumbnailRenderWidth(size.width)
       : climbListThumbnailRenderWidth(listCell.width, PixelRatio.get()),
   });
+
+  useEffect(() => {
+    if (missingBackgroundCount > 0 || (frames.length > 0 && overlayUnavailable)) {
+      onArtError?.(new Error('Board artwork unavailable'));
+    }
+  }, [missingBackgroundCount, overlayUnavailable, frames, onArtError]);
 
   // Rendered when the row took this climb (a revisit, or a row the list warmed
   // ahead of the scroll) is not enough on its own: on a hard flick the row can
@@ -161,11 +175,15 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
   return (
     <View style={[styles.container, cell]}>
       <LayeredClimbImage
+        onArtError={onArtError}
         overlayUri={overlayUri}
         overlayLoadKey={overlayLoadKey}
         displayIdentity={displayIdentity}
         onArtDisplayed={(loadKey) => {
-          if (displayedRef.current.identity === displayIdentity) displayedRef.current.loadKey = loadKey;
+          if (displayedRef.current.identity === displayIdentity) {
+            displayedRef.current.loadKey = loadKey;
+            onArtDisplayed?.();
+          }
         }}
         onOverlayLoad={onOverlayLoad}
         onOverlayError={onOverlayError}

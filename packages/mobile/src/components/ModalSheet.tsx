@@ -1,3 +1,4 @@
+import { useSheetPresented } from './use-sheet-presented';
 // Modal bottom sheet, presented imperatively via ref (`present()` / `dismiss()`)
 // OR declaratively via the `visible` prop.
 //
@@ -71,6 +72,8 @@ type ModalSheetProps = {
   snapPoints?: (string | number)[];
   enableDynamicSizing?: boolean;
   onChange?: (index: number) => void;
+  /** Fired after the coordinated presentation settles and the sheet content has laid out. */
+  onPresented?: () => void;
   /** Fired when the user closes the sheet themselves (pan-down / backdrop), so a
    * controlled parent can clear the state driving `visible`. */
   onClose?: () => void;
@@ -124,6 +127,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
     snapPoints: customSnapPoints,
     enableDynamicSizing = false,
     onChange,
+    onPresented,
     onClose,
     onFullyDismissed,
     onDisplaced,
@@ -173,6 +177,7 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   // Whether the native sheet is open, so a closed sheet never listens for the
   // keyboard (see the keyboard block below).
   const [isOpen, setIsOpen] = useState(false);
+  const observeContentLayout = useSheetPresented(isOpen, managed.waitForPresentation, onPresented);
   const columnStyle = useSheetColumnStyle(snapPoints, { enableDynamicSizing, activeIndex, contentSizedOnAndroid });
   // Dev-only observers for #3922 — they feed a log line, never layout.
   const { probeProps, sentinelProps, onColumnLayout } = useSheetDetentProbe(columnStyle, 'ModalSheet');
@@ -240,9 +245,10 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const handleColumnLayout = useCallback(
     (event: LayoutChangeEvent) => {
       onColumnLayout?.(event);
+      observeContentLayout(event);
       measureColumnForKeyboard();
     },
-    [onColumnLayout, measureColumnForKeyboard],
+    [onColumnLayout, observeContentLayout, measureColumnForKeyboard],
   );
   // The sheet's single child must carry the iOS detent bound (see
   // useSheetColumnStyle): with a header or footer the chrome column below
@@ -268,7 +274,14 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   const bodyContentContainerStyle = useSheetBodyContentStyle(Boolean(footer), contentContainerStyle, bottomInset);
   // #3922: measure whichever view actually carries columnStyle — the body when
   // there is no header or footer, the chrome column below when there is.
-  const bodyLayout = hasChrome ? undefined : onColumnLayout;
+  const handleBodyLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      observeContentLayout(event);
+      if (!hasChrome) onColumnLayout?.(event);
+    },
+    [observeContentLayout, hasChrome, onColumnLayout],
+  );
+  const bodyLayout = handleBodyLayout;
   // A focused field that opts in (the tick note) is scrolled clear of the pinned
   // footer once the keyboard shrinks the body (#5665). See sheet-scroll-into-view.
   const { scrollIntoView, scrollProps } = useSheetScrollIntoViewHost({
@@ -291,7 +304,9 @@ export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(functi
   ) : useContentFitting && !hasChrome && Platform.OS === 'web' ? (
     // Web + dynamic sizing only, where the column is never bounded and the
     // #3922 probe stays idle — so there is nothing to measure here.
-    <BottomSheetView style={[bodyStyle, bodyContentContainerStyle]}>{children}</BottomSheetView>
+    <BottomSheetView style={[bodyStyle, bodyContentContainerStyle]}>
+      {onPresented ? <View onLayout={handleBodyLayout}>{children}</View> : children}
+    </BottomSheetView>
   ) : (
     <View style={[bodyStyle, bodyContentContainerStyle]} onLayout={bodyLayout}>
       {children}

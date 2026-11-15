@@ -1,3 +1,4 @@
+import type { HoldMarkerStyle } from '../../lib/board-render-style';
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import type { BoardName, HoldFilterEntry, HoldFilterMode, HoldFilterType, HoldsFilter } from '@boardsesh/shared-schema';
@@ -9,6 +10,7 @@ import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
 import { getHoldFilterTypeShape } from './hold-filter-visuals';
 
 type SearchHoldFilterRingsProps = {
+  holdStyleOverride?: HoldMarkerStyle;
   boardName: BoardName;
   holdsFilter: HoldsFilter;
   holdTargets: BoardHoldTarget[];
@@ -43,6 +45,7 @@ function collectActiveFilters(entry: HoldFilterEntry): ActiveFilter[] {
  */
 export const SearchHoldFilterRings = React.memo(function SearchHoldFilterRings({
   boardName,
+  holdStyleOverride,
   holdsFilter,
   holdTargets,
   boardWidth,
@@ -50,12 +53,13 @@ export const SearchHoldFilterRings = React.memo(function SearchHoldFilterRings({
   measuredWidth,
   mirrored,
 }: SearchHoldFilterRingsProps) {
+  const storedHoldStyle = useHoldColorOverrides();
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
     brushThickness,
     shapeSize,
-  } = useHoldColorOverrides();
+  } = holdStyleOverride ?? storedHoldStyle;
   const colorByType = useMemo(() => {
     const map = new Map<HoldFilterType, string>();
     for (const option of buildHoldFilterOptions(boardName, holdColorOverrides)) map.set(option.type, option.color);

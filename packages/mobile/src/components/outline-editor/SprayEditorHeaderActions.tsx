@@ -13,7 +13,7 @@ type SprayEditorHeaderActionsProps = {
   /** Nothing ON yet, a Corners outline half placed, Refine open, or the wall locked. */
   primaryDisabled: boolean;
   onPrimary: () => void;
-  /** Replays the hints. Omitted hides the "?" (screenshot mode). */
+  /** Replays the hints. Omitted hides the help action. */
   onHelp?: () => void;
   helpDisabled: boolean;
 };

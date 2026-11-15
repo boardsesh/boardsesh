@@ -82,15 +82,17 @@ export const RestTimerPacerCaption = memo(function RestTimerPacerCaption(props: 
   return <CrewPacerLine {...props} />;
 });
 
-function CrewPacerLine({
+export function RestTimerPacerCaptionView({
+  role,
+  pacerDisplayName,
   variant = 'footnote',
   centered = false,
   scalesWithText = false,
   style,
-}: RestTimerPacerCaptionProps) {
+}: RestTimerPacerCaptionProps & { role: WallDriverRole; pacerDisplayName: string | null }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
-  const { role, pacerDisplayName } = useSessionTimerDriver();
+
   const caption = restTimerPacerCaption(role, pacerDisplayName, t);
   if (caption === null) return null;
   return (
@@ -115,3 +117,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+function CrewPacerLine(props: RestTimerPacerCaptionProps) {
+  return <RestTimerPacerCaptionView {...props} {...useSessionTimerDriver()} />;
+}

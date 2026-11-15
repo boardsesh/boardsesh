@@ -1,6 +1,4 @@
-import { useEffect, useMemo } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
-import { useTranslation } from 'react-i18next';
+import type { ConnectedAppsFormatters } from '@boardsesh/connected-apps';
 import {
   buildConnectedAppDetail,
   buildConnectedAppsSection,
@@ -8,19 +6,34 @@ import {
   type ConnectedAppsFacts,
   type ConnectedAppsTranslate,
 } from '@boardsesh/connected-apps';
+import { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ScrollView, StyleSheet } from 'react-native';
 import type { StoryModule } from '../../dev/stories/types';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { nowMs } from '../../lib/clock';
 import { spacing } from '../../theme/tokens';
-import { ConnectedAppDetailPage } from './ConnectedAppDetailScreen';
-import { PartnerAppsSectionView, useConnectedAppsFormatters } from './PartnerAppsSection';
+import { ConnectedAppDetailPageView } from './ConnectedAppDetailPageView';
+import { PartnerAppsSectionView } from './PartnerAppsSectionView';
+const FIXED_NOW = Date.parse('2026-10-26T12:00:00Z');
+function useStoryFormatters(): ConnectedAppsFormatters {
+  const { i18n } = useTranslation('settings');
+  return useMemo(
+    () => ({
+      date: (iso: string) =>
+        new Date(iso).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short', year: 'numeric' }),
+      relativeTime: (iso: string) => new Date(iso).toLocaleDateString(i18n.language),
+      nowMs: FIXED_NOW,
+    }),
+    [i18n.language],
+  );
+}
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 function twoApps({ suspendSecond = false } = {}): ConnectedAppsFacts {
-  const now = nowMs();
+  const now = FIXED_NOW;
   return {
     partnerAppsEnabled: true,
     apps: [
@@ -63,7 +76,7 @@ function StoryPage({ children }: { children: React.ReactNode }) {
 /** The list exactly as `PartnerAppsSection` builds it, from fixed data instead of the server. */
 function ListStory({ data }: { data: ConnectedAppsFacts }) {
   const { t } = useTranslation('settings');
-  const formatters = useConnectedAppsFormatters();
+  const formatters = useStoryFormatters();
   const section = useMemo(
     () => buildConnectedAppsSection({ signedIn: true, data, t: t as ConnectedAppsTranslate, formatters }),
     [data, t, formatters],
@@ -86,7 +99,7 @@ function DetailStory({
   confirm?: boolean;
 }) {
   const { t } = useTranslation('settings');
-  const formatters = useConnectedAppsFormatters();
+  const formatters = useStoryFormatters();
   const ask = useConfirm();
   const detail = useMemo(
     () => buildConnectedAppDetail({ signedIn: true, data, connectionId, t: t as ConnectedAppsTranslate, formatters }),
@@ -99,7 +112,15 @@ function DetailStory({
       destructive: true,
     });
   }, [confirm, detail, ask, t]);
-  return <ConnectedAppDetailPage detail={detail} onDisconnect={() => {}} disconnecting={false} onRetry={() => {}} />;
+  return (
+    <ConnectedAppDetailPageView
+      scrollBottomPadding={32}
+      detail={detail}
+      onDisconnect={() => {}}
+      disconnecting={false}
+      onRetry={() => {}}
+    />
+  );
 }
 
 const stories: StoryModule = {

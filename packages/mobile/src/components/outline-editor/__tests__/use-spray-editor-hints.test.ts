@@ -238,7 +238,7 @@ describe('useSprayEditorHints', () => {
     expect(markTipSeenMock).toHaveBeenCalledWith(ONBOARDING_TIP_SPRAY_LONG_PRESS_KEY);
   });
 
-  it('stays silent when disabled (screenshot mode, read-only)', async () => {
+  it('stays silent when the editor is read-only', async () => {
     const { result } = renderHook(() => useSprayEditorHints({ enabled: false, hasMaybes: true }));
     act(() => {
       result.current.replay();
@@ -250,7 +250,7 @@ describe('useSprayEditorHints', () => {
     expect(markTipSeenMock).not.toHaveBeenCalled();
   });
 
-  it('stays silent in screenshot mode, where storage reports every tip seen', async () => {
+  it('stays silent when saved preferences report every tip seen', async () => {
     hasSeenTipMock.mockImplementation(async () => true);
     const { result } = renderHook(() => useSprayEditorHints({ enabled: true, hasMaybes: true }));
     await waitFor(() => expect(hasSeenTipMock).toHaveBeenCalledTimes(5));

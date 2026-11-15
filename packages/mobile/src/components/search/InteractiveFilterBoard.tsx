@@ -1,7 +1,9 @@
+import type { BoardRenderStyle } from '../../lib/board-render-style';
 import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  type ComponentProps,
   type MutableRefObject,
   type ReactNode,
   type RefObject,
@@ -83,6 +85,8 @@ export type FilterBoardTransformContext = {
 };
 
 type InteractiveFilterBoardProps = {
+  renderStyleOverride?: BoardRenderStyle;
+  onArtReadinessChange?: ComponentProps<typeof BoardImageNative>['onArtReadinessChange'];
   /** Explicit draft photograph; avoids published registry geometry. */
   backgroundPhotoUrl?: string;
   /**
@@ -218,6 +222,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
   renderAboveBoard,
   controlRef,
   resetZoomStyle,
+  onArtReadinessChange,
+  renderStyleOverride,
   maxScale,
   pinchPans,
   viewport,
@@ -395,6 +401,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               <>
                 <Image
                   source={{ uri: backgroundPhotoUrl }}
+                  onDisplay={() => onArtReadinessChange?.('ready')}
+                  onError={() => onArtReadinessChange?.('failed')}
                   style={StyleSheet.absoluteFill}
                   contentFit="fill"
                   cachePolicy="memory"
@@ -409,6 +417,8 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               </>
             ) : (
               <BoardImageNative
+                renderStyleOverride={renderStyleOverride}
+                onArtReadinessChange={onArtReadinessChange}
                 frames=""
                 boardName={boardName}
                 layoutId={layoutId}
@@ -425,6 +435,7 @@ export const InteractiveFilterBoard = React.memo(function InteractiveFilterBoard
               <SearchHoldFilterRings
                 boardName={boardName}
                 holdsFilter={holdsFilter}
+                holdStyleOverride={renderStyleOverride?.holds}
                 holdTargets={holdTargets}
                 boardWidth={boardWidth}
                 boardHeight={boardHeight}

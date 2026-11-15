@@ -66,11 +66,7 @@ function countStaticColourUses(source: string): number {
 
 /** File → [count, reason]. Shrink-only. */
 const ALLOWLIST: Record<string, [number, string]> = {
-  'src/providers/theme-provider.tsx': [
-    1,
-    'Theme resolution itself: screenshot mode swaps the translucent separator for its opaque static twin.',
-  ],
-  'src/components/session/SessionTickRow.tsx': [
+  'src/components/session/SessionTickRowView.tsx': [
     1,
     'Solid attempt badge under a white glyph. Neither label role keeps white-on-fill contrast in both schemes, same as the static brand tones beside it.',
   ],

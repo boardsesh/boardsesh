@@ -125,7 +125,7 @@ export async function initializeConsent(): Promise<void> {
       record,
       loaded: true,
       accountResolved: coordinator.getSnapshot().accountResolved,
-      settled: process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
+      settled: false,
     });
     await initializePosthogClient();
   })();

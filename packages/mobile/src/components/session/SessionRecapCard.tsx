@@ -1,20 +1,9 @@
-import { AccessibleTextInput as TextInput } from '../AccessibleTextInput';
-import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
-import { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { useTranslation } from 'react-i18next';
-import { SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { Text } from '../Text';
-import { Button } from '../Button';
-import { Card } from '../Card';
-import { Icon } from '../Icon';
-import { PressableSurface } from '../PressableSurface';
-import { useTheme } from '../../providers/theme-provider';
-import { useUpdateSession } from '../../lib/graphql/hooks';
-import { getDraftComment, clearDraftComment } from '../../lib/session-comment-draft-store';
+import { useEffect, useState } from 'react';
 import { track } from '../../lib/analytics';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { useUpdateSession } from '../../lib/graphql/hooks';
+import { clearDraftComment, getDraftComment } from '../../lib/session-comment-draft-store';
+import { SessionRecapCardView } from './SessionRecapCardView';
 
 type SessionRecapCardProps = {
   sessionId: string;
@@ -37,10 +26,6 @@ type SessionRecapCardProps = {
  * toast would render behind the modal route.
  */
 export function SessionRecapCard({ sessionId, notes, editable = false, onEditorFocus }: SessionRecapCardProps) {
-  const styles = useTypographyStyles(createStyles);
-  const { t } = useTranslation('session');
-  const { t: tCommon } = useTranslation('common');
-  const { systemColors, brandColors } = useTheme();
   const updateSession = useUpdateSession();
 
   // Optimistic copy so the card flips to read mode with the saved text before
@@ -92,127 +77,19 @@ export function SessionRecapCard({ sessionId, notes, editable = false, onEditorF
     );
   };
 
-  if (isEditing) {
-    return (
-      <Card style={styles.card}>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {t('summary.commentLabel')}
-        </Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-          placeholder={t('summary.commentPlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          accessibilityLabel={t('summary.commentLabel')}
-          value={draft}
-          onChangeText={setDraft}
-          maxLength={SESSION_NOTES_MAX_LENGTH}
-          multiline
-          autoFocus
-          textAlignVertical="top"
-          onFocus={onEditorFocus}
-        />
-        <Text variant="caption2" color={systemColors.secondaryLabel} style={styles.helper}>
-          {t('summary.commentHelper', { count: draft.length, max: SESSION_NOTES_MAX_LENGTH })}
-        </Text>
-        {updateSession.isError ? (
-          <Text variant="footnote" color={brandColors.error}>
-            {t('summary.recapSaveError')}
-          </Text>
-        ) : null}
-        <View style={styles.actions}>
-          <Button title={tCommon('comment.cancel')} variant="text" onPress={cancelEditing} />
-          <Button
-            title={tCommon('comment.save')}
-            variant="filled"
-            loading={updateSession.isPending}
-            onPress={handleSave}
-          />
-        </View>
-      </Card>
-    );
-  }
-
-  // Read mode with a recap: the creator can tap to edit; viewers see it read-only.
-  if (hasNotes) {
-    return (
-      <Card
-        style={styles.card}
-        onPress={editable ? startEditing : undefined}
-        accessibilityLabel={editable ? `${t('summary.recapTitle')}: ${displayedNotes}` : undefined}
-      >
-        <View style={styles.captionRow}>
-          <Text variant="caption1" color={systemColors.secondaryLabel}>
-            {t('summary.recapTitle')}
-          </Text>
-          {editable ? <Icon name="edit" size={14} color={systemColors.secondaryLabel} /> : null}
-        </View>
-        <Text variant="body">{displayedNotes}</Text>
-      </Card>
-    );
-  }
-
-  // Empty + editable: an add-a-recap affordance that opens the inline editor.
-  if (editable) {
-    return (
-      <PressableSurface
-        style={[styles.addRow, { backgroundColor: systemColors.secondaryBackground }]}
-        feedback="opacity"
-        onPress={startEditing}
-        accessibilityRole="button"
-        accessibilityLabel={t('summary.addRecap')}
-      >
-        <Icon name="plus" size={20} color={systemColors.accent} />
-        <Text variant="body" color={systemColors.accent} style={styles.addLabel}>
-          {t('summary.addRecap')}
-        </Text>
-        <Icon name="chevron.right" size={14} color={systemColors.tertiaryLabel} />
-      </PressableSurface>
-    );
-  }
-
-  return null;
+  return (
+    <SessionRecapCardView
+      displayedNotes={displayedNotes}
+      editable={editable}
+      isEditing={isEditing}
+      draft={draft}
+      pending={updateSession.isPending}
+      error={updateSession.isError}
+      onChangeDraft={setDraft}
+      onEdit={startEditing}
+      onCancel={cancelEditing}
+      onSave={handleSave}
+      onEditorFocus={onEditorFocus}
+    />
+  );
 }
-
-const createStyles = (textStyles: TypographyScale) =>
-  StyleSheet.create({
-    card: {
-      gap: spacing[1],
-    },
-    input: {
-      minHeight: 88,
-      maxHeight: 160,
-      borderRadius: borderRadius.lg,
-      paddingHorizontal: spacing[3],
-      paddingVertical: spacing[2],
-      fontSize: textStyles.subheadline.fontSize,
-      marginTop: spacing[1],
-    },
-    helper: {
-      textAlign: 'right',
-    },
-    actions: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      gap: spacing[2],
-      marginTop: spacing[1],
-    },
-    addRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      minHeight: 44,
-      paddingHorizontal: spacing[4],
-      paddingVertical: spacing[3],
-      gap: spacing[3],
-      borderRadius: borderRadius.lg,
-      overflow: 'hidden',
-    },
-    addLabel: {
-      flex: 1,
-    },
-    captionRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing[1],
-    },
-  });

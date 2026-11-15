@@ -28,7 +28,6 @@ const ELIGIBLE_INPUT = {
   boardseshGradeEnabled: true,
   description: 'Start with your left hand on the sidepull.',
   boardName: 'moonboard' as BoardName,
-  screenshotMode: false,
 };
 
 describe('visiblePlayDrawerSections', () => {
@@ -130,12 +129,8 @@ describe('visiblePlayDrawerSections', () => {
     },
   );
 
-  it.each([
-    { isAuthenticated: false, screenshotMode: false },
-    { isAuthenticated: true, screenshotMode: true },
-    { isAuthenticated: false, screenshotMode: true },
-  ])('omits Climber logs when auth/screenshot eligibility excludes it: %j', (eligibility) => {
-    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, ...eligibility })).not.toContain('climberLogs');
+  it('omits Climber logs for an anonymous viewer', () => {
+    expect(visiblePlayDrawerSections({ ...ELIGIBLE_INPUT, isAuthenticated: false })).not.toContain('climberLogs');
   });
 
   it('omits Boardsesh grade when its feature flag is disabled', () => {

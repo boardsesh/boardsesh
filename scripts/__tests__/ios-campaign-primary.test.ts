@@ -11,7 +11,7 @@ import {
   parseArgs,
   resolveIosScreenshotDevices,
 } from '../mobile-screenshots';
-import { parseScreenshotBoardSelectors } from '../../packages/mobile/src/lib/screenshot-board-matching';
+import { parseScreenshotBoardSelectors } from '../../packages/mobile/src/dev/integration/screenshot-board-matching';
 import { SEARCH_CLIMBS } from '../../packages/mobile/src/lib/graphql/operations';
 import { createHash } from 'node:crypto';
 import { graphqlFixtureKey } from '../lib/screenshot-fixtures';

@@ -1,13 +1,4 @@
-import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
-import { ReadableColumn } from '../../../src/components/ReadableColumn';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
-import { FlashList, type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useScopedRouter as useRouter } from '../../../src/lib/routing/scoped-navigation';
-import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
-import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { SMART_PLAYLIST_COUNTS_QUERY_KEY } from '@boardsesh/playlists-react';
 import type {
   CrewFeedItem,
   SessionFeedItem,
@@ -15,59 +6,54 @@ import type {
   SocialEntityType,
   UserBoard,
 } from '@boardsesh/shared-schema';
-import { Text } from '../../../src/components/Text';
-import { Icon } from '../../../src/components/Icon';
-import { Card } from '../../../src/components/Card';
-import { Button } from '../../../src/components/Button';
-import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
-import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
-import { useSessionWorkoutHeadlines } from '../../../src/components/session/workout/use-session-workout-view';
-import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
-import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
-import { CommentSheet } from '../../../src/components/you/CommentSheet';
-import { HomeTopChrome, TOP_ISLAND_BAND } from '../../../src/components/feed/HomeTopChrome';
-import { FeedScopeTitle } from '../../../src/components/feed/FeedScopeTitle';
+import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
+import { type FlashListRef, type ListRenderItemInfo } from '@shopify/flash-list';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { type AppMenuAction } from '../../../src/components/AppMenu';
+import { AppStorePrompt } from '../../../src/components/AppStorePrompt';
+import { HomeTopChrome, TOP_ISLAND_BAND } from '../../../src/components/feed/HomeTopChrome';
+import { NewClimbFeedCard } from '../../../src/components/feed/NewClimbFeedCard';
+import { HomeCustomizeSheet } from '../../../src/components/home/HomeCustomizeSheet';
+import { HomeHeaderView } from '../../../src/components/home/HomeHeaderView';
+import { HomeSections } from '../../../src/components/home/HomeSections';
+import { HomeSupportCard } from '../../../src/components/home/HomeSupportCard';
+import { HomeView } from '../../../src/components/home/HomeView';
+import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
+import { useSessionWorkoutHeadlines } from '../../../src/components/session/workout/use-session-workout-view';
+import { CommentSheet } from '../../../src/components/you/CommentSheet';
+import { SessionFeedCard } from '../../../src/components/you/SessionFeedCard';
+import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
+import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
+import { useMountedOnFirstOpen } from '../../../src/hooks/use-mounted-on-first-open';
+import { useNativeRootHeader } from '../../../src/hooks/use-native-root-header';
+import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
+import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
+import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
+import { createFeedPageGate, requiresCrewPageTap } from '../../../src/lib/feed/crew-page-state';
+import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
+import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
 import { useBulkVoteSummaries, useSessionGroupedFeed } from '../../../src/lib/graphql/hooks';
+import { useCrewFeed } from '../../../src/lib/graphql/hooks/use-crew-feed';
+import { useHomeBoard } from '../../../src/lib/graphql/hooks/use-home-board';
 import {
   FOLLOWED_LIVE_SESSIONS_QUERY_KEY,
   RECENT_BETA_LINKS_QUERY_KEY,
   SESSION_SUMMARY_QUERY_KEY,
 } from '../../../src/lib/graphql/query-keys';
-import { SMART_PLAYLIST_COUNTS_QUERY_KEY } from '@boardsesh/playlists-react';
-import { useHomeBoard } from '../../../src/lib/graphql/hooks/use-home-board';
-import { useAuth } from '../../../src/providers/auth-provider';
-import { useTheme } from '../../../src/providers/theme-provider';
-import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
-import { useOfflineQueryState } from '../../../src/hooks/use-offline-query-state';
-import { useScrollEdgeBackdrop } from '../../../src/hooks/use-scroll-edge-backdrop';
-import { useHideOnScroll } from '../../../src/hooks/use-hide-on-scroll';
-import { OfflineState } from '../../../src/components/OfflineState';
-import { dedupeSessionsById } from '../../../src/lib/feed-time-buckets';
-import { deriveFeedScopeInput, type FeedMode } from '../../../src/lib/feed/feed-scope';
-import { createFeedPageGate, requiresCrewPageTap } from '../../../src/lib/feed/crew-page-state';
-import { buildVoteSummaryMap, voteSummaryKey, type VoteSummary } from '../../../src/lib/feed/vote-summary-map';
-import { useTickListActivation } from '../../../src/lib/playlists/use-tick-list-activation';
 import { hapticLight } from '../../../src/lib/haptics';
-import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
-import { borderRadius, spacing } from '../../../src/theme/tokens';
-import { InviteSheet } from '../../../src/components/session-screen/InviteSheet';
-import { HomeSections } from '../../../src/components/home/HomeSections';
-import { HomeSupportCard } from '../../../src/components/home/HomeSupportCard';
-import { HomeCustomizeButton } from '../../../src/components/home/HomeCustomizeButton';
-import { HomeCustomizeSheet } from '../../../src/components/home/HomeCustomizeSheet';
-import { HomeEmptyState } from '../../../src/components/home/HomeEmptyState';
 import { useHomeSectionLayout, visibleTopHomeSections } from '../../../src/lib/home-sections';
-import { useMountedOnFirstOpen } from '../../../src/hooks/use-mounted-on-first-open';
+import { useTickListActivation } from '../../../src/lib/playlists/use-tick-list-activation';
+import { useScopedRouter as useRouter } from '../../../src/lib/routing/scoped-navigation';
+import { navigateToSessionFeedItem } from '../../../src/lib/session-feed-navigation';
+import { useAuth } from '../../../src/providers/auth-provider';
 
-import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit';
-import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
-import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
 import { useHasBeenFocused } from '../../../src/hooks/use-has-been-focused';
-import { ScreenshotSmokeMarker } from '../../../src/components/ScreenshotSmokeMarker';
-
-const INITIAL_FEED_SKELETON_KEYS = ['home-feed-skeleton-1', 'home-feed-skeleton-2', 'home-feed-skeleton-3'];
-const NEXT_PAGE_FEED_SKELETON_KEYS = ['home-feed-footer-skeleton-1', 'home-feed-footer-skeleton-2'];
+import { HomeStartupCommit } from '../../../src/lib/profiling/HomeStartupCommit';
+import { homeEmptyStartupOutcome } from '../../../src/lib/profiling/startup-collector';
+import { STARTUP_PROFILING_ENABLED } from '../../../src/lib/profiling/startup-profile';
 
 type CommentTarget = {
   entityId: string;
@@ -76,8 +62,6 @@ type CommentTarget = {
 
 // Hoisted so the FlashList `keyExtractor` prop keeps a stable identity across
 // renders (perf playbook rule 3) instead of a fresh inline arrow each pass.
-const keyExtractor = (item: CrewFeedItem) => item.id;
-const getItemType = (item: CrewFeedItem) => item.__typename;
 const NO_FEED_ITEMS: CrewFeedItem[] = [];
 // A session card shows one climb, so it plays from a list of just that one.
 const NO_TICKS: SessionFeedTickHighlight[] = [];
@@ -91,7 +75,6 @@ export default function HomeTab() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
-  const { systemColors, brandColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlashListRef<CrewFeedItem>>(null);
@@ -127,10 +110,7 @@ export default function HomeTab() {
   // or the "Everyone" global feed). It defaults to the inferred home board once
   // it resolves; the view stays on `crew`.
   const { board: homeBoard, isResolving: isResolvingHomeBoard, boards: ownedBoards } = useHomeBoard();
-  // Screenshot builds open on the global "Everyone" feed (gym + no board) — a
-  // livelier hero shot than the test user's own crew. Inlined so it dead-strips
-  // in normal builds, where the default stays `crew`.
-  const [mode, setMode] = useState<FeedMode>(process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? 'gym' : 'crew');
+  const [mode, setMode] = useState<FeedMode>('crew');
   const [selectedBoard, setSelectedBoard] = useState<UserBoard | null>(null);
   // Once home-board inference settles, point the crew/gym filter at the home
   // board. The view stays on `crew`; with no home board it's the unfiltered crew.
@@ -146,9 +126,7 @@ export default function HomeTab() {
   const homeBoardUuid = homeBoard?.uuid ?? null;
   if (!isResolvingHomeBoard && scopedHomeBoardUuid !== homeBoardUuid) {
     setScopedHomeBoardUuid(homeBoardUuid);
-    // Screenshot mode stays on the global "Everyone" feed, so don't scope the
-    // gym view to the home board (that would turn it into one board's feed).
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1' && !hasChosenScope) setSelectedBoard(homeBoard);
+    if (!hasChosenScope) setSelectedBoard(homeBoard);
   }
   const hasDefaultedScope = scopedHomeBoardUuid !== undefined;
 
@@ -506,38 +484,38 @@ export default function HomeTab() {
   // The layout changes only when the climber edits it.
   const header = useMemo(
     () => (
-      <View style={styles.header}>
-        {nativeRootHeader && scopeVisible ? (
-          <View style={styles.scopePicker}>
-            <FeedScopeTitle
-              title={scopeMenu.title}
-              actions={scopeMenu.actions}
-              onSelectIndex={scopeMenu.onSelectIndex}
-              accessibilityHint={t('mobile.home.scope.hint')}
-            />
-          </View>
-        ) : null}
-        {/* Days 1 to 7 of each month, where store rules allow; usually nothing. */}
-        <HomeSupportCard />
-        {/* Browser app on a phone only; renders nothing on native. */}
-        <AppStorePrompt surface="home" />
-        <HomeSections
-          sectionIds={topSectionIds}
-          cardsReady={hasBeenFocused}
-          liveBoardUuid={liveBoardUuid}
-          liveEnabled={scopeReady}
-          betaBoardType={selectedBoard?.boardType ?? null}
-          betaLayoutId={selectedBoard?.layoutId ?? null}
-          onInvite={handleOpenInvite}
-        />
-        {/* An empty Home offers Customize in its empty state instead. */}
-        {homeEmpty ? null : <HomeCustomizeButton onPress={handleOpenCustomize} />}
-        {feedVisible ? (
-          <Text variant="title3" style={styles.feedHeading}>
-            {sessionsHeading}
-          </Text>
-        ) : null}
-      </View>
+      <HomeHeaderView
+        scope={
+          nativeRootHeader && scopeVisible
+            ? {
+                title: scopeMenu.title,
+                actions: scopeMenu.actions,
+                onSelectIndex: scopeMenu.onSelectIndex,
+                accessibilityHint: t('mobile.home.scope.hint'),
+              }
+            : undefined
+        }
+        notices={
+          <>
+            <HomeSupportCard />
+            <AppStorePrompt surface="home" />
+          </>
+        }
+        sections={
+          <HomeSections
+            sectionIds={topSectionIds}
+            cardsReady={hasBeenFocused}
+            liveBoardUuid={liveBoardUuid}
+            liveEnabled={scopeReady}
+            betaBoardType={selectedBoard?.boardType ?? null}
+            betaLayoutId={selectedBoard?.layoutId ?? null}
+            onInvite={handleOpenInvite}
+          />
+        }
+        showCustomize={!homeEmpty}
+        onCustomize={handleOpenCustomize}
+        heading={feedVisible ? sessionsHeading : undefined}
+      />
     ),
     [
       nativeRootHeader,
@@ -557,325 +535,80 @@ export default function HomeTab() {
     ],
   );
 
-  if (!isAuthenticated) {
-    return (
-      <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
-        {STARTUP_PROFILING_ENABLED ? <HomeStartupCommit outcome="empty" /> : null}
-        <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.emptyTitle}>
-          {t('mobile.home.signInTitle')}
-        </Text>
-        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-          {t('mobile.home.signInBody')}
-        </Text>
-        <View style={styles.emptyCta}>
-          <Button title={tCommon('userDrawer.signIn')} onPress={() => router.push('/auth/login')} />
-        </View>
-      </View>
-    );
-  }
-
   return (
-    <View testID="home-screen" style={[styles.flex, { backgroundColor: systemColors.background }]}>
-      {process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? (
-        <ScreenshotSmokeMarker route="/home" count={feedItems.length} />
-      ) : null}
-      <ReadableColumn style={styles.flex}>
-        <FlashList
-          ref={listRef}
-          data={feedItems}
-          getItemType={getItemType}
-          extraData={listExtraData}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          // UIKit owns the native title inset; other variants use the measured chrome.
-          contentInsetAdjustmentBehavior={nativeRootHeader ? 'automatic' : 'never'}
-          contentContainerStyle={{
-            paddingTop: chromeHeight,
-            paddingBottom: bottomChrome.scrollBottomPadding + spacing[5],
-          }}
-          scrollIndicatorInsets={{ top: chromeHeight }}
-          // Every frame, so the app bar tints while rows pass under it (the browser
-          // build otherwise reports little more than the start and end of a scroll).
-          scrollEventThrottle={16}
-          {...scrollEdge.list?.listProps}
-          onScroll={handleScroll}
-          onEndReached={handleEndReached}
-          onEndReachedThreshold={0.5}
-          ListHeaderComponent={header}
-          refreshControl={
-            <RefreshControl
-              refreshing={feedVisible ? feed.isRefetching : sectionsRefreshing}
-              onRefresh={handleRefresh}
-              tintColor={brandColors.primary}
-            />
-          }
-          ListEmptyComponent={
-            !feedVisible ? (
-              <>
-                {STARTUP_PROFILING_ENABLED ? <HomeStartupCommit outcome={homeEmpty ? 'empty' : 'content'} /> : null}
-                {homeEmpty ? <HomeEmptyState onCustomize={handleOpenCustomize} /> : null}
-              </>
-            ) : (
-              <>
-                {STARTUP_PROFILING_ENABLED ? (
-                  <HomeStartupCommit
-                    outcome={homeEmptyStartupOutcome({
-                      authenticated: isAuthenticated,
-                      blockedReason: feedOffline.isBlocked ? feedOffline.reason : null,
-                      loading: feed.isLoading,
-                      scopeReady,
-                      error: feed.isError,
-                    })}
-                  />
-                ) : null}
-                {feedOffline.isBlocked && feedOffline.reason ? (
-                  <OfflineState reason={feedOffline.reason} onRetry={handleRefresh} />
-                ) : feed.isLoading || !scopeReady ? (
-                  <ActivitySkeletonList skeletonKeys={INITIAL_FEED_SKELETON_KEYS} />
-                ) : feed.isError ? (
-                  <View style={styles.feedState}>
-                    <Icon name="error" size={32} color={systemColors.error} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('errors.loadActivity')}
-                    </Text>
-                    <View style={styles.emptyCta}>
-                      <Button title={tCommon('actions.retry')} onPress={() => void feed.refetch()} />
-                    </View>
-                  </View>
-                ) : requiresManualPage ? null : mode === 'gym' && selectedBoard != null ? (
-                  <View style={styles.feedState}>
-                    <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('mobile.home.boardEmptyTitle', { board: selectedBoard.gymName ?? selectedBoard.name })}
-                    </Text>
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                      {t('mobile.home.boardEmptyBody')}
-                    </Text>
-                    <View style={styles.emptyCta}>
-                      <Button title={t('mobile.home.boardEmptyCta')} onPress={handleBrowseEveryone} />
-                    </View>
-                  </View>
-                ) : mode === 'crew' ? (
-                  <View style={styles.feedState}>
-                    <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('mobile.home.emptyTitle')}
-                    </Text>
-                    <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyBody}>
-                      {t('mobile.home.emptyBody')}
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.feedState}>
-                    <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-                    <Text variant="headline" style={styles.emptyTitle}>
-                      {t('emptyStates.noRecentActivity')}
-                    </Text>
-                  </View>
-                )}
-              </>
-            )
-          }
-          ListFooterComponent={
-            feed.isFetchingNextPage ? (
-              <ActivitySkeletonList skeletonKeys={NEXT_PAGE_FEED_SKELETON_KEYS} />
-            ) : requiresManualPage ? (
-              <Button title={t('crewLoadMore')} onPress={loadNextPage} />
-            ) : null
-          }
+    <HomeView
+      isAuthenticated={isAuthenticated}
+      feedItems={feedItems}
+      renderItem={renderItem}
+      listRef={listRef}
+      listExtraData={listExtraData}
+      nativeRootHeader={nativeRootHeader}
+      chromeHeight={chromeHeight}
+      bottomInset={bottomChrome.scrollBottomPadding}
+      scrollEdge={scrollEdge.list}
+      handleScroll={handleScroll}
+      handleEndReached={handleEndReached}
+      handleRefresh={handleRefresh}
+      handleOpenCustomize={handleOpenCustomize}
+      handleBrowseEveryone={handleBrowseEveryone}
+      loadNextPage={loadNextPage}
+      onSignIn={() => router.push('/auth/login')}
+      header={header}
+      chrome={
+        <HomeTopChrome
+          showScopeMenu={scopeVisible}
+          scopeTitle={scopeMenu.title}
+          scopeActions={scopeMenu.actions}
+          onSelectScopeIndex={scopeMenu.onSelectIndex}
+          onOpenSearch={handleOpenSearch}
+          searchAccessibilityLabel={t('mobile.home.searchAction')}
+          scopeAccessibilityHint={t('mobile.home.scope.hint')}
+          onHeightChange={setChromeHeight}
+          scrollEdge={scrollEdge.backdrop}
         />
-      </ReadableColumn>
-      <HomeTopChrome
-        showScopeMenu={scopeVisible}
-        scopeTitle={scopeMenu.title}
-        scopeActions={scopeMenu.actions}
-        onSelectScopeIndex={scopeMenu.onSelectIndex}
-        onOpenSearch={handleOpenSearch}
-        searchAccessibilityLabel={t('mobile.home.searchAction')}
-        scopeAccessibilityHint={t('mobile.home.scope.hint')}
-        onHeightChange={setChromeHeight}
-        scrollEdge={scrollEdge.backdrop}
-      />
-      <CommentSheet
-        sheetRef={commentSheetRef}
-        entityId={commentTarget?.entityId ?? null}
-        entityType={commentTarget?.entityType ?? 'tick'}
-        onClose={() => setCommentTarget(null)}
-      />
-      {inviteSessionId ? (
-        <InviteSheet visible={inviteOpen} onDismiss={handleDismissInvite} sessionId={inviteSessionId} />
-      ) : null}
-      {mountCustomizeSheet ? <HomeCustomizeSheet visible={customizeOpen} onClose={handleCloseCustomize} /> : null}
-    </View>
+      }
+      overlays={
+        <>
+          <CommentSheet
+            sheetRef={commentSheetRef}
+            entityId={commentTarget?.entityId ?? null}
+            entityType={commentTarget?.entityType ?? 'tick'}
+            onClose={() => setCommentTarget(null)}
+          />
+          {inviteSessionId ? (
+            <InviteSheet visible={inviteOpen} onDismiss={handleDismissInvite} sessionId={inviteSessionId} />
+          ) : null}
+          {mountCustomizeSheet ? <HomeCustomizeSheet visible={customizeOpen} onClose={handleCloseCustomize} /> : null}
+        </>
+      }
+      feedVisible={feedVisible}
+      homeEmpty={homeEmpty}
+      sectionsRefreshing={sectionsRefreshing}
+      scopeReady={scopeReady}
+      requiresManualPage={requiresManualPage}
+      mode={mode}
+      selectedBoard={selectedBoard}
+      feedOffline={feedOffline}
+      feed={feed}
+      emptyMarker={
+        STARTUP_PROFILING_ENABLED ? (
+          <HomeStartupCommit
+            outcome={
+              !feedVisible
+                ? homeEmpty
+                  ? 'empty'
+                  : 'content'
+                : homeEmptyStartupOutcome({
+                    authenticated: isAuthenticated,
+                    blockedReason: feedOffline.isBlocked ? feedOffline.reason : null,
+                    loading: feed.isLoading,
+                    scopeReady,
+                    error: feed.isError,
+                  })
+            }
+          />
+        ) : undefined
+      }
+    />
   );
 }
-
-function ActivitySkeletonList({ skeletonKeys }: { skeletonKeys: string[] }) {
-  return (
-    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      {skeletonKeys.map((skeletonKey) => (
-        <ActivityCardSkeleton key={skeletonKey} />
-      ))}
-    </View>
-  );
-}
-
-function ActivityCardSkeleton() {
-  const { systemColors } = useTheme();
-  const blockStyle = { backgroundColor: systemColors.fill };
-
-  return (
-    <View style={styles.cardOuter}>
-      <Card>
-        <View style={styles.skeletonHeader}>
-          <View style={[styles.skeletonAvatar, blockStyle]} />
-          <View style={styles.skeletonHeaderText}>
-            <View style={[styles.skeletonTitleLine, blockStyle]} />
-            <View style={[styles.skeletonSmallLine, blockStyle]} />
-          </View>
-        </View>
-
-        <View style={styles.skeletonBody}>
-          <View style={[styles.skeletonThumbnail, blockStyle]} />
-          <View style={styles.skeletonDetails}>
-            <View style={[styles.skeletonClimbName, blockStyle]} />
-            <View style={[styles.skeletonMetaLine, blockStyle]} />
-            <View style={[styles.skeletonCommentLine, blockStyle]} />
-            <View style={[styles.skeletonCommentShortLine, blockStyle]} />
-          </View>
-        </View>
-
-        <View style={[styles.skeletonSocialRow, { borderTopColor: systemColors.separator }]}>
-          <View style={[styles.skeletonSocialPill, blockStyle]} />
-          <View style={[styles.skeletonSocialPill, blockStyle]} />
-        </View>
-      </Card>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  centered: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing[8],
-    gap: spacing[2],
-  },
-  header: {
-    // A small gap below the floating header band (the list already insets by the
-    // band via contentContainerStyle).
-    paddingTop: spacing[2],
-  },
-  scopePicker: {
-    alignItems: 'flex-start',
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-  },
-  feedHeading: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
-  },
-  cardOuter: {
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
-  },
-  skeletonHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[3],
-  },
-  skeletonAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: borderRadius.full,
-    opacity: 0.5,
-  },
-  skeletonHeaderText: {
-    flex: 1,
-    gap: spacing[2],
-  },
-  skeletonTitleLine: {
-    width: '44%',
-    height: 18,
-    borderRadius: borderRadius.full,
-    opacity: 0.55,
-  },
-  skeletonSmallLine: {
-    width: '34%',
-    height: 12,
-    borderRadius: borderRadius.full,
-    opacity: 0.4,
-  },
-  skeletonBody: {
-    flexDirection: 'row',
-    gap: spacing[3],
-    paddingTop: spacing[3],
-  },
-  skeletonThumbnail: {
-    width: 76,
-    height: 96,
-    borderRadius: borderRadius.md,
-    opacity: 0.55,
-  },
-  skeletonDetails: {
-    flex: 1,
-    gap: spacing[2],
-  },
-  skeletonClimbName: {
-    width: '74%',
-    height: 20,
-    borderRadius: borderRadius.full,
-    opacity: 0.55,
-  },
-  skeletonMetaLine: {
-    width: '64%',
-    height: 14,
-    borderRadius: borderRadius.full,
-    opacity: 0.4,
-  },
-  skeletonCommentLine: {
-    width: '92%',
-    height: 12,
-    borderRadius: borderRadius.full,
-    opacity: 0.35,
-  },
-  skeletonCommentShortLine: {
-    width: '58%',
-    height: 12,
-    borderRadius: borderRadius.full,
-    opacity: 0.32,
-  },
-  skeletonSocialRow: {
-    flexDirection: 'row',
-    gap: spacing[2],
-    marginTop: spacing[3],
-    paddingTop: spacing[2],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  skeletonSocialPill: {
-    width: 52,
-    height: 28,
-    borderRadius: borderRadius.full,
-    opacity: 0.42,
-  },
-  feedState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: spacing[12],
-    paddingHorizontal: spacing[8],
-    gap: spacing[2],
-  },
-  emptyTitle: {
-    marginTop: spacing[3],
-    textAlign: 'center',
-  },
-  emptyBody: {
-    textAlign: 'center',
-  },
-  emptyCta: {
-    marginTop: spacing[4],
-  },
-});

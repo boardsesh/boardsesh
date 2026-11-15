@@ -10,7 +10,7 @@ name: e2e gate smoke
 # This flow only NAVIGATES. On this iOS build Maestro cannot match the app's own
 # elements (see README.md, "Coordinate taps"), so there is nothing here to
 # assert with. The assertions are the app's own: each screen pings the
-# orchestrator with a content count (src/components/ScreenshotSmokeMarker.tsx)
+# orchestrator with a content count (src/components/ContentRenderObserver.tsx)
 # and the crash screen pings an error. The orchestrator fails the run on a
 # missing ping, a zero count, an error ping, or a fatal line in the device log.
 #
@@ -62,7 +62,7 @@ name: e2e gate smoke
     timeout: 30000
 
 # Open the first climb's play drawer.
-- openLink: com.boardsesh.app://climbs?screenshotOpenFirst=1
+- openLink: com.boardsesh.app://dev/integration/open-first-climb
 - tapOn:
     text: 'Open'
     optional: true

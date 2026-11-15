@@ -283,7 +283,9 @@ describe('native wizard exit protection', () => {
   it('keeps editor controls below the measured header and photo actions on screen under the photo', () => {
     const editor = readFileSync(resolve(mobileRoot, 'src/components/outline-editor/SprayHoldEditorScreen.tsx'), 'utf8');
     expect(editor.includes('const headerInset = useTransparentHeaderInset()')).toBe(true);
-    expect(/backgroundColor:\s*systemColors.background,\s*marginTop:\s*headerInset/.test(editor)).toBe(true);
+    expect(editor.includes('headerInset={headerInset}')).toBe(true);
+    const editorView = readFileSync(resolve(mobileRoot, 'src/components/outline-editor/SprayEditorView.tsx'), 'utf8');
+    expect(/backgroundColor:\s*systemColors.background,\s*marginTop:\s*headerInset/.test(editorView)).toBe(true);
     const wizard = readFileSync(resolve(mobileRoot, 'src/components/spray-wall/SprayWallWizardScreen.tsx'), 'utf8');
     const photo = wizard.slice(
       wizard.indexOf("{state.step === 'photo' ?"),

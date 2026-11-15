@@ -1,11 +1,12 @@
-import { PressableSurface } from '../PressableSurface';
+import { QueueListBodyView } from './QueueListBodyView';
+
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Platform, View, StyleSheet } from 'react-native';
+import { Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { upNextStart, type Climb, type ClimbQueueItem, type PlaylistSuggestionSource } from '@boardsesh/queue';
 import { QueueSheetHeader } from './QueueSheetHeader';
 import { QueueList } from './QueueList';
-import { Text } from '../Text';
+
 import type { QueueItemRowBoard } from '../QueueItemRow';
 import {
   usePlaylistSuggestionSource,
@@ -13,14 +14,13 @@ import {
   useQueueSessionId,
   type QueueClearSource,
 } from '../../providers/queue-provider';
-import { useTheme } from '../../providers/theme-provider';
+
 import { hapticWarning } from '../../lib/haptics';
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
 import { getCredentialGeneration } from '../../lib/privacy/privacy-cache';
 import { useQueueWalkBoard } from '../../providers/queue/use-queue-walk-board';
 import { UndoSnackbar } from '../UndoSnackbar';
-import { brandColors } from '../../theme/colors';
-import { iosSystemColors } from '../../theme/ios-colors';
+
 import { spacing } from '../../theme/tokens';
 import { useWindowBottomInset } from '../../hooks/use-window-bottom-inset';
 import { useScreenReaderEnabled } from '../../hooks/use-screen-reader-enabled';
@@ -105,7 +105,6 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   // above the home indicator.
   const windowBottomInset = useWindowBottomInset();
   const bottomInset = presentation === 'sheet' ? windowBottomInset : 0;
-  const { systemColors } = useTheme();
 
   const {
     removeQueueItems,
@@ -269,108 +268,73 @@ export const QueueListBody = forwardRef<QueueListBodyHandle, QueueListBodyProps>
   );
 
   return (
-    <>
-      <QueueSheetHeader
-        isEditMode={isEditMode}
-        showHistory={showHistory}
-        selectedCount={selectedItems.size}
-        queueCount={upNextCount}
-        viewOnlyMode={viewOnlyMode}
-        showTitle={presentation === 'sheet'}
-        onToggleEditMode={handleToggleEditMode}
-        onToggleHistory={handleToggleHistory}
-        onClose={onClose}
-        onClearAll={handleClearAll}
-      />
-
-      <QueueList
-        queue={queue}
-        currentItem={currentClimbQueueItem}
-        historyCount={historyCount ?? null}
-        board={board}
-        isEditMode={isEditMode}
-        showHistory={showHistory}
-        showFullHistory={showFullHistory}
-        selectedItems={selectedItems}
-        playlistSuggestionSource={playlistSuggestionSource}
-        walkBoard={walkBoard}
-        active={active}
-        autoScrollOnMount={active}
-        onToggleSelect={handleToggleSelect}
-        onClimbPress={onClimbPress}
-        onOpenActions={onOpenActions}
-        onRemove={handleRemove}
-        onShowFullHistory={handleShowFullHistory}
-        onTickHistory={onTickHistory}
-        onSuggestionPress={onSuggestionPress}
-        reorderQueue={reorderQueue}
-        onDraggingChange={onDraggingChange}
-        presentation={presentation}
-      />
-
-      {pendingUndo ? (
-        <UndoSnackbar
-          visible
-          nonce={pendingUndo.nonce}
-          message={
-            pendingUndo.kind === 'cleared'
-              ? t('mobile.queueSheet.cleared')
-              : t('mobile.queueSheet.removed', { count: pendingUndo.removedUuids.size })
-          }
-          undoLabel={t('mobile.queueSheet.undo')}
-          undoAccessibilityLabel={t('mobile.queueSheet.undoAria')}
-          onUndo={handleUndo}
-          onDismiss={handleUndoDismiss}
-          duration={screenReaderEnabled ? screenReaderUndoDuration : QUEUE_UNDO_DURATION}
-          // Every queue removal unmounts the control the climber was on: the ⋯
-          // and Edit once the queue is empty, the Remove bar, the removed row.
-          focusUndoOnShow={screenReaderEnabled}
-          bottom={bottomInset + spacing[3]}
+    <QueueListBodyView
+      header={
+        <QueueSheetHeader
+          isEditMode={isEditMode}
+          showHistory={showHistory}
+          selectedCount={selectedItems.size}
+          queueCount={upNextCount}
+          viewOnlyMode={viewOnlyMode}
+          showTitle={presentation === 'sheet'}
+          onToggleEditMode={handleToggleEditMode}
+          onToggleHistory={handleToggleHistory}
+          onClose={onClose}
+          onClearAll={handleClearAll}
         />
-      ) : null}
-
-      {isEditMode && selectedItems.size > 0 && (
-        <View
-          style={[
-            styles.bulkBar,
-            {
-              paddingBottom: bottomInset + spacing[3],
-              backgroundColor: systemColors.background,
-              borderTopColor: systemColors.separator,
-            },
-          ]}
-        >
-          <PressableSurface
-            onPress={handleBulkRemove}
-            accessibilityRole="button"
-            accessibilityLabel={t('queueDrawer.removeItems', { count: selectedItems.size })}
-            style={styles.bulkButton}
-          >
-            <Text variant="headline" color={iosSystemColors.white}>
-              {t('queueDrawer.removeItems', { count: selectedItems.size })}
-            </Text>
-          </PressableSurface>
-        </View>
-      )}
-    </>
+      }
+      list={
+        <QueueList
+          queue={queue}
+          currentItem={currentClimbQueueItem}
+          historyCount={historyCount ?? null}
+          board={board}
+          isEditMode={isEditMode}
+          showHistory={showHistory}
+          showFullHistory={showFullHistory}
+          selectedItems={selectedItems}
+          playlistSuggestionSource={playlistSuggestionSource}
+          walkBoard={walkBoard}
+          active={active}
+          autoScrollOnMount={active}
+          onToggleSelect={handleToggleSelect}
+          onClimbPress={onClimbPress}
+          onOpenActions={onOpenActions}
+          onRemove={handleRemove}
+          onShowFullHistory={handleShowFullHistory}
+          onTickHistory={onTickHistory}
+          onSuggestionPress={onSuggestionPress}
+          reorderQueue={reorderQueue}
+          onDraggingChange={onDraggingChange}
+          presentation={presentation}
+        />
+      }
+      undo={
+        pendingUndo ? (
+          <UndoSnackbar
+            visible
+            nonce={pendingUndo.nonce}
+            message={
+              pendingUndo.kind === 'cleared'
+                ? t('mobile.queueSheet.cleared')
+                : t('mobile.queueSheet.removed', { count: pendingUndo.removedUuids.size })
+            }
+            undoLabel={t('mobile.queueSheet.undo')}
+            undoAccessibilityLabel={t('mobile.queueSheet.undoAria')}
+            onUndo={handleUndo}
+            onDismiss={handleUndoDismiss}
+            duration={screenReaderEnabled ? screenReaderUndoDuration : QUEUE_UNDO_DURATION}
+            // Every queue removal unmounts the control the climber was on: the ⋯
+            // and Edit once the queue is empty, the Remove bar, the removed row.
+            focusUndoOnShow={screenReaderEnabled}
+            bottom={bottomInset + spacing[3]}
+          />
+        ) : null
+      }
+      isEditMode={isEditMode}
+      selectedCount={selectedItems.size}
+      bottomInset={bottomInset}
+      onRemove={handleBulkRemove}
+    />
   );
-});
-
-const styles = StyleSheet.create({
-  bulkBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  bulkButton: {
-    backgroundColor: brandColors.error,
-    borderRadius: 12,
-    paddingVertical: spacing[3],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

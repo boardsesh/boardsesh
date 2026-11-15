@@ -1,3 +1,4 @@
+import { bluetoothTransport } from './transport-runtime';
 // Scan-only BLE discovery for the "Bluetooth quickstart" board picker. Unlike
 // the adapter's requestAndConnect (which scans *and* opens a UART connection),
 // this only listens for in-range boards. Aurora boxes that advertise a serial
@@ -120,11 +121,7 @@ export function useBoardScan(): BoardScan {
 
   const start = useCallback(async () => {
     if (scanningRef.current) return;
-
-    // The fake-Bluetooth screenshot build pretends a board is connected, not
-    // that one is advertising: no real serial exists to resolve, so the scan
-    // finishes empty instead of erroring on the simulator's radio.
-    if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && process.env.EXPO_PUBLIC_SCREENSHOT_FAKE_BLE === '1') {
+    if (bluetoothTransport()?.discovery === 'external') {
       setStatus('done');
       return;
     }

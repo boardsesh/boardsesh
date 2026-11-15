@@ -1,3 +1,4 @@
+import { BoardHeldCapsuleView, HeldClimbCapsuleView, type HeldClimbCapsuleProps } from './BoardHeldCapsuleView';
 // "You have the board": the Climbs header's status capsule while this climber
 // holds the board (Liquid Glass only). It takes the slot the "On the wall"
 // capsule uses: when the wall shows your own queue head it is that climb's skin,
@@ -24,36 +25,25 @@
 // swipe and the screen-reader action, no × (#7281). A tap here lets go of the
 // board, so a touch that panned is never a tap or a long press.
 
-import { memo, useCallback, useMemo, useState } from 'react';
-import { StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
-import { useReducedMotion } from 'react-native-reanimated';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Climb } from '@boardsesh/queue';
-import { useQueueData } from '../../providers/queue/queue-contexts';
-import { useTheme } from '../../providers/theme-provider';
+import { type AccessibilityActionEvent } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
+import { useDisplayGrade } from '../../hooks/use-display-grade';
+import { hapticMedium } from '../../lib/haptics';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
-import { useDisplayGrade } from '../../hooks/use-display-grade';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
-import { hapticMedium } from '../../lib/haptics';
-import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
+import { useQueueData } from '../../providers/queue/queue-contexts';
+import { useTheme } from '../../providers/theme-provider';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
+import { useSettledHeaderValue } from '../chrome/use-settled-header-value';
 import { useBulbDriveTap } from './bar-bulb-tap';
-import { phoneDrivesTheWall } from './bulb-drive-cue';
 import { showsWallHoldLook } from './board-control-indicator-state';
-import { LargeContentViewer } from '../LargeContentViewer';
-import { Text } from '../Text';
-import { Icon } from '../Icon';
-import { HeaderCapsuleClimbLabel, HeaderStatusCapsule, useHeaderCapsuleCompact } from './HeaderStatusCapsule';
-import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
+import { phoneDrivesTheWall } from './bulb-drive-cue';
 import { useClimbStatsDetail } from './use-climb-byline';
-import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 import { useClimbWallGlow } from './use-climb-wall-glow';
-import { useWallGlowLayer, wallGlowBlendFor, type WallGlowLayer } from '../play-drawer/use-wall-glow';
-import { wallGlowSurfaces } from '../../theme/colors';
-import { WallGlow } from '../play-drawer/WallGlow';
-
-const CAPSULE_GLYPH_SIZE = 16;
+import { useWallCapsuleDismiss } from './use-wall-capsule-dismiss';
+import { WallCapsuleSwipe } from './WallCapsuleSwipe';
 
 /** Hide the climb on the wall for this lighting, as the "On the wall" capsule does. */
 export type HeldCapsuleDismiss = {
@@ -75,23 +65,8 @@ const NO_OCCURRENCE = 'board-held';
 function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsuleProps) {
   const { t } = useTranslation('settings');
   const { t: tSession } = useTranslation('session');
-  const { systemColors, brandColors, colorScheme } = useTheme();
-  const scheme = colorScheme === 'dark' ? 'dark' : 'light';
-  // A held LED board with no climb still gets the frost base and grain. Empty
-  // blobs deliberately supply no invented hold colours and need no measurement.
-  const emptyGlow = useMemo<WallGlowLayer>(
-    () => ({
-      key: `held-header-empty-${scheme}`,
-      blobs: [],
-      fade: 0,
-      surface: wallGlowSurfaces[scheme],
-      ...wallGlowBlendFor(scheme),
-      readableZone: 'full',
-    }),
-    [scheme],
-  );
+  const { brandColors } = useTheme();
   const { open: openControls } = useBleControlSheet();
-  const compact = useHeaderCapsuleCompact();
   const reduceMotion = useReducedMotion();
   const swipe = useWallCapsuleDismiss({
     occurrenceKey: dismiss?.occurrenceKey ?? NO_OCCURRENCE,
@@ -138,9 +113,7 @@ function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsu
     lightbulbPress();
   }, [consumePanned, takeTap, pressAction, lightbulbPress]);
 
-  const plainGlow = !ledless && localConnected ? emptyGlow : null;
   const toneColor = ledless ? brandColors.primary : brandColors.warning;
-  const statusLabel = t(ledless ? 'ble.barControl.wallHeldLabel' : 'ble.barControl.youHaveBoard');
 
   const handleLongPress = useCallback(() => {
     if (!localConnected || consumePanned()) return;
@@ -179,54 +152,15 @@ function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsu
       accessibilityHint={accessibilityHint}
     />
   ) : (
-    <HeaderStatusCapsule
-      tintColor={toneColor}
-      entryKey={ledless ? 'wall-held' : 'board-held'}
+    <BoardHeldCapsuleView
+      ledless={ledless}
+      localConnected={localConnected}
       onPress={onPress}
       onLongPress={handleLongPress}
       accessibilityActions={accessibilityActions}
       onAccessibilityAction={handleAccessibilityAction}
-      accessibilityLabel={statusLabel}
       accessibilityHint={accessibilityHint}
-      compact={compact}
-      background={
-        plainGlow
-          ? {
-              content: <WallGlow layer={plainGlow} width={0} />,
-              color: plainGlow.surface.base,
-              borderColor: plainGlow.surface.border,
-            }
-          : undefined
-      }
-      testID="board-held-capsule"
-    >
-      {compact ? null : (
-        <Icon
-          maxFontSizeMultiplier={1}
-          name={ledless ? 'pin.fill' : 'lightbulb.fill'}
-          size={CAPSULE_GLYPH_SIZE}
-          color={toneColor}
-        />
-      )}
-      {/* At an accessibility text size the viewer takes the hold and cancels the
-          capsule's own long press, then activates when the finger lifts. A hold
-          means "board controls" here, so the lift opens them; it never lets go. */}
-      <LargeContentViewer title={statusLabel} onActivate={handleLongPress} style={styles.labelViewer}>
-        <Text
-          variant="caption1"
-          color={plainGlow?.surface.label ?? systemColors.label}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[
-            styles.label,
-            plainGlow && (plainGlow.surface.frost ? styles.glowShadowDark : styles.glowShadowLight),
-          ]}
-        >
-          {statusLabel}
-        </Text>
-      </LargeContentViewer>
-    </HeaderStatusCapsule>
+    />
   );
 
   // Always wrapped (the pan is off with nothing to hide), so Hide arriving or
@@ -234,111 +168,18 @@ function BoardHeldCapsuleImpl({ ledless: ledlessBoard, dismiss }: BoardHeldCapsu
   return <WallCapsuleSwipe swipe={swipe}>{capsule}</WallCapsuleSwipe>;
 }
 
-type HeldClimbCapsuleProps = {
-  climb: Climb;
-  ledless: boolean;
-  toneColor: string;
-  onPress: () => void;
-  onLongPress: () => void;
-  accessibilityActions: { name: string; label: string }[] | undefined;
-  onAccessibilityAction: (event: AccessibilityActionEvent) => void;
-  accessibilityHint: string;
-};
-
 /**
  * Your climb's name over its grade and sends, no face (#7281). Split out so the
  * glow and the stats read only run with a climb; exported for the
  * header-capsules story.
  */
-export function HeldClimbCapsule({
-  climb,
-  ledless,
-  toneColor,
-  onPress,
-  onLongPress,
-  accessibilityActions,
-  onAccessibilityAction,
-  accessibilityHint,
-}: HeldClimbCapsuleProps) {
-  const { t } = useTranslation('settings');
+export function HeldClimbCapsule(props: HeldClimbCapsuleProps) {
   const { boardConfig } = useDrawerHost();
   const { resolveGrade } = useDisplayGrade();
-  const { colorScheme } = useTheme();
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const glow = useClimbWallGlow(climb, boardConfig, !ledless);
-  const glowLayer = useWallGlowLayer(glow, size.width, size.height, colorScheme === 'dark' ? 'dark' : 'light', 'full');
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setSize((previous) => (previous.width === width && previous.height === height ? previous : { width, height }));
-  }, []);
-
-  const grade = resolveGrade(climb, boardConfig?.boardName).label;
-  const sendsDetail = useClimbStatsDetail(climb, boardConfig);
-  const accessibilityLabel = t(ledless ? 'ble.barControl.wallHeldWithClimb' : 'ble.barControl.youHaveBoardWithClimb', {
-    name: climb.name,
-    grade: grade ?? '',
-  });
-
-  return (
-    <HeaderStatusCapsule
-      tintColor={toneColor}
-      entryKey={climb.uuid}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      accessibilityActions={accessibilityActions}
-      onAccessibilityAction={onAccessibilityAction}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint={accessibilityHint}
-      compact
-      onLayout={handleLayout}
-      background={
-        glowLayer
-          ? {
-              content: <WallGlow layer={glowLayer} width={size.width} />,
-              color: glowLayer.surface.base,
-              borderColor: glowLayer.surface.border,
-            }
-          : undefined
-      }
-      testID="board-held-capsule"
-    >
-      <HeaderCapsuleClimbLabel
-        avatar={null}
-        name={climb.name}
-        byline={{ grade: grade || null, detail: sendsDetail }}
-        textColor={glowLayer?.surface.label}
-        textStyle={glowLayer ? (glowLayer.surface.frost ? styles.glowShadowDark : styles.glowShadowLight) : undefined}
-        compact
-        largeContentTitle={accessibilityLabel}
-        // The viewer takes the hold at accessibility sizes; its lift is the long
-        // press (board controls), never the tap that lets go of the board.
-        onActivate={onLongPress}
-      />
-    </HeaderStatusCapsule>
-  );
+  const glow = useClimbWallGlow(props.climb, boardConfig, !props.ledless);
+  const grade = resolveGrade(props.climb, boardConfig?.boardName).label;
+  const sendsDetail = useClimbStatsDetail(props.climb, boardConfig);
+  return <HeldClimbCapsuleView {...props} grade={grade} sendsDetail={sendsDetail} glow={glow} />;
 }
 
 export const BoardHeldCapsule = memo(BoardHeldCapsuleImpl);
-
-const styles = StyleSheet.create({
-  labelViewer: {
-    // A flex:1 label has zero intrinsic width in a UIKit navigation title view.
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  label: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontWeight: '600',
-  },
-  glowShadowDark: {
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1.5,
-  },
-  glowShadowLight: {
-    textShadowColor: 'rgba(255, 255, 255, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1.5,
-  },
-});

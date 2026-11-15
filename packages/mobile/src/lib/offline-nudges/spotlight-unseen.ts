@@ -15,7 +15,6 @@ import { loadNudgeState } from './nudge-storage';
  * store screen must never show the pill.
  */
 export async function hasUnseenOfflineSpotlight(): Promise<boolean> {
-  if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;
   // Already downloading something: the spotlight has nothing to tell them.
   if (getSetting('syncEnabledBoards').length > 0) return false;
   if (getSetting('autoOfflineBoards')) return false;

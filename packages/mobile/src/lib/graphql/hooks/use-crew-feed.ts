@@ -3,7 +3,6 @@ import { GET_CREW_FEED } from '@boardsesh/graphql/operations';
 import type { CrewFeedResult } from '@boardsesh/shared-schema';
 import { useStoredUserId } from '../../../hooks/use-current-user-id';
 import { getHttpClient } from '../client';
-import { screenshotModeNextPageParam } from '../../screenshot-mode';
 
 /**
  * The zone the server draws each setter's day boundary in, so a climb published
@@ -42,11 +41,7 @@ export function useCrewFeed(enabled: boolean) {
         // for it crashes rather than ignoring it.
         input: { limit: 20, cursor: pageParam, timeZone: TIME_ZONE, groupClimbs: true },
       }),
-    getNextPageParam: (lastPage, allPages) =>
-      screenshotModeNextPageParam(
-        lastPage.crewFeed.hasMore ? (lastPage.crewFeed.cursor ?? undefined) : undefined,
-        allPages.length,
-      ),
+    getNextPageParam: (lastPage) => (lastPage.crewFeed.hasMore ? (lastPage.crewFeed.cursor ?? undefined) : undefined),
     enabled: enabled && !!userId,
   });
 }
