@@ -82,7 +82,11 @@ function missingCookies(header: string | null): string | null {
   if (
     (header ?? '').split(';').some((piece) => {
       const name = piece.trim().split('=', 1)[0];
-      return name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) || name.startsWith('__Host-boardsesh.browser-renewal');
+      return (
+        name.startsWith(BROWSER_PROOF_COOKIE_PREFIX) ||
+        name.startsWith('__Host-boardsesh.browser-renewal') ||
+        name.startsWith('__Host-boardsesh.expired-binding')
+      );
     })
   )
     return refuse(409, 'proof-required');

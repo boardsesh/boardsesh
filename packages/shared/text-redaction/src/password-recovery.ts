@@ -13,8 +13,9 @@ const QUERY_FIELDS = new Set(['query_string', 'http.query', 'url.query', 'http.f
 const RECOVERY_FIELDS = new Set(['token', 'confirmationtoken', 'email', 'password', 'confirmpassword', 'recipient']);
 /** Body fields that are secrets wherever they appear. `oauth_query` is the consent pages' signed request. */
 const SECRET_FIELD = /^(?:token|confirmationToken|password|confirmPassword|oauth_query)$/i;
-const RENEWAL_COOKIE_PREFIX = '__host-boardsesh.browser-renewal';
-const RENEWAL_COOKIE_ASSIGNMENT = /(__Host-boardsesh\.browser-renewal[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
+const CUSTODY_COOKIE_PREFIXES = ['__host-boardsesh.browser-renewal', '__host-boardsesh.expired-binding'];
+const CUSTODY_COOKIE_ASSIGNMENT =
+  /(__Host-boardsesh\.(?:browser-renewal|expired-binding)[^\s;=,"'<>\\]{0,160}\s*=\s*)[^\s;,"'<>\\]+/gi;
 
 function decodedName(name: string): string {
   const characters: string[] = [];
@@ -39,7 +40,8 @@ function isRecoveryField(name: string): boolean {
   return RECOVERY_FIELDS.has(decodedName(name));
 }
 function isRenewalCookieField(name: string): boolean {
-  return decodedName(name).startsWith(RENEWAL_COOKIE_PREFIX);
+  const decoded = decodedName(name);
+  return CUSTODY_COOKIE_PREFIXES.some((prefix) => decoded.startsWith(prefix));
 }
 
 /**
@@ -51,7 +53,7 @@ function isRenewalCookieField(name: string): boolean {
  */
 export function redactPasswordRecoveryUrls(text: string): string {
   return text
-    .replace(RENEWAL_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
+    .replace(CUSTODY_COOKIE_ASSIGNMENT, (_match, prefix: string) => `${prefix}${REDACTED}`)
     .replace(RECOVERY_URL, (_match, path: string, marker: string) => `${path}${marker}${REDACTED}`)
     .replace(VERSIONED_SECRET, REDACTED);
 }

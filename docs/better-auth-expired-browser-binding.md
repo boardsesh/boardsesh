@@ -59,12 +59,47 @@ and can drain expired hashes while the feature mode is legacy. Retain a qualifie
 current-schema pool while draining; do not downgrade its contract on the
 assumption that disabling this feature relaxes catalog qualification.
 
-Public completion remains separate: explicit user action, canonical-origin
-coordination, Host/Origin/CSRF checks, purpose-bound custody of the actual target
-before finalize, complete cookie capacity and response preparation before any
-writer, and final current-binding observations before publication. A stale
-response must never replace an unrelated current binding. A live selected
-binding with missing proof still requires a distinct real-auth recovery policy;
-this expired-only operation cannot authorize it. Generic expired admission,
-automatic anonymous/legacy fallback, broad account revocation and public
-readiness remain unavailable.
+The staged public join uses three canonical POST routes under
+`/api/internal/auth/browser-coordinator/signin`: prepare, commit and confirm.
+They require an explicit sign-in action, the canonical coordinator lock and exact
+Host/Origin/CSRF boundaries. Ordinary coordinator reads and renewal never invoke
+this retirement or its recovery. Settings, linking and reauthentication continue
+to use their existing read-only preflight.
+
+Prepare validates the actually presented correlation cookie. An admitted live
+selection is retained after a second exact primary observation. Otherwise only
+the dedicated backend's database-confirmed expiry may prepare retirement. A
+unique `__Host-boardsesh.expired-binding.<operation-key>` HttpOnly carrier uses
+AES-GCM with a separate HKDF purpose and origin/operation associated data. It
+holds the actual old and target tokens, private operation token and full frozen
+preparation; browser-visible replies contain only strict control metadata. The
+old correlation lease is refreshed to the same token before any finalizer. No
+future target correlation or proof is published during preparation.
+
+Commit requires the physical old correlation token to equal the sealed old
+token. It buffers the complete target-cookie response, including all unrelated
+observed cookies in capacity calculations, before one finalizer. The response
+is published only after exact completion and read-only acknowledgement of the
+still-anonymous version-zero target. A final acknowledgement after the target
+read fences authority, old-row or target changes during that await. An unknown
+physical outcome returns no cookie writes and retains actual recovery custody.
+The next explicit prepare may acknowledge an existing operation and publish its
+exact target; it never replays that operation's finalizer. An uncompleted old
+operation is never reused: a later explicit action requires a fresh preparation.
+
+Confirm requires the actual physical target correlation cookie, exact durable
+completion and the unchanged anonymous version-zero target. It clears only that
+operation's observed carrier names. Every unrelated operation and old proof is
+retained. The canonical transport must settle each body, confirm installation
+and perform a final exact primary observation before returning ready metadata.
+The four-operation, whole-request pair/byte and response-header limits fail
+closed; no capacity exception drops unrelated custody. Telemetry scrubs the
+new carrier family in string, map, tuple and named-cookie representations.
+
+Public readiness remains code-owned false. Full writer coordination, supported
+browser response-order and device acceptance remain in #7430. A stale response
+must never replace an unrelated current binding. A live selected binding with
+missing proof still requires a distinct real-auth recovery policy; this
+expired-only operation cannot authorize it. Generic expired admission,
+automatic anonymous/legacy fallback and broad account revocation remain
+unavailable.
