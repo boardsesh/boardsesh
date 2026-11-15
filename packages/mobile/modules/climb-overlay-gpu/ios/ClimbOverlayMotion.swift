@@ -2,10 +2,10 @@ import Foundation
 
 /// Pure motion policy, shared by the native view and its standalone tests.
 enum ClimbOverlayMotion {
-  static let editDuration: Double = 0.250
-  static let editPeakTime: Double = 0.080
+  static let editDuration: Double = 0.350
+  static let editPeakTime: Double = 0.100
   // Must match the immutable Rust GPU atlas padding reserve.
-  static let editPeakReach: Float = 1.20
+  static let editPeakReach: Float = 1.35
   static let revealBand: Float = 0.22
 
   struct Selection {

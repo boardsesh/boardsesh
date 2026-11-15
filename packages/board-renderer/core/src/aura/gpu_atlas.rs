@@ -15,7 +15,7 @@ use crate::types::{
 const MAX_BYTES: usize = 128 * 1024 * 1024;
 // Match ClimbOverlayMotion.editPeakReach: editing expands only the sampled
 // falloff, so all immutable EDT fields must already cover its maximum reach.
-const EDIT_PEAK_REACH: f32 = 1.20;
+const EDIT_PEAK_REACH: f32 = 1.35;
 
 fn append(storage: &mut Vec<u8>, bytes: &[u8]) -> Result<usize, String> {
     if storage.len().saturating_add(bytes.len()) > MAX_BYTES {
@@ -307,7 +307,7 @@ mod tests {
         let manifest: serde_json::Value = serde_json::from_slice(&packed[4..4 + length]).unwrap();
         let hold = &manifest["holds"][0];
         let reach = hold["reach"].as_f64().unwrap();
-        let padding = (reach * 1.20).ceil() + 2.0;
+        let padding = (reach * 1.35).ceil() + 2.0;
         let bounds = hold["bounds"].as_array().unwrap();
         let x = hold["x"].as_f64().unwrap();
         let y = hold["y"].as_f64().unwrap();
