@@ -1,4 +1,3 @@
-import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from '../InlineSheetError';
 import { AccessibleBottomSheetTextInput as BottomSheetTextInput } from '../AccessibleBottomSheetTextInput';
 import { useTypographyStyles, type TypographyScale } from '../../hooks/use-typography-styles';
@@ -6,7 +5,7 @@ import { PressableSurface } from '../PressableSurface';
 import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
-import { type RefObject, useState } from 'react';
+import { type RefObject, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { type BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +16,7 @@ import { Icon } from '../Icon';
 import { Sheet } from '../Sheet';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { useComments, useAddComment } from '../../lib/graphql/hooks';
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { hapticLight } from '../../lib/haptics';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -48,29 +48,96 @@ export function CommentSheet({
   const { t } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
-  const { submitError, setSubmitError } = useScopedSheetError(`${entityType}:${entityId ?? ''}`, !!entityId);
-  const [draft, setDraft] = useState('');
   const privacy = usePublicationAudience(entityId ?? '', !!entityId);
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
   const addComment = useAddComment();
+  const actionScope = useHttpActionScope();
+  const identity = useRef({ entityId, entityType, canComment, view: actionScope.key });
+  if (
+    identity.current.entityId !== entityId ||
+    identity.current.entityType !== entityType ||
+    identity.current.canComment !== canComment ||
+    identity.current.view !== actionScope.key
+  )
+    identity.current = { entityId, entityType, canComment, view: actionScope.key };
+  const currentIdentity = identity.current;
+  const [draftState, setDraftState] = useState<{ identity: typeof currentIdentity; text: string } | null>(null);
+  const [errorState, setErrorState] = useState<{ identity: typeof currentIdentity; message: string } | null>(null);
+  const draft = draftState?.identity === currentIdentity ? draftState.text : '';
+  const submitError = errorState?.identity === currentIdentity ? errorState.message : null;
+  const setDraft = (text: string) => setDraftState({ identity: currentIdentity, text });
+  const setSubmitError = (message: string | null) =>
+    setErrorState(message ? { identity: currentIdentity, message } : null);
   const comments = commentsQuery.data?.comments ?? [];
+
+  const changeDraft = (text: string) => {
+    if (identity.current !== currentIdentity) return;
+    let action: ReturnType<typeof actionScope.capture>;
+    try {
+      action = actionScope.capture();
+    } catch {
+      return;
+    }
+    try {
+      action.assertView();
+      setDraft(text);
+      setSubmitError(null);
+    } finally {
+      action.finish();
+    }
+  };
 
   const submit = () => {
     const body = draft.trim();
-    if (!body || !entityId || addComment.isPending) return;
+    if (!body || !entityId || !canComment || addComment.isPending || identity.current !== currentIdentity) return;
+    let action: ReturnType<typeof actionScope.capture>;
+    try {
+      action = actionScope.capture();
+    } catch {
+      return;
+    }
+    const isCurrent = () => identity.current === currentIdentity && action.isCurrent();
     setSubmitError(null);
     hapticLight();
     // Clear the draft only once the comment lands. On failure keep the text in
     // the composer and surface an inline error above the native sheet. The send
     // button is disabled while the mutation is pending, so no double-send.
-    addComment.mutate(
-      { entityType, entityId, body, ...(privacy.publication ? { privacy: privacy.publication } : {}) },
-      {
-        onSuccess: () => setDraft(''),
-        onError: () => setSubmitError(t('mobile.comments.sendError')),
-      },
-    );
+    void (async () => {
+      let receipt: Awaited<ReturnType<typeof addComment.mutateWithReceipt>> | undefined;
+      try {
+        receipt = await addComment.mutateWithReceipt(
+          { entityType, entityId, body, ...(privacy.publication ? { privacy: privacy.publication } : {}) },
+          { signal: action.signal },
+        );
+        receipt.assertCurrent();
+        if (isCurrent()) setDraft('');
+      } catch {
+        if (isCurrent()) setSubmitError(t('mobile.comments.sendError'));
+      } finally {
+        receipt?.dispose();
+        action.finish();
+      }
+    })();
+  };
+
+  const close = () => {
+    if (identity.current !== currentIdentity) return;
+    let action: ReturnType<typeof actionScope.capture>;
+    try {
+      action = actionScope.capture();
+    } catch {
+      return;
+    }
+    try {
+      action.assertView();
+      // A close retires this exact opening immediately, even before its parent
+      // clears the entity prop or reopens the same entity.
+      identity.current = { ...currentIdentity };
+      onClose();
+    } finally {
+      action.finish();
+    }
   };
 
   return (
@@ -78,7 +145,7 @@ export function CommentSheet({
       ref={sheetRef}
       snapPoints={MEDIUM_LARGE_SNAP_POINTS}
       scrollable
-      onClose={onClose}
+      onClose={close}
       footer={
         canComment ? (
           <View>
@@ -89,10 +156,7 @@ export function CommentSheet({
                 placeholder={t('mobile.comments.placeholder')}
                 placeholderTextColor={systemColors.tertiaryLabel}
                 value={draft}
-                onChangeText={(next) => {
-                  setDraft(next);
-                  setSubmitError(null);
-                }}
+                onChangeText={changeDraft}
                 multiline
               />
               <PressableSurface
