@@ -27,7 +27,7 @@
  *      bumped; this catches that so the bundle phase and the JS runtime never
  *      use mismatched CLI versions.
  *
- * Sentry 8.24, 8.32 and 8.33 resolve their CLI from the SDK's own dependency
+ * Sentry 8.24, 8.32, 8.33 and 8.35 resolve their CLI from the SDK's own dependency
  * graph instead. Check that installed dependency for these audited versions;
  * its CLI need not match the direct CLI used by our standalone dSYM uploader.
  *
@@ -38,6 +38,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkInstalledSentryAndroidSdk } from './mobile-sentry-native-check';
 
 export interface NativeDepRule {
   /** A direct dependency of packages/mobile whose Expo config plugin injects an iOS build-phase script. */
@@ -60,7 +61,7 @@ export const RULES: readonly NativeDepRule[] = [
   {
     trigger: '@sentry/react-native',
     tools: ['@sentry/cli'],
-    triggerToolResolutionVersions: ['8.24.0', '8.32.0', '8.33.0'],
+    triggerToolResolutionVersions: ['8.24.0', '8.32.0', '8.33.0', '8.35.0'],
   },
 ];
 
@@ -201,9 +202,10 @@ export function main(): number {
   }
 
   const { checked, errors } = checkNativeBuildPhaseDeps(mobilePackageJson, mobileDeps, RULES, nodeResolver);
+  errors.push(...checkInstalledSentryAndroidSdk(mobilePackageJson));
 
   if (errors.length > 0) {
-    console.error('[mobile-native-deps] FAILED — native build-phase deps not OK:');
+    console.error('[mobile-native-deps] FAILED — native deps not OK:');
     for (const error of errors) console.error(`  ✗ ${error}`);
     return 1;
   }

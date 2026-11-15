@@ -601,7 +601,7 @@
   },
   {
     "name": "@expo/cli",
-    "version": "58.1.15",
+    "version": "58.1.17",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "Expo",
@@ -617,7 +617,7 @@
   },
   {
     "name": "@expo/config",
-    "version": "58.0.8",
+    "version": "58.0.9",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -626,6 +626,14 @@
   {
     "name": "@expo/config-plugins",
     "version": "58.0.10",
+    "license": "MIT",
+    "repository": "https://github.com/expo/expo",
+    "publisher": null,
+    "licenseText": "The MIT License (MIT)\n\nCopyright (c) 2015-present 650 Industries, Inc. (aka Expo)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+  },
+  {
+    "name": "@expo/config-plugins",
+    "version": "58.0.11",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -673,7 +681,7 @@
   },
   {
     "name": "@expo/fingerprint",
-    "version": "0.21.6",
+    "version": "0.21.7",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -681,7 +689,7 @@
   },
   {
     "name": "@expo/image-utils",
-    "version": "0.12.5",
+    "version": "0.12.6",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -689,7 +697,7 @@
   },
   {
     "name": "@expo/inline-modules",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "Expo",
@@ -705,7 +713,7 @@
   },
   {
     "name": "@expo/local-build-cache-provider",
-    "version": "58.0.8",
+    "version": "58.0.9",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -737,7 +745,7 @@
   },
   {
     "name": "@expo/metro-config",
-    "version": "58.0.17",
+    "version": "58.0.19",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -793,7 +801,7 @@
   },
   {
     "name": "@expo/prebuild-config",
-    "version": "58.0.16",
+    "version": "58.0.17",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": null,
@@ -808,8 +816,16 @@
     "licenseText": "The MIT License (MIT)\n\nCopyright (c) 2025-present 650 Industries, Inc. (aka Expo)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
   },
   {
+    "name": "@expo/require-utils",
+    "version": "58.0.5",
+    "license": "MIT",
+    "repository": "https://github.com/expo/expo",
+    "publisher": null,
+    "licenseText": "The MIT License (MIT)\n\nCopyright (c) 2025-present 650 Industries, Inc. (aka Expo)\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+  },
+  {
     "name": "@expo/router-server",
-    "version": "58.0.17",
+    "version": "58.0.19",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -849,7 +865,7 @@
   },
   {
     "name": "@expo/ui",
-    "version": "58.0.23",
+    "version": "58.0.25",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -954,6 +970,14 @@
   {
     "name": "@jridgewell/sourcemap-codec",
     "version": "1.5.5",
+    "license": "MIT",
+    "repository": "https://github.com/jridgewell/sourcemaps",
+    "publisher": "Justin Ridgewell",
+    "licenseText": "Copyright 2024 Justin Ridgewell <justin@ridgewell.name>\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+  },
+  {
+    "name": "@jridgewell/sourcemap-codec",
+    "version": "1.6.0",
     "license": "MIT",
     "repository": "https://github.com/jridgewell/sourcemaps",
     "publisher": "Justin Ridgewell",
@@ -1169,7 +1193,7 @@
   },
   {
     "name": "@react-native/asset-utils",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1177,7 +1201,7 @@
   },
   {
     "name": "@react-native/babel-plugin-codegen",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1185,7 +1209,7 @@
   },
   {
     "name": "@react-native/babel-preset",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1193,7 +1217,7 @@
   },
   {
     "name": "@react-native/codegen",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1201,7 +1225,7 @@
   },
   {
     "name": "@react-native/community-cli-plugin",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1209,7 +1233,7 @@
   },
   {
     "name": "@react-native/debugger-frontend",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "BSD-3-Clause",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1217,7 +1241,7 @@
   },
   {
     "name": "@react-native/debugger-shell",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1225,7 +1249,7 @@
   },
   {
     "name": "@react-native/dev-middleware",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1233,7 +1257,7 @@
   },
   {
     "name": "@react-native/gradle-plugin",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1241,7 +1265,7 @@
   },
   {
     "name": "@react-native/js-polyfills",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1249,7 +1273,7 @@
   },
   {
     "name": "@react-native/metro-babel-transformer",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1257,7 +1281,7 @@
   },
   {
     "name": "@react-native/metro-config",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1265,7 +1289,7 @@
   },
   {
     "name": "@react-native/normalize-colors",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1273,7 +1297,7 @@
   },
   {
     "name": "@react-native/virtualized-lists",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -1281,7 +1305,7 @@
   },
   {
     "name": "@sentry/browser",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1289,7 +1313,7 @@
   },
   {
     "name": "@sentry/browser-utils",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1297,7 +1321,7 @@
   },
   {
     "name": "@sentry/bundler-plugins",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1313,7 +1337,7 @@
   },
   {
     "name": "@sentry/cli",
-    "version": "3.8.1",
+    "version": "3.8.2",
     "license": "FSL-1.1-MIT",
     "repository": "https://github.com/getsentry/sentry-cli",
     "publisher": "Sentry",
@@ -1329,7 +1353,7 @@
   },
   {
     "name": "@sentry/core",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1337,7 +1361,7 @@
   },
   {
     "name": "@sentry/expo-upload-sourcemaps",
-    "version": "8.32.0",
+    "version": "8.35.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-react-native",
     "publisher": "Sentry",
@@ -1345,7 +1369,7 @@
   },
   {
     "name": "@sentry/feedback",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1353,7 +1377,7 @@
   },
   {
     "name": "@sentry/react",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1361,7 +1385,7 @@
   },
   {
     "name": "@sentry/react-native",
-    "version": "8.32.0",
+    "version": "8.35.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-react-native",
     "publisher": "Sentry",
@@ -1369,7 +1393,7 @@
   },
   {
     "name": "@sentry/replay",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1377,7 +1401,7 @@
   },
   {
     "name": "@sentry/replay-canvas",
-    "version": "10.76.2",
+    "version": "10.78.0",
     "license": "MIT",
     "repository": "https://github.com/getsentry/sentry-javascript",
     "publisher": "Sentry",
@@ -1913,7 +1937,7 @@
   },
   {
     "name": "babel-preset-expo",
-    "version": "58.0.20",
+    "version": "58.0.22",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "Expo",
@@ -2633,7 +2657,7 @@
   },
   {
     "name": "expo",
-    "version": "58.0.19",
+    "version": "58.0.21",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "Expo",
@@ -2665,7 +2689,7 @@
   },
   {
     "name": "expo-asset",
-    "version": "58.0.18",
+    "version": "58.0.19",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2697,7 +2721,7 @@
   },
   {
     "name": "expo-constants",
-    "version": "58.0.13",
+    "version": "58.0.14",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2713,7 +2737,7 @@
   },
   {
     "name": "expo-dev-client",
-    "version": "58.0.15",
+    "version": "58.0.17",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2721,7 +2745,7 @@
   },
   {
     "name": "expo-dev-launcher",
-    "version": "58.0.15",
+    "version": "58.0.17",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2729,7 +2753,7 @@
   },
   {
     "name": "expo-dev-menu",
-    "version": "58.0.11",
+    "version": "58.0.12",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2769,7 +2793,7 @@
   },
   {
     "name": "expo-file-system",
-    "version": "58.0.11",
+    "version": "58.0.13",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2777,7 +2801,7 @@
   },
   {
     "name": "expo-font",
-    "version": "58.0.10",
+    "version": "58.0.11",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2801,7 +2825,7 @@
   },
   {
     "name": "expo-image",
-    "version": "58.0.17",
+    "version": "58.0.18",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2817,7 +2841,7 @@
   },
   {
     "name": "expo-image-manipulator",
-    "version": "58.0.15",
+    "version": "58.0.16",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2857,7 +2881,7 @@
   },
   {
     "name": "expo-linking",
-    "version": "58.0.14",
+    "version": "58.0.15",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2873,7 +2897,7 @@
   },
   {
     "name": "expo-location",
-    "version": "58.0.19",
+    "version": "58.0.20",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2889,7 +2913,7 @@
   },
   {
     "name": "expo-maps",
-    "version": "58.0.10",
+    "version": "58.0.11",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2897,7 +2921,7 @@
   },
   {
     "name": "expo-modules-autolinking",
-    "version": "58.0.15",
+    "version": "58.0.16",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2905,7 +2929,7 @@
   },
   {
     "name": "expo-modules-cli",
-    "version": "0.3.2",
+    "version": "0.4.0",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2913,7 +2937,7 @@
   },
   {
     "name": "expo-modules-core",
-    "version": "58.0.26",
+    "version": "58.0.28",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2921,7 +2945,7 @@
   },
   {
     "name": "expo-modules-jsi",
-    "version": "58.0.19",
+    "version": "58.0.21",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2929,7 +2953,7 @@
   },
   {
     "name": "expo-modules-macros",
-    "version": "0.22.0",
+    "version": "0.27.1",
     "license": "MIT",
     "repository": "https://github.com/expo/expo-modules-macros",
     "publisher": "650 Industries, Inc.",
@@ -2937,7 +2961,7 @@
   },
   {
     "name": "expo-notifications",
-    "version": "58.1.6",
+    "version": "58.1.7",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2953,7 +2977,7 @@
   },
   {
     "name": "expo-router",
-    "version": "58.0.26",
+    "version": "58.0.28",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2985,7 +3009,7 @@
   },
   {
     "name": "expo-sharing",
-    "version": "58.0.20",
+    "version": "58.0.21",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -2993,7 +3017,7 @@
   },
   {
     "name": "expo-splash-screen",
-    "version": "58.0.11",
+    "version": "58.0.12",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -3041,7 +3065,7 @@
   },
   {
     "name": "expo-updates",
-    "version": "58.0.18",
+    "version": "58.0.19",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -3057,7 +3081,7 @@
   },
   {
     "name": "expo-web-browser",
-    "version": "58.0.6",
+    "version": "58.0.7",
     "license": "MIT",
     "repository": "https://github.com/expo/expo",
     "publisher": "650 Industries, Inc.",
@@ -3305,7 +3329,7 @@
   },
   {
     "name": "hermes-compiler",
-    "version": "260318099.0.4",
+    "version": "260318099.0.5",
     "license": "MIT",
     "repository": "https://github.com/facebook/hermes",
     "publisher": null,
@@ -3937,7 +3961,7 @@
   },
   {
     "name": "nanoid",
-    "version": "3.3.19",
+    "version": "3.3.20",
     "license": "MIT",
     "repository": "https://github.com/ai/nanoid",
     "publisher": "Andrey Sitnik",
@@ -4017,7 +4041,7 @@
   },
   {
     "name": "noxcturnal",
-    "version": "0.1.9",
+    "version": "0.1.11",
     "license": "MIT",
     "repository": "https://github.com/expo/noxcturnal",
     "publisher": null,
@@ -4224,6 +4248,14 @@
     "licenseText": "The MIT License (MIT)\n\nCopyright (c) 2017-present, Jon Schlinkert.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE."
   },
   {
+    "name": "picomatch",
+    "version": "4.0.7",
+    "license": "MIT",
+    "repository": "https://github.com/micromatch/picomatch",
+    "publisher": "Jon Schlinkert",
+    "licenseText": "The MIT License (MIT)\n\nCopyright (c) 2017-present, Jon Schlinkert.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN\nTHE SOFTWARE."
+  },
+  {
     "name": "plist",
     "version": "3.1.1",
     "license": "MIT",
@@ -4249,7 +4281,7 @@
   },
   {
     "name": "postcss",
-    "version": "8.5.26",
+    "version": "8.5.32",
     "license": "MIT",
     "repository": "https://github.com/postcss/postcss",
     "publisher": "Andrey Sitnik",
@@ -4425,7 +4457,7 @@
   },
   {
     "name": "react-native",
-    "version": "0.88.0",
+    "version": "0.88.1",
     "license": "MIT",
     "repository": "https://github.com/react/react-native",
     "publisher": null,
@@ -4449,7 +4481,7 @@
   },
   {
     "name": "react-native-edge-to-edge",
-    "version": "1.8.1",
+    "version": "1.8.2",
     "license": "MIT",
     "repository": "https://github.com/zoontek/react-native-edge-to-edge",
     "publisher": "Mathieu Acthernoene",
@@ -4537,7 +4569,7 @@
   },
   {
     "name": "react-native-screens",
-    "version": "4.30.0",
+    "version": "4.30.1",
     "license": "MIT",
     "repository": "https://github.com/software-mansion/react-native-screens",
     "publisher": "Krzysztof Magiera",
@@ -4553,7 +4585,7 @@
   },
   {
     "name": "react-native-worklets",
-    "version": "0.13.0",
+    "version": "0.13.1",
     "license": "MIT",
     "repository": "https://github.com/software-mansion/react-native-reanimated",
     "publisher": null,
@@ -4889,7 +4921,7 @@
   },
   {
     "name": "source-map-js",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "license": "BSD-3-Clause",
     "repository": "https://github.com/7rulnik/source-map-js",
     "publisher": "Valentin 7rulnik Semirulnik",
@@ -5377,7 +5409,7 @@
   },
   {
     "name": "ws",
-    "version": "8.21.3",
+    "version": "8.22.2",
     "license": "MIT",
     "repository": "https://github.com/websockets/ws",
     "publisher": "Einar Otto Stangvik",
