@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { NativeSyntheticEvent, ViewProps } from 'react-native';
+import { Platform, type NativeSyntheticEvent, type ViewProps } from 'react-native';
 import { requireNativeViewManager, requireOptionalNativeModule } from 'expo-modules-core';
 
 /** One blob, with the platform's opacity scale already in `peak`. */
@@ -22,12 +22,10 @@ export type FrostedBokehGPUNativeProps = ViewProps & {
   onRenderError?: (event: NativeSyntheticEvent<{ reason: string }>) => void;
 };
 
-// iOS only, and new with this binary, so JS published as an OTA can land on a
-// binary without it. requireOptionalNativeModule returns null there (and on
-// Android, in Expo Go and on the web) without throwing, and the view is only
-// asked for when the module is present. The 'FrostedBokehGPU' string must match
-// Name("FrostedBokehGPU") in ios/FrostedBokehGPUModule.swift.
-const frostedBokehGPUNative = requireOptionalNativeModule<object>('FrostedBokehGPU');
+// Older binaries and Expo Go keep the React Native fallback. Android's AGSL
+// renderer needs API 33; never resolve its native view on older OS versions.
+const supported = Platform.OS === 'ios' || (Platform.OS === 'android' && Number(Platform.Version) >= 33);
+const frostedBokehGPUNative = supported ? requireOptionalNativeModule<object>('FrostedBokehGPU') : null;
 
 /** The native view, or null when the running binary does not have it. */
 export const NativeFrostedBokehGPU: ComponentType<FrostedBokehGPUNativeProps> | null = frostedBokehGPUNative

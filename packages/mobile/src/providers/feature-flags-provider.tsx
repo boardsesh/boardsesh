@@ -274,7 +274,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'wall-frost-motion',
     label: 'Moving frost on the driving wall button',
     description:
-      "While you drive the wall, the wall button's frost is drawn by a Metal shader: its lights breathe slowly and slide to the next climb's holds on Next. iOS builds with the native module only; Android, the web and older binaries keep the still frost. Reduce Motion keeps it still too. A POSITIVE rollout flag: unresolved or off is today's still frost. Dev builds read it as on unless it is set to off here; screenshot mode keeps it off so captures stay identical.",
+      "While you drive the wall, the wall button's frost is drawn by a native GPU shader: its lights breathe slowly and slide to the next climb's holds on Next. iOS and Android 13+ builds with the native module; older Android versions, the web and older binaries keep the still frost. Reduce Motion keeps it still too. A POSITIVE rollout flag: unresolved or off is today's still frost. Dev builds read it as on unless it is set to off here; screenshot mode keeps it off so captures stay identical.",
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 

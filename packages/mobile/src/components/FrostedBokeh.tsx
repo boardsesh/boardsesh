@@ -24,7 +24,7 @@ export type FrostedBokehLayer = {
   opacityScale?: number;
 };
 
-/** Whether this binary can draw the moving frost (iOS builds with the Metal module). */
+/** Whether this binary can draw the moving frost (iOS and Android 13+ builds with the native module). */
 export const frostedBokehMotionAvailable = NativeFrostedBokehGPU != null;
 
 const CROSS_FADE_MS = 200;
@@ -71,7 +71,7 @@ type FrostedBokehProps = {
   beforeFrost?: ReactNode;
   testID?: string;
   /**
-   * Draw the blobs with the Metal shader, breathing and gliding to the next
+   * Draw the blobs with the native GPU shader, breathing and gliding to the next
    * climb, where the binary has it. The caller's label fade must already cover
    * the motion (`motion` in the contrast check).
    */

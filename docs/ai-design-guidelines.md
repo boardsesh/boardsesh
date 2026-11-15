@@ -605,7 +605,12 @@ way it looks like this:
   at 4.5:1 (`wall-glow.ts` checks the brightest pixel the glow can put there). The border is a plain 1 pt hairline,
   white at 20%: Marco wanted a simple border with the busy fill. Light scheme: a pale `#F6F3FB` the blobs multiply
   into at lower strength, a dark label, black hairline at 12%. Android below 10 can't screen-blend, so the blobs
-  draw normally, fainter. A new climb or playback frame cross-fades in over 200 ms (at once with Reduce Motion).
+  draw normally, fainter. With `wall-frost-motion` enabled, iOS and Android 13+ native builds breathe at 15 fps and
+  glide between climbs over 700 ms at up to 60 fps. Both use the same 3.5-point drift and 14% swell.
+  Reduce Motion disables motion; Battery Saver/Low Power Mode disables breathing. Hidden or
+  backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
+  renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
+  new climbs or playback frames over 200 ms (at once with Reduce Motion).
   With no holds the button keeps its existing fallback: filled `live` amber while driving, otherwise its
   existing tonal surface. The climber's own face sits at the trailing edge either way.
   The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;

@@ -9,7 +9,7 @@ import { spacing } from '../theme/tokens';
 import { FrostedBokeh } from './FrostedBokeh';
 import { useWallGlowLayer, type WallGlowInput } from './play-drawer/use-wall-glow';
 
-// Parity: the same frost drawn by React Native views and by the Metal shader,
+// Parity: the same frost drawn by React Native views and by the native GPU shader,
 // held still, so the two renderers can be compared pixel for pixel in both
 // schemes. Overlapping lights of different colours are where they can differ.
 
@@ -43,7 +43,7 @@ function Parity() {
           </View>
         </StorySurface>
       </StoryVariant>
-      <StoryVariant label="Metal shader, held still">
+      <StoryVariant label="native GPU shader, held still">
         <StorySurface>
           <View style={[styles.pill, { backgroundColor: layer.surface.base }]}>
             {NativeFrostedBokehGPU ? (
@@ -65,7 +65,7 @@ function Parity() {
                 glideMs={BOKEH_GLIDE_MS}
               />
             ) : (
-              <Text>This binary has no Metal frost.</Text>
+              <Text>This binary has no native GPU frost.</Text>
             )}
             {/* The frost and grain FrostedBokeh draws over either renderer. */}
             {layer.surface.frost ? <View style={[StyleSheet.absoluteFill, styles.frost]} /> : null}
@@ -81,7 +81,7 @@ const stories: StoryModule = {
   title: 'Frosted bokeh / Renderer parity',
   stories: {
     parity: {
-      name: 'React Native vs Metal, still, overlapping lights',
+      name: 'React Native vs native GPU, still, overlapping lights',
       render: () => <Parity />,
     },
   },
