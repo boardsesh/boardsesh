@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-15T16:44:28.734Z",
+  "generatedAt": "2026-11-15T17:17:15.206Z",
   "entries": [
     {
       "prNumber": 7538,
@@ -9613,6 +9613,17 @@
     }
   ],
   "nativeReleases": [
+    {
+      "kind": "native-release",
+      "date": "2026-11-15T16:25:30Z",
+      "sha": "828c29e7f91cd938fa25c845a4d68d08fecc27c0",
+      "platforms": [
+        "android"
+      ],
+      "fingerprints": {
+        "android": "d58c3c75b6e0932efbfec642790e635116456805"
+      }
+    },
     {
       "kind": "native-release",
       "date": "2026-11-13T20:57:53+02:00",

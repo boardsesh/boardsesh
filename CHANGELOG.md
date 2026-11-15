@@ -6,6 +6,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ## 2026-11-15
 
+### App update
+
+A new version shipped to the Play Store.
+
 ### Fixed
 
 - See the highlighted climb's name, grade and send status on Home session cards again. ([#7538](https://github.com/boardsesh/boardsesh/pull/7538))
