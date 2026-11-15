@@ -4,6 +4,13 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-15
+
+### Fixed
+
+- See the highlighted climb's name, grade and send status on Home session cards again. ([#7538](https://github.com/boardsesh/boardsesh/pull/7538))
+- Your selected board stays selected when an earlier angle save finishes. ([#7539](https://github.com/boardsesh/boardsesh/pull/7539))
+
 ## 2026-11-13
 
 ### App update

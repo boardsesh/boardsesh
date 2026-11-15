@@ -1,6 +1,20 @@
 {
-  "generatedAt": "2026-11-14T00:08:04.167Z",
+  "generatedAt": "2026-11-15T16:44:28.734Z",
   "entries": [
+    {
+      "prNumber": 7538,
+      "category": "fixed",
+      "title": "See the highlighted climb's name, grade and send status on Home session cards again.",
+      "mergedAt": "2026-11-15T16:36:27Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7538"
+    },
+    {
+      "prNumber": 7539,
+      "category": "fixed",
+      "title": "Your selected board stays selected when an earlier angle save finishes.",
+      "mergedAt": "2026-11-15T16:36:07Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7539"
+    },
     {
       "prNumber": 7491,
       "category": "improved",
