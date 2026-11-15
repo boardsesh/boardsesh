@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, type ReactNode } from 'react';
-import { type AccessibilityActionEvent, type ViewProps } from 'react-native';
+import { StyleSheet, type AccessibilityActionEvent, type ViewProps } from 'react-native';
 import { GestureDetector, useTapGesture } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import type { ClimbActionsTarget } from '../../providers/drawer-host-provider';
@@ -67,7 +67,7 @@ export function ClimbActionsPressable({
       <GestureDetector gesture={tap} touchAction="pan-y">
         <Animated.View
           {...viewProps}
-          style={[style, pressedStyle]}
+          style={[styles.body, style, pressedStyle]}
           accessible
           accessibilityRole="button"
           onAccessibilityTap={press}
@@ -80,3 +80,9 @@ export function ClimbActionsPressable({
     </ClimbMenu>
   );
 }
+
+const styles = StyleSheet.create({
+  // Native menu anchors host this body in a horizontal row. Fill that row so
+  // flexible text columns retain their width, while keeping intrinsic height.
+  body: { flexGrow: 1, flexShrink: 1 },
+});
