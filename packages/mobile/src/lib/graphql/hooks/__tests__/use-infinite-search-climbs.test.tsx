@@ -294,6 +294,46 @@ describe('useInfiniteSearchClimbs', () => {
       expect(result.current.isPlaceholderData).toBe(false);
     });
 
+    // A gym-wifi drop mid-search: the first attempt fails, the connectivity
+    // store flips React Query offline, and the retry pauses until the signal
+    // comes back. Left alone, the previous rows stay tinted as "loading" for as
+    // long as the phone is offline. Asking again offline lets the request
+    // adapter answer on-device (or with its offline fallback) instead.
+    it('re-asks a search whose retry paused offline instead of leaving the old rows up', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0, networkMode: 'offlineFirst' } },
+      });
+      const offlineWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      let zenithCalls = 0;
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) => {
+        if (variables.input.name === 'Moonage') return Promise.resolve(makeResponse(variables.input.page ?? 0));
+        zenithCalls += 1;
+        if (zenithCalls === 1) {
+          onlineManager.setOnline(false);
+          return Promise.reject(new TypeError('Network request failed'));
+        }
+        return Promise.resolve({ searchClimbs: { climbs: [], hasMore: false } });
+      });
+      try {
+        const { result, rerender } = renderHook(
+          ({ input }: { input: ClimbSearchInput }) =>
+            useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+          { initialProps: { input: baseInput }, wrapper: offlineWrapper },
+        );
+        await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+        rerender({ input: { ...baseInput, name: 'Zenith' } });
+        await waitFor(() => expect(result.current.isPlaceholderData).toBe(false));
+        expect(result.current.data?.pages[0]).toEqual({ climbs: [], hasMore: false });
+        expect(zenithCalls).toBe(2);
+      } finally {
+        onlineManager.setOnline(true);
+        queryClient.clear();
+      }
+    });
+
     it('drops to no data on a new search when the option is off', async () => {
       const { result, rerender } = renderHook(
         ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input),
