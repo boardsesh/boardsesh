@@ -2,7 +2,7 @@
 import { createElement, useState, type ReactNode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_TNUT_CORNERS, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import { DEFAULT_TNUT_CORNERS, ledPairs, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
 import type { SprayPhotoCanvasProps } from '../SprayPhotoCanvas';
 import type { SprayLookPreviewSource } from '../../../lib/spray/spray-look-preview';
 
@@ -10,18 +10,24 @@ const controls = vi.hoisted(() => ({
   canvas: null as Omit<SprayPhotoCanvasProps, 'maxWidth' | 'maxHeight'> | null,
   alert: vi.fn(),
   changed: vi.fn(),
+  layout: null as TnutLayout | null,
 }));
 vi.mock('react-native', () => ({
   Alert: { alert: controls.alert },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Modal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Platform: { OS: 'android' },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ brandColors: {}, spacing: [0, 4, 8, 12, 16] }),
+  useTheme: () => ({ brandColors: {}, systemColors: {}, spacing: [0, 4, 8, 12, 16] }),
 }));
-vi.mock('../../../lib/spray/use-spray-led-preview', () => ({ useSprayLedPreview: vi.fn() }));
+vi.mock('../../../lib/spray/use-spray-led-preview', () => ({
+  useSprayLedPreview: () => ({ available: false, show: vi.fn(), stop: vi.fn(), error: null }),
+}));
 vi.mock('../SprayPhotoStage', () => ({
   SprayPhotoStage: ({ canvas }: { canvas: typeof controls.canvas }) => {
     controls.canvas = canvas;
@@ -35,7 +41,14 @@ vi.mock('../../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
-vi.mock('../../board-discovery/BoardMetaFields', () => ({ BuilderTextInput: () => null }));
+vi.mock('../../board-discovery/BoardMetaFields', () => ({
+  BuilderTextInput: ({ value, onChangeText }: { value: string; onChangeText: (text: string) => void }) =>
+    createElement('input', {
+      'aria-label': 'skip count',
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
+    }),
+}));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -83,11 +96,12 @@ const original: TnutLayout = {
     skips: [{ from: 'a', to: 'b', count: 4 }],
   },
 };
-function Editor({ initial = original }: { initial?: TnutLayout }) {
+function Editor({ initial = original, kind = 'positions' }: { initial?: TnutLayout; kind?: 'positions' | 'skips' }) {
   const [layout, setLayout] = useState(initial);
+  controls.layout = layout;
   return (
     <SprayLedMapEditor
-      kind="positions"
+      kind={kind}
       layout={layout}
       onChange={(update) => {
         controls.changed(update);
@@ -202,5 +216,85 @@ describe('LED pairs behind a hold', () => {
     expect(screen.getByText('sprayLedSetup.pairLedsSecond')).toBeTruthy();
     act(() => controls.canvas?.onTap?.({ x: 0.8, y: 0.8 }, 1000, 1000));
     expect(latest()).toEqual({ ledGroups: [['b', 'c']] });
+  });
+
+  it('Undo of the first pair edit brings back the default pairs of a layout that had no list', () => {
+    const sides: TnutLayout = {
+      ...paired,
+      ledPlacement: 'sides',
+      ledGroups: undefined,
+      ledPositions: [
+        { id: 'a', x: 0.2, y: 0.2, hole: { x: 0.22, y: 0.2 } },
+        { id: 'b', x: 0.24, y: 0.2, hole: { x: 0.22, y: 0.2 } },
+        { id: 'c', x: 0.8, y: 0.8 },
+      ],
+    };
+    delete sides.ledGroups;
+    render(<Editor initial={sides} />);
+    fireEvent.click(screen.getByText('sprayLedSetup.pairLeds'));
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.2 }, 1000, 1000));
+    expect(controls.layout?.ledGroups).toEqual([]);
+    fireEvent.click(screen.getByText('undo'));
+    expect(controls.layout?.ledGroups).toBeUndefined();
+    expect(ledPairs(controls.layout!)).toEqual([['a', 'b']]);
+  });
+
+  it('Undo of the first hand-made pair leaves a layout with no list', () => {
+    const { ledGroups: _none, ...single } = paired;
+    render(<Editor initial={single} />);
+    fireEvent.click(screen.getByText('sprayLedSetup.pairLeds'));
+    act(() => controls.canvas?.onTap?.({ x: 0.2, y: 0.2 }, 1000, 1000));
+    act(() => controls.canvas?.onTap?.({ x: 0.8, y: 0.8 }, 1000, 1000));
+    expect(controls.layout?.ledGroups).toEqual([['a', 'c']]);
+    fireEvent.click(screen.getByText('undo'));
+    expect(controls.layout?.ledGroups).toBeUndefined();
+    expect(ledPairs(controls.layout!)).toEqual([]);
+  });
+
+  it('drops removed pairs from the list, so the layout still saves', () => {
+    const three: TnutLayout = {
+      ...paired,
+      ledPositions: [
+        { id: 'a', x: 0.1, y: 0.1 },
+        { id: 'b', x: 0.14, y: 0.1 },
+        { id: 'c', x: 0.5, y: 0.5 },
+        { id: 'd', x: 0.54, y: 0.5 },
+        { id: 'e', x: 0.9, y: 0.9 },
+        { id: 'f', x: 0.94, y: 0.9 },
+      ],
+      ledGroups: [
+        ['a', 'b'],
+        ['c', 'd'],
+        ['e', 'f'],
+      ],
+    };
+    render(<Editor initial={three} />);
+    fireEvent.click(screen.getByText('remove'));
+    act(() => controls.canvas?.onTap?.({ x: 0.1, y: 0.1 }, 1000, 1000));
+    act(() => controls.canvas?.onTap?.({ x: 0.5, y: 0.5 }, 1000, 1000));
+    expect(controls.layout?.ledPositions?.map((led) => led.id)).toEqual(['e', 'f']);
+    expect(controls.layout?.ledGroups).toEqual([['e', 'f']]);
+    const saved = readTnutLayout(JSON.parse(JSON.stringify(controls.layout)));
+    expect(saved?.ledGroups).toEqual([['e', 'f']]);
+  });
+});
+
+describe('Skipped LEDs on a connection', () => {
+  // Skips are undirected: this one names the connection's ends the other way round.
+  const reversed: TnutLayout = {
+    ...original,
+    wiring: { direction: 'custom', startCorner: 'tl', paths: [['a', 'b']], skips: [{ from: 'b', to: 'a', count: 3 }] },
+  };
+
+  it('reads a skip stored in the other direction, and 0 clears it', () => {
+    render(<Editor initial={reversed} kind="skips" />);
+    act(() => controls.canvas?.onTap?.({ x: 0.5, y: 0.5 }, 400, 400));
+    expect(screen.getByText('sprayLedSetup.gapLabel')).toBeTruthy();
+    fireEvent.click(screen.getByText('sprayLedSetup.insertSkips'));
+    expect((screen.getByLabelText('skip count') as HTMLInputElement).value).toBe('3');
+    fireEvent.change(screen.getByLabelText('skip count'), { target: { value: '0' } });
+    fireEvent.click(screen.getByText('sprayLed.confirm'));
+    expect(controls.layout?.wiring?.skips).toEqual([]);
+    expect(screen.getByText('sprayLedSetup.skipsNone')).toBeTruthy();
   });
 });

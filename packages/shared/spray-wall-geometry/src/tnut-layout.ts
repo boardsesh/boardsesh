@@ -312,8 +312,12 @@ export function readTnutLayout(candidate: unknown): TnutLayout | null {
   const holdLeds =
     candidate.holdLeds === undefined ? undefined : readHoldLedLinks(candidate.holdLeds, ledPositions ?? []);
   if (holdLeds === null) return null;
+  // `null` comes from an app that knows about pairs and wants the default ones (see
+  // keepLedPairsFromOlderApp); it reads like no list.
   const ledGroups =
-    candidate.ledGroups === undefined ? undefined : readLedPairs(candidate.ledGroups, ledPositions ?? []);
+    candidate.ledGroups === undefined || candidate.ledGroups === null
+      ? undefined
+      : readLedPairs(candidate.ledGroups, ledPositions ?? []);
   if (ledGroups === null) return null;
   return {
     version: 1,

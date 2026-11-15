@@ -1,7 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import * as dbSchema from '@boardsesh/db/schema';
-import { keepHoldLedLinksFromOlderApp, readTnutLayout, type TnutLayout } from '@boardsesh/spray-wall-geometry';
+import {
+  keepHoldLedLinksFromOlderApp,
+  keepLedPairsFromOlderApp,
+  readTnutLayout,
+  type TnutLayout,
+} from '@boardsesh/spray-wall-geometry';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import { SaveSprayWallLedSetupInputSchema } from '../../../validation/schemas/spray-walls';
@@ -100,22 +105,28 @@ export const sprayWallLedSetupMutations = {
     }
     if (wall.archivedAt != null) throw sprayWallArchivedError();
 
-    // An app from before hand-made hold links sends a layout without `holdLeds`.
-    // Saving that as is would erase the links a newer phone made, so keep them.
-    const sentLinks =
-      typeof input === 'object' &&
-      input !== null &&
-      typeof (input as { layout?: unknown }).layout === 'object' &&
-      (input as { layout?: object | null }).layout !== null &&
-      'holdLeds' in (input as { layout: object }).layout;
+    // An app from before hand-made hold links sends a layout without `holdLeds`, and
+    // one from before LED pairs sends it without `ledGroups` (an app that knows about
+    // pairs always sends the key). Saving that as is would erase what a newer phone
+    // decided, so keep each list the sender did not know about. Each key is checked
+    // on its own: some released apps know about links but not pairs.
+    const sentLayout = (input as { layout?: unknown } | null)?.layout;
+    const sent = (key: string) => typeof sentLayout === 'object' && sentLayout !== null && key in sentLayout;
+    const sentLinks = sent('holdLeds'),
+      sentPairs = sent('ledGroups');
     let savedLayout: TnutLayout | null | undefined = layout;
-    if (layout != null && !sentLinks) {
+    if (layout != null && !(sentLinks && sentPairs)) {
       const [stored] = await db
         .select({ layout: dbSchema.sprayWallLedSetups.layout })
         .from(dbSchema.sprayWallLedSetups)
         .where(eq(dbSchema.sprayWallLedSetups.boardId, board.id))
         .limit(1);
-      savedLayout = keepHoldLedLinksFromOlderApp(layout, false, stored?.layout ? readTnutLayout(stored.layout) : null);
+      const storedLayout = stored?.layout ? readTnutLayout(stored.layout) : null;
+      savedLayout = keepLedPairsFromOlderApp(
+        keepHoldLedLinksFromOlderApp(layout, sentLinks, storedLayout),
+        sentPairs,
+        storedLayout,
+      );
     }
 
     const now = new Date();

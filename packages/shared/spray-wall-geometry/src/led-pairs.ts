@@ -1,4 +1,4 @@
-import { generateLedPositions, type LedPosition } from './led-layout';
+import { generateLedPositions, MAX_LED_POSITIONS, type LedPosition } from './led-layout';
 import type { TnutLayout } from './tnut-layout';
 
 /**
@@ -12,9 +12,13 @@ export type SprayLedPair = readonly [string, string];
 
 const holeKey = (point: { x: number; y: number }) => `${point.x}:${point.y}`;
 
-/** Reject malformed pairs; drop pairs whose LEDs are gone and later pairs that reuse an LED. */
+/**
+ * Reject malformed pairs; drop pairs whose LEDs are gone and later pairs that reuse an LED.
+ * The size bound is on the raw list, not the LEDs left: removing LEDs can leave
+ * stale pairs behind, and those are pruned here rather than failing the layout.
+ */
 export function readLedPairs(candidate: unknown, ledPositions: readonly LedPosition[]): SprayLedPair[] | null {
-  if (!Array.isArray(candidate) || candidate.length > ledPositions.length) return null;
+  if (!Array.isArray(candidate) || candidate.length > MAX_LED_POSITIONS) return null;
   const known = new Set(ledPositions.map((led) => led.id));
   const used = new Set<string>();
   const pairs: SprayLedPair[] = [];
@@ -82,4 +86,25 @@ export function withLedPartners(ids: readonly string[], pairs: readonly SprayLed
     if (partner && !result.includes(partner) && !wired.has(partner)) result.push(partner);
   }
   return result;
+}
+
+/**
+ * An app from before LED pairs saves a layout without `ledGroups`, and the server
+ * would otherwise store that and forget pair decisions a newer phone made. Keep the
+ * stored list (an empty one too: it says every pair was separated), minus pairs
+ * whose LEDs the older app removed. A newer app always sends the key, `null` when
+ * it wants the default pairs, so this only runs for older apps.
+ *
+ * A different LED placement means the older app rebuilt the LEDs, and the rebuilt
+ * ones reuse ids, so the stored pairs would name the wrong LEDs: start from the
+ * new placement's default pairs instead.
+ */
+export function keepLedPairsFromOlderApp(
+  incoming: TnutLayout,
+  incomingHadPairs: boolean,
+  stored: TnutLayout | null,
+): TnutLayout {
+  if (incomingHadPairs || stored?.ledGroups === undefined) return incoming;
+  if (stored.ledPlacement !== incoming.ledPlacement) return incoming;
+  return { ...incoming, ledGroups: readLedPairs(stored.ledGroups, incoming.ledPositions ?? []) ?? [] };
 }

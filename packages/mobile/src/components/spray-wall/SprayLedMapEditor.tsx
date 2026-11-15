@@ -15,6 +15,7 @@ import {
   withLedPartners,
   setWiringSkip,
   traceLedPath,
+  wiringSkipCount,
   MAX_LED_POSITIONS,
   MAX_WIRING_SKIP,
   MAX_WIRING_TOTAL_SKIPS,
@@ -74,7 +75,12 @@ function useEditorHistory(layout: TnutLayout, onChange: MapEditorProps['onChange
     undo: () => {
       const previous = history.at(-1);
       if (!previous) return;
-      onChange(previous);
+      // The parent merges an update into the layout, so a key the snapshot lacks must be
+      // named: otherwise a list added since (ledGroups on a layout whose pairs were
+      // implicit) would survive the Undo.
+      const restore: Partial<TnutLayout> = { ...previous };
+      for (const key of Object.keys(layout)) if (!(key in previous)) Object.assign(restore, { [key]: undefined });
+      onChange(restore);
       setHistory((entries) => entries.slice(0, -1));
     },
   };
@@ -105,7 +111,9 @@ function LedPositionsEditor({ layout, onChange, source, photoUri, width, onInter
         ...link,
         ledIds: link.ledIds.filter((id) => retainedIds.has(id)),
       }));
-      change({ ledPositions, wiring: undefined, holdLeds });
+      // Pairs go with their LEDs; a removed pair must not outlive them in the saved list.
+      const ledGroups = layout.ledGroups?.filter((pair) => pair.every((id) => retainedIds.has(id)));
+      change({ ledPositions, wiring: undefined, holdLeds, ledGroups });
     };
     if (!layout.wiring?.paths.length) {
       apply();
@@ -596,9 +604,8 @@ function SkipsEditor({ layout, onChange, wallUuid, source, photoUri, width, onIn
     connection && connections.some(({ from, to }) => from === connection.from && to === connection.to)
       ? connection
       : null;
-  const gapCount = selected
-    ? (wiring?.skips.find(({ from, to }) => from === selected.from && to === selected.to)?.count ?? 0)
-    : 0;
+  // A stored skip may name the connection's ends in the other order.
+  const gapCount = selected ? wiringSkipCount(wiring, selected.from, selected.to) : 0;
   const ends = selected ? [indices.get(selected.from), indices.get(selected.to)] : [];
   const endsKey = endsLit && ends.length === 2 && ends.every((index) => index !== undefined) ? ends.join(',') : '';
 

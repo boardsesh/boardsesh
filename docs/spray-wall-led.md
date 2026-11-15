@@ -159,6 +159,14 @@ are all gone returns that hold to the automatic mapping. A current app always
 sends the list, and an explicit `[]` (after the last link is cleared or the LEDs
 are rebuilt) clears them.
 
+LED pairs (`ledGroups`) follow the same rule (`keepLedPairsFromOlderApp`), checked
+on its own because some released apps know about links but not pairs. A layout
+with no `ledGroups` key keeps the stored list, an empty one too, minus pairs
+whose LEDs are gone; if its LED placement differs from the stored one, the older
+app rebuilt the LEDs and the new placement's default pairs apply. A current app
+always names the key when it uploads, `null` for the default pairs, which the
+reader treats like no list.
+
 Enable LEDs, finish setup and take the wall through the usual lightbulb control.
 Routes illuminate their mapped LEDs using the existing start, hand, foot and
 finish colors, including saved color overrides. Route playback and creator

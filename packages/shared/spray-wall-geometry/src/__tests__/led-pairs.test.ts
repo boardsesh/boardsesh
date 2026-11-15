@@ -4,12 +4,16 @@ import {
   generateLedPositions,
   generateTnutGrid,
   groupLedPair,
+  keepLedPairsFromOlderApp,
   ledPairs,
   ledPartner,
   readTnutLayout,
   separateLedPair,
+  setWiringSkip,
+  wiringSkipCount,
   withLedPartners,
   type TnutLayout,
+  type TnutWiring,
 } from '../index';
 
 function layout(ledPlacement: TnutLayout['ledPlacement'] = 'sides'): TnutLayout {
@@ -92,5 +96,102 @@ describe('LED pairs behind a hold', () => {
     expect(withLedPartners(['a', 'c'], pairs, new Set())).toEqual(['a', 'b', 'c']);
     expect(withLedPartners(['b', 'a'], pairs, new Set())).toEqual(['b', 'a']);
     expect(withLedPartners(['a'], pairs, new Set(['b']))).toEqual(['a']);
+  });
+});
+
+describe('LED pairs that outlive their LEDs', () => {
+  it('still reads a layout whose stale pairs outnumber the LEDs left', () => {
+    const sides = layout('sides');
+    const pairs = ledPairs(sides);
+    // Three stored pairs, then two of them removed: two LEDs and three entries.
+    const [kept] = pairs;
+    const stored = JSON.parse(
+      JSON.stringify({
+        ...sides,
+        ledPositions: sides.ledPositions!.filter((led) => kept.includes(led.id)),
+        ledGroups: pairs.slice(0, 3),
+      }),
+    );
+    expect(readTnutLayout(stored)?.ledGroups).toEqual([kept]);
+    // The raw list is still bounded on its own.
+    expect(readTnutLayout({ ...stored, ledGroups: Array.from({ length: 6001 }, () => kept) })).toBeNull();
+  });
+
+  it('reads a null list as the default pairs', () => {
+    const sides = layout('sides');
+    const read = readTnutLayout(JSON.parse(JSON.stringify({ ...sides, ledGroups: null })));
+    expect(read).not.toBeNull();
+    expect(read).not.toHaveProperty('ledGroups');
+    expect(ledPairs(read!)).toEqual(ledPairs(sides));
+  });
+});
+
+describe('LED pairs across an older app save', () => {
+  /** An app from before pairs rebuilds the layout from the keys it knows. */
+  function olderAppSave(saved: TnutLayout): TnutLayout {
+    const { ledGroups: _dropped, ...known } = saved;
+    return readTnutLayout(JSON.parse(JSON.stringify(known)))!;
+  }
+
+  it('keeps a hand-made pair', () => {
+    const sides = layout('sides');
+    const [[a], [b]] = ledPairs(sides);
+    const custom = groupLedPair(sides, a, b);
+    const merged = keepLedPairsFromOlderApp(olderAppSave(custom), false, custom);
+    expect(ledPartner(ledPairs(merged), a)).toBe(b);
+    expect(merged.ledGroups).toEqual(custom.ledGroups);
+  });
+
+  it('keeps a separated default pair separated, and an empty list empty', () => {
+    const sides = layout('sides');
+    const [first] = ledPairs(sides)[0];
+    const separated = separateLedPair(sides, first);
+    const merged = keepLedPairsFromOlderApp(olderAppSave(separated), false, separated);
+    expect(ledPartner(ledPairs(merged), first)).toBeNull();
+    const none = { ...sides, ledGroups: [] };
+    expect(keepLedPairsFromOlderApp(olderAppSave(none), false, none).ledGroups).toEqual([]);
+  });
+
+  it('drops pairs whose LEDs the older app removed, and keeps the rest', () => {
+    const sides = layout('sides');
+    const custom = { ...sides, ledGroups: ledPairs(sides) };
+    const [gone, ...rest] = custom.ledGroups;
+    const edited = olderAppSave({
+      ...custom,
+      ledPositions: custom.ledPositions!.filter((led) => !gone.includes(led.id)),
+    });
+    expect(keepLedPairsFromOlderApp(edited, false, custom).ledGroups).toEqual(rest);
+  });
+
+  it('takes the list as sent from an app that knows about pairs, and leaves layouts with no list alone', () => {
+    const sides = layout('sides');
+    const separated = separateLedPair(sides, ledPairs(sides)[0][0]);
+    expect(keepLedPairsFromOlderApp(sides, true, separated)).toBe(sides);
+    expect(keepLedPairsFromOlderApp(olderAppSave(sides), false, sides)).not.toHaveProperty('ledGroups');
+    expect(keepLedPairsFromOlderApp(olderAppSave(sides), false, null)).not.toHaveProperty('ledGroups');
+  });
+
+  it('starts from the default pairs when the older app rebuilt the LEDs for another placement', () => {
+    const sides = layout('sides');
+    const separated = separateLedPair(sides, ledPairs(sides)[0][0]);
+    const rebuilt = olderAppSave(layout('center'));
+    expect(keepLedPairsFromOlderApp(rebuilt, false, separated)).not.toHaveProperty('ledGroups');
+  });
+});
+
+describe('skipped LEDs on a connection', () => {
+  it('reads a stored skip in either direction', () => {
+    const sides = layout('center');
+    const [a, b] = sides.ledPositions!.map((led) => led.id);
+    const wiring: TnutWiring = {
+      direction: 'custom',
+      startCorner: 'tl',
+      paths: [[a, b]],
+      skips: [{ from: b, to: a, count: 3 }],
+    };
+    expect(wiringSkipCount(wiring, a, b)).toBe(3);
+    expect(wiringSkipCount(wiring, b, a)).toBe(3);
+    expect(wiringSkipCount(setWiringSkip(wiring, a, b, 0), a, b)).toBe(0);
+    expect(wiringSkipCount(undefined, a, b)).toBe(0);
   });
 });
