@@ -8,7 +8,21 @@ import { decode, encode } from 'next-auth/jwt';
 import { NextRequest } from 'next/server';
 import type { PresentedBrowserSelection } from '../presented-browser-selection.server';
 import type { BrowserPasswordCommandClient } from '../browser-password-command-client.server';
-const state = vi.hoisted(() => ({ selection: undefined as PresentedBrowserSelection | undefined }));
+const state = vi.hoisted(() => ({
+  selection: undefined as PresentedBrowserSelection | undefined,
+  afterDecode: undefined as (() => Promise<void>) | undefined,
+}));
+vi.mock('next-auth/jwt', async (original) => {
+  const actual = await original<typeof import('next-auth/jwt')>();
+  return {
+    ...actual,
+    async decode(parameters: Parameters<typeof actual.decode>[0]) {
+      const claims = await actual.decode(parameters);
+      await state.afterDecode?.();
+      return claims;
+    },
+  };
+});
 vi.mock('server-only', () => ({}));
 vi.mock('@auth/drizzle-adapter', () => ({ DrizzleAdapter: () => ({}) }));
 vi.mock('@/app/lib/db/db', () => ({
@@ -54,10 +68,14 @@ beforeAll(() => {
 });
 afterAll(() => vi.restoreAllMocks());
 beforeEach(() => {
+  state.afterDecode = undefined;
   for (const [name, content] of Object.entries(passwordTestEnvironment)) vi.stubEnv(name, content);
   vi.stubEnv('CURRENT_STORE_WEB_CREDENTIAL_PROOF_MODE', 'required');
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  state.afterDecode = undefined;
+  vi.unstubAllEnvs();
+});
 function setup(kind: 'legacy-jwe' | 'canonical-token' = 'canonical-token', selected = true, verified = true) {
   const current = browserPasswordFixture(kind, selected);
   current.preparation.verification.verified = verified;
@@ -368,6 +386,7 @@ function wholeFixture(
   let holdEvent: Promise<void> | undefined;
   let holdBody: Promise<void> | undefined;
   let holdEncoder: Promise<void> | undefined;
+  let localEncoder: typeof encode = encode;
   let holdTarget: Promise<void> | undefined;
   let refuseFinalAck = false;
   const encodedCredentials: string[] = [];
@@ -454,7 +473,7 @@ function wholeFixture(
       encode: async (parameters) => {
         trace.push('encoder');
         await holdEncoder;
-        const credential = await encode(parameters);
+        const credential = await localEncoder(parameters);
         encodedCredentials.push(credential);
         trace.push('encoder-settled');
         return credential;
@@ -577,6 +596,7 @@ function wholeFixture(
     trace.push('preflight');
     return { bindingId: current.preparation.browserCursor.bindingId, version: 7 };
   });
+  const controller = new AbortController();
   const run = () =>
     signInCanonicalPassword(
       {
@@ -585,7 +605,7 @@ function wholeFixture(
         password: '  päss\0word  ',
         callbackUrl: '/settings',
         redirect: false,
-        signal: new AbortController().signal,
+        signal: controller.signal,
       },
       { currentOrigin: passwordTestEnvironment.NEXTAUTH_URL, locks, preflight, send, navigate: vi.fn() },
     );
@@ -596,6 +616,7 @@ function wholeFixture(
     jar,
     send,
     client,
+    controller,
     run,
     readSelection,
     preflight,
@@ -608,6 +629,9 @@ function wholeFixture(
     },
     setHoldEncoder: (pending: Promise<void>) => {
       holdEncoder = pending;
+    },
+    setEncoder: (next: typeof encode) => {
+      localEncoder = next;
     },
     setHoldBody: (pending: Promise<void>) => {
       holdBody = pending;
@@ -711,9 +735,10 @@ describe('canonical client to mounted endpoints to installed NextAuth cookie jar
       clock.mockRestore();
     }
   });
-  it('refuses an actual legacy encoder crossing one epoch second without freshening authentication age', async () => {
+  it('compensates one actual legacy encoder epoch crossing without freshening authentication age', async () => {
     let milliseconds = Date.now();
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => milliseconds);
+    const jwtCallback = vi.spyOn(authOptions.callbacks!, 'jwt');
     let release = () => {};
     try {
       const current = wholeFixture('legacy-jwe');
@@ -721,28 +746,155 @@ describe('canonical client to mounted endpoints to installed NextAuth cookie jar
         release = resolve;
       });
       current.setHoldEncoder(gate);
-      const pending = current.run().catch((error: unknown) => error);
+      const pending = current.run();
       await vi.waitFor(() => expect(current.trace).toContain('encoder'));
       expect(current.encodedCredentials).toEqual([]);
       milliseconds += 1000;
       release();
-      const failure = await pending;
-      expect(failure).toBeInstanceOf(Error);
-      expect(current.client.finalize).not.toHaveBeenCalled();
-      expect(current.client.abort).toHaveBeenCalledOnce();
-      expect([...current.jar.keys()].some((name) => name.startsWith('__Host-boardsesh.password-signin.'))).toBe(false);
-      expect(current.encodedCredentials).toHaveLength(1);
-      const claims = await decode({
+      expect(await pending).toMatchObject({ ok: true });
+      expect(current.client.prepare).toHaveBeenCalledOnce();
+      expect(current.client.finalize).toHaveBeenCalledOnce();
+      expect(current.client.abort).not.toHaveBeenCalled();
+      expect(jwtCallback).toHaveBeenCalledOnce();
+      expect(current.trace.filter((entry) => entry === 'event')).toHaveLength(1);
+      expect(current.encodedCredentials).toHaveLength(2);
+      const discarded = await decode({
         token: current.encodedCredentials[0],
         secret: passwordTestEnvironment.NEXTAUTH_SECRET,
       });
-      expect(claims?.exp).toBe(Date.parse(current.current.preparation.credentialExpiresAt) / 1000 + 1);
+      const claims = await decode({
+        token: current.encodedCredentials[1],
+        secret: passwordTestEnvironment.NEXTAUTH_SECRET,
+      });
+      expect(discarded?.exp).toBe(Date.parse(current.current.preparation.credentialExpiresAt) / 1000 + 1);
+      expect(claims?.exp).toBe(Date.parse(current.current.preparation.credentialExpiresAt) / 1000);
       expect(claims?.auth_time).toBe(Date.parse(current.current.preparation.credentialProof.authenticatedAt!) / 1000);
+      expect(vi.mocked(current.client.finalize).mock.calls[0]?.[0].candidate).toEqual({
+        kind: 'legacy-jwe',
+        credential: current.encodedCredentials[1],
+      });
     } finally {
       release();
+      jwtCallback.mockRestore();
       clock.mockRestore();
     }
   });
+  it('refuses when both local encoder attempts cross an epoch second', async () => {
+    let milliseconds = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => milliseconds);
+    try {
+      const current = wholeFixture('legacy-jwe');
+      current.setEncoder(async (parameters) => {
+        milliseconds += 1000;
+        return encode(parameters);
+      });
+      await expect(current.run()).rejects.toThrow();
+      expect(current.encodedCredentials).toHaveLength(2);
+      expect(current.client.prepare).toHaveBeenCalledOnce();
+      expect(current.client.finalize).not.toHaveBeenCalled();
+      expect(current.client.abort).toHaveBeenCalledOnce();
+      expect(current.trace).not.toContain('event');
+      expect([...current.jar.keys()].some((name) => name.startsWith('__Host-boardsesh.password-signin.'))).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it.each([
+    'unexplained-expiry',
+    'earlier-expiry',
+    'wrong-proof',
+    'invalid-jwe',
+    'oversized',
+    'encoder-error',
+    'clock-rollback',
+  ] as const)('never retries a first local %s', async (fault) => {
+    let milliseconds = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => milliseconds);
+    try {
+      const current = wholeFixture('legacy-jwe');
+      const encoder = vi.fn(async (parameters: Parameters<typeof encode>[0]) => {
+        if (fault === 'encoder-error') throw new Error('Private encoder cause');
+        if (fault === 'invalid-jwe') return 'not-a-jwe';
+        if (fault === 'oversized') return 'a'.repeat(16_385);
+        if (fault === 'wrong-proof') {
+          milliseconds += 1000;
+          return encode({ ...parameters, token: { ...parameters.token, authSessionId: 'wrong-SID' } });
+        }
+        if (fault === 'clock-rollback') milliseconds -= 1000;
+        const offset = fault === 'earlier-expiry' ? -1 : 1;
+        return encode({ ...parameters, maxAge: (parameters.maxAge ?? 0) + offset });
+      });
+      current.setEncoder(encoder);
+      await expect(current.run()).rejects.toThrow();
+      expect(encoder).toHaveBeenCalledOnce();
+      expect(current.client.prepare).toHaveBeenCalledOnce();
+      expect(current.client.finalize).not.toHaveBeenCalled();
+      expect(current.client.abort).toHaveBeenCalledOnce();
+      expect(current.trace).not.toContain('event');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it('does not use decode delay to explain a first encoder expiry mismatch', async () => {
+    let milliseconds = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => milliseconds);
+    let release = () => {};
+    try {
+      const current = wholeFixture('legacy-jwe');
+      let attempts = 0;
+      current.setEncoder(async (parameters) => {
+        attempts += 1;
+        return encode({ ...parameters, maxAge: (parameters.maxAge ?? 0) + (attempts === 1 ? 1 : 0) });
+      });
+      let decoded = false;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      state.afterDecode = async () => {
+        decoded = true;
+        await gate;
+      };
+      const pending = current.run().catch((error: unknown) => error);
+      await vi.waitFor(() => expect(decoded).toBe(true));
+      milliseconds += 1000;
+      release();
+      expect(await pending).toBeInstanceOf(Error);
+      expect(attempts).toBe(1);
+      expect(current.client.finalize).not.toHaveBeenCalled();
+      expect(current.client.abort).toHaveBeenCalledOnce();
+    } finally {
+      release();
+      state.afterDecode = undefined;
+      clock.mockRestore();
+    }
+  });
+  it.each(['first-abort', 'first-deadline', 'second-abort', 'second-deadline'] as const)(
+    'keeps original source deadlines and cancellation for %s',
+    async (fault) => {
+      let milliseconds = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => milliseconds);
+      try {
+        const current = wholeFixture('legacy-jwe');
+        let attempts = 0;
+        current.setEncoder(async (parameters) => {
+          attempts += 1;
+          const interrupt = fault.startsWith('first') || attempts === 2;
+          if (!interrupt) milliseconds += 1000;
+          else if (fault.endsWith('abort')) current.controller.abort();
+          else milliseconds = Date.parse(current.current.preparation.expiresAt);
+          return encode(parameters);
+        });
+        await expect(current.run()).rejects.toThrow();
+        expect(attempts).toBe(fault.startsWith('first') ? 1 : 2);
+        expect(current.client.prepare).toHaveBeenCalledOnce();
+        expect(current.client.finalize).not.toHaveBeenCalled();
+        expect(current.client.abort).toHaveBeenCalledOnce();
+        expect(current.trace).not.toContain('event');
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
   it('holds final target primary admission then refuses changed final ACK without auth cookie publication', async () => {
     const current = wholeFixture();
     let release!: () => void;
