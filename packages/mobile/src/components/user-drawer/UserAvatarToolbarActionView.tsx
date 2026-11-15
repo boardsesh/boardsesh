@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { Appbar } from 'react-native-paper';
@@ -13,6 +14,8 @@ const GLASS_AVATAR_INSET = 8;
 // icon box by 8dp a side, so the icon size must match the avatar; the default
 // 24dp box clips the avatar into a lopsided shape.
 const MATERIAL_AVATAR_SIZE = 32;
+
+const uiVariantByAppearance = { glass: 'liquidGlass', material: 'material' } as const;
 
 export type UserAvatarToolbarActionViewProps = {
   variant: 'glass' | 'material';
@@ -33,8 +36,8 @@ export function UserAvatarToolbarActionView({
   const actionCount = useToolbarActionCount();
   const accessibilityLabel = t('ariaLabels.userMenu');
 
-  if (variant === 'material') {
-    return (
+  return selectByVariant(uiVariantByAppearance[variant], {
+    material: (
       <Appbar.Action
         icon={() => <Avatar uri={avatarUrl} name={avatarName} size={MATERIAL_AVATAR_SIZE} />}
         size={MATERIAL_AVATAR_SIZE}
@@ -42,26 +45,29 @@ export function UserAvatarToolbarActionView({
         onPress={onPress}
         accessibilityLabel={accessibilityLabel}
       />
-    );
-  }
-
-  return (
-    <GlassToolbarAction onPress={onPress} accessibilityLabel={accessibilityLabel}>
-      <View
-        style={[
-          styles.glassAvatarFrame,
-          {
-            width: actionSize,
-            height: actionSize,
-            borderColor: systemColors.separator,
-            borderRightWidth: actionCount > 1 ? StyleSheet.hairlineWidth : 0,
-          },
-        ]}
-      >
-        <Avatar uri={avatarUrl} name={avatarName} size={Math.min(GLASS_AVATAR_SIZE, actionSize - GLASS_AVATAR_INSET)} />
-      </View>
-    </GlassToolbarAction>
-  );
+    ),
+    liquidGlass: (
+      <GlassToolbarAction onPress={onPress} accessibilityLabel={accessibilityLabel}>
+        <View
+          style={[
+            styles.glassAvatarFrame,
+            {
+              width: actionSize,
+              height: actionSize,
+              borderColor: systemColors.separator,
+              borderRightWidth: actionCount > 1 ? StyleSheet.hairlineWidth : 0,
+            },
+          ]}
+        >
+          <Avatar
+            uri={avatarUrl}
+            name={avatarName}
+            size={Math.min(GLASS_AVATAR_SIZE, actionSize - GLASS_AVATAR_INSET)}
+          />
+        </View>
+      </GlassToolbarAction>
+    ),
+  });
 }
 
 const styles = StyleSheet.create({

@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import {
   createContext,
@@ -91,6 +92,10 @@ export function ClimbsStory({
   const { systemColors, variant, actionColors } = useTheme();
   const nativeHeader = useNativeRootHeader();
   const [chromeHeight, setChromeHeight] = useState(0);
+  const clipStyle = useMemo(
+    () => selectByVariant(variant, { material: { top: chromeHeight }, liquidGlass: undefined }),
+    [variant, chromeHeight],
+  );
   const [filtered, setFiltered] = useState(scene === 'filtered');
   const [selected, setSelected] = useState<string | null>(null);
   const [laidOut, setLaidOut] = useState(false);
@@ -187,7 +192,7 @@ export function ClimbsStory({
       onToggleBenchmarks={noop}
       sortBy="ascents"
       onChangeSort={noop}
-      dense={variant === 'material'}
+      dense={selectByVariant(variant, { material: true, liquidGlass: false })}
     />
   );
   const leftActions = (
@@ -238,14 +243,14 @@ export function ClimbsStory({
         <View style={styles.fill} onLayout={onLayout}>
           <ClimbsView
             thumbnailSize={thumbnailSize}
-            clipStyle={variant === 'material' ? { top: chromeHeight } : undefined}
+            clipStyle={clipStyle}
             listProps={{
               data: showRows ? climbs : [],
               renderItem,
               keyExtractor,
               contentInsetAdjustmentBehavior: nativeHeader ? 'automatic' : 'never',
               contentContainerStyle: {
-                paddingTop: variant === 'material' ? 0 : chromeHeight,
+                paddingTop: selectByVariant(variant, { material: 0, liquidGlass: chromeHeight }),
                 paddingBottom: bottomInset,
               },
               refreshControl: <RefreshControl refreshing={scene === 'refreshing'} onRefresh={noop} />,

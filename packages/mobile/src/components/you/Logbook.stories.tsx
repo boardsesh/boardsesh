@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import {
   buildLogbookListRows,
@@ -115,7 +116,7 @@ function LogbookStory({ state = 'ready' }: { state?: 'ready' | 'loading' | 'empt
             accountAction={
               <UserAvatarToolbarActionView
                 avatarName="Alex"
-                variant={variant === 'material' ? 'material' : 'glass'}
+                variant={selectByVariant(variant, { material: 'material', liquidGlass: 'glass' } as const)}
                 onPress={noop}
               />
             }

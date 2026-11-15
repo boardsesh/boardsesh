@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +36,7 @@ const noop = () => {};
 function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (error: unknown) => void }) {
   const { t } = useTranslation('climbs');
   const { variant } = useTheme();
+  const nativeForm = Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
   const [boardFilters, setBoardFilters] = useState<ClimbBoardFilterState>(DEFAULT_CLIMB_BOARD_FILTER_STATE);
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [sheetReady, setSheetReady] = useState(false);
@@ -194,7 +196,7 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
       ) : (
         <ModalSheet
           visible={visible}
-          snapPoints={Platform.OS === 'ios' && variant === 'liquidGlass' ? MEDIUM_LARGE_SNAP_POINTS : LARGE_SNAP_POINTS}
+          snapPoints={nativeForm ? MEDIUM_LARGE_SNAP_POINTS : LARGE_SNAP_POINTS}
           scrollable={false}
           onPresented={markSheetReady}
           onClose={() => setVisible(false)}
@@ -211,7 +213,7 @@ function FiltersStory({ onReady, onError }: { onReady: () => void; onError: (err
             />
           }
         >
-          {Platform.OS === 'ios' && variant === 'liquidGlass' ? (
+          {nativeForm ? (
             <ClimbFilterForm model={model} />
           ) : (
             <ClimbFilterSheetContent

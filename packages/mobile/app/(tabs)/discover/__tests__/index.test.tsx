@@ -12,6 +12,7 @@ vi.mock('../../../../src/components/PressableSurface', async () => {
       createElement(Pressable, { ...props, onPress: props.disabled ? undefined : props.onPress }),
   };
 });
+import { variantFeatures } from '../../../../src/theme/variants/variant-features';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { router } from 'expo-router';
@@ -234,6 +235,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({
     brandColors: { primary: '#6D28D9' },
     variant: chromeState.variant,
+    features: variantFeatures[chromeState.variant ?? 'liquidGlass'],
     systemColors: {
       separator: 'theme-separator',
       secondaryLabel: 'theme-secondary-label',

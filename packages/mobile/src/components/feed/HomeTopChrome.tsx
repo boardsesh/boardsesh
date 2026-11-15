@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
@@ -17,7 +18,7 @@ export function HomeTopChrome(props: HomeTopChromeProps) {
   const router = useRouter();
   const nativeBarItems = useNativeRootBarItems();
   const onOpenNotifications = useCallback(() => router.push('/(tabs)/home/notifications'), [router]);
-  const appearance = variant === 'material' ? 'material' : 'glass';
+  const appearance = selectByVariant(variant, { material: 'material', liquidGlass: 'glass' } as const);
   return (
     <HomeTopChromeView
       {...props}

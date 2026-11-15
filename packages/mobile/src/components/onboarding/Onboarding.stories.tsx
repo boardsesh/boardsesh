@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useTheme as usePaperTheme } from 'react-native-paper';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
 import { useTheme } from '../../providers/theme-provider';
@@ -12,9 +13,13 @@ function WelcomeStory({ onReady, onError }: StoryRenderControls) {
       onContinue={noop}
       onImageDisplayed={onReady}
       onImageError={onError}
-      iconColor={String(variant === 'material' ? paper.colors.primary : systemColors.accent)}
-      bodyColor={String(variant === 'material' ? paper.colors.onSurfaceVariant : systemColors.secondaryLabel)}
-      backgroundColor={String(variant === 'material' ? paper.colors.background : systemColors.background)}
+      iconColor={String(selectByVariant(variant, { material: paper.colors.primary, liquidGlass: systemColors.accent }))}
+      bodyColor={String(
+        selectByVariant(variant, { material: paper.colors.onSurfaceVariant, liquidGlass: systemColors.secondaryLabel }),
+      )}
+      backgroundColor={String(
+        selectByVariant(variant, { material: paper.colors.background, liquidGlass: systemColors.background }),
+      )}
     />
   );
 }

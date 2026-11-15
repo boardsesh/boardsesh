@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useNativeRootBarItems } from '../../hooks/use-native-root-bar-items';
 import { useProfile } from '../../lib/graphql/hooks';
-import { useTheme } from '../../providers/theme-provider';
+import { createVariantComponent } from '../../theme/variants';
 import { GlassActionToolbar } from '../chrome';
 import { barItemsFactory } from '../chrome/root-bar-items';
 import { useAccountRailItem, useBarItemsOnRail } from '../chrome/use-root-bar-items';
@@ -11,10 +11,10 @@ import { ProfileTopChromeView, type ProfileTopChromeViewProps } from './ProfileT
 export type { ProfileTabKey } from './ProfileTopChromeView';
 export type ProfileTopChromeProps = Omit<ProfileTopChromeViewProps, 'accountAction' | 'displayName' | 'leftItems'>;
 
-export function ProfileTopChrome(props: ProfileTopChromeProps) {
-  const { variant } = useTheme();
-  return variant === 'material' ? <ProfileTopChromeMaterial {...props} /> : <ProfileTopChromeGlass {...props} />;
-}
+export const ProfileTopChrome = createVariantComponent<ProfileTopChromeProps>('ProfileTopChrome', {
+  material: ProfileTopChromeMaterial,
+  liquidGlass: ProfileTopChromeGlass,
+});
 function ProfileTopChromeMaterial(props: ProfileTopChromeProps) {
   const { data: profile } = useProfile();
   return (

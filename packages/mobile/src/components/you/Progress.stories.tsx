@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -28,7 +29,7 @@ function ProgressStory({ state = 'ready' }: { state?: State }) {
   });
   const accountAction = (
     <UserAvatarToolbarActionView
-      variant={variant === 'material' ? 'material' : 'glass'}
+      variant={selectByVariant(variant, { material: 'material', liquidGlass: 'glass' } as const)}
       avatarName="Alex"
       onPress={noop}
     />
@@ -48,13 +49,10 @@ function ProgressStory({ state = 'ready' }: { state?: State }) {
         displayName="Alex"
         onSelectTab={noop}
         onHeightChange={setTopInset}
-        accountAction={
-          variant === 'material' ? (
-            accountAction
-          ) : (
-            <GlassActionToolbar actionCount={1}>{accountAction}</GlassActionToolbar>
-          )
-        }
+        accountAction={selectByVariant(variant, {
+          material: accountAction,
+          liquidGlass: <GlassActionToolbar actionCount={1}>{accountAction}</GlassActionToolbar>,
+        })}
       />
     </View>
   );

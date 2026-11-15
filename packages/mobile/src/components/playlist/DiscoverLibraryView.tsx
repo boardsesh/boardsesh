@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ReadableColumn } from '../ReadableColumn';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
+import { ScreenTitle } from '../ScreenTitle';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { OfflineStateView } from '../OfflineStateView';
@@ -63,7 +64,7 @@ export function DiscoverLibraryView({
   overlays,
 }: DiscoverLibraryViewProps) {
   const { t } = useTranslation('playlists');
-  const { systemColors, brandColors, variant } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   return (
     <View style={styles.flex}>
       <ReadableColumn style={styles.flex}>
@@ -85,11 +86,7 @@ export function DiscoverLibraryView({
             />
           }
         >
-          {nativeRootHeader || variant === 'material' ? null : (
-            <Text variant="largeTitle" style={styles.screenTitle}>
-              {t('bottomTabBar.discover')}
-            </Text>
-          )}
+          {!nativeRootHeader && <ScreenTitle style={styles.screenTitle}>{t('bottomTabBar.discover')}</ScreenTitle>}
           {showSignInPrompt ? (
             <PressableSurface
               style={[styles.signInBanner, { borderColor: systemColors.separator }]}

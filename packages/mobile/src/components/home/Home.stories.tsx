@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import type { CrewFeedItem } from '@boardsesh/shared-schema';
 import { useCallback, useState } from 'react';
@@ -70,7 +71,7 @@ function HomeStory({
     <UserAvatarToolbarActionView
       avatarName="Alex"
       onPress={noop}
-      variant={variant === 'material' ? 'material' : 'glass'}
+      variant={selectByVariant(variant, { material: 'material', liquidGlass: 'glass' } as const)}
     />
   );
   const [mode, setMode] = useState<'gym' | 'crew'>('gym');
@@ -85,7 +86,7 @@ function HomeStory({
   };
   const notifications = (
     <NotificationsToolbarActionView
-      variant={variant === 'material' ? 'material' : 'glass'}
+      variant={selectByVariant(variant, { material: 'material', liquidGlass: 'glass' } as const)}
       unreadCount={0}
       onPress={noop}
     />

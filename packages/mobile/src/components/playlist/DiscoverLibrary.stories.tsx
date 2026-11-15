@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useStoryBottomInset } from '../../dev/stories/use-story-bottom-inset';
 import { CollapsingTopChromeView } from '../chrome/CollapsingTopChromeView';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
@@ -58,7 +59,10 @@ function DiscoverStory({ state = 'none' }: { state?: DiscoverLibraryViewProps['e
         onCreate={noop}
         chrome={
           <CollapsingTopChromeView
-            presentation={variant === 'material' ? 'material' : nativeHeader ? 'native' : 'floating'}
+            presentation={selectByVariant(variant, {
+              material: 'material',
+              liquidGlass: nativeHeader ? 'native' : 'floating',
+            } as const)}
             onHeightChange={setChromeHeight}
             materialActions={
               <>

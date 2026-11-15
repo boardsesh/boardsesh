@@ -1,3 +1,4 @@
+import { selectByVariant } from '../../theme/variants';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { Appbar } from 'react-native-paper';
@@ -6,6 +7,8 @@ import { Badge } from '../Badge';
 import { Icon } from '../Icon';
 import { iconMap } from '../icon-map';
 import { GlassToolbarAction, toolbarGlyphSize, useToolbarActionSize } from './GlassActionToolbar';
+
+const uiVariantByAppearance = { glass: 'liquidGlass', material: 'material' } as const;
 
 export function NotificationsToolbarActionView({
   variant,
@@ -23,12 +26,8 @@ export function NotificationsToolbarActionView({
   const label = t('ariaLabels.notifications');
   const accessibilityLabel = unreadCount > 0 ? `${label} (${unreadCount})` : label;
 
-  // This is the component's OWN `'glass' | 'material'` prop — the hosting chrome
-  // says which island it renders into — not `theme.variant`, so there is no
-  // `selectByVariant` to route it through. Recorded in the variant guard's
-  // ALLOWLIST next to UserAvatarToolbarAction, which is the identical case.
-  if (variant === 'material') {
-    return (
+  return selectByVariant(uiVariantByAppearance[variant], {
+    material: (
       <View>
         <Appbar.Action
           icon={iconMap['notification'].android}
@@ -42,26 +41,25 @@ export function NotificationsToolbarActionView({
           </View>
         ) : null}
       </View>
-    );
-  }
-
-  return (
-    <GlassToolbarAction onPress={handlePress} accessibilityLabel={accessibilityLabel}>
-      <Icon
-        maxFontSizeMultiplier={1}
-        name="notification"
-        size={toolbarGlyphSize(22, actionSize)}
-        color={systemColors.label}
-      />
-      {unreadCount > 0 ? (
-        // Nudged inward (top/right 2) so the island's rounded corner can't crop
-        // the dot — same geometry as BoardToolbarAction's onboarding cue.
-        <View style={styles.glassBadge} pointerEvents="none">
-          <Badge visible color={brandColors.primary} size="small" />
-        </View>
-      ) : null}
-    </GlassToolbarAction>
-  );
+    ),
+    liquidGlass: (
+      <GlassToolbarAction onPress={handlePress} accessibilityLabel={accessibilityLabel}>
+        <Icon
+          maxFontSizeMultiplier={1}
+          name="notification"
+          size={toolbarGlyphSize(22, actionSize)}
+          color={systemColors.label}
+        />
+        {unreadCount > 0 ? (
+          // Nudged inward (top/right 2) so the island's rounded corner can't crop
+          // the dot — same geometry as BoardToolbarAction's onboarding cue.
+          <View style={styles.glassBadge} pointerEvents="none">
+            <Badge visible color={brandColors.primary} size="small" />
+          </View>
+        ) : null}
+      </GlassToolbarAction>
+    ),
+  });
 }
 
 const styles = StyleSheet.create({
