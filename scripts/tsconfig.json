@@ -14,6 +14,9 @@
     "types": ["node"]
   },
   "include": [
+    "wled-simulator.ts",
+    "wled-simulator.test.ts",
+    "lib/wled-simulator-state.ts",
     "__tests__/vp-toolchain-alignment.test.ts",
     "auth-rehearsal/**/*.ts",
     "../packages/backend/src/__tests__/auth-rehearsal/worker.ts",

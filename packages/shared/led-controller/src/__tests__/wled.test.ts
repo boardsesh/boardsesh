@@ -132,6 +132,18 @@ describe('WLED driver', () => {
     expect(command).not.toHaveProperty('seg.1.stop');
   });
 
+  it('lights the full strip at the chosen brightness', async () => {
+    const fetchController = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json(deviceInfo))
+      .mockResolvedValueOnce(json({ seg: [{ id: 0 }] }))
+      .mockResolvedValueOnce(json({ success: true }));
+    await createWledDriver({ fetch: fetchController }).lightAll('wled.local', undefined, { brightness: 128 });
+    const body = fetchController.mock.calls[2][1]?.body;
+    if (typeof body !== 'string') throw new Error('Expected a JSON request body');
+    expect(JSON.parse(body)).toMatchObject({ bri: 128, nl: { on: false } });
+  });
+
   it('sends no lighting command if a fresh device or segment read fails', async () => {
     const fetchController = vi
       .fn<typeof fetch>()

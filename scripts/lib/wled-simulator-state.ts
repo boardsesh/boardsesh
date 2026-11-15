@@ -12,7 +12,22 @@ export type WledSimulatorState = {
   bri: number;
   /** One colour per physical LED, as segment 0 last painted it. */
   pixels: Rgb[];
-  nightlight: { on: boolean; dur: number; startedAt: number | null };
+  /**
+   * WLED's nightlight. A request only sets `on`; `tickNightlight`, like WLED's
+   * `handleNightlight` (at most every 100 ms, never inside a request), starts a
+   * countdown when it first sees `on` (`running` false) and forgets one when it
+   * sees it off. A `dur` change alone does not restart a running countdown.
+   */
+  nightlight: {
+    on: boolean;
+    dur: number;
+    mode: number;
+    tbri: number;
+    running: boolean;
+    startedAt: number;
+    lengthMs: number;
+    lastTick: number;
+  };
 };
 
 const BLACK: Rgb = [0, 0, 0];
@@ -29,7 +44,16 @@ export function createWledSimulatorState(ledCount: number, name = 'Boardsesh WLE
     on: false,
     bri: 128,
     pixels: Array.from({ length: ledCount }, () => [...BLACK] as Rgb),
-    nightlight: { on: false, dur: 60, startedAt: null },
+    nightlight: {
+      on: false,
+      dur: 60,
+      mode: 1,
+      tbri: 0,
+      running: false,
+      startedAt: 0,
+      lengthMs: 0,
+      lastTick: -Infinity,
+    },
   };
 }
 
@@ -51,16 +75,24 @@ export function wledState(state: WledSimulatorState, now: number) {
   return {
     on: state.on,
     bri: state.bri,
-    nl: { on: state.nightlight.on, dur: state.nightlight.dur, rem: nightlightRemaining(state, now) },
+    nl: {
+      on: state.nightlight.on,
+      dur: state.nightlight.dur,
+      mode: state.nightlight.mode,
+      tbri: state.nightlight.tbri,
+      rem: nightlightRemaining(state, now),
+    },
     seg: [{ id: 0, start: 0, stop: state.ledCount, on: true }],
   };
 }
 
-/** Seconds left on the auto-off timer, or -1 when it is not running (WLED's convention). */
+/**
+ * Seconds left on the auto-off timer, or -1 when it is off, computed like WLED:
+ * before the handler starts a new countdown, it still reports the old one.
+ */
 export function nightlightRemaining(state: WledSimulatorState, now: number): number {
-  const { on, dur, startedAt } = state.nightlight;
-  if (!on || startedAt === null) return -1;
-  return Math.max(0, Math.round(dur * 60 - (now - startedAt) / 1000));
+  const { on, startedAt, lengthMs } = state.nightlight;
+  return on ? Math.trunc((lengthMs - (now - startedAt)) / 1000) : -1;
 }
 
 /** "RRGGBB", "RRGGBBWW" or [r, g, b(, w)] — the white channel is ignored. */
@@ -101,7 +133,7 @@ export function applyIndividualColors(state: WledSimulatorState, entries: readon
 }
 
 /** Apply one POST /json/state body. Returns what changed, for the console log. */
-export function applyWledCommand(state: WledSimulatorState, command: unknown, now: number): string[] {
+export function applyWledCommand(state: WledSimulatorState, command: unknown): string[] {
   if (!isRecord(command)) throw new Error('The state command must be a JSON object');
   const changes: string[] = [];
   if (typeof command.on === 'boolean' && command.on !== state.on) {
@@ -115,16 +147,13 @@ export function applyWledCommand(state: WledSimulatorState, command: unknown, no
   if (isRecord(command.nl)) {
     const nightlight = command.nl;
     if (typeof nightlight.dur === 'number') state.nightlight.dur = Math.max(1, Math.min(255, nightlight.dur));
-    if (typeof nightlight.on === 'boolean') {
-      // Like WLED, only an off-to-on change starts the countdown.
-      if (nightlight.on && !state.nightlight.on) {
-        state.nightlight.startedAt = now;
-        changes.push(`auto-off in ${state.nightlight.dur} min`);
-      }
-      if (!nightlight.on && state.nightlight.on) state.nightlight.startedAt = null;
-      state.nightlight.on = nightlight.on;
-    }
+    if (typeof nightlight.mode === 'number') state.nightlight.mode = nightlight.mode;
+    if (typeof nightlight.tbri === 'number') state.nightlight.tbri = nightlight.tbri;
+    // Like WLED, this only sets the flag: the countdown starts or stops on the next tick.
+    if (typeof nightlight.on === 'boolean') state.nightlight.on = nightlight.on;
   }
+  // WLED ends the nightlight once the wall is at its target brightness (off, for auto-off).
+  if (!state.on && state.nightlight.tbri === 0) state.nightlight.on = false;
   if (Array.isArray(command.seg)) {
     for (const segment of command.seg) {
       if (!isRecord(segment) || (segment.id ?? 0) !== 0) continue;
@@ -144,11 +173,33 @@ export function applyWledCommand(state: WledSimulatorState, command: unknown, no
   return changes;
 }
 
-/** Fire the auto-off timer if it has run out. Returns true when it just switched the wall off. */
+/**
+ * WLED's `handleNightlight`: call it often; it acts at most every 100 ms. Starts
+ * and forgets countdowns, and ends one that ran out. Returns true when that just
+ * switched the wall off.
+ */
 export function tickNightlight(state: WledSimulatorState, now: number): boolean {
-  if (!state.nightlight.on || nightlightRemaining(state, now) > 0) return false;
-  // Instant mode with target brightness 0: the wall goes dark.
-  state.nightlight = { ...state.nightlight, on: false, startedAt: null };
+  const nightlight = state.nightlight;
+  if (now - nightlight.lastTick < 100) return false;
+  nightlight.lastTick = now;
+  if (!nightlight.on) {
+    nightlight.running = false;
+    return false;
+  }
+  if (!nightlight.running) {
+    nightlight.running = true;
+    nightlight.startedAt = now;
+    nightlight.lengthMs = nightlight.dur * 60_000;
+  }
+  if (now - nightlight.startedAt < nightlight.lengthMs) return false;
+  nightlight.on = false;
+  nightlight.running = false;
+  // Instant mode: the brightness drops to the target; with target 0 the wall goes dark.
+  if (nightlight.mode !== 0) return false;
+  if (nightlight.tbri > 0) {
+    state.bri = nightlight.tbri;
+    return false;
+  }
   state.on = false;
   return true;
 }

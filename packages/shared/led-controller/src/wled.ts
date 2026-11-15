@@ -5,6 +5,8 @@ import { createWledCommandDriver } from './wled-commands';
 export interface WledDriverOptions {
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+  /** Waits for WLED's nightlight tick between auto-off writes; tests replace it. */
+  sleep?: (milliseconds: number) => Promise<void>;
 }
 
 export function createWledDriver(options: WledDriverOptions = {}): LedControllerDriver {
@@ -65,7 +67,7 @@ export function createWledDriver(options: WledDriverOptions = {}): LedController
     }
   }
 
-  return createWledCommandDriver(request);
+  return createWledCommandDriver(request, { sleep: options.sleep });
 }
 
 export const wledDriver = createWledDriver();

@@ -6,7 +6,9 @@ import {
   applyWledCommand,
   createWledSimulatorState,
   litIndices,
+  nightlightRemaining,
   renderStrip,
+  tickNightlight,
   wledInfo,
   wledState,
   type WledSimulatorState,
@@ -19,7 +21,7 @@ function simulatedFetch(state: WledSimulatorState, clock: { now: number }): type
     const path = new URL(url).pathname;
     if (init?.method === 'POST') {
       if (typeof init.body !== 'string') throw new Error('Expected a JSON body');
-      applyWledCommand(state, JSON.parse(init.body), clock.now);
+      applyWledCommand(state, JSON.parse(init.body));
       return new Response(JSON.stringify({ success: true }));
     }
     return new Response(JSON.stringify(path === '/json/info' ? wledInfo(state) : wledState(state, clock.now)));
@@ -36,9 +38,10 @@ describe('WLED simulator', () => {
       version: '0.15.0-sim',
       ledCount: 120,
     });
-    const session = createLedPreviewSession(driver, 'http://sim.local:8080');
+    const session = createLedPreviewSession(driver, 'http://sim.local:8080', { brightness: 200 });
     await session.show([3, 7], [{ index: 3, color: [255, 0, 0] }]);
     expect(state.on).toBe(true);
+    expect(state.bri).toBe(200);
     expect(litIndices(state)).toEqual([3, 7]);
     expect(state.pixels[3]).toEqual([255, 0, 0]);
     expect(state.pixels[7]).toEqual([255, 255, 255]);
@@ -47,6 +50,47 @@ describe('WLED simulator', () => {
     await session.stop();
     expect(litIndices(state)).toEqual([]);
     await session.close();
+  });
+
+  it('runs the auto-off timer like WLED, and the driver restarts it near its end', async () => {
+    const state = createWledSimulatorState(50);
+    const clock = { now: 0 };
+    // The simulator's 100 ms tick runs while time passes, never inside a request.
+    const advance = (milliseconds: number) => {
+      const end = clock.now + milliseconds;
+      while (clock.now < end) {
+        clock.now = Math.min(end, clock.now + 10);
+        tickNightlight(state, clock.now);
+      }
+    };
+    const driver = createWledDriver({ fetch: simulatedFetch(state, clock), sleep: async (ms) => advance(ms) });
+    const session = createLedPreviewSession(driver, 'http://timer.local', { autoOffMinutes: 1 });
+    await session.show([1]);
+    expect(nightlightRemaining(state, clock.now)).toBeGreaterThanOrEqual(59);
+    advance(55_000);
+    await session.show([2]);
+    // The later selection restarted the countdown.
+    expect(nightlightRemaining(state, clock.now)).toBeGreaterThanOrEqual(59);
+    advance(58_000);
+    expect(litIndices(state)).toEqual([2]);
+    advance(3_000);
+    expect(litIndices(state)).toEqual([]);
+    // The next selection wakes the wall again.
+    await session.show([3]);
+    expect(litIndices(state)).toEqual([3]);
+    await session.close();
+  });
+
+  it('keeps a running countdown when the flag is switched off and on within one request gap', () => {
+    const state = createWledSimulatorState(10);
+    applyWledCommand(state, { on: true, nl: { on: true, dur: 1, mode: 0, tbri: 0 } });
+    tickNightlight(state, 100);
+    // Off and on again before the next tick: WLED never sees it off.
+    applyWledCommand(state, { nl: { on: false } });
+    applyWledCommand(state, { nl: { on: true } });
+    tickNightlight(state, 50_010);
+    expect(nightlightRemaining(state, 50_010)).toBe(10);
+    expect(tickNightlight(state, 60_200)).toBe(true);
   });
 
   it('understands both single LEDs and ranges in the individual-colour array', () => {

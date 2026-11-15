@@ -85,7 +85,7 @@ const server = createServer((request, response) => {
         const raw = await readBody(request);
         const command: unknown = JSON.parse(raw);
         if (values.verbose) console.log(`POST ${path} ${raw}`);
-        const changes = applyWledCommand(state, command, Date.now());
+        const changes = applyWledCommand(state, command);
         send(response, 200, { success: true });
         return describe(changes);
       }
@@ -99,7 +99,7 @@ const server = createServer((request, response) => {
 
 setInterval(() => {
   if (tickNightlight(state, Date.now())) describe(['auto-off timer ran out']);
-}, 1000);
+}, 100);
 
 server.listen(port, '0.0.0.0', () => {
   const addresses = Object.values(networkInterfaces())
