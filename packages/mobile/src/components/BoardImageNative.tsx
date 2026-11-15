@@ -9,11 +9,12 @@ import React, {
   type ReactNode,
 } from 'react';
 import { View, type ViewStyle } from 'react-native';
-import { NativeFrameClimbOverlayGPU } from '../../modules/climb-overlay-gpu/src';
+import { NativeFrameClimbOverlayGPU, NativeMotionClimbOverlayGPU } from '../../modules/climb-overlay-gpu/src';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
-import { GpuClimbOverlay } from './GpuClimbOverlay';
+import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
 import type { BackgroundVariant } from '../lib/background-image-cache';
 import type { BoardRenderSettings } from '../lib/board-render-settings';
@@ -64,6 +65,9 @@ type BoardImageNativeProps = {
   playSurface?: boolean;
   /** Explicit interactive editor surface; thumbnails and previews never opt in. */
   editorSurface?: boolean;
+  /** Stationary board: the neighboring hold sets blend while the photo stays still. */
+  gpuTransition?: GpuClimbTransition;
+  onGpuTransitionStateChange?: (state: 'unavailable' | 'loading' | 'ready') => void;
   /**
    * Target overlay/background width in px for small surfaces (e.g. the
    * 40×40 accessory thumbnail). Forwarded to useNativeClimbRender so the
@@ -189,6 +193,8 @@ const BoardImageNative = React.memo(function BoardImageNative({
   filledStyle = false,
   playSurface = false,
   editorSurface = false,
+  gpuTransition,
+  onGpuTransitionStateChange,
   renderWidth,
   backgroundVariant,
   recyclingKey,
@@ -215,6 +221,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   const gpuSurface =
     gpuFlag &&
     NativeFrameClimbOverlayGPU !== null &&
+    (!gpuTransition || NativeMotionClimbOverlayGPU !== null) &&
     !filledStyle &&
     (playSurface || editorSurface) &&
     boardName === 'kilter' &&
@@ -234,6 +241,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     rendererUnavailable,
     artworkIdentity,
     gpuConfigJson = null,
+    gpuStatus = gpuConfigJson ? 'ready' : 'unavailable',
     gpuFrames = frames,
   } = useNativeClimbRender({
     frames,
@@ -253,25 +261,65 @@ const BoardImageNative = React.memo(function BoardImageNative({
     maxVeilOpacity,
   });
 
+  const normalizedGpuTransition = useMemo(
+    () =>
+      gpuTransition
+        ? {
+            ...gpuTransition,
+            previousFrames:
+              gpuTransition.previousFrames === null ? null : toFlatFrames(gpuTransition.previousFrames, boardName),
+            nextFrames: gpuTransition.nextFrames === null ? null : toFlatFrames(gpuTransition.nextFrames, boardName),
+          }
+        : undefined,
+    [gpuTransition, boardName],
+  );
   const gpuInstanceId = React.useId();
-  const [gpuAttempt, setGpuAttempt] = useState({ configJson: gpuConfigJson, frames: gpuFrames, generation: 0 });
+  const transitionIdentity = normalizedGpuTransition
+    ? JSON.stringify([
+        normalizedGpuTransition.previousFrames,
+        normalizedGpuTransition.nextFrames,
+        normalizedGpuTransition.centerPage,
+      ])
+    : null;
+  const [gpuAttempt, setGpuAttempt] = useState({
+    configJson: gpuConfigJson,
+    frames: gpuFrames,
+    transitionIdentity,
+    generation: 0,
+  });
   let currentGpuAttempt = gpuAttempt;
-  if (gpuAttempt.configJson !== gpuConfigJson || gpuAttempt.frames !== gpuFrames) {
-    currentGpuAttempt = { configJson: gpuConfigJson, frames: gpuFrames, generation: gpuAttempt.generation + 1 };
+  if (
+    gpuAttempt.configJson !== gpuConfigJson ||
+    gpuAttempt.frames !== gpuFrames ||
+    gpuAttempt.transitionIdentity !== transitionIdentity
+  ) {
+    currentGpuAttempt = {
+      configJson: gpuConfigJson,
+      frames: gpuFrames,
+      transitionIdentity,
+      generation: gpuAttempt.generation + 1,
+    };
     setGpuAttempt(currentGpuAttempt);
   }
   const gpuRequestId = `${gpuInstanceId}:${currentGpuAttempt.generation}`;
   const currentGpuRequest = useRef<string | null>(null);
   const [gpuPresented, setGpuPresented] = useState<string | null>(null);
+  const [gpuPaintedConfig, setGpuPaintedConfig] = useState<string | null>(null);
   useLayoutEffect(() => {
     currentGpuRequest.current = gpuConfigJson ? gpuRequestId : null;
     return () => {
       currentGpuRequest.current = null;
     };
   }, [gpuConfigJson, gpuRequestId]);
-  const handleGpuPresented = useCallback((requestId: string) => {
-    if (currentGpuRequest.current === requestId) setGpuPresented(requestId);
-  }, []);
+  const handleGpuPresented = useCallback(
+    (requestId: string) => {
+      if (currentGpuRequest.current !== requestId) return;
+      setGpuPresented(requestId);
+      setGpuPaintedConfig(gpuConfigJson);
+    },
+    [gpuConfigJson],
+  );
+  const handleGpuRelease = useCallback(() => setGpuPaintedConfig(null), []);
   const handleGpuFailure = useCallback((requestId: string, configJson: string) => {
     if (currentGpuRequest.current === requestId) setGpuFallbackConfigJson(configJson);
   }, []);
@@ -289,15 +337,41 @@ const BoardImageNative = React.memo(function BoardImageNative({
                 configJson={gpuConfigJson}
                 frames={gpuFrames}
                 requestId={gpuRequestId}
+                transition={normalizedGpuTransition}
+                animateEdits={editorSurface}
                 onPresented={handleGpuPresented}
                 onFailure={handleGpuFailure}
                 onReset={handleGpuReset}
+                onRelease={handleGpuRelease}
               />
             ),
           }
         : undefined,
-    [gpuConfigJson, gpuFrames, gpuRequestId, gpuPresented, handleGpuPresented, handleGpuFailure, handleGpuReset],
+    [
+      gpuConfigJson,
+      gpuFrames,
+      gpuRequestId,
+      gpuPresented,
+      normalizedGpuTransition,
+      editorSurface,
+      handleGpuPresented,
+      handleGpuFailure,
+      handleGpuReset,
+      handleGpuRelease,
+    ],
   );
+
+  const hasGpuTransition = gpuTransition !== undefined;
+  useEffect(() => {
+    if (!hasGpuTransition) return;
+    onGpuTransitionStateChange?.(
+      !gpuSurface || gpuStatus === 'unavailable'
+        ? 'unavailable'
+        : gpuPresented === gpuRequestId && gpuConfigJson
+          ? 'ready'
+          : 'loading',
+    );
+  }, [hasGpuTransition, gpuSurface, gpuConfigJson, gpuStatus, gpuPresented, gpuRequestId, onGpuTransitionStateChange]);
 
   // Already rendered when the board took this climb AND decoded into memory, so
   // it is on the layer the frame the board mounts. Rendered alone is not enough:
@@ -327,6 +401,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     openingArt.overlayLoadKey === overlayLoadKey;
   const bridging =
     openingArt !== undefined &&
+    !(liveOverlay && gpuPaintedConfig === gpuConfigJson) &&
     !openingArtIsCurrent &&
     !overlayUnavailable &&
     displayedArtIdentity !== currentArtIdentity;
@@ -415,7 +490,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       {/* The carousel's incoming slot may already have a decoded PNG. Keep
           that complete board over the live view until its drawable presents,
           without starting another PNG render or inventing a PNG handoff. */}
-      {liveOverlay && !liveOverlay.displayed && overlayUri && !bridging ? (
+      {liveOverlay && !liveOverlay.displayed && gpuPaintedConfig !== gpuConfigJson && overlayUri && !bridging ? (
         <View style={{ position: 'absolute', inset: 0, zIndex: 1 }} pointerEvents="none">
           <LayeredClimbImage
             overlayUri={overlayUri}
@@ -464,7 +539,13 @@ const BoardImageNative = React.memo(function BoardImageNative({
           // Nothing to wait for when the holds are already rendered and decoded,
           // when there are none to draw, or when no overlay is coming.
           revealWithOverlay={
-            frames && !bridging && !overlayPaintsWithBoard && !overlayUnavailable ? revealWithOverlay : undefined
+            frames &&
+            !bridging &&
+            !overlayPaintsWithBoard &&
+            !overlayUnavailable &&
+            (!liveOverlay || gpuPaintedConfig !== gpuConfigJson)
+              ? revealWithOverlay
+              : undefined
           }
           // An overlay that paints with the board has nothing to fade from.
           suppressOverlayTransition={suppressOverlayTransition || overlayPaintsWithBoard || bridging}

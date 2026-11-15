@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
+
 import { describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => false }));
-vi.mock('../../../modules/climb-overlay-gpu/src', () => ({ NativeFrameClimbOverlayGPU: null }));
+vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
+  NativeFrameClimbOverlayGPU: null,
+  NativeMotionClimbOverlayGPU: null,
+}));
 
 type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
 const imageEvents = vi.hoisted(() => ({
@@ -257,3 +261,5 @@ describe('BoardImageNative overlay layers', () => {
     expect(overlayIndex).toBeGreaterThan(underOverlayIndex);
   });
 });
+
+vi.mock('../GpuClimbOverlay', () => ({ GpuClimbOverlay: () => null }));

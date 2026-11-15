@@ -3,7 +3,7 @@ import ExpoModulesCore
 public class ClimbOverlayGPUModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ClimbOverlayGPU")
-    Constants(["apiVersion": 2])
+    Constants(["apiVersion": 3])
     AsyncFunction("compare") { (configJson: String) throws -> [String: Any] in
       try compareClimbOverlayGPU(configJson)
     }.runOnQueue(climbOverlayGPUWorkQueue)
@@ -11,6 +11,12 @@ public class ClimbOverlayGPUModule: Module {
       Events("onRenderReady", "onRenderError")
       Prop("configJson") { (view: ClimbOverlayGPUView, config: String) in view.configJson = config }
       Prop("frames") { (view: ClimbOverlayGPUView, frames: String?) in view.frames = frames }
+      Prop("previousFrames") { (view: ClimbOverlayGPUView, frames: String?) in view.previousFrames = frames }
+      Prop("nextFrames") { (view: ClimbOverlayGPUView, frames: String?) in view.nextFrames = frames }
+      Prop("centerPage") { (view: ClimbOverlayGPUView, page: Double) in view.centerPage = page }
+      Prop("pagePosition") { (view: ClimbOverlayGPUView, page: Double) in view.setPagePosition(page) }
+      Prop("animateEdits") { (view: ClimbOverlayGPUView, animate: Bool) in view.animateEdits = animate }
+      Prop("reduceMotion") { (view: ClimbOverlayGPUView, reduce: Bool) in view.reduceMotion = reduce }
       Prop("requestId") { (view: ClimbOverlayGPUView, request: String) in view.requestId = request }
       Prop("active") { (view: ClimbOverlayGPUView, active: Bool) in view.active = active }
       OnViewDidUpdateProps { view in view.applyProps() }

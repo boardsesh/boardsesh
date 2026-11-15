@@ -20,6 +20,9 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
+import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
+import { StationaryBoardCarousel } from './StationaryBoardCarousel';
+import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
@@ -317,6 +320,23 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+  const { settings: renderSettings } = useBoardRenderSettings();
+  // A failed native scene stays on the image carousel for this board. Changing
+  // climb must not immediately retry the same failed layout on every swipe.
+  const stationaryIdentity = JSON.stringify([boardName, layoutId, sizeId, setIds, renderSettings]);
+  const [failedStationaryIdentity, setFailedStationaryIdentity] = useState<string | null>(null);
+  const handleStationaryUnavailable = useCallback(() => {
+    setFailedStationaryIdentity(stationaryIdentity);
+  }, [stationaryIdentity]);
+  const stationary =
+    !isScreenshotMode &&
+    NativeMotionClimbOverlayGPU !== null &&
+    boardName === 'kilter' &&
+    layoutId === 8 &&
+    !currentFrameOverride &&
+    renderSettings.mode !== 'classic' &&
+    !renderSettings.boardsesh.softDisc &&
+    failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
@@ -595,17 +615,52 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             at one end and drop one at the other without moving the two that
             stay. Screenshot mode's plain board is not on a layer the neighbours
             can slide under, so there it goes first and they draw over it. */}
-        {isScreenshotMode
-          ? [
-              currentBoard,
-              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
-              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
-            ]
-          : [
-              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
-              currentBoard,
-              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
-            ]}
+        {stationary ? (
+          <StationaryBoardCarousel
+            boardProps={{
+              accessible: false,
+              readyBoardArt,
+              onReadyArtDisplayed,
+              frames: currentFrames,
+              boardName,
+              layoutId,
+              sizeId,
+              setIds,
+              boardWidth,
+              boardHeight,
+              mirrored,
+              renderWidth: overlayRenderWidth,
+              backgroundVariant: 'full',
+              recyclingKey: currentFrames,
+              style: imageBox,
+              showGridLabels: true,
+              revealWithOverlay: 'first-paint',
+              retainDisplayedOverlay: true,
+              suppressOverlayTransition: true,
+              playSurface: true,
+            }}
+            previousFrames={prevFrames}
+            nextFrames={nextFrames}
+            centerPage={centerPage}
+            pager={pager}
+            pageArt={pageArt}
+            boardBox={imageBox}
+            zoomStyle={animatedZoomStyle}
+            onUnavailable={handleStationaryUnavailable}
+          />
+        ) : isScreenshotMode ? (
+          [
+            currentBoard,
+            neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+            neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+          ]
+        ) : (
+          [
+            neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+            currentBoard,
+            neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+          ]
+        )}
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
             while the renderer is idle, so those swipes are cache hits. Skipped

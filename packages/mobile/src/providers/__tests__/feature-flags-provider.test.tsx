@@ -9,6 +9,7 @@ import {
   useBoardseshGradeEnabled,
   useFeatureFlag,
   useFeatureFlags,
+  useGpuClimbOverlayEnabled,
   useOfflineDownloadProgressEnabled,
   useOfflineDownloadsEnabled,
   useSnapshotBootstrapEnabled,
@@ -50,6 +51,32 @@ describe('FeatureFlagsProvider', () => {
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(() => useFeatureFlags(), { wrapper });
     expect(result.current).toEqual({});
+  });
+
+  it('ships GPU rendering without flags or a development build, ignoring old experiment overrides', () => {
+    vi.stubGlobal('__DEV__', false);
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+    try {
+      setFeatureFlagOverride('gpu-climb-overlay-experiment', false);
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <FeatureFlagsProvider flags={{ 'gpu-climb-overlay-experiment': false }}>{children}</FeatureFlagsProvider>
+      );
+      const { result } = renderHook(() => useGpuClimbOverlayEnabled(), { wrapper });
+      expect(result.current).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('retains deterministic PNGs for screenshot fixtures', () => {
+    vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
+    try {
+      const { result } = renderHook(() => useGpuClimbOverlayEnabled());
+      expect(result.current).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('exposes flags passed via the `flags` prop', () => {

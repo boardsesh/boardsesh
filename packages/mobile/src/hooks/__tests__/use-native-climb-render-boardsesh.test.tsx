@@ -1309,6 +1309,22 @@ describe('live Homewall GPU render selection', () => {
     });
   });
 
+  it('reports loading while native support is being discovered, then ready', async () => {
+    let resolveSupport: (supported: boolean) => void = () => {};
+    nativeModule.probeBoardseshRendererSupport.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSupport = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useNativeClimbRender({ ...board, frames: 'p4131r42' }));
+    expect(result.current.gpuConfigJson).toBeNull();
+    expect(result.current.gpuStatus).toBe('loading');
+    resolveSupport(true);
+    await waitFor(() => expect(result.current.gpuStatus).toBe('ready'));
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
   it('prepares all hold geometry once across frame changes and skips competing PNG work', async () => {
     const { result, rerender } = renderHook(({ frames }) => useNativeClimbRender({ ...board, frames }), {
       initialProps: { frames: 'p4131r42' },
@@ -1350,6 +1366,7 @@ describe('live Homewall GPU render selection', () => {
     expect(JSON.parse(failed).veil).toBeUndefined();
     rerender({ fallback: failed, frames: 'p4306r43' });
     expect(result.current.gpuConfigJson).toBeNull();
+    expect(result.current.gpuStatus).toBe('unavailable');
     await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
   });
 

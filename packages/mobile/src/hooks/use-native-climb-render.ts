@@ -312,6 +312,7 @@ type NativeClimbRenderResult = {
   overlayUri: string | null;
   /** Stable full-layout config for a live GPU view; frames travel separately. */
   gpuConfigJson?: string | null;
+  gpuStatus?: 'loading' | 'unavailable' | 'ready';
   gpuFrames?: string;
   /**
    * Changes whenever this consumer must make expo-image perform a fresh load,
@@ -2200,6 +2201,17 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     return gpuStaticConfig.json;
   }, [gpuStaticConfig, flatFrames, gpuFallbackConfigJson]);
 
+  // A stationary carousel must wait for geometry/capability discovery rather
+  // than permanently latching its PNG fallback during the first render.
+  const gpuStatus: 'loading' | 'unavailable' | 'ready' = gpuConfigJson
+    ? 'ready'
+    : gpuSurface &&
+        !!flatFrames &&
+        requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
+        (boardArtChunkPending || getBoardseshRendererSupport() === null)
+      ? 'loading'
+      : 'unavailable';
+
   // Seed both pieces of state synchronously so the first paint already
   // shows whatever's available. Backgrounds in production are usually
   // available on the first frame (Asset.localUri pre-populated); the
@@ -3349,6 +3361,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   return {
     artworkIdentity,
     gpuConfigJson,
+    gpuStatus,
     gpuFrames: flatFrames,
     getReadyBoardArtSnapshot,
     overlayUri,

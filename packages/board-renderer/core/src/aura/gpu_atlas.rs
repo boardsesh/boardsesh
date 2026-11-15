@@ -97,10 +97,10 @@ pub fn prepare(config: &RenderConfig) -> Result<Vec<u8>, String> {
                 scale_y,
             )?;
             let mut reach = lit.reach_px(tuning, clamp_multiplier(config.shape_size_multiplier));
-            if let Some(cap) = outline_cap {
-                if lit.r_px > cap {
-                    reach *= cap / lit.r_px;
-                }
+            if let Some(cap) = outline_cap
+                && lit.r_px > cap
+            {
+                reach *= cap / lit.r_px;
             }
             Some((hold, lit, reach))
         })
@@ -148,11 +148,12 @@ pub fn prepare(config: &RenderConfig) -> Result<Vec<u8>, String> {
         let mut coverage = Mask::new(crop_width, crop_height).ok_or("Mask allocation failed")?;
         coverage.fill_path(&local.path, FillRule::Winding, true, Transform::identity());
         let mut sites_mask = coverage.clone();
-        if draws_plate && config.led_base.glow_from_base {
-            if let Some(plate) = &local.base_path {
-                sites_mask.clear();
-                sites_mask.fill_path(plate, FillRule::EvenOdd, true, Transform::identity());
-            }
+        if draws_plate
+            && config.led_base.glow_from_base
+            && let Some(plate) = &local.base_path
+        {
+            sites_mask.clear();
+            sites_mask.fill_path(plate, FillRule::EvenOdd, true, Transform::identity());
         }
         let sites: Vec<_> = sites_mask
             .data()

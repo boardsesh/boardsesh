@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 vi.mock('../../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => false }));
-vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({ NativeFrameClimbOverlayGPU: null }));
+vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  NativeFrameClimbOverlayGPU: null,
+  NativeMotionClimbOverlayGPU: null,
+}));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
@@ -158,3 +162,5 @@ describe('BoardImageNative showGridLabels', () => {
     expect(container.querySelector(LABELS)!.getAttribute('src')).toBe('module:401');
   });
 });
+
+vi.mock('../../GpuClimbOverlay', () => ({ GpuClimbOverlay: () => null }));

@@ -44,13 +44,14 @@ private struct AtlasManifest: Decodable {
   let holds: [AtlasHold]
 }
 
-// Five 16-byte vectors, matching Metal's Hold exactly.
+// Six 16-byte vectors, matching Metal's Hold exactly.
 private struct GPUHold {
   var color: SIMD4<Float>
   var bounds: SIMD4<Float>
   var crop: SIMD4<UInt32>
   var offsets: SIMD4<UInt32>
   var numbers: SIMD4<Float>
+  var identity: SIMD4<UInt32>
 }
 
 private struct GPUUniforms {
@@ -60,6 +61,8 @@ private struct GPUUniforms {
   var tuning2: SIMD4<Float>
   var offsets: SIMD4<UInt32>
   var viewport: SIMD4<Float>
+  var motion: SIMD4<Float>
+  var other: SIMD4<Float>
 }
 
 private struct GPUAtlas {
@@ -67,6 +70,7 @@ private struct GPUAtlas {
   let pixels: MTLBuffer
   let lut: MTLBuffer
   let holds: [UInt32: AtlasHold]
+  let supportedStates: Set<UInt32>
   let uploadMs: Double
 }
 
@@ -77,6 +81,13 @@ private struct GPUScene {
   let maxReach: Float
   let prepareMs: Double
   let cacheHit: Bool
+  let descriptors: [GPUHold]
+}
+
+private struct GPUScenes {
+  let current: GPUScene
+  let previous: GPUScene?
+  let next: GPUScene?
 }
 
 private enum OverlayFailure: Error {
@@ -96,7 +107,7 @@ private enum OverlayRenderer {
   ) { _ in OverlayRenderer.work.async { OverlayRenderer.cache = nil } }
 
   static func prepare(configJson: String, frames overrideFrames: String? = nil,
-                      preparedAtlas: GPUAtlas? = nil) throws -> GPUScene {
+                      preparedAtlas: GPUAtlas? = nil, strictRoles: Bool = false) throws -> GPUScene {
     guard let device else { throw OverlayFailure.reason("Metal unavailable") }
     _ = memoryWarningObserver
     if pipeline == nil {
@@ -149,29 +160,87 @@ private enum OverlayRenderer {
     var active: [GPUHold] = []
     for token in frames.split(separator: ",", omittingEmptySubsequences: false).first?.split(separator: "p") ?? [] {
       let pieces = token.split(separator: "r", omittingEmptySubsequences: false)
-      guard pieces.count == 2, let id = UInt32(pieces[0]), let state = UInt32(pieces[1]),
-        let original = atlas.holds[id] else { continue }
+      guard pieces.count == 2, let id = UInt32(pieces[0]), let state = UInt32(pieces[1]) else { continue }
+      if strictRoles && !atlas.supportedStates.contains(state) {
+        throw OverlayFailure.reason("Unsupported hold role in GPU source")
+      }
+      guard let original = atlas.holds[id] else { continue }
       let hold = atlas.manifest.mirrored ? (original.mirror.flatMap { atlas.holds[$0] } ?? original) : original
-      guard let role = hold.roles.first(where: { $0.state == state }) else { continue }
+      guard let role = hold.roles.first(where: { $0.state == state }) else {
+        if strictRoles { throw OverlayFailure.reason("Unsupported hold role in GPU source") }
+        continue
+      }
       guard active.count < 128 else { throw OverlayFailure.reason("Prototype supports at most 128 active holds") }
       active.append(GPUHold(
         color: SIMD4(role.color[0]/255, role.color[1]/255, role.color[2]/255, 1),
         bounds: SIMD4(hold.bounds[0],hold.bounds[1],hold.bounds[2],hold.bounds[3]),
         crop: SIMD4(hold.x,hold.y,hold.width,hold.height),
         offsets: SIMD4(hold.field,role.fill,role.plate,role.glyph),
-        numbers: SIMD4(hold.reach,0,0,0)))
+        numbers: SIMD4(hold.reach,0,0,0),identity: SIMD4(hold.id,state,0,0)))
     }
     let count = active.count
+    if strictRoles && !frames.isEmpty && count == 0 {
+      throw OverlayFailure.reason("GPU source contains no matching holds")
+    }
     let maxReach = active.map { $0.numbers.x }.max() ?? 0
     // Metal requires a nonempty buffer even when the shader loop runs zero times.
+    let descriptors = active
     if active.isEmpty {
-      active.append(GPUHold(color: .zero, bounds: .zero, crop: .zero, offsets: .zero, numbers: .zero))
+      active.append(GPUHold(color: .zero, bounds: .zero, crop: .zero, offsets: .zero, numbers: .zero, identity: .zero))
     }
     guard let holds = device.makeBuffer(bytes: active, length: active.count * MemoryLayout<GPUHold>.stride) else {
       throw OverlayFailure.reason("Active hold allocation failed")
     }
     return GPUScene(atlas: atlas, holds: holds, count: count, maxReach: maxReach,
-                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit)
+                    prepareMs: (CACurrentMediaTime()-start)*1000, cacheHit: hit, descriptors: descriptors)
+  }
+
+  static func replacingDescriptors(_ scene: GPUScene, with descriptors: [GPUHold]) throws -> GPUScene {
+    guard let device else { throw OverlayFailure.reason("Metal unavailable") }
+    let buffer = descriptors.isEmpty
+      ? [GPUHold(color: .zero,bounds: .zero,crop: .zero,offsets: .zero,numbers: .zero,identity: .zero)]
+      : descriptors
+    guard let holds = device.makeBuffer(bytes: buffer,length: buffer.count*MemoryLayout<GPUHold>.stride) else {
+      throw OverlayFailure.reason("Motion hold allocation failed")
+    }
+    return GPUScene(atlas: scene.atlas,holds: holds,count: descriptors.count,maxReach: scene.maxReach,
+      prepareMs: scene.prepareMs,cacheHit: scene.cacheHit,descriptors: descriptors)
+  }
+
+  static func prepareSources(configJson: String, frames: String?, previous: String?, next: String?,
+                             preparedAtlas: GPUAtlas?, editBaseline: [UInt32: UInt32]?) throws -> GPUScenes {
+    let started = CACurrentMediaTime()
+    let current = try prepare(configJson: configJson,frames: frames,preparedAtlas: preparedAtlas,
+                              strictRoles: previous != nil || next != nil)
+    let previousScene = try previous.map { try prepare(configJson: configJson,frames: $0,
+      preparedAtlas: current.atlas,strictRoles: true) }
+    let nextScene = try next.map { try prepare(configJson: configJson,frames: $0,
+      preparedAtlas: current.atlas,strictRoles: true) }
+    func roles(_ scene: GPUScene?) -> [UInt32: UInt32] {
+      var roles: [UInt32: UInt32] = [:]
+      for hold in scene?.descriptors ?? [] { roles[hold.identity.x] = hold.identity.y }
+      return roles
+    }
+    func annotate(_ scene: GPUScene, lower: [UInt32: UInt32], upper: [UInt32: UInt32],
+                  baseline: [UInt32: UInt32]?) throws -> GPUScene {
+      let descriptors = scene.descriptors.map { descriptor in
+        var hold = descriptor
+        hold.numbers.y = baseline.map { $0[hold.identity.x] != hold.identity.y } == true ? 1 : 0
+        hold.numbers.z = lower[hold.identity.x].map { $0 != hold.identity.y } == true ? 1 : 0
+        hold.numbers.w = upper[hold.identity.x].map { $0 != hold.identity.y } == true ? 1 : 0
+        return hold
+      }
+      return try replacingDescriptors(scene,with: descriptors)
+    }
+    let currentRoles = roles(current)
+    let annotatedCurrent = try annotate(current,lower: roles(previousScene),upper: roles(nextScene),baseline: editBaseline)
+    let annotatedPrevious = try previousScene.map { try annotate($0,lower: [:],upper: currentRoles,baseline: nil) }
+    let annotatedNext = try nextScene.map { try annotate($0,lower: currentRoles,upper: [:],baseline: nil) }
+    let timedCurrent = GPUScene(atlas: annotatedCurrent.atlas,holds: annotatedCurrent.holds,
+      count: annotatedCurrent.count,maxReach: annotatedCurrent.maxReach,
+      prepareMs: (CACurrentMediaTime()-started)*1000,cacheHit: annotatedCurrent.cacheHit,
+      descriptors: annotatedCurrent.descriptors)
+    return GPUScenes(current: timedCurrent,previous: annotatedPrevious,next: annotatedNext)
   }
 
   private static func makeAtlas(config: Data, device: MTLDevice) throws -> GPUAtlas {
@@ -210,6 +279,7 @@ private enum OverlayRenderer {
       let lut = device.makeBuffer(bytes: manifest.lut, length: manifest.lut.count * MemoryLayout<Float>.size)
     else { throw OverlayFailure.reason("GPU atlas allocation failed") }
     return GPUAtlas(manifest: manifest, pixels: pixels, lut: lut, holds: holdIndex,
+                    supportedStates: Set(manifest.holds.flatMap { $0.roles.map(\.state) }),
                     uploadMs: (CACurrentMediaTime()-uploadStart)*1000)
   }
 }
@@ -245,12 +315,14 @@ func compareClimbOverlayGPU(_ configJson: String) throws -> [String: Any] {
     veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
     tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
     tuning2: SIMD4(manifest.fringe,manifest.coreShare,scene.maxReach,0),
-    offsets: SIMD4(manifest.covers,0,0,0),viewport: SIMD4(Float(width),Float(height),0,0))
+    offsets: SIMD4(manifest.covers,0,0,0),viewport: SIMD4(Float(width),Float(height),0,0),
+    motion: SIMD4(0,1,1,1),other: .zero)
   encoder.setRenderPipelineState(pipeline)
   encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
   encoder.setFragmentBuffer(scene.holds, offset: 0, index: 1)
   encoder.setFragmentBytes(&uniforms, length: MemoryLayout<GPUUniforms>.stride, index: 2)
   encoder.setFragmentBuffer(scene.atlas.lut, offset: 0, index: 3)
+  encoder.setFragmentBuffer(scene.holds, offset: 0, index: 4)
   encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
   encoder.endEncoding()
   var submitted = false
@@ -327,21 +399,39 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     didSet { if configJson != oldValue { configRevision &+= 1 } }
   }
   var frames: String?
+  var previousFrames: String?
+  var nextFrames: String?
+  var centerPage: Double = 0 {
+    didSet { if !centerPage.isFinite { centerPage = oldValue } }
+  }
+  var animateEdits = false
+  var reduceMotion = false
+  private var pagePosition: Double?
   var requestId = ""
   var active = false
   private let metal: MTKView
   private var revision: UInt64 = 0
   private var reportedRevision: UInt64?
   private var scene: GPUScene?
+  private var previousScene: GPUScene?
+  private var nextScene: GPUScene?
   private var configRevision: UInt64 = 0
   private var submittedConfigRevision: UInt64?
   private var submittedFrames: String?
+  private var submittedPreviousFrames: String?
+  private var submittedNextFrames: String?
+  private var submittedCenterPage: Double = 0
   private var preparedConfigRevision: UInt64?
   private var preparedAtlas: GPUAtlas?
   private var submittedRequest = ""
   private var background = UIApplication.shared.applicationState != .active
   private var needsFrame = false
   private var preparing = false
+  private var editorBaseline: [UInt32: UInt32]?
+  private var editorBaselineRevision: UInt64?
+  private var editorStart: CFTimeInterval?
+  private var editorDisplayLink: CADisplayLink?
+  private var suppressMotion: Bool { reduceMotion || UIAccessibility.isReduceMotionEnabled }
 
   required init(appContext: AppContext? = nil) {
     metal = MTKView(frame: .zero, device: OverlayRenderer.device)
@@ -358,6 +448,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     addSubview(metal)
     NotificationCenter.default.addObserver(self, selector: #selector(suspend), name: UIApplication.willResignActiveNotification, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(resume), name: UIApplication.didBecomeActiveNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(motionPolicyChanged), name: .NSProcessInfoPowerStateDidChange, object: nil)
   }
 
   override func layoutSubviews() {
@@ -371,7 +463,12 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window == nil {
+      stopEditorMotion()
       scene = nil
+      previousScene = nil
+      nextScene = nil
+      editorBaseline = nil
+      editorBaselineRevision = nil
       preparedAtlas = nil
       preparedConfigRevision = nil
       submittedConfigRevision = nil
@@ -383,12 +480,56 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     requestDraw()
   }
 
-  @objc private func suspend() { background = true }
+  @objc private func suspend() { background = true; stopEditorMotion() }
   @objc private func resume() { background = false; applyProps(); requestDraw() }
+
+  func setPagePosition(_ position: Double) {
+    guard position.isFinite, position != pagePosition else { return }
+    pagePosition = position
+    requestDraw()
+  }
+
+  @objc private func motionPolicyChanged() {
+    if suppressMotion || ProcessInfo.processInfo.isLowPowerModeEnabled { stopEditorMotion() }
+    requestDraw()
+  }
+
+  private func stopEditorMotion() {
+    editorDisplayLink?.invalidate()
+    editorDisplayLink = nil
+    editorStart = nil
+  }
+
+  private func startEditorMotion() {
+    stopEditorMotion()
+    guard animateEdits, !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled,
+      active, !background, window != nil else { return }
+    editorStart = CACurrentMediaTime()
+    let link = CADisplayLink(target: self,selector: #selector(editorTick))
+    link.preferredFramesPerSecond = 60
+    link.add(to: .main,forMode: .common)
+    editorDisplayLink = link
+  }
+
+  @objc private func editorTick() {
+    guard let started = editorStart, active, !background, window != nil,
+      !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+      stopEditorMotion()
+      requestDraw()
+      return
+    }
+    if CACurrentMediaTime()-started >= ClimbOverlayMotion.editDuration { stopEditorMotion() }
+    requestDraw()
+  }
 
   func applyProps() {
     if !active {
+      stopEditorMotion()
       scene = nil
+      previousScene = nil
+      nextScene = nil
+      editorBaseline = nil
+      editorBaselineRevision = nil
       preparedAtlas = nil
       preparedConfigRevision = nil
       submittedConfigRevision = nil
@@ -396,8 +537,10 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       submittedRequest = ""
       return
     }
+    if suppressMotion || !animateEdits || ProcessInfo.processInfo.isLowPowerModeEnabled { stopEditorMotion() }
     guard active, window != nil, !background, !configJson.isEmpty else { return }
-    if submittedConfigRevision == configRevision && submittedFrames == frames && submittedRequest == requestId {
+    if submittedConfigRevision == configRevision && submittedFrames == frames && submittedRequest == requestId
+      && submittedPreviousFrames == previousFrames && submittedNextFrames == nextFrames && submittedCenterPage == centerPage {
       requestDraw()
       return
     }
@@ -405,31 +548,44 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     // one worker request for this view; completion picks up the latest props.
     guard !preparing else { return }
     preparing = true
+    stopEditorMotion()
     scene = nil
+    previousScene = nil
+    nextScene = nil
     revision &+= 1
     let generation = revision
     let config = configJson
     let layoutRevision = configRevision
     let frame = frames
+    let previous = previousFrames
+    let next = nextFrames
+    let page = centerPage.isFinite ? centerPage : 0
+    let baseline = animateEdits && !suppressMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
+      && editorBaselineRevision == layoutRevision ? editorBaseline : nil
     let request = requestId
     let reusableAtlas = preparedConfigRevision == layoutRevision ? preparedAtlas : nil
     submittedConfigRevision = layoutRevision
     submittedFrames = frame
+    submittedPreviousFrames = previous
+    submittedNextFrames = next
+    submittedCenterPage = page
     submittedRequest = request
     OverlayRenderer.work.async { [weak self] in
-      let result = Result { try OverlayRenderer.prepare(configJson: config, frames: frame, preparedAtlas: reusableAtlas) }
+      let result = Result { try OverlayRenderer.prepareSources(configJson: config,frames: frame,
+        previous: previous,next: next,preparedAtlas: reusableAtlas,editBaseline: baseline) }
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         self.preparing = false
         // A rapid swipe can invalidate the active frame while its layout is
         // still useful. Keep that atlas, then prepare only the latest frame.
         if self.configRevision == layoutRevision, self.window != nil, self.active,
-          case .success(let scene) = result {
-          self.preparedAtlas = scene.atlas
+          case .success(let scenes) = result {
+          self.preparedAtlas = scenes.current.atlas
           self.preparedConfigRevision = layoutRevision
         }
         guard self.revision == generation, self.configRevision == layoutRevision,
-          self.frames == frame, self.requestId == request else {
+          self.frames == frame, self.previousFrames == previous, self.nextFrames == next,
+          self.centerPage == page, self.requestId == request else {
           self.applyProps()
           return
         }
@@ -441,10 +597,21 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         }
         self.submittedConfigRevision = layoutRevision
         self.submittedFrames = frame
+        self.submittedPreviousFrames = previous
+        self.submittedNextFrames = next
+        self.submittedCenterPage = page
         self.submittedRequest = request
         switch result {
-        case .success(let scene):
+        case .success(let scenes):
+          let scene = scenes.current
           self.scene = scene
+          self.previousScene = scenes.previous
+          self.nextScene = scenes.next
+          var baseline: [UInt32: UInt32] = [:]
+          for hold in scene.descriptors { baseline[hold.identity.x] = hold.identity.y }
+          self.editorBaseline = baseline
+          self.editorBaselineRevision = layoutRevision
+          if scene.descriptors.contains(where: { $0.numbers.y > 0 }) { self.startEditorMotion() }
           self.metal.drawableSize = CGSize(width: Int(scene.atlas.manifest.width), height: Int(scene.atlas.manifest.height))
           self.requestDraw()
         case .failure(let error):
@@ -465,6 +632,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   func draw(in view: MTKView) {
     guard needsFrame, !preparing, active, !background, window != nil,
       configRevision == submittedConfigRevision, frames == submittedFrames, requestId == submittedRequest,
+      previousFrames == submittedPreviousFrames, nextFrames == submittedNextFrames, centerPage == submittedCenterPage,
       let scene, let pipeline = OverlayRenderer.pipeline,
       let drawable = view.currentDrawable, let descriptor = view.currentRenderPassDescriptor
     else { return }
@@ -476,18 +644,35 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     }
     needsFrame = false
     let manifest = scene.atlas.manifest
+    var lower = scene
+    var upper = scene
+    var progress: Float = 0
+    let selection = ClimbOverlayMotion.select(pagePosition: pagePosition ?? submittedCenterPage,
+      centerPage: submittedCenterPage,hasPrevious: previousScene != nil,hasNext: nextScene != nil,
+      reduceMotion: suppressMotion)
+    if selection.lowerOffset == -1, let previousScene { lower = previousScene }
+    if selection.upperOffset == 1, let nextScene { upper = nextScene }
+    progress = selection.progress
+    let roleScales = ClimbOverlayMotion.roleScales(progress)
+    let illumination = editorStart.map {
+      ClimbOverlayMotion.editIllumination(elapsed: CACurrentMediaTime()-$0)
+    } ?? 1
     var uniforms = GPUUniforms(
-      size: SIMD4(Float(manifest.width),Float(manifest.height),Float(scene.count),manifest.glow ? 1 : 0),
+      size: SIMD4(Float(manifest.width),Float(manifest.height),Float(lower.count),manifest.glow ? 1 : 0),
       veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
       tuning: SIMD4(manifest.merge,manifest.seam,manifest.seamMix,manifest.seamSharpness),
-      tuning2: SIMD4(manifest.fringe,manifest.coreShare,scene.maxReach,0),
+      tuning2: SIMD4(manifest.fringe,manifest.coreShare,lower.maxReach,0),
       offsets: SIMD4(manifest.covers,0,0,0),
-      viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0))
+      viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0),
+      motion: SIMD4(progress,roleScales.lower,roleScales.upper,illumination),
+      other: SIMD4(Float(upper.count),upper.maxReach,
+        previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,0))
     encoder.setRenderPipelineState(pipeline)
     encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
-    encoder.setFragmentBuffer(scene.holds, offset: 0, index: 1)
+    encoder.setFragmentBuffer(lower.holds, offset: 0, index: 1)
     encoder.setFragmentBytes(&uniforms, length: MemoryLayout<GPUUniforms>.stride, index: 2)
     encoder.setFragmentBuffer(scene.atlas.lut, offset: 0, index: 3)
+    encoder.setFragmentBuffer(upper.holds, offset: 0, index: 4)
     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
     encoder.endEncoding()
     let generation = revision
@@ -502,6 +687,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         !requiresPresentation || presented,
         self.revision == generation, self.requestId == request,
         self.configRevision == self.submittedConfigRevision, self.frames == self.submittedFrames,
+        self.previousFrames == self.submittedPreviousFrames, self.nextFrames == self.submittedNextFrames,
+        self.centerPage == self.submittedCenterPage,
         self.active, !self.background, self.window != nil,
         self.reportedRevision != generation else { return }
       self.reportedRevision = generation
@@ -519,6 +706,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       DispatchQueue.main.async { [weak self] in
         guard let self, self.revision == generation, self.requestId == request,
           self.configRevision == self.submittedConfigRevision, self.frames == self.submittedFrames,
+          self.previousFrames == self.submittedPreviousFrames, self.nextFrames == self.submittedNextFrames,
+          self.centerPage == self.submittedCenterPage,
           self.active, !self.background, self.window != nil else { return }
         if completed.status == .error {
           self.onRenderError(["requestId":request,"reason":completed.error?.localizedDescription ?? "GPU command failed"])

@@ -26,6 +26,17 @@ export type ClimbOverlayGPUFrameProps = ClimbOverlayGPUNativeProps & {
   frames: string;
 };
 
+/** v3 keeps the wall fixed while the gesture changes its lit holds. */
+export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
+  previousFrames: string | null;
+  nextFrames: string | null;
+  centerPage: number;
+  /** Absolute pager position, updated directly from a UI-thread worklet. */
+  pagePosition?: number;
+  animateEdits: boolean;
+  reduceMotion: boolean;
+};
+
 export type ClimbOverlayGPUComparison = {
   width: number;
   height: number;
@@ -59,4 +70,9 @@ export const NativeClimbOverlayGPU: ComponentType<ClimbOverlayGPUNativeProps> | 
 export const NativeFrameClimbOverlayGPU: ComponentType<ClimbOverlayGPUFrameProps> | null =
   nativeModule && (nativeModule.apiVersion ?? 1) >= 2
     ? requireNativeViewManager<ClimbOverlayGPUFrameProps>('ClimbOverlayGPU')
+    : null;
+
+export const NativeMotionClimbOverlayGPU: ComponentType<ClimbOverlayGPUMotionProps> | null =
+  nativeModule && (nativeModule.apiVersion ?? 1) >= 3
+    ? requireNativeViewManager<ClimbOverlayGPUMotionProps>('ClimbOverlayGPU')
     : null;
