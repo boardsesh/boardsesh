@@ -71,6 +71,12 @@ internal object OverlayPolicy {
 
 /** Pure pending-frame ledger. A skipped earlier buffer cannot block readiness. */
 internal class PresentationLedger {
+    enum class ConsumptionWait {
+        NONE,
+        RETRY,
+        TIMED_OUT,
+    }
+
     data class Frame(
         val timestamp: Long,
         val revision: Long,
@@ -108,6 +114,15 @@ internal class PresentationLedger {
         if (!frame.complete || !frame.consumed) return false
         frames.remove(frame)
         return frame.revision == revision && frame.generation == generation
+    }
+
+    fun consumptionWait(now: Long, revision: Long, generation: Long): ConsumptionWait {
+        val oldest =
+            frames.firstOrNull {
+                it.revision == revision && it.generation == generation && !it.consumed
+            } ?: return ConsumptionWait.NONE
+        return if (now - oldest.timestamp >= 2_000_000_000L) ConsumptionWait.TIMED_OUT
+        else ConsumptionWait.RETRY
     }
 
     fun clear() {

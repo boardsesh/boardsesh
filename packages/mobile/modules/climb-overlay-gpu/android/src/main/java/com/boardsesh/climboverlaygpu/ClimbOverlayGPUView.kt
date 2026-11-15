@@ -57,6 +57,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
     private val preparing = AtomicBoolean(false)
     private val drawing = AtomicBoolean(false)
     private val needsFrame = AtomicBoolean(false)
+    private var consumptionObservation: Runnable? = null
     private var animationScheduled = false
     private var lastAnimationFrameNanos = 0L
     private var registered = false
@@ -123,6 +124,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         latest = null
         revision++
         cancelAnimation()
+        cancelConsumptionObservation()
         if (registered) {
             context.unregisterReceiver(powerReceiver)
             context.contentResolver.unregisterContentObserver(animationObserver)
@@ -179,6 +181,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 OverlayRenderer.foreground
         if (!allowed) {
             cancelAnimation()
+            cancelConsumptionObservation()
             needsFrame.set(false)
             if (wasAllowed || latest != null) {
                 latest = null
@@ -205,6 +208,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
                 old.generation == generation
         if (!same) {
             cancelAnimation()
+            cancelConsumptionObservation()
             revision++
             lastErrorRevision = null
             latest =
@@ -286,6 +290,28 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         animationScheduled = false
     }
 
+    internal fun observeConsumption(target: OverlaySession, request: OverlayRequest) {
+        main.post {
+            if (!matches(request) || session !== target || consumptionObservation != null)
+                return@post
+            // HWUI consumes the layer on RenderThread after TextureView's
+            // synchronous update listener. Do not redraw; reread its timestamp.
+            val observation = Runnable {
+                consumptionObservation = null
+                if (matches(request) && session === target) {
+                    OverlayRenderer.consumed(target, target.texture.timestamp, request)
+                }
+            }
+            consumptionObservation = observation
+            main.postDelayed(observation, 16)
+        }
+    }
+
+    private fun cancelConsumptionObservation() {
+        consumptionObservation?.let { main.removeCallbacks(it) }
+        consumptionObservation = null
+    }
+
     internal fun ready(request: OverlayRequest, metrics: RenderMetrics) {
         main.post {
             if (!matches(request)) return@post
@@ -311,6 +337,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
             if (!matches(accepted) || lastErrorRevision == accepted.revision) return@post
             lastErrorRevision = accepted.revision
             cancelAnimation()
+            cancelConsumptionObservation()
             onRenderError(mapOf("requestId" to accepted.requestId, "reason" to reason))
         }
     }
@@ -332,6 +359,7 @@ class ClimbOverlayGPUView(context: Context, appContext: AppContext) :
         generation++
         latest = null
         cancelAnimation()
+        cancelConsumptionObservation()
         needsFrame.set(false)
         session?.let { OverlayRenderer.detach(it) }
         session = null

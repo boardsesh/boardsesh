@@ -80,6 +80,33 @@ class OverlayPolicyTest {
     }
 
     @Test
+    fun delayedConsumptionRetriesWithoutAcceptingZeroOrStaleTimestamps() {
+        val ledger = PresentationLedger()
+        val frame = ledger.submit(100, 1, 5)!!
+        ledger.finish(frame.timestamp)
+        assertNull(ledger.consume(0))
+        assertFalse(ledger.accept(frame, 1, 5))
+        assertEquals(PresentationLedger.ConsumptionWait.RETRY, ledger.consumptionWait(200, 1, 5))
+        assertEquals(PresentationLedger.ConsumptionWait.NONE, ledger.consumptionWait(200, 2, 5))
+        assertEquals(PresentationLedger.ConsumptionWait.NONE, ledger.consumptionWait(200, 1, 6))
+        ledger.consume(frame.timestamp)
+        assertTrue(ledger.accept(frame, 1, 5))
+        assertEquals(PresentationLedger.ConsumptionWait.NONE, ledger.consumptionWait(200, 1, 5))
+        val next = ledger.submit(300, 2, 5)!!
+        ledger.finish(next.timestamp)
+        assertNull(ledger.consume(frame.timestamp))
+        assertEquals(
+            PresentationLedger.ConsumptionWait.TIMED_OUT,
+            ledger.consumptionWait(2_000_000_300, 2, 5),
+        )
+        ledger.clear()
+        assertEquals(
+            PresentationLedger.ConsumptionWait.NONE,
+            ledger.consumptionWait(2_000_000_300, 2, 5),
+        )
+    }
+
+    @Test
     fun skippedFramesDoNotBlockLatestAndPendingWorkIsBounded() {
         val ledger = PresentationLedger()
         val first = ledger.submit(100, 1, 5)!!

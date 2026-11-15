@@ -746,15 +746,43 @@ internal object OverlayRenderer {
             GLES31.glDeleteSync(fence.first)
             session.fences.remove(timestamp)
             session.ledger.finish(timestamp)?.let { accept(session, it) }
+            requestConsumptionObservation(session)
             session.view.resumeDraw()
         } catch (failure: Exception) {
             fail(session, failure)
         }
     }
 
-    fun consumed(session: OverlaySession, timestamp: Long) {
+    fun consumed(
+        session: OverlaySession,
+        timestamp: Long,
+        observedRequest: OverlayRequest? = null,
+    ) {
         handler.post {
-            session.ledger.consume(timestamp)?.let { accept(session, it) }
+            if (observedRequest != null && session.request != observedRequest) return@post
+            val consumed = session.ledger.consume(timestamp)
+            consumed?.let { accept(session, it) }
+            requestConsumptionObservation(session)
+        }
+    }
+
+    private fun requestConsumptionObservation(session: OverlaySession) {
+        val request = session.request ?: return
+        if (!eligible(session, request)) return
+        when (
+            session.ledger.consumptionWait(System.nanoTime(), request.revision, request.generation)
+        ) {
+            PresentationLedger.ConsumptionWait.NONE -> Unit
+            PresentationLedger.ConsumptionWait.RETRY ->
+                session.view.observeConsumption(session, request)
+            PresentationLedger.ConsumptionWait.TIMED_OUT -> {
+                clearFences(session)
+                fail(
+                    session,
+                    IllegalStateException("GPU texture consumption timestamp unavailable"),
+                    request,
+                )
+            }
         }
     }
 
