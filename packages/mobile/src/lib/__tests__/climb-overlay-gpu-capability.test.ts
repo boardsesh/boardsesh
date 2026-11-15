@@ -1,8 +1,18 @@
+import type { ClimbOverlayGPUComparison } from '../../../modules/climb-overlay-gpu/src';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const controls = vi.hoisted(() => ({
-  nativeModule: null as null | { apiVersion?: number; compare: ReturnType<typeof vi.fn> },
+  platform: 'ios' as 'ios' | 'android',
+  nativeModule: null as null | { apiVersion?: number; compare?: ReturnType<typeof vi.fn> },
   requireView: vi.fn(() => 'ClimbOverlayGPUView'),
+}));
+
+vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return controls.platform;
+    },
+  },
 }));
 
 vi.mock('expo-modules-core', () => ({
@@ -10,9 +20,10 @@ vi.mock('expo-modules-core', () => ({
   requireNativeViewManager: controls.requireView,
 }));
 
-describe('GPU frame-update binary capability', () => {
+describe.each(['ios', 'android'] as const)('%s GPU binary capability', (platform) => {
   beforeEach(() => {
     vi.resetModules();
+    controls.platform = platform;
     controls.nativeModule = null;
     controls.requireView.mockClear();
   });
@@ -21,6 +32,8 @@ describe('GPU frame-update binary capability', () => {
     const module = await import('../../../modules/climb-overlay-gpu/src');
     expect(module.NativeFrameClimbOverlayGPU).toBeNull();
     expect(module.NativeClimbOverlayGPU).toBeNull();
+    expect(module.NativeMotionClimbOverlayGPU).toBeNull();
+    expect(module.compareClimbOverlayGPU).toBeNull();
     expect(controls.requireView).not.toHaveBeenCalled();
   });
 
@@ -52,5 +65,36 @@ describe('GPU frame-update binary capability', () => {
     controls.nativeModule = { apiVersion: 3, compare: vi.fn() };
     const module = await import('../../../modules/climb-overlay-gpu/src');
     expect(module.NativeMotionClimbOverlayGPU).not.toBeNull();
+  });
+
+  it('keeps comparison unavailable on a live-rendering binary without diagnostic readback', async () => {
+    controls.nativeModule = { apiVersion: 3 };
+    const module = await import('../../../modules/climb-overlay-gpu/src');
+    expect(module.NativeMotionClimbOverlayGPU).not.toBeNull();
+    expect(module.compareClimbOverlayGPU).toBeNull();
+  });
+
+  it('preserves unavailable GPU timing in the native comparison result', async () => {
+    const result: ClimbOverlayGPUComparison = {
+      width: 32,
+      height: 32,
+      maxChannelError: 0,
+      rmse: 0,
+      pixelsOverOne: 0,
+      cpuRenderMs: 3,
+      gpuMs: null,
+      prepareMs: 2,
+      uploadMs: 1,
+      atlasBytes: 4096,
+      atlasCacheHit: true,
+      gpuUri: 'file:///gpu.png',
+      referenceUri: 'file:///reference.png',
+    };
+    const compare = vi.fn().mockResolvedValue(result);
+    controls.nativeModule = { apiVersion: 3, compare };
+    const module = await import('../../../modules/climb-overlay-gpu/src');
+    expect(await module.compareClimbOverlayGPU?.('config')).toBe(result);
+    expect(compare).toHaveBeenCalledWith('config');
+    expect(compare.mock.contexts[0]).toBe(controls.nativeModule);
   });
 });

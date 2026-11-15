@@ -285,6 +285,7 @@
     "__tests__/ios-screenshot-shard-shell.test.ts",
     "__tests__/screenshot-xcode-selector.test.ts",
     "mobile-dev-start.ts",
+    "check-android-gpu-shaders.ts",
     "mobile-screenshots.ts",
     "mobile-screenshot-maestro.ts",
     "__tests__/mobile-screenshot-maestro.test.ts",

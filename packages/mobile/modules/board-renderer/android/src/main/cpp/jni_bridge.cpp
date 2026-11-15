@@ -1,12 +1,18 @@
 #include <jni.h>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
+#include <unordered_map>
 
 extern "C" {
     int32_t board_renderer_render(
         const uint8_t *config_json, uint32_t config_json_len,
         uint8_t **out_data, uint32_t *out_len,
         uint32_t *out_width, uint32_t *out_height
+    );
+    int32_t board_renderer_prepare_gpu_atlas(
+        const uint8_t *config_json, uint32_t config_json_len,
+        uint8_t **out_data, uint32_t *out_len
     );
     void board_renderer_free(uint8_t *ptr, uint32_t len);
 }
@@ -63,4 +69,55 @@ Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativeRender(
 
     board_renderer_free(outData, outLen);
     return output;
+}
+
+// The atlas stays in Rust-owned native memory until glBufferData completes.
+// A registry makes duplicate release or a sliced/foreign buffer harmless.
+static std::mutex atlas_mutex;
+static std::unordered_map<void *, uint32_t> atlas_allocations;
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativePrepareAtlas(
+    JNIEnv *env, jobject, jbyteArray config
+) {
+    if (!config) return nullptr;
+    const jsize length = env->GetArrayLength(config);
+    if (length <= 0 || length > 8 * 1024 * 1024) return nullptr;
+    jbyte *bytes = env->GetByteArrayElements(config, nullptr);
+    if (!bytes) return nullptr;
+    uint8_t *output = nullptr;
+    uint32_t output_length = 0;
+    const int32_t status = board_renderer_prepare_gpu_atlas(
+        reinterpret_cast<const uint8_t *>(bytes), static_cast<uint32_t>(length),
+        &output, &output_length);
+    env->ReleaseByteArrayElements(config, bytes, JNI_ABORT);
+    if (status != 0 || !output) return nullptr;
+    // 128 MiB pixels plus the bounded 2 MiB JSON manifest and length prefix.
+    if (output_length < 4 || output_length > 130 * 1024 * 1024 + 4) {
+        board_renderer_free(output, output_length);
+        return nullptr;
+    }
+    jobject buffer = env->NewDirectByteBuffer(output, output_length);
+    if (!buffer) {
+        board_renderer_free(output, output_length);
+        return nullptr;
+    }
+    {
+        std::lock_guard<std::mutex> lock(atlas_mutex);
+        atlas_allocations.emplace(output, output_length);
+    }
+    return buffer;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_boardsesh_boardrenderer_BoardRendererBridge_nativeFreeAtlas(
+    JNIEnv *env, jobject, jobject buffer
+) {
+    void *address = env->GetDirectBufferAddress(buffer);
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    std::lock_guard<std::mutex> lock(atlas_mutex);
+    const auto found = atlas_allocations.find(address);
+    if (found == atlas_allocations.end() || capacity != found->second) return;
+    board_renderer_free(static_cast<uint8_t *>(address), found->second);
+    atlas_allocations.erase(found);
 }

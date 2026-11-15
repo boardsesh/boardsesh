@@ -6,8 +6,8 @@ export type ClimbOverlayGPUReady = {
   requestId: string;
   prepareMs: number;
   uploadMs: number;
-  /** Command-buffer GPU duration; this is not time-to-display. */
-  gpuMs: number;
+  /** GPU duration, or null when the driver cannot measure it; never wall-clock latency. */
+  gpuMs: number | null;
   atlasBytes: number;
   atlasCacheHit: boolean;
   editChangedHoldCount?: number;
@@ -49,7 +49,7 @@ export type ClimbOverlayGPUComparison = {
   rmse: number;
   pixelsOverOne: number;
   cpuRenderMs: number;
-  gpuMs: number;
+  gpuMs: number | null;
   prepareMs: number;
   uploadMs: number;
   atlasBytes: number;
@@ -60,12 +60,15 @@ export type ClimbOverlayGPUComparison = {
 
 const nativeModule = requireOptionalNativeModule<{
   apiVersion?: number;
-  compare(configJson: string): Promise<ClimbOverlayGPUComparison>;
+  compare?(configJson: string): Promise<ClimbOverlayGPUComparison>;
 }>('ClimbOverlayGPU');
 
-export const compareClimbOverlayGPU = nativeModule
-  ? (configJson: string): Promise<ClimbOverlayGPUComparison> => nativeModule.compare(configJson)
-  : null;
+// A binary can support live rendering without the optional diagnostic readback.
+const nativeCompare = nativeModule?.compare;
+export const compareClimbOverlayGPU =
+  typeof nativeCompare === 'function'
+    ? (configJson: string): Promise<ClimbOverlayGPUComparison> => nativeCompare.call(nativeModule, configJson)
+    : null;
 
 export const NativeClimbOverlayGPU: ComponentType<ClimbOverlayGPUNativeProps> | null = nativeModule
   ? requireNativeViewManager<ClimbOverlayGPUNativeProps>('ClimbOverlayGPU')

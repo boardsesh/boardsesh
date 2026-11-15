@@ -5,6 +5,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const controls = vi.hoisted(() => ({
+  platform: 'ios' as 'ios' | 'android',
   enabled: true,
   nativeAvailable: true,
   motionAvailable: true,
@@ -36,7 +37,11 @@ const controls = vi.hoisted(() => ({
   pngMounted: vi.fn(),
 }));
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
+  Platform: {
+    get OS() {
+      return controls.platform;
+    },
+  },
   View: ({ children, testID }: { children?: React.ReactNode; testID?: string }) => (
     <div data-testid={testID}>{children}</div>
   ),
@@ -139,8 +144,9 @@ const BOARD = {
   playSurface: true,
 };
 
-describe('live GPU board integration', () => {
+describe.each(['ios', 'android'] as const)('%s live GPU board integration', (platform) => {
   beforeEach(() => {
+    controls.platform = platform;
     controls.enabled = true;
     controls.nativeAvailable = true;
     controls.motionAvailable = true;
@@ -395,6 +401,26 @@ describe('live GPU board integration', () => {
     expect(state).toHaveBeenLastCalledWith('unavailable');
     expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
     expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
+
+  it('ignores stale ready and error events, then falls back for the current native error', () => {
+    const readiness = vi.fn();
+    const { rerender } = render(<BoardImageNative {...BOARD} onArtReadinessChange={readiness} />);
+    const old = controls.props!;
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" onArtReadinessChange={readiness} />);
+    const current = controls.props!;
+    expect(current.requestId).not.toBe(old.requestId);
+    act(() => {
+      old.onRenderReady({ nativeEvent: { requestId: old.requestId } });
+      old.onRenderError({ nativeEvent: { requestId: old.requestId } });
+    });
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    expect(controls.hookInputs.at(-1)?.gpuFallbackConfigJson).toBeNull();
+    expect(readiness).not.toHaveBeenLastCalledWith('ready');
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId } }));
+    expect(controls.hookInputs.at(-1)?.gpuFallbackConfigJson).toBe('static-config');
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(document.querySelector('img[src="file:///cached-overlay.png"]')).not.toBeNull();
   });
 
   it('falls back after a silent foreground renderer and cancels its watch while hidden', () => {

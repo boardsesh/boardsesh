@@ -2,7 +2,7 @@
   "name": "@boardsesh/climb-overlay-gpu-module",
   "version": "0.1.0",
   "private": true,
-  "description": "Experimental still Metal climb overlay for the rendering parity story.",
+  "description": "Native GPU climb overlays and motion with rendering parity diagnostics.",
   "license": "MIT",
   "main": "src/index.ts"
 }

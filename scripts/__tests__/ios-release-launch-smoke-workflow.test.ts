@@ -376,4 +376,14 @@ describe('native gate exercises iOS launch tooling changes', () => {
     expect(nativeGateDecision('packages/mobile/src/example.ts')).toBe('should_build=false');
     expect(nativeGateDecision('scripts/ios-release-launch-smoke.ts', 'android')).toBe('should_build=false');
   });
+
+  it('runs the Android shader checker when only its implementation changes', () => {
+    const checkerPath = 'scripts/check-android-gpu-shaders.ts';
+    const androidWorkflow = parse(
+      readFileSync(join(repoRoot, '.github/workflows/android-pr-rn.yml'), 'utf8'),
+    ) as IosWorkflow;
+    expect(androidWorkflow.on.pull_request.paths).toContain(checkerPath);
+    expect(nativeGateDecision(checkerPath, 'android')).toBe('should_build=true');
+    expect(nativeGateDecision(checkerPath, 'ios')).toBe('should_build=false');
+  });
 });
