@@ -19,7 +19,7 @@ enum ClimbOverlayShader {
     float4 tuning2; // fringe, core share, active max reach
     uint4 offsets; // LED covers
     float4 viewport;
-    float4 motion; // progress, reveal band width, reserved, editor illumination
+    float4 motion; // progress, reveal band width, reserved, editor reach scale
     float4 other; // second count, second max reach, empty production source, display mirror
   };
   vertex float4 overlay_vertex(uint index [[vertex_id]]) {
@@ -57,7 +57,7 @@ enum ClimbOverlayShader {
   }
   float4 scene_pixel(uint2 point, device const uchar* atlas, device const Hold* lower,
       device const Hold* upper, constant Uniforms& uniforms, device const float* lut,
-      uint lowerCount, uint upperCount, float maxReach, bool transitioning, float illumination) {
+      uint lowerCount, uint upperCount, float maxReach, bool transitioning, float reachScale) {
     uint count=lowerCount+upperCount;
     // Production empty frames show the bare board, matching the CPU host.
     // Legacy parity diagnostics retain their explicit veil-only empty image.
@@ -69,7 +69,6 @@ enum ClimbOverlayShader {
     float best = 1e20, second = 1e20;
     float bestScore=1e20, secondScore=1e20;
     int nearest = -1, runner = -1;
-    float dilation = ceil(maxReach)+2;
     for (uint index=0;index<count;index++) {
       Hold hold = source_hold(index,lowerCount,lower,upper);
       int local = index_at(point,hold);
@@ -81,6 +80,7 @@ enum ClimbOverlayShader {
       float alpha = fields[local*2+1]*weight;
       coverage = max(coverage,alpha);
       pixel = quantize(pixel*(1.0-alpha));
+      float dilation = ceil(maxReach*(hold.numbers.y>0 ? reachScale : 1))+2;
       // Match the CPU crop for THIS climb, even though the immutable atlas
       // carries enough padding for the widest hold in the layout.
       if(dist2>=1e20 || hold.numbers.x <= 0 || float(point.x)<floor(hold.bounds.x-dilation) ||
@@ -103,7 +103,7 @@ enum ClimbOverlayShader {
     if(uniforms.size.w > 0 && nearest>=0) {
       Hold hold=source_hold(uint(nearest),lowerCount,lower,upper);
       float weight=transitioning ? reveal_weight(hold,uint(nearest)>=lowerCount,uniforms) : 1;
-      float reach=hold.numbers.x;
+      float reach=hold.numbers.x*(hold.numbers.y>0 ? reachScale : 1);
       float distance=max(sqrt(best)-0.5,0.0);
       float fraction=distance/reach;
       float3 color=hold.color.rgb;
@@ -135,7 +135,6 @@ enum ClimbOverlayShader {
         color=round(mix(color,deep,deepen)*255.0)/255.0;
         alpha*=1-coverage;
         alpha*=weight;
-        alpha=min(1.0,alpha*(hold.numbers.y>0 ? illumination : 1));
         if(alpha>0.002) pixel=over(pixel,float4(color*alpha,alpha));
       }
     }

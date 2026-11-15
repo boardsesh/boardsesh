@@ -13,6 +13,9 @@ use crate::types::{
 };
 
 const MAX_BYTES: usize = 128 * 1024 * 1024;
+// Match ClimbOverlayMotion.editPeakReach: editing expands only the sampled
+// falloff, so all immutable EDT fields must already cover its maximum reach.
+const EDIT_PEAK_REACH: f32 = 1.20;
 
 fn append(storage: &mut Vec<u8>, bytes: &[u8]) -> Result<usize, String> {
     if storage.len().saturating_add(bytes.len()) > MAX_BYTES {
@@ -112,7 +115,7 @@ pub fn prepare(config: &RenderConfig) -> Result<Vec<u8>, String> {
     if !max_reach.is_finite() || max_reach > 512.0 {
         return Err("Unsupported GPU glow reach".into());
     }
-    let padding = max_reach.ceil() + 2.0;
+    let padding = (max_reach * EDIT_PEAK_REACH).ceil() + 2.0;
     let mut storage = Vec::new();
     let mut covers = Pixmap::new(width, height).ok_or("Cover allocation failed")?;
     if let Some(cover) = &config.led_cover {
@@ -290,6 +293,38 @@ mod tests {
         config.output_width = 100;
         config.board_height = 2049.0;
         assert!(prepare(&config).is_err(), "height remains bounded at 2048");
+    }
+    #[test]
+    fn fields_reserve_the_full_editor_expansion_before_upload() {
+        let mut config = config();
+        config.board_width = 1000.0;
+        config.board_height = 1000.0;
+        config.output_width = 1000;
+        config.holds[0].cx = 500.0;
+        config.holds[0].cy = 500.0;
+        let packed = prepare(&config).unwrap();
+        let length = u32::from_le_bytes(packed[..4].try_into().unwrap()) as usize;
+        let manifest: serde_json::Value = serde_json::from_slice(&packed[4..4 + length]).unwrap();
+        let hold = &manifest["holds"][0];
+        let reach = hold["reach"].as_f64().unwrap();
+        let padding = (reach * 1.20).ceil() + 2.0;
+        let bounds = hold["bounds"].as_array().unwrap();
+        let x = hold["x"].as_f64().unwrap();
+        let y = hold["y"].as_f64().unwrap();
+        assert_eq!(x, (bounds[0].as_f64().unwrap() - padding).floor());
+        assert_eq!(y, (bounds[1].as_f64().unwrap() - padding).floor());
+        assert_eq!(
+            x + hold["width"].as_f64().unwrap(),
+            (bounds[2].as_f64().unwrap() + padding).ceil()
+        );
+        assert_eq!(
+            y + hold["height"].as_f64().unwrap(),
+            (bounds[3].as_f64().unwrap() + padding).ceil()
+        );
+        assert!(
+            padding > reach.ceil() + 2.0,
+            "Guard must reject normal-only padding"
+        );
     }
     #[test]
     fn fields_store_exact_squared_distance_and_coverage() {

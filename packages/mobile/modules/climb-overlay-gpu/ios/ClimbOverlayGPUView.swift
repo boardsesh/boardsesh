@@ -430,7 +430,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var preparing = false
   private var editorBaseline: [UInt32: UInt32]?
   private var editorBaselineRevision: UInt64?
-  private var editorStart: CFTimeInterval?
+  private var editorPulse = ClimbOverlayMotion.EditorPulse()
   private var editorDisplayLink: CADisplayLink?
   private var editChangedHoldCount = 0
   private var scheduledEditDurationMs: Double = 0
@@ -500,23 +500,30 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private func stopEditorMotion() {
     editorDisplayLink?.invalidate()
     editorDisplayLink = nil
-    editorStart = nil
+    editorPulse.cancel()
   }
 
   private func startEditorMotion() -> Bool {
     stopEditorMotion()
     guard animateEdits, !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled,
       active, !background, window != nil else { return false }
-    editorStart = CACurrentMediaTime()
+    editorPulse.schedule()
+    return true
+  }
+
+  private func beginPresentedEditorMotion() {
+    guard animateEdits, !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled,
+      active, !background, window != nil else { stopEditorMotion(); return }
+    guard editorPulse.present(at: CACurrentMediaTime()) else { return }
     let link = CADisplayLink(target: self,selector: #selector(editorTick))
     link.preferredFramesPerSecond = 60
     link.add(to: .main,forMode: .common)
     editorDisplayLink = link
-    return true
+    requestDraw()
   }
 
   @objc private func editorTick() {
-    guard let started = editorStart, active, !background, window != nil,
+    guard let started = editorPulse.started, active, !background, window != nil,
       !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
       stopEditorMotion()
       requestDraw()
@@ -667,9 +674,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     if selection.lowerOffset == -1, let previousScene { lower = previousScene }
     if selection.upperOffset == 1, let nextScene { upper = nextScene }
     progress = selection.progress
-    let illumination = editorStart.map {
-      ClimbOverlayMotion.editIllumination(elapsed: CACurrentMediaTime()-$0)
-    } ?? 1
+    let reachScale = editorPulse.reachScale(at: CACurrentMediaTime())
     var uniforms = GPUUniforms(
       size: SIMD4(Float(manifest.width),Float(manifest.height),Float(lower.count),manifest.glow ? 1 : 0),
       veil: SIMD4(manifest.veil[0]/255,manifest.veil[1]/255,manifest.veil[2]/255,manifest.veil[3]/255),
@@ -677,7 +682,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       tuning2: SIMD4(manifest.fringe,manifest.coreShare,lower.maxReach,0),
       offsets: SIMD4(manifest.covers,0,0,0),
       viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0),
-      motion: SIMD4(progress,ClimbOverlayMotion.revealBand,0,illumination),
+      motion: SIMD4(progress,ClimbOverlayMotion.revealBand,0,reachScale),
       other: SIMD4(Float(upper.count),upper.maxReach,
         previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,displayMirrored ? 1 : 0))
     encoder.setRenderPipelineState(pipeline)
@@ -714,6 +719,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         self.active, !self.background, self.window != nil,
         self.reportedRevision != generation else { return }
       self.reportedRevision = generation
+      self.beginPresentedEditorMotion()
       self.onRenderReady(["requestId":request,"prepareMs":scene.prepareMs,
         "uploadMs":scene.cacheHit ? 0 : scene.atlas.uploadMs,"gpuMs":gpuMs,
         "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit,

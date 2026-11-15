@@ -46,11 +46,36 @@ import Foundation
     let reduced = ClimbOverlayMotion.select(pagePosition: 12.75,centerPage: 12,
       hasPrevious: true,hasNext: true,reduceMotion: true)
     precondition(reduced.lowerOffset == 0 && reduced.upperOffset == 0 && reduced.progress == 0)
-    precondition(abs(ClimbOverlayMotion.editIllumination(elapsed: 0)-1.12)<0.0001)
-    precondition(abs(ClimbOverlayMotion.editIllumination(elapsed: 0.06)-1.03)<0.0001)
-    precondition(ClimbOverlayMotion.editIllumination(elapsed: 0.12)==1)
-    precondition(ClimbOverlayMotion.editIllumination(elapsed: 10)==1)
-    precondition(ClimbOverlayMotion.editIllumination(elapsed: .nan)==1)
-    print("Motion guards passed: 1,001 reveal positions × 5 hold centres, mirror/direction, role isolation, glow ownership, pager endpoints, Reduce Motion, 120ms settle")
+    precondition(ClimbOverlayMotion.editDuration == 0.250)
+    precondition(ClimbOverlayMotion.editReachScale(elapsed: 0) == 1)
+    precondition(abs(ClimbOverlayMotion.editReachScale(elapsed: 0.080)-1.20)<0.0001)
+    precondition(ClimbOverlayMotion.editReachScale(elapsed: 0.250)==1)
+    precondition(ClimbOverlayMotion.editReachScale(elapsed: 10)==1)
+    precondition(ClimbOverlayMotion.editReachScale(elapsed: .nan)==1)
+    precondition(ClimbOverlayMotion.editReachScale(elapsed: -1)==1)
+    var previous: Float = 1
+    for millisecond in 0...250 {
+      let scale = ClimbOverlayMotion.editReachScale(elapsed: Double(millisecond)/1000)
+      precondition(scale>=1 && scale<=1.20,"Expansion stays within immutable atlas padding")
+      if millisecond<=80 { precondition(scale>=previous,"Expand to peak") }
+      else { precondition(scale<=previous,"Contract monotonically to normal") }
+      previous=scale
+    }
+    var pulse = ClimbOverlayMotion.EditorPulse()
+    pulse.schedule()
+    precondition(pulse.reachScale(at: 100)==1,"Preparation delay cannot consume the pulse")
+    precondition(pulse.present(at: 100))
+    precondition(!pulse.present(at: 101),"Repeated drawable readiness cannot restart the clock")
+    precondition(abs(pulse.reachScale(at: 100.08)-1.20)<0.0001)
+    pulse.cancel()
+    precondition(pulse.reachScale(at: 100.08)==1 && !pulse.present(at: 102),
+      "Cancellation restores normal reach and rejects delayed presentation")
+    pulse.schedule()
+    precondition(pulse.present(at: 200))
+    pulse.schedule()
+    precondition(pulse.reachScale(at: 200.08)==1,"Rapid edits replace, never queue, the pulse")
+    pulse.cancel()
+    precondition(!pulse.present(at: 201),"Suppressed pending edits cannot start later")
+    print("Motion guards passed: reveal direction/mirror/roles, ownership, pager endpoints, and presentation-started 250ms reach expansion/cancellation")
   }
 }

@@ -2,8 +2,10 @@ import Foundation
 
 /// Pure motion policy, shared by the native view and its standalone tests.
 enum ClimbOverlayMotion {
-  static let editDuration: Double = 0.120
-  static let editLift: Float = 0.12
+  static let editDuration: Double = 0.250
+  static let editPeakTime: Double = 0.080
+  // Must match the immutable Rust GPU atlas padding reserve.
+  static let editPeakReach: Float = 1.20
   static let revealBand: Float = 0.22
 
   struct Selection {
@@ -57,9 +59,33 @@ enum ClimbOverlayMotion {
     actualNearest+max(runnerScore-nearestScore,0)
   }
 
-  static func editIllumination(elapsed: Double) -> Float {
+  /// Only the glow reach changes; the normal frame is shown before expansion.
+  static func editReachScale(elapsed: Double) -> Float {
     guard elapsed.isFinite, elapsed >= 0, elapsed < editDuration else { return 1 }
-    let remaining = Float(1 - elapsed / editDuration)
-    return 1 + editLift * remaining * remaining
+    let phase = elapsed <= editPeakTime
+      ? elapsed / editPeakTime
+      : (editDuration - elapsed) / (editDuration - editPeakTime)
+    let progress = Float(phase)
+    let eased = progress * progress * (3 - 2 * progress)
+    return 1 + (editPeakReach - 1) * eased
+  }
+
+  /// The first accepted drawable starts the clock, not CPU preparation.
+  /// The view fences presentation by request/revision before calling present.
+  struct EditorPulse {
+    private(set) var pending = false
+    private(set) var started: Double?
+
+    mutating func schedule() { cancel(); pending = true }
+    mutating func cancel() { pending = false; started = nil }
+    mutating func present(at time: Double) -> Bool {
+      guard pending, time.isFinite else { return false }
+      pending = false
+      started = time
+      return true
+    }
+    func reachScale(at time: Double) -> Float {
+      started.map { editReachScale(elapsed: time - $0) } ?? 1
+    }
   }
 }
