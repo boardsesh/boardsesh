@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, waitFor } from '@testing-library/react';
-import { createElement, useEffect } from 'react';
+import { createElement, useEffect, Suspense, startTransition } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   reanchorPlaylistSuggestionSource,
@@ -218,11 +218,17 @@ vi.mock('../queue/use-reachable-board-keys', () => ({
 // replace below never needs.
 vi.mock('../drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../dialog-provider', () => ({ useChoose: () => async () => 'cancel' }));
+const capturedActivationMode = vi.hoisted(() => ({ real: false }));
 vi.mock('@boardsesh/playlists-react', async () => ({
   ...(await vi.importActual<typeof import('@boardsesh/playlists-react/fetch-playlist-suggestion-climbs')>(
     '@boardsesh/playlists-react/fetch-playlist-suggestion-climbs',
   )),
-  usePlaylistClimbActivation: () => async () => {},
+  usePlaylistClimbActivation: (
+    ...args: Parameters<(typeof import('@boardsesh/playlists-react'))['usePlaylistClimbActivation']>
+  ) => {
+    if (capturedActivationMode.real) return actualCapturedActivation(...args);
+    return async () => {};
+  },
 }));
 
 import {
@@ -1626,4 +1632,517 @@ describe('QueueProvider plays Up next before the list continues (#6777)', () => 
     act(() => latest().nextClimb());
     expect(currentClimbUuid()).toBe('s3');
   });
+});
+
+// These cases use authentic installed-SDK original delivery assertions at the
+// actual provider sink. Query/group eligibility is covered by the actual
+// userClimbs and mounted Profile tests; no marker supplies delivery authority.
+import { usePlaylistClimbActivation as actualCapturedActivation } from '../../../../shared/playlists-react/src/use-playlist-climb-activation';
+import { createScopedHttpFixture } from '../../lib/graphql/__tests__/fixtures/scoped-http';
+import { combineLoadedListReceipts } from '../../lib/playlists/loaded-list-pages';
+import { bindTrackActivation, createTrackPublication } from '../../lib/playlists/track-pager';
+
+const ownedHttpFixtures: ReturnType<typeof createScopedHttpFixture>[] = [];
+afterEach(() => {
+  capturedActivationMode.real = false;
+  for (const fixture of ownedHttpFixtures.splice(0)) fixture.dispose();
+});
+async function authenticProviderPage(uuid = 'sdk-third', existing?: ReturnType<typeof createScopedHttpFixture>) {
+  const fixture = existing ?? createScopedHttpFixture();
+  if (!existing) ownedHttpFixtures.push(fixture);
+  fixture.performFetch.mockResolvedValueOnce(
+    Response.json({ data: { ownedPage: { climbs: [makeClimb(uuid, 'kilter', 1)] } } }),
+  );
+  const scope = fixture.scope();
+  const delivered = await scope.run((operation) =>
+    operation.request<{ ownedPage: { climbs: Climb[] } }>('query OwnedProviderPage { ownedPage { climbs { uuid } } }'),
+  );
+  const consumer = combineLoadedListReceipts([], delivered.assertCurrent)!;
+  return { ...fixture, fixture, scope, consumer, climbs: delivered.result.ownedPage.climbs };
+}
+
+describe('QueueProvider actual original delivery at deferred publication', () => {
+  let snapshots: Snapshot[];
+  const latest = () => {
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('Provider not mounted');
+    return snapshot;
+  };
+  const climb = makeClimb('provider-owned-anchor', 'kilter', 1);
+  const second = makeClimb('provider-owned-second', 'kilter', 1);
+  beforeEach(() => {
+    snapshots = [];
+    activeBoardStore.setPending(false);
+    activeBoardStore.set(boards.kilter);
+    continuationFeed.climbs = [];
+    continuationFeed.isSettled = true;
+    queueSnapshotStore.getStoredQueueSnapshot.mockResolvedValue(null);
+    sessionStore.getStoredSessionId.mockResolvedValue(null);
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>)
+      mutation.mockResolvedValue(undefined);
+  });
+  async function mounted() {
+    const view = render(
+      createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) })),
+    );
+    await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+    const identity = Object.freeze({});
+    const original = bindTrackActivation(
+      { ...kilterSource([climb, second], climb), continuation: { loaderId: 'owned-fixed-loader', nextPage: 2 } },
+      identity,
+    );
+    act(() => latest().setCurrentClimb(makeItem('owned-current', climb), { playlistSuggestionSource: original }));
+    await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2));
+    return { view, identity, original };
+  }
+
+  it('settles only after actual commit and keeps a terminal original guard replayable after release', async () => {
+    const { original } = await mounted();
+    const page = await authenticProviderPage();
+    const next = { ...original, climbs: [...original.climbs, ...page.climbs], continuation: undefined };
+    const settled = vi.fn();
+    const publication = createTrackPublication(original, page.consumer, page.scope.assertView, { onSettled: settled });
+    let queued = false;
+    act(() => {
+      queued = latest().refreshPlaylistSuggestionSource(next, publication);
+      expect(settled).not.toHaveBeenCalled();
+    });
+    expect(queued).toBe(true);
+    await waitFor(() => expect(settled).toHaveBeenCalledWith('applied'));
+    expect(latest().playlistSuggestionSource?.climbs.at(-1)?.uuid).toBe('sdk-third');
+    expect(() => publication.assertCurrent()).not.toThrow();
+    expect(() => publication.assertCurrent()).not.toThrow();
+    expect(publication.claim()).toBe(false);
+    page.clock(200_000);
+    const fresh = page.operations.capture({ mode: 'offline' });
+    await fresh.request('query FreshProvider { viewer { id } }');
+    fresh.assertDeliveries();
+    expect(publication.apply(original, () => next)).toBe(original);
+    expect(() => publication.assertCurrent()).toThrow();
+    fresh.dispose();
+  });
+
+  it.each(['B', 'ABA', 'expired-original-fresh-lease'] as const)(
+    'refuses the original SDK cause inside the actual deferred updater across %s',
+    async (change) => {
+      const { original } = await mounted();
+      const page = await authenticProviderPage();
+      const next = { ...original, climbs: [...original.climbs, ...page.climbs] };
+      const settled = vi.fn();
+      const publication = createTrackPublication(original, page.consumer, page.scope.assertView, {
+        onSettled: settled,
+      });
+      let queued = false;
+      act(() => {
+        // Queue a real provider update first so React cannot eagerly precompute
+        // the guarded updater before the retirement below.
+        latest().setCurrentClimb(makeItem('owned-current', climb), { playlistSuggestionSource: original });
+        queued = latest().refreshPlaylistSuggestionSource(next, publication);
+        if (change === 'expired-original-fresh-lease') page.clock(200_000);
+        else {
+          page.switchAccount('owned-B');
+          if (change === 'ABA') page.switchAccount('owned-A');
+        }
+      });
+      expect(queued).toBe(true);
+      if (change === 'expired-original-fresh-lease') {
+        const fresh = page.operations.capture({ mode: 'offline' });
+        await fresh.request('query FreshProvider { viewer { id } }');
+        fresh.assertDeliveries();
+        fresh.dispose();
+      }
+      await waitFor(() => expect(settled).toHaveBeenCalled());
+      expect(settled).not.toHaveBeenCalledWith('applied');
+      expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2);
+      expect(latest().playlistSuggestionSource?.climbs.some((candidate) => candidate.uuid === 'sdk-third')).toBe(false);
+    },
+  );
+
+  it('checks expected loader and cursor inside the actual updater even when the public triple still matches', async () => {
+    const { original, identity } = await mounted();
+    const page = await authenticProviderPage();
+    const settled = vi.fn();
+    const publication = createTrackPublication(original, page.consumer, page.scope.assertView, { onSettled: settled });
+    const replacement = bindTrackActivation(
+      { ...original, continuation: { loaderId: 'different-owned-loader', nextPage: 7 } },
+      identity,
+    );
+    act(() => {
+      latest().setCurrentClimb(makeItem('owned-current', climb), { playlistSuggestionSource: replacement });
+      latest().refreshPlaylistSuggestionSource(
+        { ...original, climbs: [...original.climbs, ...page.climbs] },
+        publication,
+      );
+    });
+    await waitFor(() => expect(settled).toHaveBeenCalledWith('held'));
+    expect(latest().playlistSuggestionSource?.continuation).toEqual({
+      loaderId: 'different-owned-loader',
+      nextPage: 7,
+    });
+    expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2);
+  });
+  it.each(['current', 'expired-L-only'] as const)(
+    'settles lower page1 after actual higher page1/page2 commits and lane rebase: %s',
+    async (phase) => {
+      let lowerId: object | undefined;
+      let blocked = true;
+      let attempts = 0;
+      let release!: () => void;
+      const suspended = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      function PendingLowerPublication() {
+        const source = usePlaylistSuggestionSource();
+        // Inspect only exact commit-ticket membership, never an authentication
+        // handle. This lets the real Suspense sibling hold L while H/P commit.
+        const fields = source as unknown as Record<symbol, unknown> | null;
+        const containsLower =
+          !!source &&
+          Object.getOwnPropertySymbols(source).some((symbol) => {
+            const tickets = fields?.[symbol];
+            return Array.isArray(tickets) && tickets.includes(lowerId);
+          });
+        if (blocked && lowerId && containsLower) {
+          attempts += 1;
+          throw suspended;
+        }
+        return null;
+      }
+      render(
+        createElement(
+          Suspense,
+          { fallback: createElement('span', { 'data-fallback': true }) },
+          createElement(
+            QueueProvider,
+            null,
+            createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+            createElement(PendingLowerPublication),
+          ),
+        ),
+      );
+      await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+      const identity = Object.freeze({});
+      const original = bindTrackActivation(
+        { ...kilterSource([climb, second], climb), continuation: { loaderId: 'lane-owned-loader', nextPage: 2 } },
+        identity,
+      );
+      act(() => latest().setCurrentClimb(makeItem('owned-current', climb), { playlistSuggestionSource: original }));
+      await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2));
+      const firstPage = await authenticProviderPage();
+      const nextPage1 = {
+        ...original,
+        climbs: [...original.climbs, ...firstPage.climbs],
+        continuation: { loaderId: 'lane-owned-loader', nextPage: 3 },
+      };
+      const lowerSettled = vi.fn();
+      const higherSettled = vi.fn();
+      // The success case shares one actual page with two retained consumers.
+      // The expiry case gives H an independent real response renewed at100s,
+      // while L's original120s lease is still valid. P uses that newer lease.
+      let higherPage = firstPage;
+      if (phase === 'expired-L-only') {
+        firstPage.clock(100_000);
+        higherPage = await authenticProviderPage('sdk-third', firstPage.fixture);
+        expect(firstPage.issueLease).toHaveBeenCalledTimes(2);
+      }
+      const higherConsumer = phase === 'current' ? firstPage.consumer.retain() : higherPage.consumer;
+      const lower = createTrackPublication(original, firstPage.consumer, firstPage.scope.assertView, {
+        onSettled: lowerSettled,
+      });
+      const higher = createTrackPublication(original, higherConsumer, higherPage.scope.assertView, {
+        onSettled: higherSettled,
+      });
+      lowerId = lower.id;
+      act(() => {
+        startTransition(() => {
+          latest().refreshPlaylistSuggestionSource(nextPage1, lower);
+        });
+      });
+      expect(attempts).toBeGreaterThan(0);
+      expect(document.querySelector('[data-fallback]')).toBeNull();
+      expect(lowerSettled).not.toHaveBeenCalled();
+      expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2);
+      act(() => {
+        latest().refreshPlaylistSuggestionSource(nextPage1, higher);
+      });
+      await waitFor(() => expect(higherSettled).toHaveBeenCalledWith('applied'));
+      expect(lowerSettled).not.toHaveBeenCalled();
+      const afterHigher = latest().playlistSuggestionSource!;
+      const secondPage = await authenticProviderPage('sdk-fourth', firstPage.fixture);
+      const page2Settled = vi.fn();
+      const page2 = createTrackPublication(afterHigher, secondPage.consumer, secondPage.scope.assertView, {
+        onSettled: page2Settled,
+      });
+      const nextPage2 = {
+        ...afterHigher,
+        climbs: [...afterHigher.climbs, ...secondPage.climbs],
+        continuation: { loaderId: 'lane-owned-loader', nextPage: 4 },
+      };
+      act(() => {
+        latest().refreshPlaylistSuggestionSource(nextPage2, page2);
+      });
+      await waitFor(() => expect(page2Settled).toHaveBeenCalledWith('applied'));
+      expect(lowerSettled).not.toHaveBeenCalled();
+      expect(latest().playlistSuggestionSource?.climbs).toHaveLength(4);
+      const beforeResume = attempts;
+      if (phase === 'expired-L-only') {
+        firstPage.clock(130_000);
+        expect(() => lower.assertCurrent()).toThrow();
+        expect(() => higher.assertCurrent()).not.toThrow();
+        expect(() => page2.assertCurrent()).not.toThrow();
+      }
+      await act(async () => {
+        blocked = false;
+        release();
+        await suspended;
+      });
+      await waitFor(() => expect(lowerSettled).toHaveBeenCalledWith(phase === 'current' ? 'applied' : 'retired'));
+      expect(beforeResume).toBeGreaterThan(1);
+      expect(latest().playlistSuggestionSource?.climbs.map((entry) => entry.uuid)).toEqual([
+        'provider-owned-anchor',
+        'provider-owned-second',
+        'sdk-third',
+        'sdk-fourth',
+      ]);
+      expect(latest().playlistSuggestionSource?.continuation?.nextPage).toBe(4);
+      expect(firstPage.performFetch).toHaveBeenCalledTimes(phase === 'current' ? 2 : 3);
+      expect(lowerSettled).toHaveBeenCalledTimes(1);
+      expect(higherSettled).toHaveBeenCalledTimes(1);
+      expect(page2Settled).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['current', 'retired-before-refresh'] as const)(
+    'consumes the actual mobile/shared captured refresh in the provider: %s',
+    async (phase) => {
+      capturedActivationMode.real = true;
+      startAlwaysDrive({ sessionId: null, boardId: null });
+      const fixture = createScopedHttpFixture();
+      ownedHttpFixtures.push(fixture);
+      const scope = fixture.scope();
+      const receipt = combineLoadedListReceipts([], scope.assertView)!;
+      const initial = { climbs: [climb, second], hasMore: false, loadedRows: 2, receipt };
+      let activation: PlaylistActivationResult | undefined;
+      function CapturedActivationProbe() {
+        activation = usePlaylistActivation({
+          sourceId: 'climblist',
+          allClimbs: [climb, second],
+          fetchPage: async () => {
+            throw new Error('Recaptured mutable page fetcher');
+          },
+          loadedRowsAreTheList: true,
+          refreshErrorMessage: 'Owned captured refresh failed',
+        });
+        return null;
+      }
+      render(
+        createElement(
+          QueueProvider,
+          null,
+          createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+          createElement(CapturedActivationProbe),
+        ),
+      );
+      await waitFor(() => expect(activation).toBeDefined());
+      const local = vi.fn(scope.assertView);
+      const source = Object.freeze({
+        assertCurrent: scope.assertView,
+        read: () => initial,
+        loadMore: async () => initial,
+        dispose: vi.fn(),
+        holdOnNoProgress: true,
+      });
+      let started!: Promise<void>;
+      act(() => {
+        started = activation!.activate(climb, undefined, {
+          initial,
+          source,
+          board: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 },
+          assertLocal: local,
+        });
+        if (phase === 'retired-before-refresh') fixture.switchAccount('owned-B');
+      });
+      await act(async () => {
+        await started;
+      });
+      await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2));
+      if (phase === 'current') {
+        // The initial pending continuation disappears only after the actual
+        // guarded refresh is admitted by provider+shared postcommit settlement.
+        await waitFor(() => expect(latest().playlistSuggestionSource?.continuation).toBeUndefined());
+        expect(() => receipt.retain()).toThrow();
+      } else {
+        expect(latest().playlistSuggestionSource?.continuation?.nextPage).toBe(0);
+        expect(() => receipt.retain()).toThrow();
+      }
+      expect(local).toHaveBeenCalled();
+      // Current cached rows are a local action and never acquire a new lease.
+      expect(fixture.issueLease).not.toHaveBeenCalled();
+      expect(fixture.performFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('holds the33rd pending provider publication and frees exact handles after commit', async () => {
+    const { original } = await mounted();
+    const page = await authenticProviderPage();
+    const next = { ...original, climbs: [...original.climbs, ...page.climbs] };
+    const outcomes = Array.from({ length: 34 }, () => vi.fn());
+    const publications = outcomes.map((onSettled) =>
+      createTrackPublication(original, page.consumer.retain(), page.scope.assertView, { onSettled }),
+    );
+    page.consumer.release();
+    const queued: boolean[] = [];
+    act(() => {
+      for (const publication of publications.slice(0, 33))
+        queued.push(latest().refreshPlaylistSuggestionSource(next, publication));
+    });
+    expect(queued).toEqual([...Array.from({ length: 32 }, () => true), false]);
+    await waitFor(() =>
+      expect(outcomes.slice(0, 32).every((settled) => settled.mock.calls[0]?.[0] === 'applied')).toBe(true),
+    );
+    expect(outcomes[32]).toHaveBeenCalledWith('held');
+    expect(outcomes[33]).not.toHaveBeenCalled();
+    act(() => {
+      expect(latest().refreshPlaylistSuggestionSource(next, publications[33])).toBe(true);
+    });
+    await waitFor(() => expect(outcomes[33]).toHaveBeenCalledWith('applied'));
+    expect(latest().playlistSuggestionSource?.climbs).toHaveLength(3);
+    expect(page.performFetch).toHaveBeenCalledOnce();
+    for (const settled of outcomes) expect(settled).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds cumulative applied IDs and prunes acknowledged IDs only during a later data publication', async () => {
+    const { original } = await mounted();
+    const page = await authenticProviderPage();
+    const next = { ...original, climbs: [...original.climbs, ...page.climbs] };
+    const publications = Array.from({ length: 66 }, () =>
+      createTrackPublication(original, page.consumer.retain(), page.scope.assertView),
+    );
+    page.consumer.release();
+    let current: PlaylistSuggestionSource | null = original;
+    for (const publication of publications.slice(0, 64)) {
+      expect(publication.claim()).toBe(true);
+      const prior = current;
+      current = publication.apply(current, () => next);
+      expect(current).not.toBe(prior);
+    }
+    const full = current;
+    expect(publications[64].claim()).toBe(true);
+    expect(publications[64].apply(current, () => next)).toBe(full);
+    for (const publication of publications.slice(0, 64)) expect(publication.settle(current)).toBe('applied');
+    expect(publications[64].settle(current)).toBe('held');
+    // Settling touches no source identity or source setter.
+    expect(current).toBe(full);
+    expect(publications[65].claim()).toBe(true);
+    const pruned = publications[65].apply(current, () => next);
+    expect(pruned).not.toBe(current);
+    expect(publications[65].settle(pruned)).toBe('applied');
+    expect(() => publications[0].assertCurrent()).not.toThrow();
+    expect(page.performFetch).toHaveBeenCalledOnce();
+  });
+  it.each(['current-replay', 'expired-original-replay'] as const)(
+    'rechecks a single provider publication after actual suspension and lease renewal: %s',
+    async (phase) => {
+      let blocked = true;
+      let pendingId: object | undefined;
+      let attempts = 0;
+      let release!: () => void;
+      const suspended = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      function PendingPublication() {
+        const source = usePlaylistSuggestionSource();
+        const fields = source as unknown as Record<symbol, unknown> | null;
+        const attempted =
+          !!source &&
+          Object.getOwnPropertySymbols(source).some((symbol) => {
+            const tickets = fields?.[symbol];
+            return Array.isArray(tickets) && tickets.includes(pendingId);
+          });
+        if (pendingId && attempted && blocked) {
+          attempts += 1;
+          throw suspended;
+        }
+        return <span data-provider-count={source?.climbs.length ?? 0} />;
+      }
+      render(
+        createElement(
+          Suspense,
+          { fallback: createElement('span', { 'data-provider-fallback': true }) },
+          createElement(
+            QueueProvider,
+            null,
+            createElement(Probe, { onSnapshot: (snapshot) => snapshots.push(snapshot) }),
+            createElement(PendingPublication),
+          ),
+        ),
+      );
+      await waitFor(() => expect(snapshots.length).toBeGreaterThan(0));
+      const original = bindTrackActivation(
+        { ...kilterSource([climb, second], climb), continuation: { loaderId: 'eager-owned-loader', nextPage: 2 } },
+        Object.freeze({}),
+      );
+      act(() => latest().setCurrentClimb(makeItem('owned-current', climb), { playlistSuggestionSource: original }));
+      await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2));
+      const page = await authenticProviderPage();
+      const next = {
+        ...original,
+        climbs: [...original.climbs, ...page.climbs],
+        continuation: { loaderId: 'eager-owned-loader', nextPage: 3 },
+      };
+      const settled = vi.fn();
+      const originalOwnerGuard = vi.fn(page.scope.assertView);
+      const publication = createTrackPublication(original, page.consumer, originalOwnerGuard, { onSettled: settled });
+      pendingId = publication.id;
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      // Clear the prior activation's alternate-fiber lane with ordinary
+      // same-value public refreshes; neither changes rows or acquires a lease.
+      act(() => {
+        latest().refreshPlaylistSuggestionSource(original);
+      });
+      act(() => {
+        latest().refreshPlaylistSuggestionSource(original);
+      });
+      let guardCallsAtReturn = 0;
+      act(() => {
+        startTransition(() => {
+          latest().refreshPlaylistSuggestionSource(next, publication);
+          guardCallsAtReturn = originalOwnerGuard.mock.calls.length;
+        });
+      });
+      expect(attempts).toBeGreaterThan(0);
+      expect(settled).not.toHaveBeenCalled();
+      expect(latest().playlistSuggestionSource?.climbs).toHaveLength(2);
+      expect(document.querySelector('[data-provider-count]')?.getAttribute('data-provider-count')).toBe('2');
+      expect(document.querySelector('[data-provider-fallback]')).toBeNull();
+      page.clock(100_000);
+      const fresh = page.operations.capture({ mode: 'offline' });
+      await fresh.request('query FreshProvider { viewer { id } }');
+      fresh.assertDeliveries();
+      expect(page.issueLease).toHaveBeenCalledTimes(2);
+      page.clock(phase === 'current-replay' ? 110_000 : 130_000);
+      fresh.assertDeliveries();
+      await act(async () => {
+        blocked = false;
+        release();
+        await suspended;
+      });
+      await waitFor(() => expect(settled).toHaveBeenCalledWith(phase === 'current-replay' ? 'applied' : 'retired'));
+      const expected = phase === 'current-replay' ? 3 : 2;
+      expect({ rows: latest().playlistSuggestionSource?.climbs.length, guardCallsAtReturn }).toEqual({
+        rows: expected,
+        guardCallsAtReturn: 4,
+      });
+      expect(document.querySelector('[data-provider-count]')?.getAttribute('data-provider-count')).toBe(
+        String(expected),
+      );
+      expect(latest().playlistSuggestionSource?.continuation?.nextPage).toBe(phase === 'current-replay' ? 3 : 2);
+      expect(page.performFetch).toHaveBeenCalledTimes(2);
+      expect(settled).toHaveBeenCalledOnce();
+      fresh.assertDeliveries();
+      fresh.dispose();
+    },
+  );
 });
