@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import type { ComponentStory, RegisteredStory, StoryRenderControls } from '../types';
 
-const fixture = vi.hoisted(() => ({ story: null as RegisteredStory | null, shot: 'first', focused: true }));
+const fixture = vi.hoisted(() => ({
+  story: null as RegisteredStory | null,
+  shot: 'first',
+  focused: true,
+  rendererReady: true,
+}));
+vi.mock('../../fixtures/board-render-style', () => ({ useStoryRendererReady: () => fixture.rendererReady }));
 vi.mock('../registry', () => ({
   loadStory: () => fixture.story,
   loadStories: () => [],
@@ -59,6 +65,7 @@ function installStory(readiness: ComponentStory['readiness']) {
 beforeEach(() => {
   fixture.shot = 'first';
   fixture.focused = true;
+  fixture.rendererReady = true;
   vi.useFakeTimers();
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => setTimeout(callback, 0));
   vi.stubGlobal('cancelAnimationFrame', (timer: ReturnType<typeof setTimeout>) => clearTimeout(timer));
@@ -79,6 +86,20 @@ function flushPaints() {
 }
 
 describe('story capture readiness', () => {
+  it('waits for the requested renderer even after content and layout are ready', () => {
+    installStory('explicit');
+    fixture.rendererReady = false;
+    const screen = render(<StoryScreen />);
+    fireEvent.click(screen.getByTestId('canvas'));
+    act(() => controls.onReady());
+    flushPaints();
+    expect(console.log).not.toHaveBeenCalled();
+    fixture.rendererReady = true;
+    screen.rerender(<StoryScreen />);
+    flushPaints();
+    expect(console.log).toHaveBeenCalledExactlyOnceWith('[stories] ready sample--loaded');
+  });
+
   it('leaves native header options to tab views while hiding the standalone story header', () => {
     installStory('layout');
     fixture.story!.story.layout = 'fullscreen';

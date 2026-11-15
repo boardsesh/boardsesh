@@ -34,7 +34,10 @@ vi.mock('react-native', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
-  useTheme: () => ({ systemColors: { fill: '#000', label: '#fff', tertiaryLabel: '#888' } }),
+  useTheme: () => ({
+    textStyles: { callout: {} },
+    systemColors: { fill: '#000', label: '#fff', tertiaryLabel: '#888' },
+  }),
 }));
 vi.mock('../../../theme/tokens', () => ({
   opacity: { disabled: 0.5 },

@@ -22,9 +22,9 @@ const MOBILE_ROOT = join(__dirname, '../../..');
 /** The two footers the rule keeps for good. */
 const PERMANENT_FOOTERS = [
   // Attempt / Save stay in thumb reach while logging an ascent.
-  'src/components/LogAscentSheet.tsx',
+  'src/components/LogAscentSheetView.tsx',
   // A composer: the input and Send sit at the bottom, Messages-style.
-  'src/components/you/CommentSheet.tsx',
+  'src/components/you/CommentSheetView.tsx',
 ];
 
 /** Footers still to move to the top bar. Each later PR deletes its lines. */
@@ -32,7 +32,7 @@ const PENDING_FOOTERS: string[] = [];
 
 const FOOTER_ALLOWLIST = new Set([...PERMANENT_FOOTERS, ...PENDING_FOOTERS]);
 
-const TICK_ACTION_BAR_ALLOWLIST = new Set(['src/components/LogAscentSheet.tsx']);
+const TICK_ACTION_BAR_ALLOWLIST = new Set(['src/components/LogAscentSheetView.tsx']);
 
 /** Hand-rolled sheets that bound their own column. Shrink-only. */
 const SHEET_COLUMN_STYLE_ALLOWLIST = new Set([
