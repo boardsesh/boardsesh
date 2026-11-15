@@ -16,6 +16,7 @@ import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
@@ -25,6 +26,7 @@ import { ClimbPreviewCard } from '../ClimbPreviewCard';
 import { GradeSingleSelectRail } from '../grade';
 import { TickNoteField } from '../tick';
 import { useReportClimb } from '../../lib/graphql/hooks/use-report-climb';
+import { useHttpActionScope, type HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { useGrades, useProfile } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
 import { useTheme } from '../../providers/theme-provider';
@@ -57,7 +59,12 @@ type ReportClimbSheetProps = {
 
 const SNAP_POINTS = MEDIUM_LARGE_SNAP_POINTS;
 
-export function ReportClimbSheet({
+export function ReportClimbSheet(props: ReportClimbSheetProps) {
+  const actionScope = useHttpActionScope();
+  return <OwnedReportClimbSheet key={actionScope.key} {...props} actionScope={actionScope} />;
+}
+
+function OwnedReportClimbSheet({
   visible,
   climb,
   boardName,
@@ -67,7 +74,9 @@ export function ReportClimbSheet({
   angle,
   onClose,
   onFullyDismissed,
-}: ReportClimbSheetProps) {
+  actionScope,
+}: ReportClimbSheetProps & { actionScope: HttpActionScope }) {
+  const { capture: captureAction } = actionScope;
   const { t } = useTranslation('climbs');
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -86,13 +95,27 @@ export function ReportClimbSheet({
   // rather than on nothing.
   const [pickedDifficultyId, setPickedDifficultyId] = useState<number | null>(null);
 
-  const { mutate: sendReport, reset: resetReport, isPending, error: reportError } = useReportClimb();
+  const { mutateWithReceipt: sendReport, reset: resetReport, isPending, error: reportError } = useReportClimb();
+  const closeCurrent = useCallback(() => {
+    let action: ReturnType<typeof captureAction>;
+    try {
+      action = captureAction();
+    } catch {
+      return;
+    }
+    try {
+      action.assertView();
+      onClose();
+    } finally {
+      action.finish();
+    }
+  }, [captureAction, onClose]);
 
   const guard = useUnsavedSheetGuard({
     visible: visible && !!climb,
     dirty: reason.length > 0 || pickedDifficultyId !== null || (!ownClimb && chosenKind !== 'hide'),
     busy: isPending,
-    onClose,
+    onClose: closeCurrent,
     scope: climb?.uuid,
   });
 
@@ -116,9 +139,21 @@ export function ReportClimbSheet({
   }, [visible, resetForm]);
 
   const handleFullyDismissed = useCallback(() => {
-    resetForm();
-    onFullyDismissed?.();
-  }, [resetForm, onFullyDismissed]);
+    let action: ReturnType<typeof captureAction>;
+    try {
+      action = captureAction();
+    } catch {
+      return;
+    }
+    try {
+      action.assertView();
+      resetForm();
+      action.assertView();
+      onFullyDismissed?.();
+    } finally {
+      action.finish();
+    }
+  }, [captureAction, resetForm, onFullyDismissed]);
 
   const currentGradeName = climb?.difficulty ?? null;
   const gradeList = useMemo(() => grades ?? [], [grades]);
@@ -168,27 +203,39 @@ export function ReportClimbSheet({
   const handleSubmit = useCallback(() => {
     if (!climb || isPending) return;
     if (!built || !built.ok) return;
+    let action: ReturnType<typeof captureAction>;
+    try {
+      action = captureAction();
+    } catch {
+      return;
+    }
     const { input } = built;
-    sendReport(
-      { input },
-      {
-        onSuccess: (result) => {
-          track(SHARED_EVENTS.ClimbReported, { kind, boardType: boardName, status: result.status });
-          // The success toast plays the haptic.
-          const copy = reportToastCopy(result.status, kind, result.proposal);
-          resetForm();
-          // Toast AFTER the close request: a toast raised while the sheet is up
-          // renders behind it and self-dismisses where nobody sees it.
-          onClose();
-          showToast(t(copy.textI18nKey, copy.params), 'success');
-        },
-        onError: () => {
-          // No toast — the message renders inline, under the form that caused it.
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        },
-      },
-    );
-  }, [climb, built, isPending, sendReport, kind, boardName, resetForm, onClose, showToast, t]);
+    void sendReport({ input }, { signal: action.signal })
+      .then((receipt) => {
+        action.assertView();
+        receipt.assertCurrent();
+        const result = receipt.result;
+        track(SHARED_EVENTS.ClimbReported, { kind, boardType: boardName, status: result.status });
+        // The success toast plays the haptic.
+        const copy = reportToastCopy(result.status, kind, result.proposal);
+        action.assertView();
+        receipt.assertCurrent();
+        resetForm();
+        // Toast AFTER the close request: a toast raised while the sheet is up
+        // renders behind it and self-dismisses where nobody sees it.
+        action.assertView();
+        receipt.assertCurrent();
+        onClose();
+        receipt.assertCurrent();
+        showToast(t(copy.textI18nKey, copy.params), 'success');
+      })
+      .catch((error: unknown) => {
+        if (!action.isCurrent() || error instanceof BrowserBackendConsumerError) return;
+        // No toast — the message renders inline, under the form that caused it.
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      })
+      .finally(() => action.finish());
+  }, [captureAction, climb, built, isPending, sendReport, kind, boardName, resetForm, onClose, showToast, t]);
 
   const remainingCharacters = remainingReasonCharacters(reason);
   const errorMessage = reportError ? (extractGraphqlMessage(reportError) ?? t('mobile.report.submitError')) : null;
@@ -217,7 +264,7 @@ export function ReportClimbSheet({
       snapPoints={SNAP_POINTS}
       scrollable
       androidContentSized
-      onDisplaced={onClose}
+      onDisplaced={closeCurrent}
       onClose={guard.requestClose}
       enablePanDownToClose={guard.enablePanDownToClose}
       onFullyDismissed={handleFullyDismissed}
