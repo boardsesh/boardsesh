@@ -16,5 +16,8 @@ android {
 }
 
 dependencies {
+  // Expo keeps React Android as an implementation dependency; our view uses
+  // its lifecycle API directly, so it must be on this module's classpath too.
+  implementation 'com.facebook.react:react-android'
   testImplementation 'junit:junit:4.13.2'
 }
