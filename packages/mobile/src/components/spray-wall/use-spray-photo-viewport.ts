@@ -3,6 +3,9 @@ import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { clampViewportPan, focalZoomPan } from './tnut-corner-viewport';
 
+/** At any zoom the photo can move a quarter of the frame, so two fingers can pan it before a pinch. */
+export const SPRAY_PHOTO_MIN_PAN_TRAVEL = 0.25;
+
 /** The detector remains untransformed: focal coordinates never feed back through the image. */
 export function useSprayPhotoViewport(
   width: number,
@@ -108,8 +111,24 @@ export function useSprayPhotoViewport(
           return;
         }
         const next = Math.max(1, Math.min(6, (startZoom.value * event.scale) / startScale.value));
-        panX.value = focalZoomPan(focalX.value, event.focalX, width, startZoom.value, next, startX.value);
-        panY.value = focalZoomPan(focalY.value, event.focalY, height, startZoom.value, next, startY.value);
+        panX.value = focalZoomPan(
+          focalX.value,
+          event.focalX,
+          width,
+          startZoom.value,
+          next,
+          startX.value,
+          SPRAY_PHOTO_MIN_PAN_TRAVEL,
+        );
+        panY.value = focalZoomPan(
+          focalY.value,
+          event.focalY,
+          height,
+          startZoom.value,
+          next,
+          startY.value,
+          SPRAY_PHOTO_MIN_PAN_TRAVEL,
+        );
         zoom.value = next;
       })
       .onFinalize(() => {
@@ -136,8 +155,8 @@ export function useSprayPhotoViewport(
         lastX.value = event.translationX;
         lastY.value = event.translationY;
         if (isPinching.value) return;
-        panX.value = clampViewportPan(panX.value + dx, width, zoom.value);
-        panY.value = clampViewportPan(panY.value + dy, height, zoom.value);
+        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
       })
       .onFinalize(() => {
         if (!panning.value) return;
@@ -166,8 +185,8 @@ export function useSprayPhotoViewport(
         lastTwoX.value = event.translationX;
         lastTwoY.value = event.translationY;
         if (!panEnabled || pinchStarted.value) return;
-        panX.value = clampViewportPan(panX.value + dx, width, zoom.value);
-        panY.value = clampViewportPan(panY.value + dy, height, zoom.value);
+        panX.value = clampViewportPan(panX.value + dx, width, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
+        panY.value = clampViewportPan(panY.value + dy, height, zoom.value, SPRAY_PHOTO_MIN_PAN_TRAVEL);
       })
       .onFinalize(() => {
         if (!twoFingerPanning.value) return;

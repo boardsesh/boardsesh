@@ -288,6 +288,26 @@ describe('SprayPhotoCanvas', () => {
     expect(onTap).toHaveBeenLastCalledWith({ x: 0.4, y: 0.4 }, 600, 900);
   });
 
+  it('pans with two fingers on a freshly opened photo, before any pinch, within a quarter of the frame', () => {
+    const onTap = vi.fn();
+    render(createElement(SprayPhotoCanvas, canvasProps({ mode: 'tap', onTap })));
+    const twoFinger = runtime.gestures.find((gesture) => gesture.options.minPointers?.[0] === 2)!;
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 60, translationY: 90 });
+    fire(twoFinger, 'onFinalize');
+    expect(runtime.styles[0].compute()).toEqual({ transform: [{ translateX: 60 }, { translateY: 90 }, { scale: 1 }] });
+    const tap = runtime.gestures.find((gesture) => gesture.kind === 'tap')!;
+    end(tap, { x: 150, y: 225 });
+    expect(onTap).toHaveBeenLastCalledWith({ x: 0.3, y: 0.3 }, 300, 450);
+    // A long drag stops a quarter of the frame (75 × 112.5 points) from centre.
+    fire(twoFinger, 'onStart');
+    fire(twoFinger, 'onUpdate', { translationX: 999, translationY: -999 });
+    fire(twoFinger, 'onFinalize');
+    expect(runtime.styles[0].compute()).toEqual({
+      transform: [{ translateX: 75 }, { translateY: -112.5 }, { scale: 1 }],
+    });
+  });
+
   it('collects a normalized trace on the UI thread and commits only once at release', () => {
     const onTrace = vi.fn();
     const lock = vi.fn();
