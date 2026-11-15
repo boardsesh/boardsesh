@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.view.Choreographer
 import android.view.ViewTreeObserver
 import com.facebook.react.bridge.LifecycleEventListener
+import com.facebook.react.bridge.ReactContext
 import com.facebook.react.common.LifecycleState
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.viewevent.EventDispatcher
@@ -39,6 +40,7 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
     private var failed = false
     private var disposed = false
     private var observing = false
+    private var lifecycleContext: ReactContext? = null
     private var foreground = false
     private var lowPower = false
     private var framePending = false
@@ -154,9 +156,16 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (disposed) return
-        foreground = appContext.reactContext?.lifecycleState == LifecycleState.RESUMED
+        // Expo exposes this as Context; the lifecycle API belongs to ReactContext.
+        val reactContext = appContext.reactContext as? ReactContext
+        if (reactContext == null) {
+            reportError("react-context")
+            return
+        }
+        lifecycleContext = reactContext
+        foreground = reactContext.lifecycleState == LifecycleState.RESUMED
         lowPower = powerManager.isPowerSaveMode
-        appContext.reactContext?.addLifecycleEventListener(this)
+        reactContext.addLifecycleEventListener(this)
         val filter = IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
             context.registerReceiver(powerReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -178,7 +187,8 @@ class FrostedBokehGPUView(context: Context, appContext: AppContext) : ExpoView(c
         stopFrames()
         if (!observing) return
         observing = false
-        appContext.reactContext?.removeLifecycleEventListener(this)
+        lifecycleContext?.removeLifecycleEventListener(this)
+        lifecycleContext = null
         context.unregisterReceiver(powerReceiver)
         if (viewTreeObserver.isAlive) viewTreeObserver.removeOnPreDrawListener(preDrawListener)
     }
