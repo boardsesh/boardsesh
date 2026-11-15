@@ -226,8 +226,8 @@ private enum OverlayRenderer {
       let descriptors = scene.descriptors.map { descriptor in
         var hold = descriptor
         hold.numbers.y = baseline.map { $0[hold.identity.x] != hold.identity.y } == true ? 1 : 0
-        hold.numbers.z = lower[hold.identity.x].map { $0 != hold.identity.y } == true ? 1 : 0
-        hold.numbers.w = upper[hold.identity.x].map { $0 != hold.identity.y } == true ? 1 : 0
+        hold.numbers.z = lower[hold.identity.x].map { $0 == hold.identity.y ? 1 : 2 } ?? 0
+        hold.numbers.w = upper[hold.identity.x].map { $0 == hold.identity.y ? 1 : 2 } ?? 0
         return hold
       }
       return try replacingDescriptors(scene,with: descriptors)
@@ -406,6 +406,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   }
   var animateEdits = false
   var reduceMotion = false
+  var displayMirrored = false
   private var pagePosition: Double?
   var requestId = ""
   var active = false
@@ -431,6 +432,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
   private var editorBaselineRevision: UInt64?
   private var editorStart: CFTimeInterval?
   private var editorDisplayLink: CADisplayLink?
+  private var editChangedHoldCount = 0
+  private var scheduledEditDurationMs: Double = 0
   private var suppressMotion: Bool { reduceMotion || UIAccessibility.isReduceMotionEnabled }
 
   required init(appContext: AppContext? = nil) {
@@ -500,15 +503,16 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     editorStart = nil
   }
 
-  private func startEditorMotion() {
+  private func startEditorMotion() -> Bool {
     stopEditorMotion()
     guard animateEdits, !suppressMotion, !ProcessInfo.processInfo.isLowPowerModeEnabled,
-      active, !background, window != nil else { return }
+      active, !background, window != nil else { return false }
     editorStart = CACurrentMediaTime()
     let link = CADisplayLink(target: self,selector: #selector(editorTick))
     link.preferredFramesPerSecond = 60
     link.add(to: .main,forMode: .common)
     editorDisplayLink = link
+    return true
   }
 
   @objc private func editorTick() {
@@ -539,6 +543,13 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     }
     if suppressMotion || !animateEdits || ProcessInfo.processInfo.isLowPowerModeEnabled { stopEditorMotion() }
     guard active, window != nil, !background, !configJson.isEmpty else { return }
+    // An observed empty editor is a real semantic baseline even when its
+    // atlas is still preparing. Preserve it before the coalescing guard so a
+    // quick first tap lights the changed hold instead of looking like mount.
+    if animateEdits, frames?.isEmpty == true {
+      editorBaseline = [:]
+      editorBaselineRevision = configRevision
+    }
     if submittedConfigRevision == configRevision && submittedFrames == frames && submittedRequest == requestId
       && submittedPreviousFrames == previousFrames && submittedNextFrames == nextFrames && submittedCenterPage == centerPage {
       requestDraw()
@@ -549,6 +560,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     guard !preparing else { return }
     preparing = true
     stopEditorMotion()
+    editChangedHoldCount = 0
+    scheduledEditDurationMs = 0
     scene = nil
     previousScene = nil
     nextScene = nil
@@ -560,8 +573,7 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     let previous = previousFrames
     let next = nextFrames
     let page = centerPage.isFinite ? centerPage : 0
-    let baseline = animateEdits && !suppressMotion && !ProcessInfo.processInfo.isLowPowerModeEnabled
-      && editorBaselineRevision == layoutRevision ? editorBaseline : nil
+    let baseline = animateEdits && editorBaselineRevision == layoutRevision ? editorBaseline : nil
     let request = requestId
     let reusableAtlas = preparedConfigRevision == layoutRevision ? preparedAtlas : nil
     submittedConfigRevision = layoutRevision
@@ -611,7 +623,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
           for hold in scene.descriptors { baseline[hold.identity.x] = hold.identity.y }
           self.editorBaseline = baseline
           self.editorBaselineRevision = layoutRevision
-          if scene.descriptors.contains(where: { $0.numbers.y > 0 }) { self.startEditorMotion() }
+          self.editChangedHoldCount = scene.descriptors.filter { $0.numbers.y > 0 }.count
+          self.scheduledEditDurationMs = self.editChangedHoldCount > 0 && self.startEditorMotion()
+            ? ClimbOverlayMotion.editDuration * 1000 : 0
           self.metal.drawableSize = CGSize(width: Int(scene.atlas.manifest.width), height: Int(scene.atlas.manifest.height))
           self.requestDraw()
         case .failure(let error):
@@ -653,7 +667,6 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     if selection.lowerOffset == -1, let previousScene { lower = previousScene }
     if selection.upperOffset == 1, let nextScene { upper = nextScene }
     progress = selection.progress
-    let roleScales = ClimbOverlayMotion.roleScales(progress)
     let illumination = editorStart.map {
       ClimbOverlayMotion.editIllumination(elapsed: CACurrentMediaTime()-$0)
     } ?? 1
@@ -664,9 +677,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       tuning2: SIMD4(manifest.fringe,manifest.coreShare,lower.maxReach,0),
       offsets: SIMD4(manifest.covers,0,0,0),
       viewport: SIMD4(Float(view.drawableSize.width),Float(view.drawableSize.height),0,0),
-      motion: SIMD4(progress,roleScales.lower,roleScales.upper,illumination),
+      motion: SIMD4(progress,ClimbOverlayMotion.revealBand,0,illumination),
       other: SIMD4(Float(upper.count),upper.maxReach,
-        previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,0))
+        previousFrames != nil || nextFrames != nil || animateEdits ? 1 : 0,displayMirrored ? 1 : 0))
     encoder.setRenderPipelineState(pipeline)
     encoder.setFragmentBuffer(scene.atlas.pixels, offset: 0, index: 0)
     encoder.setFragmentBuffer(lower.holds, offset: 0, index: 1)
@@ -677,6 +690,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     encoder.endEncoding()
     let generation = revision
     let request = requestId
+    let editCount = editChangedHoldCount
+    let editDurationMs = scheduledEditDurationMs
+    let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
     let requiresPresentation = frames != nil
     // These are accessed only on main. A drawable callback and a command
     // completion can arrive in either order; v2 readiness needs both.
@@ -694,7 +710,8 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
       self.reportedRevision = generation
       self.onRenderReady(["requestId":request,"prepareMs":scene.prepareMs,
         "uploadMs":scene.cacheHit ? 0 : scene.atlas.uploadMs,"gpuMs":gpuMs,
-        "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit])
+        "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit,
+        "editChangedHoldCount":editCount,"editDurationMs":editDurationMs,"lowPowerMode":lowPowerMode])
     }
     if requiresPresentation {
       drawable.addPresentedHandler { _ in

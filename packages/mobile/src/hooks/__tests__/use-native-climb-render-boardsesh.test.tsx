@@ -1350,6 +1350,28 @@ describe('live Homewall GPU render selection', () => {
     expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
   });
 
+  it('reuses one config across empty and first-hold v3 editor scenes without PNG work', async () => {
+    const { result, rerender } = renderHook(
+      ({ frames }) =>
+        useNativeClimbRender({
+          ...board,
+          frames,
+          gpuAllowEmpty: true,
+          maxVeilOpacity: 0,
+        }),
+      { initialProps: { frames: '' } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const initialConfig = result.current.gpuConfigJson;
+    expect(result.current.gpuFrames).toBe('');
+    rerender({ frames: 'p4131r42' });
+    expect(result.current.gpuConfigJson).toBe(initialConfig);
+    rerender({ frames: '' });
+    expect(result.current.gpuConfigJson).toBe(initialConfig);
+    expect(result.current.gpuFrames).toBe('');
+    expect(nativeModule.renderHoldsOverlay).not.toHaveBeenCalled();
+  });
+
   it('falls back for a failed static config across later taps, with editor veil preserved', async () => {
     const { result, rerender } = renderHook(
       ({ fallback, frames }) =>

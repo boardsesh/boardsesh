@@ -222,6 +222,7 @@ function restingPager(): SwipePager {
     uiSteps: { value: 0 },
     jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
     slideWidth: { value: 0 },
+    stationaryMotion: { value: false },
     resetGeneration: { value: 0 },
     untoldStep: { value: 0 },
     tellUntoldStep: () => {},
@@ -322,6 +323,43 @@ function latestStationaryBoard(): StationaryBoardProps {
   return call[0] as StationaryBoardProps;
 }
 
+it.each([
+  { native: false, boardWidth: 1000, boardHeight: 2000, width: 250, height: 500, offsetX: 70, offsetY: 0 },
+  { native: true, boardWidth: 1000, boardHeight: 2000, width: 250, height: 500, offsetX: 70, offsetY: 0 },
+  { native: false, boardWidth: 2000, boardHeight: 1000, width: 358, height: 179, offsetX: 16, offsetY: 160.5 },
+  { native: true, boardWidth: 2000, boardHeight: 1000, width: 358, height: 179, offsetX: 16, offsetY: 160.5 },
+])(
+  'zooms across the full player width without changing rest fit (%j)',
+  ({ native, boardWidth, boardHeight, width, height, offsetX, offsetY }) => {
+    recorded.motionNative = native;
+    const { getByTestId } = render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        layoutId: 8,
+        restingHorizontalInset: 16,
+        boardRenderData: { boardWidth, boardHeight },
+        containerSize: { width: 390, height: 500 },
+      }),
+    );
+    expectDimensions(getByTestId('board-current'), width, height);
+    expect(recorded.zoomOptions.mock.lastCall?.[0]).toMatchObject({
+      containerWidth: width,
+      containerHeight: height,
+      viewport: {
+        width: 390,
+        height: 500,
+        offsetX,
+        offsetY,
+        bandStartX: 0,
+        bandEndX: 390,
+        bandStartY: 0,
+        bandEndY: 500,
+      },
+    });
+    expect(recorded.swipeOptions.mock.lastCall?.[0].boardWidth).toBe(width);
+  },
+);
+
 it('keeps one photograph and feeds reversible absolute progress without a JS render', () => {
   recorded.motionNative = true;
   const pager = restingPager();
@@ -335,6 +373,7 @@ it('keeps one photograph and feeds reversible absolute progress without a JS ren
     }),
   );
   expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  expect(pager.stationaryMotion.value).toBe(true);
   const board = latestStationaryBoard();
   expect(board.gpuTransition).toMatchObject({ previousFrames: 'previous', nextFrames: 'next', centerPage: 0 });
   const renderCount = recorded.boardProps.mock.calls.length;
@@ -429,9 +468,11 @@ it('rejects old readiness and failure callbacks when the same three climbs retur
 
 it('returns to retained image pages after unsupported or failed native rendering', async () => {
   recorded.motionNative = true;
+  const pager = restingPager();
   const { queryAllByTestId } = render(
     createElement(SwipeBoardCarousel, {
       ...baseProps,
+      pager,
       layoutId: 8,
       prevFrames: 'previous',
       containerSize: { width: 350, height: 500 },
@@ -442,6 +483,7 @@ it('returns to retained image pages after unsupported or failed native rendering
   await nextFrame();
   expect(queryAllByTestId(/^board-/)).toHaveLength(3);
   expect(recorded.boardProps.mock.lastCall?.[0].gpuTransition).toBeUndefined();
+  expect(pager.stationaryMotion.value).toBe(false);
 });
 
 it('uses the existing carousel for Classic and retries stationary rendering after changing appearance', async () => {

@@ -34,6 +34,13 @@ export const StationaryBoardCarousel = React.memo(function StationaryBoardCarous
   onUnavailable,
 }: Props) {
   const { anchorPage, translateX, slideWidth } = pager;
+  const stationaryMotion = pager.stationaryMotion;
+  useLayoutEffect(() => {
+    if (stationaryMotion) stationaryMotion.value = true;
+    return () => {
+      if (stationaryMotion) stationaryMotion.value = false;
+    };
+  }, [stationaryMotion]);
   const pagePosition = useDerivedValue(() =>
     slideWidth.value > 0 ? anchorPage.value - translateX.value / slideWidth.value : anchorPage.value,
   );

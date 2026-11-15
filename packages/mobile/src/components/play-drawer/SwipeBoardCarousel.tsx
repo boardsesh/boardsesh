@@ -26,6 +26,7 @@ import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
+import { centeredZoomViewport } from './zoom-viewport-clamp';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
@@ -54,6 +55,8 @@ type SwipeBoardCarouselProps = {
   captureLocalMirrorTestID?: string;
   /** Positive geometry from the player's shared layout owner or validated cache. */
   containerSize?: { width: number; height: number };
+  /** Fit-to-screen gutter only; the zoom clip spans the entire container. */
+  restingHorizontalInset?: number;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;
@@ -291,6 +294,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   capturePaintedTestID,
   captureLocalMirrorTestID,
   containerSize: suppliedContainerSize,
+  restingHorizontalInset = 0,
   readyBoardArt,
   onReadyArtDisplayed,
   boardName,
@@ -403,9 +407,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const boardBox = useMemo(
     () =>
       Number.isFinite(containerSize.width) && Number.isFinite(containerSize.height) && Number.isFinite(aspectRatio)
-        ? computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio)
+        ? computeContainedBoardSize(containerSize.width - restingHorizontalInset * 2, containerSize.height, aspectRatio)
         : null,
-    [containerSize, aspectRatio],
+    [containerSize, aspectRatio, restingHorizontalInset],
   );
   const imageBox = useMemo<ViewStyle>(
     () => ({ ...(boardBox ?? { width: '100%', height: '100%' }), aspectRatio: undefined }),
@@ -417,11 +421,19 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // edge-adjacent. Using screenWidth instead leaves a gap equal to the letterbox
   // margins.
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
+  const zoomViewport = useMemo(
+    () =>
+      boardBox
+        ? centeredZoomViewport(containerSize.width, containerSize.height, boardBox.width, boardBox.height)
+        : undefined,
+    [containerSize, boardBox],
+  );
 
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
     enabled: gesturesEnabled,
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
+    viewport: zoomViewport,
     scrollRef,
     dismissRef,
   });

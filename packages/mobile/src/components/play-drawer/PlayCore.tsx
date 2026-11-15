@@ -3488,6 +3488,7 @@ export function PlayCore({
                               )}
                               open={isSheetOpen}
                               containerSize={boardContainerSize}
+                              restingHorizontalInset={spacing[4]}
                               boardName={boardName as BoardName}
                               boardRenderData={boardRenderData}
                               layoutId={layoutId}
@@ -3793,7 +3794,6 @@ const styles = StyleSheet.create({
   boardSection: {
     flex: 1,
     position: 'relative',
-    marginHorizontal: spacing[4],
   },
   // Anchors the switch-board overlay so its scrim covers exactly the playback +
   // action controls, leaving the board art and header above it interactive.

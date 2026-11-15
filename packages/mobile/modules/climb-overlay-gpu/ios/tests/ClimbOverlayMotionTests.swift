@@ -5,16 +5,32 @@ import Foundation
   static func main() {
     for step in 0...1000 {
       let progress = Float(step)/1000
-      let scales = ClimbOverlayMotion.roleScales(progress)
-      let oldRole = (1-progress)*scales.lower
-      let newRole = progress*scales.upper
-      precondition(oldRole >= 0 && oldRole <= 1 && newRole >= 0 && newRole <= 1)
-      precondition(oldRole*newRole == 0,"A changed hold must never show a third role colour")
+      for center in [Float(0),0.2,0.5,0.8,1] {
+        let reveal = ClimbOverlayMotion.revealProgress(progress,centerX: center,mirrored: false)
+        let mirrored = ClimbOverlayMotion.revealProgress(progress,centerX: 1-center,mirrored: true)
+        precondition(abs(reveal-mirrored)<0.00001,"Mirror must preserve screen-space direction")
+        precondition(reveal>=0 && reveal<=1)
+        let oldRole = ClimbOverlayMotion.holdWeight(reveal: reveal,membership: 2,upper: false)
+        let newRole = ClimbOverlayMotion.holdWeight(reveal: reveal,membership: 2,upper: true)
+        precondition(oldRole>=0 && oldRole<=1 && newRole>=0 && newRole<=1)
+        precondition(oldRole*newRole==0,"A changed hold never shows two role colours together")
+        precondition(ClimbOverlayMotion.holdWeight(reveal: reveal,membership: 1,upper: false)==1)
+        precondition(ClimbOverlayMotion.holdWeight(reveal: reveal,membership: 1,upper: true)==0)
+        if step==0 { precondition(reveal==0) }
+        if step==1000 { precondition(reveal==1) }
+      }
     }
-    precondition(ClimbOverlayMotion.roleScales(0).lower == 1)
-    precondition(ClimbOverlayMotion.roleScales(1).upper == 1)
-    let midpoint = ClimbOverlayMotion.roleScales(0.5)
-    precondition(midpoint.lower == 0 && midpoint.upper == 0)
+    let left = ClimbOverlayMotion.revealProgress(0.5,centerX: 0.2,mirrored: false)
+    let right = ClimbOverlayMotion.revealProgress(0.5,centerX: 0.8,mirrored: false)
+    precondition(right>left,"Next enters from the right")
+    precondition(ClimbOverlayMotion.ownershipDistance(distance: 0,reach: 10,weight: 0.001)>1000,
+      "Almost invisible holds cannot steal the existing glow even at distance zero")
+    precondition(ClimbOverlayMotion.ownershipDistance(distance: 3,reach: 10,weight: 1)==3)
+    precondition(ClimbOverlayMotion.ownershipDistance(distance: 0,reach: 10,weight: 0).isInfinite)
+    let faintRunner = ClimbOverlayMotion.ownershipDistance(distance: 0,reach: 10,weight: 0.001)
+    precondition(ClimbOverlayMotion.mergeDistance(actualNearest: 2,nearestScore: 2,runnerScore: faintRunner)>1000,
+      "A faint same-colour runner cannot bulge the existing glow")
+    precondition(ClimbOverlayMotion.mergeDistance(actualNearest: 2,nearestScore: 2,runnerScore: 3)==3)
     let forward = ClimbOverlayMotion.select(pagePosition: 12.25,centerPage: 12,
       hasPrevious: true,hasNext: true,reduceMotion: false)
     precondition(forward.lowerOffset == 0 && forward.upperOffset == 1 && forward.progress == 0.25)
@@ -35,6 +51,6 @@ import Foundation
     precondition(ClimbOverlayMotion.editIllumination(elapsed: 0.12)==1)
     precondition(ClimbOverlayMotion.editIllumination(elapsed: 10)==1)
     precondition(ClimbOverlayMotion.editIllumination(elapsed: .nan)==1)
-    print("Motion guards passed: 1,001 role positions, pager endpoints, missing neighbour, Reduce Motion, 120ms settle")
+    print("Motion guards passed: 1,001 reveal positions × 5 hold centres, mirror/direction, role isolation, glow ownership, pager endpoints, Reduce Motion, 120ms settle")
   }
 }

@@ -252,6 +252,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     filledStyle,
     playSurface,
     gpuSurface,
+    gpuAllowEmpty: editorSurface && NativeMotionClimbOverlayGPU !== null,
     gpuFallbackConfigJson,
     paintBridgingRef,
     renderWidth,
@@ -311,14 +312,9 @@ const BoardImageNative = React.memo(function BoardImageNative({
       currentGpuRequest.current = null;
     };
   }, [gpuConfigJson, gpuRequestId]);
-  const handleGpuPresented = useCallback(
-    (requestId: string) => {
-      if (currentGpuRequest.current !== requestId) return;
-      setGpuPresented(requestId);
-      setGpuPaintedConfig(gpuConfigJson);
-    },
-    [gpuConfigJson],
-  );
+  const handleGpuPresented = useCallback((requestId: string) => {
+    if (currentGpuRequest.current === requestId) setGpuPresented(requestId);
+  }, []);
   const handleGpuRelease = useCallback(() => setGpuPaintedConfig(null), []);
   const handleGpuFailure = useCallback((requestId: string, configJson: string) => {
     if (currentGpuRequest.current === requestId) setGpuFallbackConfigJson(configJson);
@@ -339,6 +335,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
                 requestId={gpuRequestId}
                 transition={normalizedGpuTransition}
                 animateEdits={editorSurface}
+                displayMirrored={mirrored ?? false}
                 onPresented={handleGpuPresented}
                 onFailure={handleGpuFailure}
                 onReset={handleGpuReset}
@@ -354,6 +351,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       gpuPresented,
       normalizedGpuTransition,
       editorSurface,
+      mirrored,
       handleGpuPresented,
       handleGpuFailure,
       handleGpuReset,
@@ -377,9 +375,15 @@ const BoardImageNative = React.memo(function BoardImageNative({
   // it is on the layer the frame the board mounts. Rendered alone is not enough:
   // the view would show the bare wall for the frames its own decode takes.
   const overlayPaintsWithBoard = overlayImmediate && isBoardArtInMemory(overlayUri);
-  const openingArt = isReadyBoardArtCurrent(readyBoardArt, { ...artworkIdentity, mirrored: mirrored ?? false })
-    ? readyBoardArt
-    : undefined;
+  // A row thumbnail may use glow-fill even when the full board uses glow.
+  // Its signature describes the same preferences, not the same surface style.
+  // Never flash those filled marks over an incoming GPU board, even while its
+  // geometry is loading. Exact full-board snapshots remain a valid bridge.
+  const openingArt =
+    (!gpuSurface || readyBoardArt?.quality === 'full') &&
+    isReadyBoardArtCurrent(readyBoardArt, { ...artworkIdentity, mirrored: mirrored ?? false })
+      ? readyBoardArt
+      : undefined;
   const currentArtIdentity = JSON.stringify(
     paintedTestID === undefined
       ? [artworkIdentity, overlayUri, overlayLoadKey, backgroundPaths, liveOverlay?.identity]
@@ -410,10 +414,13 @@ const BoardImageNative = React.memo(function BoardImageNative({
   }, [bridging]);
   const handleArtReadinessChange = useCallback(
     (ready: boolean) => {
-      if (liveOverlay && ready && bridging) setDisplayedArtIdentity(currentArtIdentity);
+      if (liveOverlay && ready) {
+        setGpuPaintedConfig(gpuConfigJson);
+        if (bridging) setDisplayedArtIdentity(currentArtIdentity);
+      }
       onArtReadinessChange?.(!liveOverlay && overlayFailed ? 'failed' : ready && !bridging ? 'ready' : 'loading');
     },
-    [onArtReadinessChange, overlayFailed, bridging, liveOverlay, currentArtIdentity],
+    [onArtReadinessChange, overlayFailed, bridging, liveOverlay, currentArtIdentity, gpuConfigJson],
   );
   const liveArtRef = useRef({ identity: currentArtIdentity, bridging, onReadyArtDisplayed });
   liveArtRef.current = { identity: currentArtIdentity, bridging, onReadyArtDisplayed };

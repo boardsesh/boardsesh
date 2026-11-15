@@ -17,6 +17,8 @@ const controls = vi.hoisted(() => ({
     requestId: string;
     frames: string;
     animateEdits?: boolean;
+    displayMirrored?: boolean;
+    configJson: string;
     reduceMotion?: boolean;
     previousFrames?: string | null;
     nextFrames?: string | null;
@@ -25,7 +27,7 @@ const controls = vi.hoisted(() => ({
     onRenderError: (event: { nativeEvent: { requestId: string } }) => void;
   },
   imageDisplays: [] as Array<() => void>,
-  hookInputs: [] as Array<{ gpuSurface?: boolean; gpuFallbackConfigJson?: string | null }>,
+  hookInputs: [] as Array<{ gpuSurface?: boolean; gpuAllowEmpty?: boolean; gpuFallbackConfigJson?: string | null }>,
   pngMounted: vi.fn(),
 }));
 vi.mock('react-native', () => ({
@@ -78,12 +80,17 @@ function NativeView(props: NonNullable<typeof controls.props>) {
   return <div data-testid="native-gpu" />;
 }
 vi.mock('../../hooks/use-native-climb-render', () => ({
-  useNativeClimbRender: (props: { frames: string; gpuSurface?: boolean; gpuFallbackConfigJson?: string | null }) => {
+  useNativeClimbRender: (props: {
+    frames: string;
+    gpuSurface?: boolean;
+    gpuAllowEmpty?: boolean;
+    gpuFallbackConfigJson?: string | null;
+  }) => {
     controls.hookInputs.push(props);
     const gpu =
       props.gpuSurface &&
       props.gpuFallbackConfigJson !== 'static-config' &&
-      props.frames !== '' &&
+      (props.frames !== '' || props.gpuAllowEmpty) &&
       controls.gpuStatus === 'ready';
     return {
       gpuConfigJson: gpu ? 'static-config' : null,
@@ -113,6 +120,8 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
   },
 }));
 import { BoardImageNative } from '../BoardImageNative';
+import { cacheRenderedOverlay } from '../../lib/overlay-index';
+import { captureReadyBoardArt } from '../../lib/board-render/ready-board-art';
 const BOARD = {
   boardName: 'kilter' as const,
   layoutId: 8,
@@ -161,6 +170,69 @@ describe('live GPU board integration', () => {
     expect(handoff).not.toHaveBeenCalled();
   });
 
+  it.each(['loading', 'ready'] as const)('never shows a filled thumbnail opening bridge while GPU is %s', (status) => {
+    controls.gpuStatus = status;
+    const cached = cacheRenderedOverlay(`gpu-opening-thumb-${status}`, 'file:///filled-thumbnail.png');
+    const opening = captureReadyBoardArt({
+      ...BOARD,
+      renderSignature: 'aura',
+      colorScheme: 'dark',
+      climbUuid: 'real-climb',
+      mirrored: false,
+      quality: 'thumbnail',
+      overlayCacheKey: `gpu-opening-thumb-${status}`,
+      overlayUri: cached.uri,
+      overlayGeneration: cached.generation,
+      overlayLoadKey: `${cached.generation}:0`,
+      backgroundPaths: ['/board.jpg'],
+    });
+    render(<BoardImageNative {...BOARD} readyBoardArt={opening} />);
+    expect(document.querySelector('img[src="file:///filled-thumbnail.png"]')).toBeNull();
+  });
+
+  it('retains an exact full-style opening bridge until GPU and photos are ready', () => {
+    const cached = cacheRenderedOverlay('gpu-opening-full', 'file:///full-style.png');
+    const opening = captureReadyBoardArt({
+      ...BOARD,
+      renderSignature: 'aura',
+      colorScheme: 'dark',
+      climbUuid: 'real-climb',
+      mirrored: false,
+      quality: 'full',
+      overlayCacheKey: 'gpu-opening-full',
+      overlayUri: cached.uri,
+      overlayGeneration: cached.generation,
+      overlayLoadKey: `${cached.generation}:0`,
+      backgroundPaths: ['/board.jpg'],
+    });
+    render(<BoardImageNative {...BOARD} readyBoardArt={opening} />);
+    expect(document.querySelector('img[src="file:///full-style.png"]')).not.toBeNull();
+    const current = controls.props!;
+    act(() => current.onRenderReady({ nativeEvent: { requestId: current.requestId } }));
+    expect(document.querySelector('img[src="file:///full-style.png"]')).not.toBeNull();
+    act(() => {
+      controls.imageDisplays.forEach((display) => display());
+    });
+    expect(document.querySelector('img[src="file:///full-style.png"]')).toBeNull();
+  });
+
+  it('keeps a v3 empty editor mounted for the first hold and clearing, while v2 still unmounts', () => {
+    const { rerender } = render(<BoardImageNative {...BOARD} frames="" playSurface={false} editorSurface />);
+    const nativeNode = screen.getByTestId('native-gpu');
+    expect(controls.props?.frames).toBe('');
+    expect(controls.props?.animateEdits).toBe(true);
+    rerender(<BoardImageNative {...BOARD} playSurface={false} editorSurface />);
+    expect(screen.getByTestId('native-gpu')).toBe(nativeNode);
+    expect(controls.props?.frames).toBe(BOARD.frames);
+    rerender(<BoardImageNative {...BOARD} frames="" playSurface={false} editorSurface />);
+    expect(screen.getByTestId('native-gpu')).toBe(nativeNode);
+    expect(controls.props?.frames).toBe('');
+    expect(document.querySelector('img[src="file:///cached-overlay.png"]')).toBeNull();
+    controls.motionAvailable = false;
+    rerender(<BoardImageNative {...BOARD} frames="" playSurface={false} editorSurface style={{ opacity: 1 }} />);
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+  });
+
   it('uses a new generation on A-B-A and clears an empty editor immediately', () => {
     const { rerender } = render(<BoardImageNative {...BOARD} playSurface={false} editorSurface />);
     const original = controls.props!;
@@ -170,7 +242,8 @@ describe('live GPU board integration', () => {
     act(() => original.onRenderError({ nativeEvent: { requestId: original.requestId } }));
     expect(screen.getByTestId('native-gpu')).toBeTruthy();
     rerender(<BoardImageNative {...BOARD} playSurface={false} editorSurface frames="" />);
-    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(screen.queryByTestId('native-gpu')).not.toBeNull();
+    expect(controls.props?.frames).toBe('');
     expect(document.querySelector('img[src="file:///cached-overlay.png"]')).toBeNull();
   });
 
@@ -181,6 +254,18 @@ describe('live GPU board integration', () => {
     expect(controls.hookInputs.at(-1)?.gpuSurface).toBe(false);
     expect(screen.queryByTestId('native-gpu')).toBeNull();
     expect(document.querySelector('img[src="file:///cached-overlay.png"]')).not.toBeNull();
+  });
+
+  it('forwards display mirroring without changing the atlas config or request', () => {
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    const initial = controls.props!;
+    expect(initial.displayMirrored).toBe(false);
+    rerender(<BoardImageNative {...BOARD} mirrored />);
+    expect(controls.props?.displayMirrored).toBe(true);
+    expect(controls.props?.configJson).toBe(initial.configJson);
+    expect(controls.props?.requestId).toBe(initial.requestId);
+    rerender(<BoardImageNative {...BOARD} mirrored={false} />);
+    expect(controls.props?.displayMirrored).toBe(false);
   });
 
   it('passes editor settling only to v3 and respects Reduce Motion', () => {
@@ -207,6 +292,9 @@ describe('live GPU board integration', () => {
     expect(first.nextFrames).toBe(transition.nextFrames);
     expect(first.animateEdits).toBe(false);
     expect(state).toHaveBeenLastCalledWith('loading');
+    act(() => {
+      controls.imageDisplays.forEach((display) => display());
+    });
     const renderCount = controls.hookInputs.length;
     pagePosition.value = 4.75;
     expect(controls.animatedWorklet?.().pagePosition).toBe(4.75);

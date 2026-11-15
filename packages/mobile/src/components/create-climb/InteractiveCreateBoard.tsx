@@ -8,13 +8,14 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { View, StyleSheet, PixelRatio } from 'react-native';
-import Animated from 'react-native-reanimated';
+import { View, StyleSheet, PixelRatio, type ViewStyle } from 'react-native';
+import Animated, { useDerivedValue } from 'react-native-reanimated';
 import { GestureDetector, GestureHandlerRootView, type GestureType } from 'react-native-gesture-handler';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../BoardImageNative';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { useZoomPanGesture } from '../play-drawer/use-zoom-pan-gesture';
+import type { ZoomViewport } from '../play-drawer/zoom-viewport-clamp';
 import { spacing } from '../../theme/tokens';
 import { EDITING_VEIL_OPACITY } from '../../lib/board-render-settings';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
@@ -50,6 +51,8 @@ type InteractiveCreateBoardProps = {
    *  renders immediately (no onLayout round-trip while the modal animates in). */
   renderWidth: number;
   renderHeight: number;
+  /** Full editing-card clip; the fitted board keeps its resting size inside it. */
+  viewport?: ZoomViewport;
   /** Optional overlay (e.g. heatmap) drawn between the board photo and the holds. */
   overlay?: ReactNode;
   /** Lets the drawer reset the zoom — both from its own chrome and on frame change. */
@@ -119,6 +122,7 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   mirrored = false,
   renderWidth,
   renderHeight,
+  viewport,
   overlay,
   controlRef,
   scrollRef,
@@ -139,6 +143,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     translateYSV,
     containerWidthSV,
     containerHeightSV,
+    viewportOffsetXSV,
+    viewportOffsetYSV,
     resetZoom,
     animatedZoomStyle,
   } = useZoomPanGesture({
@@ -148,7 +154,14 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     panActivationOffset: PAN_ACTIVATION_OFFSET,
     pinchRef,
     scrollRef,
+    viewport,
   });
+
+  // The zoomed overlay covers the viewport, so its screen coordinates include
+  // the resting board's offset. Fold that into the inverse-transform inputs,
+  // exactly as InteractiveFilterBoard does for its full-size editing stage.
+  const viewportTranslateX = useDerivedValue(() => translateXSV.value + (viewportOffsetXSV?.value ?? 0));
+  const viewportTranslateY = useDerivedValue(() => translateYSV.value + (viewportOffsetYSV?.value ?? 0));
 
   // Rasterize the holds overlay at the size it is actually displayed, not the
   // board's native ~1080px. Clamped to board width inside useNativeClimbRender
@@ -215,8 +228,8 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
   const overlayGesture = useZoomedHoldTapGesture({
     zoomPanGesture,
     scaleSV,
-    translateXSV,
-    translateYSV,
+    translateXSV: viewport ? viewportTranslateX : translateXSV,
+    translateYSV: viewport ? viewportTranslateY : translateYSV,
     containerWidthSV,
     containerHeightSV,
     hitTargets,
@@ -257,11 +270,24 @@ export const InteractiveCreateBoard = React.memo(function InteractiveCreateBoard
     [overlay],
   );
 
+  const boardBoxStyle: ViewStyle | null = viewport
+    ? {
+        position: 'absolute',
+        left: viewport.offsetX,
+        top: viewport.offsetY,
+        width: renderWidth,
+        height: renderHeight,
+      }
+    : null;
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <GestureDetector gesture={pinchGesture}>
-        <View style={[styles.clip, { width: renderWidth, height: renderHeight }]}>
-          <Animated.View style={[styles.board, animatedZoomStyle]}>
+        <View
+          testID="create-board-viewport"
+          style={[styles.clip, { width: viewport?.width ?? renderWidth, height: viewport?.height ?? renderHeight }]}
+        >
+          <Animated.View testID="create-board-render-box" style={[boardBoxStyle ?? styles.board, animatedZoomStyle]}>
             <BoardImageNative
               editorSurface
               frames={frames}

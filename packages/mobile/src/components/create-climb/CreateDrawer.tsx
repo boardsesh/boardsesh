@@ -28,6 +28,7 @@ import { spacing } from '../../theme/tokens';
 import type { BoardHoldTarget } from '../../lib/create-board-holds';
 import { AccessibleHoldList } from './AccessibleHoldList';
 import { InteractiveCreateBoard, type CreateBoardControls } from './InteractiveCreateBoard';
+import { centeredZoomViewport } from '../play-drawer/zoom-viewport-clamp';
 import { CreateDrawerHeader } from './CreateDrawerHeader';
 import { CreateDrawerActionBar } from './CreateDrawerActionBar';
 import { CreateDrawerForm } from './CreateDrawerForm';
@@ -233,6 +234,10 @@ export function CreateDrawer({
     }
     return { width: availWidth, height: availWidth / boardAspect };
   }, [boardHolds.boardWidth, boardHolds.boardHeight, editorWidth, boardMaxHeight]);
+  const boardViewport = useMemo(
+    () => centeredZoomViewport(editorWidth, boardRender.height, boardRender.width, boardRender.height),
+    [editorWidth, boardRender],
+  );
 
   // Heat covers every hold, painted ones included: the painted hold's own mark
   // is drawn in the holds layer on top and covers it. Skipping painted holds in
@@ -431,6 +436,7 @@ export function CreateDrawer({
                   onLongPressHold={onLongPressHold}
                   renderWidth={boardRender.width}
                   renderHeight={boardRender.height}
+                  viewport={boardViewport}
                   controlRef={boardControlsRef}
                   scrollRef={scrollGestureRef}
                   overlay={boardOverlay}
@@ -509,7 +515,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   boardSection: {
-    marginHorizontal: spacing[4],
     marginTop: spacing[2],
   },
   belowFold: {

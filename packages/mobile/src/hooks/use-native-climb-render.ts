@@ -198,6 +198,8 @@ type NativeClimbRenderParams = {
   playSurface?: boolean;
   /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
   gpuSurface?: boolean;
+  /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
+  gpuAllowEmpty?: boolean;
   gpuFallbackConfigJson?: string | null;
   /**
    * The play board's own view layer writes here whether its live stack is held
@@ -1861,6 +1863,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayFile = false,
     playSurface = false,
     gpuSurface = false,
+    gpuAllowEmpty = false,
     gpuFallbackConfigJson,
     paintBridgingRef,
     prefetch = false,
@@ -2191,7 +2194,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     boardArtChunkPending,
   ]);
   const gpuConfigJson = useMemo(() => {
-    if (!flatFrames || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson) return null;
+    if ((!flatFrames && !gpuAllowEmpty) || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson)
+      return null;
     const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
       [42, 43, 44, 45].includes(Number(match[1])),
     );
@@ -2199,14 +2203,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     const litIds = parseLitHoldIds(flatFrames);
     if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
     return gpuStaticConfig.json;
-  }, [gpuStaticConfig, flatFrames, gpuFallbackConfigJson]);
+  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson]);
 
   // A stationary carousel must wait for geometry/capability discovery rather
   // than permanently latching its PNG fallback during the first render.
   const gpuStatus: 'loading' | 'unavailable' | 'ready' = gpuConfigJson
     ? 'ready'
     : gpuSurface &&
-        !!flatFrames &&
+        (!!flatFrames || gpuAllowEmpty) &&
         requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
         (boardArtChunkPending || getBoardseshRendererSupport() === null)
       ? 'loading'

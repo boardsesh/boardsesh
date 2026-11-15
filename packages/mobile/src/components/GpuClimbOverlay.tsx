@@ -25,6 +25,7 @@ type Props = {
   requestId: string;
   transition?: GpuClimbTransition;
   animateEdits?: boolean;
+  displayMirrored?: boolean;
   onPresented: (requestId: string) => void;
   onFailure: (requestId: string, configJson: string) => void;
   onReset: (requestId: string) => void;
@@ -38,6 +39,7 @@ export function GpuClimbOverlay({
   requestId,
   transition,
   animateEdits = false,
+  displayMirrored = false,
   onPresented,
   onFailure,
   onReset,
@@ -85,15 +87,38 @@ export function GpuClimbOverlay({
       if (currentRequest.current !== nativeEvent.requestId || answered.current) return;
       answered.current = true;
       if (__DEV__) {
-        const { requestId, prepareMs, uploadMs, gpuMs, atlasCacheHit, atlasBytes } = nativeEvent;
+        const {
+          requestId,
+          prepareMs,
+          uploadMs,
+          gpuMs,
+          atlasCacheHit,
+          atlasBytes,
+          editChangedHoldCount,
+          editDurationMs,
+          lowPowerMode,
+        } = nativeEvent;
         console.info(
           '[gpu-climb-live]',
-          JSON.stringify({ requestId, prepareMs, uploadMs, gpuMs, atlasCacheHit, atlasBytes }),
+          JSON.stringify({
+            requestId,
+            prepareMs,
+            uploadMs,
+            gpuMs,
+            atlasCacheHit,
+            atlasBytes,
+            editChangedHoldCount,
+            editDurationMs,
+            lowPowerMode,
+            surface: animateEdits ? 'editor' : 'player',
+            apiVersion: NativeMotionClimbOverlayGPU ? 3 : 2,
+            reduceMotion,
+          }),
         );
       }
       onPresented(nativeEvent.requestId);
     },
-    [onPresented],
+    [onPresented, animateEdits, reduceMotion],
   );
   const failed = useCallback(
     ({ nativeEvent }: NativeSyntheticEvent<{ requestId: string; reason: string }>) => {
@@ -122,6 +147,7 @@ export function GpuClimbOverlay({
         animatedProps={animatedProps}
         animateEdits={animateEdits && !transition}
         reduceMotion={reduceMotion}
+        displayMirrored={displayMirrored}
         requestId={requestId}
         active
         onRenderReady={ready}

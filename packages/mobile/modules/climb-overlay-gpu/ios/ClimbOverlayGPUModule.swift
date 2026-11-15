@@ -17,6 +17,7 @@ public class ClimbOverlayGPUModule: Module {
       Prop("pagePosition") { (view: ClimbOverlayGPUView, page: Double) in view.setPagePosition(page) }
       Prop("animateEdits") { (view: ClimbOverlayGPUView, animate: Bool) in view.animateEdits = animate }
       Prop("reduceMotion") { (view: ClimbOverlayGPUView, reduce: Bool) in view.reduceMotion = reduce }
+      Prop("displayMirrored") { (view: ClimbOverlayGPUView, mirrored: Bool) in view.displayMirrored = mirrored }
       Prop("requestId") { (view: ClimbOverlayGPUView, request: String) in view.requestId = request }
       Prop("active") { (view: ClimbOverlayGPUView, active: Bool) in view.active = active }
       OnViewDidUpdateProps { view in view.applyProps() }

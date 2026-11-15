@@ -44,6 +44,25 @@ export type ZoomViewport = {
   bandEndY: number;
 };
 
+/** The resting board stays centred while zoom can use the entire stage. */
+export function centeredZoomViewport(
+  width: number,
+  height: number,
+  renderWidth: number,
+  renderHeight: number,
+): ZoomViewport {
+  return {
+    width,
+    height,
+    offsetX: (width - renderWidth) / 2,
+    offsetY: (height - renderHeight) / 2,
+    bandStartX: 0,
+    bandEndX: width,
+    bandStartY: 0,
+    bandEndY: height,
+  };
+}
+
 /**
  * One axis of a pan, clamped.
  *

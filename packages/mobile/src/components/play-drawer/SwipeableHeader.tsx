@@ -2,6 +2,19 @@ import { memo, type ReactNode } from 'react';
 import { View, StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
+import { useReduceMotion } from '../../hooks/use-reduce-motion';
+
+const STATIONARY_HEADER_TRAVEL = 24;
+
+/** A short directional cue, with no overlapping names at the midpoint. */
+export function stationaryHeaderStyle(page: number, position: number, anchor: number, reduceMotion: boolean) {
+  'worklet';
+  if (reduceMotion) return { opacity: page === anchor ? 1 : 0, transform: [{ translateX: 0 }] };
+  const distance = Math.max(-1, Math.min(1, page - position));
+  const fade = Math.max(0, Math.min(1, (Math.abs(distance) - 0.05) / 0.4));
+  const opacity = 1 - fade * fade * (3 - 2 * fade);
+  return { opacity, transform: [{ translateX: distance * STATIONARY_HEADER_TRAVEL }] };
+}
 
 type SwipeableHeaderProps = {
   /** The carousel's pager — the header rides the EXACT same anchor and offset as
@@ -35,6 +48,8 @@ type HeaderSlotProps = {
   translateX: SharedValue<number>;
   /** The board's travel for the same swipe; see `pager.slideWidth`. */
   boardSlideWidth: SharedValue<number>;
+  stationaryMotion: SharedValue<boolean>;
+  reduceMotion: boolean;
   viewportWidth: number;
   children: ReactNode;
 };
@@ -51,6 +66,8 @@ const HeaderSlot = memo(function HeaderSlot({
   anchorPage,
   translateX,
   boardSlideWidth,
+  stationaryMotion,
+  reduceMotion,
   viewportWidth,
   children,
 }: HeaderSlotProps) {
@@ -61,11 +78,15 @@ const HeaderSlot = memo(function HeaderSlot({
     // It also keeps the two in step when a swipe takes over a fling, which
     // re-bases the offset by the board's width.
     const boardWidth = boardSlideWidth.value;
+    if (stationaryMotion?.value) {
+      const position = boardWidth > 0 ? anchorPage.value - translateX.value / boardWidth : anchorPage.value;
+      return stationaryHeaderStyle(page, position, anchorPage.value, reduceMotion);
+    }
     const scale = boardWidth > 0 ? viewportWidth / boardWidth : 1;
     const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value * scale, viewportWidth);
     // Opacity and transform only; see CarouselBoardSlot for why never zIndex.
     return { opacity: visible ? 1 : 0, transform: [{ translateX: offset }] };
-  }, [page, viewportWidth]);
+  }, [page, viewportWidth, reduceMotion]);
 
   return (
     <Animated.View
@@ -96,6 +117,7 @@ export const SwipeableHeader = memo(function SwipeableHeader({
   next,
   accessibilityStandIn,
 }: SwipeableHeaderProps) {
+  const reduceMotion = useReduceMotion();
   const renderSlot = (page: number, content: ReactNode, isCurrent: boolean) =>
     content ? (
       <HeaderSlot
@@ -105,6 +127,8 @@ export const SwipeableHeader = memo(function SwipeableHeader({
         anchorPage={pager.anchorPage}
         translateX={pager.translateX}
         boardSlideWidth={pager.slideWidth}
+        stationaryMotion={pager.stationaryMotion}
+        reduceMotion={reduceMotion}
         viewportWidth={viewportWidth}
       >
         {content}

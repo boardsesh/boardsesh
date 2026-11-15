@@ -4,6 +4,7 @@ import Foundation
 enum ClimbOverlayMotion {
   static let editDuration: Double = 0.120
   static let editLift: Float = 0.12
+  static let revealBand: Float = 0.22
 
   struct Selection {
     let lowerOffset: Int
@@ -26,14 +27,34 @@ enum ClimbOverlayMotion {
     return Selection(lowerOffset: 0,upperOffset: 0,progress: 0)
   }
 
-  /// The final compositor already weights the lower source by 1-p and the
-  /// upper source by p. These extra scales make a changed role go fully dark
-  /// before the other role lights, rather than inventing a third role colour.
-  static func roleScales(_ progress: Float) -> (lower: Float, upper: Float) {
+  /// Progress at one whole hold's screen-space centre. The incoming upper
+  /// page starts on the right; reducing progress reverses the same wave.
+  static func revealProgress(_ progress: Float, centerX: Float, mirrored: Bool) -> Float {
     let progress = min(1, max(0, progress.isFinite ? progress : 0))
-    let lower = progress < 1 ? max(0, 1 - 2 * progress) / (1 - progress) : 0
-    let upper = progress > 0 ? max(0, 2 * progress - 1) / progress : 0
-    return (lower, upper)
+    if progress == 0 { return 0 }
+    if progress == 1 { return 1 }
+    let center = min(1,max(0,centerX.isFinite ? centerX : 0))
+    let screenCenter = mirrored ? 1-center : center
+    let halfBand = revealBand * 0.5
+    let boundary = 1+halfBand-progress*(1+2*halfBand)
+    let position = min(1,max(0,(screenCenter-(boundary-halfBand))/revealBand))
+    return position*position*(3-2*position)
+  }
+
+  /// Membership: 0 unique, 1 shared same role, 2 shared changed role.
+  static func holdWeight(reveal: Float, membership: Int, upper: Bool) -> Float {
+    if membership == 1 { return upper ? 0 : 1 }
+    if membership == 2 { return upper ? max(2*reveal-1,0) : max(1-2*reveal,0) }
+    return upper ? reveal : 1-reveal
+  }
+
+  static func ownershipDistance(distance: Float, reach: Float, weight: Float) -> Float {
+    guard weight > 0 else { return .infinity }
+    return distance+reach*(1-weight)/max(weight,0.0001)
+  }
+
+  static func mergeDistance(actualNearest: Float, nearestScore: Float, runnerScore: Float) -> Float {
+    actualNearest+max(runnerScore-nearestScore,0)
   }
 
   static func editIllumination(elapsed: Double) -> Float {

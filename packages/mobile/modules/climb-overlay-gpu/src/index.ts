@@ -10,6 +10,9 @@ export type ClimbOverlayGPUReady = {
   gpuMs: number;
   atlasBytes: number;
   atlasCacheHit: boolean;
+  editChangedHoldCount?: number;
+  editDurationMs?: number;
+  lowPowerMode?: boolean;
 };
 
 export type ClimbOverlayGPUNativeProps = ViewProps & {
@@ -34,6 +37,8 @@ export type ClimbOverlayGPUMotionProps = ClimbOverlayGPUFrameProps & {
   /** Absolute pager position, updated directly from a UI-thread worklet. */
   pagePosition?: number;
   animateEdits: boolean;
+  /** The outer view mirrors artwork; only reverse the reveal direction here. */
+  displayMirrored?: boolean;
   reduceMotion: boolean;
 };
 
