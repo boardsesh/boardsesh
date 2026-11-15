@@ -4,15 +4,17 @@ This is the default iOS GPU renderer for the current play-drawer climb and creat
 
 Production surfaces require native API v2. They use the existing board configuration builder, full layout geometry and current appearance settings. Static configuration and changing climb frames travel separately: swipes and hold edits reuse the prepared atlas rather than parsing and uploading the full board again. Layout, resolution or appearance changes can require new preparation. A bounded, one-entry native cache survives view remounts and is cleared on memory warnings; it is not a persistent disk cache.
 
-The current PNG stays above an incoming GPU surface until the native drawable has been presented. A missing module, unsupported configuration, rendering error or ten-second readiness timeout restores normal PNG rendering. Empty selections remove the live overlay immediately. GPU readiness is never written into the PNG cache or snapshot contract. Native rendering pauses while inactive or detached.
+A matching full-size PNG stays above an incoming GPU surface until the native drawable and board photographs are ready. Row thumbnails cannot bridge this transition: their filled-hold appearance can differ from the full board. A missing module, unsupported configuration, rendering error or ten-second readiness timeout restores normal PNG rendering. Empty player selections remove the live overlay immediately. The v3 editor retains a transparent empty scene so the very first hold receives the same feedback as later edits. GPU readiness is never written into the PNG cache or snapshot contract. Native rendering pauses while inactive or detached.
 
 ## Swipe and edit feedback
 
-Native API v3 supports the stationary play-drawer wall. The photograph stays in one zoomable surface while the existing pager moves the title and supplies an absolute page position directly from its UI-thread shared values. Current, previous and next hold lists share one atlas. Moving the finger only changes a numeric native property; it does not parse the layout, upload geometry or update React state per frame.
+Native API v3 supports the stationary play-drawer wall. The photograph stays in one zoomable surface while the existing pager moves the title by at most 24 points, fades between names and supplies an absolute page position directly from its UI-thread shared values. Current, previous and next hold lists share one atlas. Moving the finger only changes a numeric native property; it does not parse the layout, upload geometry or update React state per frame.
 
-The compositor blends outgoing and incoming climbs into one premultiplied output, so the veil is not stacked twice. Shared holds with the same role remain steady. A hold whose role changes fades its old mark through clear before its new role appears, preserving the meaning of role colours and glyphs. Exact endpoints use the still renderer. Cancelling restores the original endpoint; a committed swipe settles on the next climb. Unsupported scenes retain the existing image carousel.
+A soft directional reveal changes each hold’s lighting as it crosses the stationary wall. Its 22%-wide band uses the hold’s display position, including mirroring. One weighted field combines outgoing and incoming holds without duplicating the veil or same-role holds. Shared holds with the same role remain steady. A hold whose role changes fades its old mark through clear before its new role appears, preserving the meaning of role colours and glyphs. Exact endpoints use the still renderer. Cancelling restores the original endpoint; a committed swipe settles on the next climb. Unsupported scenes retain the existing image carousel.
 
-In Create Climb, the new role and glyph appear immediately. Added or changed holds receive a bounded illumination lift that settles within 120 ms; removals disappear immediately. Undo and Redo use the same frame-difference treatment. A new edit replaces the previous effect instead of queuing it, and initial mounting or layout changes do not animate. Reduce Motion shows the exact committed state directly; Low Power Mode suppresses the optional edit feedback. The native display link stops when the effect ends or the view becomes inactive.
+In Create Climb, the new role and glyph appear immediately. Added or changed holds receive a bounded illumination lift that settles within 120 ms; removals disappear immediately. Undo and Redo use the same frame-difference treatment. A new edit replaces the previous effect instead of queuing it. Opening an existing climb or changing the layout does not animate; an empty editor records its baseline before preparation finishes, so a fast first tap still gets feedback. Reduce Motion shows the exact committed state directly; Low Power Mode suppresses the optional edit feedback. The native display link stops when the effect ends or the view becomes inactive.
+
+Both the player and editor preserve their unzoomed board size while allowing zoom to fill the available width. Pan limits use the full viewport. Editor taps and role-menu anchors account for the centred board offset, including mirrored boards.
 
 For repeatable capture, the story URL accepts `gpu=1`, `sample=0` through `4`, `resolution=512|768|1024`, `mode=compare|rust|metal`, and `verify=1`. Invalid inputs use the normal defaults; the unparameterized story keeps GPU drawing off. `verify=1` runs one pixel comparison after that request is ready and logs its metrics and PNG paths with the `[gpu-climb-parity]` prefix. The story harness's `theme=light|dark` parameter sets appearance.
 
@@ -20,7 +22,7 @@ For repeatable capture, the story URL accepts `gpu=1`, `sample=0` through `4`, `
 
 Both sides receive identical Rust render configuration for Kilter Homewall layout 8, size 17, sets 26 and 27: real catalogue placements and traced silhouettes, the current shared Aura defaults, and the current light/dark veil. The test climbs are synthetic selections of real holds; they are never saved to the account. Five samples cover six spread holds, 30 spread holds, adjacent same-colour holds, adjacent different-colour holds, and an empty climb.
 
-The story's own switch starts off and enables its optional native view independently of the production feature flag. A missing native module or rendering error shows the matching Rust image. There is no animation loop, breathing or glide. The story disables drawing on route blur; the native view also handles application/window inactivity.
+The story's own switch starts off and enables its optional native view independently of production rendering. A missing native module or rendering error shows the matching Rust image. There is no animation loop, breathing or glide. The story disables drawing on route blur; the native view also handles application/window inactivity.
 
 The initial output width is 768 pixels. The resolution button cycles through 512, 768, and 1024 pixels; both renderers receive the same resolution. A native memory-budget failure is reported and falls back to Rust. This experiment does not establish sharpness under pinch zoom or production rendering speed.
 
@@ -46,3 +48,11 @@ Initial iPhone 17 Pro evidence at 768 × 1047 pixels: the sparse dark sample dif
 The v2 live integration on the same iPhone reported fourteen consecutive cached requests with 0.063–0.157 ms preparation, zero upload time and 2.82–4.44 ms GPU execution. Their active atlas payload was 61,516,448 bytes. These readings confirm reuse across frame updates; they do not include gesture handling, JS scheduling or total time to visible presentation. Cold-start latency and peak process memory remain separate measurements.
 
 An Android implementation would need a native drawing surface, equivalent resource preparation/cache and lifecycle handling, plus matching shader math (Vulkan/AGSL or a portable wgpu backend). A wgpu path would also need Rust/native surface ownership, shader/backend packaging, binary-size measurement, and parity checks. Neither ships in this slice.
+
+## Initial device parity images
+
+These are the original 768 × 1047 offscreen outputs captured on the iPhone 17 Pro, not screenshots of the later swipe animation. They document still-image parity only.
+
+| Rust reference | Metal output |
+| --- | --- |
+| ![Rust sparse dark reference](images/gpu-climb-overlay/initial-rust-dark.png) | ![Metal sparse dark output](images/gpu-climb-overlay/initial-metal-dark.png) |
