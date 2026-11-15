@@ -16,8 +16,11 @@ export async function acknowledgeClimbWrite(
   db: OfflineDatabase,
   mutation: PendingMutation,
   graphqlFetch: GraphQLFetch,
+  assertCurrent?: () => void,
+  selected = false,
 ): Promise<void> {
   if (mutation.table_name !== 'board_climbs') return;
+  assertCurrent?.();
   const payload = JSON.parse(mutation.payload) as { uuid: string; boardType: string; sprayWallUuid?: string };
   if (payload.boardType !== 'spray') return;
   const generation = captureAuthCredentialGeneration();
@@ -26,12 +29,17 @@ export async function acknowledgeClimbWrite(
     'SELECT layout_id FROM board_climbs WHERE uuid = ? AND board_type = ?',
     [payload.uuid, payload.boardType],
   );
+  assertCurrent?.();
   if (!climb) throw new Error('Queued climb is missing from this device');
   const scope = { boardType: 'spray', layoutId: climb.layout_id, sizeId: climb.layout_id };
-  const canWrite = () =>
-    isAuthCredentialGenerationCurrent(generation) &&
-    !isSigningOut() &&
-    !hasPurgeLanded(purgeToken, purgeNamespaceKey(scope));
+  const canWrite = () => {
+    assertCurrent?.();
+    return (
+      isAuthCredentialGenerationCurrent(generation) &&
+      !isSigningOut() &&
+      !hasPurgeLanded(purgeToken, purgeNamespaceKey(scope))
+    );
+  };
   const response = await graphqlFetch<SavedClimbDocumentsResponse>(SAVED_CLIMB_DOCUMENTS, {
     boardType: payload.boardType,
     layoutId: climb.layout_id,
@@ -39,13 +47,20 @@ export async function acknowledgeClimbWrite(
     sprayWallUuid: payload.sprayWallUuid,
   });
   if (!canWrite() || !response.syncClimbDocuments) throw new Error('Canonical climb is unavailable');
-  const mirrored = await mirrorSavedClimb(
-    db,
-    scope,
-    payload.uuid,
-    response.syncClimbDocuments,
-    canWrite,
-    mutation.idempotency_key,
-  );
+  const canonicalDocuments = response.syncClimbDocuments;
+  const mirror = () =>
+    mirrorSavedClimb(db, scope, payload.uuid, canonicalDocuments, canWrite, mutation.idempotency_key);
+  const mirrored = selected
+    ? await mirrorSavedClimb(
+        db,
+        scope,
+        payload.uuid,
+        canonicalDocuments,
+        canWrite,
+        mutation.idempotency_key,
+        assertCurrent,
+      )
+    : await mirror();
+  assertCurrent?.();
   if (!mirrored) throw new Error('Canonical climb reconciliation was interrupted');
 }

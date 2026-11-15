@@ -1,77 +1,77 @@
 import type { QueryInvalidator } from '../database';
 import { scopedInvalidateFilters, type BoardScopeKey, type InvalidateKeys } from './invalidate-keys';
+import { holdSyncRequest } from '../network/request-context';
 
-/** A filter that names its queries outright, with no table behind it: a retired wall's renderer keys. */
 type DirectInvalidateFilters = { queryKey: readonly unknown[]; exact?: boolean };
-
-/**
- * One pull cycle's query invalidations, held until `flush`.
- *
- * A cycle used to invalidate as it went: once per table that moved rows, once
- * per tombstone page. Several tables share a key, so one cycle refetched the
- * same on-screen query many times over, each refetch cancelling the one before
- * it (#6302). The pull client now queues here and flushes at the end of a
- * phase, so a key is invalidated once for everything the phase changed.
- *
- * Queuing only ever DELAYS an invalidation, and only until the caller's next
- * flush. The pull client flushes in a `finally`, so rows a cycle committed
- * before it threw or was torn down still reach the UI. A flush tries every
- * entry even when one throws.
- */
 export type InvalidationBatch = {
-  /**
-   * Queue a table's keys. `scope` is the one board whose rows changed; leave it
-   * out when the change names no board (a user table), and every board's entry
-   * refreshes.
-   */
-  add(keys: InvalidateKeys, scope?: BoardScopeKey | null): void;
-  /** Queue one filter as given. */
-  addFilters(filters: DirectInvalidateFilters): void;
-  /** Invalidate everything queued, once each, in the order it was queued. */
+  add(keys: InvalidateKeys, scope?: BoardScopeKey | null, assertCurrent?: () => void): void;
+  addFilters(filters: DirectInvalidateFilters, assertCurrent?: () => void): void;
   flush(): void;
 };
-
 type PendingInvalidation = {
   filters: Parameters<QueryInvalidator['invalidateQueries']>[0];
-  /** Set on a board-scoped entry: the id of the same key queued for every board. */
   unscopedId?: string;
+  unconditional: boolean;
+  causes: Set<() => void>;
 };
 
+/** Existing native batches stay unconditional. Selected batches retain at most
+ * ten independent original mutation causes, then flush before disposing them. */
 export function createInvalidationBatch(queryClient: QueryInvalidator): InvalidationBatch {
-  // A Map keeps insertion order, and re-queuing a key leaves it in its first slot.
   let pending = new Map<string, PendingInvalidation>();
-
+  const add = (
+    id: string,
+    filters: PendingInvalidation['filters'],
+    unscopedId: string | undefined,
+    assertCurrent?: () => void,
+  ) => {
+    let entry = pending.get(id);
+    if (!entry) {
+      entry = { filters, unscopedId, unconditional: false, causes: new Set() };
+      pending.set(id, entry);
+    }
+    if (!assertCurrent) entry.unconditional = true;
+    else {
+      if (!entry.causes.has(assertCurrent) && entry.causes.size >= 10) throw holdSyncRequest();
+      entry.causes.add(assertCurrent);
+    }
+  };
+  const isCurrent = (entry: PendingInvalidation) => {
+    if (entry.unconditional) return true;
+    for (const assertCurrent of entry.causes) {
+      try {
+        assertCurrent();
+        return true;
+      } catch {
+        /* Retired causes authorize nothing. */
+      }
+    }
+    return false;
+  };
   return {
-    add(keys, scope) {
+    add(keys, scope, assertCurrent) {
       for (const key of keys) {
         const filters = scopedInvalidateFilters(key, scope);
         const unscopedId = JSON.stringify([key, false]);
-        if (filters.predicate && scope) {
-          const scopedId = JSON.stringify([key, false, scope.boardType, scope.layoutId]);
-          if (!pending.has(scopedId)) pending.set(scopedId, { filters, unscopedId });
-        } else if (!pending.has(unscopedId)) {
-          pending.set(unscopedId, { filters });
-        }
+        if (filters.predicate && scope)
+          add(JSON.stringify([key, false, scope.boardType, scope.layoutId]), filters, unscopedId, assertCurrent);
+        else add(unscopedId, filters, undefined, assertCurrent);
       }
     },
-
-    addFilters(filters) {
-      const id = JSON.stringify([filters.queryKey, filters.exact === true]);
-      if (!pending.has(id)) pending.set(id, { filters });
+    addFilters(filters, assertCurrent) {
+      add(JSON.stringify([filters.queryKey, filters.exact === true]), filters, undefined, assertCurrent);
     },
-
     flush() {
       const flushing = pending;
-      // Emptied first: a flush that throws must not replay on the next one.
       pending = new Map();
       let failure: { error: unknown } | undefined;
-      for (const { filters, unscopedId } of flushing.values()) {
-        // The same key queued for every board already covers this one board.
-        if (unscopedId !== undefined && flushing.has(unscopedId)) continue;
+      for (const entry of flushing.values()) {
+        const unscoped = entry.unscopedId ? flushing.get(entry.unscopedId) : undefined;
+        if (unscoped && isCurrent(unscoped)) continue;
+        if (!isCurrent(entry)) continue;
         try {
-          queryClient.invalidateQueries(filters);
+          queryClient.invalidateQueries(entry.filters);
         } catch (error) {
-          // One key failing must not cost the rest of the phase its refresh.
           failure ??= { error };
         }
       }

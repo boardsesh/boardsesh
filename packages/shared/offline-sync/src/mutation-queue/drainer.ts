@@ -1,6 +1,14 @@
 import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
-import { processMutation } from './handlers';
+import { processMutation, isLocalMutationValidationError } from './handlers';
+import {
+  holdSyncRequest,
+  isSyncRequestHeld,
+  type CapturedSyncSession,
+  type CapturedSyncRequest,
+} from '../network/request-context';
+import { runPullWrite } from '../sync/pull-write';
+import type { SqlExecutor } from '../database';
 import { peekPending, markCompleted, recordFailure, markDeadLetter, type PendingMutation } from './queue';
 import {
   isGraphQLEmptyResponseError,
@@ -128,7 +136,7 @@ export function onTeardown(listener: () => void): () => void {
 function notifyTeardown(): void {
   // Snapshot first: a listener that unsubscribes itself must not mutate the set
   // being iterated.
-  for (const listener of [...teardownListeners]) {
+  for (const listener of Array.from(teardownListeners)) {
     try {
       listener();
     } catch {
@@ -225,7 +233,7 @@ export function onPurgeSettled(listener: (namespace: string) => void): () => voi
 function notifyPurgeSettled(namespace: string): void {
   // Snapshot first, same as notifyTeardown: a listener that unsubscribes itself
   // must not mutate the set being iterated.
-  for (const listener of [...purgeSettledListeners]) {
+  for (const listener of Array.from(purgeSettledListeners)) {
     try {
       listener(namespace);
     } catch {
@@ -338,7 +346,7 @@ export type MutationDeadLetterInfo = {
   error: unknown;
 };
 
-export type MutationDeadLetterReporter = (info: MutationDeadLetterInfo) => void;
+export type MutationDeadLetterReporter = (info: MutationDeadLetterInfo, assertCurrent?: () => void) => void;
 
 /**
  * Why a drain sent nothing because the outbox is not provably the signed-in
@@ -348,6 +356,8 @@ export type MutationDeadLetterReporter = (info: MutationDeadLetterInfo) => void;
 export type OutboxOwnerRefusal = 'no-signed-in-user' | 'unstamped' | 'other-account';
 
 export type DrainOptions = {
+  /** Fixed platform-owned network identity; selected callers cannot omit it after refusal. */
+  network?: CapturedSyncSession;
   /** Injectable sleep for deterministic tests. Defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
   /** Max retryable attempts within one drain cycle before giving up. */
@@ -388,7 +398,7 @@ export type DrainOptions = {
    * not throw (a throw is swallowed). The mobile adapter reports
    * `other-account` once per process.
    */
-  onOutboxOwnerRefused?: (reason: OutboxOwnerRefusal) => void;
+  onOutboxOwnerRefused?: (reason: OutboxOwnerRefusal, assertCurrent?: () => void) => void;
   /**
    * Called when a mutation fails with a server-side failure signal (5xx or the
    * masked INTERNAL_SERVER_ERROR shape the backend serves over HTTP 200).
@@ -413,9 +423,13 @@ export type DrainOptions = {
    * enqueue from server acknowledgement or permanent rejection. The
    * idempotency key is the entity UUID for tick creates.
    */
-  onMutationStatus?: (event: MutationDeliveryEvent) => void;
+  onMutationStatus?: (event: MutationDeliveryEvent, assertCurrent?: () => void) => void;
   /** Reconcile canonical climb data before releasing its queued dependents. */
-  beforeMutationAcknowledged?: (mutation: PendingMutation, graphqlFetch: GraphQLFetch) => Promise<void>;
+  beforeMutationAcknowledged?: (
+    mutation: PendingMutation,
+    graphqlFetch: GraphQLFetch,
+    request?: CapturedSyncRequest,
+  ) => Promise<void>;
   /** Platform-owned telemetry for a throwing delivery callback. */
   onMutationStatusError?: (failure: MutationStatusListenerFailure) => void;
   /**
@@ -427,10 +441,17 @@ export type DrainOptions = {
   onMutationDeadLettered?: MutationDeadLetterReporter;
 };
 
-function notifyMutationStatus(options: DrainOptions, event: MutationDeliveryEvent): void {
+function notifyMutationStatus(options: DrainOptions, event: MutationDeliveryEvent, assertCurrent?: () => void): void {
+  assertCurrent?.();
   try {
-    options.onMutationStatus?.(event);
+    if (assertCurrent) options.onMutationStatus?.(event, assertCurrent);
+    else options.onMutationStatus?.(event);
   } catch (error) {
+    try {
+      assertCurrent?.();
+    } catch {
+      return;
+    }
     try {
       options.onMutationStatusError?.({ error, event });
     } catch (reportingError) {
@@ -444,20 +465,34 @@ function notifyMutationStatus(options: DrainOptions, event: MutationDeliveryEven
   }
 }
 
-function notifyDeadLetter(options: DrainOptions, info: MutationDeadLetterInfo): void {
+function notifyDeadLetter(options: DrainOptions, info: MutationDeadLetterInfo, assertCurrent?: () => void): void {
+  assertCurrent?.();
   try {
-    options.onMutationDeadLettered?.(info);
+    if (assertCurrent) options.onMutationDeadLettered?.(info, assertCurrent);
+    else options.onMutationDeadLettered?.(info);
   } catch (reportingError) {
+    try {
+      assertCurrent?.();
+    } catch {
+      return;
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[MutationQueue] dead-letter reporter failed:', reportingError);
     }
   }
 }
 
-function notifyOutboxOwnerRefused(options: DrainOptions, reason: OutboxOwnerRefusal): void {
+function notifyOutboxOwnerRefused(options: DrainOptions, reason: OutboxOwnerRefusal, assertCurrent?: () => void): void {
+  assertCurrent?.();
   try {
-    options.onOutboxOwnerRefused?.(reason);
+    if (assertCurrent) options.onOutboxOwnerRefused?.(reason, assertCurrent);
+    else options.onOutboxOwnerRefused?.(reason);
   } catch (reportingError) {
+    try {
+      assertCurrent?.();
+    } catch {
+      return;
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.warn('[MutationQueue] outbox-owner reporter failed:', reportingError);
     }
@@ -484,7 +519,11 @@ function backoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
   return Math.floor(Math.random() * exponential);
 }
 
-function queueInvalidationForTable(invalidations: InvalidationBatch, tableName: string): void {
+function queueInvalidationForTable(
+  invalidations: InvalidationBatch,
+  tableName: string,
+  assertCurrent?: () => void,
+): void {
   const keys = invalidateKeysForTable(tableName);
   if (!keys) {
     // table_name is a plain string, so a NEW mutation type missing from the
@@ -498,7 +537,7 @@ function queueInvalidationForTable(invalidations: InvalidationBatch, tableName: 
     }
     return;
   }
-  invalidations.add(keys);
+  invalidations.add(keys, undefined, assertCurrent);
 }
 
 function formatError(error: unknown): string {
@@ -531,6 +570,7 @@ export async function drainMutationQueue(
   // outage; `confirmServerAvailability` covers the one failure that DISCOVERS
   // an outage, before the store has learned about it (#4862).
   if (!options.isOnline()) return;
+  if (options.network) return drainCapturedMutationQueue(db, queryClient, { ...options, network: options.network });
   _isDraining = true;
 
   const sleep = options.sleep ?? defaultSleep;
@@ -852,4 +892,254 @@ export function __resetDrainerStateForTests(): void {
   // A listener leaked by an aborted run would otherwise fire into the next test.
   teardownListeners.clear();
   purgeSettledListeners.clear();
+}
+
+/** A captured cycle never resolves another account after SQLite or network waits. */
+async function drainCapturedMutationQueue(
+  db: OfflineDatabase,
+  queryClient: QueryInvalidator,
+  provided: DrainOptions & { network: CapturedSyncSession },
+): Promise<void> {
+  const options = Object.freeze({ ...provided });
+  const { userId, assertView: assertNetworkView, beginRequest } = options.network;
+  const selected = options.network.kind === 'selected';
+  const purge = capturePurgeToken();
+  const assertView = () => {
+    try {
+      if (_isSigningOut || _isBackgrounded || hasPurgeLanded(purge)) throw holdSyncRequest();
+      assertNetworkView();
+    } catch {
+      throw holdSyncRequest();
+    }
+  };
+  const invalidations = createInvalidationBatch(queryClient);
+  let retained: CapturedSyncRequest[] = [];
+  const flush = () => {
+    try {
+      invalidations.flush();
+    } finally {
+      for (const request of retained) request.dispose();
+      retained = [];
+    }
+  };
+  const writeMutation = async <Result>(
+    mutation: PendingMutation,
+    assertCause: () => void,
+    site: string,
+    task: (transaction: SqlExecutor) => Promise<Result>,
+  ): Promise<Result> => {
+    return runPullWrite(
+      db,
+      async (transaction) => {
+        assertCause();
+        const stamped = await getLocalUserId(transaction);
+        assertCause();
+        if (stamped !== userId) throw holdSyncRequest();
+        const current = await transaction.getFirstAsync<PendingMutation>(
+          'SELECT * FROM pending_mutations WHERE id = ?',
+          [mutation.id],
+        );
+        assertCause();
+        if (
+          !current ||
+          (Object.keys(mutation) as (keyof PendingMutation)[]).some((key) => current[key] !== mutation[key])
+        )
+          throw holdSyncRequest();
+        const result = await task(transaction);
+        assertCause();
+        return result;
+      },
+      { site, assertCurrent: assertCause },
+    );
+  };
+  const publish = (mutation: PendingMutation, status: MutationDeliveryEvent['status'], assertCause: () => void) => {
+    assertCause();
+    queueInvalidationForTable(invalidations, mutation.table_name, assertCause);
+    assertCause();
+    notifyMutationStatus(
+      options,
+      {
+        tableName: mutation.table_name,
+        operation: mutation.operation,
+        idempotencyKey: mutation.idempotency_key,
+        ...(mutation.entity_key != null ? { entityKey: mutation.entity_key } : {}),
+        status,
+      },
+      assertCause,
+    );
+    assertCause();
+  };
+  _isDraining = true;
+  let retryAttempts = 0;
+  try {
+    assertView();
+    const stamp = await getLocalUserId(db);
+    assertView();
+    if (stamp !== userId) {
+      notifyOutboxOwnerRefused(options, stamp === null ? 'unstamped' : 'other-account', assertView);
+      return;
+    }
+    while (options.isOnline()) {
+      assertView();
+      const batch = await peekPending(db, 10);
+      assertView();
+      if (!batch.length) break;
+      let retryableHit = false;
+      for (const pendingMutation of batch) {
+        assertView();
+        const mutation = Object.freeze({ ...pendingMutation });
+        let request: CapturedSyncRequest | undefined = beginRequest();
+        const originalRequest = request;
+        const ownedFetch: GraphQLFetch = async <Result>(
+          query: string,
+          variables?: Record<string, unknown>,
+        ): Promise<Result> => {
+          assertView();
+          originalRequest.assertView();
+          const stamped = await getLocalUserId(db);
+          assertView();
+          originalRequest.assertView();
+          if (stamped !== userId) throw holdSyncRequest();
+          return originalRequest.fetch<Result>(query, variables);
+        };
+        const assertSuccess = () => {
+          assertView();
+          try {
+            originalRequest.assertDeliveries();
+          } catch {
+            throw holdSyncRequest();
+          }
+        };
+        let stage: 'send' | 'reconcile' | 'bookkeeping' | 'effects' = 'send';
+        try {
+          await processMutation(mutation, ownedFetch, { requirePreExecutionValidation: selected });
+          assertSuccess();
+          stage = 'reconcile';
+          await options.beforeMutationAcknowledged?.(mutation, ownedFetch, originalRequest);
+          assertSuccess();
+          stage = 'bookkeeping';
+          await writeMutation(mutation, assertSuccess, 'outbox-ack', (transaction) =>
+            markCompleted(transaction, mutation.id),
+          );
+          stage = 'effects';
+          publish(mutation, 'acknowledged', assertSuccess);
+          retained.push(originalRequest);
+          request = undefined;
+        } catch (error: unknown) {
+          assertView();
+          if (isSyncRequestHeld(error)) return;
+          if ((!selected || stage === 'bookkeeping') && isDatabaseLockedError(error)) {
+            retryableHit = true;
+            break;
+          }
+          // A send that succeeded cannot acquire a failure verdict from later
+          // reconciliation, SQLite or an external callback, including replayed errors.
+          // Legacy work retains its original classification of local failures.
+          if (stage !== 'send' && selected) return;
+          const localVerdict = isLocalMutationValidationError(error, mutation);
+          const assertFailure = () => {
+            assertView();
+            if (!localVerdict) {
+              try {
+                if (selected || stage === 'send') originalRequest.assertErrorDeliveries(error);
+                else originalRequest.assertView();
+              } catch {
+                throw holdSyncRequest();
+              }
+            }
+          };
+          assertFailure();
+          if (isGraphQLEmptyResponseError(error) && !selected) {
+            retryableHit = true;
+            break;
+          }
+          if (isNetworkError(error) || isServerUnavailableError(error)) return;
+          if (isServerFailureSignal(error) && options.confirmServerAvailability) {
+            let available = false;
+            try {
+              available = await options.confirmServerAvailability();
+            } catch (probeError) {
+              assertFailure();
+              try {
+                options.onServerAvailabilityProbeError?.(probeError);
+              } catch {
+                /* Observational only. */
+              }
+            }
+            assertFailure();
+            if (!available) return;
+          }
+          const message = formatError(error);
+          if (isClimbReferenceToDeletedClimb(mutation.table_name, mutation.operation, error)) {
+            await writeMutation(mutation, assertFailure, 'outbox-reference-ack', (transaction) =>
+              markCompleted(transaction, mutation.id),
+            );
+            publish(mutation, 'acknowledged', assertFailure);
+          } else {
+            const retryable = !(selected && localVerdict) && isRetryable(error);
+            const outcome = retryable
+              ? await writeMutation(mutation, assertFailure, 'outbox-failure', (transaction) =>
+                  recordFailure(transaction, mutation.id, message),
+                )
+              : await writeMutation(mutation, assertFailure, 'outbox-dead-letter', async (transaction) => {
+                  await markDeadLetter(transaction, mutation.id, message);
+                  return { status: 'dead_letter' as const, retryCount: mutation.retry_count };
+                });
+            assertFailure();
+            if (outcome.status === 'dead_letter') {
+              publish(mutation, 'dead_letter', assertFailure);
+              assertFailure();
+              notifyDeadLetter(
+                options,
+                {
+                  tableName: mutation.table_name,
+                  operation: mutation.operation,
+                  idempotencyKey: mutation.idempotency_key,
+                  reason: retryable ? 'retries_exhausted' : 'non_retryable',
+                  retryCount: outcome.retryCount,
+                  maxRetries: mutation.max_retries,
+                  queuedForMs: queuedForMs(mutation.created_at),
+                  status: getErrorStatus(error),
+                  errorMessage: message,
+                  error,
+                },
+                assertFailure,
+              );
+              assertFailure();
+            } else queueInvalidationForTable(invalidations, mutation.table_name, assertFailure);
+            retryableHit = retryable;
+          }
+          retained.push(originalRequest);
+          request = undefined;
+          if (retryableHit) break;
+        } finally {
+          request?.dispose();
+        }
+      }
+      // Bound retained original causes to the existing ten-row peek batch.
+      flush();
+      if (retryableHit) {
+        if (retryAttempts >= (options.maxCycleAttempts ?? DEFAULT_MAX_CYCLE_ATTEMPTS)) break;
+        assertView();
+        if (!options.isOnline()) break;
+        await (options.sleep ?? defaultSleep)(
+          backoffDelay(
+            retryAttempts,
+            options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
+            options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+          ),
+        );
+        assertView();
+        retryAttempts += 1;
+      } else retryAttempts = 0;
+    }
+  } catch (error) {
+    if (!isSyncRequestHeld(error)) throw error;
+  } finally {
+    try {
+      flush();
+    } finally {
+      _isDraining = false;
+    }
+  }
 }

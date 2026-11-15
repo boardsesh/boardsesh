@@ -1,3 +1,4 @@
+import { isSyncRequestHeld } from '../network/request-context';
 // The write primitives every background writer in the sync engine shares: the
 // bound-parameter ceiling, the multi-row INSERT builder sized against it, and the
 // retried IMMEDIATE transaction a write nobody is waiting on runs in.
@@ -139,13 +140,17 @@ export async function runPullWrite<T = void>(
   try {
     await runLocalWriteWithRetry(
       async (attempt) => {
+        options.assertCurrent?.();
         try {
           await db.withExclusiveTransactionAsync(async (transaction) => {
             await beginImmediateWrite(transaction, ladder.busyTimeoutMs(attempt));
+            options.assertCurrent?.();
             result = await task(transaction);
+            options.assertCurrent?.();
           });
         } catch (error) {
           if (attempt === 1) firstAttemptLostLock = isDatabaseLockedError(error);
+          options.assertCurrent?.();
           throw error;
         }
       },
@@ -156,7 +161,13 @@ export async function runPullWrite<T = void>(
         onSettled: ({ attempts, error, recovered, elapsedMs }) => {
           // A non-lock throw on attempt 1 is a task's own control flow (an abort
           // sentinel, a guard), not contention, and is not worth an event.
-          if (!firstAttemptLostLock) return;
+          if (!firstAttemptLostLock || isSyncRequestHeld(error)) return;
+          // A settled diagnostic is another effect of this original write.
+          try {
+            options.assertCurrent?.();
+          } catch {
+            return;
+          }
           const outcome: PullWriteOutcome = recovered
             ? options.refusedWhen?.(result as T)
               ? 'refused'
@@ -204,7 +215,12 @@ export async function runGuardedPullWrite(
       await task(transaction);
       return true;
     },
-    { site: options.site, sizing: options.sizing, refusedWhen: (wrote) => !wrote },
+    {
+      site: options.site,
+      sizing: options.sizing,
+      assertCurrent: options.assertCurrent,
+      refusedWhen: (wrote) => !wrote,
+    },
   );
 }
 
@@ -218,6 +234,8 @@ export async function runGuardedPullWrite(
 export type PullWriteSizing = 'background' | 'foreground';
 
 export type PullWriteOptions = {
+  /** Runs under the writer lock before work and immediately before commit. */
+  assertCurrent?: () => void;
   /**
    * Low-cardinality label for telemetry: what the write is, never which scope.
    * `deletions-coverage`, `scope-complete`, `bootstrap-retry-state`, ….
