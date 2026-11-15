@@ -28,12 +28,17 @@ const MAX_TRACKED_BOARDS = 50;
 /** `boardUuid -> { angle, updatedAt }`. `updatedAt` drives the eviction order. */
 type StoredBoardAngles = Record<string, { angle: number; updatedAt: number }>;
 
+// Every board shares one stored map. Serialize the complete read/modify/write,
+// otherwise overlapping saves can overwrite another board or a newer angle.
+let angleWriteQueue: Promise<void> = Promise.resolve();
+
 async function readAll(): Promise<StoredBoardAngles> {
   return (await getPreference<StoredBoardAngles>(BOARD_ANGLES_KEY)) ?? {};
 }
 
 /** The angle this board was last set to on this device, or null if untracked. */
 export async function getStoredBoardAngle(boardUuid: string): Promise<number | null> {
+  await angleWriteQueue;
   const entry = (await readAll())[boardUuid];
   return entry?.angle ?? null;
 }
@@ -43,18 +48,23 @@ export async function getStoredBoardAngle(boardUuid: string): Promise<number | n
  * depend on the clock; callers pass nothing.
  */
 export async function setStoredBoardAngle(boardUuid: string, angle: number, now: number = Date.now()): Promise<void> {
-  const angles = await readAll();
-  angles[boardUuid] = { angle, updatedAt: now };
+  const operation = angleWriteQueue.then(async () => {
+    const angles = await readAll();
+    angles[boardUuid] = { angle, updatedAt: now };
 
-  const trackedUuids = Object.keys(angles);
-  if (trackedUuids.length > MAX_TRACKED_BOARDS) {
-    const oldestFirst = trackedUuids.sort((left, right) => angles[left].updatedAt - angles[right].updatedAt);
-    for (const staleUuid of oldestFirst.slice(0, trackedUuids.length - MAX_TRACKED_BOARDS)) {
-      delete angles[staleUuid];
+    const trackedUuids = Object.keys(angles);
+    if (trackedUuids.length > MAX_TRACKED_BOARDS) {
+      const oldestFirst = trackedUuids.sort((left, right) => angles[left].updatedAt - angles[right].updatedAt);
+      for (const staleUuid of oldestFirst.slice(0, trackedUuids.length - MAX_TRACKED_BOARDS)) {
+        delete angles[staleUuid];
+      }
     }
-  }
 
-  await setPreference(BOARD_ANGLES_KEY, angles);
+    await setPreference(BOARD_ANGLES_KEY, angles);
+  });
+  // Return the original rejection to the caller, but keep later saves usable.
+  angleWriteQueue = operation.catch(() => undefined);
+  return operation;
 }
 
 /**

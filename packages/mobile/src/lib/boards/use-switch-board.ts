@@ -15,7 +15,7 @@ import { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import { useSetActiveBoard } from '../graphql/use-active-board';
+import { getActiveBoardWriteGeneration, useSetActiveBoard } from '../graphql/use-active-board';
 import { useAdoptFoundBoard } from '../board-discovery/use-adopt-found-board';
 import { resolveBoardAngle } from './board-angle-store';
 import { hapticSelection } from '../haptics';
@@ -126,6 +126,7 @@ export function useSwitchBoard({
         // The angle belongs to the wall being adopted, never to the one being
         // left. Carrying the current angle across is how a climber ends up
         // "on" a fixed-angle spray wall at 40°.
+        const selectionGeneration = getActiveBoardWriteGeneration();
         const angle = await resolveBoardAngle(target);
 
         // Success says nothing: the surface the climber tapped from visibly
@@ -136,6 +137,10 @@ export function useSwitchBoard({
           showToast(t('mobile.boardPresence.gymWalls.switchFailed', { board: target.name }), 'error');
           return 'failed';
         };
+
+        // Resolving the remembered angle can wait for pending storage writes.
+        // A board picked or cleared during that wait owns the newer intent.
+        if (selectionGeneration !== getActiveBoardWriteGeneration()) return reportFailure('superseded');
 
         let accepted: boolean;
         try {

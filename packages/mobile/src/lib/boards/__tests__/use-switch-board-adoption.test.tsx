@@ -21,7 +21,10 @@ const spies = vi.hoisted(() => ({
   showToast: vi.fn(),
 }));
 
-vi.mock('../../graphql/use-active-board', () => ({ useSetActiveBoard: () => spies.setActiveBoard }));
+vi.mock('../../graphql/use-active-board', () => ({
+  useSetActiveBoard: () => spies.setActiveBoard,
+  getActiveBoardWriteGeneration: () => 0,
+}));
 vi.mock('../../graphql/hooks', () => ({
   useFollowBoard: () => ({ mutate: spies.followMutate }),
   useProfile: () => ({ data: { id: 'viewer-1' } }),
