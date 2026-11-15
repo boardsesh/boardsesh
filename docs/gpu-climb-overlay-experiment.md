@@ -82,3 +82,10 @@ The [Android comparison screen](images/gpu-climb-overlay/android-comparison-scre
 | --- | --- | --- |
 | Dark | ![Android Rust dark reference](images/gpu-climb-overlay/android-rust-dark.png) | ![Android GPU dark output](images/gpu-climb-overlay/android-gpu-dark.png) |
 | Light | ![Android Rust light reference](images/gpu-climb-overlay/android-rust-light.png) | ![Android GPU light output](images/gpu-climb-overlay/android-gpu-light.png) |
+
+
+The final APK without diagnostic tracing also reported API v3 readiness in the normal player and editor (screenshot mode off, recorded local backend). Player swipes reused the atlas with zero upload time. The first editor hold, later additions, role changes, Undo and Redo reported 350 ms edit feedback; recorded frames show expansion and contraction. Disabled system animations reported reduced motion and zero edit duration. Battery Saver was confirmed on through Android power state and reported zero edit duration with low-power mode active; both system settings were restored afterward. These emulator observations do not establish a hardware frame rate.
+
+| Player swipes | Editor hold feedback |
+| --- | --- |
+| ![Android player swipes recording](images/gpu-climb-overlay/android-player-swipes.gif) | ![Android editor pulse recording](images/gpu-climb-overlay/android-editor-pulse.gif) |
