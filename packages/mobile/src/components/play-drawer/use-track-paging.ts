@@ -1,11 +1,23 @@
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   appendPlaylistTrackPage,
   findPlaylistClimbIndex,
   type PlaylistSuggestionSource,
   type PlaylistTrackPage,
 } from '@boardsesh/queue';
-import { canLoadMoreOfTrack, loadNextTrackPage, pinTrackLoader } from '../../lib/playlists/track-pager';
+import {
+  canLoadMoreOfTrack,
+  loadNextTrackPage,
+  pinTrackLoader,
+  takeTrackPageConsumer,
+  releaseUnusedTrackPage,
+  createTrackPublication,
+  sameTrackActivation,
+  isTrackPublicationSink,
+  MAX_PENDING_TRACK_PUBLICATIONS,
+  type TrackPublication,
+} from '../../lib/playlists/track-pager';
+import { holdLoadedList } from '../../lib/playlists/loaded-list-pages';
 
 /**
  * How close to the end of what is loaded the climber gets before the next page
@@ -39,7 +51,7 @@ type TrackPagingInputs = {
   setPreviewSource: Dispatch<SetStateAction<PlaylistSuggestionSource | null>>;
   /** The provider's track, read when the page lands, to see it still continues from where it was. */
   getCommittedSource: () => PlaylistSuggestionSource | null;
-  refreshCommittedSource: (source: PlaylistSuggestionSource) => void;
+  refreshCommittedSource: (source: PlaylistSuggestionSource, publication?: TrackPublication) => boolean | void;
 };
 
 /**
@@ -61,6 +73,42 @@ export function useTrackPaging({
   getCommittedSource,
   refreshCommittedSource,
 }: TrackPagingInputs): void {
+  const latestSource = useRef(source);
+  latestSource.current = source;
+  const owner = useRef({ mounted: true, epoch: 0, pending: new Map<object, TrackPublication>() });
+  const [committedPublications, setCommittedPublications] = useState<readonly object[]>([]);
+  useLayoutEffect(() => {
+    const original = owner.current;
+    original.mounted = true;
+    return () => {
+      original.mounted = false;
+      original.epoch += 1;
+      for (const publication of original.pending.values()) {
+        try {
+          publication.settle(null);
+        } catch {
+          publication.release();
+        }
+      }
+      original.pending.clear();
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (!committedPublications.length) return;
+    const acknowledged = new Set(committedPublications);
+    for (const id of acknowledged) {
+      const publication = owner.current.pending.get(id);
+      owner.current.pending.delete(id);
+      if (publication) {
+        try {
+          publication.settle(source);
+        } catch {
+          publication.release();
+        }
+      }
+    }
+    setCommittedPublications((previous) => previous.filter((id) => !acknowledged.has(id)));
+  }, [committedPublications, source]);
   // The track the player walks keeps its loader, however many other lists the
   // climber taps meanwhile. A committed walk releases the preview's.
   useEffect(() => {
@@ -73,6 +121,8 @@ export function useTrackPaging({
     const index = findPlaylistClimbIndex(source, listClimbUuid);
     if (index < 0 || source.climbs.length - 1 - index > TRACK_PAGE_LOOKAHEAD) return;
     if (!canLoadMoreOfTrack(source)) return;
+    const originalOwner = owner.current;
+    const epoch = originalOwner.epoch;
     const atLastClimb = index === source.climbs.length - 1;
     const land = (page: PlaylistTrackPage | null) => {
       if (!page) return;
@@ -83,7 +133,80 @@ export function useTrackPaging({
       // it lands only when the climber is on the last climb and Next waits on
       // it; otherwise the next swipe asks again.
       const stalled = page.climbs.length === 0 && page.nextPage === source.continuation?.nextPage;
-      if (stalled && !atLastClimb) return;
+      if (stalled && !atLastClimb) {
+        releaseUnusedTrackPage(page);
+        return;
+      }
+      let consumer;
+      try {
+        consumer = takeTrackPageConsumer(page, source);
+      } catch {
+        releaseUnusedTrackPage(page);
+        return;
+      }
+      if (consumer) {
+        let publication: TrackPublication | undefined;
+        try {
+          const assertOwner = () => {
+            if (
+              !originalOwner.mounted ||
+              originalOwner.epoch !== epoch ||
+              !sameTrackActivation(source, latestSource.current)
+            )
+              throw holdLoadedList();
+          };
+          publication = createTrackPublication(source, consumer, assertOwner, {
+            project: (current) => appendPlaylistTrackPage(current, page),
+          });
+          publication.assertCurrent();
+          if (previewTrack) {
+            if (
+              originalOwner.pending.size >= MAX_PENDING_TRACK_PUBLICATIONS ||
+              originalOwner.pending.has(publication.id) ||
+              !publication.claim()
+            ) {
+              publication.settle(null);
+              return;
+            }
+            const captured = publication;
+            originalOwner.pending.set(captured.id, captured);
+            // Claim admits this freshly created id only once. Enqueue its
+            // exact mark FIRST in the same fiber/lane/batch: the new array marks
+            // the fiber pending, preventing React from caching an eager data
+            // result before a suspended render can retire the original cause.
+            // Neither updater consumes/releases, including during replay.
+            setCommittedPublications((previous) =>
+              previous.includes(captured.id) ? previous : [...previous, captured.id],
+            );
+            setPreviewSource((current) => captured.apply(current, (held) => appendPlaylistTrackPage(held, page)));
+            return;
+          }
+          if (!isTrackPublicationSink(refreshCommittedSource)) {
+            publication.settle(null);
+            return;
+          }
+          const committed = getCommittedSource();
+          publication.assertCurrent();
+          if (!committed || !publication.owns(committed) || !continuesFrom(committed, source)) {
+            publication.settle(null);
+            return;
+          }
+          const next = appendPlaylistTrackPage(committed, page);
+          publication.assertCurrent();
+          if (!refreshCommittedSource(next, publication)) publication.settle(null);
+          return;
+        } catch {
+          if (publication) {
+            originalOwner.pending.delete(publication.id);
+            try {
+              publication.settle(null);
+            } catch {
+              publication.release();
+            }
+          } else consumer.release();
+          return;
+        }
+      }
       if (previewTrack) {
         setPreviewSource((current) =>
           current && continuesFrom(current, source) ? appendPlaylistTrackPage(current, page) : current,

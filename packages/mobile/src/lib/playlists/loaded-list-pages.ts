@@ -18,6 +18,7 @@
 
 import type { Climb } from '@boardsesh/queue';
 import type { UsePlaylistActivationOptions } from './use-playlist-activation';
+import type { HttpPageConsumer } from '../graphql/use-http-query';
 
 /** A list as it is loaded right now. */
 export type LoadedList = {
@@ -31,7 +32,11 @@ export type LoadedList = {
    * and no climbs, and the list has still moved on.
    */
   loadedRows: number;
+  /** Original causes for rows not yet admitted by a track publication. */
+  receipt?: HttpPageConsumer;
 };
+
+export type LoadedListProgress = LoadedList | { status: 'no-progress' | 'held' };
 
 export type LoadedListSource = {
   read: () => LoadedList;
@@ -39,8 +44,63 @@ export type LoadedListSource = {
    * Load the query's next page; resolves with the list as loaded after it.
    * Rejects when the page fails, which ends the track where it is.
    */
-  loadMore: () => Promise<LoadedList>;
+  loadMore: () => Promise<LoadedListProgress>;
+  /** Present only for an adopted original source, independent of its screen. */
+  assertCurrent?: () => void;
+  dispose?: () => void;
+  /** Scoped ambiguity holds; native retains its two-load terminal rule. */
+  holdOnNoProgress?: boolean;
 };
+
+const heldListLoads = new WeakSet<object>();
+export function holdLoadedList(): Error {
+  const error = new Error('The original list is unavailable');
+  error.name = 'AbortError';
+  heldListLoads.add(error);
+  return error;
+}
+export function isLoadedListHeld(error: unknown): boolean {
+  return error !== null && typeof error === 'object' && heldListLoads.has(error);
+}
+
+/** Aggregates references, never substitutes a newer operation for a cause. */
+export function combineLoadedListReceipts(
+  receipts: readonly HttpPageConsumer[],
+  assertSource?: () => void,
+): HttpPageConsumer | undefined {
+  if (!receipts.length && !assertSource) return undefined;
+  const captured = [...receipts];
+  let released = false;
+  const assertCurrent = () => {
+    try {
+      assertSource?.();
+      for (const receipt of captured) receipt.assertCurrent();
+      assertSource?.();
+    } catch {
+      throw holdLoadedList();
+    }
+  };
+  return Object.freeze({
+    assertCurrent,
+    retain() {
+      if (released) throw holdLoadedList();
+      assertCurrent();
+      return combineLoadedListReceipts(
+        captured.map((receipt) => receipt.retain()),
+        assertSource,
+      )!;
+    },
+    acknowledge() {
+      assertCurrent();
+      for (const receipt of captured) receipt.acknowledge();
+    },
+    release() {
+      if (released) return;
+      released = true;
+      for (const receipt of captured) receipt.release();
+    },
+  });
+}
 
 type FetchPage = UsePlaylistActivationOptions['fetchPage'];
 
@@ -63,6 +123,7 @@ export type LoadedListTrackLoad = {
   climbs: Climb[];
   /** The list position after the last climb served, or null at the list's end. */
   nextOffset: number | null;
+  receipt?: HttpPageConsumer;
 };
 
 export type LoadedListTrackLoader = (args: {
@@ -84,35 +145,78 @@ export function createLoadedListTrackLoader(
   isSameList: () => boolean = () => true,
 ): LoadedListTrackLoader {
   return async ({ offset, count, signal }) => {
-    if (!isSameList()) return { climbs: [], nextOffset: null };
-    let list = source.read();
-    const end = offset + count;
-    let loads = 0;
-    let loadsWithoutRows = 0;
-    while (list.climbs.length < end && list.hasMore && loads < MAX_LIST_LOADS_PER_TRACK_REQUEST) {
-      if (signal.aborted) throw abortError();
-      const loadedRows = list.loadedRows;
-      list = await source.loadMore();
-      loads += 1;
-      if (!isSameList()) return { climbs: [], nextOffset: null };
-      if (list.loadedRows > loadedRows) {
-        loadsWithoutRows = 0;
-        continue;
+    const receipts: HttpPageConsumer[] = [];
+    let transferred = false;
+    const current = () => {
+      if (!isSameList()) {
+        if (source.assertCurrent) throw holdLoadedList();
+        return false;
       }
-      // One load that added nothing is usually a refetch in flight: logging a
-      // tick refetches the logbook, and a load asked for meanwhile resolves
-      // with that refetch's pages. Once it settles the next load is real, so
-      // only a second one in a row means the list is stuck, and the track ends.
-      loadsWithoutRows += 1;
-      if (loadsWithoutRows >= 2) {
+      try {
+        source.assertCurrent?.();
+      } catch {
+        throw holdLoadedList();
+      }
+      return true;
+    };
+    const remember = (list: LoadedList) => {
+      if (list.receipt) {
+        receipts.push(list.receipt);
+        try {
+          list.receipt.assertCurrent();
+        } catch {
+          throw holdLoadedList();
+        }
+      }
+      return list;
+    };
+    const finish = (climbs: Climb[], nextOffset: number | null): LoadedListTrackLoad => {
+      if (!current()) return { climbs: [], nextOffset: null };
+      const receipt = combineLoadedListReceipts(receipts, source.assertCurrent);
+      receipt?.assertCurrent();
+      transferred = true;
+      return { climbs, nextOffset, ...(receipt ? { receipt } : {}) };
+    };
+    try {
+      if (!current()) return { climbs: [], nextOffset: null };
+      let list = remember(source.read());
+      current();
+      const end = offset + count;
+      let loads = 0;
+      let loadsWithoutRows = 0;
+      while (list.climbs.length < end && list.hasMore && loads < MAX_LIST_LOADS_PER_TRACK_REQUEST) {
         if (signal.aborted) throw abortError();
-        return { climbs: list.climbs.slice(offset, end), nextOffset: null };
+        current();
+        const loadedRows = list.loadedRows;
+        const loaded = await source.loadMore();
+        loads += 1;
+        if (!('status' in loaded)) list = remember(loaded);
+        if (!current()) return { climbs: [], nextOffset: null };
+        if ('status' in loaded) {
+          if (loaded.status === 'held') throw holdLoadedList();
+          loadsWithoutRows += 1;
+          if (loadsWithoutRows >= 2) throw holdLoadedList();
+          continue;
+        }
+        current();
+        if (list.loadedRows > loadedRows) {
+          loadsWithoutRows = 0;
+          continue;
+        }
+        loadsWithoutRows += 1;
+        if (loadsWithoutRows >= 2) {
+          if (signal.aborted) throw abortError();
+          if (source.holdOnNoProgress) throw holdLoadedList();
+          return finish(list.climbs.slice(offset, end), null);
+        }
       }
+      if (signal.aborted) throw abortError();
+      const climbs = list.climbs.slice(offset, end);
+      const served = offset + climbs.length;
+      return finish(climbs, list.climbs.length > served || list.hasMore ? served : null);
+    } finally {
+      if (!transferred) for (const receipt of receipts) receipt.release();
     }
-    if (signal.aborted) throw abortError();
-    const climbs = list.climbs.slice(offset, end);
-    const served = offset + climbs.length;
-    return { climbs, nextOffset: list.climbs.length > served || list.hasMore ? served : null };
   };
 }
 
@@ -124,38 +228,76 @@ export function createLoadedListTrackLoader(
  */
 export function createLoadedListFetchPage(source: LoadedListSource, isSameList: () => boolean = () => true): FetchPage {
   return async ({ page, pageSize, signal }) => {
-    if (!isSameList()) return { climbs: [], hasMore: false };
-    let list = source.read();
-    const end = (page + 1) * pageSize;
-    // No cap on the loads: the next page starts at the next page boundary, so
-    // a page that came back short with more behind it would skip every climb
-    // between its end and that boundary. Tracks don't page this way (see
-    // `createLoadedListTrackLoader`). The loop still ends: at the list's end,
-    // on two loads in a row that added no rows, on another list, or on an abort.
-    let loadsWithoutRows = 0;
-    while (list.climbs.length < end && list.hasMore) {
-      if (signal.aborted) throw abortError();
-      const loadedRows = list.loadedRows;
-      list = await source.loadMore();
-      if (!isSameList()) return { climbs: [], hasMore: false };
-      if (list.loadedRows > loadedRows) {
-        loadsWithoutRows = 0;
-        continue;
+    const receipts: HttpPageConsumer[] = [];
+    let transferred = false;
+    const current = () => {
+      if (!isSameList()) {
+        if (source.assertCurrent) throw holdLoadedList();
+        return false;
       }
-      // A refetch in flight, or a stuck list: see `createLoadedListTrackLoader`.
-      loadsWithoutRows += 1;
-      if (loadsWithoutRows >= 2) {
-        // Give up by ending the track here. A short page that still said
-        // `hasMore` would send the next page to the next boundary and skip
-        // every climb in between.
-        if (signal.aborted) throw abortError();
-        return { climbs: list.climbs.slice(page * pageSize, end), hasMore: false };
+      try {
+        source.assertCurrent?.();
+      } catch {
+        throw holdLoadedList();
       }
-    }
-    if (signal.aborted) throw abortError();
-    return {
-      climbs: list.climbs.slice(page * pageSize, end),
-      hasMore: list.climbs.length > end || list.hasMore,
+      return true;
     };
+    const remember = (list: LoadedList) => {
+      if (list.receipt) {
+        receipts.push(list.receipt);
+        try {
+          list.receipt.assertCurrent();
+        } catch {
+          throw holdLoadedList();
+        }
+      }
+      return list;
+    };
+    const finish = (climbs: Climb[], hasMore: boolean) => {
+      if (!current()) return { climbs: [], hasMore: false };
+      const receipt = combineLoadedListReceipts(receipts, source.assertCurrent);
+      receipt?.assertCurrent();
+      transferred = true;
+      return { climbs, hasMore, ...(receipt ? { receipt } : {}) };
+    };
+    try {
+      if (!current()) return { climbs: [], hasMore: false };
+      let list = remember(source.read());
+      current();
+      const end = (page + 1) * pageSize;
+      let loadsWithoutRows = 0;
+      // Whole-page loads keep the native algorithm: a short page with hasMore
+      // would skip rows at the next page boundary. Positional tracks above
+      // retain their separate five-load bound.
+      while (list.climbs.length < end && list.hasMore) {
+        if (signal.aborted) throw abortError();
+        current();
+        const loadedRows = list.loadedRows;
+        const loaded = await source.loadMore();
+        if (!('status' in loaded)) list = remember(loaded);
+        if (!current()) return { climbs: [], hasMore: false };
+        if ('status' in loaded) {
+          if (loaded.status === 'held') throw holdLoadedList();
+          loadsWithoutRows += 1;
+          if (loadsWithoutRows >= 2) throw holdLoadedList();
+          continue;
+        }
+        current();
+        if (list.loadedRows > loadedRows) {
+          loadsWithoutRows = 0;
+          continue;
+        }
+        loadsWithoutRows += 1;
+        if (loadsWithoutRows >= 2) {
+          if (signal.aborted) throw abortError();
+          if (source.holdOnNoProgress) throw holdLoadedList();
+          return finish(list.climbs.slice(page * pageSize, end), false);
+        }
+      }
+      if (signal.aborted) throw abortError();
+      return finish(list.climbs.slice(page * pageSize, end), list.climbs.length > end || list.hasMore);
+    } finally {
+      if (!transferred) for (const receipt of receipts) receipt.release();
+    }
   };
 }

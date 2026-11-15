@@ -20,6 +20,7 @@
 import { useCallback, useMemo, useRef } from 'react';
 import type { Climb as SchemaClimb } from '@boardsesh/shared-schema';
 import type { Climb } from '@boardsesh/queue';
+import type { HttpPageConsumer } from '../graphql/use-http-query';
 import { useIsSharedSession } from '../../providers/queue-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
@@ -31,6 +32,7 @@ import { usePlaylistActivation } from './use-playlist-activation';
 import {
   createLoadedListFetchPage,
   createLoadedListTrackLoader,
+  holdLoadedList,
   type LoadedList,
   type LoadedListSource,
 } from './loaded-list-pages';
@@ -43,6 +45,16 @@ export type BoardListRow = {
   board: BoardConfig | null;
 };
 
+export type CapturedRowsSource<Row> = Readonly<{
+  read: () => { rows: readonly Row[]; hasMore: boolean; receipt?: HttpPageConsumer };
+  loadMore: () => Promise<
+    { rows: readonly Row[]; hasMore: boolean; receipt?: HttpPageConsumer } | { status: 'held' | 'no-progress' }
+  >;
+  assertCurrent: () => void;
+  dispose: () => void;
+  holdOnNoProgress: boolean;
+}>;
+
 export type UseBoardListActivationOptions<Row> = {
   /** Names this list's track, e.g. `logbook:<userId>`. */
   sourceId: string;
@@ -50,6 +62,10 @@ export type UseBoardListActivationOptions<Row> = {
   label: string;
   /** The rows on screen, from the list's first, in order. */
   rows: readonly Row[];
+  /** Opt-in original source; its accepted track outlives the origin screen. */
+  captureRowsSource?: () => CapturedRowsSource<Row>;
+  /** UI row identity only; never network authority. */
+  assertRowCurrent?: (row: Row) => void;
   /** Read a row. Keep it stable (a module-level function). */
   describeRow: (row: Row) => BoardListRow;
   /** The screen's query has rows past these. */
@@ -82,16 +98,20 @@ function listFromRows<Row>(
   rows: readonly Row[],
   describeRow: (row: Row) => BoardListRow,
   hasMore: boolean,
+  assertCurrent?: () => void,
 ): LoadedList {
   const climbs: Climb[] = [];
   const seenClimbUuids = new Set<string>();
   for (const row of rows) {
+    assertCurrent?.();
     const { climb } = describeRow(row);
+    assertCurrent?.();
     // A track holds a climb once: the first row of it, the most recent in a
     // logbook. The other rows of it are the same climb to swipe onto.
     if (!climb || seenClimbUuids.has(climb.uuid)) continue;
     seenClimbUuids.add(climb.uuid);
     climbs.push(toQueueClimb(climb));
+    assertCurrent?.();
   }
   return { climbs, hasMore, loadedRows: rows.length };
 }
@@ -100,6 +120,8 @@ export function useBoardListActivation<Row>({
   sourceId,
   label,
   rows,
+  captureRowsSource,
+  assertRowCurrent,
   describeRow,
   hasMore = false,
   loadMore,
@@ -180,8 +202,100 @@ export function useBoardListActivation<Row>({
   const openFallbackRef = useRef(openFallback);
   openFallbackRef.current = openFallback;
 
+  const capturedActivate = captureRowsSource ? activation.activate : undefined;
   return useCallback(
     (row: Row, readyBoardArt?: ReadyBoardArtSnapshot) => {
+      if (captureRowsSource) {
+        let capturedRows: CapturedRowsSource<Row> | undefined;
+        let initial: LoadedList | undefined;
+        let handedOff = false;
+        try {
+          assertRowCurrent?.(row);
+          capturedRows = captureRowsSource();
+          const rowsSource = capturedRows;
+          const assertSource = () => {
+            try {
+              rowsSource.assertCurrent();
+            } catch {
+              throw holdLoadedList();
+            }
+          };
+          const convert = (loaded: {
+            rows: readonly Row[];
+            hasMore: boolean;
+            receipt?: HttpPageConsumer;
+          }): LoadedList => {
+            let transferred = false;
+            try {
+              assertSource();
+              try {
+                loaded.receipt?.assertCurrent();
+              } catch {
+                throw holdLoadedList();
+              }
+              const converted = listFromRows(loaded.rows, describeRow, loaded.hasMore, assertSource);
+              try {
+                loaded.receipt?.assertCurrent();
+              } catch {
+                throw holdLoadedList();
+              }
+              assertSource();
+              transferred = true;
+              return { ...converted, ...(loaded.receipt ? { receipt: loaded.receipt } : {}) };
+            } finally {
+              if (!transferred) loaded.receipt?.release();
+            }
+          };
+          const source: LoadedListSource = Object.freeze({
+            assertCurrent: assertSource,
+            dispose: rowsSource.dispose,
+            holdOnNoProgress: rowsSource.holdOnNoProgress,
+            read: () => convert(rowsSource.read()),
+            loadMore: async () => {
+              assertSource();
+              const loaded = await rowsSource.loadMore();
+              try {
+                assertSource();
+              } catch (error) {
+                if (!('status' in loaded)) loaded.receipt?.release();
+                throw error;
+              }
+              return 'status' in loaded ? loaded : convert(loaded);
+            },
+          });
+          initial = source.read();
+          assertRowCurrent?.(row);
+          const { climb, board } = describeRow(row);
+          assertRowCurrent?.(row);
+          assertSource();
+          if (!climb || !board) return;
+          const queueClimb = toQueueClimb(climb);
+          assertRowCurrent?.(row);
+          assertSource();
+          // No activateRef/listRef after this capture. Those belong to later UI.
+          const pending = capturedActivate!(
+            queueClimb,
+            readyBoardArt,
+            Object.freeze({
+              source,
+              initial,
+              board,
+              assertLocal: () => assertRowCurrent?.(row),
+            }),
+          );
+          handedOff = true;
+          void pending;
+        } catch {
+          // Retired UI callbacks are inert. No user-data diagnostics under a
+          // potentially different viewer.
+        } finally {
+          if (!handedOff) {
+            initial?.receipt?.release();
+            capturedRows?.dispose();
+          }
+        }
+        return;
+      }
       const { climb, board } = describeRow(row);
       if (!climb || !board) {
         // The list's own rule: only driving the wall lights it, in a crew too
@@ -192,6 +306,6 @@ export function useBoardListActivation<Row>({
       tappedBoardRef.current = { key: climbBoardKey(climb), board };
       void activateRef.current(toQueueClimb(climb), readyBoardArt);
     },
-    [describeRow],
+    [capturedActivate, assertRowCurrent, captureRowsSource, describeRow],
   );
 }

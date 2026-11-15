@@ -1,4 +1,5 @@
 import type { QueueContentSnapshot } from '../../lib/queue-undo';
+import type { TrackPublication } from '../../lib/playlists/track-pager';
 import type { WidgetMirrorEvent } from '../../../modules/live-activity/src/index';
 import { createContext, useContext } from 'react';
 import type {
@@ -198,7 +199,7 @@ type QueueContextValue = {
   setPlaylistSuggestionSource: (source: PlaylistSuggestionSource | null) => void;
   /** Refresh the suggestion source in place (no-op unless it matches the active one). */
   /** True when the source replaced the active one; false when it was stale and ignored. */
-  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource) => boolean;
+  refreshPlaylistSuggestionSource: (source: PlaylistSuggestionSource, publication?: TrackPublication) => boolean;
   /**
    * Reset the active session locally. Pass `{ notifyServer: true }` on an
    * intentional leave (e.g. switching sessions) to emit LEAVE_SESSION so peers

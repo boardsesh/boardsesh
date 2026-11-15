@@ -99,7 +99,34 @@ vi.mock('../../../providers/queue-provider', () => ({ useIsSharedSession: () => 
 vi.mock('../../../lib/graphql/use-active-board', () => ({
   useActiveBoard: () => ({ data: { boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 } }),
 }));
-vi.mock('../../../lib/graphql/hooks', () => ({ useUserClimbs: () => feed }));
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useUserClimbs: () => ({
+    ...feed,
+    capturePageSource: () => {
+      let snapshot = feed.data;
+      const receipt = { assertCurrent: () => {}, retain: () => receipt, acknowledge: () => {}, release: () => {} };
+      return {
+        kind: 'legacy',
+        identity: {},
+        assertView: () => {},
+        dispose: () => {},
+        read: () => ({ data: snapshot, hasMore: feed.hasNextPage, retain: () => receipt }),
+        fetchNextPage: async () => {
+          const result = await feed.fetchNextPage({ cancelRefetch: false });
+          if (result.isError) throw result.error;
+          snapshot = result.data;
+          return { status: 'delivered', data: snapshot, hasMore: result.hasNextPage, consumer: receipt };
+        },
+      };
+    },
+  }),
+}));
+// This host covers native list layout/ordering. Selected authority is exercised
+// by the actual SDK mounted host in profile-climbs-delivery.web.test.tsx.
+vi.mock('../../../lib/graphql/use-http-query-scope', () => ({
+  useHttpQueryScope: () => nativeScope,
+}));
+const nativeScope = { assertView: () => {} };
 vi.mock('../../../lib/playlists/board-details-for-playlist', () => ({
   renderBoardToPlaylistConfig: () => boardConfig.current,
 }));
@@ -277,7 +304,11 @@ describe('ProfileClimbsTab track paging', () => {
 
     act(() => onPress(firstPage.climbs[0]));
 
-    expect(playlistActivation.activate).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }), undefined);
+    expect(playlistActivation.activate).toHaveBeenCalledWith(
+      expect.objectContaining({ uuid: 'climb-1' }),
+      undefined,
+      expect.objectContaining({ board: expect.any(Object), source: expect.any(Object) }),
+    );
     expect(playlistActivation.options?.hasMoreRows).toBe(true);
     // The track walks the list by position, from the first climb past the loaded rows.
     const trackLoader = playlistActivation.options?.snapshotListLoader?.();

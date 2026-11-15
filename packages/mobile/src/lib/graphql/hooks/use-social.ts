@@ -1,12 +1,6 @@
 import { REQUEST_FOLLOW, type PrivacyRelationship, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 import { useMemo } from 'react';
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueries,
-  useQueryClient,
-  type QueryFunctionContext,
-} from '@tanstack/react-query';
+import { useMutation, useQueries, useQueryClient, type QueryFunctionContext } from '@tanstack/react-query';
 import {
   VOTE,
   GET_COMMENTS,
@@ -169,18 +163,16 @@ export function useToggleUserFollow(currentUserId: string | undefined) {
 
 /** Climbs created by a user (across their linked setters), paginated by offset. */
 export function useUserClimbs(userId: string | undefined, enabled = true) {
-  return useInfiniteQuery({
+  return useHttpInfiniteQuery({
+    pageDelivery: true,
     queryKey: ['userClimbs', userId],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam }, operation) => {
       if (!userId) throw new Error('Cannot load user climbs without a user id.');
       const variables: GetUserClimbsQueryVariables = {
         input: { userId, limit: SOCIAL_PAGE_SIZE, offset: Number(pageParam) },
       };
-      const response = await getHttpClient().request<GetUserClimbsQueryResponse, GetUserClimbsQueryVariables>(
-        GET_USER_CLIMBS,
-        variables,
-      );
+      const response = await operation.request<GetUserClimbsQueryResponse>(GET_USER_CLIMBS, variables);
       return response.userClimbs;
     },
     getNextPageParam: (lastPage, allPages) =>
