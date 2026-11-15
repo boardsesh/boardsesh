@@ -10,6 +10,10 @@ manual changes). See docs/mobile-ota-updates.md.
 
 A new version shipped to the App Store and Play Store.
 
+### New
+
+- Your wall’s lights now breathe and glide between climbs on Android 13+. ([#7541](https://github.com/boardsesh/boardsesh/pull/7541))
+
 ### Fixed
 
 - See the highlighted climb's name, grade and send status on Home session cards again. ([#7538](https://github.com/boardsesh/boardsesh/pull/7538))
