@@ -39,6 +39,7 @@ on:
       - '.github/workflows/android-pr-rn.yml'
       - '.github/actions/android-rn-setup/**'
       - '.github/actions/mobile-native-gate/**'
+      - 'scripts/check-android-gpu-shaders.ts'
   workflow_dispatch:
 
 concurrency:
@@ -103,6 +104,11 @@ jobs:
         uses: actions/checkout@v4
 
       - uses: ./.github/actions/android-rn-setup
+
+      - name: Compile the embedded GLSL ES shaders
+        run: >-
+          vp exec tsx scripts/check-android-gpu-shaders.ts
+          --compiler "$ANDROID_HOME/ndk/27.1.12297006/shader-tools/linux-x86_64/glslc"
 
       - name: Run native-module unit tests (Robolectric/JUnit)
         working-directory: packages/mobile/android

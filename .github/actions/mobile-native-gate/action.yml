@@ -105,6 +105,12 @@ runs:
           build "CI plumbing changed"
         fi
 
+        # Shader-checker changes must exercise the checker even when the
+        # native renderer itself, and therefore its fingerprint, is unchanged.
+        if [ "$PLATFORM" = android ] && [ -n "$(changed scripts/check-android-gpu-shaders.ts)" ]; then
+          build "Android GPU shader checker changed"
+        fi
+
         # The Release launch guard is CI plumbing too. Exercise changes to its
         # implementation even though they do not move the app's fingerprint.
         if [ "$PLATFORM" = ios ] && [ -n "$(changed \
