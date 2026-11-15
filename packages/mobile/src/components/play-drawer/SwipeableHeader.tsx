@@ -4,18 +4,6 @@ import Animated, { useAnimatedStyle, type SharedValue } from 'react-native-reani
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
 
-const STATIONARY_HEADER_TRAVEL = 24;
-
-/** A short directional cue, with no overlapping names at the midpoint. */
-export function stationaryHeaderStyle(page: number, position: number, anchor: number, reduceMotion: boolean) {
-  'worklet';
-  if (reduceMotion) return { opacity: page === anchor ? 1 : 0, transform: [{ translateX: 0 }] };
-  const distance = Math.max(-1, Math.min(1, page - position));
-  const fade = Math.max(0, Math.min(1, (Math.abs(distance) - 0.05) / 0.4));
-  const opacity = 1 - fade * fade * (3 - 2 * fade);
-  return { opacity, transform: [{ translateX: distance * STATIONARY_HEADER_TRAVEL }] };
-}
-
 type SwipeableHeaderProps = {
   /** The carousel's pager — the header rides the EXACT same anchor and offset as
    *  the board, so the title/grade slide in lockstep with the climb. */
@@ -78,9 +66,8 @@ const HeaderSlot = memo(function HeaderSlot({
     // It also keeps the two in step when a swipe takes over a fling, which
     // re-bases the offset by the board's width.
     const boardWidth = boardSlideWidth.value;
-    if (stationaryMotion?.value) {
-      const position = boardWidth > 0 ? anchorPage.value - translateX.value / boardWidth : anchorPage.value;
-      return stationaryHeaderStyle(page, position, anchorPage.value, reduceMotion);
+    if (stationaryMotion?.value && reduceMotion) {
+      return { opacity: page === anchorPage.value ? 1 : 0, transform: [{ translateX: 0 }] };
     }
     const scale = boardWidth > 0 ? viewportWidth / boardWidth : 1;
     const { visible, offset } = pageOffset(page, anchorPage.value, translateX.value * scale, viewportWidth);

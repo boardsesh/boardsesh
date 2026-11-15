@@ -3,7 +3,13 @@ import ExpoModulesCore
 public class ClimbOverlayGPUModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ClimbOverlayGPU")
+    #if targetEnvironment(simulator)
+    // The simulator SDK omits MTLDrawable.addPresentedHandler. Keep the
+    // diagnostic story available, but do not promise live presentation fences.
+    Constants(["apiVersion": 1])
+    #else
     Constants(["apiVersion": 3])
+    #endif
     AsyncFunction("compare") { (configJson: String) throws -> [String: Any] in
       try compareClimbOverlayGPU(configJson)
     }.runOnQueue(climbOverlayGPUWorkQueue)

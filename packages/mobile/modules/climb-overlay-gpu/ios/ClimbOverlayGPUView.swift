@@ -693,7 +693,13 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     let editCount = editChangedHoldCount
     let editDurationMs = scheduledEditDurationMs
     let lowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+    #if targetEnvironment(simulator)
+    // Simulator exposes only the legacy diagnostic capability. Its command
+    // completion says pixels were rendered, not that a drawable was displayed.
+    let requiresPresentation = false
+    #else
     let requiresPresentation = frames != nil
+    #endif
     // These are accessed only on main. A drawable callback and a command
     // completion can arrive in either order; v2 readiness needs both.
     var finishedGPUMs: Double?
@@ -713,11 +719,13 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
         "atlasBytes":scene.atlas.pixels.length,"atlasCacheHit":scene.cacheHit,
         "editChangedHoldCount":editCount,"editDurationMs":editDurationMs,"lowPowerMode":lowPowerMode])
     }
+    #if !targetEnvironment(simulator)
     if requiresPresentation {
       drawable.addPresentedHandler { _ in
         DispatchQueue.main.async { presented = true; reportReady() }
       }
     }
+    #endif
     command.addCompletedHandler { [weak self] completed in
       let gpuMs = max(0, completed.gpuEndTime-completed.gpuStartTime)*1000
       DispatchQueue.main.async { [weak self] in

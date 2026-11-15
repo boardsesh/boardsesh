@@ -98,7 +98,7 @@ export type SwipePager = {
    * header scales its own travel by it so the two arrive together.
    */
   slideWidth: SharedValue<number>;
-  /** The current board uses an anchored GPU reveal, so titles travel only a few points. */
+  /** The current board uses an anchored GPU reveal; Reduce Motion keeps its title fixed. */
   stationaryMotion: SharedValue<boolean>;
   /** Bumped each time the UI thread abandons what it was doing to follow the JS thread. A drag in progress starts over. */
   resetGeneration: SharedValue<number>;

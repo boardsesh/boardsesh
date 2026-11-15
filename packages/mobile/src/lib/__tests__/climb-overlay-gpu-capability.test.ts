@@ -40,6 +40,14 @@ describe('GPU frame-update binary capability', () => {
     expect(controls.requireView).toHaveBeenCalledWith('ClimbOverlayGPU');
   });
 
+  it('keeps live surfaces on PNG for the simulator legacy capability', async () => {
+    controls.nativeModule = { apiVersion: 1, compare: vi.fn() };
+    const module = await import('../../../modules/climb-overlay-gpu/src');
+    expect(module.NativeClimbOverlayGPU).not.toBeNull();
+    expect(module.NativeFrameClimbOverlayGPU).toBeNull();
+    expect(module.NativeMotionClimbOverlayGPU).toBeNull();
+  });
+
   it('allows scrubbed and editor motion only when native supports v3', async () => {
     controls.nativeModule = { apiVersion: 3, compare: vi.fn() };
     const module = await import('../../../modules/climb-overlay-gpu/src');

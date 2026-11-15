@@ -17,7 +17,7 @@ const preferences = vi.hoisted(() => ({ reduceMotion: false }));
 vi.mock('../../../hooks/use-reduce-motion', () => ({ useReduceMotion: () => preferences.reduceMotion }));
 
 // react-native isn't satisfiable under jsdom. Views become divs that surface the
-// accessibility props, which is all this suite asserts on.
+// accessibility props and the animated styles for sampled pager frames.
 vi.mock('react-native', () => {
   const View = ({
     children,
@@ -45,7 +45,7 @@ vi.mock('react-native-reanimated', async () => {
   return { default: { View }, useAnimatedStyle: (factory: () => unknown) => factory() };
 });
 
-import { SwipeableHeader, stationaryHeaderStyle } from '../SwipeableHeader';
+import { SwipeableHeader } from '../SwipeableHeader';
 
 const pager = {
   anchorPage: { value: 0 },
@@ -57,6 +57,7 @@ const pager = {
 beforeEach(() => {
   pager.anchorPage.value = 0;
   pager.translateX.value = 0;
+  pager.slideWidth.value = 390;
   pager.stationaryMotion.value = false;
   preferences.reduceMotion = false;
 });
@@ -64,53 +65,104 @@ beforeEach(() => {
 const header = (name: string) => createElement('span', { 'data-testid': `header-${name}` }, name);
 const standIn = createElement('div', { 'data-testid': 'stand-in' });
 
-describe('stationary title motion', () => {
-  it('uses short reversible travel and never displays overlapping names', () => {
-    expect(stationaryHeaderStyle(0, 0, 0, false)).toEqual({ opacity: 1, transform: [{ translateX: 0 }] });
-    const forward = stationaryHeaderStyle(0, 0.25, 0, false);
-    const backward = stationaryHeaderStyle(0, -0.25, 0, false);
-    expect(forward.opacity).toBeCloseTo(0.5);
-    expect(backward.opacity).toBe(forward.opacity);
-    expect(forward.transform[0].translateX).toBe(-6);
-    expect(backward.transform[0].translateX).toBe(6);
-    for (const progress of [0, 0.25, 0.45, 0.5, 0.55, 0.75, 1]) {
-      const outgoing = stationaryHeaderStyle(0, progress, 0, false);
-      const incoming = stationaryHeaderStyle(1, progress, 0, false);
-      expect(outgoing.opacity > 0 && incoming.opacity > 0).toBe(false);
-    }
-    // A fling rebase changes the anchor, not the absolute progress or appearance.
-    expect(stationaryHeaderStyle(1, 1, 0, false)).toEqual(stationaryHeaderStyle(1, 1, 1, false));
-    expect(stationaryHeaderStyle(0, 0, 0, false).opacity).toBe(1);
+function mountHeaderFrames() {
+  const props = (centerPage: number) => ({
+    pager,
+    centerPage,
+    viewportWidth: 390,
+    current: header(String(centerPage)),
+    previous: header(String(centerPage - 1)),
+    next: header(String(centerPage + 1)),
+    accessibilityStandIn: standIn,
   });
-
-  it('limits stationary travel while preserving the existing carousel slide', () => {
-    pager.translateX.value = -97.5;
-    const props = {
-      pager,
-      centerPage: 0,
-      viewportWidth: 390,
-      current: header('A'),
-      previous: null,
-      next: header('B'),
-      accessibilityStandIn: standIn,
-    };
-    const { getByTestId, rerender } = render(createElement(SwipeableHeader, props));
-    const style = () =>
-      JSON.parse(getByTestId('header-A').parentElement!.dataset.style!)[1] as {
+  const { getByTestId, rerender } = render(createElement(SwipeableHeader, props(0)));
+  return {
+    frame(anchor: number, offset: number, centerPage = 0) {
+      pager.anchorPage.value = anchor;
+      pager.translateX.value = offset;
+      rerender(createElement(SwipeableHeader, props(centerPage)));
+    },
+    style(page: number) {
+      return JSON.parse(getByTestId(`header-${page}`).parentElement!.dataset.style!)[1] as {
         opacity: number;
         transform: { translateX: number }[];
       };
-    expect(style().transform[0].translateX).toBe(-97.5);
+    },
+  };
+}
+
+const visibleAt = (translateX: number) => ({ opacity: 1, transform: [{ translateX }] });
+
+describe('continuous title motion', () => {
+  it.each([false, true])(
+    'follows forward, backward, reversal and cancellation with stationary board %s',
+    (stationary) => {
+      pager.stationaryMotion.value = stationary;
+      // The board fits inside a wider header; travel uses the same page progress.
+      pager.slideWidth.value = 300;
+      const { frame, style } = mountHeaderFrames();
+      for (const offset of [-30, -75, -150, -225, -150, -75, 0, 75, 150, 75, 0]) {
+        frame(0, offset);
+        expect(style(0)).toEqual(visibleAt(offset * 1.3));
+        if (offset < 0) {
+          expect(style(1)).toEqual(visibleAt(390 + offset * 1.3));
+          expect(style(-1).opacity).toBe(0);
+        } else if (offset > 0) {
+          expect(style(-1)).toEqual(visibleAt(-390 + offset * 1.3));
+          expect(style(1).opacity).toBe(0);
+        } else {
+          expect(style(-1).opacity).toBe(0);
+          expect(style(1).opacity).toBe(0);
+        }
+      }
+    },
+  );
+
+  it.each([-1, 1])('keeps incoming title settled through fling overshoot and rebase in direction %s', (direction) => {
     pager.stationaryMotion.value = true;
-    rerender(createElement(SwipeableHeader, { ...props, current: header('A') }));
-    expect(style().transform[0].translateX).toBe(-6);
-    expect(style().opacity).toBeCloseTo(0.5);
+    pager.slideWidth.value = 300;
+    const { frame, style } = mountHeaderFrames();
+    frame(0, -direction * 300);
+    expect(style(direction)).toEqual(visibleAt(0));
+    // The outgoing board clears the screen, beyond the narrower board width.
+    // JS catches up before the UI anchor lands; neither event moves the title.
+    frame(0, -direction * 360, direction);
+    expect(style(direction)).toEqual(visibleAt(0));
+    frame(0, -direction * 422, direction);
+    expect(style(direction)).toEqual(visibleAt(0));
+    frame(direction, 0, direction);
+    expect(style(direction)).toEqual(visibleAt(0));
   });
 
-  it('keeps the exact anchor title stationary under Reduce Motion', () => {
-    expect(stationaryHeaderStyle(0, 0.75, 0, true)).toEqual({ opacity: 1, transform: [{ translateX: 0 }] });
-    expect(stationaryHeaderStyle(1, 0.75, 0, true).opacity).toBe(0);
-    expect(stationaryHeaderStyle(1, 1, 1, true)).toEqual({ opacity: 1, transform: [{ translateX: 0 }] });
+  it.each([-1, 1])(
+    'preserves both title positions when a new swipe takes over a fling in direction %s',
+    (direction) => {
+      pager.stationaryMotion.value = true;
+      pager.slideWidth.value = 300;
+      const { frame, style } = mountHeaderFrames();
+      frame(0, -direction * 225);
+      const outgoing = style(0);
+      const incoming = style(direction);
+      // landFling(true) carries the remaining board offset into the new anchor.
+      frame(direction, direction * 75, direction);
+      expect(style(0)).toEqual(outgoing);
+      expect(style(direction)).toEqual(incoming);
+    },
+  );
+
+  it('keeps the committed stationary-board title still under Reduce Motion', () => {
+    pager.stationaryMotion.value = true;
+    preferences.reduceMotion = true;
+    const { frame, style } = mountHeaderFrames();
+    frame(0, -290);
+    expect(style(0)).toEqual(visibleAt(0));
+    expect(style(1).opacity).toBe(0);
+    frame(0, -422, 1);
+    expect(style(0)).toEqual(visibleAt(0));
+    expect(style(1).opacity).toBe(0);
+    frame(1, 0, 1);
+    expect(style(1)).toEqual(visibleAt(0));
+    expect(style(0).opacity).toBe(0);
   });
 });
 
