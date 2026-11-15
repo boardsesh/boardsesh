@@ -11,7 +11,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BOARD_RECENT_CLIMBS } from '@boardsesh/graphql/operations/board-presence';
 
 const requestMock = vi.hoisted(() => vi.fn());
-vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
+vi.mock('../../client', () => ({
+  getHttpClient: () => ({
+    request: ({ document, variables }: { document: unknown; variables?: unknown }) => requestMock(document, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
+}));
 
 import { useBoardRecentClimb } from '../use-board-recent-climb';
 
