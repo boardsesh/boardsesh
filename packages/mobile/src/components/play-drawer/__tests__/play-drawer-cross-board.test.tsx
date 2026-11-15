@@ -17,7 +17,8 @@
 // the current art.
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 import { render as renderInitial, act, renderHook } from '@testing-library/react';
-import { createElement, useEffect, useRef, type ReactNode } from 'react';
+import { Children, createElement, isValidElement, useEffect, useRef, type ReactNode } from 'react';
+import { DeferredBoard } from '../DeferredBoard';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { LayoutChangeEvent } from 'react-native';
@@ -171,7 +172,12 @@ vi.mock('react-native', () => ({
       ? style.find((entry) => entry && 'height' in entry && 'paddingTop' in entry)
       : undefined;
     if (firstScreenStyle) recorded.firstScreen.push(firstScreenStyle);
-    if (onLayout && style && !Array.isArray(style) && 'marginHorizontal' in style) recorded.boardLayout = onLayout;
+    // Identify the measured board viewport by its content: its resting gutter
+    // now belongs inside the full-width carousel, not on this container.
+    const containsBoard = Children.toArray(children).some(
+      (child) => isValidElement(child) && child.type === DeferredBoard,
+    );
+    if (onLayout && containsBoard) recorded.boardLayout = onLayout;
     // Geometry telemetry has a ref-bearing wrapper without a style, too. The
     // title header remains the unreffed measurement this suite drives.
     else if (onLayout && !style && ref == null) recorded.headerLayout = onLayout;
@@ -837,13 +843,15 @@ describe('PlayDrawer opening layout', () => {
   it('reuses measured board geometry on a matching open and invalidates it for font scale', () => {
     queueState.currentClimbQueueItem = queueItem(TWELVE_CLIMB, 'queue-twelve');
     const first = renderDrawer();
+    const boardLayout = recorded.boardLayout;
+    if (!boardLayout) throw new Error('Board viewport measurement callback is missing');
     const layout = (width: number, height: number) =>
       ({ nativeEvent: { layout: { x: 0, y: 0, width, height } } }) as LayoutChangeEvent;
     act(() => {
       (recorded.scroll.at(-1)?.onLayout as (event: LayoutChangeEvent) => void)(layout(390, 844));
       recorded.headerLayout?.(layout(390, 70));
       (recorded.deferredSections.at(-1)?.onFirstSectionHeaderLayout as (height: number) => void)(44);
-      recorded.boardLayout?.(layout(358, 650));
+      boardLayout(layout(390, 650));
     });
     first.unmount();
     const same = renderInitial(
@@ -854,7 +862,8 @@ describe('PlayDrawer opening layout', () => {
         openTarget: null,
       }),
     );
-    expect(lastBoardProps().containerSize).toEqual({ width: 358, height: 650 });
+    expect(lastBoardProps().containerSize).toEqual({ width: 390, height: 650 });
+    expect(lastBoardProps().restingHorizontalInset).toBe(16);
     expect(same.getByTestId('board')).toBeTruthy();
     same.unmount();
     viewport.fontScale = 1.2;

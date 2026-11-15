@@ -196,6 +196,11 @@ type NativeClimbRenderParams = {
    *    climber is waiting on.
    */
   playSurface?: boolean;
+  /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
+  gpuSurface?: boolean;
+  /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
+  gpuAllowEmpty?: boolean;
+  gpuFallbackConfigJson?: string | null;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -270,6 +275,8 @@ type NativeClimbRenderParams = {
    * cache with) the uncapped one.
    */
   maxVeilOpacity?: number;
+  /** Explicit host ground for the veil; omitted surfaces retain their shared drawing. */
+  fieldColorOverride?: string;
   /**
    * Hold-state codes this surface draws that no board defines — the hold
    * heatmap's buckets (900–904) and grade colours (910+) — merged into the
@@ -307,6 +314,10 @@ type NativeClimbRenderResult = {
    * Expo Go). Consumers stack this on top of `backgroundPaths`.
    */
   overlayUri: string | null;
+  /** Stable full-layout config for a live GPU view; frames travel separately. */
+  gpuConfigJson?: string | null;
+  gpuStatus?: 'loading' | 'unavailable' | 'ready';
+  gpuFrames?: string;
   /**
    * Changes whenever this consumer must make expo-image perform a fresh load,
    * including a regeneration that writes back to the same file:// URI.
@@ -1853,9 +1864,13 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdColorOverride,
     verifyOverlayFile = false,
     playSurface = false,
+    gpuSurface = false,
+    gpuAllowEmpty = false,
+    gpuFallbackConfigJson,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
+    fieldColorOverride,
     extraHoldStates,
     markStyleOverride,
   } = params;
@@ -2000,7 +2015,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // The play field the veil washes toward. Baked into the PNG, so it is part of
   // the cache key: a light-mode overlay reused in dark mode would show a wall
   // the veil never quieted.
-  const fieldColor = boardFieldColorForScheme(colorScheme);
+  const fieldColor = fieldColorOverride ?? boardFieldColorForScheme(colorScheme);
   const veilOpacity = useMemo(() => {
     if (effectiveRenderSettings.mode !== 'aura') return 0;
     const resolved = resolveVeilOpacity(
@@ -2013,10 +2028,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // (which encodes this exact number) stays shared with the uncapped surfaces.
     return maxVeilOpacity != null ? Math.min(resolved, maxVeilOpacity) : resolved;
   }, [effectiveRenderSettings, boardName, layoutId, sizeId, fieldColor, maxVeilOpacity]);
-  const boardRenderSignature = useMemo(
-    () => buildBoardRenderSignature(effectiveRenderSettings, fieldColor, veilOpacity),
-    [effectiveRenderSettings, fieldColor, veilOpacity],
-  );
+  const boardRenderSignature = useMemo(() => {
+    const signature = buildBoardRenderSignature(effectiveRenderSettings, fieldColor, veilOpacity);
+    // A cutout base can change even with the veil off. Keep opening snapshots
+    // and GPU/PNG identities scoped to the explicit host ground as well.
+    return fieldColorOverride === undefined
+      ? signature
+      : `${signature}.field-${fieldColor.replace('#', '').toLowerCase()}`;
+  }, [effectiveRenderSettings, fieldColor, veilOpacity, fieldColorOverride]);
 
   // Marker overrides (colours included — a palette card's substituted map is
   // already inside `effectiveOverrideSignature`) and render mode are independent
@@ -2121,6 +2140,88 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // Parsed set ids, reused by the lazy background initializer and the
   // background-paths effect. Kept in sync with the strings that feed the keys.
   const setIdsArray = useMemo(() => setIds.split(',').map(Number).filter(Boolean), [setIds]);
+
+  const gpuStaticConfig = useMemo(() => {
+    if (
+      !gpuSurface ||
+      filledStyle ||
+      prefetch ||
+      boardName !== 'kilter' ||
+      layoutId !== 8 ||
+      effectiveRenderSettings.mode !== 'aura' ||
+      effectiveRenderSettings.boardsesh.softDisc ||
+      extraHoldStates ||
+      boardArtChunkPending
+    )
+      return null;
+    const holdIds = getBoardHoldIds(boardName, layoutId, sizeId, setIds, setIdsArray);
+    if (!holdIds) return null;
+    const boardConfig = getBoardConfig(
+      boardName,
+      layoutId,
+      sizeId,
+      setIds,
+      false,
+      renderWidth,
+      effectiveOverrides.colors,
+      effectiveOverrides.shapes,
+      effectiveOverrides.brushThickness,
+      effectiveOverrides.shapeSize,
+      configRenderSignature,
+      {
+        settings: effectiveRenderSettings.boardsesh,
+        glowFalloff: effectiveRenderSettings.glowFalloff,
+        fieldColor,
+        veilOpacity,
+      },
+      holdIds,
+    );
+    if (!boardConfig) return null;
+    const roleMap = boardConfig.configBase.hold_state_map as Record<number, unknown>;
+    // Homewall's four calibrated roles only. The general Kilter map includes
+    // other products that this layout never uses, wasting atlas role stamps.
+    const holdStateMap = Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
+    return { holdIds, json: JSON.stringify({ ...boardConfig.configBase, hold_state_map: holdStateMap, frames: '' }) };
+  }, [
+    gpuSurface,
+    filledStyle,
+    prefetch,
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    setIdsArray,
+    renderWidth,
+    effectiveRenderSettings,
+    effectiveOverrides,
+    configRenderSignature,
+    fieldColor,
+    veilOpacity,
+    extraHoldStates,
+    boardArtChunkPending,
+  ]);
+  const gpuConfigJson = useMemo(() => {
+    if ((!flatFrames && !gpuAllowEmpty) || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson)
+      return null;
+    const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
+      [42, 43, 44, 45].includes(Number(match[1])),
+    );
+    if (!rolesSupported) return null;
+    const litIds = parseLitHoldIds(flatFrames);
+    if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
+    return gpuStaticConfig.json;
+  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson]);
+
+  // A stationary carousel must wait for geometry/capability discovery rather
+  // than permanently latching its PNG fallback during the first render.
+  const gpuStatus: 'loading' | 'unavailable' | 'ready' = gpuConfigJson
+    ? 'ready'
+    : gpuSurface &&
+        (!!flatFrames || gpuAllowEmpty) &&
+        requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
+        (boardArtChunkPending || getBoardseshRendererSupport() === null)
+      ? 'loading'
+      : 'unavailable';
 
   // Seed both pieces of state synchronously so the first paint already
   // shows whatever's available. Backgrounds in production are usually
@@ -2353,6 +2454,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
+    if (gpuConfigJson) return;
+    // A v2 GPU binary has Aura support, but the ordinary capability probe may
+    // still be resolving on first mount. Do not launch a competing classic PNG.
+    if (
+      gpuSurface &&
+      requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
+      getBoardseshRendererSupport() === null
+    )
+      return;
     if (!flatFrames || isRenderSignatureUnsupported(effectiveOverrideSignature)) return;
 
     // The lit placement ids the renderer will actually draw, parsed ONCE: the
@@ -2757,6 +2867,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentCacheKey,
+    gpuConfigJson,
+    gpuSurface,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.
     boardArtChunkPending,
@@ -3259,6 +3371,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   );
   return {
     artworkIdentity,
+    gpuConfigJson,
+    gpuStatus,
+    gpuFrames: flatFrames,
     getReadyBoardArtSnapshot,
     overlayUri,
     overlayLoadKey,

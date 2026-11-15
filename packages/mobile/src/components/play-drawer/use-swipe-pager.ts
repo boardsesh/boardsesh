@@ -98,6 +98,8 @@ export type SwipePager = {
    * header scales its own travel by it so the two arrive together.
    */
   slideWidth: SharedValue<number>;
+  /** The current board uses an anchored GPU reveal; Reduce Motion keeps its title fixed. */
+  stationaryMotion: SharedValue<boolean>;
   /** Bumped each time the UI thread abandons what it was doing to follow the JS thread. A drag in progress starts over. */
   resetGeneration: SharedValue<number>;
   /** The step a fling is carrying that the JS thread has not been told about yet; 0 when there is none. */
@@ -184,6 +186,7 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
     processedStep: 0,
   });
   const slideWidth = useSharedValue(0);
+  const stationaryMotion = useSharedValue(false);
   const resetGeneration = useSharedValue(0);
   const untoldStep = useSharedValue(0);
   const trackEndAvailable = useSharedValue(false);
@@ -293,6 +296,7 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       uiSteps,
       jsState,
       slideWidth,
+      stationaryMotion,
       resetGeneration,
       untoldStep,
       tellUntoldStep,
@@ -312,6 +316,7 @@ export function useSwipePager(): { pager: SwipePager; stepSignal: SwipeStepSigna
       uiSteps,
       jsState,
       slideWidth,
+      stationaryMotion,
       resetGeneration,
       untoldStep,
       tellUntoldStep,

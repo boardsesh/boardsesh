@@ -20,6 +20,9 @@ type DeferredBoardProps = {
   /** Legacy caller hint; artwork mounts independently of measurement readiness. */
   layoutReady?: boolean;
   containerSize?: { width: number; height: number };
+  /** Keep the resting board inset while zoom uses the complete column. */
+  restingHorizontalInset?: number;
+  fieldColorOverride?: string;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;

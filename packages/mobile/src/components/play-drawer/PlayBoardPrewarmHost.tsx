@@ -1,5 +1,6 @@
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { useNativeClimbRender } from '../../hooks/use-native-climb-render';
+import { usePlayDrawerSurface } from '../../hooks/use-play-drawer-surface';
 import { backgroundImageUri } from '../LayeredClimbImage';
 import { warmBoardArtMemory } from '../../lib/board-render/warm-board-art-memory';
 import {
@@ -29,6 +30,7 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
   setIds,
   renderWidth,
 }: PlayBoardPrewarmTarget) {
+  const { fieldColor } = usePlayDrawerSurface();
   const { overlayUri, overlayLoadKey, backgroundPaths } = useNativeClimbRender({
     frames,
     boardName,
@@ -40,6 +42,7 @@ const TappedBoardRender = React.memo(function TappedBoardRender({
     // the drawer never looks up.
     renderWidth,
     backgroundVariant: 'full',
+    fieldColorOverride: fieldColor,
   });
   // Decode what the drawer is about to show, so its images come out of memory
   // on the frame they mount.

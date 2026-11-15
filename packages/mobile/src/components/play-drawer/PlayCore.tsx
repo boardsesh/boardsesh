@@ -309,6 +309,7 @@ function settleRelightHeldAfterConnect(
 }
 
 export function PlayCore({
+  fieldColorOverride,
   swipeDismiss,
   onClose,
   boardConfig,
@@ -3465,6 +3466,7 @@ export function PlayCore({
                         <View style={styles.boardSection} onLayout={handleBoardContainerLayout}>
                           {boardRenderData ? (
                             <DeferredBoard
+                              fieldColorOverride={fieldColorOverride}
                               capturePaintedTestID={screenshotPaintedClimbTestId(
                                 process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
                                 activeBoardForNavigation,
@@ -3488,6 +3490,7 @@ export function PlayCore({
                               )}
                               open={isSheetOpen}
                               containerSize={boardContainerSize}
+                              restingHorizontalInset={spacing[4]}
                               boardName={boardName as BoardName}
                               boardRenderData={boardRenderData}
                               layoutId={layoutId}
@@ -3793,7 +3796,6 @@ const styles = StyleSheet.create({
   boardSection: {
     flex: 1,
     position: 'relative',
-    marginHorizontal: spacing[4],
   },
   // Anchors the switch-board overlay so its scrim covers exactly the playback +
   // action controls, leaving the board art and header above it interactive.

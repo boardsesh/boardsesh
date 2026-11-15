@@ -20,9 +20,13 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { useBoardAccessibilitySummary } from '../../hooks/use-board-accessibility-summary';
 import { useTranslation } from 'react-i18next';
 import { BoardImageNative } from '../BoardImageNative';
+import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
+import { StationaryBoardCarousel } from './StationaryBoardCarousel';
+import { useBoardRenderSettings } from '../../lib/board-render-settings';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
+import { centeredZoomViewport } from './zoom-viewport-clamp';
 import { computeContainedBoardSize, CAROUSEL_LAYER_Z } from './play-drawer-layout';
 import { ResetZoomButton } from '../board-controls/ResetZoomButton';
 import { UpcomingBoardPrefetch } from './UpcomingBoardPrefetch';
@@ -51,6 +55,9 @@ type SwipeBoardCarouselProps = {
   captureLocalMirrorTestID?: string;
   /** Positive geometry from the player's shared layout owner or validated cache. */
   containerSize?: { width: number; height: number };
+  /** Fit-to-screen gutter only; the zoom clip spans the entire container. */
+  restingHorizontalInset?: number;
+  fieldColorOverride?: string;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;
@@ -148,6 +155,7 @@ type CarouselBoardSlotProps = {
   boardHeight: number;
   mirrored: boolean;
   overlayRenderWidth: number;
+  fieldColorOverride?: string;
   zoomStyle: AnimatedStyle<ViewStyle>;
 };
 
@@ -180,6 +188,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   boardHeight,
   mirrored,
   overlayRenderWidth,
+  fieldColorOverride,
   zoomStyle,
 }: CarouselBoardSlotProps) {
   const mountedRef = useRef(true);
@@ -255,6 +264,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
             mirrored={mirrored}
             renderWidth={overlayRenderWidth}
             backgroundVariant="full"
+            fieldColorOverride={fieldColorOverride}
             // Climb identity (not the per-frame override) so the overlay
             // recycles on a change of climb, not on every playback frame.
             recyclingKey={frames}
@@ -288,6 +298,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   capturePaintedTestID,
   captureLocalMirrorTestID,
   containerSize: suppliedContainerSize,
+  restingHorizontalInset = 0,
+  fieldColorOverride,
   readyBoardArt,
   onReadyArtDisplayed,
   boardName,
@@ -317,6 +329,23 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const isScreenshotMode = process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1';
+  const { settings: renderSettings } = useBoardRenderSettings();
+  // A failed native scene stays on the image carousel for this board. Changing
+  // climb must not immediately retry the same failed layout on every swipe.
+  const stationaryIdentity = JSON.stringify([boardName, layoutId, sizeId, setIds, renderSettings]);
+  const [failedStationaryIdentity, setFailedStationaryIdentity] = useState<string | null>(null);
+  const handleStationaryUnavailable = useCallback(() => {
+    setFailedStationaryIdentity(stationaryIdentity);
+  }, [stationaryIdentity]);
+  const stationary =
+    !isScreenshotMode &&
+    NativeMotionClimbOverlayGPU !== null &&
+    boardName === 'kilter' &&
+    layoutId === 8 &&
+    !currentFrameOverride &&
+    renderSettings.mode !== 'classic' &&
+    !renderSettings.boardsesh.softDisc &&
+    failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');
   const accessibilitySummary = useBoardAccessibilitySummary(boardName, currentFrameOverride ?? currentFrames);
@@ -383,9 +412,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const boardBox = useMemo(
     () =>
       Number.isFinite(containerSize.width) && Number.isFinite(containerSize.height) && Number.isFinite(aspectRatio)
-        ? computeContainedBoardSize(containerSize.width, containerSize.height, aspectRatio)
+        ? computeContainedBoardSize(containerSize.width - restingHorizontalInset * 2, containerSize.height, aspectRatio)
         : null,
-    [containerSize, aspectRatio],
+    [containerSize, aspectRatio, restingHorizontalInset],
   );
   const imageBox = useMemo<ViewStyle>(
     () => ({ ...(boardBox ?? { width: '100%', height: '100%' }), aspectRatio: undefined }),
@@ -397,11 +426,19 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   // edge-adjacent. Using screenWidth instead leaves a gap equal to the letterbox
   // margins.
   const boardWidthForSwipe = boardBox?.width ?? screenWidth;
+  const zoomViewport = useMemo(
+    () =>
+      boardBox
+        ? centeredZoomViewport(containerSize.width, containerSize.height, boardBox.width, boardBox.height)
+        : undefined,
+    [containerSize, boardBox],
+  );
 
   const { pinchGesture, zoomPanGesture, isZoomed, isZoomedSV, resetZoom, animatedZoomStyle } = useZoomPanGesture({
     enabled: gesturesEnabled,
     containerWidth: boardBox?.width ?? screenWidth,
     containerHeight: boardBox?.height ?? containerSize.height,
+    viewport: zoomViewport,
     scrollRef,
     dismissRef,
   });
@@ -513,6 +550,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       boardHeight={boardHeight}
       mirrored={mirrored}
       overlayRenderWidth={overlayRenderWidth}
+      fieldColorOverride={fieldColorOverride}
       zoomStyle={animatedZoomStyle}
     />
   );
@@ -557,6 +595,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         mirrored={mirrored}
         renderWidth={overlayRenderWidth}
         backgroundVariant="full"
+        fieldColorOverride={fieldColorOverride}
         recyclingKey={currentFrames}
         style={imageBox}
         showGridLabels
@@ -595,17 +634,53 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             at one end and drop one at the other without moving the two that
             stay. Screenshot mode's plain board is not on a layer the neighbours
             can slide under, so there it goes first and they draw over it. */}
-        {isScreenshotMode
-          ? [
-              currentBoard,
-              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
-              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
-            ]
-          : [
-              neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
-              currentBoard,
-              neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
-            ]}
+        {stationary ? (
+          <StationaryBoardCarousel
+            boardProps={{
+              accessible: false,
+              readyBoardArt,
+              onReadyArtDisplayed,
+              frames: currentFrames,
+              boardName,
+              layoutId,
+              sizeId,
+              setIds,
+              boardWidth,
+              boardHeight,
+              mirrored,
+              renderWidth: overlayRenderWidth,
+              backgroundVariant: 'full',
+              fieldColorOverride,
+              recyclingKey: currentFrames,
+              style: imageBox,
+              showGridLabels: true,
+              revealWithOverlay: 'first-paint',
+              retainDisplayedOverlay: true,
+              suppressOverlayTransition: true,
+              playSurface: true,
+            }}
+            previousFrames={prevFrames}
+            nextFrames={nextFrames}
+            centerPage={centerPage}
+            pager={pager}
+            pageArt={pageArt}
+            boardBox={imageBox}
+            zoomStyle={animatedZoomStyle}
+            onUnavailable={handleStationaryUnavailable}
+          />
+        ) : isScreenshotMode ? (
+          [
+            currentBoard,
+            neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+            neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+          ]
+        ) : (
+          [
+            neighboursMounted ? renderSlot(centerPage - 1, prevFrames, false) : null,
+            currentBoard,
+            neighboursMounted ? renderSlot(centerPage + 1, nextFrames, false) : null,
+          ]
+        )}
 
         {/* Draws nothing: warms the renders for the climbs a few swipes ahead
             while the renderer is idle, so those swipes are cache hits. Skipped
@@ -619,6 +694,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             sizeId={sizeId}
             setIds={setIds}
             renderWidth={overlayRenderWidth}
+            fieldColorOverride={fieldColorOverride}
           />
         )}
 

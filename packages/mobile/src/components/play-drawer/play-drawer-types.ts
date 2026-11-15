@@ -116,6 +116,8 @@ export type PlayerSidePanelClimb = {
 };
 
 export type PlayDrawerProps = {
+  /** Opaque host surface for the board veil; panes keep their own rendering default. */
+  fieldColorOverride?: string;
   /** `/play` owns the transform so its backing and content travel together. */
   swipeDismiss?: SwipeDismissAnimation;
   onClose?: () => void;

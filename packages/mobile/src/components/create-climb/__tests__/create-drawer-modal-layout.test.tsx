@@ -125,10 +125,28 @@ vi.mock('../../board/HeatmapOverlay', () => ({
 vi.mock('../../board/HeatmapLegend', () => ({ HeatmapLegend: () => null }));
 vi.mock('../../board/HeatmapDownloadLine', () => ({ HeatmapDownloadLine: () => null }));
 vi.mock('../InteractiveCreateBoard', () => ({
-  InteractiveCreateBoard: ({ litUpHoldsMap, onPaint }: { litUpHoldsMap: unknown; onPaint: (id: number) => void }) =>
+  InteractiveCreateBoard: ({
+    litUpHoldsMap,
+    onPaint,
+    viewport,
+    renderWidth,
+    renderHeight,
+  }: {
+    litUpHoldsMap: unknown;
+    onPaint: (id: number) => void;
+    viewport?: unknown;
+    renderWidth: number;
+    renderHeight: number;
+  }) =>
     createElement(
       'div',
-      { 'data-node': 'board', 'data-roles': JSON.stringify(litUpHoldsMap) },
+      {
+        'data-node': 'board',
+        'data-roles': JSON.stringify(litUpHoldsMap),
+        'data-viewport': JSON.stringify(viewport),
+        'data-render-width': renderWidth,
+        'data-render-height': renderHeight,
+      },
       createElement('button', { 'data-paint': 'board', onClick: () => onPaint(1) }),
     ),
 }));
@@ -267,6 +285,23 @@ function renderDrawer(overrides: Record<string, unknown>, onClose: () => void = 
 }
 
 describe('CreateDrawer as a full-height modal', () => {
+  it('gives the editor the full card width while centering its original fitted board', () => {
+    const { node } = renderDrawer({});
+    const boardNode = node('board');
+    const width = Number(boardNode?.getAttribute('data-render-width'));
+    const height = Number(boardNode?.getAttribute('data-render-height'));
+    expect(width).toBeLessThanOrEqual(405 - 32);
+    expect(JSON.parse(boardNode?.getAttribute('data-viewport') ?? '{}')).toEqual({
+      width: 405,
+      height,
+      offsetX: (405 - width) / 2,
+      offsetY: 0,
+      bandStartX: 0,
+      bandEndX: 405,
+      bandStartY: 0,
+      bandEndY: height,
+    });
+  });
   beforeEach(() => {
     translateCalls.length = 0;
     platform.OS = 'ios';

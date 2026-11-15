@@ -690,6 +690,12 @@ export function useWallFrostMotionEnabled(): boolean {
   return wallFrostMotionOffered(useFeatureFlag('wall-frost-motion'));
 }
 
+export function useGpuClimbOverlayEnabled(): boolean {
+  // Shipped on compatible native binaries. Old experiment overrides must not
+  // disable it; deterministic screenshot fixtures retain their PNG renderer.
+  return process.env.EXPO_PUBLIC_SCREENSHOT_MODE !== '1';
+}
+
 /** The rule behind `useWallFrostMotionEnabled`, for tests. */
 export function wallFrostMotionOffered(flag: boolean | string | undefined): boolean {
   if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') return false;

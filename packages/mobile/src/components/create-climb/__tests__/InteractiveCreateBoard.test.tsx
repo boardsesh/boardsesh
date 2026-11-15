@@ -16,6 +16,11 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('react-native-reanimated', () => ({
+  useDerivedValue: (factory: () => unknown) => ({
+    get value() {
+      return factory();
+    },
+  }),
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
 }));
 

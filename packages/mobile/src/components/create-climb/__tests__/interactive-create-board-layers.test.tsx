@@ -13,6 +13,11 @@ vi.mock('react-native', () => ({
   PixelRatio: { get: () => 3 },
 }));
 vi.mock('react-native-reanimated', () => ({
+  useDerivedValue: (factory: () => unknown) => ({
+    get value() {
+      return factory();
+    },
+  }),
   default: { View: ({ children }: ChildrenProps) => createElement('div', null, children) },
 }));
 vi.mock('react-native-gesture-handler', () => ({

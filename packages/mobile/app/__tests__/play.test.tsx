@@ -7,6 +7,7 @@ import type { SwipeDismissAnimation } from '../../src/components/play-drawer/use
 import type { QueueSheetHandle } from '../../src/components/play-drawer/QueueSheet';
 import type { PlayDrawerOpenTarget } from '../../src/components/play-drawer';
 import type { DismissAndWaitResult } from '../../src/providers/sheet-presentation-provider';
+import { materialSurfaceContainers, materialSurfaces } from '../../src/theme/colors';
 
 const router = vi.hoisted(() => ({ dismiss: vi.fn() }));
 const navigation = vi.hoisted(() => ({
@@ -54,6 +55,8 @@ vi.mock('../../src/components/launch-update/hold-until-launch-ready', () => ({
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, absoluteFill: {} },
+  PlatformColor: (name: string) => ({ semantic: name }),
+  DynamicColorIOS: (colors: unknown) => colors,
   Platform: {
     OS: 'ios',
     get isPad() {
@@ -184,14 +187,16 @@ vi.mock('../../src/providers/queue-provider', () => ({
   useQueueSessionControls: () => ({}),
 }));
 vi.mock('../../src/providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryBackground: '#fff' }, colorScheme: 'light', variant: 'material' }),
+  useTheme: () => ({
+    systemColors: materialSurfaces.light,
+    m3SurfaceContainers: materialSurfaceContainers.light,
+    colorScheme: 'light',
+    variant: 'material',
+  }),
 }));
-vi.mock('../../src/theme/colors', () => ({
-  playDrawerMaterialTint: {
-    material: { light: 'transparent', dark: 'transparent' },
-    liquidGlass: { light: 'transparent', dark: 'transparent' },
-  },
-}));
+// The route uses its real surface resolver and palette. Only the native
+// capability/accessibility decision is fixed to this harness's Material theme.
+vi.mock('../../src/hooks/use-effective-surface-mode', () => ({ useEffectiveSurfaceMode: () => 'material' }));
 vi.mock('../../src/components/create-climb/use-player-dismiss-and-wait', () => ({
   usePlayerDismissAndWait: () => player.nativeWait,
 }));

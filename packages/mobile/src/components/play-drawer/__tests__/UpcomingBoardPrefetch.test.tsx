@@ -19,6 +19,7 @@ type RecordedRenderParams = {
   renderWidth?: number;
   backgroundVariant?: string;
   prefetch?: boolean;
+  fieldColorOverride?: string;
 };
 
 const renderParams = vi.hoisted(() => [] as RecordedRenderParams[]);
@@ -53,7 +54,9 @@ beforeEach(() => {
 
 describe('UpcomingBoardPrefetch', () => {
   it('warms one render per upcoming climb, at the play board’s own cache key', () => {
-    render(<UpcomingBoardPrefetch frames={[FIRST, SECOND]} {...BOARD} renderWidth={880} />);
+    render(
+      <UpcomingBoardPrefetch frames={[FIRST, SECOND]} {...BOARD} renderWidth={880} fieldColorOverride="#1C1C1E" />,
+    );
 
     expect(renderParams).toHaveLength(2);
     expect(renderParams.map(({ frames }) => frames)).toEqual([FIRST, SECOND]);
@@ -66,6 +69,7 @@ describe('UpcomingBoardPrefetch', () => {
         renderWidth: 880,
         backgroundVariant: 'full',
         prefetch: true,
+        fieldColorOverride: '#1C1C1E',
       });
       // Stroke-only, like the play board — a filled render is a different PNG.
       expect(params.filledStyle).toBeUndefined();

@@ -17,8 +17,7 @@ import {
   type OpenClimbActionsOptions,
 } from '../src/providers/drawer-host-provider';
 import { useQueueActions, useQueueSessionControls } from '../src/providers/queue-provider';
-import { useTheme } from '../src/providers/theme-provider';
-import { playDrawerMaterialTint } from '../src/theme/colors';
+import { usePlayDrawerSurface } from '../src/hooks/use-play-drawer-surface';
 import { usePlayerDismissAndWait } from '../src/components/create-climb/use-player-dismiss-and-wait';
 import { usePlaySwipeDismiss } from '../src/components/play-drawer/use-play-swipe-dismiss';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -68,7 +67,7 @@ function PlayScreen() {
   const { openLogAscent, sheet: logAscentSheet } = useLogAscentSheetHost();
   const { setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
-  const { systemColors, colorScheme, variant } = useTheme();
+  const { backgroundProps, fieldColor } = usePlayDrawerSurface();
   const { swipeDismiss, animatedStyle, onLayout, close, canConsumeTarget, dismissAndWait } = usePlaySwipeDismiss(
     playTarget?.nonce,
   );
@@ -233,15 +232,11 @@ function PlayScreen() {
           Transparency keep their opaque tonal surface — see ScreenBackground,
           which also owns why that fill stays `level0` and untouchable (#4209).
           Rendered on the first frame so the present animates over it. */}
-        <ScreenBackground
-          color={systemColors.secondaryBackground}
-          role="low"
-          fallbackColor={systemColors.secondaryBackground}
-          tintColor={playDrawerMaterialTint[variant][colorScheme]}
-        />
+        <ScreenBackground {...backgroundProps} />
         {activeBoardConfig ? (
           <>
             <PlayDrawer
+              fieldColorOverride={fieldColor}
               swipeDismiss={swipeDismiss}
               onClose={close}
               boardConfig={activeBoardConfig}

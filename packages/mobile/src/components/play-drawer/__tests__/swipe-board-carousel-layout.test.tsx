@@ -21,6 +21,8 @@ type ViewProps = {
 };
 
 const recorded = vi.hoisted(() => ({
+  motionNative: false,
+  renderSettings: { mode: 'aura', boardsesh: { softDisc: false } },
   onLayout: undefined as ViewProps['onLayout'],
   prefetch: vi.fn(),
   swipeOptions: vi.fn(),
@@ -30,6 +32,15 @@ const recorded = vi.hoisted(() => ({
   accessibility: undefined as
     | Pick<ViewProps, 'accessibilityRole' | 'accessibilityActions' | 'accessibilityValue' | 'onAccessibilityAction'>
     | undefined,
+}));
+
+vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  get NativeMotionClimbOverlayGPU() {
+    return recorded.motionNative ? 'NativeMotionClimbOverlayGPU' : null;
+  },
+}));
+vi.mock('../../../lib/board-render-settings', () => ({
+  useBoardRenderSettings: () => ({ settings: recorded.renderSettings }),
 }));
 
 const sharedThreads = vi.hoisted(() => ({
@@ -90,6 +101,11 @@ vi.mock('react-native-reanimated', async () => {
   return {
     default: { View },
     useAnimatedStyle: (factory: () => unknown) => factory(),
+    useDerivedValue: (factory: () => unknown) => ({
+      get value() {
+        return factory();
+      },
+    }),
     useSharedValue: (initial: unknown) => {
       const shared = useRef<{ value: unknown } | null>(null);
       if (shared.current === null) {
@@ -206,6 +222,7 @@ function restingPager(): SwipePager {
     uiSteps: { value: 0 },
     jsState: { value: { center: 0, hasPrevious: false, hasNext: true, processedStep: 0 } },
     slideWidth: { value: 0 },
+    stationaryMotion: { value: false },
     resetGeneration: { value: 0 },
     untoldStep: { value: 0 },
     tellUntoldStep: () => {},
@@ -270,6 +287,8 @@ function readinessCallbackFor(frames: string): (readiness: BoardArtReadiness) =>
 }
 
 beforeEach(() => {
+  recorded.motionNative = false;
+  recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
   recorded.onLayout = undefined;
   _resetPlayBoardPrewarmForTests();
   recorded.prefetch.mockClear();
@@ -285,6 +304,208 @@ beforeEach(() => {
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
 });
 afterEach(() => vi.unstubAllEnvs());
+
+type StationaryBoardProps = {
+  frames: string;
+  gpuTransition?: {
+    previousFrames: string | null;
+    nextFrames: string | null;
+    centerPage: number;
+    pagePosition: SharedValue<number>;
+  };
+  onArtReadinessChange: (state: BoardArtReadiness) => void;
+  onGpuTransitionStateChange: (state: 'unavailable' | 'loading' | 'ready') => void;
+};
+
+function latestStationaryBoard(): StationaryBoardProps {
+  const call = recorded.boardProps.mock.calls.findLast(([props]) => props.gpuTransition !== undefined);
+  if (!call) throw new Error('Stationary GPU board was not mounted');
+  return call[0] as StationaryBoardProps;
+}
+
+it.each([
+  { native: false, boardWidth: 1000, boardHeight: 2000, width: 250, height: 500, offsetX: 70, offsetY: 0 },
+  { native: true, boardWidth: 1000, boardHeight: 2000, width: 250, height: 500, offsetX: 70, offsetY: 0 },
+  { native: false, boardWidth: 2000, boardHeight: 1000, width: 358, height: 179, offsetX: 16, offsetY: 160.5 },
+  { native: true, boardWidth: 2000, boardHeight: 1000, width: 358, height: 179, offsetX: 16, offsetY: 160.5 },
+])(
+  'zooms across the full player width without changing rest fit (%j)',
+  ({ native, boardWidth, boardHeight, width, height, offsetX, offsetY }) => {
+    recorded.motionNative = native;
+    const { getByTestId } = render(
+      createElement(SwipeBoardCarousel, {
+        ...baseProps,
+        layoutId: 8,
+        restingHorizontalInset: 16,
+        boardRenderData: { boardWidth, boardHeight },
+        containerSize: { width: 390, height: 500 },
+      }),
+    );
+    expectDimensions(getByTestId('board-current'), width, height);
+    expect(recorded.zoomOptions.mock.lastCall?.[0]).toMatchObject({
+      containerWidth: width,
+      containerHeight: height,
+      viewport: {
+        width: 390,
+        height: 500,
+        offsetX,
+        offsetY,
+        bandStartX: 0,
+        bandEndX: 390,
+        bandStartY: 0,
+        bandEndY: 500,
+      },
+    });
+    expect(recorded.swipeOptions.mock.lastCall?.[0].boardWidth).toBe(width);
+  },
+);
+
+it('keeps one photograph and feeds reversible absolute progress without a JS render', () => {
+  recorded.motionNative = true;
+  const pager = restingPager();
+  const { queryAllByTestId } = render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      pager,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    }),
+  );
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  expect(pager.stationaryMotion.value).toBe(true);
+  const board = latestStationaryBoard();
+  expect(board.gpuTransition).toMatchObject({ previousFrames: 'previous', nextFrames: 'next', centerPage: 0 });
+  const renderCount = recorded.boardProps.mock.calls.length;
+  pager.slideWidth.value = 250;
+  pager.translateX.value = -125;
+  expect(board.gpuTransition?.pagePosition.value).toBe(0.5);
+  pager.translateX.value = 50;
+  expect(board.gpuTransition?.pagePosition.value).toBe(-0.2);
+  pager.anchorPage.value = 1;
+  pager.translateX.value = 0;
+  expect(board.gpuTransition?.pagePosition.value).toBe(1);
+  expect(recorded.boardProps.mock.calls).toHaveLength(renderCount);
+});
+
+it('waits for the photograph and prepared native neighbors before releasing a swipe', () => {
+  recorded.motionNative = true;
+  render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    }),
+  );
+  const board = latestStationaryBoard();
+  const pageArt = recorded.swipeOptions.mock.lastCall?.[0].pageArt as SharedValue<Record<number, BoardArtReadiness>>;
+  act(() => board.onGpuTransitionStateChange('ready'));
+  expect(pageArt.value).toEqual({ '-1': 'loading', 0: 'loading', 1: 'loading' });
+  act(() => board.onArtReadinessChange('ready'));
+  expect(pageArt.value).toEqual({ '-1': 'ready', 0: 'ready', 1: 'ready' });
+});
+
+it('ignores a stale three-climb presentation after the pager window advances', () => {
+  recorded.motionNative = true;
+  const props = { ...baseProps, layoutId: 8, prevFrames: 'previous', containerSize: { width: 350, height: 500 } };
+  const { rerender } = render(createElement(SwipeBoardCarousel, props));
+  const stale = latestStationaryBoard();
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: 1,
+      prevFrames: 'current',
+      currentFrames: 'next',
+      nextFrames: 'later',
+    }),
+  );
+  const pageArt = recorded.swipeOptions.mock.lastCall?.[0].pageArt as SharedValue<Record<number, BoardArtReadiness>>;
+  act(() => {
+    stale.onGpuTransitionStateChange('ready');
+    stale.onArtReadinessChange('ready');
+  });
+  expect(pageArt.value).toEqual({ 0: 'loading', 1: 'loading', 2: 'loading' });
+  const current = latestStationaryBoard();
+  act(() => {
+    current.onGpuTransitionStateChange('ready');
+    current.onArtReadinessChange('ready');
+  });
+  expect(pageArt.value).toEqual({ 0: 'ready', 1: 'ready', 2: 'ready' });
+});
+
+it('rejects old readiness and failure callbacks when the same three climbs return', () => {
+  recorded.motionNative = true;
+  const props = { ...baseProps, layoutId: 8, prevFrames: 'previous', containerSize: { width: 350, height: 500 } };
+  const { rerender, queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+  const firstVisit = latestStationaryBoard();
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: 1,
+      prevFrames: 'current',
+      currentFrames: 'next',
+      nextFrames: 'later',
+    }),
+  );
+  rerender(createElement(SwipeBoardCarousel, props));
+  const returnVisit = latestStationaryBoard();
+  const pageArt = recorded.swipeOptions.mock.lastCall?.[0].pageArt as SharedValue<Record<number, BoardArtReadiness>>;
+  act(() => {
+    firstVisit.onGpuTransitionStateChange('ready');
+    firstVisit.onArtReadinessChange('ready');
+  });
+  expect(pageArt.value).toEqual({ '-1': 'loading', 0: 'loading', 1: 'loading' });
+  act(() => firstVisit.onGpuTransitionStateChange('unavailable'));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  expect(recorded.boardProps.mock.lastCall?.[0].gpuTransition).toBeDefined();
+  act(() => {
+    returnVisit.onGpuTransitionStateChange('ready');
+    returnVisit.onArtReadinessChange('ready');
+  });
+  expect(pageArt.value).toEqual({ '-1': 'ready', 0: 'ready', 1: 'ready' });
+});
+
+it('returns to retained image pages after unsupported or failed native rendering', async () => {
+  recorded.motionNative = true;
+  const pager = restingPager();
+  const { queryAllByTestId } = render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      pager,
+      layoutId: 8,
+      prevFrames: 'previous',
+      containerSize: { width: 350, height: 500 },
+    }),
+  );
+  const board = latestStationaryBoard();
+  act(() => board.onGpuTransitionStateChange('unavailable'));
+  await nextFrame();
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  expect(recorded.boardProps.mock.lastCall?.[0].gpuTransition).toBeUndefined();
+  expect(pager.stationaryMotion.value).toBe(false);
+});
+
+it('uses the existing carousel for Classic and retries stationary rendering after changing appearance', async () => {
+  recorded.motionNative = true;
+  recorded.renderSettings = { mode: 'classic', boardsesh: { softDisc: false } };
+  const props = { ...baseProps, layoutId: 8, prevFrames: 'previous', containerSize: { width: 350, height: 500 } };
+  const { rerender, queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+  await nextFrame();
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
+  rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  const board = latestStationaryBoard();
+  act(() => board.onGpuTransitionStateChange('unavailable'));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: true } };
+  rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  recorded.renderSettings = { mode: 'default', boardsesh: { softDisc: false } };
+  rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+});
 
 it('keeps readiness on retained pages and prunes removed slots without accepting their late callbacks', async () => {
   const props = { ...baseProps, containerSize: { width: 350, height: 500 }, prevFrames: 'previous' };
@@ -795,4 +1016,24 @@ describe('SwipeBoardCarousel pages', () => {
 
     expect(queryAllByTestId(/^board-/)).toHaveLength(1);
   });
+});
+
+it.each([false, true])('passes the host ground to all displayed boards and prefetches, GPU %s', async (native) => {
+  recorded.motionNative = native;
+  render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      sizeId: 25,
+      fieldColorOverride: '#1C1C1E',
+      prefetchFrames: ['later'],
+    }),
+  );
+  measure(390, 700);
+  await nextFrame();
+  expect(recorded.boardProps).toHaveBeenCalled();
+  for (const [props] of recorded.boardProps.mock.calls) {
+    expect(props.fieldColorOverride).toBe('#1C1C1E');
+  }
+  expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ fieldColorOverride: '#1C1C1E' }));
 });

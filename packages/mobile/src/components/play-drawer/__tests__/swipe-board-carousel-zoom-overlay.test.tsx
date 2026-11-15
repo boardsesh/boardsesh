@@ -75,6 +75,10 @@ vi.mock('react-native-gesture-handler', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../BoardImageNative', () => ({ BoardImageNative: () => createElement('div') }));
+vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({ NativeMotionClimbOverlayGPU: null }));
+vi.mock('../../../lib/board-render-settings', () => ({
+  useBoardRenderSettings: () => ({ settings: { mode: 'aura', boardsesh: { softDisc: false } } }),
+}));
 // Drawn siblings of the overlay; neither carries a gesture, so they stay stubs.
 vi.mock('../../board-controls/ResetZoomButton', () => ({ ResetZoomButton: () => null }));
 vi.mock('../UpcomingBoardPrefetch', () => ({ UpcomingBoardPrefetch: () => null }));

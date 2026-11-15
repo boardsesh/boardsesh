@@ -18,6 +18,7 @@
 
 mod geometry;
 mod glow;
+pub mod gpu_atlas;
 mod marks;
 #[cfg(test)]
 mod tests;
