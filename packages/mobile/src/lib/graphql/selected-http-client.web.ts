@@ -4,6 +4,7 @@ import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-ba
 import {
   createBrowserBackendHttpTransportForView,
   captureBrowserBackendHttpResult,
+  captureBrowserBackendHttpError,
   isCurrentBrowserBackendHttpResult,
 } from '@boardsesh/auth-protocol/browser-backend-http';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
@@ -45,15 +46,20 @@ export function createSelectedBrowserHttpClient(options: {
     // the shared core's actual-live-401 observer confirms reachability.
     ignoreFailure: (error) => error instanceof BrowserBackendConsumerError,
   });
+  const requestIdentities = new WeakMap<object, AbortSignal | null | undefined>();
   const client = new GraphQLClient(url, {
-    fetch(input, init = {}) {
+    async fetch(input, init = {}) {
       // graphql-request exposes setEndpoint(). This view's credential belongs
       // only to its configured backend, even if a caller mutates that SDK API.
       const destination = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
       if (destination !== url) throw new BrowserBackendConsumerError('unavailable');
       const caller = init.signal ?? (input instanceof Request ? input.signal : undefined);
       const signal = AbortSignal.any(caller ? [caller, controller.signal] : [controller.signal]);
-      return gatedFetch(input, { ...init, signal }, timeoutMs());
+      const response = await gatedFetch(input, { ...init, signal }, timeoutMs());
+      // The SDK response middleware omits signal despite its context type.
+      // Keep the invocation received by actual fetch before our own composition.
+      requestIdentities.set(response.headers, caller);
+      return response;
     },
     responseMiddleware(response) {
       const headers =
@@ -62,7 +68,13 @@ export function createSelectedBrowserHttpClient(options: {
           : 'headers' in response
             ? response.headers
             : undefined;
-      if (response instanceof Error) transport.admitResponse({ kind: 'error', headers });
+      if (response instanceof Error)
+        transport.admitResponse({
+          kind: 'error',
+          headers,
+          error: response,
+          requestIdentity: headers ? requestIdentities.get(headers) : undefined,
+        });
       else transport.admitResponse({ kind: 'result', headers, data: 'data' in response ? response.data : undefined });
     },
   });
@@ -80,6 +92,15 @@ export function createSelectedBrowserHttpClient(options: {
       return () => {
         if (!transport.isCurrent()) throw new BrowserBackendConsumerError('superseded');
         assertResult();
+      };
+    },
+    captureErrorDelivery(error: unknown, requestIdentity: AbortSignal): (() => void) | null {
+      if (!transport.isCurrent()) return null;
+      const assertError = captureBrowserBackendHttpError(error, backendClient, requestIdentity);
+      if (!assertError) return null;
+      return () => {
+        if (!transport.isCurrent()) throw new BrowserBackendConsumerError('superseded');
+        assertError();
       };
     },
     dispose(): void {

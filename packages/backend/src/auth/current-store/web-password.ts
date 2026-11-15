@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
@@ -158,7 +158,7 @@ export async function registerWebPassword(
   });
 }
 
-interface ExactCandidate {
+export interface WebPasswordCandidate {
   readonly userId: string;
   readonly email: string;
   readonly name: string | null;
@@ -179,7 +179,7 @@ async function addressSnapshot(
   email: string,
   receipt: IdentityAuthorityReceipt,
   lockedIds?: readonly string[],
-): Promise<ExactCandidate[]> {
+): Promise<WebPasswordCandidate[]> {
   const fields = {
     userId: users.id,
     email: users.email,
@@ -190,7 +190,9 @@ async function addressSnapshot(
     generation: authSubjectCutoffs.generation,
     deletedAt: authSubjectCutoffs.deletedAt,
   };
-  const predicate = lockedIds ? inArray(users.id, [...lockedIds]) : accountEmailCandidates(email);
+  const predicate = lockedIds
+    ? and(accountEmailCandidates(email), inArray(users.id, [...lockedIds]))
+    : accountEmailCandidates(email);
   // Legacy takes hash+generation in one SELECT. Canonical takes both from the
   // actual adapter account SELECT below; the legacy table is never its source.
   const rows =
@@ -216,7 +218,7 @@ async function addressSnapshot(
   )
     throw new CurrentStoreFoundationError('RESERVATION_INCONSISTENT');
   const resolved = resolveAccountEmail(email, rows).rows;
-  const snapshot: ExactCandidate[] = [];
+  const snapshot: WebPasswordCandidate[] = [];
   const identity = bindIdentityAuthority(transaction, receipt);
   for (const candidate of resolved) {
     const credential = receipt.authority === 'better-auth' ? await identity.readPassword(candidate.userId) : undefined;
@@ -233,7 +235,7 @@ async function addressSnapshot(
   return snapshot;
 }
 
-function sameCredentialMembers(before: readonly ExactCandidate[], after: readonly ExactCandidate[]) {
+function sameCredentialMembers(before: readonly WebPasswordCandidate[], after: readonly WebPasswordCandidate[]) {
   if (before.length !== after.length || before.length > MAX_CURRENT_STORE_PASSWORD_CANDIDATES) return false;
   const previousById = new Map(before.map((candidate) => [candidate.userId, candidate]));
   return after.every((candidate) => {
@@ -248,6 +250,86 @@ function sameCredentialMembers(before: readonly ExactCandidate[], after: readonl
   });
 }
 
+/** Private verifier state; never serialize the candidate hashes or password. */
+export interface PreparedWebPasswordAuthentication {
+  readonly receipt: IdentityAuthorityReceipt;
+  readonly email: string;
+  readonly snapshot: readonly WebPasswordCandidate[];
+  readonly matchedUserId: string | null;
+}
+
+/** Both ordinary login and browser publication use this one byte-preserving verifier. */
+export async function prepareWebPasswordAuthentication(
+  database: DbInstance,
+  authority: WebPasswordAuthority,
+  email: string,
+  password: string,
+): Promise<PreparedWebPasswordAuthentication> {
+  const prepared = await database.transaction(async (transaction) => {
+    await transactionSettings(transaction);
+    const receipt = await captureIdentityAuthority(transaction, authority);
+    return { receipt, snapshot: await addressSnapshot(transaction, email, receipt) };
+  });
+  const credentialCandidates = prepared.snapshot.flatMap((candidate) =>
+    candidate.passwordHash === null
+      ? []
+      : [{ userId: candidate.userId, createdAt: candidate.createdAt, passwordHash: candidate.passwordHash }],
+  );
+  const matched = await matchCurrentStorePasswordCandidate(
+    credentialCandidates,
+    password,
+    prepared.receipt.authority === 'better-auth'
+      ? (passwordHash, submittedPassword) =>
+          verifyAuthorityPassword({ hash: passwordHash, password: submittedPassword })
+      : undefined,
+  );
+  return { ...prepared, email, matchedUserId: matched?.userId ?? null };
+}
+
+/** Publication includes the observed source owner in the SAME ordered lock
+ * statement, before any binding lock. A no-match request takes no user lock. */
+export async function lockWebPasswordAuthentication(
+  transaction: CurrentStoreTransaction,
+  prepared: PreparedWebPasswordAuthentication,
+  publicationSourceUserIds?: readonly string[],
+): Promise<WebPasswordCandidate | null> {
+  if (prepared.matchedUserId === null) return null;
+  await boundSignInLockWaits(transaction);
+  const additionalUserIds = [...new Set(publicationSourceUserIds ?? [])];
+  const predicate = additionalUserIds.length
+    ? or(accountEmailCandidates(prepared.email), inArray(users.id, additionalUserIds))
+    : accountEmailCandidates(prepared.email);
+  const lockedUsers = await transaction
+    .select({ id: users.id })
+    .from(users)
+    .where(predicate)
+    .orderBy(users.id)
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1 + additionalUserIds.length)
+    .for(publicationSourceUserIds === undefined ? 'key share' : 'update');
+  // A later statement sees a reset that committed while the lock was waiting.
+  const current = lockedUsers.length
+    ? await addressSnapshot(
+        transaction,
+        prepared.email,
+        prepared.receipt,
+        lockedUsers.map((user) => user.id),
+      )
+    : [];
+  const selected = current.find((candidate) => candidate.userId === prepared.matchedUserId);
+  return selected && sameCredentialMembers(prepared.snapshot, current) && !selected.deleted ? selected : null;
+}
+
+/** Caller holds the target user lock; only its authoritative credential is read. */
+export async function readWebPasswordCandidateInTransaction(
+  transaction: CurrentStoreTransaction,
+  receipt: IdentityAuthorityReceipt,
+  userId: string,
+): Promise<WebPasswordCandidate | null> {
+  const [owner] = await transaction.select({ email: users.email }).from(users).where(eq(users.id, userId));
+  if (!owner) return null;
+  return (await addressSnapshot(transaction, owner.email, receipt, [userId]))[0] ?? null;
+}
+
 /** One-request password/UID verification snapshot, NOT a continuing credential. */
 export async function authenticateWebPassword(
   database: DbInstance,
@@ -258,26 +340,9 @@ export async function authenticateWebPassword(
   const configuredAuthority = captureAuthority(authorityInput);
   const { requestId, issuedAt, credentialProofVersion } = input;
   const { email, password } = input.payload;
-  const prepared = await database.transaction(async (transaction) => {
-    await transactionSettings(transaction);
-    const receipt = await captureIdentityAuthority(transaction, configuredAuthority);
-    return { receipt, snapshot: await addressSnapshot(transaction, email, receipt) };
-  });
-  const { receipt, snapshot } = prepared;
+  const prepared = await prepareWebPasswordAuthentication(database, configuredAuthority, email, password);
+  const { receipt } = prepared;
   const authority = { ...configuredAuthority, expectedWriterEpoch: receipt.epoch };
-  const credentialCandidates = snapshot.flatMap((candidate) =>
-    candidate.passwordHash === null
-      ? []
-      : [{ userId: candidate.userId, createdAt: candidate.createdAt, passwordHash: candidate.passwordHash }],
-  );
-  const matched = await matchCurrentStorePasswordCandidate(
-    credentialCandidates,
-    password,
-    receipt.authority === 'better-auth'
-      ? (passwordHash, submittedPassword) =>
-          verifyAuthorityPassword({ hash: passwordHash, password: submittedPassword })
-      : undefined,
-  );
   return database.transaction(async (transaction): Promise<PasswordReply> => {
     await transactionSettings(transaction);
     await revalidateIdentityAuthority(transaction, receipt);
@@ -294,7 +359,7 @@ export async function authenticateWebPassword(
     // A password that matched no one is wrong whatever the rows say now, so it
     // takes no user lock: a burst of wrong guesses naming a held account never
     // waits or holds a pool connection behind it.
-    if (!matched) {
+    if (prepared.matchedUserId === null) {
       assertFresh(issuedAt);
       return {
         protocolVersion: AUTH_PROTOCOL_VERSION,
@@ -313,27 +378,9 @@ export async function authenticateWebPassword(
     // and answered unavailable, never as a wrong password.
     // BA-02: the lock covers every row the address rule could name (the typed
     // text and its other capitals), still in users.id order.
-    await boundSignInLockWaits(transaction);
-    const lockedUsers = await transaction
-      .select({ id: users.id })
-      .from(users)
-      .where(accountEmailCandidates(email))
-      .orderBy(users.id)
-      .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1)
-      .for('key share');
-    // A statement of its own, after the lock: the locking statement's snapshot
-    // predates its wait, so only a later one sees a reset that committed during it.
-    const current = lockedUsers.length
-      ? await addressSnapshot(
-          transaction,
-          email,
-          receipt,
-          lockedUsers.map((user) => user.id),
-        )
-      : [];
-    const selected = matched ? current.find((candidate) => candidate.userId === matched.userId) : undefined;
+    const selected = await lockWebPasswordAuthentication(transaction, prepared);
     assertFresh(issuedAt);
-    if (!selected || !sameCredentialMembers(snapshot, current) || selected.deleted)
+    if (!selected)
       return {
         protocolVersion: AUTH_PROTOCOL_VERSION,
         operation: 'password',

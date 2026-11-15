@@ -10,9 +10,14 @@ export function createBrowserHttpOperations(options: {
   readonly captureScope: () => string | undefined;
   readonly isCurrentView: (scope: string | undefined) => boolean;
   readonly captureResult: (scope: string | undefined, result: unknown) => (() => void) | null;
+  readonly captureErrorDelivery: (
+    scope: string | undefined,
+    error: unknown,
+    requestIdentity: AbortSignal,
+  ) => (() => void) | null;
   readonly resolveClient: (scope: string | undefined, mode: 'interactive' | 'offline') => GraphQLClient;
 }) {
-  const { captureScope, isCurrentView, captureResult, resolveClient } = options;
+  const { captureScope, isCurrentView, captureResult, captureErrorDelivery, resolveClient } = options;
   function create(scope: string | undefined, options: HttpOperationOptions = {}) {
     const { mode = 'interactive', signal: callerSignal } = options;
     const controller = new AbortController();
@@ -23,6 +28,7 @@ export function createBrowserHttpOperations(options: {
         if (!isCurrentView(scope)) throw new BrowserBackendConsumerError('superseded');
       },
       captureDelivery: (result) => captureResult(scope, result),
+      captureErrorDelivery: (error, requestIdentity) => captureErrorDelivery(scope, error, requestIdentity),
     });
     const request = createHttpOperationRequest({
       resolveClient: () => resolveClient(scope, mode),
@@ -34,6 +40,7 @@ export function createBrowserHttpOperations(options: {
       request,
       assertView: original.assertView,
       assertDeliveries: original.assertDeliveries,
+      assertErrorDeliveries: original.assertErrorDeliveries,
       dispose() {
         original.dispose();
         controller.abort(new BrowserBackendConsumerError('superseded'));
