@@ -27,6 +27,8 @@ export function useSprayLedPreviewForSettings(
   const enabled = !loading && settings?.enabled === true;
   const url = settings?.controller.url ?? '';
   const controllerType = settings?.controller.type ?? 'wled';
+  const brightness = settings?.brightness;
+  const autoOffMinutes = settings?.autoOffMinutes;
   const runtime = useRef<PreviewRuntime | null>(null);
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
@@ -96,12 +98,12 @@ export function useSprayLedPreviewForSettings(
       void loadSprayLedDriver(controllerType)
         .then((driver) => {
           if (!cancelled && credentialGeneration === getCredentialGeneration())
-            attach(createLedPreviewSession(driver, url));
+            attach(createLedPreviewSession(driver, url, { brightness, autoOffMinutes }));
         })
         .catch(() => undefined);
     } else {
       try {
-        attach(createLedPreviewSession(getLedControllerDriver(controllerType), url));
+        attach(createLedPreviewSession(getLedControllerDriver(controllerType), url, { brightness, autoOffMinutes }));
       } catch {
         /* Invalid address stays unavailable. */
       }
@@ -110,7 +112,7 @@ export function useSprayLedPreviewForSettings(
       cancelled = true;
       dispose?.();
     };
-  }, [wallUuid, enabled, url, controllerType]);
+  }, [wallUuid, enabled, url, controllerType, brightness, autoOffMinutes]);
 
   const run = useCallback(
     async (

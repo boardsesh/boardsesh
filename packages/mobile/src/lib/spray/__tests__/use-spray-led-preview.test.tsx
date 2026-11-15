@@ -80,6 +80,21 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['wled', 'http://wall.local'],
+    ['wled-ble', 'wled-ble:wled-aabbccddeeff'],
+  ] as const)('gives the %s session the wall’s brightness and auto-off', async (type, url) => {
+    mocks.settings = {
+      enabled: true,
+      controller: { type, url },
+      brightness: 200,
+      autoOffMinutes: 30,
+    } as typeof mocks.settings;
+    renderHook(() => useSprayLedPreview('wall'));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create).toHaveBeenLastCalledWith({}, url, { brightness: 200, autoOffMinutes: 30 });
+  });
+
   it('waits for interaction and keeps callbacks stable through state changes', async () => {
     const { result, rerender, unmount } = renderHook(() => useSprayLedPreview('wall'));
     expect(result.current.available).toBe(true);
@@ -105,7 +120,7 @@ describe('spray LED preview lifecycle', () => {
     expect(mocks.show).toHaveBeenCalledTimes(1);
     mocks.settings = { enabled: true, controller: { type: 'wled', url: 'http://new.local' } };
     rerender();
-    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local');
+    expect(mocks.create).toHaveBeenLastCalledWith({}, 'http://new.local', expect.any(Object));
   });
 
   it('chases in supplied order, at 100ms intervals, then clears', async () => {

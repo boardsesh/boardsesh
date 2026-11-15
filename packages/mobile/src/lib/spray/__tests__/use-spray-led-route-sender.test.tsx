@@ -36,6 +36,7 @@ vi.mock('react-native', () => ({
   },
 }));
 vi.mock('../spray-led-driver', () => ({ loadSprayLedDriver: mocks.loadDriver }));
+vi.mock('../spray-led-ble-primer', () => ({ explainSprayBluetooth: async () => true }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => 'query-client' }));
 vi.mock('@boardsesh/spray-wall-geometry', () => ({ buildSprayLedMapping: mocks.mapping }));
 vi.mock('@boardsesh/led-controller', () => ({
@@ -142,6 +143,29 @@ describe('spray route transport', () => {
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.clear).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['wled', 'http://wall.local'],
+    ['wled-ble', 'wled-ble:wled-aabbccddeeff'],
+  ] as const)(
+    'lights a %s wall at its brightness and auto-off, and starts afresh when they change',
+    async (type, url) => {
+      mocks.settings.mockResolvedValue({
+        enabled: true,
+        controller: { type, url },
+        brightness: 200,
+        autoOffMinutes: 30,
+      });
+      const { result } = renderHook(() => useSender());
+      expect(await result.current.send('p7r1')).toBe(true);
+      expect(mocks.loadDriver).toHaveBeenCalledWith(type);
+      expect(mocks.create).toHaveBeenLastCalledWith('wled-driver', url, { brightness: 200, autoOffMinutes: 30 });
+      mocks.settings.mockResolvedValue({ enabled: true, controller: { type, url }, brightness: 90, autoOffMinutes: 0 });
+      expect(await result.current.send('p7r2')).toBe(true);
+      expect(mocks.close).toHaveBeenCalledOnce();
+      expect(mocks.create).toHaveBeenLastCalledWith('wled-driver', url, { brightness: 90, autoOffMinutes: 0 });
+    },
+  );
 
   it('keeps catalog boards outside LAN setup', async () => {
     const { result } = renderHook(() => useSender('kilter'));
