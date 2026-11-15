@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useHttpQuery } from '../use-http-query';
 import {
   GET_RECENT_BETA_LINKS,
   type GetRecentBetaLinksQueryResponse,
@@ -7,7 +7,6 @@ import {
 } from '@boardsesh/graphql/operations/beta-links';
 import { betaLinkIdentity, isBetaVideoUrl } from '@boardsesh/shared-schema';
 import { mapBetaLink } from '../../beta-video-url';
-import { getHttpClient } from '../client';
 import { recentBetaLinksQueryKey } from '../query-keys';
 import type { RecentBetaVideo } from './index';
 
@@ -34,13 +33,14 @@ export function selectRecentBetaVideos(rows: RecentBetaLinkGqlRow[], limit: numb
  * Network only, never persisted (`docs/offline-reads.md`, bucket 3).
  */
 export function useRecentBetaLinks(limit: number, boardType: string | null, layoutId: number | null, enabled: boolean) {
-  return useQuery({
+  return useHttpQuery({
     queryKey: recentBetaLinksQueryKey(limit, boardType, layoutId),
-    queryFn: () =>
-      getHttpClient().request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(
-        GET_RECENT_BETA_LINKS,
-        { limit, boardType, layoutId },
-      ),
+    queryFn: (_context, operation) =>
+      operation.request<GetRecentBetaLinksQueryResponse, GetRecentBetaLinksQueryVariables>(GET_RECENT_BETA_LINKS, {
+        limit,
+        boardType,
+        layoutId,
+      }),
     select: (data) => selectRecentBetaVideos(data.recentBetaLinks, limit),
     enabled,
     staleTime: 5 * 60 * 1000,

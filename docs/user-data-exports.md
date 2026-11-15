@@ -130,6 +130,25 @@ that copy under the destination app's retention rules.
 
 `expo-sharing` requires new native binaries; an OTA update alone cannot add it.
 
+### Captured browser operations
+
+In the staged selected-browser mode, export status and generation use the
+original view's query keys and cache. A polling-cap hit may return already-owned
+metadata; it does not supply a new delivery receipt or authorize a download.
+Each generation request and fresh-link request captures its operation before
+asynchronous work. The screen also captures its action before reading the
+outbox or asking whether to export synced changes. A later account or an
+account round trip cannot adopt those pending actions or their busy/error state.
+
+The fresh link's actual delivery receipt remains attached to the platform
+download guard through later awaits. A newer same-owner lease cannot extend an
+older link response. Download cancellation and mount retirement happen during
+layout cleanup, before a removing parent's layout effect. Native query keys,
+polling limits, file cleanup and save/share behavior stay compatible. Signed
+URLs remain local to the download call, outside query and mutation data.
+These caller controls keep public browser readiness false; they do not qualify
+the remaining offline outboxes or whole-application browser behavior.
+
 ## Rollout
 
 1. Apply generated indexes and rerun worker grants with the

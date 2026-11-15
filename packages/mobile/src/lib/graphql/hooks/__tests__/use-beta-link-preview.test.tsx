@@ -6,7 +6,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const requestMock = vi.fn();
 vi.mock('../../client', () => ({
-  getHttpClient: () => ({ request: requestMock }),
+  getHttpClient: () => ({
+    request: ({ document, variables }: { document: unknown; variables?: unknown }) => requestMock(document, variables),
+  }),
+  getOfflineSyncHttpClient: vi.fn(),
 }));
 
 import { useBetaLinkPreview } from '../use-beta-link-preview';

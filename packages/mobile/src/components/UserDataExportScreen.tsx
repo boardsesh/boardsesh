@@ -16,6 +16,8 @@ import { useTheme } from '../providers/theme-provider';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { useProfile } from '../lib/graphql/hooks';
 import { UserDataExportActionError, useUserDataExport } from '../lib/graphql/hooks/use-user-data-export';
+import { useHttpActionScope } from '../lib/graphql/use-http-action-scope';
+import { useHttpQueryScope } from '../lib/graphql/use-http-query-scope';
 import { isGraphqlRateLimitedError } from '../lib/graphql/extract-error-message';
 import { withSettingTracking } from '../lib/settings-analytics';
 import { spacing } from '../theme/tokens';
@@ -44,6 +46,7 @@ export function UserDataExportScreen() {
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('settings');
   const { systemColors } = useTheme();
+  const httpScope = useHttpQueryScope();
   const profileQuery = useProfile({ enabled: isAuthenticated });
   const pageBackground = { backgroundColor: systemColors.groupedBackground };
 
@@ -71,7 +74,7 @@ export function UserDataExportScreen() {
 
   return (
     <AccountUserDataExportScreen
-      key={`${profileQuery.data.id}:${captureAuthCredentialGeneration()}`}
+      key={`${profileQuery.data.id}:${captureAuthCredentialGeneration()}:${httpScope.scoped ? httpScope.scope : 'native-legacy'}`}
       userId={profileQuery.data.id}
     />
   );
@@ -80,6 +83,7 @@ export function UserDataExportScreen() {
 function AccountUserDataExportScreen({ userId }: { userId: string }) {
   const { t, i18n } = useTranslation('settings');
   const confirm = useConfirm();
+  const actions = useHttpActionScope();
   const [boardType, setBoardType] = useState<BoardName>(BOARD_DISPLAY_ORDER[0]);
   const [format, setFormat] = useState<UserDataExportFormat>('boardsesh');
   const [actionError, setActionError] = useState<ExportActionError>(null);
@@ -122,6 +126,12 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
 
   async function requestExport() {
     if (actionInFlight.current || isOffline) return;
+    let action: ReturnType<typeof actions.capture>;
+    try {
+      action = actions.capture();
+    } catch {
+      return;
+    }
     actionInFlight.current = true;
     setPreparingAction(true);
     setActionError(null);
@@ -134,10 +144,10 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
         const summary = database ? await getOutboxSummary(database) : null;
         unsyncedCount = (summary?.pendingCount ?? 0) + (summary?.deadLetterCount ?? 0);
       } catch {
-        if (isAuthCredentialGenerationCurrent(credentialGeneration)) setActionError('outbox');
+        if (action.isCurrent() && isAuthCredentialGenerationCurrent(credentialGeneration)) setActionError('outbox');
         return;
       }
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return;
+      if (!action.isCurrent() || !isAuthCredentialGenerationCurrent(credentialGeneration)) return;
       if (unsyncedCount > 0) {
         const exportSynced = await confirm({
           title: t('export.unsyncedTitle'),
@@ -145,11 +155,13 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
           confirmLabel: t('export.exportSynced'),
           cancelLabel: t('export.waitForSync'),
         });
-        if (!exportSynced || !isAuthCredentialGenerationCurrent(credentialGeneration)) return;
+        if (!exportSynced || !action.isCurrent() || !isAuthCredentialGenerationCurrent(credentialGeneration)) return;
       }
-      await requestMutation.mutateAsync();
+      const receipt = await requestMutation.mutateWithReceipt({ signal: action.signal });
+      receipt.assertCurrent();
+      action.assertView();
     } catch (error) {
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return;
+      if (!action.isCurrent() || !isAuthCredentialGenerationCurrent(credentialGeneration)) return;
       setActionError(
         error instanceof UserDataExportActionError && error.reason === 'offline'
           ? 'offline'
@@ -158,20 +170,34 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
             : 'request',
       );
     } finally {
-      actionInFlight.current = false;
-      setPreparingAction(false);
+      if (action.isCurrent()) {
+        actionInFlight.current = false;
+        setPreparingAction(false);
+      }
+      action.finish();
     }
   }
 
   async function downloadExport() {
     if (actionInFlight.current || isOffline || !exportStatus || !selectedFile) return;
+    let action: ReturnType<typeof actions.capture>;
+    try {
+      action = actions.capture();
+    } catch {
+      return;
+    }
     actionInFlight.current = true;
     setActionError(null);
     const credentialGeneration = captureAuthCredentialGeneration();
     try {
-      await downloadMutation.mutateAsync({ period: exportStatus.period, format });
+      const receipt = await downloadMutation.mutateWithReceipt(
+        { period: exportStatus.period, format },
+        { signal: action.signal },
+      );
+      receipt.assertCurrent();
+      action.assertView();
     } catch (error) {
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return;
+      if (!action.isCurrent() || !isAuthCredentialGenerationCurrent(credentialGeneration)) return;
       if (error instanceof UserDataExportActionError) {
         switch (error.reason) {
           case 'session_changed':
@@ -200,7 +226,26 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
         isGraphqlRateLimitedError(error) ? 'rate_limited' : Platform.OS === 'web' ? 'download' : 'native_download',
       );
     } finally {
-      actionInFlight.current = false;
+      if (action.isCurrent()) actionInFlight.current = false;
+      action.finish();
+    }
+  }
+
+  async function refreshExport() {
+    let action: ReturnType<typeof actions.capture>;
+    try {
+      action = actions.capture();
+    } catch {
+      return;
+    }
+    try {
+      setActionError(null);
+      await refresh();
+      action.assertView();
+    } catch {
+      if (action.isCurrent()) setActionError('request');
+    } finally {
+      action.finish();
     }
   }
 
@@ -252,10 +297,7 @@ function AccountUserDataExportScreen({ userId }: { userId: string }) {
       formatDate,
       onGenerate: () => void requestExport(),
       onDownload: () => void downloadExport(),
-      onRefresh: () => {
-        setActionError(null);
-        void refresh();
-      },
+      onRefresh: () => void refreshExport(),
     }),
     'export',
     { skipKeys: UNTRACKED_EXPORT_ROWS },
