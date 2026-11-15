@@ -318,3 +318,41 @@ export type RegenerateCncPackMutationVariables = {
 export type RegenerateCncPackMutationResponse = {
   regenerateCncPack: CncOrder;
 };
+
+/** Layout/artwork queue submissions return immediately; callers poll the opaque computation ID. */
+export const REQUEST_CNC_LAYOUT = gql`
+  mutation RequestCncLayout($config: CncBoardConfigInput!, $includeHoles: Boolean) {
+    requestCncLayout(config: $config, includeHoles: $includeHoles) {
+      id
+      status
+      result
+      errorCode
+    }
+  }
+`;
+export const REQUEST_CNC_ARTWORK_VALIDATION = gql`
+  mutation RequestCncArtworkValidation($config: CncBoardConfigInput!) {
+    requestCncArtworkValidation(config: $config) {
+      id
+      status
+      result
+      errorCode
+    }
+  }
+`;
+export const GET_CNC_COMPUTATION = gql`
+  query GetCncComputation($id: ID!) {
+    cncComputation(id: $id) {
+      id
+      status
+      result
+      errorCode
+    }
+  }
+`;
+export type CncComputationResult = {
+  id: string;
+  status: 'queued' | 'running' | 'ready' | 'failed';
+  result: Record<string, unknown> | null;
+  errorCode: string | null;
+};

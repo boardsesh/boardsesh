@@ -3,6 +3,8 @@ export const queriesTypeDefs = /* GraphQL */ `
   Root query type for all read operations.
   """
   type Query {
+    cncComputation(id: ID!): CncComputation
+
     "Compatible saved and recent physical boards for a tick owned by the viewer."
     tickBoardOptions(tickUuid: ID!, limit: Int, offset: Int): TickBoardOptions!
     """

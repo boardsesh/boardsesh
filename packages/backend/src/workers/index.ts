@@ -10,7 +10,7 @@ async function main() {
   const stop = async () => {
     if (stopping || !worker) return;
     stopping = true;
-    const timeout = setTimeout(() => process.exit(1), 120_000);
+    const timeout = setTimeout(() => process.exit(1), config.role.startsWith('cnc-') ? 645_000 : 120_000);
     timeout.unref();
     try {
       await worker.stop();

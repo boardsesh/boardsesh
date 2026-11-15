@@ -14,6 +14,8 @@ describe('family registry', () => {
     }
     expect(allFamilies().map((family) => family.name)).toEqual([
       'worker-probe',
+      'cnc-computation',
+      'cnc-generation',
       'refresh-recommendations',
       'refresh-hold-features',
       'refresh-climb-grades',

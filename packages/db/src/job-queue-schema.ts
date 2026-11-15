@@ -536,6 +536,38 @@ const COMMUNITY_MONTHLY_STATS_GRANTS: readonly WorkerTableGrant[] = [
  * ship later add their lists in the PR that ships them.
  */
 export const WORKER_ROLE_DATA_GRANTS: Record<BackgroundWorkerRole, readonly WorkerTableGrant[]> = {
+  'cnc-interactive': [
+    { table: 'cnc_computations', privileges: ['SELECT'] },
+    { table: 'cnc_computations', privileges: ['UPDATE'], columns: ['status', 'result', 'error_code'] },
+  ],
+  'cnc-generation': [
+    { table: 'cnc_orders', privileges: ['SELECT'] },
+    {
+      table: 'cnc_orders',
+      privileges: ['UPDATE'],
+      columns: [
+        'status',
+        'attempts',
+        'claim_token',
+        'worker_id',
+        'claimed_at',
+        'heartbeat_at',
+        'last_error',
+        'updated_at',
+        'generated_at',
+        'zip_key',
+        'zip_size_bytes',
+        'zip_sha256',
+        'fingerprint_manifest',
+        'preview_zip_key',
+        'preview_zip_size_bytes',
+        'preview_generated_at',
+        'preview_keys',
+        'previews_generated',
+      ],
+    },
+    { table: 'cnc_art_assets', privileges: ['SELECT'] },
+  ],
   // aurora-user-sync, kilter-user-sync.
   'interactive-import': PROVIDER_SYNC_GRANTS,
   // provider-routine-cycle (a user sync), aurora-shared-sync,

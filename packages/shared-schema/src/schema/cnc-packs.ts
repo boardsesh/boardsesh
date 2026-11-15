@@ -416,4 +416,12 @@ export const cncPacksTypeDefs = /* GraphQL */ `
     "ISO 8601. Ask for another one after this; nothing is lost by doing so."
     expiresAt: String!
   }
+
+  "A queued CNC layout/artwork computation. Only its owner may read private results."
+  type CncComputation {
+    id: ID!
+    status: String!
+    result: JSON
+    errorCode: String
+  }
 `;

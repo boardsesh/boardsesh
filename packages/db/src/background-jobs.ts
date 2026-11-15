@@ -28,6 +28,8 @@ export const BACKGROUND_WORKER_ROLES = [
   'routine-provider',
   'maintenance-delivery',
   'batch',
+  'cnc-interactive',
+  'cnc-generation',
 ] as const;
 
 export type BackgroundWorkerRole = (typeof BACKGROUND_WORKER_ROLES)[number];
@@ -40,6 +42,8 @@ export type BackgroundJobStatus = 'queued' | 'running' | 'retrying' | 'succeeded
  */
 export const BACKGROUND_JOB_FAMILIES = [
   'worker-probe',
+  'cnc-computation',
+  'cnc-generation',
   'refresh-recommendations',
   'refresh-hold-features',
   'refresh-climb-grades',
@@ -80,6 +84,8 @@ export const BACKGROUND_JOB_QUEUES: Record<BackgroundWorkerRole, string> = {
   'routine-provider': 'background-routine-provider',
   'maintenance-delivery': 'background-maintenance-delivery',
   batch: 'background-batch',
+  'cnc-interactive': 'background-cnc-interactive',
+  'cnc-generation': 'background-cnc-generation',
 };
 
 /**

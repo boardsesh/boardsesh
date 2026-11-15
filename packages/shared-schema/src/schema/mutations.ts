@@ -3,6 +3,9 @@ export const mutationsTypeDefs = /* GraphQL */ `
   Root mutation type for all write operations.
   """
   type Mutation {
+    requestCncLayout(config: CncBoardConfigInput!, includeHoles: Boolean): CncComputation!
+    requestCncArtworkValidation(config: CncBoardConfigInput!): CncComputation!
+
     """
     Join an existing session or create it if it doesn't exist.
     Returns the session with current state.

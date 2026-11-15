@@ -13,6 +13,7 @@ import {
   type CncOrderStatus,
 } from './order-state';
 import { CNC_CATALOG_VERSION, type CncLicenceTier } from './catalog';
+import { enqueueCncGenerationOn, usesCncJobQueue } from './generation-queue';
 
 export { CNC_MAX_ATTEMPTS } from './order-state';
 
@@ -107,25 +108,27 @@ export async function createPreviewOrder(input: CreatePreviewOrderInput): Promis
   const maxLicenceIdAttempts = 5;
   for (let attempt = 1; attempt <= maxLicenceIdAttempts; attempt += 1) {
     try {
-      const [order] = await db
-        .insert(cncOrders)
-        .values({
-          licenceId: generateLicenceId(),
-          userId: input.userId,
-          tier: null,
-          status: 'preview_queued',
-          boardName: input.boardName,
-          layoutId: input.layoutId,
-          sizeId: input.sizeId,
-          setIds: input.setIds,
-          options: input.options,
-          artwork: input.artwork ?? null,
-          catalogVersion: input.catalogVersion ?? CNC_CATALOG_VERSION,
-          configHash: input.configHash,
-          queuedAt: new Date(),
-        })
-        .returning();
-      return order;
+      return await db.transaction(async (transaction) => {
+        const [order] = await transaction
+          .insert(cncOrders)
+          .values({
+            licenceId: generateLicenceId(),
+            userId: input.userId,
+            tier: null,
+            status: 'preview_queued',
+            boardName: input.boardName,
+            layoutId: input.layoutId,
+            sizeId: input.sizeId,
+            setIds: input.setIds,
+            options: input.options,
+            artwork: input.artwork ?? null,
+            catalogVersion: input.catalogVersion ?? CNC_CATALOG_VERSION,
+            configHash: input.configHash,
+            queuedAt: new Date(),
+          })
+          .returning();
+        return enqueueCncGenerationOn(transaction, order);
+      });
     } catch (error) {
       if (!isLicenceIdCollision(error) || attempt === maxLicenceIdAttempts) throw error;
     }
@@ -362,6 +365,7 @@ export type CncOrderPatch = {
   attempts?: number;
   lastError?: string | null;
   generation?: number;
+  generationRunId?: string | null;
   stripeCheckoutSessionId?: string | null;
   stripePaymentIntentId?: string | null;
   // Writable by the paid webhook, which records what Stripe ACTUALLY charged
@@ -396,6 +400,9 @@ export type TransitionOrderOptions = {
    * read the reclaim can race.
    */
   claimToken?: string;
+  /** Require this exact generation and active pg-boss run when publishing. */
+  generation?: number;
+  generationRunId?: string;
   /**
    * Run the UPDATE inside a caller's transaction. The Stripe webhook passes
    * its transaction handle so the status change and the "event processed"
@@ -427,8 +434,15 @@ export async function transitionOrder(
   orderId: number,
   event: CncOrderEvent,
   patch: CncOrderPatch = {},
-  { claimToken, executor = db }: TransitionOrderOptions = {},
+  options: TransitionOrderOptions = {},
 ): Promise<CncOrder | null> {
+  const queuesGeneration = event === 'checkoutCompleted' || event === 'regenerate';
+  if (usesCncJobQueue() && queuesGeneration && !options.executor) {
+    return db.transaction((transaction) =>
+      transitionOrder(orderId, event, patch, { ...options, executor: transaction }),
+    );
+  }
+  const { claimToken, executor = db, generation, generationRunId } = options;
   const transition = transitionFor(event);
   // 'new' is the pre-insert state — there is no row to condition an UPDATE on
   // — so it never belongs in the allowed-from list here. Only
@@ -454,10 +468,13 @@ export async function transitionOrder(
         eq(cncOrders.id, orderId),
         inArray(cncOrders.status, allowedFromStatuses),
         ...(claimToken ? [eq(cncOrders.claimToken, claimToken)] : []),
+        ...(generation !== undefined ? [eq(cncOrders.generation, generation)] : []),
+        ...(generationRunId ? [eq(cncOrders.generationRunId, generationRunId)] : []),
       ),
     )
     .returning();
-  return order ?? null;
+  if (!order) return null;
+  return queuesGeneration ? enqueueCncGenerationOn(executor, order) : order;
 }
 
 /**
@@ -634,6 +651,11 @@ export async function claimNextJob(workerId: string, now: Date): Promise<CncOrde
 /** Order columns that are internal to the generation pipeline and must never reach the buyer. */
 type CncOrderInternalColumn =
   | 'fingerprintManifest'
+  | 'generationRunId'
+  | 'notificationGeneration'
+  | 'notificationStatus'
+  | 'notificationClaimToken'
+  | 'notificationClaimedAt'
   | 'claimToken'
   | 'workerId'
   | 'lastError'
@@ -683,6 +705,11 @@ export type PublicCncOrder = Omit<CncOrder, CncOrderInternalColumn>;
 export function toPublicOrder(order: CncOrder): PublicCncOrder {
   const {
     fingerprintManifest: _manifest,
+    generationRunId: _generationRunId,
+    notificationGeneration: _notificationGeneration,
+    notificationStatus: _notificationStatus,
+    notificationClaimToken: _notificationClaimToken,
+    notificationClaimedAt: _notificationClaimedAt,
     claimToken: _token,
     workerId: _worker,
     lastError: _error,

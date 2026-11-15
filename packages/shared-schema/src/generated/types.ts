@@ -1985,6 +1985,15 @@ export type CncCheckoutSession = {
   orderId: Scalars['ID']['output'];
 };
 
+/** A queued CNC layout/artwork computation. Only its owner may read private results. */
+export type CncComputation = {
+  __typename?: 'CncComputation';
+  errorCode?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  result?: Maybe<Scalars['JSON']['output']>;
+  status: Scalars['String']['output'];
+};
+
 /**
  * A short-lived link to one pack or preview.
  *
@@ -5244,6 +5253,8 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestCncArtworkValidation: CncComputation;
+  requestCncLayout: CncComputation;
   requestFollow: PrivacyRelationship;
   /**
    * Request ownership of a gym. With a matching work email at the gym's website
@@ -6137,6 +6148,17 @@ export type MutationReportGymDuplicateArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportSprayWallArgs = {
   input: ReportSprayWallInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestCncArtworkValidationArgs = {
+  config: CncBoardConfigInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestCncLayoutArgs = {
+  config: CncBoardConfigInput;
+  includeHoles?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -7803,6 +7825,7 @@ export type Query = {
    * this before anyone signs in.
    */
   cncCatalog: CncCatalog;
+  cncComputation?: Maybe<CncComputation>;
   /**
    * Panel layout for a configuration: panels, seams, keep-outs and a BOM
    * preview, straight from the pack generator. Public, rate-limited, and
@@ -8740,6 +8763,11 @@ export type QueryClimbStatsForClimbsArgs = {
 export type QueryClimbStatsHistoryArgs = {
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCncComputationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -13573,6 +13601,7 @@ export type ResolversTypes = ResolversObject<{
   CncCatalog: ResolverTypeWrapper<CncCatalog>;
   CncCatalogEntry: ResolverTypeWrapper<CncCatalogEntry>;
   CncCheckoutSession: ResolverTypeWrapper<CncCheckoutSession>;
+  CncComputation: ResolverTypeWrapper<CncComputation>;
   CncDownloadGrant: ResolverTypeWrapper<CncDownloadGrant>;
   CncDownloadKind: CncDownloadKind;
   CncLicenceTier: CncLicenceTier;
@@ -14176,6 +14205,7 @@ export type ResolversParentTypes = ResolversObject<{
   CncCatalog: CncCatalog;
   CncCatalogEntry: CncCatalogEntry;
   CncCheckoutSession: CncCheckoutSession;
+  CncComputation: CncComputation;
   CncDownloadGrant: CncDownloadGrant;
   CncManufacturingOption: CncManufacturingOption;
   CncOrder: CncOrder;
@@ -15642,6 +15672,17 @@ export type CncCheckoutSessionResolvers<
   checkoutUrl?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   licenceId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   orderId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CncComputationResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CncComputation'] = ResolversParentTypes['CncComputation'],
+> = ResolversObject<{
+  errorCode?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  result?: Resolver<Maybe<ResolversTypes['JSON']>, ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -17593,6 +17634,18 @@ export type MutationResolvers<
     RequireFields<MutationReportSprayWallArgs, 'input'>
   >;
   reportWallDisconnect?: Resolver<ResolversTypes['Session'], ParentType, ContextType>;
+  requestCncArtworkValidation?: Resolver<
+    ResolversTypes['CncComputation'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestCncArtworkValidationArgs, 'config'>
+  >;
+  requestCncLayout?: Resolver<
+    ResolversTypes['CncComputation'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationRequestCncLayoutArgs, 'config'>
+  >;
   requestFollow?: Resolver<
     ResolversTypes['PrivacyRelationship'],
     ParentType,
@@ -18848,6 +18901,12 @@ export type QueryResolvers<
     RequireFields<QueryClimbStatsHistoryArgs, 'boardName' | 'climbUuid'>
   >;
   cncCatalog?: Resolver<ResolversTypes['CncCatalog'], ParentType, ContextType>;
+  cncComputation?: Resolver<
+    Maybe<ResolversTypes['CncComputation']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryCncComputationArgs, 'id'>
+  >;
   cncLayout?: Resolver<ResolversTypes['JSON'], ParentType, ContextType, RequireFields<QueryCncLayoutArgs, 'config'>>;
   cncOrder?: Resolver<
     Maybe<ResolversTypes['CncOrder']>,
@@ -21467,6 +21526,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   CncCatalog?: CncCatalogResolvers<ContextType>;
   CncCatalogEntry?: CncCatalogEntryResolvers<ContextType>;
   CncCheckoutSession?: CncCheckoutSessionResolvers<ContextType>;
+  CncComputation?: CncComputationResolvers<ContextType>;
   CncDownloadGrant?: CncDownloadGrantResolvers<ContextType>;
   CncManufacturingOption?: CncManufacturingOptionResolvers<ContextType>;
   CncOrder?: CncOrderResolvers<ContextType>;

@@ -1982,6 +1982,15 @@ export type CncCheckoutSession = {
   orderId: Scalars['ID']['output'];
 };
 
+/** A queued CNC layout/artwork computation. Only its owner may read private results. */
+export type CncComputation = {
+  __typename?: 'CncComputation';
+  errorCode?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  result?: Maybe<Scalars['JSON']['output']>;
+  status: Scalars['String']['output'];
+};
+
 /**
  * A short-lived link to one pack or preview.
  *
@@ -5241,6 +5250,8 @@ export type Mutation = {
    * context — no `sessionId` argument is required.
    */
   reportWallDisconnect: Session;
+  requestCncArtworkValidation: CncComputation;
+  requestCncLayout: CncComputation;
   requestFollow: PrivacyRelationship;
   /**
    * Request ownership of a gym. With a matching work email at the gym's website
@@ -6134,6 +6145,17 @@ export type MutationReportGymDuplicateArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportSprayWallArgs = {
   input: ReportSprayWallInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestCncArtworkValidationArgs = {
+  config: CncBoardConfigInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRequestCncLayoutArgs = {
+  config: CncBoardConfigInput;
+  includeHoles?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** Root mutation type for all write operations. */
@@ -7800,6 +7822,7 @@ export type Query = {
    * this before anyone signs in.
    */
   cncCatalog: CncCatalog;
+  cncComputation?: Maybe<CncComputation>;
   /**
    * Panel layout for a configuration: panels, seams, keep-outs and a BOM
    * preview, straight from the pack generator. Public, rate-limited, and
@@ -8737,6 +8760,11 @@ export type QueryClimbStatsForClimbsArgs = {
 export type QueryClimbStatsHistoryArgs = {
   boardName: Scalars['String']['input'];
   climbUuid: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryCncComputationArgs = {
+  id: Scalars['ID']['input'];
 };
 
 /** Root query type for all read operations. */

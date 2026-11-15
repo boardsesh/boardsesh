@@ -7,6 +7,7 @@ import {
   escapeHtml,
   fromAddress,
   getTransporter,
+  sendBoundedCncNotification,
   headerSafe,
   shell,
   webPublicUrl,
@@ -120,19 +121,16 @@ export type SendCncPackReadyEmailInput = {
  * ownership and refund status on every hit, and a link in an inbox is exactly
  * the thing that gets forwarded.
  */
-export async function sendCncPackReadyEmail({
-  to,
-  licenseeName,
-  licenceId,
-  boardLabel,
-  orderUrl,
-}: SendCncPackReadyEmailInput): Promise<void> {
+export async function sendCncPackReadyEmail(
+  { to, licenseeName, licenceId, boardLabel, orderUrl }: SendCncPackReadyEmailInput,
+  options: { bounded?: boolean } = {},
+): Promise<boolean> {
   try {
     const validatedEmail = emailSchema.parse(to);
     const safeName = escapeHtml(licenseeName);
     const safeBoard = escapeHtml(boardLabel);
 
-    await getTransporter().sendMail({
+    const mail = {
       from: fromAddress(),
       to: validatedEmail,
       subject: headerSafe(`Your build plans are ready — ${licenceId}`),
@@ -153,9 +151,13 @@ export async function sendCncPackReadyEmail({
       `,
       ),
       text: `${licenseeName}, the build plans for your ${boardLabel} are ready — DXFs for every panel, printable PDFs, a bill of materials and the build notes.\n\nDownload: ${orderUrl}\n\nLicence: ${licenceId}`,
-    });
+    };
+    if (options.bounded) await sendBoundedCncNotification(mail);
+    else await getTransporter().sendMail(mail);
+    return true;
   } catch (error) {
     logger.warn('[cnc-email] Failed to send the pack-ready email:', error instanceof Error ? error.message : error);
+    return false;
   }
 }
 
@@ -177,14 +179,10 @@ export type SendCncPackFailedAdminEmailInput = {
  * been handed the real error, the licence id and the buyer's address, and
  * every one of these is a refund or a manual regenerate waiting to happen.
  */
-export async function sendCncPackFailedAdminEmail({
-  licenceId,
-  orderId,
-  boardLabel,
-  licenseeEmail,
-  attempts,
-  lastError,
-}: SendCncPackFailedAdminEmailInput): Promise<void> {
+export async function sendCncPackFailedAdminEmail(
+  { licenceId, orderId, boardLabel, licenseeEmail, attempts, lastError }: SendCncPackFailedAdminEmailInput,
+  options: { bounded?: boolean } = {},
+): Promise<boolean> {
   try {
     const safeLicence = escapeHtml(licenceId);
     const safeBoard = escapeHtml(boardLabel);
@@ -192,7 +190,7 @@ export async function sendCncPackFailedAdminEmail({
     const safeError = escapeHtml(lastError ?? 'no error recorded');
     const orderUrl = `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(licenceId)}`;
 
-    await getTransporter().sendMail({
+    const mail = {
       from: fromAddress(),
       to: ADMIN_NOTIFICATION_EMAIL,
       subject: headerSafe(`CNC pack generation failed: ${licenceId}`),
@@ -213,12 +211,16 @@ export async function sendCncPackFailedAdminEmail({
       `,
       ),
       text: `${licenceId} (order ${String(orderId)}) failed after ${String(attempts)} attempts.\n\nWall: ${boardLabel}\nBuyer: ${licenseeEmail}\n\nLast error: ${lastError ?? 'no error recorded'}\n\n${orderUrl}`,
-    });
+    };
+    if (options.bounded) await sendBoundedCncNotification(mail);
+    else await getTransporter().sendMail(mail);
+    return true;
   } catch (error) {
     logger.warn(
       '[cnc-email] Failed to send the pack-failed admin email:',
       error instanceof Error ? error.message : error,
     );
+    return false;
   }
 }
 

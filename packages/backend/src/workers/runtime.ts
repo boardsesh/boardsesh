@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { runCncGenerator } from '../services/cnc/generator-process';
 import { and, count, eq, inArray, max, min } from 'drizzle-orm';
 import { createDb, closePool } from '@boardsesh/db/client';
 import { backgroundJobRuns } from '@boardsesh/db/schema';
@@ -20,6 +21,8 @@ export async function startWorker(
   // Before any connection: a worker missing a provider secret never claims a
   // job, unless paused, when it starts anyway and reports it via /health.
   const providerSecretsReady = requireProviderSecrets(config.role, familiesForRole(config.role), config.paused);
+  const isCnc = config.role === 'cnc-interactive' || config.role === 'cnc-generation';
+  const renderer = isCnc ? await runCncGenerator('version', {}, {}, AbortSignal.timeout(15_000)) : undefined;
   const database = createDb();
   const boss = createJobQueueClient({ connectionString: config.databaseUrl, poolSize: 1, owner: 'worker' });
   const handler = handlerForRole(config.role);
@@ -43,6 +46,21 @@ export async function startWorker(
   const started = Date.now();
   const health = createServer((request, response) => {
     const healthy = ready && !stopping && Date.now() - lastContact < 60_000;
+    if (request.url === '/version' && renderer) {
+      response.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          role: config.role,
+          worker_id: process.env.CNC_WORKER_ID,
+          git_sha: renderer.buildSha,
+          generator_version: renderer.generatorVersion,
+          app_sha: process.env.BOARDSESH_BUILD_SHA,
+          paused: config.paused,
+          active,
+        }),
+      );
+      return;
+    }
     if (request.url === '/metrics') {
       response.setHeader('Content-Type', 'text/plain; version=0.0.4');
       const samples = {
@@ -182,11 +200,25 @@ export async function startWorker(
       stopStallWatch?.();
       clearTimeout(monitor);
       clearTimeout(pollTimer);
-      // Abort fetches/batches first; handlers cannot commit after their fence is lost.
+      // CNC finishes current rendering while its fenced heartbeat stays alive.
+      // Other roles retain their existing immediate-abort shutdown contract.
+      if (isCnc && polling) {
+        let drainTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            polling,
+            new Promise<void>((resolve) => {
+              drainTimer = setTimeout(resolve, 600_000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(drainTimer);
+        }
+      }
       shutdown.abort();
       await polling;
       await monitoring;
-      await boss.stop({ graceful: true, close: true, timeout: 115_000 });
+      await boss.stop({ graceful: true, close: true, timeout: isCnc ? 15_000 : 115_000 });
       await closePool();
       await new Promise<void>((resolve) => health.close(() => resolve()));
       logger.info('[worker] stopped', { role: config.role });

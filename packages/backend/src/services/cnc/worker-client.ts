@@ -431,7 +431,9 @@ export function toArtworkItems(items: readonly CncArtworkRequestItem[]): CncWork
  * import.
  */
 export function isWorkerConfigured(): boolean {
-  return Boolean(process.env.CNC_WORKER_URL && process.env.CNC_WORKER_SECRET);
+  return process.env.CNC_TRANSPORT === 'pgboss'
+    ? /^[a-f0-9]{40}$/.test(process.env.CNC_GENERATOR_SHA ?? '')
+    : Boolean(process.env.CNC_WORKER_URL && process.env.CNC_WORKER_SECRET);
 }
 
 function workerBaseUrl(): string {
@@ -554,6 +556,7 @@ export type FetchLayoutOptions = {
    * only when it is about to draw the drill pattern.
    */
   includeHoles?: boolean;
+  ownerId?: string | null;
 };
 
 /**
@@ -566,8 +569,12 @@ export type FetchLayoutOptions = {
  */
 export async function fetchLayout(
   request: CncWorkerLayoutRequest,
-  { includeHoles = false }: FetchLayoutOptions = {},
+  { includeHoles = false, ownerId = null }: FetchLayoutOptions = {},
 ): Promise<unknown> {
+  if (process.env.CNC_TRANSPORT === 'pgboss') {
+    if (includeHoles && !ownerId) throw new CncWorkerUnavailableError('Authenticated layout owner is required');
+    return awaitComputation('layout', { layoutRequest: request, includeHoles }, includeHoles ? ownerId : null);
+  }
   const path = includeHoles ? '/layout?include=holes' : '/layout';
   const key = cacheKey(path, request);
   const now = Date.now();
@@ -590,7 +597,20 @@ export async function fetchLayout(
 export async function validateArtwork(
   request: CncWorkerLayoutRequest,
   artwork: readonly CncWorkerArtworkItem[],
+  ownerId: string | null = null,
 ): Promise<unknown> {
+  if (process.env.CNC_TRANSPORT === 'pgboss') {
+    if (!ownerId) throw new CncWorkerUnavailableError('Authenticated artwork owner is required');
+    const { getOwnedArtAssets } = await import('./art-assets');
+    const assetIds = artwork.flatMap((item) => (item.asset_ref ? [item.asset_ref] : []));
+    const owned = await getOwnedArtAssets(ownerId, assetIds);
+    if (owned.size !== new Set(assetIds).size)
+      throw new CncWorkerValidationError('ASSET_UNAVAILABLE', 'Artwork upload is unavailable');
+    const assetKeys = Object.fromEntries(
+      [...owned].map(([assetId, asset]) => [assetId, { key: asset.key, mime: asset.mime, sha256: asset.sha256 }]),
+    );
+    return awaitComputation('artwork', { layoutRequest: request, artwork }, ownerId, assetKeys);
+  }
   const path = '/artwork/validate';
   const body = { layout_request: request, artwork };
   const key = cacheKey(path, body);
@@ -602,4 +622,34 @@ export async function validateArtwork(
   const verdict = await postToWorker(path, body);
   writeCache(key, verdict, now);
   return verdict;
+}
+
+/** Compatibility for older GraphQL callers. New configurators submit and poll explicitly. */
+async function awaitComputation(
+  operation: 'layout' | 'artwork',
+  request: Record<string, unknown>,
+  ownerId: string | null,
+  assetKeys: Record<string, { key: string; mime: string; sha256: string }> = {},
+): Promise<unknown> {
+  const { submitCncComputation, readCncComputation } = await import('./computations');
+  let computation = await submitCncComputation({ operation, request, ownerId, assetKeys });
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (computation.status === 'ready') return computation.result;
+    if (computation.status === 'failed') {
+      if (
+        !computation.errorCode ||
+        computation.errorCode === 'CNC_WORKER_UNAVAILABLE' ||
+        computation.errorCode.startsWith('GENERATOR_')
+      ) {
+        throw new CncWorkerUnavailableError('The pack generator is unavailable');
+      }
+      throw new CncWorkerValidationError(computation.errorCode, 'The generator rejected this configuration');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const next = await readCncComputation(computation.id, ownerId);
+    if (!next) throw new CncWorkerUnavailableError('The computation expired');
+    computation = next;
+  }
+  throw new CncWorkerUnavailableError('The pack generator did not respond in time');
 }

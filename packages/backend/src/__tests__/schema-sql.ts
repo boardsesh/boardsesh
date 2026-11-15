@@ -1814,6 +1814,11 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
     "artwork" jsonb,
     "catalog_version" text NOT NULL,
     "config_hash" text,
+    "generation_run_id" uuid,
+    "notification_generation" integer DEFAULT 0 NOT NULL,
+    "notification_status" text,
+    "notification_claim_token" uuid,
+    "notification_claimed_at" timestamptz,
     "licensee_name" text,
     "licensee_email" text,
     "customer_site_name" text,
@@ -1853,6 +1858,22 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "cnc_orders_user_created_idx" ON "cnc_orders" ("user_id", "created_at" DESC NULLS LAST);
   CREATE INDEX IF NOT EXISTS "cnc_orders_status_queued_idx" ON "cnc_orders" ("status", "queued_at");
   CREATE INDEX IF NOT EXISTS "cnc_orders_user_config_hash_idx" ON "cnc_orders" ("user_id", "config_hash");
+
+  CREATE TABLE IF NOT EXISTS "cnc_computations" (
+    "id" uuid PRIMARY KEY,
+    "owner_id" text REFERENCES "users"("id") ON DELETE CASCADE,
+    "operation" text NOT NULL,
+    "request_hash" text NOT NULL,
+    "generator_sha" text NOT NULL,
+    "request" jsonb NOT NULL,
+    "asset_keys" jsonb DEFAULT '{}'::jsonb NOT NULL,
+    "run_id" uuid NOT NULL,
+    "status" text DEFAULT 'queued' NOT NULL,
+    "result" jsonb,
+    "error_code" text,
+    "created_at" timestamptz DEFAULT now() NOT NULL,
+    "expires_at" timestamptz NOT NULL
+  );
 
   CREATE TABLE IF NOT EXISTS "cnc_stripe_events" (
     "id" text PRIMARY KEY NOT NULL,

@@ -309,7 +309,7 @@ describe('cncLayout', () => {
 
     await cncPackQueries.cncLayout(undefined, { config: config(), includeHoles: true }, authCtx(OWNER_ID));
 
-    expect(fetchLayoutMock).toHaveBeenCalledWith(expect.anything(), { includeHoles: true });
+    expect(fetchLayoutMock).toHaveBeenCalledWith(expect.anything(), { includeHoles: true, ownerId: OWNER_ID });
   });
 
   it('requires authentication when includeHoles is set', async () => {

@@ -108,6 +108,7 @@ import { syncQueries } from './sync/queries';
 import { resolveClimbNoMatchField } from './climbs/climb-no-match-field';
 import { resolveClimbLostHolds, type ClimbLostHoldsParent } from './climbs/lost-holds';
 import { resolveClimbAuthorId } from './climbs/climb-author';
+import { cncComputationQueries, cncComputationMutations } from './cnc-packs/computations';
 import { cncPackQueries } from './cnc-packs/queries';
 import { cncPackMutations } from './cnc-packs/mutations';
 
@@ -181,6 +182,7 @@ export const resolvers = {
     ...feedbackQueries,
     ...qaQueries,
     ...cncPackQueries,
+    ...cncComputationQueries,
   },
 
   Mutation: {
@@ -236,6 +238,7 @@ export const resolvers = {
     ...oauthClientMutations,
     ...connectedAppsMutations,
     ...cncPackMutations,
+    ...cncComputationMutations,
   },
 
   Subscription: {

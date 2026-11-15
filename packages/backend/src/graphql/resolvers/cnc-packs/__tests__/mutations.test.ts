@@ -171,6 +171,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const [key, value] of savedEnv) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -499,6 +500,17 @@ describe('validateCncArtwork', () => {
 });
 
 describe('createCncPreview', () => {
+  it('refuses an excluded beta account before order lookup or creation', async () => {
+    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
+    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
+    vi.stubEnv('CNC_BETA_USER_IDS', '44444444-4444-4444-8444-444444444444');
+    await expect(cncPackMutations.createCncPreview(undefined, { config: config() }, authCtx())).rejects.toMatchObject({
+      extensions: { code: 'CNC_WORKER_UNAVAILABLE' },
+    });
+    expect(findPreviewOrderByConfigHashMock).not.toHaveBeenCalled();
+    expect(createPreviewOrderMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     [14, false],
     [8, false],
@@ -710,6 +722,20 @@ describe('createCncPreview', () => {
 });
 
 describe('finaliseCncOrder', () => {
+  it('refuses a live Stripe key in beta before touching the order or Stripe', async () => {
+    const betaUserId = '44444444-4444-4444-8444-444444444444';
+    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
+    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
+    vi.stubEnv('CNC_BETA_USER_IDS', betaUserId);
+    vi.stubEnv('STRIPE_SECRET_KEY', 'rk_live_fake');
+    await expect(
+      cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, { ...authCtx(), userId: betaUserId }),
+    ).rejects.toMatchObject({ extensions: { code: 'CNC_CHECKOUT_UNAVAILABLE' } });
+    expect(getOrderByIdMock).not.toHaveBeenCalled();
+    expect(transitionOrderMock).not.toHaveBeenCalled();
+    expect(createCheckoutSessionMock).not.toHaveBeenCalled();
+  });
+
   it('requires authentication', async () => {
     await expect(cncPackMutations.finaliseCncOrder(undefined, { input: finaliseInput() }, anonCtx())).rejects.toThrow(
       /Authentication required/,

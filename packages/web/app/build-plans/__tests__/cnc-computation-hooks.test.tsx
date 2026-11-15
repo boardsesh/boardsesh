@@ -1,0 +1,205 @@
+import React from 'react';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import type { CncBoardConfigInput } from '@boardsesh/shared-schema';
+
+const state = vi.hoisted(() => ({ activeToken: 'buyer-a', compute: vi.fn() }));
+vi.mock('../configurator/cnc-computation-client', () => ({ computeCnc: state.compute }));
+vi.mock('@/app/lib/auth/browser-backend-client', () => ({
+  browserBackendClient: {
+    isSelected: () => true,
+    capture: (token: string) => ({ token }),
+    isCurrent: (scope: { token: string }) => scope.token === state.activeToken,
+  },
+}));
+vi.mock('@/app/lib/auth/browser-backend-graphql', () => ({ isCurrentBrowserBackendGraphQLResult: () => true }));
+import { useCncLayout } from '../configurator/use-cnc-layout';
+import { useCncArtworkValidation } from '../configurator/use-cnc-artwork-validation';
+
+const CONFIG: CncBoardConfigInput = {
+  boardName: 'kilter',
+  layoutId: 8,
+  sizeId: 25,
+  setIds: '26,27,28,29',
+  options: {},
+};
+const ARTWORK_CONFIG: CncBoardConfigInput = {
+  ...CONFIG,
+  artwork: [
+    {
+      text: 'Send',
+      font: 'liberation-sans',
+      mode: 'engrave',
+      placement: { panelIndex: 0, xMm: 100, yMm: 100, widthMm: 100, rotationDeg: 0 },
+    },
+  ],
+};
+const LAYOUT = { wall: { width_mm: 2440, height_mm: 3000 }, panels: [{ index: 0 }], holes: [] };
+function deferred() {
+  let resolve: (result: Record<string, unknown>) => void = () => {
+    throw new Error('not initialized');
+  };
+  const promise = new Promise<Record<string, unknown>>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+function layoutWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  }
+  return { client, Wrapper };
+}
+async function tick(milliseconds = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(milliseconds);
+  });
+}
+beforeEach(() => {
+  vi.useFakeTimers();
+  state.activeToken = 'buyer-a';
+  state.compute.mockReset();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+describe('CNC layout request and cache ownership', () => {
+  it('keeps private layouts separate for each login and shares only hole-free layouts', async () => {
+    state.compute.mockResolvedValue(LAYOUT);
+    const { client, Wrapper } = layoutWrapper();
+    const first = renderHook(
+      () => useCncLayout(CONFIG, { includeHoles: true, authToken: 'buyer-a', cacheScope: 'a-session-1' }),
+      { wrapper: Wrapper },
+    );
+    await tick();
+    expect(first.result.current.summary?.wallWidthMm).toBe(2440);
+    first.unmount();
+    state.activeToken = 'buyer-b';
+    renderHook(() => useCncLayout(CONFIG, { includeHoles: true, authToken: 'buyer-b', cacheScope: 'b-session-2' }), {
+      wrapper: Wrapper,
+    });
+    await tick();
+    expect(state.compute).toHaveBeenCalledTimes(2);
+    expect(
+      client
+        .getQueryCache()
+        .getAll()
+        .map((query) => query.queryKey[3]),
+    ).toEqual(['a-session-1', 'b-session-2']);
+    const publicLayout = renderHook(() => useCncLayout(CONFIG, { authToken: 'buyer-b', cacheScope: 'b-session-2' }), {
+      wrapper: Wrapper,
+    });
+    await tick();
+    expect(state.compute.mock.calls[2][2]).toMatchObject({
+      includeHoles: false,
+      authToken: undefined,
+      isCurrent: undefined,
+    });
+    expect(publicLayout.result.current.summary?.panelCount).toBe(1);
+    expect(client.getQueryCache().getAll().at(-1)?.queryKey[3]).toBe('public');
+  });
+
+  it('rejects an old account result after admission changes during the final await', async () => {
+    const pending = deferred();
+    state.compute.mockReturnValue(pending.promise);
+    const { client, Wrapper } = layoutWrapper();
+    const mounted = renderHook(
+      () => useCncLayout(CONFIG, { includeHoles: true, authToken: 'buyer-a', cacheScope: 'a' }),
+      { wrapper: Wrapper },
+    );
+    await tick();
+    state.activeToken = 'buyer-b';
+    await act(async () => {
+      pending.resolve(LAYOUT);
+    });
+    await tick();
+    expect(mounted.result.current.summary).toBeNull();
+    expect(client.getQueryCache().getAll()[0].state.data).toBeUndefined();
+  });
+
+  it('aborts an obsolete configuration when its debounced replacement starts', async () => {
+    state.compute.mockImplementation(() => new Promise(() => {}));
+    const { Wrapper } = layoutWrapper();
+    const mounted = renderHook(({ config }) => useCncLayout(config), {
+      wrapper: Wrapper,
+      initialProps: { config: CONFIG },
+    });
+    await tick();
+    const originalSignal = state.compute.mock.calls[0][2].signal as AbortSignal;
+    mounted.rerender({ config: { ...CONFIG, options: { sheetStock: '3600x1220' } } });
+    await tick(399);
+    expect(state.compute).toHaveBeenCalledOnce();
+    await tick(1);
+    expect(originalSignal.aborted).toBe(true);
+    expect(state.compute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('CNC artwork validation staleness', () => {
+  it('clears a prior pass immediately while the replacement placement is being checked', async () => {
+    state.compute.mockResolvedValueOnce({ ok: true, collisions: [] }).mockImplementation(() => new Promise(() => {}));
+    const mounted = renderHook(({ config }) => useCncArtworkValidation(config, 'buyer-a'), {
+      initialProps: { config: ARTWORK_CONFIG },
+    });
+    await tick(500);
+    expect(mounted.result.current.ok).toBe(true);
+    mounted.rerender({ config: { ...ARTWORK_CONFIG, options: { sheetStock: '3600x1220' } } });
+    expect(mounted.result.current.ok).toBeNull();
+    expect(mounted.result.current.isChecking).toBe(true);
+    await tick(500);
+    expect(mounted.result.current.ok).toBeNull();
+  });
+
+  it('ignores a late answer to an old placement', async () => {
+    const oldPlacement = deferred();
+    const newPlacement = deferred();
+    state.compute.mockReturnValueOnce(oldPlacement.promise).mockReturnValueOnce(newPlacement.promise);
+    const mounted = renderHook(({ config }) => useCncArtworkValidation(config, 'buyer-a'), {
+      initialProps: { config: ARTWORK_CONFIG },
+    });
+    await tick(500);
+    const oldSignal = state.compute.mock.calls[0][2].signal as AbortSignal;
+    mounted.rerender({ config: { ...ARTWORK_CONFIG, options: { sheetStock: '3600x1220' } } });
+    expect(mounted.result.current.ok).toBeNull();
+    expect(oldSignal.aborted).toBe(true);
+    await tick(500);
+    await act(async () => {
+      newPlacement.resolve({ ok: false, collisions: [{ artwork_index: 0, kind: 'keepout', panel_index: 0 }] });
+    });
+    expect(mounted.result.current.ok).toBe(false);
+    await act(async () => {
+      oldPlacement.resolve({ ok: true, collisions: [] });
+    });
+    expect(mounted.result.current.ok).toBe(false);
+    expect(mounted.result.current.collisions[0].kind).toBe('keepout');
+  });
+
+  it('keeps an answer from a superseded account out of the current UI', async () => {
+    const pending = deferred();
+    state.compute.mockReturnValue(pending.promise);
+    const mounted = renderHook(() => useCncArtworkValidation(ARTWORK_CONFIG, 'buyer-a'));
+    await tick(500);
+    state.activeToken = 'buyer-b';
+    await act(async () => {
+      pending.resolve({ ok: true, collisions: [] });
+    });
+    expect(mounted.result.current.ok).toBeNull();
+    expect(mounted.result.current.errorKey).toBeNull();
+  });
+
+  it('aborts polling and resets the verdict on sign out', async () => {
+    state.compute.mockImplementation(() => new Promise(() => {}));
+    const mounted = renderHook(({ token }) => useCncArtworkValidation(ARTWORK_CONFIG, token), {
+      initialProps: { token: 'buyer-a' as string | null },
+    });
+    await tick(500);
+    const signal = state.compute.mock.calls[0][2].signal as AbortSignal;
+    mounted.rerender({ token: null });
+    expect(signal.aborted).toBe(true);
+    expect(mounted.result.current).toEqual({ ok: null, collisions: [], isChecking: false, errorKey: null });
+  });
+});

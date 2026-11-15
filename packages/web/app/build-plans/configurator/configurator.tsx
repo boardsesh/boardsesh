@@ -191,7 +191,11 @@ function OwnedConfigurator({
     model: layoutModel,
     isLoading: isLayoutLoading,
     errorKey: layoutErrorKey,
-  } = useCncLayout(configInput, { includeHoles: isAuthenticated && hasArtwork, authToken: token });
+  } = useCncLayout(configInput, {
+    includeHoles: isAuthenticated && hasArtwork,
+    authToken: token,
+    cacheScope: JSON.stringify([ownerId, authSessionId, browserScopeKey]),
+  });
 
   const {
     requestPreview,

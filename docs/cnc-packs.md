@@ -48,13 +48,39 @@ Deploy the generator with Original support before deploying this catalogue
 version. The existing `cnc-packs` feature gate still controls the shop; there
 are no new public routes or database migrations.
 
-## The order row is the queue
+## Orders and the durable queue
 
-One row in `cnc_orders` per configuration a buyer previewed, and the same row
-becomes the licence if they buy it. It carries the licence identity
-(`licence_id`, printed on every file in the pack), the configuration, the
-preview, the payment, and the generation lease — all in one place, so "who paid
-for this" and "who is generating it right now" can never disagree.
+In production, `CNC_TRANSPORT=pgboss` uses two dedicated worker roles on the
+CNC VM: `cnc-interactive` for layout/artwork and `cnc-generation` for previews
+and paid packs. Each has its own queue and one active job, so rendering a pack
+cannot block the configurator. Six database connections are reserved in total.
+The VM makes outbound verified-TLS connections to the existing primary and R2;
+it has no public listener, tunnel, public DNS name or browser SSO dependency.
+
+The order remains the source of truth for configuration, payment, licence and
+published artifacts. Preview creation, paid webhook handling and regeneration
+enqueue pg-boss work in the same transaction as their order change. A generation
+is bound to its run ID; publication checks the current attempt fence, generation,
+status and claim token again. Refunds and superseded attempts cannot publish.
+Full packs take priority over previews. Backend reconciliation adopts queued
+legacy rows and marks exhausted/crashed runs terminal; the VM is not the reaper.
+
+Layout/artwork use `requestCncLayout` / `requestCncArtworkValidation` and poll
+`cncComputation`. Only hole-free layouts are public. Hole/artwork results belong
+to the submitting account, expire after 90 seconds, and never enter generic job
+output. Browser polling stops when configuration or account scope changes.
+Private requests/results are reclaimed after 24 hours, in bounded backend passes.
+The old synchronous GraphQL fields remain compatible through bounded queue waits.
+
+Python runs locally through a versioned stdin/stdout protocol. Startup verifies
+the actual generator SHA before consuming anything. Only authorized immutable
+artwork bytes cross that boundary. Private fingerprint manifests are written to
+the protected order, not to pg-boss output or logs. The worker stops new claims
+on SIGTERM and drains for 600 seconds; container and host shutdown budgets exceed
+that allowance. Emails and analytics remain backend-owned with leased retries.
+
+One row in `cnc_orders` exists per previewed configuration, and that same row
+becomes the licence when the buyer purchases it. Its visible states remain:
 
 | From | Event | To |
 | --- | --- | --- |
@@ -258,7 +284,13 @@ actually charged, **GST-inclusive**. It is never the catalogue's pre-tax
 breakdown) — that field exists for revenue reporting and is not persisted on
 the order row.
 
-## The worker job API
+## Legacy HTTP worker API
+
+This section documents rollback compatibility. When `CNC_TRANSPORT=pgboss`,
+all `/api/cnc/worker/*` routes return 404 and the custom claim loop is disabled.
+Do not deploy an HTTP poller alongside the pg-boss consumers. The production
+worker requires no shared HTTP worker secret or backend-to-homelab URL.
+
 
 The generator PULLS work. Boardsesh never calls it to start a job, which is what
 lets the worker restart, scale and redeploy without anything here knowing. Every
@@ -887,8 +919,12 @@ Backend, all fail-closed when unset:
 | `STRIPE_WEBHOOK_SECRET` | The webhook route 404s. |
 | `STRIPE_PRICE_CNC_PERSONAL` | The personal tier cannot be sold. |
 | `STRIPE_PRICE_CNC_COMMERCIAL` | The commercial tier cannot be sold. |
-| `CNC_WORKER_URL` | Layout previews and artwork validation refuse rather than guess. |
-| `CNC_WORKER_SECRET` | The same, plus the whole `/api/cnc/worker/*` job API 404s — the generator can claim nothing. Shared with the worker, which sends it as a bearer token. |
+| `CNC_TRANSPORT` | Set `pgboss` for the outbound-only deployment; unset retains legacy HTTP compatibility. |
+| `CNC_RELEASE_MODE` | Set `beta` for the restricted sandbox launch. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and checkout. `public` requires a separately approved launch. |
+| `CNC_BETA_USER_IDS` | Comma-separated exact account IDs authorized for beta. Empty or malformed lists deny access. Beta checkout requires a test/sandbox Stripe secret or restricted key. Existing owner downloads remain available. |
+| `CNC_GENERATOR_SHA` | In pg-boss mode, requests refuse without the reviewed 40-character generator SHA. Must match the image. |
+| `CNC_WORKER_URL` | Legacy HTTP transport only; leave unset in pg-boss production. |
+| `CNC_WORKER_SECRET` | Legacy HTTP transport only; leave unset in pg-boss production. |
 | `CNC_DOWNLOAD_TOKEN_SECRET` | No download grants can be minted, so browser downloads stop. Bearer-token downloads keep working. Rotating it invalidates every outstanding grant (a buyer clicks Download again). |
 | `BACKEND_PUBLIC_URL` | Grant URLs are built against `https://ws.boardsesh.com`. Set it anywhere the backend is not on that host. |
 
@@ -997,6 +1033,17 @@ is a write cost paid for a guess.
 
 ## Launch
 
+Current owner scope is a **test-user beta only**, pending actual GST registration
+([issue 7518](https://github.com/boardsesh/boardsesh/issues/7518)). Target the
+two owner-approved accounts in PostHog and the backend `CNC_BETA_USER_IDS`
+allowlist; anonymous and other accounts must stay off. Set
+`CNC_RELEASE_MODE=beta` and use only a Stripe sandbox key for beta checkout.
+Do not add a Stripe tax registration on an assumption,
+make real verification charges, or widen the flag without a later explicit
+launch approval. Owner licence/printed-plan approval was recorded on 2026-11-14;
+that approval does not prove tax registration is complete.
+
+
 The flag is off and the pages are `noindex` because the manufacturing licence
 ships marked DRAFT pending an Australian IP review — not because the code is
 unfinished. Launch is therefore mostly owner actions, in this order. Steps 1-5
@@ -1013,16 +1060,18 @@ can all be done before anything is visible to anyone.
    `https://www.boardsesh.com/build-plans/licence` — Checkout collects the
    licence acceptance against that URL, so it has to resolve before the first
    real sale even though the page is still `noindex`.
-2. **Railway worker.** Create the `cnc-worker` service from
-   `ghcr.io/boardsesh/boardsesh-cnc-worker:production`, healthcheck `/health`,
-   `drainingSeconds` at least one job's length. Set its env:
-   `BOARDSESH_BACKEND_URL`, `CNC_WORKER_SECRET`, `CNC_WORKER_ID`
-   (`$RAILWAY_REPLICA_ID`), `FINGERPRINT_SECRET`, the `PRIVATE_*` bucket
-   credentials, `WORKER_CONCURRENCY`, `POLL_INTERVAL_S`, `SENTRY_DSN`.
-3. **Backend env.** Set `CNC_WORKER_URL` (private networking), the same
-   `CNC_WORKER_SECRET` the worker got, and `CNC_DOWNLOAD_TOKEN_SECRET`. Every
-   one of these fails closed, so a missed variable is a refusal rather than a
-   silent half-working shop — see the Environment table above.
+2. **Dedicated homelab worker.** Provision the CNC VM using the homelab's
+   source-controlled Ansible configuration. Pre-create restricted logins for
+   `cnc-interactive` and `cnc-generation`, append them to
+   `MIGRATION_WORKER_ROLES`, and apply the additive schema, queue and grants
+   before starting consumers. Pin the composite image by digest, including both
+   its application and generator SHAs. Configure each role's verified primary
+   URL, private R2 credentials and build identity; only generation receives
+   `FINGERPRINT_SECRET`. Preserve that durable secret on every redeploy.
+3. **Backend env.** Set `CNC_TRANSPORT=pgboss`, `CNC_GENERATOR_SHA`, and
+   `CNC_DOWNLOAD_TOKEN_SECRET`. Do not set `CNC_WORKER_URL` or the shared HTTP
+   worker secret. Verify local `/health`, `/version`, queue processing and private
+   downloads before unpausing consumers. Keep the feature flag off during setup.
 4. **Lawyer sign-off.** The Australian IP review of the licence text and of the
    Kilter-derived engrave layer. This is the actual gate; everything else is
    reversible and this is not.

@@ -27,6 +27,7 @@ import {
 } from '../../../validation/schemas';
 import { decodeCursor, encodeCursor } from '../../../utils/feed-cursor';
 import { requireAdmin } from '../social/roles';
+import { requireCncCreationAccess } from '../../../services/cnc/release-access';
 import { CNC_WORKER_UNAVAILABLE_CODE, invalidConfigError, resolveCncConfig } from './config';
 import { toGraphQLAdminOrder, toGraphQLOrder } from './order-mapper';
 
@@ -250,6 +251,7 @@ export const cncPackQueries = {
     const wantsHoles = includeHoles ?? false;
     if (wantsHoles) {
       requireAuthenticated(ctx);
+      requireCncCreationAccess(ctx.userId!);
       await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT_HOLES, RATE_LIMIT_CNC_LAYOUT_HOLES_OP);
     } else {
       await applyRateLimit(ctx, RATE_LIMIT_CNC_LAYOUT, RATE_LIMIT_CNC_LAYOUT_OP);
@@ -261,7 +263,7 @@ export const cncPackQueries = {
       // trip. Run inside this try so a mapping error (bad option, unparseable
       // sheet stock) classifies the same way a worker rejection would.
       const { layoutRequest } = resolveCncConfig(config);
-      return await fetchLayout(layoutRequest, { includeHoles: wantsHoles });
+      return await fetchLayout(layoutRequest, { includeHoles: wantsHoles, ownerId: ctx.userId ?? null });
     } catch (error) {
       throw toGraphQLWorkerError(error);
     }

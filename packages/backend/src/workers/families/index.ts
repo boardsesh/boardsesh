@@ -4,6 +4,8 @@ import {
   type BackgroundWorkerRole,
 } from '@boardsesh/db/background-jobs';
 import type { BackgroundJobFamilyModule } from './types';
+import { cncComputationFamily } from './cnc-computation';
+import { cncGenerationFamily } from './cnc-generation';
 import { exportBoardSnapshotsFamily } from './export-board-snapshots';
 import { refreshClimbGradesFamily } from './refresh-climb-grades';
 import { refreshClimbNeighborsFamily } from './refresh-climb-neighbors';
@@ -32,6 +34,8 @@ export type { BackgroundJobContext, BackgroundJobFamilyModule, BackgroundJobFami
 /** Every family, keyed by name. The `satisfies` fails the build when a name has no module. */
 const FAMILY_MODULES = {
   'worker-probe': workerProbeFamily,
+  'cnc-computation': cncComputationFamily,
+  'cnc-generation': cncGenerationFamily,
   'refresh-recommendations': refreshRecommendationsFamily,
   'refresh-hold-features': refreshHoldFeaturesFamily,
   'refresh-climb-grades': refreshClimbGradesFamily,

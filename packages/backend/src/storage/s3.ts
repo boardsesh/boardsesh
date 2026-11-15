@@ -297,7 +297,11 @@ export type S3ObjectBody = {
  * treating a transient read error as "no previous manifest" would drop every
  * other board's entries from the published manifest.
  */
-export async function getFromS3Strict(bucket: StorageBucket, key: string): Promise<S3ObjectBody | null> {
+export async function getFromS3Strict(
+  bucket: StorageBucket,
+  key: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<S3ObjectBody | null> {
   const client = getS3Client(bucket);
 
   try {
@@ -306,6 +310,7 @@ export async function getFromS3Strict(bucket: StorageBucket, key: string): Promi
         Bucket: getConfig(bucket).bucketName,
         Key: key,
       }),
+      { abortSignal: options.signal },
     );
 
     if (!response.Body) {
@@ -362,10 +367,16 @@ export async function getS3ObjectMetadata(
 }
 
 /** Return null only for a missing object; outages must not trigger export generation. */
-export async function getS3ObjectMetadataStrict(bucket: StorageBucket, key: string) {
+export async function getS3ObjectMetadataStrict(
+  bucket: StorageBucket,
+  key: string,
+  options: { signal?: AbortSignal } = {},
+) {
   const client = getS3Client(bucket);
   try {
-    const response = await client.send(new HeadObjectCommand({ Bucket: getConfig(bucket).bucketName, Key: key }));
+    const response = await client.send(new HeadObjectCommand({ Bucket: getConfig(bucket).bucketName, Key: key }), {
+      abortSignal: options.signal,
+    });
     return {
       contentType: response.ContentType,
       contentLength: response.ContentLength,

@@ -8410,10 +8410,20 @@ type CncDownloadGrant {
   expiresAt: String!
 }
 
+"A queued CNC layout/artwork computation. Only its owner may read private results."
+type CncComputation {
+  id: ID!
+  status: String!
+  result: JSON
+  errorCode: String
+}
+
 """
 Root query type for all read operations.
 """
 type Query {
+  cncComputation(id: ID!): CncComputation
+
   "Compatible saved and recent physical boards for a tick owned by the viewer."
   tickBoardOptions(tickUuid: ID!, limit: Int, offset: Int): TickBoardOptions!
   """
@@ -9713,6 +9723,9 @@ type Query {
 Root mutation type for all write operations.
 """
 type Mutation {
+  requestCncLayout(config: CncBoardConfigInput!, includeHoles: Boolean): CncComputation!
+  requestCncArtworkValidation(config: CncBoardConfigInput!): CncComputation!
+
   """
   Join an existing session or create it if it doesn't exist.
   Returns the session with current state.
