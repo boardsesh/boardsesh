@@ -109,11 +109,28 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
 
 describe('POST /api/cnc/art', () => {
+  it('refuses a non-beta account before reading or storing its upload', async () => {
+    vi.stubEnv('CNC_TRANSPORT', 'pgboss');
+    vi.stubEnv('CNC_RELEASE_MODE', 'beta');
+    vi.stubEnv('CNC_BETA_USER_IDS', '44444444-4444-4444-8444-444444444444');
+    const { baseUrl, server } = await startServer();
+    try {
+      const response = await postArt(baseUrl, { bytes: CLEAN_SVG, type: 'image/svg+xml', name: 'logo.svg' });
+      expect(response.status).toBe(403);
+      expect(uploadToS3Mock).not.toHaveBeenCalled();
+      expect(createArtAssetMock).not.toHaveBeenCalled();
+      expect(checkRateLimitRedisMock).not.toHaveBeenCalled();
+    } finally {
+      await closeServer(server);
+    }
+  });
+
   it('stores a PNG with the dimensions it decoded, object before row', async () => {
     const png = await makePng(128);
     const { baseUrl, server } = await startServer();

@@ -7,6 +7,7 @@ import {
   type CncComputationAssets,
 } from '../../../services/cnc/computations';
 import { getOwnedArtAssets } from '../../../services/cnc/art-assets';
+import { requireCncCreationAccess } from '../../../services/cnc/release-access';
 import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/helpers';
 import { artworkAssetIds, resolveArtworkAssets, resolveCncConfig } from './config';
 import { toGraphQLWorkerError } from './queries';
@@ -23,7 +24,10 @@ export const cncComputationMutations = {
     context: ConnectionContext,
   ) => {
     const wantsHoles = includeHoles ?? false;
-    if (wantsHoles) requireAuthenticated(context);
+    if (wantsHoles) {
+      requireAuthenticated(context);
+      requireCncCreationAccess(context.userId!);
+    }
     await applyRateLimit(context, wantsHoles ? 10 : 30, 'requestCncLayout');
     try {
       const { layoutRequest } = resolveCncConfig(config);
@@ -40,6 +44,7 @@ export const cncComputationMutations = {
   },
   requestCncArtworkValidation: async (_: unknown, { config }: { config: unknown }, context: ConnectionContext) => {
     requireAuthenticated(context);
+    requireCncCreationAccess(context.userId!);
     await applyRateLimit(context, 60, 'requestCncArtworkValidation');
     try {
       const { layoutRequest, artwork, artworkInput } = resolveCncConfig(config);

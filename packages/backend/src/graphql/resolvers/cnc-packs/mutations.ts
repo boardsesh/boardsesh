@@ -17,6 +17,7 @@ import { findCatalogEntry } from '../../../services/cnc/catalog';
 import { computeCncConfigHash } from '../../../services/cnc/config-hash';
 import { createCheckoutSessionForOrder, isStripeConfigured } from '../../../services/cnc/stripe';
 import { isCheckoutBypassEnabled } from '../../../services/cnc/checkout-bypass';
+import { requireCncCreationAccess, requireCncCheckoutAccess } from '../../../services/cnc/release-access';
 import { sendCncOrderStuckAdminEmail } from '../../../email/cnc-emails';
 import { isDownloadable, type CncDeliverable } from '../../../services/cnc/order-state';
 import { createDownloadGrant, isDownloadGrantConfigured } from '../../../services/cnc/download-grant';
@@ -136,6 +137,7 @@ export const cncPackMutations = {
     ctx: ConnectionContext,
   ): Promise<{ ok: boolean; collisions: unknown }> => {
     requireAuthenticated(ctx);
+    requireCncCreationAccess(ctx.userId!);
     await applyRateLimit(ctx, RATE_LIMIT_VALIDATE_ARTWORK, RATE_LIMIT_VALIDATE_ARTWORK_OP);
 
     let verdict: unknown;
@@ -182,6 +184,7 @@ export const cncPackMutations = {
    */
   createCncPreview: async (_: unknown, { config }: { config: unknown }, ctx: ConnectionContext) => {
     requireAuthenticated(ctx);
+    requireCncCreationAccess(ctx.userId!);
     const userId = ctx.userId!;
     // The per-minute burst guard. The real ceiling is hourly and lives below;
     // this one is here because it costs nothing and stops a runaway client
@@ -306,6 +309,7 @@ export const cncPackMutations = {
     ctx: ConnectionContext,
   ): Promise<{ orderId: string; licenceId: string; checkoutUrl: string }> => {
     requireAuthenticated(ctx);
+    requireCncCheckoutAccess(ctx.userId!);
     await applyRateLimit(ctx, RATE_LIMIT_FINALISE, RATE_LIMIT_FINALISE_OP);
 
     const validated = validateInput(FinaliseCncOrderInputSchema, input, 'input');

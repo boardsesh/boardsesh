@@ -7,6 +7,7 @@ import { validateToken } from '../middleware/auth';
 import { detectImageMimeType } from '../lib/image-mime';
 import { isS3Configured, uploadToS3 } from '../storage/s3';
 import { cncArtAssetKey, createArtAsset } from '../services/cnc/art-assets';
+import { isCncCreationAllowed } from '../services/cnc/release-access';
 import { looksLikeSvg, sanitiseSvg, type SvgRejectionReason } from '../services/cnc/svg-sanitiser';
 import { RateLimitError } from '../utils/rate-limiter';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
@@ -256,6 +257,10 @@ export async function handleCncArtUpload(req: IncomingMessage, res: ServerRespon
     return;
   }
   const userId = authResult.userId;
+  if (!isCncCreationAllowed(userId)) {
+    sendJson(res, 403, { error: 'Build packs are unavailable for this account.' });
+    return;
+  }
 
   // Checked before a byte is read. An operator who has not set the private
   // bucket up gets a 503 the buyer can retry, rather than a 500 after a 5 MB

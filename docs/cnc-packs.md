@@ -920,6 +920,8 @@ Backend, all fail-closed when unset:
 | `STRIPE_PRICE_CNC_PERSONAL` | The personal tier cannot be sold. |
 | `STRIPE_PRICE_CNC_COMMERCIAL` | The commercial tier cannot be sold. |
 | `CNC_TRANSPORT` | Set `pgboss` for the outbound-only deployment; unset retains legacy HTTP compatibility. |
+| `CNC_RELEASE_MODE` | Set `beta` for the restricted sandbox launch. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and checkout. `public` requires a separately approved launch. |
+| `CNC_BETA_USER_IDS` | Comma-separated exact account IDs authorized for beta. Empty or malformed lists deny access. Beta checkout requires a test/sandbox Stripe secret or restricted key. Existing owner downloads remain available. |
 | `CNC_GENERATOR_SHA` | In pg-boss mode, requests refuse without the reviewed 40-character generator SHA. Must match the image. |
 | `CNC_WORKER_URL` | Legacy HTTP transport only; leave unset in pg-boss production. |
 | `CNC_WORKER_SECRET` | Legacy HTTP transport only; leave unset in pg-boss production. |
@@ -1033,8 +1035,10 @@ is a write cost paid for a guess.
 
 Current owner scope is a **test-user beta only**, pending actual GST registration
 ([issue 7518](https://github.com/boardsesh/boardsesh/issues/7518)). Target the
-existing PostHog `Internal / Test users` cohort (295337); anonymous and non-test
-accounts must stay off. Do not add a Stripe tax registration on an assumption,
+two owner-approved accounts in PostHog and the backend `CNC_BETA_USER_IDS`
+allowlist; anonymous and other accounts must stay off. Set
+`CNC_RELEASE_MODE=beta` and use only a Stripe sandbox key for beta checkout.
+Do not add a Stripe tax registration on an assumption,
 make real verification charges, or widen the flag without a later explicit
 launch approval. Owner licence/printed-plan approval was recorded on 2026-11-14;
 that approval does not prove tax registration is complete.
