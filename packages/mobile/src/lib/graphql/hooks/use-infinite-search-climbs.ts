@@ -132,8 +132,9 @@ export function useInfiniteSearchClimbs(
   // explain. The paused fetch is cancelled first because `refetch` on a query
   // with no data of its own only nudges the paused retryer, which stays paused.
   // Once per pending stretch, so a re-ask that pauses again can't loop; the
-  // guard clears when the search settles, so the same search pausing again
-  // later (a retry after an error, coming back to it) is recovered too.
+  // guard clears once the list stops showing placeholder rows, so a search
+  // that errored and is later refetched (a sync invalidation) and pauses again
+  // is re-asked too.
   // Backgrounding the app mid-retry also pauses it (focus, not connectivity);
   // the re-ask then costs one request, and a re-pause resumes on foreground.
   // `status` reads `success` while a placeholder is up, so the placeholder flag

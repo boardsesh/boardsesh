@@ -367,6 +367,48 @@ describe('useInfiniteSearchClimbs', () => {
       }
     });
 
+    it('re-asks again when a search that errored is refetched and pauses', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0, networkMode: 'offlineFirst' } },
+      });
+      const offlineWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      let zenithCalls = 0;
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) => {
+        if (variables.input.name === 'Moonage') return Promise.resolve(makeResponse(variables.input.page ?? 0));
+        zenithCalls += 1;
+        // 1: drop offline and fail, so the retry pauses. 2 (the re-ask): back
+        // online and fail, 3 (its retry): fail, so the search errors.
+        // 4 (a later refetch): offline and fail again. 5: the second re-ask answers.
+        if (zenithCalls === 1 || zenithCalls === 4) onlineManager.setOnline(false);
+        if (zenithCalls === 2) onlineManager.setOnline(true);
+        if (zenithCalls === 5) return Promise.resolve({ searchClimbs: { climbs: [], hasMore: false } });
+        return Promise.reject(new TypeError('Network request failed'));
+      });
+      try {
+        const { result, rerender } = renderHook(
+          ({ input }: { input: ClimbSearchInput }) =>
+            useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+          { initialProps: { input: baseInput }, wrapper: offlineWrapper },
+        );
+        await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+        rerender({ input: { ...baseInput, name: 'Zenith' } });
+        await waitFor(() => expect(result.current.isError).toBe(true));
+        expect(zenithCalls).toBe(3);
+
+        await act(async () => {
+          void queryClient.refetchQueries({ predicate: (query) => JSON.stringify(query.queryKey).includes('Zenith') });
+        });
+        await waitFor(() => expect(result.current.isSuccess && !result.current.isPlaceholderData).toBe(true));
+        expect(zenithCalls).toBe(5);
+      } finally {
+        onlineManager.setOnline(true);
+        queryClient.clear();
+      }
+    });
+
     it('drops to no data on a new search when the option is off', async () => {
       const { result, rerender } = renderHook(
         ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input),
