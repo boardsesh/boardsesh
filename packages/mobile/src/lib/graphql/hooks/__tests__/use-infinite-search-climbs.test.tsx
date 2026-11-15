@@ -334,6 +334,39 @@ describe('useInfiniteSearchClimbs', () => {
       }
     });
 
+    it('re-asks a paused search only once while it stays pending', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: 1, retryDelay: 0, networkMode: 'offlineFirst' } },
+      });
+      const offlineWrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      );
+      let zenithCalls = 0;
+      requestMock.mockImplementation((_query: unknown, variables: { input: ClimbSearchInput }) => {
+        if (variables.input.name === 'Moonage') return Promise.resolve(makeResponse(variables.input.page ?? 0));
+        zenithCalls += 1;
+        onlineManager.setOnline(false);
+        return Promise.reject(new TypeError('Network request failed'));
+      });
+      try {
+        const { result, rerender } = renderHook(
+          ({ input }: { input: ClimbSearchInput }) =>
+            useInfiniteSearchClimbs(input, true, { keepPreviousResults: true }),
+          { initialProps: { input: baseInput }, wrapper: offlineWrapper },
+        );
+        await waitFor(() => expect(result.current.data?.pages).toHaveLength(1));
+
+        rerender({ input: { ...baseInput, name: 'Zenith' } });
+        await waitFor(() => expect(zenithCalls).toBe(2));
+        await waitFor(() => expect(result.current.fetchStatus).toBe('paused'));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(zenithCalls).toBe(2);
+      } finally {
+        onlineManager.setOnline(true);
+        queryClient.clear();
+      }
+    });
+
     it('drops to no data on a new search when the option is off', async () => {
       const { result, rerender } = renderHook(
         ({ input }: { input: ClimbSearchInput }) => useInfiniteSearchClimbs(input),

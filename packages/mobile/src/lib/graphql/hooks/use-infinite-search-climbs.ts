@@ -131,12 +131,23 @@ export function useInfiniteSearchClimbs(
   // or with its offline fallback, which the screen already knows how to
   // explain. The paused fetch is cancelled first because `refetch` on a query
   // with no data of its own only nudges the paused retryer, which stays paused.
-  // Once per search, so a re-ask that pauses again can't loop.
+  // Once per pending stretch, so a re-ask that pauses again can't loop; the
+  // guard clears when the search settles, so the same search pausing again
+  // later (a retry after an error, coming back to it) is recovered too.
+  // Backgrounding the app mid-retry also pauses it (focus, not connectivity);
+  // the re-ask then costs one request, and a re-pause resumes on foreground.
+  // `status` reads `success` while a placeholder is up, so the placeholder flag
+  // is the pending signal: it holds exactly until the search has data or an
+  // error of its own.
   const { fetchStatus, isPlaceholderData } = query;
   const searchHash = hashKey(queryKey);
   const reaskedSearchRef = useRef<string | null>(null);
   useEffect(() => {
-    if (fetchStatus !== 'paused' || !isPlaceholderData) return;
+    if (!isPlaceholderData) {
+      reaskedSearchRef.current = null;
+      return;
+    }
+    if (fetchStatus !== 'paused') return;
     if (reaskedSearchRef.current === searchHash) return;
     reaskedSearchRef.current = searchHash;
     const pausedKey = queryClient.getQueryCache().get(searchHash)?.queryKey;
