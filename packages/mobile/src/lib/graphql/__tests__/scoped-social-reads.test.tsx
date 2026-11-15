@@ -400,7 +400,7 @@ describe('actual SDK captured social readers', () => {
     expect(current.performFetch).toHaveBeenCalledTimes(6);
   });
 
-  it('gives each people page its own request and preserves offset/limit/screenshot rules', async () => {
+  it('gives each people page its own request and preserves offset/limit rules', async () => {
     const current = fixture();
     current.performFetch.mockImplementation(async (_url, init) =>
       Response.json({ data: payload(requestBody(init), 1, true) }),
@@ -435,7 +435,7 @@ describe('actual SDK captured social readers', () => {
     }
   });
 
-  it('retains the one-page screenshot cap for all three people readers', async () => {
+  it('paginates all three captured people readers regardless of screenshot configuration', async () => {
     vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '1');
     const current = fixture();
     current.performFetch.mockImplementation(async (_url, init) =>
@@ -452,13 +452,25 @@ describe('actual SDK captured social readers', () => {
     await waitFor(() => {
       for (const reader of Object.values(result.current)) {
         expect(reader.data?.pages).toHaveLength(1);
-        expect(reader.hasNextPage).toBe(false);
+        expect(reader.hasNextPage).toBe(true);
       }
     });
     await act(async () => {
       await Promise.all(Object.values(result.current).map((reader) => reader.fetchNextPage()));
     });
-    expect(current.performFetch).toHaveBeenCalledTimes(3);
+    await waitFor(() => {
+      for (const reader of Object.values(result.current)) {
+        expect(reader.data?.pages).toHaveLength(2);
+        expect(reader.hasNextPage).toBe(false);
+      }
+    });
+    expect(current.performFetch).toHaveBeenCalledTimes(6);
+    for (const document of ['followers(', 'following(', 'searchUsers(']) {
+      const requests = current.performFetch.mock.calls
+        .map(([, init]) => requestBody(init))
+        .filter((body) => body.query.includes(document));
+      expect(requests.map((body) => body.variables?.input?.offset)).toEqual([0, 30]);
+    }
   });
 
   it('retains independent <=100-ID chunks, good siblings and stable combined identities', async () => {
