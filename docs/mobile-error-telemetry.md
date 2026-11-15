@@ -151,6 +151,32 @@ so events group in Sentry: `react-query`, `native-auth`, `queue-mutation`,
 
 ## Source maps / symbolication (CI)
 
+### Android unwinder dependency floor
+
+Sentry React Native 8.35.0 includes Android SDK 8.64.0 and native SDK 0.17.6.
+The native SDK catches allocation failures while unwinding a crash and initializes
+the handler thread's exception state before crash handling. Earlier versions could
+abort inside the reporter and replace the original crash with an unwinder failure.
+The upstream fix is [sentry-native #2239](https://github.com/getsentry/sentry-native/pull/2239).
+
+`check:mobile-native-deps` checks the installed React Native SDK against its exact
+mobile pin and reads its Android Gradle dependency declaration. Android SDK 8.63.0
+is the minimum audited release containing the native fix (0.17.6). This source
+check does not replace qualification of the final Gradle dependency graph or device
+crash delivery. Keep the historical uploader SDK allowlists: frozen release builds
+still use those versions.
+
+These native changes require a new store binary. An OTA cannot replace the native
+crash handler on an installed binary. The unwinder fix preserves the original
+failure; it does not resolve an application's underlying out-of-memory condition.
+
+Worklets 0.13.1 is a compatible patch for Reanimated 4.7.1 and React Native 0.88.1.
+It is explicitly excluded from Expo's exact 0.13.0 recommendation while the Expo
+58 native patch set stays coordinated. This patch updates Jest package resolution;
+it is not an out-of-memory fix.
+
+### Symbol uploads
+
 Both are gated on `SENTRY_AUTH_TOKEN`; without it the builds stay green and upload
 nothing.
 

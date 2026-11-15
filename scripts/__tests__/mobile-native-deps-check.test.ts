@@ -50,7 +50,7 @@ describe('checkNativeBuildPhaseDeps', () => {
     ).toEqual({ checked: 1, errors: [] });
   });
 
-  it.each(['8.24.0', '8.32.0', '8.33.0'])(
+  it.each(['8.24.0', '8.32.0', '8.33.0', '8.35.0'])(
     'checks Sentry %s CLI from the SDK even when the standalone CLI differs',
     (version) => {
       const resolver = makeResolver(
@@ -74,7 +74,7 @@ describe('checkNativeBuildPhaseDeps', () => {
     },
   );
 
-  it.each(['8.24.0', '8.32.0', '8.33.0'])(
+  it.each(['8.24.0', '8.32.0', '8.33.0', '8.35.0'])(
     'rejects Sentry %s when its SDK-owned CLI is missing even if mobile resolves a CLI',
     (version) => {
       const resolver = makeResolver(
