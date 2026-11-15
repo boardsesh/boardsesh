@@ -9,6 +9,7 @@
 // never leave a row unread.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
+import { useMemo } from 'react';
 import type { GroupedNotification } from '@boardsesh/shared-schema';
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
@@ -18,6 +19,22 @@ const openClimbInPlayDrawer = vi.hoisted(() => vi.fn());
 const openCommentThread = vi.hoisted(() => vi.fn());
 const state = vi.hoisted(() => ({
   moderationEnabled: true,
+  scoped: false,
+  revision: 0,
+}));
+vi.mock('../../../lib/graphql/use-http-query-scope', () => ({
+  useHttpQueryScope: () =>
+    useMemo(() => {
+      const original = { ...state };
+      return {
+        scoped: original.scoped,
+        scope: `notification-view-${original.revision}`,
+        assertView() {
+          if (original.scoped && original.revision !== state.revision)
+            throw new Error('Original notification view retired');
+        },
+      };
+    }, [state.scoped, state.revision]),
 }));
 
 vi.mock('expo-router', () => ({
@@ -38,6 +55,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 vi.mock('../../../lib/open-climb-in-play-drawer', () => ({ openClimbInPlayDrawer }));
 
 import { useNotificationNavigation } from '../use-notification-navigation';
+import { useHttpActionScope } from '../../../lib/graphql/use-http-action-scope';
 
 function makeNotification(overrides: Partial<GroupedNotification> = {}): GroupedNotification {
   return {
@@ -63,13 +81,57 @@ function makeNotification(overrides: Partial<GroupedNotification> = {}): Grouped
   } as GroupedNotification;
 }
 
+function renderNavigation() {
+  return renderHook(() => {
+    const actionScope = useHttpActionScope();
+    return useNotificationNavigation(openCommentThread, actionScope.capture);
+  });
+}
 function tap(notification: GroupedNotification) {
-  const { result } = renderHook(() => useNotificationNavigation(openCommentThread));
+  const { result } = renderNavigation();
   result.current(notification);
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  state.scoped = false;
+  state.revision = 0;
+});
+
+describe('original notification navigation intent', () => {
+  it.each([1, 2])('refuses an earlier callback after %s selected view changes without another render', (changes) => {
+    state.scoped = true;
+    const { result } = renderNavigation();
+    const original = result.current;
+    state.revision += changes;
+    original(makeNotification());
+    expect(markGroupMutate).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(openCommentThread).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('checks again before navigation if marking read retires the selected view synchronously', () => {
+    state.scoped = true;
+    const { result } = renderNavigation();
+    markGroupMutate.mockImplementationOnce(() => {
+      state.revision += 1;
+    });
+    result.current(makeNotification());
+    expect(markGroupMutate).toHaveBeenCalledOnce();
+    expect(routerMock.push).not.toHaveBeenCalled();
+    expect(openCommentThread).not.toHaveBeenCalled();
+    expect(openClimbInPlayDrawer).not.toHaveBeenCalled();
+  });
+
+  it('refuses a removed screen callback before marking read or opening a private target', () => {
+    const { result, unmount } = renderNavigation();
+    const original = result.current;
+    unmount();
+    original(makeNotification());
+    expect(markGroupMutate).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
+  });
 });
 
 describe('useNotificationNavigation proposal rows', () => {

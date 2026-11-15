@@ -11,6 +11,7 @@ import { defaultAngle } from '../../lib/boards/default-angle';
 import { sprayImportRoute } from '../../lib/spray/spray-import-progress';
 import { notificationClimbRender } from './notification-climb-render';
 import { notificationToClimb } from './notification-to-climb';
+import type { HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 
 /** Opens the comment thread for an entity. Supplied by the screen, which hosts the sheet. */
 export type OpenCommentThread = (entityType: SocialEntityType, entityId: string) => void;
@@ -70,7 +71,10 @@ const THREAD_TYPES: ReadonlySet<GroupedNotification['type']> = new Set([
  * resolution until W-20b (#4439) removed the web notification centre — mobile is
  * the only client now.
  */
-export function useNotificationNavigation(openCommentThread: OpenCommentThread) {
+export function useNotificationNavigation(
+  openCommentThread: OpenCommentThread,
+  captureAction: HttpActionScope['capture'],
+) {
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   const moderationEnabled = useClimbModerationEnabled();
@@ -87,10 +91,8 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
   // then the screen's `renderItem`, then every memoized row, on each tap.
   const { mutate: markGroupAsRead } = useMarkGroupAsRead();
 
-  return useCallback(
+  const navigate = useCallback(
     (notification: GroupedNotification) => {
-      if (!notification.isRead) markGroupAsRead(notification);
-
       if (notification.type === 'new_follower') {
         // One follower reads as "go see who this is"; several read as "let me
         // deal with all of them", which is the follow-back list.
@@ -248,10 +250,30 @@ export function useNotificationNavigation(openCommentThread: OpenCommentThread) 
       activeBoardSizeId,
       activeBoardSetIds,
       moderationEnabled,
-      markGroupAsRead,
       openCommentThread,
       openPlayDrawer,
       router,
     ],
+  );
+
+  return useCallback(
+    (notification: GroupedNotification) => {
+      let action: ReturnType<HttpActionScope['capture']>;
+      try {
+        action = captureAction();
+      } catch {
+        return;
+      }
+      try {
+        action.assertView();
+        if (!notification.isRead) markGroupAsRead(notification);
+        if (action.isCurrent()) navigate(notification);
+      } catch (error) {
+        if (action.isCurrent()) throw error;
+      } finally {
+        action.finish();
+      }
+    },
+    [captureAction, markGroupAsRead, navigate],
   );
 }
