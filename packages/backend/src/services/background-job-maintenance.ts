@@ -8,6 +8,7 @@ import { deleteExpiredCommandClaims } from '../auth/current-store/command-contex
 import { purgeRetiredEmailKeys } from '../auth/current-store/email-reservations';
 import { runFirstPasswordPreparationMaintenance } from '../auth/authority/first-password-maintenance';
 import { runNativeBrowserHandoffMaintenance } from '../auth/authority/native-browser-handoff-maintenance';
+import { runExpiredBrowserBindingRetirementMaintenance } from '../auth/authority/expired-browser-binding-maintenance';
 import { logger } from '../utils/logger';
 import { MAINTENANCE_POLLING_INTERVAL_SECONDS } from './job-queue-client';
 
@@ -76,6 +77,11 @@ export async function clearExpiredAuthRecords(database: DbInstance): Promise<voi
     await runNativeBrowserHandoffMaintenance();
   } catch {
     logger.warn('Native browser handoff claim cleanup unavailable');
+  }
+  try {
+    await runExpiredBrowserBindingRetirementMaintenance();
+  } catch {
+    logger.warn('Expired browser binding receipt cleanup unavailable');
   }
   try {
     await purgeRetiredEmailKeys(database);
