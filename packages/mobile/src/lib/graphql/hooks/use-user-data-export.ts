@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsFocused } from 'expo-router';
-import { onlineManager, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardName, UserDataExportFormat, UserDataExportStatus } from '@boardsesh/shared-schema';
 import {
   GET_USER_DATA_EXPORT,
@@ -18,7 +18,9 @@ import { useIsAppBackgrounded } from '../../app-visibility';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../../auth-store';
 import { openUserDataExportDownload } from '../../user-data-export-download';
 import { UserDataExportActionError } from '../../user-data-export-action';
-import { getHttpClient } from '../client';
+import { useHttpMutation } from '../use-http-mutation';
+import { useHttpQueryScope } from '../use-http-query-scope';
+import { isGraphqlRateLimitedError } from '../extract-error-message';
 
 export { UserDataExportActionError } from '../../user-data-export-action';
 
@@ -54,8 +56,11 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
   const isOffline = useIsOffline();
   const isBackgrounded = useIsAppBackgrounded();
   const queryClient = useQueryClient();
+  const httpScope = useHttpQueryScope();
+  const viewCache = useMemo(() => httpScope.cache(queryClient), [httpScope, queryClient]);
   const credentialGeneration = captureAuthCredentialGeneration();
-  const scope = `${userId}:${credentialGeneration}:${boardType}`;
+  const accountScope = `${userId}:${credentialGeneration}:${boardType}`;
+  const scope = httpScope.scoped ? `${accountScope}:${httpScope.scope}` : accountScope;
   const [periodAnchor, setPeriodAnchor] = useState<{ scope: string; period: string | null }>({ scope, period: null });
   const period = periodAnchor.scope === scope ? periodAnchor.period : null;
   const queryKey = userDataExportQueryKey(userId, credentialGeneration, boardType, period);
@@ -63,7 +68,7 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
   currentScope.current = scope;
   const downloadControllers = useRef(new Set<AbortController>());
   const mounted = useRef(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     const controllers = downloadControllers.current;
     return () => {
@@ -73,31 +78,36 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
     };
   }, [scope]);
   const pollingDeadline = useRef<{ scope: string; at: number } | null>(null);
-  const manualRefresh = useRef(false);
+  const manualRefresh = useRef<{ scope: string } | null>(null);
   const [pollDeadline, setPollDeadline] = useState<{ scope: string; reached: boolean }>({ scope, reached: false });
   const pollLimitReached = pollDeadline.scope === scope && pollDeadline.reached;
   const active = isFocused && !isBackgrounded && !isOffline;
 
   const statusQuery = useQuery({
-    queryKey,
-    queryFn: async () => {
+    queryKey: httpScope.key(queryKey),
+    queryFn: async ({ signal }) => {
+      httpScope.assertView();
       requireCurrentSession(credentialGeneration);
       if (
-        !manualRefresh.current &&
+        manualRefresh.current?.scope !== scope &&
         pollingDeadline.current?.scope === scope &&
         Date.now() >= pollingDeadline.current.at
       ) {
-        const cachedStatus = queryClient.getQueryData<UserDataExportStatus>(queryKey);
+        // This polling cap may return already-owned metadata; it is not a new
+        // network delivery and cannot authorize a download or mutation.
+        const cachedStatus = viewCache.getQueryData<UserDataExportStatus>(queryKey);
         if (cachedStatus) return cachedStatus;
       }
-      const response = await getHttpClient().request<GetUserDataExportResponse, GetUserDataExportVariables>(
+      const operation = httpScope.create({ signal });
+      const response = await operation.request<GetUserDataExportResponse, GetUserDataExportVariables>(
         GET_USER_DATA_EXPORT,
         period ? { boardType, period } : { boardType },
       );
       requireCurrentSession(credentialGeneration);
+      operation.assertDeliveries();
       return response.userDataExport;
     },
-    enabled: active && !pollLimitReached,
+    enabled: active && !pollLimitReached && httpScope.isReady(),
     networkMode: 'online',
     retry: false,
     staleTime: USER_DATA_EXPORT_POLL_MS,
@@ -111,14 +121,24 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
   const generating = statusQuery.data?.status === 'generating';
   const generatingPeriod = generating ? statusQuery.data?.period : null;
   useEffect(() => {
-    if (!generatingPeriod || period === generatingPeriod) return;
+    if (!generatingPeriod || period === generatingPeriod || !httpScope.isReady()) return;
     const exportStatus = statusQuery.data;
-    queryClient.setQueryData(
+    viewCache.setQueryData(
       userDataExportQueryKey(userId, credentialGeneration, boardType, generatingPeriod),
       exportStatus,
     );
     setPeriodAnchor({ scope, period: generatingPeriod });
-  }, [generatingPeriod, period, scope, statusQuery.data, queryClient, userId, credentialGeneration, boardType]);
+  }, [
+    generatingPeriod,
+    period,
+    scope,
+    statusQuery.data,
+    httpScope,
+    viewCache,
+    userId,
+    credentialGeneration,
+    boardType,
+  ]);
 
   useEffect(() => {
     setPollDeadline({ scope, reached: false });
@@ -132,29 +152,35 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
 
   const refetchStatus = statusQuery.refetch;
   const refresh = useCallback(async () => {
+    httpScope.assertView();
+    requireCurrentSession(credentialGeneration);
     if (period && statusQuery.data?.status === 'ready' && Date.parse(statusQuery.data.refreshAt) <= Date.now()) {
       // Keep a Sunday request downloadable on Monday; an explicit refresh then selects the new week.
-      queryClient.removeQueries({
+      viewCache.removeQueries({
         queryKey: userDataExportQueryKey(userId, credentialGeneration, boardType),
         exact: true,
       });
       setPeriodAnchor({ scope, period: null });
       return;
     }
-    manualRefresh.current = true;
+    const attempt = { scope };
+    manualRefresh.current = attempt;
     try {
-      return await refetchStatus();
+      const result = await refetchStatus();
+      httpScope.assertView();
+      requireCurrentSession(credentialGeneration);
+      return result;
     } finally {
-      manualRefresh.current = false;
+      if (manualRefresh.current === attempt) manualRefresh.current = null;
     }
-  }, [refetchStatus, period, statusQuery.data, queryClient, userId, credentialGeneration, boardType, scope]);
+  }, [refetchStatus, period, statusQuery.data, httpScope, viewCache, userId, credentialGeneration, boardType, scope]);
 
-  const requestMutation = useMutation({
+  const requestMutation = useHttpMutation({
     // Guard explicitly rather than queue a paused generation for a later session/reconnect.
     networkMode: 'always',
     retry: false,
     onMutate: (request: ExportActionScope & { anchorPeriod: string | null }) =>
-      queryClient.cancelQueries({
+      viewCache.cancelQueries({
         queryKey: userDataExportQueryKey(
           request.userId,
           request.credentialGeneration,
@@ -162,47 +188,64 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
           request.anchorPeriod,
         ),
       }),
-    mutationFn: async (request: ExportActionScope & { anchorPeriod: string | null }) => {
+    mutationFn: async (request: ExportActionScope & { anchorPeriod: string | null }, operation) => {
       requireCurrentSession(request.credentialGeneration);
       if (currentScope.current !== request.scope) throw new UserDataExportActionError('session_changed');
-      const response = await getHttpClient().request<RequestUserDataExportResponse, UserDataExportVariables>(
+      const response = await operation.request<RequestUserDataExportResponse, UserDataExportVariables>(
         REQUEST_USER_DATA_EXPORT,
         { boardType: request.boardType },
       );
       requireCurrentSession(request.credentialGeneration);
       return response.requestUserDataExport;
     },
-    onSuccess: (exportStatus, request) => {
+    onSuccess: (exportStatus, request, _context, operation) => {
       if (currentScope.current === request.scope && isAuthCredentialGenerationCurrent(request.credentialGeneration)) {
-        queryClient.setQueryData<UserDataExportStatus>(
-          userDataExportQueryKey(request.userId, request.credentialGeneration, request.boardType, exportStatus.period),
-          exportStatus,
-        );
+        operation
+          .cache(queryClient)
+          .setQueryData<UserDataExportStatus>(
+            userDataExportQueryKey(
+              request.userId,
+              request.credentialGeneration,
+              request.boardType,
+              exportStatus.period,
+            ),
+            exportStatus,
+          );
         setPeriodAnchor({ scope: request.scope, period: exportStatus.period });
       }
     },
   });
 
-  const downloadMutation = useMutation({
+  const downloadMutation = useHttpMutation({
     networkMode: 'always',
     retry: false,
-    mutationFn: async (request: ExportActionScope & { period: string; format: UserDataExportFormat }) => {
+    mutationFn: async (request: ExportActionScope & { period: string; format: UserDataExportFormat }, operation) => {
       requireCurrentSession(request.credentialGeneration);
-      const isCurrent = () =>
+      const isCurrentOwner = () =>
         mounted.current &&
         currentScope.current === request.scope &&
         isAuthCredentialGenerationCurrent(request.credentialGeneration);
-      if (!isCurrent()) throw new UserDataExportActionError('session_changed');
+      if (!isCurrentOwner()) throw new UserDataExportActionError('session_changed');
       const controller = new AbortController();
       downloadControllers.current.add(controller);
+      const isCurrent = () => {
+        if (!isCurrentOwner() || controller.signal.aborted) return false;
+        try {
+          operation.assertDeliveries();
+          return true;
+        } catch {
+          return false;
+        }
+      };
       try {
-        const response = await getHttpClient().request<
-          GetUserDataExportDownloadResponse,
-          UserDataExportDownloadVariables
-        >(GET_USER_DATA_EXPORT_DOWNLOAD, {
-          boardType: request.boardType,
-          period: request.period,
-          format: request.format,
+        const response = await operation.request<GetUserDataExportDownloadResponse, UserDataExportDownloadVariables>({
+          document: GET_USER_DATA_EXPORT_DOWNLOAD,
+          variables: {
+            boardType: request.boardType,
+            period: request.period,
+            format: request.format,
+          },
+          signal: controller.signal,
         });
         requireCurrentSession(request.credentialGeneration);
         if (!isCurrent() || controller.signal.aborted) throw new UserDataExportActionError('session_changed');
@@ -213,7 +256,16 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
           isCurrent,
           signal: controller.signal,
         });
+        if (!isCurrent()) throw new UserDataExportActionError('session_changed');
         // Signed URLs remain local to this call, outside mutation variables/data.
+      } catch (error) {
+        if (!isCurrentOwner() || controller.signal.aborted) throw new UserDataExportActionError('session_changed');
+        if (error instanceof UserDataExportActionError) throw error;
+        // graphql-request may retain a partial signed link in response.data,
+        // body and message. Preserve only the existing retry classification.
+        const refusal = new Error('User data export link unavailable');
+        if (isGraphqlRateLimitedError(error)) Object.assign(refusal, { extensions: { code: 'RATE_LIMITED' } });
+        throw refusal;
       } finally {
         downloadControllers.current.delete(controller);
       }
@@ -233,11 +285,20 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
       ...requestMutation,
       mutateAsync: () =>
         requestMutation.mutateAsync({ userId, boardType, credentialGeneration, scope, anchorPeriod: period }),
+      mutateWithReceipt: (options?: { signal?: AbortSignal }) =>
+        requestMutation.mutateWithReceipt(
+          { userId, boardType, credentialGeneration, scope, anchorPeriod: period },
+          options,
+        ),
     },
     downloadMutation: {
       ...downloadMutation,
       mutateAsync: (download: { period: string; format: UserDataExportFormat }) =>
         downloadMutation.mutateAsync({ ...download, userId, boardType, credentialGeneration, scope }),
+      mutateWithReceipt: (
+        download: { period: string; format: UserDataExportFormat },
+        options?: { signal?: AbortSignal },
+      ) => downloadMutation.mutateWithReceipt({ ...download, userId, boardType, credentialGeneration, scope }, options),
     },
     pollLimitReached,
     isOffline,
