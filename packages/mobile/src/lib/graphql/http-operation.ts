@@ -18,7 +18,7 @@ export function createHttpOperation(_scope: string | undefined, options: HttpOpe
   };
   const request = createHttpOperationRequest({
     resolveClient: () => (mode === 'offline' ? getOfflineSyncHttpClient() : getHttpClient()),
-    beginRequest: () => ({ admit: () => {}, discard: () => {} }),
+    beginRequest: () => ({ admit: () => {}, admitError: (_error: unknown) => {}, discard: () => {} }),
     signal,
   });
   return Object.freeze({
@@ -26,6 +26,7 @@ export function createHttpOperation(_scope: string | undefined, options: HttpOpe
     request,
     assertView: assertActive,
     assertDeliveries: assertActive,
+    assertErrorDeliveries: (_error: unknown) => assertActive(),
     dispose: () => controller.abort(),
   });
 }

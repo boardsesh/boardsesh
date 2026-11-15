@@ -88,6 +88,7 @@ function fixture(kind: 'selected' | 'legacy' | 'anonymous' = 'selected') {
     captureScope: facade.captureRequestView,
     isCurrentView: facade.isCurrentView,
     captureResult: facade.captureResult,
+    captureErrorDelivery: facade.captureErrorDelivery,
     resolveClient: (scope, mode) =>
       mode === 'offline' ? facade.getOfflineSyncHttpClient(scope) : facade.getHttpClient(scope),
   });
