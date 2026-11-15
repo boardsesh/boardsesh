@@ -27,7 +27,12 @@ const controls = vi.hoisted(() => ({
     onRenderError: (event: { nativeEvent: { requestId: string } }) => void;
   },
   imageDisplays: [] as Array<() => void>,
-  hookInputs: [] as Array<{ gpuSurface?: boolean; gpuAllowEmpty?: boolean; gpuFallbackConfigJson?: string | null }>,
+  hookInputs: [] as Array<{
+    gpuSurface?: boolean;
+    gpuAllowEmpty?: boolean;
+    gpuFallbackConfigJson?: string | null;
+    fieldColorOverride?: string;
+  }>,
   pngMounted: vi.fn(),
 }));
 vi.mock('react-native', () => ({
@@ -85,6 +90,7 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
     gpuSurface?: boolean;
     gpuAllowEmpty?: boolean;
     gpuFallbackConfigJson?: string | null;
+    fieldColorOverride?: string;
   }) => {
     controls.hookInputs.push(props);
     const gpu =
@@ -113,7 +119,7 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
         sizeId: 25,
         setIds: '26,27,28,29',
         frames: props.frames,
-        renderSignature: 'aura',
+        renderSignature: props.fieldColorOverride ? `aura.field-${props.fieldColorOverride}` : 'aura',
         colorScheme: 'dark',
       },
     };
@@ -150,6 +156,26 @@ describe('live GPU board integration', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  it('forwards the host ground and rejects a full opening snapshot from another surface', () => {
+    const cached = cacheRenderedOverlay('old-player-ground', 'file:///old-ground.png');
+    const opening = captureReadyBoardArt({
+      ...BOARD,
+      renderSignature: 'aura',
+      colorScheme: 'dark',
+      climbUuid: 'real-climb',
+      mirrored: false,
+      quality: 'full',
+      overlayCacheKey: 'old-player-ground',
+      overlayUri: cached.uri,
+      overlayGeneration: cached.generation,
+      overlayLoadKey: `${cached.generation}:0`,
+      backgroundPaths: ['/board.jpg'],
+    });
+    render(<BoardImageNative {...BOARD} readyBoardArt={opening} fieldColorOverride="#1C1C1E" />);
+    expect(controls.hookInputs.at(-1)?.fieldColorOverride).toBe('#1C1C1E');
+    expect(document.querySelector('img[src="file:///old-ground.png"]')).toBeNull();
   });
 
   it('keeps incoming cached art until GPU and photos display, without publishing a PNG handoff', () => {

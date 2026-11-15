@@ -57,6 +57,7 @@ type SwipeBoardCarouselProps = {
   containerSize?: { width: number; height: number };
   /** Fit-to-screen gutter only; the zoom clip spans the entire container. */
   restingHorizontalInset?: number;
+  fieldColorOverride?: string;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;
@@ -154,6 +155,7 @@ type CarouselBoardSlotProps = {
   boardHeight: number;
   mirrored: boolean;
   overlayRenderWidth: number;
+  fieldColorOverride?: string;
   zoomStyle: AnimatedStyle<ViewStyle>;
 };
 
@@ -186,6 +188,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
   boardHeight,
   mirrored,
   overlayRenderWidth,
+  fieldColorOverride,
   zoomStyle,
 }: CarouselBoardSlotProps) {
   const mountedRef = useRef(true);
@@ -261,6 +264,7 @@ const CarouselBoardSlot = React.memo(function CarouselBoardSlot({
             mirrored={mirrored}
             renderWidth={overlayRenderWidth}
             backgroundVariant="full"
+            fieldColorOverride={fieldColorOverride}
             // Climb identity (not the per-frame override) so the overlay
             // recycles on a change of climb, not on every playback frame.
             recyclingKey={frames}
@@ -295,6 +299,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   captureLocalMirrorTestID,
   containerSize: suppliedContainerSize,
   restingHorizontalInset = 0,
+  fieldColorOverride,
   readyBoardArt,
   onReadyArtDisplayed,
   boardName,
@@ -545,6 +550,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
       boardHeight={boardHeight}
       mirrored={mirrored}
       overlayRenderWidth={overlayRenderWidth}
+      fieldColorOverride={fieldColorOverride}
       zoomStyle={animatedZoomStyle}
     />
   );
@@ -589,6 +595,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
         mirrored={mirrored}
         renderWidth={overlayRenderWidth}
         backgroundVariant="full"
+        fieldColorOverride={fieldColorOverride}
         recyclingKey={currentFrames}
         style={imageBox}
         showGridLabels
@@ -643,6 +650,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               mirrored,
               renderWidth: overlayRenderWidth,
               backgroundVariant: 'full',
+              fieldColorOverride,
               recyclingKey: currentFrames,
               style: imageBox,
               showGridLabels: true,
@@ -686,6 +694,7 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
             sizeId={sizeId}
             setIds={setIds}
             renderWidth={overlayRenderWidth}
+            fieldColorOverride={fieldColorOverride}
           />
         )}
 

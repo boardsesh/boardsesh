@@ -1017,3 +1017,23 @@ describe('SwipeBoardCarousel pages', () => {
     expect(queryAllByTestId(/^board-/)).toHaveLength(1);
   });
 });
+
+it.each([false, true])('passes the host ground to all displayed boards and prefetches, GPU %s', async (native) => {
+  recorded.motionNative = native;
+  render(
+    createElement(SwipeBoardCarousel, {
+      ...baseProps,
+      layoutId: 8,
+      sizeId: 25,
+      fieldColorOverride: '#1C1C1E',
+      prefetchFrames: ['later'],
+    }),
+  );
+  measure(390, 700);
+  await nextFrame();
+  expect(recorded.boardProps).toHaveBeenCalled();
+  for (const [props] of recorded.boardProps.mock.calls) {
+    expect(props.fieldColorOverride).toBe('#1C1C1E');
+  }
+  expect(recorded.prefetch).toHaveBeenLastCalledWith(expect.objectContaining({ fieldColorOverride: '#1C1C1E' }));
+});

@@ -22,6 +22,7 @@ type DeferredBoardProps = {
   containerSize?: { width: number; height: number };
   /** Keep the resting board inset while zoom uses the complete column. */
   restingHorizontalInset?: number;
+  fieldColorOverride?: string;
   readyBoardArt?: ReadyBoardArtSnapshot;
   onReadyArtDisplayed?: (art: ReadyBoardArtIdentity & { overlayUri: string; overlayLoadKey: string | null }) => void;
   boardName: BoardName;

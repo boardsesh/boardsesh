@@ -118,6 +118,8 @@ type BoardImageNativeProps = {
    * tap keep the wall they sit on. Only ever lowers; see `useNativeClimbRender`.
    */
   maxVeilOpacity?: number;
+  /** Explicit host ground for the veil; omitted surfaces retain their shared drawing. */
+  fieldColorOverride?: string;
   /**
    * Hold the last painted overlay while the next one renders — for surfaces
    * whose frames change on every tap. The board identity the retained frame is
@@ -207,6 +209,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   renderSettingsOverride,
   holdColorOverride,
   maxVeilOpacity,
+  fieldColorOverride,
   retainPreviousOverlay,
   retainDisplayedOverlay,
   underOverlay,
@@ -260,6 +263,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     renderSettingsOverride,
     holdColorOverride,
     maxVeilOpacity,
+    fieldColorOverride,
   });
 
   const normalizedGpuTransition = useMemo(

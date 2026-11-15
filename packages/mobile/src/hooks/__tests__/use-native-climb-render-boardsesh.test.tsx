@@ -1309,6 +1309,51 @@ describe('live Homewall GPU render selection', () => {
     });
   });
 
+  it('uses the host ground for GPU and PNG fallback, and invalidates opening artwork on a surface change', async () => {
+    const { result, rerender } = renderHook(
+      ({ fieldColorOverride, fallback }) =>
+        useNativeClimbRender({ ...board, frames: 'p4131r42', fieldColorOverride, gpuFallbackConfigJson: fallback }),
+      { initialProps: { fieldColorOverride: '#1C1C1E' as string | undefined, fallback: null as string | null } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const firstConfig = result.current.gpuConfigJson!;
+    const firstIdentity = result.current.artworkIdentity;
+    expect(JSON.parse(firstConfig).veil.color).toBe('#1C1C1E');
+    rerender({ fieldColorOverride: '#15131a', fallback: null });
+    await waitFor(() => expect(result.current.gpuConfigJson).not.toBe(firstConfig));
+    const nextConfig = result.current.gpuConfigJson!;
+    expect(JSON.parse(nextConfig).veil.color).toBe('#15131a');
+    expect(result.current.artworkIdentity.renderSignature).not.toBe(firstIdentity.renderSignature);
+    rerender({ fieldColorOverride: '#15131a', fallback: nextConfig });
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay).toHaveBeenCalled());
+    const [fallbackConfig, fallbackKey] = nativeModule.renderHoldsOverlay.mock.calls.at(-1)!;
+    expect(JSON.parse(fallbackConfig).veil.color).toBe('#15131a');
+    expect(result.current.gpuConfigJson).toBeNull();
+    rerender({ fieldColorOverride: '#1C1C1E', fallback: nextConfig });
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const restoredConfig = result.current.gpuConfigJson!;
+    rerender({ fieldColorOverride: '#1C1C1E', fallback: restoredConfig });
+    await waitFor(() => expect(nativeModule.renderHoldsOverlay.mock.calls.at(-1)?.[1]).not.toBe(fallbackKey));
+    expect(JSON.parse(nativeModule.renderHoldsOverlay.mock.calls.at(-1)![0]).veil.color).toBe('#1C1C1E');
+    // A list/editor/share caller without the override keeps its existing palette.
+    rerender({ fieldColorOverride: undefined, fallback: null });
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    expect(JSON.parse(result.current.gpuConfigJson!).veil.color).toBe(DARK_FIELD);
+  });
+
+  it('invalidates a host-color opening snapshot even when the veil is disabled', async () => {
+    const { result, rerender } = renderHook(
+      ({ fieldColorOverride }) =>
+        useNativeClimbRender({ ...board, frames: 'p4131r42', maxVeilOpacity: 0, fieldColorOverride }),
+      { initialProps: { fieldColorOverride: '#1C1C1E' } },
+    );
+    await waitFor(() => expect(result.current.gpuConfigJson).toBeTruthy());
+    const signature = result.current.artworkIdentity.renderSignature;
+    expect(JSON.parse(result.current.gpuConfigJson!).veil).toBeUndefined();
+    rerender({ fieldColorOverride: '#15131a' });
+    expect(result.current.artworkIdentity.renderSignature).not.toBe(signature);
+  });
+
   it('reports loading while native support is being discovered, then ready', async () => {
     let resolveSupport: (supported: boolean) => void = () => {};
     nativeModule.probeBoardseshRendererSupport.mockImplementation(

@@ -309,6 +309,7 @@ function settleRelightHeldAfterConnect(
 }
 
 export function PlayCore({
+  fieldColorOverride,
   swipeDismiss,
   onClose,
   boardConfig,
@@ -3465,6 +3466,7 @@ export function PlayCore({
                         <View style={styles.boardSection} onLayout={handleBoardContainerLayout}>
                           {boardRenderData ? (
                             <DeferredBoard
+                              fieldColorOverride={fieldColorOverride}
                               capturePaintedTestID={screenshotPaintedClimbTestId(
                                 process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1',
                                 activeBoardForNavigation,

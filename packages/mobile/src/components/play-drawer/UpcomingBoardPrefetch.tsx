@@ -16,6 +16,7 @@ type UpcomingBoardPrefetchProps = {
    * nothing worth warming yet.
    */
   renderWidth: number | undefined;
+  fieldColorOverride?: string;
 };
 
 type PrefetchedBoardRenderProps = Omit<UpcomingBoardPrefetchProps, 'frames'> & { frames: string };
@@ -31,6 +32,7 @@ const PrefetchedBoardRender = React.memo(function PrefetchedBoardRender({
   sizeId,
   setIds,
   renderWidth,
+  fieldColorOverride,
 }: PrefetchedBoardRenderProps) {
   useNativeClimbRender({
     frames,
@@ -46,6 +48,7 @@ const PrefetchedBoardRender = React.memo(function PrefetchedBoardRender({
     // photo rather than the overlay, but it is pinned to the play board's
     // `full` anyway so a prefetch can't warm the wrong photo either.
     renderWidth,
+    fieldColorOverride,
     backgroundVariant: 'full',
     prefetch: true,
   });
@@ -74,6 +77,7 @@ export const UpcomingBoardPrefetch = React.memo(function UpcomingBoardPrefetch({
   sizeId,
   setIds,
   renderWidth,
+  fieldColorOverride,
 }: UpcomingBoardPrefetchProps) {
   if (renderWidth === undefined) return null;
 
@@ -91,6 +95,7 @@ export const UpcomingBoardPrefetch = React.memo(function UpcomingBoardPrefetch({
           sizeId={sizeId}
           setIds={setIds}
           renderWidth={renderWidth}
+          fieldColorOverride={fieldColorOverride}
         />
       ))}
     </>
