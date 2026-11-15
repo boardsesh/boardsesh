@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { GET_SESSION_DETAIL, type GetSessionDetailQueryResponse } from '@boardsesh/graphql/operations';
 import {
   GET_SESSION,
@@ -7,7 +6,7 @@ import {
   type GetSessionQueryResponse,
   type SessionPreview,
 } from '../operations';
-import { getHttpClient } from '../client';
+import { useHttpQuery } from '../use-http-query';
 
 const SESSION_DETAIL_STALE_TIME_MS = 30 * 1000;
 
@@ -18,10 +17,10 @@ const SESSION_DETAIL_STALE_TIME_MS = 30 * 1000;
  * which is reused unchanged from web.
  */
 export function useSessionDetail(sessionId: string | undefined) {
-  return useQuery({
+  return useHttpQuery({
     queryKey: ['sessionDetail', sessionId],
-    queryFn: () =>
-      getHttpClient()
+    queryFn: (_context, operation) =>
+      operation
         .request<GetSessionDetailQueryResponse>(GET_SESSION_DETAIL, { sessionId })
         .then((response) => response.sessionDetail),
     enabled: !!sessionId,
@@ -35,12 +34,10 @@ export function useSessionDetail(sessionId: string | undefined) {
  * session — see `QueueProvider.joinSession`.
  */
 export function useSessionPreview(sessionId: string | undefined) {
-  return useQuery<SessionPreview | null>({
+  return useHttpQuery<SessionPreview | null>({
     queryKey: ['sessionPreview', sessionId],
-    queryFn: () =>
-      getHttpClient()
-        .request<GetSessionQueryResponse>(GET_SESSION, { sessionId })
-        .then((response) => response.session),
+    queryFn: (_context, operation) =>
+      operation.request<GetSessionQueryResponse>(GET_SESSION, { sessionId }).then((response) => response.session),
     enabled: !!sessionId,
     // Preview reflects live presence; keep it fresh while the screen is open.
     staleTime: 10 * 1000,
@@ -58,10 +55,10 @@ export function useSessionPreview(sessionId: string | undefined) {
  * for a given session id, so this is cached hard.
  */
 export function useSessionOwnerUserId(sessionId: string | undefined) {
-  return useQuery<string | null>({
+  return useHttpQuery<string | null>({
     queryKey: ['sessionOwner', sessionId],
-    queryFn: () =>
-      getHttpClient()
+    queryFn: (_context, operation) =>
+      operation
         .request<GetSessionOwnerQueryResponse>(GET_SESSION_OWNER, { sessionId })
         .then((response) => response.session?.createdByUserId ?? null),
     enabled: !!sessionId,
