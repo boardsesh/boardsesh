@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { validateArtwork } from '../../../services/cnc/worker-client';
+import { usesCncJobQueue } from '../../../services/cnc/generation-queue';
 import {
   attachCheckoutSession,
   countOrdersCreatedSince,
@@ -148,7 +149,7 @@ export const cncPackMutations = {
       // be a way to have Boardsesh read somebody else's upload on request —
       // even if the only thing that comes back is "it fits".
       await resolveArtworkAssets(ctx.userId!, artworkInput);
-      verdict = await validateArtwork(layoutRequest, artwork);
+      verdict = await validateArtwork(layoutRequest, artwork, ctx.userId!);
     } catch (error) {
       throw error instanceof GraphQLError ? error : toGraphQLWorkerError(error);
     }
@@ -246,10 +247,10 @@ export const cncPackMutations = {
     // previewing artwork that cannot be routed produces a job guaranteed to
     // fail. Skipped entirely when there is no artwork — most orders — so the
     // common path costs no round trip.
-    if (artwork.length > 0) {
+    if (artwork.length > 0 && !usesCncJobQueue()) {
       let verdict: unknown;
       try {
-        verdict = await validateArtwork(layoutRequest, artwork);
+        verdict = await validateArtwork(layoutRequest, artwork, ctx.userId!);
       } catch (error) {
         throw toGraphQLWorkerError(error);
       }

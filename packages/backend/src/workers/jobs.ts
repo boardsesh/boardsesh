@@ -88,6 +88,8 @@ export type EnqueueBackgroundJobInput = {
   role?: BackgroundWorkerRole;
   /** Doubles as the caller's idempotency key, including after a lost acknowledgement. */
   runId?: string;
+  /** Backend-selected priority; bounded before queue insertion. */
+  priority?: number;
   /** Overrides the family's own key. Defaults to the family's key, then the run ID. */
   singletonKey?: string;
   /**
@@ -130,6 +132,8 @@ export async function enqueueBackgroundJobOn(
   const runId = requireRunId(input.runId ?? randomUUID());
   const singletonKey = input.singletonKey ?? family.singletonKey?.(payload) ?? runId;
   if (!singletonKey || singletonKey.length > 200) throw new Error('INVALID_SINGLETON_KEY');
+  if (input.priority !== undefined && (!Number.isInteger(input.priority) || input.priority < 0 || input.priority > 100))
+    throw new Error('INVALID_JOB_PRIORITY');
   const queue = BACKGROUND_JOB_QUEUES[role];
   const queueSingletonKey = `${family.name}:${singletonKey}`;
   const { deadlineSeconds, ...jobOptions } = family.options;
@@ -161,6 +165,7 @@ export async function enqueueBackgroundJobOn(
         { runId },
         {
           ...jobOptions,
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
           id: runId,
           singletonKey: queueSingletonKey,
           ...(startAfterSeconds > 0 ? { startAfter: startAfterSeconds } : {}),

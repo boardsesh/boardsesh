@@ -32,4 +32,6 @@ export const SERIAL_TEST_FILES = [
   'src/__tests__/spray-wall-art-jobs.test.ts',
   'src/__tests__/spray-detection-notifications.test.ts',
   'src/__tests__/posthog-person-deletion-enqueue.test.ts',
+  'src/__tests__/cnc-generation.test.ts',
+  'src/__tests__/cnc-computations.test.ts',
 ];

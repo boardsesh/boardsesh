@@ -1,4 +1,5 @@
-import nodemailer, { type Transporter } from 'nodemailer';
+import nodemailer, { type SendMailOptions, type Transporter } from 'nodemailer';
+import { createConnection, type Socket } from 'node:net';
 import { z } from 'zod';
 import { logger } from '../utils/logger';
 import { backendPublicUrl, webPublicUrl } from '../utils/public-urls';
@@ -35,24 +36,96 @@ const FONT_FAMILY = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Rob
 // Lazy transporter so importing this module never touches SMTP.
 let transporter: Transporter | null = null;
 
+function smtpOptions() {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
+    throw new Error('SMTP credentials not configured. Set SMTP_USER and SMTP_PASSWORD environment variables.');
+  }
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  // `secure: true` means TLS-on-connect (port 465). Port 587 uses STARTTLS and
+  // must be `secure: false`, or the connection hangs. Derive it from the port,
+  // with an explicit SMTP_SECURE override for non-standard setups.
+  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+  return {
+    host: process.env.SMTP_HOST || 'smtp.fastmail.com',
+    port,
+    secure,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+  };
+}
+
 function getTransporter(): Transporter {
   if (!transporter) {
-    if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
-      throw new Error('SMTP credentials not configured. Set SMTP_USER and SMTP_PASSWORD environment variables.');
-    }
-    const port = parseInt(process.env.SMTP_PORT || '465', 10);
-    // `secure: true` means TLS-on-connect (port 465). Port 587 uses STARTTLS and
-    // must be `secure: false`, or the connection hangs. Derive it from the port,
-    // with an explicit SMTP_SECURE override for non-standard setups.
-    const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.fastmail.com',
-      port,
-      secure,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
-    });
+    transporter = nodemailer.createTransport(smtpOptions());
   }
   return transporter;
+}
+
+/** A separate, cancellable transport: CNC maintenance never changes other mail's defaults. */
+export async function sendBoundedCncNotification(mail: SendMailOptions): Promise<void> {
+  const options = smtpOptions();
+  const sockets = new Set<Socket>();
+  let closed = false;
+  const notificationTransport = nodemailer.createTransport({
+    ...options,
+    connectionTimeout: 5_000,
+    greetingTimeout: 5_000,
+    socketTimeout: 10_000,
+    // Retain the raw socket so the total deadline cancels a slow-drip SMTP
+    // conversation too. Nodemailer still performs normal TLS/STARTTLS and
+    // certificate validation around this plain connected socket.
+    getSocket(_options: unknown, callback: (error: Error | null, result?: { connection: Socket }) => void) {
+      if (closed) {
+        callback(new Error('CNC_NOTIFICATION_TIMEOUT'));
+        return;
+      }
+      const socket = createConnection({ host: options.host, port: options.port });
+      sockets.add(socket);
+      let returned = false;
+      const finish = (error: Error | null, result?: { connection: Socket }) => {
+        if (returned) return;
+        returned = true;
+        callback(error, result);
+      };
+      const connectionDeadline = setTimeout(() => {
+        const error = new Error('CNC_NOTIFICATION_CONNECTION_TIMEOUT');
+        socket.destroy(error);
+        finish(error);
+      }, 5_000);
+      connectionDeadline.unref();
+      socket.once('connect', () => {
+        clearTimeout(connectionDeadline);
+        if (closed) {
+          socket.destroy();
+          finish(new Error('CNC_NOTIFICATION_TIMEOUT'));
+        } else finish(null, { connection: socket });
+      });
+      socket.once('error', (error) => finish(error));
+      socket.once('close', () => {
+        clearTimeout(connectionDeadline);
+        sockets.delete(socket);
+        if (!returned) finish(new Error('CNC_NOTIFICATION_TIMEOUT'));
+      });
+    },
+  });
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      notificationTransport.sendMail(mail),
+      new Promise<never>((_resolve, reject) => {
+        deadline = setTimeout(() => {
+          closed = true;
+          reject(new Error('CNC_NOTIFICATION_TIMEOUT'));
+          for (const socket of sockets) socket.destroy();
+        }, 20_000);
+        deadline.unref();
+      }),
+    ]);
+  } finally {
+    closed = true;
+    clearTimeout(deadline);
+    for (const socket of sockets) socket.destroy();
+    notificationTransport.close();
+  }
 }
 
 function escapeHtml(text: string): string {

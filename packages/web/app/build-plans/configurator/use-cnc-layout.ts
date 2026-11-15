@@ -3,12 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { CncBoardConfigInput } from '@boardsesh/shared-schema';
-import {
-  GET_CNC_LAYOUT,
-  type GetCncLayoutQueryResponse,
-  type GetCncLayoutQueryVariables,
-} from '@boardsesh/graphql/operations/cnc-packs';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useCncRequestScope } from '../use-cnc-request-scope';
+import { computeCnc } from './cnc-computation-client';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
 import { readLayoutModel, type CncLayoutModel } from './layout-model';
 import { readLayoutSummary, type CncLayoutSummary } from './layout-summary';
@@ -69,6 +65,7 @@ export type CncLayoutOptions = {
   includeHoles?: boolean;
   /** Required when `includeHoles` is set; the holes are not public. */
   authToken?: string | null;
+  cacheScope?: string;
 };
 
 /**
@@ -84,8 +81,9 @@ export type CncLayoutOptions = {
  */
 export function useCncLayout(
   config: CncBoardConfigInput | null,
-  { includeHoles = false, authToken = null }: CncLayoutOptions = {},
+  { includeHoles = false, authToken = null, cacheScope = 'anonymous' }: CncLayoutOptions = {},
 ): CncLayoutResult {
+  const beginRequest = useCncRequestScope(authToken);
   const debouncedConfig = useDebouncedConfig(config);
   const configKey = debouncedConfig ? JSON.stringify(debouncedConfig) : '';
   // Holes are only ever asked for on behalf of somebody signed in, so a signed
@@ -94,15 +92,18 @@ export function useCncLayout(
   const wantsHoles = includeHoles && authToken !== null;
 
   const query = useQuery({
-    queryKey: ['cncLayout', configKey, wantsHoles] as const,
-    queryFn: async () => {
+    queryKey: ['cncLayout', configKey, wantsHoles, wantsHoles ? cacheScope : 'public'] as const,
+    queryFn: async ({ signal }) => {
       if (!debouncedConfig) throw new Error('useCncLayout: queryFn ran without a config');
-      const client = createGraphQLHttpClient(wantsHoles ? authToken : undefined);
-      const response = await client.request<GetCncLayoutQueryResponse, GetCncLayoutQueryVariables>(GET_CNC_LAYOUT, {
-        config: debouncedConfig,
+      const isCurrent = wantsHoles ? beginRequest() : undefined;
+      const layout = await computeCnc('layout', debouncedConfig, {
         includeHoles: wantsHoles,
+        authToken: wantsHoles ? authToken : undefined,
+        signal,
+        isCurrent,
       });
-      return { summary: readLayoutSummary(response.cncLayout), model: readLayoutModel(response.cncLayout) };
+      if (isCurrent && !isCurrent()) throw new Error('STALE_CNC_REQUEST');
+      return { summary: readLayoutSummary(layout), model: readLayoutModel(layout) };
     },
     enabled: debouncedConfig !== null,
     // The generator caches layouts for a minute of its own; match it here so

@@ -51,6 +51,21 @@ export function configureWorkerPools(): void {
  * startup turns that into a worker that refuses to start.
  */
 export const PROVIDER_FAMILY_SECRETS: Readonly<Record<string, readonly string[]>> = {
+  'cnc-computation': [
+    'CNC_GENERATOR_SHA',
+    'PRIVATE_S3_BUCKET_NAME',
+    'PRIVATE_AWS_ENDPOINT_URL',
+    'PRIVATE_AWS_ACCESS_KEY_ID',
+    'PRIVATE_AWS_SECRET_ACCESS_KEY',
+  ],
+  'cnc-generation': [
+    'CNC_GENERATOR_SHA',
+    'FINGERPRINT_SECRET',
+    'PRIVATE_S3_BUCKET_NAME',
+    'PRIVATE_AWS_ENDPOINT_URL',
+    'PRIVATE_AWS_ACCESS_KEY_ID',
+    'PRIVATE_AWS_SECRET_ACCESS_KEY',
+  ],
   'aurora-user-sync': ['AURORA_CREDENTIALS_SECRET'],
   'kilter-user-sync': ['AURORA_CREDENTIALS_SECRET', 'KILTER_OAUTH_CLIENT_ID'],
   // Both providers, every cycle.

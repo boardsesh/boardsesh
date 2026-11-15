@@ -9,20 +9,16 @@ import {
   index,
   uniqueIndex,
   pgEnum,
+  uuid,
 } from 'drizzle-orm/pg-core';
 import { users } from '../auth/users';
 
 /**
  * CNC build packs: one purchased manufacturing licence per row, and the row is
- * also the job queue the pack generator polls.
- *
- * Two jobs in one table on purpose. The generator is a separate service that
- * pulls work over HTTP; giving it a queue of its own would mean a second store
- * that can disagree with the order about whether a pack was paid for, refunded,
- * or already generated. A lease (claim_token + heartbeat_at + attempts) on the
- * order row keeps "who owns this pack right now" in the same place as "who is
- * allowed to download it", and `SELECT ... FOR UPDATE SKIP LOCKED` over
- * `(status, queued_at)` is all the queueing the volume here needs.
+ * remains the authority for payment, generation leases and published artifacts.
+ * Addressed pg-boss jobs reference the order and generation; attempt fences and
+ * the order's claim token prevent superseded or refunded work from publishing.
+ * The legacy HTTP transport remains available during staged migration.
  */
 
 /**
@@ -122,6 +118,12 @@ export const cncOrders = pgTable(
     // Nullable only for rows written before previews existed; every new row
     // has one (`computeCncConfigHash`).
     configHash: text('config_hash'),
+    // Binds the current generation to its durable pg-boss run.
+    generationRunId: uuid('generation_run_id'),
+    notificationGeneration: integer('notification_generation').default(0).notNull(),
+    notificationStatus: text('notification_status'),
+    notificationClaimToken: uuid('notification_claim_token'),
+    notificationClaimedAt: timestamp('notification_claimed_at', { withTimezone: true }),
 
     // Licence identity, captured at checkout and printed into the pack.
     licenseeName: text('licensee_name'),
@@ -298,3 +300,32 @@ export const cncArtAssets = pgTable(
 
 export type CncArtAsset = typeof cncArtAssets.$inferSelect;
 export type NewCncArtAsset = typeof cncArtAssets.$inferInsert;
+
+/** CNC-only results; the generic job ledger contains only the computation ID. */
+export const cncComputations = pgTable(
+  'cnc_computations',
+  {
+    id: uuid('id').primaryKey(),
+    // Null only for public, hole-free layouts. Private results follow account ownership.
+    ownerId: text('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    operation: text('operation').$type<'layout' | 'artwork'>().notNull(),
+    requestHash: text('request_hash').notNull(),
+    generatorSha: text('generator_sha').notNull(),
+    request: jsonb('request').$type<Record<string, unknown>>().notNull(),
+    assetKeys: jsonb('asset_keys')
+      .$type<Record<string, { key: string; mime: string; sha256: string }>>()
+      .default({})
+      .notNull(),
+    runId: uuid('run_id').notNull(),
+    status: text('status').$type<'queued' | 'running' | 'ready' | 'failed'>().default('queued').notNull(),
+    result: jsonb('result').$type<Record<string, unknown>>(),
+    errorCode: text('error_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('cnc_computations_owner_hash_idx').on(table.ownerId, table.requestHash),
+    index('cnc_computations_expiry_idx').on(table.expiresAt),
+  ],
+);
+export type CncComputation = typeof cncComputations.$inferSelect;

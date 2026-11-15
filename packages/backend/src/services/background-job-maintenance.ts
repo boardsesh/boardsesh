@@ -1,3 +1,5 @@
+import { clearExpiredCncComputations } from './cnc/computations';
+import { reconcileCncGenerationRuns } from './cnc/generation-queue';
 import { and, asc, eq, gt, inArray, lt } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import type { DbInstance } from '@boardsesh/db/client';
@@ -55,6 +57,8 @@ export function backgroundJobReconciler(database: DbInstance) {
     // "Sync now" would otherwise coalesce onto a dead run. Bounded like the
     // two steps above.
     await clearFinishedProviderSyncRuns(database, 100);
+    await reconcileCncGenerationRuns(database);
+    await clearExpiredCncComputations();
   };
 }
 

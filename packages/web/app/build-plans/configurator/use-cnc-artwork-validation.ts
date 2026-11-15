@@ -2,12 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CncBoardConfigInput } from '@boardsesh/shared-schema';
-import {
-  VALIDATE_CNC_ARTWORK,
-  type ValidateCncArtworkMutationResponse,
-  type ValidateCncArtworkMutationVariables,
-} from '@boardsesh/graphql/operations/cnc-packs';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
+import { useCncRequestScope } from '../use-cnc-request-scope';
+import { computeCnc } from './cnc-computation-client';
 import { cncErrorKey, type CncErrorKey } from '../cnc-error';
 
 /**
@@ -90,6 +86,7 @@ export function useCncArtworkValidation(
   config: CncBoardConfigInput | null,
   authToken: string | null,
 ): CncArtworkValidationResult {
+  const beginRequest = useCncRequestScope(authToken);
   const [result, setResult] = useState<{ ok: boolean | null; collisions: CncArtworkCollision[] }>({
     ok: null,
     collisions: [],
@@ -118,33 +115,39 @@ export function useCncArtworkValidation(
       return;
     }
 
+    const isCurrent = beginRequest();
     setIsChecking(true);
+    setResult({ ok: null, collisions: [] });
+    const controller = new AbortController();
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const client = createGraphQLHttpClient(authToken);
-          const response = await client.request<
-            ValidateCncArtworkMutationResponse,
-            ValidateCncArtworkMutationVariables
-          >(VALIDATE_CNC_ARTWORK, { config: JSON.parse(configKey) as CncBoardConfigInput });
-          if (requestId !== requestRef.current) return;
-          const verdict = response.validateCncArtwork;
-          setResult({ ok: verdict.ok, collisions: readCollisions(verdict.collisions) });
+          const verdict = await computeCnc('artwork', JSON.parse(configKey) as CncBoardConfigInput, {
+            authToken,
+            signal: controller.signal,
+            isCurrent,
+          });
+          if (requestId !== requestRef.current || !isCurrent()) return;
+          setResult({ ok: verdict.ok === true, collisions: readCollisions(verdict.collisions) });
           setErrorKey(null);
         } catch (error) {
-          if (requestId !== requestRef.current) return;
+          if (requestId !== requestRef.current || !isCurrent()) return;
           // Back to "no answer", not to a pass. A failed check must leave the
           // Buy button in the same state as an unfinished one.
           setResult({ ok: null, collisions: [] });
           setErrorKey(cncErrorKey(error));
         } finally {
-          if (requestId === requestRef.current) setIsChecking(false);
+          if (requestId === requestRef.current && isCurrent()) setIsChecking(false);
         }
       })();
     }, ARTWORK_DEBOUNCE_MS);
 
-    return () => clearTimeout(timer);
-  }, [configKey, authToken]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      requestRef.current += 1;
+    };
+  }, [configKey, authToken, beginRequest]);
 
   return { ok: result.ok, collisions: result.collisions, isChecking, errorKey };
 }

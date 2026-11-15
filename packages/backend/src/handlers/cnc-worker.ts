@@ -9,7 +9,6 @@ import {
   claimNextJob,
   failStaleExhaustedJobs,
   getOrderById,
-  getAccountEmail,
   recordWorkerHeartbeat,
   transitionOrder,
   type CncOrderPatch,
@@ -28,11 +27,8 @@ import {
   CncJobPayloadError,
 } from '../services/cnc/job-payload';
 import { getArtAssetById, getAssetForJob, isCncArtKey } from '../services/cnc/art-assets';
-import { describeBoard } from '../services/cnc/catalog';
-import { sendCncPackFailedAdminEmail, sendCncPackReadyEmail } from '../email/cnc-emails';
-import { webPublicUrl } from '../email/email-service';
-import { captureBackendEvent } from '../services/analytics/posthog';
-import { CNC_KICKER_SET_IDS, parseSetIds } from '../services/cnc/catalog';
+import { announceCncGenerationComplete, announceCncGenerationFailure } from '../services/cnc/generation-completion';
+import { usesCncJobQueue } from '../services/cnc/generation-queue';
 
 /**
  * The pack generator's job API.
@@ -115,7 +111,7 @@ function matchesClaimToken(presented: string, stored: string | null): boolean {
  */
 function authoriseWorker(req: IncomingMessage, res: ServerResponse): boolean {
   const secret = process.env.CNC_WORKER_SECRET;
-  if (!secret) {
+  if (usesCncJobQueue() || !secret) {
     sendJson(res, 404, { error: 'Not found' });
     return false;
   }
@@ -261,28 +257,7 @@ async function abandonUnbuildableOrder(order: CncOrder, reason: string): Promise
  * bury the emails that mean a purchase is stuck.
  */
 async function announceFailure(order: CncOrder): Promise<void> {
-  if (deliverableForStatus(order.status) === 'preview') {
-    logger.error('[cnc-worker] preview generation gave up', {
-      orderId: order.id,
-      licenceId: order.licenceId,
-      attempts: order.attempts,
-      lastError: order.lastError,
-    });
-    return;
-  }
-
-  try {
-    await sendCncPackFailedAdminEmail({
-      licenceId: order.licenceId,
-      orderId: order.id,
-      boardLabel: describeBoard(order),
-      licenseeEmail: order.licenseeEmail ?? 'unknown',
-      attempts: order.attempts,
-      lastError: order.lastError,
-    });
-  } catch (error) {
-    logger.warn('[cnc-worker] pack-failed admin email failed', { orderId: order.id, error });
-  }
+  await announceCncGenerationFailure(order);
 }
 
 /**
@@ -427,18 +402,6 @@ function validatePreviewKeys(
   return keys;
 }
 
-/** Board-shaped properties every build-plans analytics event carries. */
-function boardProperties(order: CncOrder): Record<string, string | number | boolean | null> {
-  const setIds = parseSetIds(order.setIds) ?? [];
-  return {
-    board_name: order.boardName,
-    layout_id: order.layoutId,
-    size_id: order.sizeId,
-    kicker: setIds.some((setId) => CNC_KICKER_SET_IDS.includes(setId)),
-    has_artwork: Array.isArray(order.artwork) && order.artwork.length > 0,
-  };
-}
-
 /**
  * A finished preview: store the watermarked artifacts and stop.
  *
@@ -494,16 +457,7 @@ async function completePreview(
 
   sendJson(res, 200, { ok: true, status: ready.status });
 
-  captureBackendEvent('Build Plans Preview Generated', {
-    properties: {
-      ...boardProperties(ready),
-      // Which preview of this configuration this is. A row that has produced
-      // three is a generator retrying, not a buyer iterating — iterating writes
-      // a new row.
-      preview_index: ready.previewsGenerated,
-      image_count: previewKeys.length,
-    },
-  });
+  await announceCncGenerationComplete(ready);
 }
 
 /**
@@ -591,26 +545,7 @@ async function handleComplete(req: IncomingMessage, res: ServerResponse, orderId
 
   sendJson(res, 200, { ok: true, status: ready.status });
 
-  let accountEmail: string | null = null;
-  try {
-    accountEmail = ready.userId ? await getAccountEmail(ready.userId) : null;
-  } catch (error) {
-    logger.warn('[cnc-worker] could not look up buyer email', { orderId, error });
-  }
-  const recipients = new Set([accountEmail, ready.licenseeEmail].filter((email): email is string => Boolean(email)));
-  for (const recipient of recipients) {
-    try {
-      await sendCncPackReadyEmail({
-        to: recipient,
-        licenseeName: ready.licenseeName ?? 'there',
-        licenceId: ready.licenceId,
-        boardLabel: describeBoard(ready),
-        orderUrl: `${webPublicUrl()}/build-plans/orders/${encodeURIComponent(ready.licenceId)}`,
-      });
-    } catch (error) {
-      logger.warn('[cnc-worker] pack-ready email failed', { orderId, error });
-    }
-  }
+  await announceCncGenerationComplete(ready);
 }
 
 /**

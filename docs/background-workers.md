@@ -1312,3 +1312,26 @@ interactive-plus-routine capacity tests remain deployment gates. The under-30s
 eligible import start target can be measured once the interactive-import worker
 is unpaused with the provider families enabled. Probe tests are not evidence of provider import throughput.
 Do not close #5614's deployment/capacity acceptance items from code tests alone.
+
+## Dedicated CNC roles
+
+CNC uses a separate homelab VM and two roles: `cnc-interactive` runs the
+`cnc-computation` family, and `cnc-generation` runs addressed preview/full pack
+jobs. Each retains the standard one-job, two-application/one-queue connection
+budget. They need six connections in total and consume none of the existing
+background worker queues. The interactive login can select/update only CNC
+computations; generation can select/update orders and select artwork assets,
+in addition to the standard queue/ledger grants.
+
+The private composite image contains the reviewed Python generator and the
+application worker. A local version handshake refuses a mismatched generator
+before jobs are fetched. No homelab API or tunnel is exposed publicly. Health
+and metrics ports are LAN-only. Private storage and fingerprint credentials are
+not placed in queue payloads; emails and analytics remain on the backend.
+
+CNC roles stop fetching on shutdown, allow current jobs 600 seconds to finish,
+then abort their child process and bounded storage operations. Their hard process
+budget is 645 seconds; container/daemon allowance is at least 660 seconds and
+systemd at least 720. Other roles retain their existing shutdown behavior.
+See [CNC build packs](cnc-packs.md) for producer, result, rollout and rollback
+contracts. Deploy schema/queues/grants before consumers and producers.
