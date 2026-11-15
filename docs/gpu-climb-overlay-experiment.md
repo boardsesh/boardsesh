@@ -49,7 +49,17 @@ Initial iPhone 17 Pro evidence at 768 × 1047 pixels: the sparse dark sample dif
 
 The v2 live integration on the same iPhone reported fourteen consecutive cached requests with 0.063–0.157 ms preparation, zero upload time and 2.82–4.44 ms GPU execution. Their active atlas payload was 61,516,448 bytes. These readings confirm reuse across frame updates; they do not include gesture handling, JS scheduling or total time to visible presentation. Cold-start latency and peak process memory remain separate measurements.
 
-An Android implementation would need a native drawing surface, equivalent resource preparation/cache and lifecycle handling, plus matching shader math (Vulkan/AGSL or a portable wgpu backend). A wgpu path would also need Rust/native surface ownership, shader/backend packaging, binary-size measurement, and parity checks. Neither ships in this slice.
+## Android implementation and verification
+
+The Android follow-up uses a transparent `TextureView` and an OpenGL ES 3.1 compositor. It keeps the same shared player/editor API, supported Homewall Aura configurations, directional reveal and 135% edit-glow reach. The outer React Native view still owns zoom, clipping and mirroring. Registering native API v3 enables the existing default-on selection; there is no additional feature flag.
+
+The native bridge transfers ownership of the Rust atlas through a direct buffer, avoiding a Java byte-array copy of the large payload. Cold preparations are serialized and GPU atlas residency is bounded, including entries retained by mounted views. The Rust packing step can still hold both its working storage and its final payload temporarily. Neither the GPU residency limit nor the atlas byte count establishes a peak process-memory bound. Low-memory admission checks and unsupported GPU limits must fall back to PNG rather than retry indefinitely.
+
+Android readiness requires both GPU completion and a matching buffer update consumed by `TextureView`, correlated using a monotonic presentation timestamp and request/surface generations. This proves consumption by the view, **not physical display scanout**. The edit pulse starts after the initial normal-reach frame meets that boundary. A destroyed surface, context loss or superseded request must not release the PNG bridge for a newer request. Battery Saver and disabled system animations suppress the optional pulse, alongside the shared reduced-motion setting.
+
+Only genuine, non-disjoint GPU timer results may populate GPU timing. Devices without that facility report unavailable timing; CPU command-submission time must not be labelled GPU execution. Offscreen framebuffer comparisons remain separate from visible presentation measurements.
+
+Android validation must include native lifecycle/ownership tests, shader pixel comparisons in both themes, mirrored and dense hold patterns, rapid edits and cancelled swipes, background/resume and memory pressure. Emulator checks can establish functional behavior but cannot establish physical-device performance or scanout timing. Record actual build, device, parity and memory results with the stacked PR; iPhone measurements above are not Android evidence.
 
 ## Initial device parity images
 

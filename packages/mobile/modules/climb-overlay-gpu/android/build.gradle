@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.climboverlaygpu'
+  defaultConfig {
+    minSdk 24
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+// Expo derives project names from autolinking; resolve by owned module path.
+def rendererDirectory = file('../../board-renderer/android').canonicalFile
+def rendererProject = rootProject.allprojects.find { it.projectDir.canonicalFile == rendererDirectory }
+if (rendererProject == null) throw new GradleException('Board renderer native dependency is missing')
+
+dependencies {
+  implementation project(rendererProject.path)
+  testImplementation 'junit:junit:4.13.2'
+}

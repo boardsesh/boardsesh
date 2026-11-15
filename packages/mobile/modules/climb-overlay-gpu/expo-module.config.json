@@ -1,4 +1,16 @@
 {
-  "platforms": ["ios"],
-  "ios": { "modules": ["ClimbOverlayGPUModule"] }
+  "platforms": [
+    "ios",
+    "android"
+  ],
+  "ios": {
+    "modules": [
+      "ClimbOverlayGPUModule"
+    ]
+  },
+  "android": {
+    "modules": [
+      "com.boardsesh.climboverlaygpu.ClimbOverlayGPUModule"
+    ]
+  }
 }
