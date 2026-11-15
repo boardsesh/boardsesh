@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
 import { useVote } from '../../lib/graphql/hooks';
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 
 export type OptimisticVote = {
   /** Whether the viewer has upvoted (optimistic while a tap is in flight). */
@@ -29,36 +30,68 @@ export function useOptimisticVote(
   serverUserVote: number | null,
   entityType: SocialEntityType = 'session',
 ): OptimisticVote {
-  // Destructure the stable `mutate` + the `isPending` flag rather than depend on
+  // Destructure the stable submit function + pending flag rather than depend on
   // the whole useMutation result — that object is a fresh reference every render,
   // so depending on it would needlessly recreate `toggle` (defeating any memo on
   // consumers). `mutate` is reference-stable; only `isPending` legitimately moves.
-  const { mutate: voteMutate, isPending: voteIsPending } = useVote();
-  const [optimistic, setOptimistic] = useState<{ count: number; voted: boolean } | null>(null);
-
-  // Recycled onto a different entity → drop the previous row's optimistic state.
-  useEffect(() => setOptimistic(null), [entityId]);
+  const { mutateWithReceipt: voteWithReceipt, isPending: voteIsPending } = useVote();
+  const actionScope = useHttpActionScope();
+  const identity = useRef({ entityId, entityType, view: actionScope.key });
+  if (
+    identity.current.entityId !== entityId ||
+    identity.current.entityType !== entityType ||
+    identity.current.view !== actionScope.key
+  )
+    identity.current = { entityId, entityType, view: actionScope.key };
+  const currentIdentity = identity.current;
+  const [override, setOptimistic] = useState<{
+    identity: typeof currentIdentity;
+    count: number;
+    voted: boolean;
+  } | null>(null);
+  // Retire recycled rows during render, before a parent layout effect or a
+  // completed old mutation can publish into the new entity or browser view.
+  const optimistic = override?.identity === currentIdentity ? override : null;
 
   const voted = optimistic ? optimistic.voted : serverUserVote === 1;
   const count = optimistic ? optimistic.count : serverUpvotes;
 
   const toggle = useCallback(() => {
-    if (voteIsPending) return; // guard double-tap
+    if (voteIsPending || identity.current !== currentIdentity) return; // guard double-tap and recycled callbacks
+    let action: ReturnType<typeof actionScope.capture>;
+    try {
+      action = actionScope.capture();
+    } catch {
+      return;
+    }
+    const originalIdentity = currentIdentity;
+    const isCurrent = () => identity.current === originalIdentity && action.isCurrent();
     const nextVoted = !voted;
-    setOptimistic({ count: count + (nextVoted ? 1 : -1), voted: nextVoted });
+    setOptimistic({ identity: originalIdentity, count: count + (nextVoted ? 1 : -1), voted: nextVoted });
     // The backend's vote mutation only accepts +1/-1 (no 0/null "clear vote"
     // value) — un-voting is done by resending the SAME value already on
     // record, which the resolver detects and deletes. Mobile only ever
     // represents an upvote, so the wire value is always 1; `nextVoted` still
     // drives the local optimistic voted/count flip above.
-    voteMutate(
-      { entityType, entityId, value: 1 },
-      {
-        onSuccess: (summary) => setOptimistic({ count: summary.upvotes, voted: summary.userVote === 1 }),
-        onError: () => setOptimistic(null),
-      },
-    );
-  }, [voteMutate, voteIsPending, voted, count, entityId, entityType]);
+    void (async () => {
+      let receipt: Awaited<ReturnType<typeof voteWithReceipt>> | undefined;
+      try {
+        receipt = await voteWithReceipt({ entityType, entityId, value: 1 }, { signal: action.signal });
+        receipt.assertCurrent();
+        if (!isCurrent()) return;
+        setOptimistic({
+          identity: originalIdentity,
+          count: receipt.result.upvotes,
+          voted: receipt.result.userVote === 1,
+        });
+      } catch {
+        if (isCurrent()) setOptimistic(null);
+      } finally {
+        receipt?.dispose();
+        action.finish();
+      }
+    })();
+  }, [voteWithReceipt, voteIsPending, voted, count, entityId, entityType, actionScope, currentIdentity]);
 
   return { voted, count, toggle, isPending: voteIsPending };
 }
