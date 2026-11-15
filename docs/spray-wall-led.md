@@ -12,6 +12,12 @@ every signed-in climber who can open the wall lights it from their own phone. Se
 ## Using it
 
 1. Enable LEDs and enter the controller's base address, such as `http://wled.local`.
+   Or tap **Find on my Wi-Fi**: the phone asks each address of its own Wi-Fi
+   network (a private /24 only, 32 at a time, 1.5 s each, never its own address)
+   for WLED's `/json/info`, and lists the controllers that answer by name and
+   address. Tapping one checks and saves it as below. On mobile data it asks for
+   Wi-Fi instead of scanning. It needs no new native module: the subnet comes
+   from NetInfo.
 2. Tap **OK** to check the connection. A successful check saves the address to
    the wall and shows the device name and LED count. It does not change the
    lighting.
