@@ -688,7 +688,8 @@ jobs:
     # adds one the gate must not quietly disappear with the implicit needs check.
     if: needs.setup.outputs.gate == 'probe' && needs.setup.outputs.shipped == 'true' && (inputs.cpp_target == null || inputs.cpp_target == 'none')
     runs-on: xcode-27
-    timeout-minutes: 60
+    # Shares the full phone capture's bounded boot/retry budget (see ios-capture).
+    timeout-minutes: 90
     outputs:
       changed: ${{ steps.compare.outputs.changed }}
       changed_files: ${{ steps.compare.outputs.changed_files }}
@@ -864,7 +865,10 @@ jobs:
     # JSON string is always non-empty (truthy) — so `false && x` short-circuits
     # to `false` without evaluating `x`, and `false || y` then evaluates to `y`.
     runs-on: xcode-27
-    timeout-minutes: 60
+    # A cold-boot recovery consumed 40 minutes before 13 healthy stories completed
+    # in 20 minutes. Allow the remaining captures and artifact upload to finish;
+    # individual boot, launch and story readiness deadlines stay bounded.
+    timeout-minutes: 90
     strategy:
       # One shard failing shouldn't abandon the rest — let them all finish so
       # ios-finalize can report exactly which (locale, device) is short.
