@@ -31,6 +31,8 @@ object BoardRendererBridge {
 
     private external fun nativePrepareAtlas(configUtf8: ByteArray): ByteBuffer?
 
+    private external fun nativePrepareOwnedAtlas(configUtf8: ByteArray, assetPath: ByteArray?, expectedSha: ByteArray?, generatedDir: ByteArray?): Array<ByteBuffer>?
+
     private external fun nativeFreeAtlas(buffer: ByteBuffer)
 
     /** No Java heap copy of the atlas. Upload inside useBuffer, then close. */
@@ -42,6 +44,31 @@ object BoardRendererBridge {
             nativePrepareAtlas(utf8)
                 ?: throw IllegalArgumentException("GPU atlas rejected config or exceeded budget")
         return OwnedAtlasBuffer(buffer, ::nativeFreeAtlas)
+    }
+
+    fun prepareOwnedAtlas(configJson: String, geometryAssetPath: String?, geometryAssetSha256: String?, generatedGeometryDirectory: String?): OwnedAtlasBuffers {
+        require(configJson.length <= 8 * 1024 * 1024) { "GPU config too large" }
+        val configBytes = configJson.toByteArray(Charsets.UTF_8)
+        require(configBytes.size <= 8 * 1024 * 1024) { "GPU config too large" }
+        fun pathBytes(path: String?): ByteArray? = path?.let {
+            require(it.length <= 4096) { "GPU asset path too large" }
+            val uri = android.net.Uri.parse(it)
+            require(uri.scheme == null || uri.scheme == "file") { "GPU asset must be a local file" }
+            (if (uri.scheme == "file") uri.path else it)?.toByteArray(Charsets.UTF_8)
+        }
+        val path = pathBytes(geometryAssetPath)
+        val directory = pathBytes(generatedGeometryDirectory)
+        require(path == null || path.size <= 4096) { "GPU asset path too large" }
+        require(directory == null || directory.size <= 4096) { "GPU cache directory too large" }
+        val hash = geometryAssetSha256?.toByteArray(Charsets.UTF_8)
+        require(hash == null || hash.size <= 64) { "Invalid GPU asset checksum" }
+        val buffers = nativePrepareOwnedAtlas(configBytes, path, hash, directory)
+            ?: throw IllegalArgumentException("GPU atlas rejected config or exceeded budget")
+        check(buffers.size == 2)
+        return OwnedAtlasBuffers(
+            OwnedAtlasBuffer(buffers[0], ::nativeFreeAtlas),
+            OwnedAtlasBuffer(buffers[1], ::nativeFreeAtlas),
+        )
     }
 
     fun render(configJson: String): RenderResult? {

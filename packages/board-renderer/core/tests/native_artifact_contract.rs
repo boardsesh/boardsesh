@@ -1,8 +1,11 @@
 use std::{fs, path::Path};
 
-const AURA_CONTRACT_MARKERS: [&[u8]; 7] = [
+const AURA_CONTRACT_MARKERS: [&[u8]; 10] = [
     b"board_renderer_render",
-    b"struct RenderConfig with 20 elements",
+    b"board_renderer_prepare_gpu_atlas_owned",
+    b"geometry_cache_scope",
+    b"board_renderer_gpu_atlas_format_version",
+    b"struct RenderConfig with 21 elements",
     b"render_mode",
     b"glow_falloff",
     b"silhouette_lightness",

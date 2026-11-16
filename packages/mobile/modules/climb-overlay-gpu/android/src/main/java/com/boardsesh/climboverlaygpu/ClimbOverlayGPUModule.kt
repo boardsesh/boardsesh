@@ -24,7 +24,7 @@ class ClimbOverlayGPUModule : Module() {
 
     override fun definition() = ModuleDefinition {
         Name("ClimbOverlayGPU")
-        Constants("apiVersion" to 3)
+        Constants("apiVersion" to 4, "assetApiVersion" to 1)
         OnCreate {
             application = appContext.reactContext?.applicationContext
             application?.registerComponentCallbacks(callbacks)
@@ -53,6 +53,15 @@ class ClimbOverlayGPUModule : Module() {
             Events("onRenderReady", "onRenderError")
             Prop("configJson") { view: ClimbOverlayGPUView, value: String ->
                 view.configJson = value
+            }
+            Prop("geometryAssetPath") { view: ClimbOverlayGPUView, value: String? ->
+                view.geometryAssetPath = value
+            }
+            Prop("geometryAssetSha256") { view: ClimbOverlayGPUView, value: String? ->
+                view.geometryAssetSha256 = value
+            }
+            Prop("generatedGeometryDirectory") { view: ClimbOverlayGPUView, value: String? ->
+                view.generatedGeometryDirectory = value
             }
             Prop("frames") { view: ClimbOverlayGPUView, value: String? -> view.frames = value }
             Prop("previousFrames") { view: ClimbOverlayGPUView, value: String? ->
