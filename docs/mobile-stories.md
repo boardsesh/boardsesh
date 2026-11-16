@@ -66,6 +66,8 @@ readiness: 'explicit',
 
 Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay.
 
+For iPhone Duo hinge failures, the capture debug artifact retains the latest image from each display and a `probes.jsonl` log with capture and conversion errors. Failed display reads are unknown, not proof of a dark screen; the runner waits for a known pose before toggling the hinge.
+
 `mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 
 CPP captures write a `cpp-capture.json` sidecar with `kind: "view-stories"`. It binds the source checkout, exact story/board inventory, locale, device, appearance, and raw PNG hashes. Framing carries that metadata into `presentation.json`; publication checks both sidecars against the current sources and pixels. These fixtures do not claim a verified backend recording. Existing recorded captures keep their separate snapshot provenance and checks. Native Live Activity presentation sources retain their native fixture validation.
