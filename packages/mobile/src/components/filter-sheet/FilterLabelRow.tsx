@@ -28,7 +28,7 @@ export const FilterLabelRow = memo(function FilterLabelRow({
   pinLabel,
 }: FilterLabelRowProps) {
   const labelText = (
-    <Text variant="footnote" style={styles.label}>
+    <Text tone="secondary" variant="footnote" style={styles.label}>
       {label}
     </Text>
   );
@@ -46,7 +46,7 @@ export const FilterLabelRow = memo(function FilterLabelRow({
           44pt target; it takes no touches, so a tap there still reaches the pin. */}
       {description ? (
         <View pointerEvents="none" style={styles.description}>
-          <Text variant="footnote" style={styles.descriptionText}>
+          <Text tone="tertiary" variant="footnote">
             {description}
           </Text>
         </View>
@@ -57,7 +57,6 @@ export const FilterLabelRow = memo(function FilterLabelRow({
 
 const styles = StyleSheet.create({
   label: {
-    opacity: 0.55,
     marginTop: spacing[1],
     marginBottom: spacing[2],
   },
@@ -65,9 +64,6 @@ const styles = StyleSheet.create({
   description: {
     marginTop: -spacing[2],
     marginBottom: spacing[1],
-  },
-  descriptionText: {
-    opacity: 0.4,
   },
   // A control's label line with a trailing pin toggle (pin the control to the chip row).
   pinnableRow: {

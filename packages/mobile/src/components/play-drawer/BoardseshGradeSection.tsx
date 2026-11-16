@@ -12,6 +12,7 @@ import { useBoardseshGrade, useBoardseshGradesForAngles, useClimbStatsHistory } 
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useIsOffline } from '../../hooks/use-is-offline';
 import { useTheme } from '../../providers/theme-provider';
+import { withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { getBoardCapabilities } from '@boardsesh/board-config';
@@ -276,7 +277,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -305,7 +306,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.moonboardWideAngle.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -364,7 +365,7 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
           <Text variant="caption1" color={systemColors.secondaryLabel}>
             {t('boardseshGrade.estimate.label')}
           </Text>
-          <Text variant="title1" style={[styles.gradeValue, styles.estimateGrade, { color: view.grade.color }]}>
+          <Text variant="title1" style={[styles.gradeValue, { color: withAlpha(view.grade.color, 0.75) }]}>
             {`${ESTIMATE_PREFIX}${view.grade.label}`}
           </Text>
         </View>
@@ -651,9 +652,6 @@ const styles = StyleSheet.create({
   },
   // HERO — projected angle. Keeps the grade colour (colour is content) but sits
   // a size down from a measured grade and never carries the confirmed seal.
-  estimateGrade: {
-    opacity: 0.75,
-  },
   // PAYOFF
   payoffRow: {
     flexDirection: 'row',

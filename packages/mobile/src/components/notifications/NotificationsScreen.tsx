@@ -202,7 +202,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
           ) : showError ? (
             <View style={styles.stateBlock}>
               <Icon name="error" size={32} color={systemColors.error} />
-              <Text variant="headline" style={styles.stateTitle}>
+              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                 {t('errors.load')}
               </Text>
               <View style={styles.stateCta}>
@@ -212,7 +212,7 @@ function OwnedNotificationsScreen({ actionScope }: { actionScope: HttpActionScop
           ) : (
             <View style={styles.stateBlock}>
               <Icon name="notification" size={48} color={systemColors.tertiaryLabel} />
-              <Text variant="headline" style={styles.stateTitle}>
+              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                 {t('empty')}
               </Text>
             </View>
@@ -261,7 +261,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   stateCta: {

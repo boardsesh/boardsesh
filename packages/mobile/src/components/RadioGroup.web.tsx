@@ -42,6 +42,5 @@ const styles = StyleSheet.create({
     // Aligns under the label past the leading radio control + its gutter.
     paddingStart: 56,
     paddingBottom: 8,
-    opacity: 0.8,
   },
 });

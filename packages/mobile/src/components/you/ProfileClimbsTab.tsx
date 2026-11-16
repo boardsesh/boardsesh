@@ -183,14 +183,14 @@ export function ProfileClimbsTab({ userId, topInset = 0, scrollEdge }: ProfileCl
             feed.isError ? (
               <View style={styles.stateBlock}>
                 <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.stateTitle}>
+                <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                   {t('mobile.profile.climbsError')}
                 </Text>
               </View>
             ) : (
               <View style={styles.stateBlock}>
                 <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-                <Text variant="headline" style={styles.stateTitle}>
+                <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                   {t('mobile.profile.noClimbs')}
                 </Text>
               </View>
@@ -221,7 +221,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   footer: {

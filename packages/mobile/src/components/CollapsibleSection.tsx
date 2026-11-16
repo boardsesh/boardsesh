@@ -226,7 +226,7 @@ function CollapsibleSectionInternal({
             </Text>
           )}
           {expanded || !summary ? null : typeof summary === 'string' ? (
-            <Text variant="footnote" style={styles.summary} numberOfLines={1}>
+            <Text tone="secondary" variant="footnote" style={styles.summary} numberOfLines={1}>
               {summary}
             </Text>
           ) : (
@@ -286,7 +286,6 @@ const styles = StyleSheet.create({
   // Basis 0, so the summary ellipsizes into the spare width instead of
   // squeezing the title. Right-aligned against the chevron, as before.
   summary: {
-    opacity: 0.55,
     flexGrow: 1,
     flexBasis: 0,
     flexShrink: 1,

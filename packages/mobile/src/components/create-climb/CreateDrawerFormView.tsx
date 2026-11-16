@@ -78,7 +78,7 @@ export function CreateDrawerFormView({
 
   return (
     <View style={styles.body}>
-      <Text variant="footnote" style={styles.label}>
+      <Text tone="secondary" variant="footnote">
         {t('createClimbForm.fields.description')}
       </Text>
       <TextInput
@@ -158,9 +158,6 @@ function draftDescription(
 const styles = StyleSheet.create({
   body: {
     gap: spacing[2],
-  },
-  label: {
-    opacity: 0.6,
   },
   multiline: {
     minHeight: 88,

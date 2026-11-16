@@ -738,10 +738,11 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
     if (!communityGrade) return null;
     return (
       <Text
+        tone="secondary"
         variant="footnote"
         numberOfLines={1}
         accessibilityLabel={t('mobile.climbRow.communityGradeAria', { grade: communityGrade })}
-        style={[styles.subtitle, styles.dockedCommunityGrade]}
+        style={[styles.dockedCommunityGrade]}
       >
         {communityGrade}
       </Text>
@@ -761,7 +762,7 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
   const nothingKnown = sends === null && rating === null && setter === null && !communityGrade && setAtAngle === null;
   if (showSends && nothingKnown) {
     return (
-      <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
+      <Text tone="secondary" variant="footnote" numberOfLines={1}>
         {t('mobile.climbRow.projectFallback')}
       </Text>
     );
@@ -796,6 +797,7 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
 
   return (
     <Text
+      tone="secondary"
       variant="footnote"
       numberOfLines={1}
       accessibilityLabel={
@@ -803,7 +805,6 @@ export const ClimbSubtitleView = React.memo(function ClimbSubtitleView({
           ? tokens.map((token) => token.spoken ?? token.drawn).join(' · ')
           : undefined
       }
-      style={styles.subtitle}
     >
       {tokens.map((token) => token.drawn).join(' · ')}
     </Text>
@@ -1188,12 +1189,12 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
         {subtitlePlace === 'detailLine' ? (
           subtitle
         ) : primarySubtitleOverride ? (
-          <Text variant="footnote" numberOfLines={1} style={styles.subtitle}>
+          <Text tone="secondary" variant="footnote" numberOfLines={1}>
             {primarySubtitleOverride}
           </Text>
         ) : null}
         {subtitleDetailText ? (
-          <Text variant="caption1" numberOfLines={1} style={styles.subtitle}>
+          <Text tone="secondary" variant="caption1" numberOfLines={1}>
             {subtitleDetailText}
           </Text>
         ) : null}
@@ -1272,9 +1273,6 @@ const styles = StyleSheet.create({
   // is only where a chip sits in the name row.
   nameRowChip: {
     marginStart: 6,
-  },
-  subtitle: {
-    opacity: 0.6,
   },
   // The community grade at the end of the name line. Like the chips there it
   // never absorbs the row's truncation: the climb name does.

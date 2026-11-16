@@ -121,7 +121,7 @@ export function ClimberSearchEmptyState({ query }: { query: string }) {
   return (
     <View style={styles.stateBlock}>
       <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-      <Text variant="headline" style={styles.stateTitle}>
+      <Text tone="secondary" variant="headline" style={styles.stateTitle}>
         {title}
       </Text>
       {query.length >= 2 ? (
@@ -140,7 +140,7 @@ export function ClimberSearchErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <View style={styles.stateBlock}>
       <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-      <Text variant="headline" style={styles.stateTitle}>
+      <Text tone="secondary" variant="headline" style={styles.stateTitle}>
         {t('mobile.social.loadError')}
       </Text>
       <PressableSurface
@@ -175,7 +175,6 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.65,
     textAlign: 'center',
   },
   stateSubtitle: {

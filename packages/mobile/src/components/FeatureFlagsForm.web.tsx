@@ -32,7 +32,7 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
       {rows.map((row) => (
         <Surface key={row.key} style={styles.card} elevation={1}>
           <Text variant="bodyLarge">{row.label}</Text>
-          <Text variant="bodySmall" style={[styles.muted, { color: systemColors.secondaryLabel as string }]}>
+          <Text variant="bodySmall" style={{ color: systemColors.secondaryLabel as string }}>
             {row.description}
           </Text>
           <View style={styles.control}>
@@ -52,7 +52,7 @@ export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText
               />
             )}
           </View>
-          <Text variant="labelSmall" style={[styles.muted, { color: systemColors.secondaryLabel as string }]}>
+          <Text variant="labelSmall" style={{ color: systemColors.secondaryLabel as string }}>
             {row.effectiveLabel}
           </Text>
         </Surface>
@@ -80,9 +80,6 @@ const styles = StyleSheet.create({
   },
   control: {
     marginVertical: spacing[1],
-  },
-  muted: {
-    opacity: 0.7,
   },
   fullWidth: {
     alignSelf: 'stretch',

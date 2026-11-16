@@ -755,7 +755,7 @@ export default function ManageBoards() {
         <Text variant="headline" style={styles.stateTitle}>
           {t('mobile.signInTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="secondary" variant="subheadline" style={styles.stateSubtitle}>
           {t('mobile.signInSubtitle')}
         </Text>
         <Button title={t('mobile.signInCta')} onPress={() => router.push('/auth/login')} style={styles.stateButton} />
@@ -817,7 +817,7 @@ export default function ManageBoards() {
                   mode, a Boardsesh outage, the profile failure and the lying
                   connection each read differently. Literal `t()` keys: the i18n
                   linter rejects a computed one. */}
-              <Text variant="subheadline" style={styles.offlineNotice}>
+              <Text tone="secondary" variant="subheadline">
                 {noticeKey === 'pickerNoticeOfflineMode'
                   ? t('mobile.offline.pickerNoticeOfflineMode')
                   : noticeKey === 'pickerNoticeUnreachable'
@@ -829,7 +829,7 @@ export default function ManageBoards() {
             <View style={styles.listHeader}>
               <View style={styles.pausedNotice}>
                 <Text variant="headline">{tCommon('mobile.settings.storage.downgradeTitle')}</Text>
-                <Text variant="subheadline" style={styles.offlineNotice}>
+                <Text tone="secondary" variant="subheadline">
                   {tCommon('mobile.settings.storage.downgradeSubtitle')}
                 </Text>
               </View>
@@ -839,10 +839,10 @@ export default function ManageBoards() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
+            <Text tone="secondary" variant="headline" style={styles.emptyTitle}>
               {t('mobile.emptyTitle')}
             </Text>
-            <Text variant="subheadline" style={styles.emptySubtitle}>
+            <Text tone="tertiary" variant="subheadline" style={styles.emptySubtitle}>
               {t('mobile.emptySubtitle')}
             </Text>
             <Button title={t('mobile.discovery.create')} onPress={onCreate} style={styles.emptyCta} />
@@ -873,9 +873,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing[4],
     paddingBottom: spacing[2],
   },
-  offlineNotice: {
-    opacity: 0.7,
-  },
   pausedNotice: {
     gap: spacing[1],
     paddingBottom: spacing[3],
@@ -898,7 +895,6 @@ const styles = StyleSheet.create({
   stateSubtitle: {
     marginTop: spacing[1],
     textAlign: 'center',
-    opacity: 0.6,
   },
   stateButton: {
     marginTop: spacing[4],
@@ -911,10 +907,8 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     marginTop: spacing[3],
-    opacity: 0.6,
   },
   emptySubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
   emptyCta: {

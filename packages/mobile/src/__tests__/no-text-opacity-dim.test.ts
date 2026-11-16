@@ -97,43 +97,11 @@ function countDimmedText(rawSource: string): number {
  * The allowlist's size, pinned so no one can add an entry or raise a count.
  * When you migrate a file, lower its entry AND these two numbers.
  */
-const ALLOWLIST_FILES = 31;
-const ALLOWLIST_TOTAL = 70;
+const ALLOWLIST_FILES = 0;
+const ALLOWLIST_TOTAL = 0;
 
 /** File → count today. Shrink-only. */
-const ALLOWLIST: Record<string, number> = {
-  'app/(tabs)/discover/[playlist_uuid].tsx': 4,
-  'app/(tabs)/discover/community.tsx': 8,
-  'app/boards/manage.tsx': 5,
-  'app/users/connections.tsx': 1,
-  'src/components/BoardRouteRedirect.tsx': 1,
-  'src/components/ClimbListItemContent.tsx': 5,
-  'src/components/CollapsibleSection.tsx': 1,
-  'src/components/CrashScreen.tsx': 3,
-  'src/components/FeatureFlagsForm.web.tsx': 2,
-  'src/components/ListRow.tsx': 1,
-  'src/components/RadioGroup.web.tsx': 1,
-  'src/components/board-presence/wall-kiosk/WallScrubberView.tsx': 3,
-  'src/components/create-climb/CreateDrawerFormView.tsx': 1,
-  'src/components/filter-sheet/FilterLabelRow.tsx': 2,
-  'src/components/filter-sheet/FilterTappableRow.tsx': 1,
-  'src/components/filter-sheet/SetterPickerList.tsx': 5,
-  'src/components/moderation/ModerationFeedScreen.tsx': 3,
-  'src/components/notifications/NotificationsScreen.tsx': 2,
-  'src/components/onboarding/OnboardingCard.tsx': 1,
-  'src/components/play-drawer/BoardseshGradeSection.tsx': 3,
-  'src/components/playlist/DiscoverLibraryView.tsx': 1,
-  'src/components/playlist/PlaylistCard.tsx': 2,
-  'src/components/playlist/PlaylistListRow.tsx': 1,
-  'src/components/search/SearchEmptyRecovery.stories.tsx': 2,
-  'src/components/session/session-stat-tile-views.tsx': 1,
-  'src/components/settings/StorageSettingsScreen.tsx': 3,
-  'src/components/you/ClimberSearch.tsx': 2,
-  'src/components/you/LogbookView.tsx': 1,
-  'src/components/you/ProfileClimbsTab.tsx': 2,
-  'src/components/you/SocialTab.tsx': 1,
-  'src/components/you/StatsSummaryCard.tsx': 1,
-};
+const ALLOWLIST: Record<string, number> = {};
 
 function walk(dir: string, files: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

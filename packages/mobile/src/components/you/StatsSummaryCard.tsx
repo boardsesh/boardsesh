@@ -95,12 +95,16 @@ function GradeTile({
       </View>
       {/* Match the grade/icon's contrast-aware colour; secondaryLabel is a grey
           that washes out on saturated grade tiles. Dim slightly for hierarchy. */}
-      <Text variant="caption1" color={onTile} style={styles.gradeTileLabel}>
+      <Text variant="caption1" color={onTile} style={gradeTileLabelStyle}>
         {label}
       </Text>
     </View>
   );
 }
+
+// The label sits on a grade-coloured tile in whatever on-tile colour the variant resolves,
+// so it steps down by fading toward the tile instead of by a label tone.
+const gradeTileLabelStyle = { opacity: opacity.subtle } as const;
 
 const styles = StyleSheet.create({
   card: { marginHorizontal: spacing[4] },
@@ -116,6 +120,5 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   gradeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
-  gradeTileLabel: { opacity: opacity.subtle },
   percentile: { marginTop: spacing[3] },
 });

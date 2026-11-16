@@ -1032,10 +1032,10 @@ export default function PlaylistDetail() {
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('detail.errors.loadTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('detail.errors.loadDescription')}
         </Text>
         <PressableSurface
@@ -1061,10 +1061,10 @@ export default function PlaylistDetail() {
       <View style={styles.stateContainer}>
         <PlaylistStateHeader />
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('detail.errors.notFoundTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('detail.errors.notFoundDescription')}
         </Text>
       </View>
@@ -1167,10 +1167,8 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: 12,
-    opacity: 0.6,
   },
   stateSubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
   stateRetry: {
