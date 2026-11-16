@@ -30,6 +30,73 @@ successful installation. Verification matches the same hardware identity,
 expected firmware and BLE capability metadata, configuration and presets.
 The backend never connects to a controller IP and receives no firmware backup.
 
+### Installing without Wi-Fi (controller hotspot)
+
+Many walls have no Wi-Fi. A stock WLED controller with no Wi-Fi saved opens its
+own access point, `WLED-AP` (default password `wled1234`), and serves itself at
+`http://4.3.2.1`. That hotspot has no internet. The installer offers **Install
+without Wi-Fi (controller's hotspot)** next to the Wi-Fi route, and selects it
+when the wall has no saved address. The owner can change the network name and
+password; both are prefilled with WLED's defaults.
+
+1. **Download first.** On any internet, mobile data included, the app fetches
+   the manifest and downloads every image the owner may install, checking each
+   one's byte count and SHA-256 before it needs the controller. Beta images are
+   only downloaded after the owner ticks the beta consent, which in this route
+   comes before the download. A failed checksum stops here, before any join.
+2. **Connecting to your controller.** The app asks the OS to join the hotspot
+   (`modules/wifi-join`):
+   - **Android 10+** shows the system "connect to device" sheet listing
+     `WLED-AP`. The app requests it with a `WifiNetworkSpecifier` and binds its
+     own process to that network with `bindProcessToNetwork`, so only Boardsesh
+     uses the hotspot while mobile data stays the default for other apps. While
+     bound, Boardsesh's own backend calls fail; the installer makes none.
+     Android 9 and older are not supported: the screen tells the owner to join
+     `WLED-AP` by hand, open `4.3.2.1` and put WLED on a Wi-Fi network instead.
+   - **iOS** shows "Boardsesh wants to join Wi-Fi network WLED-AP" from
+     `NEHotspotConfiguration` (`joinOnce`). iOS cannot bind requests to one
+     network, so the join only counts once a Wi-Fi interface has an address on
+     `4.3.2.0/24`. Then `4.3.2.1` is on the local subnet and never reached over
+     mobile data.
+   `4.3.2.1` is a public internet address, so every installer request to it is
+   refused unless the phone is on the hotspot at that moment.
+3. **Inspect, back up, upload, restart, check** run unchanged against
+   `http://4.3.2.1`: backup and export, model, beta and audio consent, the
+   OTA/PIN lock check, the journal, and read-back verification. The hotspot is
+   kept from the ready backup to the owner's install tap, and nothing else.
+4. **Restarting.** WLED's hotspot goes down while it restarts. Verification
+   waits up to 15 s for the phone to rejoin on its own (Android's request stays
+   registered and rebinds; iOS may rejoin a `joinOnce` network), then asks
+   again, twice, up to 30 s each. iOS may show its join alert again here. If
+   the hotspot never returns, the install is marked unconfirmed (`hotspotLost`)
+   with the journal kept, and **Check installation** rejoins and verifies.
+5. **Back to normal.** The app leaves the hotspot (Android unbinds and drops the
+   request; iOS removes the configuration) and points the owner to Bluetooth →
+   Find Bluetooth controller.
+
+The hotspot is released on success, failure, cancel, sign-out, leaving the
+screen and backgrounding. Android reports its own join sheet as backgrounding,
+so a background event during a join is ignored; a join that lands while the
+app is really in the background is undone. A JS reload or app teardown releases
+it natively too. A WLED PIN or OTA lock cannot be opened from the app in this
+route, because a browser does not use the app's hotspot binding: the owner
+joins `WLED-AP` in Wi-Fi settings and unlocks it at `4.3.2.1/settings/sec`.
+
+Error states: hotspot not found (Android also reports a refused sheet and a
+wrong password this way), refused (iOS), timeout, invalid password (WPA2 needs
+8 to 63 characters), unsupported phone, and hotspot lost after the restart.
+Each has a retry. All hotspot installs share the `4.3.2.1` journal; one for a
+different controller is refused by its hardware ID, as on Wi-Fi.
+
+Native requirements: the iOS entitlement
+`com.apple.developer.networking.HotspotConfiguration` (in `app.config.ts`),
+which also needs the **Hotspot Configuration** capability enabled on the
+`com.boardsesh.app` App ID in the Apple Developer portal; and Android's
+`CHANGE_NETWORK_STATE` (a normal permission, no prompt). Joining is a native
+change, so it ships with a new store build, not over the air. Real-device
+Android and iOS joins, restarts and releases are untested until the
+GL-C-015WL-D arrives.
+
 For firmware with Bluetooth already enabled, select Bluetooth → Find Bluetooth
 controller. Discovery reads capabilities without lighting the wall. Choose the
 controller by its name and stable ID, then test lighting. Switching to Wi-Fi
