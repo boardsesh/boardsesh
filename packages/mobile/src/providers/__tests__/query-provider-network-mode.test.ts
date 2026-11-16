@@ -1,5 +1,26 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+// These unit hosts exercise query policy and lifecycle, without REST reads.
+vi.mock('../../lib/rest-operation', () => {
+  const rejectUnusedRestRead = () => {
+    throw new Error('Unexpected REST read in query-provider unit fixture');
+  };
+  return {
+    captureRestReadView: rejectUnusedRestRead,
+    createRestOperation: rejectUnusedRestRead,
+    useRestView: rejectUnusedRestRead,
+  };
+});
+vi.mock('../../lib/aurora-credentials', () => {
+  const rejectUnusedCredentialRead = () => {
+    throw new Error('Unexpected credential read in query-provider unit fixture');
+  };
+  return {
+    getAuroraCredentialsWithReceipt: rejectUnusedCredentialRead,
+    getAuroraUnsyncedCountsWithReceipt: rejectUnusedCredentialRead,
+  };
+});
+
 // query-provider imports AppState/Platform from react-native, which can't load
 // under vitest's node env — mock it. NetInfo resolves via the netinfo-stub alias
 // (vite.config.ts), which reports connected, so the module-load seed leaves

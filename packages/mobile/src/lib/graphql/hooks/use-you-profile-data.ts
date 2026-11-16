@@ -1,4 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useReducer, useRef, useLayoutEffect, type SetStateAction } from 'react';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
+import { useHttpQueryScope } from '../use-http-query-scope';
 import dayjs from 'dayjs';
 import { useIsFocused } from 'expo-router';
 import { deriveProfileViewModel, type UnifiedTimeframeType, type PeriodComparisonMode } from '@boardsesh/profile-stats';
@@ -26,6 +28,46 @@ export function profileTotalsStatus(query: {
   return 'loading';
 }
 
+type ProgressFilters = {
+  selectedBoard: string;
+  timeframe: UnifiedTimeframeType;
+  comparisonMode: PeriodComparisonMode;
+};
+type FilterIntent = {
+  assertCurrent: () => void;
+} & (
+  | { field: 'selectedBoard'; selection: SetStateAction<string> }
+  | { field: 'timeframe'; selection: SetStateAction<UnifiedTimeframeType> }
+  | { field: 'comparisonMode'; selection: SetStateAction<PeriodComparisonMode> }
+);
+function selectFilter<Selection extends string>(current: Selection, selection: SetStateAction<Selection>): Selection {
+  return typeof selection === 'function' ? selection(current) : selection;
+}
+/** useReducer does not cache a useState eager result. The original UI guard
+ * is pure and runs again if React suspends/rebases a filter action. */
+function reduceProgressFilters(current: ProgressFilters, intent: FilterIntent): ProgressFilters {
+  try {
+    intent.assertCurrent();
+    let next: ProgressFilters;
+    switch (intent.field) {
+      case 'selectedBoard':
+        next = { ...current, selectedBoard: selectFilter(current.selectedBoard, intent.selection) };
+        break;
+      case 'timeframe':
+        next = { ...current, timeframe: selectFilter(current.timeframe, intent.selection) };
+        break;
+      case 'comparisonMode':
+        next = { ...current, comparisonMode: selectFilter(current.comparisonMode, intent.selection) };
+        break;
+    }
+    intent.assertCurrent();
+    return next;
+  } catch (error: unknown) {
+    if (error instanceof BrowserBackendConsumerError) return current;
+    throw error;
+  }
+}
+
 /**
  * Mobile counterpart of web's `useProfileData`. Fans out the per-board ticks +
  * profile-stats + percentile queries, holds the board / timeframe filter state,
@@ -39,9 +81,67 @@ export function profileTotalsStatus(query: {
 export function useYouProfileData(userId: string | undefined) {
   const { gradeFormat } = useGradeFormat();
 
-  const [selectedBoard, setSelectedBoard] = useState<string>('all');
-  const [timeframe, setTimeframe] = useState<UnifiedTimeframeType>('all');
-  const [comparisonMode, setComparisonMode] = useState<PeriodComparisonMode>('trailing');
+  const scope = useHttpQueryScope();
+  const owner = useRef({ mounted: true, epoch: 0 });
+  const target = useRef({ userId, scope, identity: Object.freeze({}) });
+  if (target.current.userId !== userId || target.current.scope !== scope) {
+    target.current = { userId, scope, identity: Object.freeze({}) };
+  }
+  const identity = target.current.identity;
+  useLayoutEffect(() => {
+    const original = owner.current;
+    original.mounted = true;
+    return () => {
+      original.mounted = false;
+      original.epoch += 1;
+    };
+  }, []);
+  const captureIntent = useCallback(() => {
+    const original = owner.current;
+    const epoch = original.epoch;
+    const assertCurrent = () => {
+      if (!original.mounted || original.epoch !== epoch || target.current.identity !== identity)
+        throw new BrowserBackendConsumerError('superseded');
+      scope.assertView();
+    };
+    assertCurrent();
+    return assertCurrent;
+  }, [identity, scope]);
+  const [{ selectedBoard, timeframe, comparisonMode }, dispatchFilter] = useReducer(reduceProgressFilters, {
+    selectedBoard: 'all',
+    timeframe: 'all',
+    comparisonMode: 'trailing',
+  });
+  const setSelectedBoard = useCallback(
+    (selection: SetStateAction<string>) => {
+      try {
+        dispatchFilter({ field: 'selectedBoard', selection, assertCurrent: captureIntent() });
+      } catch {
+        /* Retired UI is inert. */
+      }
+    },
+    [captureIntent],
+  );
+  const setTimeframe = useCallback(
+    (selection: SetStateAction<UnifiedTimeframeType>) => {
+      try {
+        dispatchFilter({ field: 'timeframe', selection, assertCurrent: captureIntent() });
+      } catch {
+        /* Retired UI is inert. */
+      }
+    },
+    [captureIntent],
+  );
+  const setComparisonMode = useCallback(
+    (selection: SetStateAction<PeriodComparisonMode>) => {
+      try {
+        dispatchFilter({ field: 'comparisonMode', selection, assertCurrent: captureIntent() });
+      } catch {
+        /* Retired UI is inert. */
+      }
+    },
+    [captureIntent],
+  );
   // Custom date-range filtering isn't surfaced yet — YouFilterSheet only offers
   // all/year/month/week. Kept as empty constants so deriveProfileViewModel gets
   // a stable range; not exposed until the custom-range UI lands.
@@ -77,15 +177,35 @@ export function useYouProfileData(userId: string | undefined) {
   );
 
   const totalsStatus = profileTotalsStatus(profileStatsQuery);
+  const startOriginalRefetch = useCallback(
+    (query: { refetchOriginal: (assertIntent: () => void) => Promise<unknown> }, assertIntent: () => void) => {
+      assertIntent();
+      // Normal query errors arrive in the real observer result/cache. A retired
+      // original intent can reject after an await; this void UI event owns no
+      // later error reporter or side effect under another viewer.
+      void query.refetchOriginal(assertIntent).catch(() => {});
+      assertIntent();
+    },
+    [],
+  );
   const retryTotals = useCallback(() => {
-    void profileStatsQuery.refetch();
-  }, [profileStatsQuery]);
+    try {
+      startOriginalRefetch(profileStatsQuery, captureIntent());
+    } catch {
+      /* Expected retired UI hold. */
+    }
+  }, [captureIntent, profileStatsQuery, startOriginalRefetch]);
 
   const refetch = useCallback(() => {
-    void allBoardsTicksQuery.refetch();
-    void profileStatsQuery.refetch();
-    void percentileQuery.refetch();
-  }, [allBoardsTicksQuery, profileStatsQuery, percentileQuery]);
+    try {
+      const assertIntent = captureIntent();
+      startOriginalRefetch(allBoardsTicksQuery, assertIntent);
+      startOriginalRefetch(profileStatsQuery, assertIntent);
+      startOriginalRefetch(percentileQuery, assertIntent);
+    } catch {
+      /* A reentrant retirement stops all remaining dispatches. */
+    }
+  }, [allBoardsTicksQuery, captureIntent, profileStatsQuery, percentileQuery, startOriginalRefetch]);
 
   // With `networkMode: 'offlineFirst'`, an offline fetch pauses instead of
   // failing, so `isPending` stays true forever and `loading` below would spin

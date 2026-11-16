@@ -1,4 +1,26 @@
 import { describe, it, expect, vi } from 'vitest';
+
+// These unit hosts exercise query policy and lifecycle, without REST reads.
+vi.mock('../../lib/rest-operation', () => {
+  const rejectUnusedRestRead = () => {
+    throw new Error('Unexpected REST read in query-provider unit fixture');
+  };
+  return {
+    captureRestReadView: rejectUnusedRestRead,
+    createRestOperation: rejectUnusedRestRead,
+    useRestView: rejectUnusedRestRead,
+  };
+});
+vi.mock('../../lib/aurora-credentials', () => {
+  const rejectUnusedCredentialRead = () => {
+    throw new Error('Unexpected credential read in query-provider unit fixture');
+  };
+  return {
+    getAuroraCredentialsWithReceipt: rejectUnusedCredentialRead,
+    getAuroraUnsyncedCountsWithReceipt: rejectUnusedCredentialRead,
+  };
+});
+
 import {
   BACKEND_UNAVAILABLE_ERROR_NAME,
   GRAPHQL_REQUEST_TIMEOUT_CODE,

@@ -25,7 +25,10 @@ export type RestOperation = Readonly<{
   dispose(): void;
 }>;
 
+export type RestReadMode = 'native' | 'legacy' | 'selected' | 'anonymous' | 'unavailable';
+
 export type RestReadView = Readonly<{
+  mode: RestReadMode;
   scope: string | undefined;
   scoped: boolean;
   ready: boolean;
@@ -34,6 +37,7 @@ export type RestReadView = Readonly<{
 }>;
 
 const nativeRestView: RestReadView = Object.freeze({
+  mode: 'native',
   scope: undefined,
   scoped: false,
   ready: true,
@@ -42,8 +46,12 @@ const nativeRestView: RestReadView = Object.freeze({
 });
 
 /** Observing a native cache does not read credentials or establish authority. */
-export function useRestView(): RestReadView {
+export function captureRestReadView(): RestReadView {
   return nativeRestView;
+}
+
+export function useRestView(): RestReadView {
+  return captureRestReadView();
 }
 
 function createRestAbortError(): Error & { code: string } {
