@@ -1,6 +1,6 @@
 # Mobile chrome and layout metrics
 
-Screen-level specs for the Boardsesh mobile app's chrome: the glass size ladder, tab and header bars, the controls under the bar, filter capsules, facet rows and the top-bar buttons. They moved here from [ai-design-guidelines.md](./ai-design-guidelines.md), which keeps the system itself (colour, type, spacing, accessibility) and the product rules "Nothing over the climb" and "Content hierarchy and brand accents". Large screens have their own doc: [mobile-large-screen-layout.md](./mobile-large-screen-layout.md).
+Screen-level specs for the Boardsesh mobile app's chrome: the glass size ladder, tab and header bars, the controls under the bar, filter capsules, facet rows and the top-bar buttons. They moved here from [ai-design-guidelines.md](./ai-design-guidelines.md), which keeps the system itself (colour, type, spacing, components, accessibility) and the product rules "Nothing over the climb" and "Content hierarchy and brand accents". Large screens have their own doc: [mobile-large-screen-layout.md](./mobile-large-screen-layout.md).
 
 ## Layout & chrome metrics
 
@@ -306,7 +306,7 @@ popover use the same picker.
 **No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
 Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for
 resizable sheets, and a glass capsule under a row of glass chips is glass on glass (see "Glass
-material" in [ai-design-guidelines.md](./ai-design-guidelines.md#aesthetic-vs-capability)). The row is the strip of chips and nothing else: no pinned control beside it.
+material" in [Aesthetic vs. capability](#aesthetic-vs-capability)). The row is the strip of chips and nothing else: no pinned control beside it.
 
 **Hidden until tapped, then it stays.** On Climbs the row is hidden by default and the Grade chip
 opens it over the list, including at the list's resting top. The persistent chip and token rows
@@ -452,3 +452,347 @@ their titled bars.
 **Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
 pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,
 borderless)` builds a Pressable `android_ripple` config at that state-layer opacity.
+
+## UI variants and glass capability
+
+The full variant model, moved from [ai-design-guidelines.md](./ai-design-guidelines.md) (which keeps one paragraph per variant).
+
+### The two UI variants
+
+Source: `packages/mobile/src/theme/resolve-ui-variant.ts`, `providers/theme-provider.tsx`.
+
+The whole app renders in one resolved `variant`:
+
+| Variant       | When                                                  | Look                                                                                     |
+| ------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `liquidGlass` | Every iPhone by default; opt-in on Android            | Apple Liquid Glass — floating glass capsules, soft corners, HIG type, reanimated springs |
+| `material`    | Android and the Expo browser app by default; on iOS only a legacy saved choice or the dev stories harness | Material 3 — elevation, ripple, nav active-indicator pill, M3 type and corners           |
+
+The user's stored preference is `UiVariantPreference` = `'auto' | 'liquidGlass' | 'material'`.
+There is no in-app picker: it was removed on 2026-06-28 (6af5f43df1). A value saved before then
+still resolves, and the dev stories harness (`dev/stories/use-story-appearance.ts`) is the only
+remaining `setUiVariant` caller.
+`'auto'` resolves against the **platform**, not glass capability — Liquid Glass on every iPhone
+(including iOS < 26), Material on Android:
+
+```ts
+export function resolveUiVariant(preference: UiVariantPreference, autoPrefersGlass: boolean): UiVariant {
+  if (preference === 'liquidGlass') return 'liquidGlass';
+  if (preference === 'material') return 'material';
+  return autoPrefersGlass ? 'liquidGlass' : 'material'; // 'auto'; caller passes Platform.OS === 'ios'
+}
+```
+
+Change it with `theme.setUiVariant(next)`. Every option is selectable on every platform — any phone
+can opt into Liquid Glass. Material is drawn opaque (M3 tonal surfaces) on **every** platform when
+chosen, so a user who picks Material gets a real M3 app, not a glass app with the blur turned off.
+
+### Aesthetic vs. capability
+
+The `variant` chooses the _aesthetic_; a separate, synchronous **capability** check decides whether
+real iOS 26 glass _chrome_ is used or a fallback stands in. Keep the two apart — Liquid Glass on an
+older iPhone is the variant with the chrome degraded, not Material.
+
+- `useGlassCapability()` → iOS 26 only (the native `GlassView` / `GlassContainer` API is present).
+- `useTabChrome()` (pure core: `resolveTabChrome` in `src/hooks/tab-chrome.ts`) is the canonical
+  answer for the tab chrome, and `useBottomChromeMetrics` keys tab-bar geometry on it so the layout
+  math matches the bar actually on screen:
+  - `nativeTabBar` (`useNativeTabBar()`): Liquid Glass on any iPhone or iPad, iOS 18 included, gets
+    the system UIKit tab bar through `NativeTabs` (HIG, Tab bars); on iPad it adapts to a sidebar.
+    Material, Android and the JS tablet shell keep the JS `Tabs` + `MaterialTabBar` / rail.
+  - **Android phones hide the bar on scroll** (M3 hide-on-scroll, the counterpart of iOS 26's
+    minimize). On a top-level tab root the bar is drawn over the content, and scrolling down 24dp
+    slides it off screen while the MiniPlayer card drops onto the gesture inset with all its
+    controls. Scrolling up 24dp, reaching the top, switching tabs or changing route brings it back.
+    It never hides on pushed sub-routes (the bar sits in flow there), on tablets, on filter boards,
+    with the keyboard open or with TalkBack or another accessibility service on. Reduce Motion
+    swaps it without the slide. The card, the rest pill, the connectivity banner, the Discover
+    create button, the Start button, snackbars and toasts move with it on one shared value
+    (`tabBarHiddenProgress`, `TabBarHideFollower`); `bottom` never animates. The bottom-chrome
+    metrics describe the shown bar, as on iOS. Kill switch: `tab-bar-hide-on-scroll-kill`.
+  - **Fades in where it overlays** (Spotify's bar): on those tab roots the bar is `m3.surface` at 92% in dark
+    and 85% in light behind the icons, labels and gesture inset (`material.navBar.overlaySurfaceAlpha`),
+    so content is faint there
+    and never legible. A 24dp fade above its top edge runs from clear to that same fill, so content dissolves into the
+    bar; it takes no touches and slides away with the bar. No blur, no top hairline, no shadow. The
+    in-flow bar on sub-routes stays opaque, and the MiniPlayer card is always opaque and draws over
+    the fade.
+  - `liquidGlassTabBar`: the iOS 26 extras on that bar, also gated on `useGlassCapability()` —
+    minimize-on-scroll. Climbs stays an ordinary labelled tab, the rightmost one, like Apple
+    Music's Search tab, not a separated `role="search"` tab. On an iOS 27 iPhone it is the
+    prominent tab, so it stays on screen when the bar collapses.
+  - `nativeAccessory`: the `BottomAccessory` platter carries the bar's climb (iOS 26 only), on
+    iPhone and iPad alike: the climb you last opened, a preview included, or the queue's current
+    climb when that changed later (`useBarClimb`; see
+    [The MiniPlayer shows your last pick](climb-lists-and-queue.md#the-miniplayer-shows-your-last-pick-owner-decision-a-2026-11-02)).
+    The Lock Screen, the Climbs wall capsule and the board history sheet still show the wall's climb.
+    Like Apple Music's platter, it shows a 32pt thumbnail and the climb name over a byline (grade ·
+    sends, or grade · rating when nobody has sent it), and fills the frame UIKit gives it, with
+    Music's insets (artwork 16pt in, last control ~30pt from the right edge). Open
+    (`regular`), the lightbulb and the tick sit at the trailing edge. Collapsed (`inline`) there is
+    one 44pt control slot: the pick's own bulb (Put on board for the pick) while the pick is unlit
+    on a board with lights; otherwise the bulb while a board is bound and nobody holds it, otherwise
+    the tick (you hold it, a teammate does, or no board is bound). The bulb is drawn solid like Music's
+    controls, and outlined when off while Differentiate Without Color is on. Both placements put a
+    connection mark on the thumbnail's top-trailing corner: a 14pt neutral disc (`CornerStatusDisc`,
+    shared with `BoardDriverAvatar`'s badge) with a 9pt glyph. `lightbulb.fill` in amber
+    (`brandColors.warning`) is an LED board you hold, `pin.fill` in the brand tone is a board with
+    no lights you hold, `person.fill` in secondary label is a teammate holding it, and no mark
+    (kept mounted at opacity 0, because UIKit snapshots the platter between placements) means free.
+    The shape carries the state, so it survives Differentiate Without Color; amber only ever means
+    lit LEDs. The collapsed platter's climb link also speaks the connection as its accessibility
+    value, plus "Driving the wall" while this phone drives; the open one doesn't, because its bulb
+    already does.
+    Wherever it is false, including the native bar on iOS 18, the floating JS `PersistentQueueBar`
+    carries the same climb, positioned above whichever bar is on screen.
+- Surfaces degrade in `GlassSurface` via `useEffectiveSurfaceMode()`: `glass` (iOS 26) → `blur`
+  (iOS < 26 frosted) → `material`/`solid` (Android, Reduce Transparency). `Button` uses native
+  SwiftUI on iOS, native Compose on Android, and Paper on web; the iOS outlined/tonal tier explicitly
+  falls back to a bordered control when native glass is unavailable.
+
+**Glass material.** Custom toolbar islands over ordinary app content use `glassEffectStyle="regular"`.
+[HIG Materials](https://developer.apple.com/design/human-interface-guidelines/materials) reserves clear
+Liquid Glass for controls over visually rich backgrounds; being a floating toolbar is not enough.
+Keep UIKit-owned headers and tabs native, and avoid adding glass behind content cards or layering it
+inside an existing glass surface. Older-iOS blur, Material and Reduce Transparency fallbacks retain
+their existing surfaces.
+
+**Component routing rule.** Cross-variant components expose one public prop API and route internally
+on `theme.variant`; call sites never change. Don't hand-write the `variant === '…'` branch — use the
+shared primitives in `packages/mobile/src/theme/variants/` (full decision tree + four-axis model in
+its `README.md`):
+
+```tsx
+// Whole subtree differs → createVariantComponent (renders the chosen impl as JSX,
+// so each gets its own fiber/hook list and a live variant flip can't crash).
+export const Card = createVariantComponent('Card', { liquidGlass: CardGlass, material: CardMaterial });
+
+// A single value differs → selectByVariant (a typed Record<UiVariant, T>; a new
+// variant is a compile error at the call site).
+const iconColor = selectByVariant(variant, { liquidGlass: systemColors.label, material: brandColors.primary });
+```
+
+Three rungs, in order of preference: (1) a **token** resolved once in the provider when the value has a
+designer-facing name (`theme.actionColors`, `theme.chartColors`, `theme.sectionCaption`,
+`theme.radii`, `theme.textStyles`); (2) **`createVariantComponent`** for a whole-subtree swap;
+(3) **`selectByVariant`** for a local one-off. A CI guard (`vp run check:mobile-variants`) blocks raw
+`variant === 'material'` / `=== 'liquidGlass'` compares from regrowing in `src/components/`.
+
+## The wall button: "is it lit"
+
+![Before](images/nothing-over-the-climb-before.png)
+
+![After](images/nothing-over-the-climb-after.png)
+
+![The wall button in each state](images/wall-button-states.png)
+
+Captured from main `3b1d9be90c` on 2026-11-02: iPhone 16 Pro Max, dark,
+local seeded Tension board and the simulated Bluetooth adapter. Left to right:
+Put on board without a link, connected but stopped, a solo preview, an open-ended
+drive, and a timed drive with its clock and frost part-way down. These show the
+app's controls, not physical Bluetooth delivery. [Capture provenance](help-screenshots.md).
+
+The wall button has two looks. Plain tonal means a preview or a single lit climb. Frost means
+driving ("You are driving the wall": every climb you pick lights up). A drive started by Put on board
+is timed, so it also shows a small m:ss clock and the frost shrinks toward the bulb as the time runs out
+(width = remaining fraction), refilling to full on each lit climb. Under Reduce Motion it shrinks in 5 s
+steps. A swipe drive ("Light every climb") is open-ended: full frost, no clock, no shrink. So is Light
+automatically's drive (Settings › Board), which keeps the phone driving whenever its link holds the board:
+it is the same frost and label, not a look of its own. There is no separate bar and no "Each pick lights"
+label; the same frost and label say "driving" for every drive.
+The preview cue ("Preview · not on the wall") lives in the top bar's second line, not on the art.
+
+Round 2 still answered "is this climb lit?" in up to four places that could disagree: the header face pill, the bulb's
+fill, the "Lit on the wall" text and the purple button. Now one board control says it, drawn from one model
+(`resolveWallControl`, `docs/climb-view-options.md`, "The board control"). By default it is the full-width wall
+button in the second row; View options › Buttons › Board control can make it the first row's bulb instead. Either
+way it looks like this:
+
+- **Physical driving uses the climb's frosted bokeh.** The play drawer's full-width/workout board button
+  frosts only while its model confirms driving: navigation changes what the wall shows. Connect, re-light,
+  relay, move, a held link without driving, and a swipe awaiting confirmation stay plain. The existing label,
+  bulb, face, tap and swipe behaviour still come from the board-control model. A confirmed drive keeps frost
+  while its busy-wall question is up.
+  "Your climb · no lights", spray walls, Set active and virtual Take/Release wall controls keep their existing
+  colours. A target gym board's own LED metadata decides moves and relays; missing LED metadata remains LED-capable.
+  The glow, in the full-width and the workout button: every
+  lit hold of the climb, turned a quarter clockwise so the
+  climb reads start (left) to finish (right), as a soft blob of the colour the player draws its role (Aura or
+  classic, with the climber's overrides). The blobs screen together on a near-black `#0E0D12` with an 8% white
+  frost and a still 6% grain; the label is white with a soft shadow, over the smallest label-zone fade that keeps it
+  at 4.5:1 (`wall-glow.ts` checks the brightest pixel the glow can put there). The border is a plain 1 pt hairline,
+  white at 20%: Marco wanted a simple border with the busy fill. Light scheme: a pale `#F6F3FB` the blobs multiply
+  into at lower strength, a dark label, black hairline at 12%. Android below 10 can't screen-blend, so the blobs
+  draw normally, fainter. With `wall-frost-motion` enabled, iOS and Android 13+ native builds breathe at 15 fps and
+  glide between climbs over 700 ms at up to 60 fps. Both use the same 3.5-point drift and 14% swell.
+  Reduce Motion disables motion; Battery Saver/Low Power Mode disables breathing. Hidden or
+  backgrounded views stop scheduling frames. Older Android versions, binaries without the module,
+  renderer failures, samples and screenshot mode retain the still renderer. That renderer cross-fades
+  new climbs or playback frames over 200 ms (at once with Reduce Motion).
+  With no holds the button keeps its existing fallback: filled `live` amber while driving, otherwise its
+  existing tonal surface. The climber's own face sits at the trailing edge either way.
+  The geometry, falloff, presets and original grain texture live in `@boardsesh/frosted-bokeh`;
+  the reusable native `FrostedBokeh` component draws them while `WallGlow` owns the button's label fade.
+  The Climbs header's board-held capsule uses the same `WallGlow` background, hold-role
+  colours and mirrored geometry for its current climb. Its label uses the glow's readable
+  foreground and shadow, with a full-width readability fade because the text reaches the pill's edges.
+  That capsule's frost means this phone holds the board,
+  including when a crew's swipes browse;
+  read the Play drawer button's "You are driving the wall" label to identify driving.
+  Missing hold data keeps the plain amber treatment. With no current climb, the held LED header uses just
+  the frost base and grain without inventing hold colours; its words use the frost label colour and shadow.
+  The wall-with-no-lights capsule keeps its existing status surface.
+  Climb-link previews reuse the dark preset behind the board/photo and details at 1200×630,
+  with an OG-only preset: blur/radii scaled by `1200 / 225`, 45% blob opacity,
+  5% frost and 3% grain. A 240px scrim transition protects text; supporting labels keep at least 4.5:1.
+  Public spray-wall previews use photo-mapped hold colours. The native preset stays at its original strength.
+- The bulb at the leading edge in every state, and whoever holds the board as a 24 pt face at the trailing edge, so
+  the label stays centred.
+- **The one place bokeh shows without a drive: the Android lock screen card (#7327).** Its background is always
+  the climb's bokeh, fully grey (blob alpha ×0.80) unless this phone is driving. The thumbnail
+  stays in full colour. Everywhere in the app, frost still means driving.
+- **Swipe to drive: flat progress until driving is confirmed (#7113).** Dragging the button left wipes flat
+  `live` amber in from the trailing edge, under the finger; the pill itself stays still. Its base colour fades in
+  over 12 pt before the edge. The row is drawn twice: words and chevrons covered by amber use the amber's label
+  colour; the rest stay violet on the tonal pill. Past 55% of the width the label becomes "Let go to light every
+  climb". The frosted bokeh appears only while `model.driving` is true, when navigation changes the wall.
+  A peek, drag, or committed swipe awaiting confirmation never shows bokeh. Stopping or browsing removes it
+  immediately, including in the compact workout button, even if swipe progress has not settled.
+- **The swipe's hint.** ‹‹ chevrons, 10 pt glyphs 2 pt apart, 4 pt before the face slot, in the brand violet at 70%
+  (the leading one) and 40%: the mocks' 25% vanished on the dark tonal pill. The one-time peek wipes flat amber in
+  28 pt from the trailing edge over 250 ms, holds 150 ms and springs back (damping 20, stiffness 300), about 700 ms
+  in all; under Reduce Motion the same strip fades in and out where it stands (200 + 300 + 200 ms). Shimmer was
+  rejected (Liquid Glass already has a specular), and so was a draggable knob (it clashes with the face).
+  Current dark references in `docs/images/7113/` were captured from `3b1d9be90c`
+  on 2026-11-02: `hints-dark` shows the flat amber entering, `drag-dark` the
+  release prompt, `driving-dark` the open-ended frost, and `timed-dark` the
+  draining clock and frost. The older light and workout files are historical;
+  they do not illustrate the current swipe treatment.
+
+A tap lights the climb, on Disconnect board disconnects (a warning buzz, and "Board disconnected" for screen
+readers), or on You are driving the wall stops driving and keeps the link (unless Disconnect Bluetooth when driving
+ends is on); a hold opens the board sheet, a named "Board options" action for screen readers. The header keeps only
+the back chip: the back arrow, plus the face of whoever lit the wall when back goes to the wall's climb. It has no
+words, so the climb name keeps its room. Screen readers and the Large Content Viewer get "Back to your climb: …" /
+"Back to the climb on the wall: …".
+
+- **On the wall, not yours (QA #147).** With no live link but presence saying the climb on screen was lit on the wall
+  under an hour ago, the button reads "Put on board", with "On the wall" as its screen-reader status,
+  an outline bulb and no face. It keeps the amber outline and sheet label without driving frost.
+  A tap still connects and lights it again.
+
+- **A face means a live link.** The holder's face, on the button's trailing edge or the bulb's corner, comes only
+  from the model, which needs this phone's link or a crewmate's authoritative one. Board presence alone never puts a
+  face up, so it goes the moment the climber disconnects.
+- **A timed block keeps the chosen look.** With the wall button, the top row becomes ⏮, the same button about 239 pt
+  wide (on a 375 pt phone), and ⏭, over Fell | Sent: same height, radius, colours, leading bulb, centred label and
+  trailing face, so the board art keeps its size. With the bulb, the block keeps ⇄ ⏮ ✓ ⏭ 💡. The two never swap
+  mid-block.
+
+## Logbook and climbs filter sheets
+
+The Profile Logbook puts the quick filter capsule row (see "Quick filter capsules" in [mobile-chrome.md](./mobile-chrome.md#quick-filter-capsules)) under the
+profile tabs: Filters · N, then the climber's pinned capsules, then at most one inline Grade or Angle
+rail and the removable tokens. There is no search field on the page: the climb-name search is the
+first row of the filter sheet, and a typed name shows as a token ("“crimp”") so a filtered list
+always says why. The Climbs list works the same way on every platform, with no title in its
+header either: a second tap on the Climbs tab opens Filters, without the keyboard. In the composed profile header the selected Logbook tab already names the page, so
+the row has no heading of its own. A public profile keeps its "Logbook" heading in the page's
+normal flow; its scope line says "All boards" until a board is picked, then names that board.
+
+The full-height native results list uses the UIKit title inset plus measured padding for these
+supplementary controls. Automatic row anchoring is disabled in this composed native header so
+FlashList does not cancel that padding when the controls are first measured or change height (an
+opening rail changes it too). Its controls use the shared scroll-driven backdrop and clear it when
+the list disappears. Material keeps its results viewport below the entire opaque header.
+
+The Logbook filter sheet is built from the shared filter-sheet parts and applies live, like the
+climbs sheet: X / "Filters" with the feed's own count / Reset. The count is entries, and only on
+the flat feeds: the date-ordered feed's total counts the server's (climb, day) groups, which the
+list regroups by local day, angle and mirror, so it would not match the rows. Its sections are Climb name (names and
+notes), Difficulty (the grade rail), Your ascents (a four-segment All · Sends · Flashes · Attempts
+control, a star minimum, and When presets with Custom From / To rows that can't cross each other or
+today), The climb (board and layout chips when there is a choice to make, the angle rail, the
+setter picker row, Only benchmark climbs) and Sort (Sort by chips and a Descending / Ascending
+order). On someone else's logbook the copy says "Their", never "Your", and the filters and sort last
+the visit: only your own logbook saves them. The setter row pushes a picker route and the sheet
+suspends around it (`useSheetSubRoute`).
+
+On iOS with Liquid Glass, the climbs Filters sheet (Climbs, playlists, smart lists, setter pages)
+draws its body as one SwiftUI `Form`, the grouped look of iOS Settings (#6872,
+`ClimbFilterForm.ios.tsx`). The X / Filters / Reset bar stays our RN `SheetTopBar`.
+- **Opening height.** It opens at half height, with the name field, Recent and the grade rail on
+  screen and the list still visible behind it. Drag it, or focus the name field, for the tall detent.
+- **Controls.** A segmented control only for two or three options (climb type, sort order). Four or
+  more become a menu row with the value on the right: grade accuracy, collection, progress, both
+  star minimums, popularity, sort by. Recent searches are one "Recent" menu row with the current
+  search ticked. Switches are toggle rows with a subtitle. Setters, Hold types and Board region are
+  value-and-chevron rows that push their pickers.
+- **Glass.** The Form's own background is hidden so the sheet's glass shows between the cards. The
+  cards are opaque (`secondarySystemGroupedBackground`): a Form row's default fill is translucent
+  over glass, and in light mode the list behind showed through it.
+- **No pins in the sheet.** Its last row opens Settings › Quick filters, where the chips are switched
+  on and ordered. After any picker round trip the Form comes back at the top: SwiftUI can't scroll a
+  Form to a row.
+
+Android and the Material variant keep the RN sheet with its pin icons.
+
+## Native switch rows and the rest timer sheet
+
+**Native switch rows.** iOS `SwitchRow` measures its wrapping title and subtitle
+inside SwiftUI. Put minimum heights in a native `frame`, not on a React Native
+`Host` with `matchContents`: the host writes its measured height back to Yoga.
+Leave text unrestricted at accessibility sizes, and let React Native own the
+leaf host's safe-area placement. A padded card must cancel its horizontal inset
+once around the whole group of self-insetting controls so labels share one gutter.
+
+Rest timer cadence uses content-width scrolling tabs above a font scale of 1.3,
+matching the iOS segmented control's large-text fallback. Keep the selection
+haptic and same-cadence guard when swapping controls so a tap cannot restart a
+running rest window.
+
+The rest timer sheet uses a bounded 90% detent and a scroll body so its final
+turn-off action stays reachable on short screens and at accessibility text sizes.
+Do not combine its scroll body with content-fitting: the native host proposes an
+unbounded height, leaving overflow outside the scroll viewport.
+
+## Theme consumption pattern
+
+Source: `packages/mobile/src/providers/theme-provider.tsx`.
+
+`useTheme()` returns the resolved theme; `useOptionalTheme()` returns `null` outside a provider (for
+low-level primitives like `Text` that can render before providers mount — e.g. the root error
+boundary). The theme object is the `Theme` type in `packages/mobile/src/providers/theme-provider.tsx`; read it there rather than from a copy here. Its colour, type and spacing fields resolve from the token sources below.
+
+Read tokens at the top of the component and compose with `StyleSheet`. Brand colours, per-scheme
+(`Button` glass branch):
+
+```tsx
+const { radii, brandColors: brand } = useTheme();
+const fillColor = tintColor ?? brand.primaryFill; // #6D28D9 light · #7C3AED dark
+const accentColor = tintColor ?? brand.primary; // #6D28D9 light · #A78BFA dark
+const containerStyle = {
+  borderRadius: radii.button, // 10 glass · 20 material
+  ...(variant === 'filled' && { backgroundColor: fillColor }),
+  ...(variant === 'outlined' && { borderWidth: 1, borderColor: accentColor }),
+};
+```
+
+Surfaces from `systemColors` (`Card` glass branch):
+
+```tsx
+const { systemColors } = useTheme();
+const backgroundStyle = { backgroundColor: systemColors.secondaryBackground };
+// styles.card carries borderRadius.lg (12), padding 16, iOS shadow / Android elevation 2
+```
+
+**Touch feedback** goes through `PressableSurface` (`components/PressableSurface.tsx`): one API that
+renders a native Material **ripple** on Android and a reanimated **scale/opacity spring** (`feedback`
+= `'scale'` | `'opacity'` | `'none'`, `springs.snappy`) on iOS. Don't hand-roll an
+`AnimatedPressable`.
+
+**Canonical primitives** (exported from `components/index.ts`): `Text`, `Button`, `Card`, `ListRow`,
+`Avatar`, `Badge`, `Separator`, `SectionHeader`, `Sheet`, `ModalSheet`, `GlassSurface`,
+`GlassSheetBackground`, `Icon`, `SegmentedControl`, `StarRating`, `Toast`, `CollapsibleSection`,
+`RadioGroup`, `SwitchRow`, `ActivityIndicator`, plus board/climb/queue components. Prefer these over
+raw RN host components.

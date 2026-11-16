@@ -324,7 +324,7 @@ flat amber fallback; the label still says what the next press does.
   hold-colour frost; a connected non-driving holder, preview, crew relay or connect remains plain. The label
   says what the press does, and "You are driving the wall" says supported climb changes light the wall.
   The glow uses the displayed climb's holds (look F1b, `wall-glow.ts`, `WallGlow.tsx`, described in
-  `ai-design-guidelines.md`). Without hold geometry the old fallbacks remain: `live` amber while driving,
+  `mobile-chrome.md`). Without hold geometry the old fallbacks remain: `live` amber while driving,
   tonal violet for other actions, or the amber outline for unlinked wall presence. The tonal fill is 20% of the
   brand violet (`WALL_CONTROL_TONAL_ALPHA`), with at least 4.6:1 label contrast on every Liquid Glass and Material
   sheet (`wall-control-button-contrast.test.ts`). Lightbulb mode keeps its own fill rule (`resolveWallBulbLook`).
