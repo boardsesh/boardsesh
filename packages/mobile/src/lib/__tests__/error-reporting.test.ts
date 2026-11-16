@@ -4,7 +4,6 @@ import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error
 import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
 import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
 import { GraphQLTransportClosedError } from '@boardsesh/graphql-client';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { reportError, reportHandledError } from '../error-reporting';
 import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
@@ -16,6 +15,15 @@ vi.mock('../sentry', () => ({
   captureToSentry: vi.fn(),
   addBreadcrumbToSentry: vi.fn(),
 }));
+
+/** The refusal shape the deleted Expo web selected mode threw. error-reporting
+ * still matches it by name and status, so the filter keeps its test. */
+class BrowserBackendConsumerError extends Error {
+  constructor(readonly status: 'superseded' | 'denied') {
+    super('Selected browser credential is unavailable');
+    this.name = 'BrowserBackendConsumerError';
+  }
+}
 
 const mockedCaptureToSentry = vi.mocked(captureToSentry);
 const mockedAddBreadcrumbToSentry = vi.mocked(addBreadcrumbToSentry);
