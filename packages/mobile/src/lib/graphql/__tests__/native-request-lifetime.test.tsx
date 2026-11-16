@@ -22,6 +22,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { GraphQLClient } from 'graphql-request';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GetMyConnectedAppsResponse } from '@boardsesh/graphql/operations/connected-apps';
+import type { GetUserClimbsQueryResponse } from '@boardsesh/graphql/operations/social';
 import {
   createHeldGraphQLServer,
   createScreenHost,
@@ -48,6 +49,7 @@ import { climbProposalsKey } from '../hooks/use-browse-proposals';
 import { CLIMB_LOST_HOLDS_QUERY_KEY, useClimbLostHolds } from '../hooks/use-climb-lost-holds';
 import { useBoardLiveSessions, useFollowedLiveSessions } from '../hooks/use-live-sessions';
 import { useSessionDetail, useSessionOwnerUserId, useSessionPreview } from '../hooks/use-session-detail';
+import { useUserClimbs } from '../hooks/use-social';
 import { boardLiveSessionsQueryKey, followedLiveSessionsQueryKey } from '../query-keys';
 
 const server = createHeldGraphQLServer();
@@ -72,6 +74,10 @@ const LOST_HOLDS_VARIABLES = {
   setIds: '1',
   angle: 40,
   climbUuid: 'climb-1',
+};
+
+const USER_CLIMBS_ANSWER: GetUserClimbsQueryResponse = {
+  userClimbs: { climbs: [], totalCount: 0, hasMore: false },
 };
 
 const READS: ReadCase[] = [
@@ -142,6 +148,17 @@ const READS: ReadCase[] = [
     data: { session: { id: 'session-1', createdByUserId: 'owner-1' } },
     cached: 'owner-1',
     mount: () => useSessionOwnerUserId('session-1'),
+  },
+  // Group 2 (#7561): the profile Created climbs list. Before #7599 its paged
+  // wrapper read TanStack's signal on phones too, so leaving the profile
+  // mid-fetch cancelled the read. It is a plain useInfiniteQuery again.
+  {
+    name: 'profile created climbs',
+    operationName: 'GetUserClimbs',
+    queryKey: ['userClimbs', 'user-1'],
+    data: USER_CLIMBS_ANSWER,
+    cached: { pages: [USER_CLIMBS_ANSWER.userClimbs], pageParams: [0] },
+    mount: () => useUserClimbs('user-1'),
   },
 ];
 
