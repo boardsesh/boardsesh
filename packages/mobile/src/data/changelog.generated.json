@@ -1,6 +1,13 @@
 {
-  "generatedAt": "2026-11-16T16:07:25.050Z",
+  "generatedAt": "2026-11-16T17:08:33.718Z",
   "entries": [
+    {
+      "prNumber": 7601,
+      "category": "fixed",
+      "title": "Dismiss the bottom-bar hint by tapping its text or the larger ×.",
+      "mergedAt": "2026-11-16T17:04:22Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7601"
+    },
     {
       "prNumber": 7570,
       "category": "fixed",
