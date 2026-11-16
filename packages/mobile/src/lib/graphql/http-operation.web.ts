@@ -9,7 +9,6 @@ const operations = createBrowserHttpOperations({
   captureScope: browserHttpClients.captureRequestView,
   isCurrentView: browserHttpClients.isCurrentView,
   captureResult: browserHttpClients.captureResult,
-  captureErrorDelivery: browserHttpClients.captureErrorDelivery,
   resolveClient: (scope, mode) => (mode === 'offline' ? getOfflineSyncHttpClient(scope) : getHttpClient(scope)),
 });
 

@@ -267,24 +267,3 @@ describe('actual Expo browser fixed-view graphql-request client', () => {
     expect(replacement.isCurrentResult(later)).toBe(true);
   });
 });
-
-describe('actual selected error capture bridge', () => {
-  it('binds the exact SDK error to its original signal before gate composition', async () => {
-    const current = fixture();
-    const signal = new AbortController().signal;
-    current.rawFetch.mockResolvedValueOnce(Response.json({ errors: [{ message: 'Owned rejection' }] }));
-    let error: unknown;
-    try {
-      await current.client.request({ document: query, signal });
-    } catch (caught) {
-      error = caught;
-    }
-    const original = current.captureErrorDelivery(error, signal)!;
-    expect(original).not.toBeNull();
-    expect(original).not.toThrow();
-    expect(current.captureErrorDelivery(error, new AbortController().signal)).toBeNull();
-    expect(current.captureResult(error)).toBeNull();
-    current.dispose();
-    expect(original).toThrow();
-  });
-});

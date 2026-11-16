@@ -108,14 +108,6 @@ export function createBrowserHttpClientFacade(provided: {
           return null;
         }
       },
-      captureErrorDelivery: (_error: unknown, _requestIdentity: AbortSignal) => {
-        try {
-          assertPublicOrLegacy();
-          return assertPublicOrLegacy;
-        } catch {
-          return null;
-        }
-      },
       dispose: () => controller.abort(new BrowserBackendConsumerError('superseded')),
     };
   }
@@ -141,9 +133,6 @@ export function createBrowserHttpClientFacade(provided: {
           isCurrent: () => interactive.isCurrent() && offline.isCurrent(),
           isCurrentResult: (result) => interactive.isCurrentResult(result) || offline.isCurrentResult(result),
           captureResult: (result) => interactive.captureResult(result) ?? offline.captureResult(result),
-          captureErrorDelivery: (error, requestIdentity) =>
-            interactive.captureErrorDelivery(error, requestIdentity) ??
-            offline.captureErrorDelivery(error, requestIdentity),
           dispose() {
             interactive.dispose();
             offline.dispose();
@@ -208,18 +197,6 @@ export function createBrowserHttpClientFacade(provided: {
           if (closed || required()) throw new BrowserBackendConsumerError('superseded');
         };
       return handle ? getRegistry().captureResult(handle, result) : null;
-    },
-    captureErrorDelivery(
-      handle: string | undefined,
-      error: unknown,
-      requestIdentity: AbortSignal,
-    ): (() => void) | null {
-      if (closed) return null;
-      if (handle === undefined && !required())
-        return () => {
-          if (closed || required()) throw new BrowserBackendConsumerError('superseded');
-        };
-      return handle ? getRegistry().captureErrorDelivery(handle, error, requestIdentity) : null;
     },
     queryKey<Key extends readonly unknown[]>(key: Key, handle: string | null | undefined): readonly unknown[] {
       return typeof handle === 'string' && handle.startsWith(BROWSER_HTTP_VIEW_PREFIX)
