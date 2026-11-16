@@ -368,6 +368,19 @@ export default function BoardSelection() {
     [popular?.configs],
   );
 
+  // Uuids of boards whose edit, unfollow or delete is running, confirm dialog
+  // included. A ref, not state, so starting one re-renders nothing. Two things
+  // read it:
+  // - a second edit/unfollow/delete on the same board (the ⋯ and the hold are
+  //   two ways in) runs nothing: two deletes would show two confirms and report
+  //   a failure for the one that lost the race;
+  // - picking that board runs nothing either. Edit mode used to disable the
+  //   card body for this. On a slow connection a tap after confirming Delete
+  //   would make the board active and close the picker, and the delete landing
+  //   afterwards would skip clearing a selection it no longer recognised,
+  //   leaving a deleted board active. Every other board stays pickable.
+  const boardActionsInFlight = useRef<Set<string>>(new Set());
+
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
   // activate. Popular/custom items have no UserBoard, so they go through the
   // custom sheet (CREATE_BOARD) — see onSelectPopular. `pickSource` is the
@@ -375,6 +388,8 @@ export default function BoardSelection() {
   // you follow can also be Near you, and the event should say where you tapped.
   const activateItem = useCallback(
     (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
+      // A no-op, not a toast: the card's own tap haptic has already answered.
+      if (boardActionsInFlight.current.has(item.key)) return;
       const board =
         myBoards.find((b) => b.uuid === item.key) ??
         (nearby?.boards ?? []).find((b) => b.uuid === item.key) ??
@@ -432,6 +447,7 @@ export default function BoardSelection() {
   const onNearbyMenuAction = useCallback(
     (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
       if (!showCardMenus || (action !== 'climb_here' && action !== 'details')) return;
+      if (action === 'climb_here' && boardActionsInFlight.current.has(item.key)) return;
       trackBoardCardAction({ action, via, section: 'nearby' });
       if (action === 'climb_here') onSelectNearbyBoard(item);
       else onNearbyBoardDetails(item);
@@ -444,6 +460,7 @@ export default function BoardSelection() {
   const onSetActiveFromDetails = useCallback(
     (board: UserBoard) => {
       closeBoardDetails();
+      if (boardActionsInFlight.current.has(board.uuid)) return;
       const importRoute = unfinishedSprayWallRoute(board, unfinishedWallUuids);
       if (importRoute) {
         router.push(importRoute);
@@ -510,13 +527,6 @@ export default function BoardSelection() {
     },
     [myBoards, confirmAndDownload, downloadedScopeKeys, unfinishedWallUuids],
   );
-
-  // Uuids of boards whose edit, unfollow or delete is running, confirm dialog
-  // included. A second pick on the same board while the first is still going
-  // (the ⋯ and the hold are two ways in) runs nothing: two deletes would show
-  // two confirms and report a failure for the one that lost the race. A ref,
-  // not state, so starting one re-renders nothing.
-  const boardActionsInFlight = useRef<Set<string>>(new Set());
 
   // One `find` per pick — the shape `onSelectMyBoard` already uses — never per row.
   const runMyBoardAction = useCallback(
@@ -650,6 +660,8 @@ export default function BoardSelection() {
       if (!showCardMenus) return;
       switch (action) {
         case 'climb_here':
+          // The board is being edited, unfollowed or deleted: see boardActionsInFlight.
+          if (boardActionsInFlight.current.has(item.key)) return;
           trackBoardCardAction({ action, via, section: 'your_boards' });
           onSelectMyBoard(item);
           return;

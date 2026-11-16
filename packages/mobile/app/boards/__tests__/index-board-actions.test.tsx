@@ -743,6 +743,71 @@ describe('deleting a board', () => {
     await waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('"Marco garage" deleted', 'success'));
   });
 
+  // Edit mode used to disable the card body. Without that, a tap after
+  // confirming Delete on a slow connection made the board active, and the
+  // delete landing afterwards left a deleted board selected.
+  it('does not pick a board while its delete is running, but still picks another', async () => {
+    state.nearbyBoards = [board({ uuid: 'mine', name: 'Marco garage', ownerId: 'me' })];
+    let finishDelete: (() => void) | undefined;
+    deleteBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledTimes(1));
+    trackMock.mockClear();
+
+    // The card itself, in both carousels it appears in, and its Climb here row.
+    for (const card of screen.getAllByRole('button', { name: 'Marco garage' })) fireEvent.click(card);
+    for (const row of screen.getAllByRole('button', { name: 'climb_here Marco garage' })) fireEvent.click(row);
+    await Promise.resolve();
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
+
+    fireEvent.click(screen.getByRole('button', { name: 'High Point Orlando' }));
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'gym' })));
+
+    await act(async () => {
+      finishDelete?.();
+    });
+  });
+
+  it('picks the board again once its delete was declined', async () => {
+    confirmMock.mockResolvedValueOnce(false);
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marco garage' }));
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'mine' })));
+  });
+
+  it('does not set the board active from its detail sheet while its delete is running', async () => {
+    let finishDelete: (() => void) | undefined;
+    deleteBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledTimes(1));
+
+    act(() => detailProps.last?.onSetActive(myWall));
+    await Promise.resolve();
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishDelete?.();
+    });
+  });
+
   // The guard covers the confirm dialog too: two dialogs for one board would
   // run the delete twice.
   it('ignores a second Delete while the first confirm is still open', async () => {
