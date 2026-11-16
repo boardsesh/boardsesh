@@ -21,12 +21,8 @@
 export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'BetaLinkPreview',
   'BoardClimbRecentSenders',
-  'BoardConnection',
   'BoardHistory',
   'BoardHistoryPage',
-  'BoardPresenceStats',
-  'BoardRecentClimbs',
-  'BoardRecentHistory',
   // The owner's invite link: only the Share sheet of a Followers or Invite-only board asks.
   'BoardShareLink',
   'BoardShareLinkPreview', // Only incoming invite links; screenshot flows do not open one.
@@ -80,14 +76,10 @@ export const QUERIES_NO_CAPTURE_SENDS: readonly string[] = [
   'GetSessionQueueStateNowSlot',
   // Spray-only detail; the recorded capture flows use catalogue boards.
   'GetSprayClimb',
-  'GetSprayWallArchive',
-  'GetSprayWallArt',
   'GetSprayWallDraftRenderData',
   'GetSprayWallForLink',
   'GetSprayWallHoldUsage',
   'GetSprayWallLedSetup',
-  'GetSprayWallLook',
-  'GetSprayWallRenderData',
   'GetSprayWallReports',
   'GetSprayWallTrainingConsent',
   'GetSprayWallWithVersions',

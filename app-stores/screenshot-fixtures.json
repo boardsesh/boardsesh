@@ -5,9 +5,9 @@
   "bytes": 1663568,
   "files": 346,
   "overlay": {
-    "path": "app-stores/screenshot-fixture-overlays/5f3c3eb6e1bee5b153c5cefb4481f8ebc11be7478cb25cf6a1532921699eeacc.json.gz",
-    "sha256": "5f3c3eb6e1bee5b153c5cefb4481f8ebc11be7478cb25cf6a1532921699eeacc",
-    "bytes": 93878,
-    "files": 357
+    "path": "app-stores/screenshot-fixture-overlays/ad5753d51ed4264161b51d129a5ffa4d05d73770fe6ac212cbfdf372b6e68d9c.json.gz",
+    "sha256": "ad5753d51ed4264161b51d129a5ffa4d05d73770fe6ac212cbfdf372b6e68d9c",
+    "bytes": 1534507,
+    "files": 370
   }
 }

@@ -99,8 +99,18 @@ describe('recorded replay overlays', () => {
     const archive = JSON.parse(gunzipSync(bytes).toString()) as { baseSha256: string; files: Record<string, string> };
     expect(archive.baseSha256).toBe(reference.sha256);
     const recordings = Object.entries(archive.files)
-      .filter(([name]) => name !== 'manifest.json')
+      .filter(([name]) => name.startsWith('graphql/'))
       .map(([, content]) => JSON.parse(Buffer.from(content, 'base64').toString()));
+    const manifest = JSON.parse(Buffer.from(archive.files['manifest.json'], 'base64').toString()) as {
+      static: Array<{ file: string; bytes: number }>;
+    };
+    const bundledImages = Object.entries(archive.files).filter(([name]) => name.startsWith('static/'));
+    expect(bundledImages).toHaveLength(5);
+    for (const [file, encoded] of bundledImages) {
+      expect(Buffer.from(encoded, 'base64').byteLength).toBe(
+        manifest.static.find((entry) => entry.file === file)?.bytes,
+      );
+    }
     expect(recordings.filter((recording) => recording.operationName === 'GetCrewFeed')).toHaveLength(4);
     for (const recording of recordings) {
       expect(recording.status).toBe(200);
