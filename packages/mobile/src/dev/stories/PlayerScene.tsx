@@ -1,3 +1,5 @@
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
+import { playContentSideInsets } from '../../components/play-drawer/play-content-side-insets';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { resolveDisplayGrade } from '../../lib/boardsesh-grade-display';
 import { StorySprayBoard } from './StorySprayBoard';
@@ -36,6 +38,7 @@ export function PlayerScene({
 }) {
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const sideInsets = playContentSideInsets('route', useHorizontalSafeArea());
   const [index, setIndex] = useState(0);
   const [mirrored, setMirrored] = useState(false);
   const [favorite, setFavorite] = useState(false);
@@ -79,7 +82,13 @@ export function PlayerScene({
     <View
       style={[
         styles.root,
-        { backgroundColor: systemColors.background, paddingTop: insets.top, paddingBottom: insets.bottom },
+        {
+          backgroundColor: systemColors.background,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: sideInsets.left,
+          paddingRight: sideInsets.right,
+        },
       ]}
     >
       <PlayStageView

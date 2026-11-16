@@ -51,7 +51,7 @@ export default stories;
 
 Set `tab` on fullscreen tab stories to mount the production tab navigator, native headers, tablet rail and foldable split shell. The public story URL redirects internally while retaining its story ID and capture readiness.
 
-Retain the production screen’s content wrappers as well as its chrome: climb lists apply `useHorizontalSafeArea` to their clip bounds, Profile uses `ReadableColumn`, and Session pads its tab content before marking `HorizontalSafeAreaApplied`. Native iPad sidebars and the Duo rail can otherwise cover successfully rendered content. Inspect the raw capture as well as the readiness result; asset readiness does not prove that navigation chrome leaves those assets visible.
+Retain the production screen’s content wrappers as well as its chrome: climb lists apply `useHorizontalSafeArea` to their clip bounds, Profile uses `ReadableColumn`, and Session pads its tab content before marking `HorizontalSafeAreaApplied`. The player scene applies the same measured `playContentSideInsets` route policy as the live player. Shared session-detail presentation bounds its list header and rows together and marks that subtree inset; overlays remain outside those bounds. Native iPad sidebars and the Duo rail can otherwise cover successfully rendered content. Inspect the raw capture as well as the readiness result; asset readiness does not prove that navigation chrome leaves those assets visible.
 
 Use ordinary props and local state for interactions. A view can read theme, translations and layout; it must not require fake auth/query/board providers. Extract shared chrome into a view with explicit props too. Fixtures belong under `src/dev/fixtures` or in the story module, never in the production screen.
 
