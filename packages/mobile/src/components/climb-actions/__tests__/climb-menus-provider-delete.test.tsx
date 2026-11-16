@@ -117,7 +117,6 @@ vi.mock('../../create-climb/use-create-climb-navigation', async (importOriginal)
 });
 
 import { ClimbMenu, ClimbMenusProvider, useClimbMenu } from '../ClimbActionsMenu';
-import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 const climb = { uuid: 'own-climb', name: 'Pinch Traverse', userId: 'viewer', frames: 'p1r12' } as Climb;
 const board = { boardName: 'spray', layoutId: 7, sizeId: 1, setIds: '1', angle: 40 };
@@ -198,7 +197,7 @@ describe('Delete from a row menu, after the menu has closed', () => {
     client.clear();
   });
 
-  it('finishes and says so when the provider unmounts mid-flow, without closing anything', async () => {
+  it('finishes, says so and closes the player when the provider unmounts mid-flow', async () => {
     const tick = deferred<boolean>();
     io.pendingTick.mockReturnValueOnce(tick.promise);
     const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
@@ -214,31 +213,9 @@ describe('Delete from a row menu, after the menu has closed', () => {
     expect(io.confirm).toHaveBeenCalledOnce();
     expect(io.request).toHaveBeenCalledOnce();
     expect(io.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
-    // Closing the player is the unmounted surface's own step.
-    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+    // As before #7547: the flow's follow-up runs whether or not its host is mounted.
+    expect(dismissPlayerAndWait).toHaveBeenCalledOnce();
     view.client.clear();
-  });
-
-  it('writes and says nothing for a late response after sign-out clears the cache', async () => {
-    const response = deferred<unknown>();
-    io.request.mockReturnValueOnce(response.promise);
-    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
-    const { client } = renderRow({ climb, boardConfig: board, dismissPlayerAndWait });
-
-    deleteRow();
-    await waitFor(() => expect(io.request).toHaveBeenCalledOnce());
-    act(() => {
-      invalidateCredentialSnapshots();
-      client.clear();
-    });
-    await act(async () => response.resolve({ deleteClimb: true }));
-    // Settle every continuation the late body could reach.
-    await act(async () => {});
-
-    expect(io.showToast).not.toHaveBeenCalled();
-    expect(io.removeFromDevice).not.toHaveBeenCalled();
-    expect(client.getQueryCache().getAll()).toHaveLength(0);
-    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
   });
 
   it('runs another climb’s Delete while the first is still asking, and ignores a repeat', async () => {

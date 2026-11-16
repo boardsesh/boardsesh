@@ -14,12 +14,7 @@ const ctrl = vi.hoisted(() => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../lib/graphql/hooks/use-delete-climb', () => ({
-  useDeleteClimb: () => ({
-    mutateWithReceipt: async (variables: unknown) => ({
-      result: await ctrl.mutateAsync(variables),
-      assertCurrent: () => {},
-    }),
-  }),
+  useDeleteClimb: () => ({ mutateAsync: ctrl.mutateAsync }),
 }));
 vi.mock('../../../lib/connectivity/connectivity-store', () => ({
   getConnectivitySnapshot: () => ({ effectiveOffline: ctrl.offline }),
@@ -29,7 +24,6 @@ vi.mock('../../../offline/pending-tick', () => ({ hasQueuedTickForClimb: ctrl.ha
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
 
 import { useDeleteClimbAction } from '../use-delete-climb-action';
-import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 const climb = { uuid: 'climb-1' };
 
@@ -198,7 +192,7 @@ describe('useDeleteClimbAction (#5960)', () => {
     ]);
   });
 
-  it('on native, finishes and says so after the player unmounts, without closing it again', async () => {
+  it('finishes, says so and closes the player even after the player unmounts', async () => {
     let answer!: (value: boolean) => void;
     ctrl.confirm.mockImplementationOnce(
       () =>
@@ -221,37 +215,7 @@ describe('useDeleteClimbAction (#5960)', () => {
 
     expect(ctrl.mutateAsync).toHaveBeenCalledOnce();
     expect(ctrl.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
-    expect(onDeleted).not.toHaveBeenCalled();
+    // As before #7547: the flow's follow-up runs whether or not the caller is mounted.
+    expect(onDeleted).toHaveBeenCalledOnce();
   });
-
-  it('on native, sends nothing for a confirm answered after sign-out', async () => {
-    let answer!: (value: boolean) => void;
-    ctrl.confirm.mockImplementationOnce(
-      () =>
-        new Promise<boolean>((resolve) => {
-          answer = resolve;
-        }),
-    );
-    const { result } = renderHook(() => useDeleteClimbAction());
-
-    let pending!: Promise<void>;
-    await act(async () => {
-      pending = result.current(climb, 'spray');
-    });
-    invalidateCredentialSnapshots();
-    await act(async () => {
-      answer(true);
-      await pending;
-    });
-
-    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
-    expect(ctrl.showToast).not.toHaveBeenCalled();
-  });
-});
-
-// The native host keeps its existing credential policy; the real action hook
-// still owns layout cleanup and caller cancellation.
-vi.mock('../../../lib/graphql/use-http-query-scope', () => {
-  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
-  return { useHttpQueryScope: () => scope };
 });

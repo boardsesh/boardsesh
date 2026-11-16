@@ -5,15 +5,11 @@ vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => async (
 // Report there) the sheet is for changing the grade, so it locks to grade and
 // shows no Hide/Grade switch. Anyone else's climb keeps both, starting on Hide.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
 const profileState = vi.hoisted(() => ({ id: null as string | null }));
-const report = vi.hoisted(() => ({
-  send: vi.fn<(variables: unknown, options: { signal?: AbortSignal }) => Promise<unknown>>(),
-  toast: vi.fn(),
-}));
 
 const { passthrough } = vi.hoisted(() => ({
   passthrough: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -44,21 +40,11 @@ vi.mock('../../grade', () => ({
   GradeSingleSelectRail: () => createElement('div', { 'data-testid': 'grade-rail' }),
 }));
 vi.mock('../../tick', () => ({
-  TickNoteField: ({
-    submitBehavior,
-    onChangeText,
-  }: {
-    submitBehavior?: string;
-    onChangeText: (text: string) => void;
-  }) =>
-    createElement('textarea', {
-      'data-testid': 'report-reason',
-      'data-submit-behavior': submitBehavior,
-      onChange: (event: { target: { value: string } }) => onChangeText(event.target.value),
-    }),
+  TickNoteField: ({ submitBehavior }: { submitBehavior?: string }) =>
+    createElement('textarea', { 'data-testid': 'report-reason', 'data-submit-behavior': submitBehavior }),
 }));
 vi.mock('../../../lib/graphql/hooks/use-report-climb', () => ({
-  useReportClimb: () => ({ mutateWithReceipt: report.send, reset: vi.fn(), isPending: false, error: null }),
+  useReportClimb: () => ({ mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null }),
 }));
 vi.mock('../../../lib/graphql/hooks', () => ({
   useGrades: () => ({ data: [] }),
@@ -71,17 +57,16 @@ vi.mock('../../../providers/theme-provider', () => ({
     brandColors: { primaryFill: '#6D28D9', error: '#f00' },
   }),
 }));
-vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: report.toast }) }));
+vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../theme/tokens', () => ({ spacing: { 2: 8, 3: 12, 4: 16, 6: 24 } }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { ClimbReported: 'Climb Reported' } }));
 
 import { ReportClimbSheet } from '../ReportClimbSheet';
-import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 const climb = { uuid: 'climb-1', name: 'Garage project', difficulty: '6b/V4', userId: 'setter-1' } as unknown as Climb;
 
-function renderSheet(onClose = vi.fn()) {
+function renderSheet() {
   return render(
     createElement(ReportClimbSheet, {
       visible: true,
@@ -91,15 +76,13 @@ function renderSheet(onClose = vi.fn()) {
       sizeId: 1,
       setIds: '1',
       angle: 40,
-      onClose,
+      onClose: vi.fn(),
     }),
   );
 }
 
 beforeEach(() => {
   profileState.id = null;
-  report.send.mockReset();
-  report.toast.mockReset();
 });
 
 describe('ReportClimbSheet on your own climb (#5971)', () => {
@@ -120,53 +103,4 @@ describe('ReportClimbSheet on your own climb (#5971)', () => {
     expect(getByTestId('kind-switch').getAttribute('data-selected')).toBe('hide');
     expect(queryByTestId('grade-rail')).toBeNull();
   });
-});
-
-describe('ReportClimbSheet on native, when the sheet goes before the server answers', () => {
-  function submitHeldReport(onClose = vi.fn()) {
-    profileState.id = 'someone-else';
-    let answer!: () => void;
-    report.send.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          answer = () =>
-            resolve({
-              result: { status: 'created', proposal: { weightedUpvotes: 1, requiredUpvotes: 3, status: 'open' } },
-              assertCurrent: () => {},
-            });
-        }),
-    );
-    const view = renderSheet(onClose);
-    fireEvent.change(view.getByTestId('report-reason'), { target: { value: 'The holds came off' } });
-    fireEvent.click(view.getByTestId('sheet-top-bar-trailing'));
-    return { view, onClose, answer: () => answer() };
-  }
-
-  it('still says the report went in, without closing a sheet that is gone', async () => {
-    const { view, onClose, answer } = submitHeldReport();
-    await waitFor(() => expect(report.send).toHaveBeenCalledOnce());
-    view.unmount();
-    await act(async () => answer());
-
-    expect(report.toast).toHaveBeenCalledOnce();
-    expect(report.toast.mock.calls[0][1]).toBe('success');
-    expect(onClose).not.toHaveBeenCalled();
-  });
-
-  it('says nothing for a report answered after sign-out', async () => {
-    const { view, answer } = submitHeldReport();
-    await waitFor(() => expect(report.send).toHaveBeenCalledOnce());
-    view.unmount();
-    act(() => invalidateCredentialSnapshots());
-    await act(async () => answer());
-
-    expect(report.toast).not.toHaveBeenCalled();
-  });
-});
-
-// The native host keeps its existing credential policy; the real action hook
-// still owns layout cleanup and caller cancellation.
-vi.mock('../../../lib/graphql/use-http-query-scope', () => {
-  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
-  return { useHttpQueryScope: () => scope };
 });

@@ -13,7 +13,6 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Proposal } from '@boardsesh/shared-schema';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { getLayoutDisplayName } from '@boardsesh/profile-stats';
 import { rolesGrantAdmin, rolesGrantAdminOrLeader, type CommunityRoleScope } from '@boardsesh/community-roles';
 import { Text } from '../Text';
@@ -34,7 +33,6 @@ import {
 } from './proposal-presenters';
 import { useVoteOnProposal } from '../../lib/graphql/hooks/use-vote-on-proposal';
 import { useResolveProposal } from '../../lib/graphql/hooks/use-resolve-proposal';
-import { useHttpActionScope, type HttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { hapticLight } from '../../lib/haptics';
 import { formatRelativeTime } from '../../lib/format-relative-time';
@@ -59,21 +57,14 @@ type ModerationProposalCardProps = {
   onLongPressClimb: (proposal: Proposal) => ClimbActionsTarget | null | undefined;
 };
 
-export const ModerationProposalCard = memo(function ModerationProposalCard(props: ModerationProposalCardProps) {
-  const actionScope = useHttpActionScope();
-  return <OwnedModerationProposalCard key={actionScope.key} {...props} actionScope={actionScope} />;
-});
-
-function OwnedModerationProposalCard({
+export const ModerationProposalCard = memo(function ModerationProposalCard({
   proposal,
   roles,
   isSignedIn,
   highlighted = false,
   onOpenClimb,
   onLongPressClimb,
-  actionScope,
-}: ModerationProposalCardProps & { actionScope: HttpActionScope }) {
-  const { capture: captureAction } = actionScope;
+}: ModerationProposalCardProps) {
   const { t } = useTranslation('climbs');
   const { t: tFeed } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
@@ -83,8 +74,8 @@ function OwnedModerationProposalCard({
   const confirm = useConfirm();
   const [reasonsExpanded, setReasonsExpanded] = useState(false);
 
-  const { mutateWithReceipt: castVote, isPending: voteIsPending } = useVoteOnProposal();
-  const { mutateWithReceipt: resolveProposal, isPending: resolveIsPending } = useResolveProposal();
+  const { mutate: castVote, isPending: voteIsPending } = useVoteOnProposal();
+  const { mutate: resolveProposal, isPending: resolveIsPending } = useResolveProposal();
 
   const boardConfig = getBoardConfigForPlaylist(proposal.boardType, proposal.layoutId);
   const typeLine = proposalTypeLine(proposal, formatGrade);
@@ -102,71 +93,30 @@ function OwnedModerationProposalCard({
     : null;
 
   const handleOpenClimb = useCallback(() => {
-    let action: ReturnType<typeof captureAction>;
-    try {
-      action = captureAction();
-    } catch {
-      return;
-    }
-    try {
-      action.assertView();
-      hapticLight();
-      action.assertView();
-      onOpenClimb(proposal);
-    } finally {
-      action.finish();
-    }
-  }, [captureAction, onOpenClimb, proposal]);
+    hapticLight();
+    onOpenClimb(proposal);
+  }, [onOpenClimb, proposal]);
 
   const menuTarget = useMemo(() => onLongPressClimb(proposal) ?? null, [onLongPressClimb, proposal]);
 
   const handleToggleReasons = useCallback(() => {
-    let action: ReturnType<typeof captureAction>;
-    try {
-      action = captureAction();
-    } catch {
-      return;
-    }
-    try {
-      action.assertView();
-      hapticLight();
-      action.assertView();
-      setReasonsExpanded((expanded) => !expanded);
-    } finally {
-      action.finish();
-    }
-  }, [captureAction]);
+    hapticLight();
+    setReasonsExpanded((expanded) => !expanded);
+  }, []);
 
   const submitVote = useCallback(
     (value: ProposalVoteValue) => {
-      let action: ReturnType<typeof captureAction>;
-      try {
-        action = captureAction();
-      } catch {
-        return;
-      }
       if (!isSignedIn) {
-        try {
-          action.assertView();
-          showToast(tCommon('proposal.validation.signInToVote'), 'info');
-        } finally {
-          action.finish();
-        }
+        showToast(tCommon('proposal.validation.signInToVote'), 'info');
         return;
       }
       hapticLight();
-      void castVote({ proposalUuid: proposal.uuid, value }, { signal: action.signal })
-        .then((receipt) => {
-          action.assertView();
-          receipt.assertCurrent();
-        })
-        .catch((error: unknown) => {
-          if (action.isCurrent() && !(error instanceof BrowserBackendConsumerError))
-            showToast(t('mobile.moderation.voteError'), 'error');
-        })
-        .finally(action.finish);
+      castVote(
+        { proposalUuid: proposal.uuid, value },
+        { onError: () => showToast(t('mobile.moderation.voteError'), 'error') },
+      );
     },
-    [captureAction, castVote, isSignedIn, proposal.uuid, showToast, t, tCommon],
+    [castVote, isSignedIn, proposal.uuid, showToast, t, tCommon],
   );
 
   const handleSupport = useCallback(() => submitVote(1), [submitVote]);
@@ -178,46 +128,31 @@ function OwnedModerationProposalCard({
       // gated too so a stale closure can never send a resolve the server would
       // reject anyway.
       if (!canModerate) return;
-      let action: ReturnType<typeof captureAction>;
-      try {
-        action = captureAction();
-      } catch {
-        return;
-      }
-      try {
-        const isApprove = status === 'approved';
-        // A `hide` proposal cuts both ways: `proposedValue: 'false'` puts the climb
-        // BACK. Approving that adds a climb to everyone's lists, so it is neither
-        // the hide warning nor a red button.
-        const unhidesTheClimb = isApprove && isUnhideProposal(proposal);
-        const hidesTheClimb = isApprove && proposal.type === 'hide' && !unhidesTheClimb;
-        const confirmed = await confirm({
-          title: t(isApprove ? 'mobile.moderation.confirm.approve.title' : 'mobile.moderation.confirm.reject.title'),
-          message: hidesTheClimb
-            ? t('mobile.moderation.confirm.approve.hideMessage')
-            : unhidesTheClimb
-              ? t('mobile.moderation.confirm.approve.unhideMessage')
-              : t(isApprove ? 'mobile.moderation.confirm.approve.message' : 'mobile.moderation.confirm.reject.message'),
-          confirmLabel: t('mobile.moderation.confirm.confirm'),
-          cancelLabel: tCommon('actions.cancel'),
-          // Approving a hide takes a climb off everyone's lists, and a rejection
-          // closes someone's report — both are worth a red button.
-          destructive: hidesTheClimb || status === 'rejected',
-        });
-        action.assertView();
-        if (!confirmed) return;
-        // Errors toast and refetch from inside the hook, so there is nothing to
-        // pass here — and nothing to lose if this card unmounts mid-request.
-        const receipt = await resolveProposal({ proposalUuid: proposal.uuid, status }, { signal: action.signal });
-        action.assertView();
-        receipt.assertCurrent();
-      } catch {
-        // The mutation hook owns current-view error feedback. Retirement is silent.
-      } finally {
-        action.finish();
-      }
+      const isApprove = status === 'approved';
+      // A `hide` proposal cuts both ways: `proposedValue: 'false'` puts the climb
+      // BACK. Approving that adds a climb to everyone's lists, so it is neither
+      // the hide warning nor a red button.
+      const unhidesTheClimb = isApprove && isUnhideProposal(proposal);
+      const hidesTheClimb = isApprove && proposal.type === 'hide' && !unhidesTheClimb;
+      const confirmed = await confirm({
+        title: t(isApprove ? 'mobile.moderation.confirm.approve.title' : 'mobile.moderation.confirm.reject.title'),
+        message: hidesTheClimb
+          ? t('mobile.moderation.confirm.approve.hideMessage')
+          : unhidesTheClimb
+            ? t('mobile.moderation.confirm.approve.unhideMessage')
+            : t(isApprove ? 'mobile.moderation.confirm.approve.message' : 'mobile.moderation.confirm.reject.message'),
+        confirmLabel: t('mobile.moderation.confirm.confirm'),
+        cancelLabel: tCommon('actions.cancel'),
+        // Approving a hide takes a climb off everyone's lists, and a rejection
+        // closes someone's report — both are worth a red button.
+        destructive: hidesTheClimb || status === 'rejected',
+      });
+      if (!confirmed) return;
+      // Errors toast and refetch from inside the hook, so there is nothing to
+      // pass here — and nothing to lose if this card unmounts mid-request.
+      resolveProposal({ proposalUuid: proposal.uuid, status });
     },
-    [captureAction, confirm, proposal, resolveProposal, t, tCommon, canModerate],
+    [confirm, proposal, resolveProposal, t, tCommon, canModerate],
   );
 
   const handleApprove = useCallback(() => void submitResolve('approved'), [submitResolve]);
@@ -394,7 +329,7 @@ function OwnedModerationProposalCard({
       </Card>
     </View>
   );
-}
+});
 
 /**
  * One half of the support/oppose pair. A `PressableSurface` rather than a
