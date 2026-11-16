@@ -507,6 +507,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
           name={ASCENT_STATUS_ICON[status]}
           size={CLIMB_ROW_DIRECTION_STATUS.iconSize}
           color={systemColors.secondaryLabel}
+          textVariant="caption2"
         />
         <Text
           variant="caption2"

@@ -19,6 +19,8 @@ type StatusEntry = { status: 'flash' | 'send' | 'attempt'; is_ascent: boolean; t
 type Logbook = { logbookByClimbAngle: Map<string, StatusEntry[]> };
 
 const live = vi.hoisted(() => ({
+  // The suite runs as iOS; the Android-mode cases switch this.
+  platform: 'ios' as 'ios' | 'android',
   // Both stores count who is subscribed, so a test can ask what a row costs.
   logbook: { listeners: new Set<() => void>(), current: null as unknown },
   stats: { listeners: new Set<() => void>() },
@@ -64,7 +66,12 @@ vi.mock('react-native', async () => {
     );
   return {
     useWindowDimensions: () => ({ fontScale: live.fontScale }),
-    Platform: { OS: 'ios', select: () => undefined },
+    Platform: {
+      get OS() {
+        return live.platform;
+      },
+      select: () => undefined,
+    },
     PlatformColor: (name: string) => name,
     DynamicColorIOS: (appearances: { light: string }) => appearances.light,
     StyleSheet: { create: <Styles,>(styles: Styles): Styles => styles, flatten: flattenStyle, hairlineWidth: 0.5 },
@@ -382,6 +389,7 @@ beforeEach(() => {
   live.myGrade = { status: 'unknown' };
   live.thumbnailMounts = 0;
   live.fontScale = 1;
+  live.platform = 'ios';
   live.playlistsById = new Map([['p1', { name: 'Project@30' }]]);
 });
 
@@ -779,6 +787,25 @@ describe('accessible names and drag-row geometry', () => {
     if (minHeight === undefined) expect(reserved).toBeUndefined();
     else expect(reserved).toBeCloseTo(minHeight, 6);
   });
+
+  // Android reports any fontScale, 1.3 included, and its Text has no ramp: the name
+  // wraps from the 1.3 threshold and the two reserved lines grow by fontScale itself.
+  it.each([
+    { fontScale: 1.29, expectedLines: '1', minHeight: undefined },
+    { fontScale: 1.3, expectedLines: '2', minHeight: 22 * 1.3 * 2 },
+  ])(
+    'on Android, allows $expectedLines name lines at font scale $fontScale',
+    ({ fontScale, expectedLines, minHeight }) => {
+      live.platform = 'android';
+      live.fontScale = fontScale;
+      const { container } = render(<ClimbListItemContent climb={climb} {...kilter} display={textOnly} />);
+
+      expect(container.querySelector(NAME)?.getAttribute('data-lines')).toBe(expectedLines);
+      const reserved = styleOf(container.querySelector(NAME)).minHeight;
+      if (minHeight === undefined) expect(reserved).toBeUndefined();
+      else expect(reserved).toBeCloseTo(minHeight, 6);
+    },
+  );
 
   it('changes the wrapping limit when system text size changes on a mounted row', () => {
     const row = <ClimbListItemContent climb={climb} {...kilter} display={textOnly} />;

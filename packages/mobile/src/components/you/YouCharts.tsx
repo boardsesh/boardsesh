@@ -646,6 +646,9 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                           color={chartColors.secondaryLabel}
                           numeric
                           numberOfLines={1}
+                          // The same cap `labelFontScale` assumes, so the width
+                          // estimate holds at every text size.
+                          maxFontSizeMultiplier={MAX_LABEL_FONT_SCALE}
                           style={[
                             styles.barTopLabel,
                             labelLayout.rotated
