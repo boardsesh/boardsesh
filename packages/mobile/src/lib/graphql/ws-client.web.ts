@@ -1,4 +1,4 @@
-import { registerClientOperationScope, type Client } from '@boardsesh/graphql-client';
+import type { Client } from '@boardsesh/graphql-client';
 import type {
   Event as WsEvent,
   EventListener as WsEventListener,
@@ -7,7 +7,6 @@ import type {
   SubscribePayload,
 } from 'graphql-ws';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
-import { sameBrowserBackendLeaseOwner } from '@boardsesh/auth-protocol/browser-backend-lease';
 import {
   captureAuthCredentialGeneration,
   getAuthToken,
@@ -185,6 +184,11 @@ subscribeAuthCredentialGenerationChanges((generation) => {
 subscribeBrowserPageRetired(disposeLegacyClient);
 
 function getLegacyWsClient(): Client {
+  // A retired page opens no socket, so a rate-limit retry inside
+  // execute(getWsClient, ...) cannot go out as the account that replaced the
+  // page's own. A sign-in on a page that had no account retires nothing
+  // (#7596 D4): a retry held across it goes out as the new login, like
+  // everything else the page sends after it.
   if (isBrowserPageRetired()) {
     disposeLegacyClient();
     return retiredPageClient;
@@ -310,34 +314,6 @@ export function getWsClient(): Client {
     return unavailable;
   }
 }
-
-// execute(getWsClient, ...) retries only confirmed rate-limit refusals. Pin the
-// intent's view once, so a wait may replace its socket but cannot choose a later
-// account, same-account login, or A -> B -> A revision. Actual socket delivery
-// still requires its own original lease receipt; this metadata guard cannot
-// extend one or replace callers' post-await publication checks.
-registerClientOperationScope(getWsClient, () => {
-  const initial = expoBrowserBackendClient.getSnapshot();
-  const initialOwner = initial.owner ? { ...initial.owner, cursor: { ...initial.owner.cursor } } : null;
-  const selectedAtStart = expoBrowserBackendClient.isSelected();
-  const generation = captureAuthCredentialGeneration();
-  return {
-    getClient: getWsClient,
-    assertCurrent() {
-      const current = expoBrowserBackendClient.getSnapshot();
-      if (
-        current.closed ||
-        !isAuthCredentialGenerationCurrent(generation) ||
-        current.revision !== initial.revision ||
-        expoBrowserBackendClient.isSelected() !== selectedAtStart ||
-        (initialOwner === null
-          ? current.owner !== null
-          : current.owner === null || !sameBrowserBackendLeaseOwner(initialOwner, current.owner))
-      )
-        throw new BrowserBackendConsumerError('superseded');
-    },
-  };
-});
 
 export function disposeWsClient(): void {
   const previousSelected = selected;

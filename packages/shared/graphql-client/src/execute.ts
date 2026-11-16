@@ -1,7 +1,6 @@
 import type { Client } from 'graphql-ws';
 import { GraphQLOperationError, GraphQLTransportClosedError, isLikeCloseEvent, parseRateLimitError } from './errors';
 import { getOperationName } from './operation-name';
-import { captureClientOperationScope, type ClientOperationScope } from './client-operation-scope';
 import {
   MUTATION_TIMEOUT_MS,
   RATE_LIMIT_MAX_RETRIES,
@@ -92,19 +91,8 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
 ): Promise<TData> {
   const opName = getOperationName(operation, 'mutation');
   const options = normalizeExecuteOptions(timeoutOrOptions);
-  let scope: ClientOperationScope | undefined;
-  try {
-    if (typeof client === 'function') scope = captureClientOperationScope(client);
-  } catch (error) {
-    return Promise.reject(error);
-  }
 
   function executeOnce(): Promise<TData> {
-    // Resolve before starting a timeout. A refused view must not call its
-    // getter, subscribe, or leave an otherwise idle mutation timer behind.
-    scope?.assertCurrent();
-    const attemptClient = scope ? scope.getClient() : typeof client === 'function' ? client() : client;
-    scope?.assertCurrent();
     return new Promise<TData>((resolve, reject) => {
       let result: TData | undefined;
       let hasResolved = false;
@@ -122,6 +110,7 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
         fn();
       }
 
+      const attemptClient = typeof client === 'function' ? client() : client;
       unsubscribe = attemptClient.subscribe<TData>(
         { query: operation.query, variables: operation.variables as Record<string, unknown> },
         {
@@ -173,11 +162,8 @@ export function execute<TData = unknown, TVariables = Record<string, unknown>>(
     let retriesUsed = 0;
     for (;;) {
       try {
-        const result = await executeOnce();
-        scope?.assertCurrent();
-        return result;
+        return await executeOnce();
       } catch (error) {
-        scope?.assertCurrent();
         const rateLimit = parseRateLimitError(error);
         if (!rateLimit || retriesUsed >= options.rateLimitRetries) {
           // Not throttled, or out of retries — surface the original error so

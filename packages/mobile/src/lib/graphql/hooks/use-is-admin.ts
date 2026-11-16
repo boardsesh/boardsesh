@@ -1,4 +1,5 @@
-import { useHttpQuery } from '../use-http-query';
+import { useQuery } from '@tanstack/react-query';
+import { getHttpClient } from '../client';
 import { GET_PROFILE_ADMIN_FLAG, type GetProfileAdminFlagQueryResponse } from '../operations';
 
 /**
@@ -11,9 +12,9 @@ import { GET_PROFILE_ADMIN_FLAG, type GetProfileAdminFlagQueryResponse } from '.
  * reads false. Fail-closed is the right default for an admin gate anyway.
  */
 export function useIsAdmin(options?: { enabled?: boolean }): { isAdmin: boolean; isLoading: boolean } {
-  const query = useHttpQuery({
+  const query = useQuery({
     queryKey: ['profileAdminFlag'],
-    queryFn: (_context, operation) => operation.request<GetProfileAdminFlagQueryResponse>(GET_PROFILE_ADMIN_FLAG),
+    queryFn: () => getHttpClient().request<GetProfileAdminFlagQueryResponse>(GET_PROFILE_ADMIN_FLAG),
     select: (data) => data.profile?.isAdmin ?? false,
     enabled: options?.enabled ?? true,
     // One retry only: an old backend rejects this document every time, and the
