@@ -190,7 +190,7 @@ import { iosCampaignPhoneScene, iosCampaignDuoScene } from './lib/ios-campaign-p
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
 import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
-import { waitForIosCaptureReady } from './lib/ios-capture-ready';
+import { launchIosCaptureReady, waitForIosCaptureReady } from './lib/ios-capture-ready';
 import { bootIosCaptureDevice } from './lib/ios-capture-boot';
 import {
   matchScreenshotBoardCandidates,
@@ -1951,10 +1951,10 @@ function readTextIfPresent(path: string): string {
 }
 
 /** The pings so far, waiting until every route has reported or the bound passes. */
-function waitForSmokePings(): SmokePing[] {
+function waitForSmokePings(baseline = 0): SmokePing[] {
   const deadline = Date.now() + SMOKE_PING_WAIT_SECONDS * 1000;
   for (;;) {
-    const pings = parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH));
+    const pings = parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH).slice(baseline));
     if (smokePingsSettled(pings, SMOKE_ROUTES) || Date.now() >= deadline) return pings;
     runCapture('sleep', ['1']);
   }
@@ -1995,6 +1995,8 @@ interface SmokeAttemptInput {
   readCaptureLog: () => string;
   backendSession: ScreenshotBackendSession | null;
   backendLogBaseline: number;
+  /** Ignore content emitted by a terminated app process, while retaining raw evidence. */
+  smokePingBaseline?: number;
 }
 
 /**
@@ -2004,8 +2006,8 @@ interface SmokeAttemptInput {
 function judgeSmokeAttempt(input: SmokeAttemptInput): number {
   const { nativeCrashes, pings, logStreamAlive } = collectSmokeObservations({
     ...input,
-    readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH)),
-    waitForPings: waitForSmokePings,
+    readPings: () => parseSmokePingLog(readTextIfPresent(SMOKE_PING_LOG_PATH).slice(input.smokePingBaseline ?? 0)),
+    waitForPings: () => waitForSmokePings(input.smokePingBaseline),
   });
   const pingProblems = findSmokePingProblems(pings, SMOKE_ROUTES);
 
@@ -2980,10 +2982,11 @@ function captureIosDevice(
     // still in the log. Snapshot the current marker count and wait for it to
     // INCREASE (not merely be present), or device 2+ would skip the readiness wait
     // on a stale marker and capture a blank/loading frame.
-    const homeReadyBaseline = homeReadyMarkerCount();
+    let homeReadyBaseline = homeReadyMarkerCount();
     if (options.cpp || options.flow === 'app-store-campaign')
       runCapture('curl', ['--fail', '--silent', `http://localhost:${SCREENSHOT_READY_PORT}/cpp/set?scene=reset`]);
-    const readinessBaseline = screenshotReadinessCount();
+    let readinessBaseline = screenshotReadinessCount();
+    let smokePingBaseline = 0;
     // Snapshot before the app can talk to the backend, so the gate below judges
     // only this device's traffic (one backend serves the whole run).
     const backendLogBaseline = screenshotBackendLogLineCount();
@@ -2992,32 +2995,36 @@ function captureIosDevice(
     // no OS confirmation dialog. SDK 58's default-launcher fallback starts loading
     // then navigates back to its launcher, resetting the React host. Its explicit
     // initial URL branch returns after loading and preserves the app host.
-    console.log(`${LOG} Launching the app with Metro as its explicit initial URL...`);
-    runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
-
-    // The app auto-signs-in and boots straight to home, so wait for it to get
-    // there before Maestro runs — this is what login.yaml's readiness wait used to
-    // do (now deleted; there's no login screen to gate on).
-    console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
-    // The dev-client's auto-connect to Metro is intermittently flaky in CI — the app
-    // lands on the "Searching for development servers" launcher (or the "Failed to
-    // load app" error) instead of loading the JS. When that happens, re-launch and try
-    // again; each fresh launch re-attempts the connect, and a shard that never recovers
-    // fails hard (rather than capturing the launcher) so it can be re-run.
-    //
-    // Keep the same explicit initial URL on every retry; never open a scheme URL.
-    // Readiness still requires a fresh app marker or ping after this launch.
-    //
-    // Generous per-wait budget: a CI cold bundle build alone is ~35-60s, on top of a
-    // slow simulator boot + auto-sign-in, so 45s (the old iPhone value) timed out before
-    // the app could ever get home.
-    let reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
-    for (let attempt = 1; attempt <= 3 && !reachedHome && !giveUpOnCrash?.(); attempt += 1) {
-      console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
-      runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-      runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv());
-      reachedHome = waitForHomeReady(homeReadyBaseline, readinessBaseline, 120, giveUpOnCrash);
-    }
+    const checkedProcessCommand = (args: string[]): boolean => {
+      const result = runCapture('xcrun', args, simulatorLaunchEnv());
+      if (result.status !== 0) {
+        console.error(`${LOG} FAILED: ${args.join(' ')} exited ${result.status}: ${result.stderr || result.stdout}`);
+      }
+      return result.status === 0;
+    };
+    const reachedHome = launchIosCaptureReady({
+      snapshot: () => {
+        // Termination may take long enough for the old process to emit readiness.
+        // Snapshot after it exits, before launching; retain full logs as evidence.
+        homeReadyBaseline = homeReadyMarkerCount();
+        readinessBaseline = screenshotReadinessCount();
+        smokePingBaseline = readTextIfPresent(SMOKE_PING_LOG_PATH).length;
+        return { homeReadyBaseline, readinessBaseline };
+      },
+      launch: () => {
+        console.log(`${LOG} Launching the app with Metro as its explicit initial URL...`);
+        return checkedProcessCommand(iosSimulatorLaunchArgs(device.udid));
+      },
+      terminate: () => checkedProcessCommand(['simctl', 'terminate', device.udid, APP_ID]),
+      waitReady: (baseline) => {
+        console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
+        return waitForHomeReady(baseline.homeReadyBaseline, baseline.readinessBaseline, 120, giveUpOnCrash);
+      },
+      beforeRetry: (attempt) => {
+        console.log(`${LOG} Not home yet; terminating and re-launching (attempt ${attempt}/3)...`);
+      },
+      giveUp: giveUpOnCrash,
+    });
     if (!reachedHome && options.flow === 'smoke') {
       dumpMetroLogTail();
       return judgeSmokeAttempt({
@@ -3029,6 +3036,7 @@ function captureIosDevice(
         logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
+        smokePingBaseline,
       });
     }
     if (!reachedHome) {
@@ -3120,6 +3128,7 @@ function captureIosDevice(
         logStreamAlive: () => deviceLogStreamAlive(deviceLogStream?.pid),
         backendSession,
         backendLogBaseline,
+        smokePingBaseline,
       });
       captureSucceeded = smokeStatus === 0;
       return smokeStatus;

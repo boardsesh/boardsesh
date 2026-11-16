@@ -16,3 +16,31 @@ export function waitForIosCaptureReady({
   }
   return false;
 }
+/** Termination must finish before taking the next process's evidence boundary. */
+export function launchIosCaptureReady<Baseline>({
+  snapshot,
+  launch,
+  terminate,
+  waitReady,
+  beforeRetry,
+  giveUp = () => false,
+}: {
+  snapshot: () => Baseline;
+  launch: () => boolean;
+  terminate: () => boolean;
+  waitReady: (baseline: Baseline) => boolean;
+  beforeRetry: (attempt: number) => void;
+  giveUp?: () => boolean;
+}): boolean {
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    if (attempt > 0) {
+      if (giveUp()) return false;
+      beforeRetry(attempt);
+      if (!terminate()) return false;
+    }
+    const baseline = snapshot();
+    if (!launch()) return false;
+    if (waitReady(baseline)) return true;
+  }
+  return false;
+}
