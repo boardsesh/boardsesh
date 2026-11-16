@@ -21,6 +21,7 @@ import type { GpuFallbackReason } from '../lib/board-render/gpu-telemetry';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
 import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
+import { supportsAuraGpu } from '@boardsesh/board-look';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import { useNativeClimbRender } from '../hooks/use-native-climb-render';
@@ -240,8 +241,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     (!gpuTransition || NativeMotionClimbOverlayGPU !== null) &&
     !filledStyle &&
     (playSurface || editorSurface) &&
-    boardName === 'kilter' &&
-    layoutId === 8;
+    supportsAuraGpu({ boardName, layoutId, catalogueNative: climbOverlayGpuApiVersion >= 5 });
   const {
     overlayUri,
     overlayLoadKey,
