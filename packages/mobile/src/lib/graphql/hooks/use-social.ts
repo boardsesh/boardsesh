@@ -1,12 +1,6 @@
 import { REQUEST_FOLLOW, type PrivacyRelationship, type PrivacySettings } from '@boardsesh/graphql/operations/privacy';
 import { useMemo } from 'react';
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQueries,
-  useQueryClient,
-  type QueryFunctionContext,
-} from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   VOTE,
   GET_COMMENTS,
@@ -36,9 +30,6 @@ import {
 } from '@boardsesh/graphql/operations';
 import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
-import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
-import { useHttpMutation } from '../use-http-mutation';
-import { useHttpQueryScope, type HttpQueryScope } from '../use-http-query-scope';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 import { useToggleAuthorFollow } from './use-followed-authors';
 import { updateUserFollowCaches } from './user-follow-cache';
@@ -47,12 +38,12 @@ const SOCIAL_PAGE_SIZE = 30;
 
 /** Public social profile for a user, including follower/following counts. */
 export function usePublicProfile(userId: string | undefined, enabled = true) {
-  return useHttpQuery({
+  return useQuery({
     queryKey: ['publicProfile', userId],
-    queryFn: async (_context, operation) => {
+    queryFn: async () => {
       if (!userId) throw new Error('Cannot load a public profile without a user id.');
       const variables: GetPublicProfileQueryVariables = { userId };
-      const response = await operation.request<GetPublicProfileQueryResponse, GetPublicProfileQueryVariables>(
+      const response = await getHttpClient().request<GetPublicProfileQueryResponse, GetPublicProfileQueryVariables>(
         GET_PUBLIC_PROFILE,
         variables,
       );
@@ -64,15 +55,15 @@ export function usePublicProfile(userId: string | undefined, enabled = true) {
 
 /** Followers for a user profile, paginated by offset. */
 export function useFollowers(userId: string | undefined, enabled = true) {
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: ['followers', userId],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       if (!userId) throw new Error('Cannot load followers without a user id.');
       const variables: GetFollowersQueryVariables = {
         input: { userId, limit: SOCIAL_PAGE_SIZE, offset: Number(pageParam) },
       };
-      const response = await operation.request<GetFollowersQueryResponse, GetFollowersQueryVariables>(
+      const response = await getHttpClient().request<GetFollowersQueryResponse, GetFollowersQueryVariables>(
         GET_FOLLOWERS,
         variables,
       );
@@ -86,15 +77,15 @@ export function useFollowers(userId: string | undefined, enabled = true) {
 
 /** Users a profile follows, paginated by offset. */
 export function useFollowing(userId: string | undefined, enabled = true) {
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: ['following', userId],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       if (!userId) throw new Error('Cannot load following without a user id.');
       const variables: GetFollowingQueryVariables = {
         input: { userId, limit: SOCIAL_PAGE_SIZE, offset: Number(pageParam) },
       };
-      const response = await operation.request<GetFollowingQueryResponse, GetFollowingQueryVariables>(
+      const response = await getHttpClient().request<GetFollowingQueryResponse, GetFollowingQueryVariables>(
         GET_FOLLOWING,
         variables,
       );
@@ -110,15 +101,15 @@ export function useFollowing(userId: string | undefined, enabled = true) {
 export function useSearchUsers(query: string, enabled = true) {
   const trimmedQuery = query.trim();
 
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: ['searchUsers', trimmedQuery],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       if (trimmedQuery.length < 2) throw new Error('Cannot search users with fewer than 2 characters.');
       const variables: SearchUsersQueryVariables = {
         input: { query: trimmedQuery, limit: SOCIAL_PAGE_SIZE, offset: Number(pageParam) },
       };
-      const response = await operation.request<SearchUsersQueryResponse, SearchUsersQueryVariables>(
+      const response = await getHttpClient().request<SearchUsersQueryResponse, SearchUsersQueryVariables>(
         SEARCH_USERS,
         variables,
       );
@@ -198,18 +189,16 @@ export function useUserClimbs(userId: string | undefined, enabled = true) {
  */
 export function useVote() {
   const queryClient = useQueryClient();
-  return useHttpMutation({
-    mutationFn: async (input: VoteMutationVariables['input'], operation) => {
-      const response = await operation.request<VoteMutationResponse>(VOTE, { input });
+  return useMutation({
+    mutationFn: async (input: VoteMutationVariables['input']) => {
+      const response = await getHttpClient().request<VoteMutationResponse>(VOTE, { input });
       return response.vote;
     },
-    onSuccess: (summary, _variables, _context, operation) => {
-      operation
-        .cache(queryClient)
-        .setQueriesData<GetBulkVoteSummariesQueryResponse['bulkVoteSummaries']>(
-          { queryKey: ['bulkVoteSummaries'] },
-          (old) => old?.map((entry) => (entry.entityId === summary.entityId ? summary : entry)),
-        );
+    onSuccess: (summary) => {
+      queryClient.setQueriesData<GetBulkVoteSummariesQueryResponse['bulkVoteSummaries']>(
+        { queryKey: ['bulkVoteSummaries'] },
+        (old) => old?.map((entry) => (entry.entityId === summary.entityId ? summary : entry)),
+      );
     },
   });
 }
@@ -222,30 +211,20 @@ type BulkVoteSummaryChunkResult = {
 };
 
 /** One ≤100-ID request, cached and retried independently of its siblings. */
-function bulkVoteSummaryChunkQuery(
-  scope: HttpQueryScope,
-  entityType: SocialEntityType,
-  chunk: string[],
-  enabled: boolean,
-) {
+function bulkVoteSummaryChunkQuery(entityType: SocialEntityType, chunk: string[], enabled: boolean) {
   return {
     // Sorted so the key is order-independent *within* a chunk (the request
     // itself keeps the caller's order). Chunk boundaries still follow the
     // caller's order, which is what keeps an append-only feed's earlier
     // chunks cached as it pages.
-    queryKey: scope.key(['bulkVoteSummaries', entityType, [...chunk].sort()]),
-    queryFn: async (context: QueryFunctionContext): Promise<BulkVoteSummaries> => {
-      // Native reads leave TanStack's signal alone, so one whose feed unmounts
-      // still lands in the cache (see `callerContext` in use-http-query.ts).
-      const operation = scope.create(scope.scoped ? { signal: context.signal } : undefined);
-      operation.assertView();
-      const response = await operation.request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
+    queryKey: ['bulkVoteSummaries', entityType, [...chunk].sort()],
+    queryFn: async (): Promise<BulkVoteSummaries> => {
+      const response = await getHttpClient().request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
         input: { entityType, entityIds: chunk },
       });
-      operation.assertDeliveries();
       return response.bulkVoteSummaries;
     },
-    enabled: enabled && scope.isReady(),
+    enabled,
   };
 }
 
@@ -287,7 +266,6 @@ function combineVoteSummaryChunks(results: BulkVoteSummaryChunkResult[]) {
  * needs per-chunk state should use `useQueries` directly.
  */
 export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: string[], enabled = true) {
-  const scope = useHttpQueryScope();
   // Chunked once per list change rather than per render. Memoized on the array
   // reference, so a caller that builds its list inline
   // (`ticks.map((tick) => tick.uuid)`) re-chunks every render — harmless,
@@ -295,7 +273,7 @@ export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: st
   // feed screens that hand over the long lists already memoize them.
   const chunks = useMemo(() => batchVoteSummaryEntityIds(entityIds), [entityIds]);
   const { summaries, refetchChunks } = useQueries({
-    queries: chunks.map((chunk) => bulkVoteSummaryChunkQuery(scope, entityType, chunk, enabled)),
+    queries: chunks.map((chunk) => bulkVoteSummaryChunkQuery(entityType, chunk, enabled)),
     combine: combineVoteSummaryChunks,
   });
 
@@ -313,10 +291,10 @@ export function useBulkVoteSummaries(entityType: SocialEntityType, entityIds: st
 
 /** Comment thread for a social entity. */
 export function useComments(entityType: SocialEntityType, entityId: string | undefined, enabled = true) {
-  return useHttpQuery({
+  return useQuery({
     queryKey: ['comments', entityType, entityId],
-    queryFn: async (_context, operation) => {
-      const response = await operation.request<GetCommentsQueryResponse>(GET_COMMENTS, {
+    queryFn: async () => {
+      const response = await getHttpClient().request<GetCommentsQueryResponse>(GET_COMMENTS, {
         input: { entityType, entityId },
       });
       return response.comments;
@@ -328,16 +306,15 @@ export function useComments(entityType: SocialEntityType, entityId: string | und
 /** Add a comment, refreshing the thread + the session feed's comment counts. */
 export function useAddComment() {
   const queryClient = useQueryClient();
-  return useHttpMutation({
-    mutationFn: async (input: AddCommentMutationVariables['input'], operation) => {
-      const response = await operation.request<AddCommentMutationResponse>(ADD_COMMENT, { input });
+  return useMutation({
+    mutationFn: async (input: AddCommentMutationVariables['input']) => {
+      const response = await getHttpClient().request<AddCommentMutationResponse>(ADD_COMMENT, { input });
       return response.addComment;
     },
-    onSuccess: async (_data, variables, _context, operation) => {
-      const cache = operation.cache(queryClient);
-      await cache.invalidateQueries({ queryKey: ['comments', variables.entityType, variables.entityId] });
-      await cache.invalidateQueries({ queryKey: ['activityFeed'] });
-      await cache.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['comments', variables.entityType, variables.entityId] });
+      void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
     },
   });
 }

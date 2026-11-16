@@ -1,4 +1,4 @@
-import { ClientError, GraphQLClient } from 'graphql-request';
+import { GraphQLClient } from 'graphql-request';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ resolve: vi.fn(), offline: vi.fn() }));
@@ -112,32 +112,5 @@ describe('native-shaped original HTTP operation cancellation with the installed 
     expect(JSON.parse((performFetch.mock.calls[1][1] as RequestInit).body as string).variables).toEqual({
       nativeVariable: 2,
     });
-  });
-});
-
-describe('native error identity compatibility', () => {
-  it.each(['server', 'fetch'] as const)('rethrows the exact original native %s error', async (kind) => {
-    const operation = createHttpOperation(undefined);
-    const failure = new Error('Owned native network failure');
-    let observed: unknown;
-    client.requestConfig.responseMiddleware = (error) => {
-      observed = error;
-    };
-    if (kind === 'server')
-      performFetch.mockResolvedValueOnce(Response.json({ errors: [{ message: 'Owned rejection' }] }));
-    else performFetch.mockRejectedValueOnce(failure);
-    let error: unknown;
-    try {
-      await operation.request(document);
-    } catch (caught) {
-      error = caught;
-    }
-    if (kind === 'server') {
-      expect(error).toBeInstanceOf(ClientError);
-      expect(error).toBe(observed);
-    } else expect(error).toBe(failure);
-    expect(() => operation.assertErrorDeliveries(error)).not.toThrow();
-    operation.dispose();
-    expect(() => operation.assertErrorDeliveries(error)).toThrow();
   });
 });

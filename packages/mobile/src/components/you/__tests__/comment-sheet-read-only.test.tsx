@@ -18,10 +18,6 @@ vi.mock('../../PressableSurface', async () => {
 });
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-vi.mock('../../../lib/graphql/use-http-query-scope', () => {
-  const scope = { scoped: false, scope: undefined, assertView: () => {}, isReady: () => true };
-  return { useHttpQueryScope: () => scope };
-});
 import { createElement, type ReactNode } from 'react';
 
 const addComment = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));

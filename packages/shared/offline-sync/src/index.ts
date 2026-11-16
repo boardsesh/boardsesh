@@ -418,6 +418,3 @@ export type { OfflineBoardScope, OfflineBoardLike } from './offline-board-key';
 
 export { mirrorSavedClimb } from './sync/saved-climb-mirror';
 export { removeDeletedClimbLocally } from './sync/deleted-climb-local';
-
-export { holdSyncRequest, isSyncRequestHeld } from './network/request-context';
-export type { CapturedSyncRequest, CapturedSyncSession } from './network/request-context';

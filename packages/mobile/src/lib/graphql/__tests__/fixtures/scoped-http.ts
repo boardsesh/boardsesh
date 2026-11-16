@@ -72,12 +72,9 @@ export function createScopedHttpFixture() {
     captureScope: facade.captureRequestView,
     isCurrentView: facade.isCurrentView,
     captureResult: facade.captureResult,
-    captureErrorDelivery: facade.captureErrorDelivery,
     resolveClient: (scope) => facade.getHttpClient(scope),
   });
   return {
-    operations,
-    facade,
     backend,
     issueLease,
     performFetch,
