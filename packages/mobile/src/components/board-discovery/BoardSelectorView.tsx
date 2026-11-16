@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
 import { SHELF_SECTION_GAP } from '../ShelfHeader';
 import { Text } from '../Text';
+import { PickerTouchContext } from './picker-touch';
 
 /**
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
@@ -60,13 +61,21 @@ export function BoardSelectorView({
 }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
+  // The climber's first touch, a tap or a drag: until then Near you may give
+  // back space it held (NearbyReservedSlot), since no finger is on its way.
+  const touched = useRef(false);
+  const noteTouch = useCallback(() => {
+    touched.current = true;
+  }, []);
   return (
-    <>
+    <PickerTouchContext value={touched}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         style={styles.flex}
         contentContainerStyle={[styles.container, { paddingBottom: scrollBottomPadding }]}
         showsVerticalScrollIndicator={false}
+        onTouchStart={noteTouch}
+        onScrollBeginDrag={noteTouch}
       >
         {activeSprayName != null ? (
           <PressableSurface
@@ -127,7 +136,7 @@ export function BoardSelectorView({
       </ScrollView>
 
       {overlays}
-    </>
+    </PickerTouchContext>
   );
 }
 

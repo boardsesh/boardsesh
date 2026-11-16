@@ -90,6 +90,7 @@ import { textStylesByVariant, type TextVariant } from '../../../theme/typography
 import { layOutRendered } from '../../../../test/yoga-rendered-layout';
 import { DISCOVERY_CARD_WIDTH } from '../BoardDiscoveryCardView';
 import { NearbyReservedSlot } from '../NearbyReservedSlot';
+import { PickerTouchContext } from '../picker-touch';
 
 afterEach(() => {
   cleanup();
@@ -100,12 +101,24 @@ function styleOf(element: Element | null): Record<string, unknown> {
   return JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
 }
 
-function slot(props: { searching: boolean; quiet: boolean }) {
-  return (
+/** The picker's touch, as BoardSelectorView keeps it; null renders outside a picker. */
+type Touch = { current: boolean } | null;
+
+function slot(props: { searching: boolean; quiet: boolean }, touch: Touch = { current: true }) {
+  const content = (
     <NearbyReservedSlot {...props}>
       <p>answer</p>
     </NearbyReservedSlot>
   );
+  return touch === null ? content : <PickerTouchContext value={touch}>{content}</PickerTouchContext>;
+}
+
+/** Searches, draws 232pt of placeholders, then answers. */
+function answer(quiet: boolean, touch: Touch) {
+  const { rerender } = render(slot({ searching: true, quiet }, touch));
+  reportPlaceholderHeight(232);
+  rerender(slot({ searching: false, quiet }, touch));
+  return styleOf(screen.getByTestId('near-you-slot'));
 }
 
 function reportPlaceholderHeight(height: number) {
@@ -144,19 +157,43 @@ describe('NearbyReservedSlot', () => {
     expect(placeholder.getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('keeps the quiet line in the space the placeholders held, centred', () => {
-    const { rerender } = render(slot({ searching: true, quiet: true }));
-    reportPlaceholderHeight(232);
-    rerender(slot({ searching: false, quiet: true }));
+  // No finger on its way to a row yet: a quiet line ("No other boards within
+  // 20 km", a search that failed, no fix) gives the space back.
+  it("gives a quiet answer's space back while the picker is untouched", () => {
+    expect(answer(true, { current: false })).toEqual({});
     expect(screen.getByText('answer')).toBeTruthy();
-    expect(styleOf(screen.getByTestId('near-you-slot'))).toEqual({ minHeight: 232, justifyContent: 'center' });
   });
 
-  it('holds at least that height under the cards, from the top', () => {
-    const { rerender } = render(slot({ searching: true, quiet: false }));
+  it('keeps the quiet line in the space the placeholders held, centred, once the picker was touched', () => {
+    expect(answer(true, { current: true })).toEqual({ minHeight: 232, justifyContent: 'center' });
+  });
+
+  // A story or a test has no touch to read: nothing moves.
+  it('keeps the space outside a picker', () => {
+    expect(answer(true, null)).toEqual({ minHeight: 232, justifyContent: 'center' });
+  });
+
+  it.each([
+    ['untouched', false],
+    ['touched', true],
+  ])('holds at least that height under the cards, from the top (%s)', (_name, touched) => {
+    expect(answer(false, { current: touched })).toEqual({ minHeight: 232 });
+  });
+
+  // Decided when the answer lands: a touch after it changes nothing.
+  it('keeps what it decided when the answer landed through later touches', () => {
+    const touch = { current: false };
+    const { rerender } = render(slot({ searching: true, quiet: true }, touch));
     reportPlaceholderHeight(232);
-    rerender(slot({ searching: false, quiet: false }));
-    expect(styleOf(screen.getByTestId('near-you-slot'))).toEqual({ minHeight: 232 });
+    rerender(slot({ searching: false, quiet: true }, touch));
+    touch.current = true;
+    rerender(slot({ searching: false, quiet: true }, touch));
+    expect(styleOf(screen.getByTestId('near-you-slot'))).toEqual({});
+    // A new search holds the space again, and decides again when it answers.
+    rerender(slot({ searching: true, quiet: true }, touch));
+    reportPlaceholderHeight(232);
+    rerender(slot({ searching: false, quiet: true }, touch));
+    expect(styleOf(screen.getByTestId('near-you-slot'))).toEqual({ minHeight: 232, justifyContent: 'center' });
   });
 
   // A cached answer: nothing was drawn before it, so there is nothing to hold.

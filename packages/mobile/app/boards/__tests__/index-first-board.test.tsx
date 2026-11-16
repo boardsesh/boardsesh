@@ -905,6 +905,8 @@ describe("the ordinary picker's Near you", () => {
     render(createElement(BoardSelection));
 
     expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    // Location off: Near you holds no space at all.
+    expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
     const banner = screen.getByTestId('location-banner');
     expect(banner.getAttribute('data-permission')).toBe('ask');
     const yourBoards = screen.getByText('mobile.discovery.yourBoardsTitle');
@@ -928,6 +930,7 @@ describe("the ordinary picker's Near you", () => {
 
     expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
     expect(screen.getByTestId('location-banner').getAttribute('data-permission')).toBe('blocked');
+    expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
     fireEvent.click(screen.getByText('banner:settings'));
     expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
   });

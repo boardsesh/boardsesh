@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { spacing } from '../../theme/tokens';
 import { RAIL_CARD_GAP } from '../board-look/board-look-card-metrics';
 import { BoardDiscoveryCardPlaceholder } from './BoardDiscoveryCardView';
+import { PickerTouchContext } from './picker-touch';
 
 /** Enough placeholder cards to run past the edge of any phone, as the real rail does. */
 const PLACEHOLDER_KEYS = ['first', 'second', 'third'] as const;
@@ -21,22 +22,35 @@ type NearbyReservedSlotProps = {
  * second or three after the picker opens, which is when most Your boards picks
  * land, so whatever it answers must not move the rows under the climber's
  * thumb. While it searches, a row of placeholder cards as tall as the real
- * ones; once it answers, the content keeps at least that height: the cards, or
- * the quiet line ("Nothing within 20 km", a failed search) centred in it. A
- * search that answers before any placeholder was drawn (a cached answer) holds
- * nothing, since nothing was there to hold.
+ * ones. Then:
+ * - cards keep at least that height;
+ * - a quiet line ("No other boards within 20 km", a failed search) gives the
+ *   space back while the climber hasn't touched the picker (no finger is on its
+ *   way to a row), and keeps it, the line centred, once they have
+ *   (`PickerTouchContext`), decided when the answer lands;
+ * - an answer with no placeholder before it (a cached one) holds nothing,
+ *   since nothing was there to hold.
  */
 export function NearbyReservedSlot({ searching, quiet, children }: NearbyReservedSlotProps) {
   const { t } = useTranslation('boards');
+  const touched = useContext(PickerTouchContext);
   const [reservedHeight, setReservedHeight] = useState<number | null>(null);
+  const [quietGivesSpaceBack, setQuietGivesSpaceBack] = useState(false);
   const onPlaceholderLayout = useCallback((event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
     setReservedHeight((current) => (current === height ? current : height));
   }, []);
-  const holdStyle = useMemo(
-    () => (reservedHeight === null ? undefined : [{ minHeight: reservedHeight }, quiet ? styles.centred : null]),
-    [reservedHeight, quiet],
-  );
+  // When the answer lands, before it paints: whether a quiet one gives the
+  // space back. Outside a picker (no touch to read), it never does.
+  const wasSearching = useRef(searching);
+  useLayoutEffect(() => {
+    if (wasSearching.current && !searching) setQuietGivesSpaceBack(touched !== null && !touched.current);
+    wasSearching.current = searching;
+  }, [searching, touched]);
+  const holdStyle = useMemo(() => {
+    if (reservedHeight === null || (quiet && quietGivesSpaceBack)) return undefined;
+    return [{ minHeight: reservedHeight }, quiet ? styles.centred : null];
+  }, [reservedHeight, quiet, quietGivesSpaceBack]);
 
   if (searching) {
     return (

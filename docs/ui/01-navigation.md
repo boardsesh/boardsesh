@@ -206,9 +206,10 @@ system prompt can still ask and Open Settings once only Settings can (in a
 browser, a refusal is final: the line shows alone). Its button sends no event of
 its own: the opening's `locationStatus` and the picks' `section` tell the two
 layouts apart. While Near you searches, placeholder cards as tall as its cards
-hold its space, and the answer keeps at least that height (cards, or the quiet
-line centred in it), so Your boards never moves under a pick that lands as the
-search answers. Under "Where do you climb?" location waits for "At a gym": it is
+hold its space, so Your boards never moves under a pick that lands as the search
+answers: cards keep at least that height, and a quiet line (nothing new within
+20 km, a failed search) keeps it too, centred, once the climber has touched the
+picker; before any touch it gives the space back. Under "Where do you climb?" location waits for "At a gym": it is
 not read on open or when the app comes back. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
 `sameConfig` compares board type, layout, size and hold sets. A failed
 restoration records unknown (`null`) rather than claiming there was no board.
