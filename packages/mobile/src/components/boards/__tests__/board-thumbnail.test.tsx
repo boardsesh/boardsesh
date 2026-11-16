@@ -15,6 +15,7 @@ const ctrl = vi.hoisted(() => ({
   photoOnDisk: false,
   resolveDownload: null as ((path: string | null) => void) | null,
   downloads: 0,
+  privacyGeneration: 1,
 }));
 
 vi.mock('react-native', async () => {
@@ -73,6 +74,9 @@ vi.mock('../../../providers/theme-provider', () => ({
 }));
 vi.mock('../../../lib/board-details', () => ({ getBoardRenderData: () => ctrl.renderData }));
 vi.mock('../../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
+vi.mock('../../../lib/spray/spray-privacy-generation', () => ({
+  sprayPrivacyGeneration: () => `generation-${ctrl.privacyGeneration}`,
+}));
 vi.mock('../../../lib/spray/spray-photo-cache', () => ({
   tryGetSprayPhotoPathSync: () => (ctrl.photoOnDisk ? '/cache/spray.jpg' : null),
   ensureSprayPhotoCached: () => {
@@ -102,6 +106,7 @@ beforeEach(() => {
   ctrl.photoOnDisk = false;
   ctrl.resolveDownload = null;
   ctrl.downloads = 0;
+  ctrl.privacyGeneration = 1;
 });
 afterEach(cleanup);
 
@@ -196,6 +201,25 @@ describe('BoardThumbnail', () => {
     });
     expect(screen.queryByTestId('board-art')).toBeNull();
     expect(container.querySelector('[data-icon="camera"]')).not.toBeNull();
+  });
+
+  it('forgets a finished download when the wall is withdrawn and registered again', async () => {
+    ctrl.renderData = { boardWidth: 3000, boardHeight: 4000, backgroundImageKeys: [sprayBackgroundKey(9001, 7)] };
+    const { rerender } = render(<BoardThumbnail board={SPRAY} size="regular" />);
+    await act(async () => {
+      ctrl.resolveDownload?.('/cache/spray.jpg');
+    });
+    expect(screen.getByTestId('board-art')).toBeTruthy();
+    // Same version, same background key, but a new privacy generation: the old
+    // download no longer vouches for the file, so it asks the cache again.
+    ctrl.privacyGeneration = 2;
+    rerender(<BoardThumbnail board={{ ...SPRAY }} size="regular" />);
+    expect(screen.queryByTestId('board-art')).toBeNull();
+    expect(ctrl.downloads).toBe(2);
+    await act(async () => {
+      ctrl.resolveDownload?.('/cache/spray.jpg');
+    });
+    expect(screen.getByTestId('board-art')).toBeTruthy();
   });
 
   it('shows the camera for a spray wall the registry has not loaded', () => {

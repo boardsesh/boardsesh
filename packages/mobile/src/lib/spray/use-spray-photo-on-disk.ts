@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { parseSprayBackgroundKey, sprayPhotoFileName } from './spray-photo-keys';
 import { ensureSprayPhotoCached, tryGetSprayPhotoPathSync } from './spray-photo-cache';
+import { sprayPrivacyGeneration } from './spray-privacy-generation';
 
 /**
  * `true` once the photo behind `backgroundImageKeys[0]` is on disk; `false` for
@@ -19,24 +20,29 @@ import { ensureSprayPhotoCached, tryGetSprayPhotoPathSync } from './spray-photo-
  * frame. Otherwise it asks for the download (shared with any other surface
  * fetching the same file) and re-renders when it lands. A failed download stays
  * `false`: the placeholder is the honest answer.
+ *
+ * A finished download counts only within the wall's privacy generation, the
+ * same epoch the photo cache keys its downloads on: a wall withdrawn and then
+ * registered again asks the cache afresh instead of trusting an old answer.
  */
 export function useSprayPhotoOnDisk(renderData: { backgroundImageKeys: readonly string[] } | null): boolean {
   const backgroundKey = renderData?.backgroundImageKeys[0] ?? null;
   const identity = useMemo(() => (backgroundKey ? parseSprayBackgroundKey(backgroundKey) : null), [backgroundKey]);
-  const [downloadedFileName, setDownloadedFileName] = useState<string | null>(null);
+  // Read every render (a string from two counters): a withdrawal bumps it without
+  // changing the background key, and the answer below has to follow.
+  const downloadKey = identity ? `${sprayPrivacyGeneration(identity.layoutId)}:${sprayPhotoFileName(identity)}` : null;
+  const [downloadedKey, setDownloadedKey] = useState<string | null>(null);
   const onDisk = useMemo(
-    () =>
-      identity !== null &&
-      (downloadedFileName === sprayPhotoFileName(identity) || tryGetSprayPhotoPathSync(identity) !== null),
-    [identity, downloadedFileName],
+    () => identity !== null && (downloadedKey === downloadKey || tryGetSprayPhotoPathSync(identity) !== null),
+    [identity, downloadKey, downloadedKey],
   );
 
   useEffect(() => {
-    if (identity === null || onDisk) return;
+    if (identity === null || downloadKey === null || onDisk) return;
     let cancelled = false;
     ensureSprayPhotoCached(identity).then(
       (path) => {
-        if (!cancelled && path) setDownloadedFileName(sprayPhotoFileName(identity));
+        if (!cancelled && path) setDownloadedKey(downloadKey);
       },
       () => {
         // A failed download keeps the placeholder; the wall's own screen reports it.
@@ -45,7 +51,7 @@ export function useSprayPhotoOnDisk(renderData: { backgroundImageKeys: readonly 
     return () => {
       cancelled = true;
     };
-  }, [identity, onDisk]);
+  }, [identity, downloadKey, onDisk]);
 
   return onDisk;
 }
