@@ -22,3 +22,8 @@ export function useAuthToken() {
     staleTime: 5 * 60 * 1000,
   });
 }
+
+/** Native adds no operation-scope notifications or credential work. */
+export function subscribeHttpOperationScope(_listener: () => void): () => void {
+  return () => {};
+}

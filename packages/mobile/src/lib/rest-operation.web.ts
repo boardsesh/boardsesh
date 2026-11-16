@@ -101,6 +101,23 @@ export function createRestOperation(
     assertView();
     if (authority && lease) authority.assertCurrent(lease);
   };
+  const assertDispatch = () => {
+    if (!options.assertBrowserGetDispatch) return;
+    assertOriginal();
+    try {
+      options.assertBrowserGetDispatch();
+    } catch {
+      throw new BrowserBackendConsumerError('superseded');
+    }
+    assertOriginal();
+  };
+  const assertLegacyDispatch = options.assertBrowserGetDispatch
+    ? () => {
+        assertView();
+        assertDispatch();
+        assertView();
+      }
+    : assertView;
   return Object.freeze({
     assertView,
     assertAttemptCurrent() {
@@ -136,9 +153,10 @@ export function createRestOperation(
         if (path !== '/api/aurora-credentials' && path !== '/api/aurora-credentials/unsynced')
           throw new BrowserBackendConsumerError('unavailable');
         assertOriginal();
+        assertDispatch();
         const url = `${BACKEND_URL.replace(/\/+$/, '')}${path}`;
         if (view?.kind === 'legacy') {
-          raw = await authenticatedFetchForOriginalLegacyRequest(url, { signal }, assertView);
+          raw = await authenticatedFetchForOriginalLegacyRequest(url, { signal }, assertLegacyDispatch);
         } else {
           const headers = new Headers();
           headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
@@ -148,6 +166,7 @@ export function createRestOperation(
             headers.set('Authorization', `Bearer ${lease.token}`);
           }
           assertOriginal();
+          assertDispatch();
           raw = await fetch(url, { headers, signal });
         }
         // Own raw before every post-fetch refusal, including already-aborted headers.

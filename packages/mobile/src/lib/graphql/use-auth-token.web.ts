@@ -82,3 +82,6 @@ export function useAuthToken() {
         : undefined;
   return { ...result, data };
 }
+
+/** No-I/O actual auth, backend-owner and request-view notifications. */
+export { subscribe as subscribeHttpOperationScope };
