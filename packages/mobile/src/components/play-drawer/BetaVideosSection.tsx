@@ -96,7 +96,7 @@ export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, bo
               pressed && !isRefetching && { backgroundColor: `${brandColors.primary}1A` },
             ]}
           >
-            <Text variant="footnote" color={brandColors.primary}>
+            <Text variant="footnote" color={systemColors.accent}>
               {t('mobile.betaVideos.retry')}
             </Text>
           </PressableSurface>

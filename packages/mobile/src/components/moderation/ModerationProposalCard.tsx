@@ -250,12 +250,12 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
             accessibilityState={{ expanded: reasonsExpanded }}
             style={styles.expander}
           >
-            <Text variant="footnote" color={brandColors.primary}>
+            <Text variant="footnote" color={systemColors.accent}>
               {extraReasons > 0
                 ? t('mobile.moderation.moreReasons', { count: extraReasons })
                 : tCommon('mobile.reportRelease.title')}
             </Text>
-            <Icon name={reasonsExpanded ? 'chevron.up' : 'chevron.down'} size={12} color={brandColors.primary} />
+            <Icon name={reasonsExpanded ? 'chevron.up' : 'chevron.down'} size={12} color={systemColors.accent} />
           </PressableSurface>
         ) : null}
 

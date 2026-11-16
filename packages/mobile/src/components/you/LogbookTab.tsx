@@ -44,10 +44,8 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { useLogbookDeleteActions, usePendingLogbookDeletes } from '../../providers/logbook-delete-provider';
-import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, opacity, spacing } from '../../theme/tokens';
 import { ReadableColumn } from '../ReadableColumn';
-import { Text } from '../Text';
 import { FilterTokenRow } from '../search/FilterTokenRow';
 import { BoardLinkPrompt } from './BoardLinkPrompt';
 import { LogbookChipRow } from './LogbookChipRow';
@@ -215,7 +213,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, renderH
   const scrollHeaderInset = hasComposedHeader && nativeRootHeader ? headerHeight : 0;
   const { t, i18n } = useTranslation('you');
   const { t: tSession } = useTranslation('session');
-  const { systemColors } = useTheme();
   // One grade scale for the grade capsule's label, the inline rail and the sheet.
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
   const { gradeFormat } = useGradeFormat();

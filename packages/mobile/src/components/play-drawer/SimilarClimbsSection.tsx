@@ -54,7 +54,7 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
 }: SimilarClimbsSectionProps) {
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
   const { resolveGrade } = useDisplayGrade();
   const scope = useMemo(() => ({ boardName, layoutId, sizeId }), [boardName, layoutId, sizeId]);
   const {
@@ -138,8 +138,8 @@ export const SimilarClimbsSection = memo(function SimilarClimbsSection({
         accessibilityRole="button"
         accessibilityLabel={t('mobile.similarClimbs.retry')}
       >
-        <Icon name="refresh" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary}>
+        <Icon name="refresh" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent}>
           {t('mobile.similarClimbs.retry')}
         </Text>
       </PressableSurface>

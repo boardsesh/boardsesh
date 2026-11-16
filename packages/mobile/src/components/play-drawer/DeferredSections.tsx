@@ -191,7 +191,7 @@ export const DeferredSections = memo(function DeferredSections({
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { isAuthenticated } = useAuth();
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { gradeFormat } = useGradeFormat();
   const boardseshGradeEnabled = useBoardseshGradeEnabled();
   const visibleSections = useMemo(
@@ -548,7 +548,7 @@ export const DeferredSections = memo(function DeferredSections({
                       pressed && { backgroundColor: `${brandColors.primary}1A` },
                     ]}
                   >
-                    <Icon name="add" size={22} color={brandColors.primary} />
+                    <Icon name="add" size={22} color={systemColors.accent} />
                   </PressableSurface>
                 ) : undefined
               }

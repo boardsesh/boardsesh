@@ -67,7 +67,7 @@ export const WorkoutRunCard = memo(function WorkoutRunCard({ onAddBlock }: Worko
 /** One quiet row for a session with no workout: tap it to add the first block. */
 function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   // Card gives the tap its own haptic.
   return (
     <Card
@@ -76,9 +76,9 @@ function AddWorkoutPrompt({ onPress }: { onPress: () => void }) {
       accessibilityHint={t('mobile.session.addWorkoutPromptSubtitle')}
     >
       <View style={styles.promptRow} testID="workout-add-prompt">
-        <Icon name="add" size={22} color={brandColors.primary} />
+        <Icon name="add" size={22} color={systemColors.accent} />
         <View style={styles.promptText}>
-          <Text variant="body" color={brandColors.primary} style={styles.promptTitle}>
+          <Text variant="body" color={systemColors.accent} style={styles.promptTitle}>
             {t('mobile.session.addWorkoutPromptTitle')}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -228,7 +228,7 @@ function WorkoutRunCardContent({
 /** Available on every shell, including iPad where there is no floating pill. */
 function StartWorkoutRow({ item, onPress }: { item: ClimbQueueItem; onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -239,9 +239,9 @@ function StartWorkoutRow({ item, onPress }: { item: ClimbQueueItem; onPress: () 
       style={styles.climbRow}
       testID="workout-runner-start"
     >
-      <Icon name="play.fill" size={18} color={brandColors.primary} />
+      <Icon name="play.fill" size={18} color={systemColors.accent} />
       <View style={styles.rowText}>
-        <Text variant="body" color={brandColors.primary} style={styles.emphasis}>
+        <Text variant="body" color={systemColors.accent} style={styles.emphasis}>
           {t('mobile.workoutRunner.startWorkout')}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -350,7 +350,7 @@ function CurrentClimbRow({ readout, item }: { readout: WorkoutRunnerReadout; ite
  */
 function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; item: ClimbQueueItem }) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { setCurrentClimb } = useQueueActions();
   const started = readout.totals.sent + readout.totals.tried > 0;
   const title = started ? t('mobile.workoutRunner.backToWorkout') : t('mobile.workoutRunner.startWorkout');
@@ -367,9 +367,9 @@ function ResumeWorkoutRow({ readout, item }: { readout: WorkoutRunnerReadout; it
       style={styles.climbRow}
       testID="workout-runner-resume"
     >
-      <Icon name="play.fill" size={18} color={brandColors.primary} />
+      <Icon name="play.fill" size={18} color={systemColors.accent} />
       <View style={styles.rowText}>
-        <Text variant="body" color={brandColors.primary} style={styles.emphasis}>
+        <Text variant="body" color={systemColors.accent} style={styles.emphasis}>
           {title}
         </Text>
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -487,7 +487,7 @@ function TurnOnRestTimerRow({
 
 function AddBlockButton({ onPress }: { onPress: () => void }) {
   const { t } = useTranslation('session');
-  const { brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={() => {
@@ -502,8 +502,8 @@ function AddBlockButton({ onPress }: { onPress: () => void }) {
       style={styles.addButton}
       testID="workout-add-block"
     >
-      <Icon name="add" size={18} color={brandColors.primary} />
-      <Text variant="subheadline" color={brandColors.primary} style={styles.addText}>
+      <Icon name="add" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent} style={styles.addText}>
         {t('mobile.session.preGeneratorAddBlock')}
       </Text>
     </PressableSurface>

@@ -123,7 +123,7 @@ export function LogbookView({
                   pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
                 ]}
               >
-                <Text variant="footnote" color={brandColors.primary}>
+                <Text variant="footnote" color={systemColors.accent}>
                   {t('mobile.logbook.retry')}
                 </Text>
               </PressableSurface>

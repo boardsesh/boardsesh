@@ -106,7 +106,7 @@ const YourGradeBlock = memo(function YourGradeBlock({
   boardName: string;
 }) {
   const { t } = useTranslation('climbs');
-  const { brandColors, systemColors } = useTheme();
+  const { systemColors } = useTheme();
   // Falls back to the device's own ticks table while the logbook is unresolved,
   // so the drawer shows the climber's grade offline too — the same grade the
   // on-device search placed this climb by.
@@ -119,8 +119,8 @@ const YourGradeBlock = memo(function YourGradeBlock({
     if (myGrade.status !== 'none') return null;
     return (
       <View style={styles.row}>
-        <Icon name="add.fill" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary} style={styles.flexText}>
+        <Icon name="add.fill" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent} style={styles.flexText}>
           {t('boardseshGrade.yours.emptyBody')}
         </Text>
       </View>
@@ -257,8 +257,8 @@ export const BoardseshGradeSection = memo(function BoardseshGradeSection({
         accessibilityRole="button"
         accessibilityLabel={t('boardseshGrade.loadError')}
       >
-        <Icon name="refresh" size={20} color={brandColors.primary} />
-        <Text variant="subheadline" color={brandColors.primary}>
+        <Icon name="refresh" size={20} color={systemColors.accent} />
+        <Text variant="subheadline" color={systemColors.accent}>
           {t('boardseshGrade.loadError')}
         </Text>
       </PressableSurface>
