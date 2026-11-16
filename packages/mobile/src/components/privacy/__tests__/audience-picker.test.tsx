@@ -7,7 +7,13 @@ vi.mock('react-native', () => ({ View: 'div', StyleSheet: { create: (styles: unk
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => confirm }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ spacing: [], radii: {}, systemColors: {}, brandColors: {} }),
+  useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
+    spacing: [],
+    radii: {},
+    systemColors: {},
+    brandColors: {},
+  }),
 }));
 vi.mock('../../Text', () => ({ Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span> }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => <i data-icon={name} /> }));

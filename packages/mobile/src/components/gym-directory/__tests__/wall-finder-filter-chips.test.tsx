@@ -54,7 +54,11 @@ vi.mock('../../../theme/animations', () => ({ springs: { snappy: {} } }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: () => hapticSelection() }));
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
-  useTheme: () => ({ brandColors: { primary: '#6D28D9' }, systemColors: { separator: '#ccc' } }),
+  useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
+    brandColors: { primary: '#6D28D9' },
+    systemColors: { separator: '#ccc' },
+  }),
 }));
 
 import { WallFinderFilterChips, type WallFinderFilterChipsProps } from '../WallFinderFilterChips';

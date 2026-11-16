@@ -122,6 +122,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../providers/theme-provider', () => ({
   useOptionalTheme: () => null,
   useTheme: () => ({
+    selection: { text: '#111111', checkmark: '#6D28D9', fill: 'rgba(109, 40, 217, 0.18)' },
     systemColors: {
       label: '#000',
       secondaryLabel: '#888',

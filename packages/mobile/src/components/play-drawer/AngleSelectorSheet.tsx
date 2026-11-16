@@ -17,7 +17,6 @@ import { buildAngleStatsMap, type AngleStats } from './community-utils';
 import { AngleBoardDiagram } from './AngleBoardDiagram';
 import { AngleSlider } from './AngleSlider';
 import { iosSystemColors } from '../../theme/ios-colors';
-import { brandColors } from '../../theme/colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
@@ -45,7 +44,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const styles = useTypographyStyles(createStyles);
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
-  const { systemColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const sheetBackgroundStyle = useSheetBackgroundStyle();
   // The window's inset, not the mount point's: a sheet covers the tab bar (#3776).
   const windowInsetBottom = useWindowBottomInset();
@@ -184,13 +183,13 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
                     accessibilityLabel={t('mobile.angleSelector.snapToAngle', { angle })}
                     style={({ pressed }) => [
                       styles.snapButton,
-                      { backgroundColor: isSelected ? brandColors.primary : systemColors.fill },
+                      { backgroundColor: isSelected ? selection.fill : systemColors.fill },
                       pressed && styles.snapButtonPressed,
                     ]}
                   >
                     <Text
                       variant="headline"
-                      style={[styles.snapText, { color: isSelected ? iosSystemColors.white : systemColors.label }]}
+                      style={[styles.snapText, { color: selection.text, fontWeight: isSelected ? '700' : undefined }]}
                     >
                       {angle}°
                     </Text>

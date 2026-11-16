@@ -37,7 +37,7 @@ const BackgroundCard = memo(function BackgroundCard({
   unavailable,
   onSelect,
 }: BackgroundCardProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, selection } = useTheme();
   const handlePress = useCallback(() => onSelect(option.key), [onSelect, option.key]);
   return (
     <PressableSurface
@@ -55,7 +55,7 @@ const BackgroundCard = memo(function BackgroundCard({
           {
             height: imageHeight,
             backgroundColor: systemColors.secondaryBackground,
-            borderColor: selected ? brandColors.primary : systemColors.separator,
+            borderColor: selected ? selection.checkmark : systemColors.separator,
           },
         ]}
       >

@@ -100,7 +100,7 @@ function BoardManageRowComponent({
 }: BoardManageRowProps) {
   const { t, i18n } = useTranslation('boards');
   const importCopy = board.sprayImport ? sprayImportCopy(board.sprayImport, importStatusStale) : null;
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, selection } = useTheme();
 
   const boardName = toBoardName(board.boardType);
   // Every wall in Manage Boards, not just the active one. A non-active spray wall
@@ -239,7 +239,7 @@ function BoardManageRowComponent({
           styles.thumb,
           {
             backgroundColor: systemColors.tertiaryBackground,
-            borderColor: isActive ? brandColors.primary : systemColors.separator,
+            borderColor: isActive ? selection.checkmark : systemColors.separator,
             borderWidth: isActive ? 2 : StyleSheet.hairlineWidth,
           },
         ]}

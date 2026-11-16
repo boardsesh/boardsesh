@@ -414,8 +414,9 @@ const VoteButton = memo(function VoteButton({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const { systemColors, brandColors } = useTheme();
-  const tint = selected ? brandColors.primary : systemColors.secondaryLabel;
+  const { systemColors, selection } = useTheme();
+  // A vote is a toggle you tap, so its on-state keeps the accent (tappable, not status).
+  const tint = selected ? selection.checkmark : systemColors.secondaryLabel;
 
   return (
     <PressableSurface
@@ -427,7 +428,7 @@ const VoteButton = memo(function VoteButton({
       accessibilityState={{ selected, disabled }}
       style={[
         styles.voteButton,
-        { borderColor: selected ? brandColors.primary : systemColors.separator },
+        { borderColor: selected ? selection.checkmark : systemColors.separator },
         disabled ? styles.voteButtonDisabled : undefined,
       ]}
     >

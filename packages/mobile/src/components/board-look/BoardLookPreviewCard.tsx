@@ -103,7 +103,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
   onEnlarge,
 }: BoardLookPreviewCardProps) {
   const { t } = useTranslation('common');
-  const { systemColors, brandColors, textStyles: resolvedTextStyles } = useTheme();
+  const { systemColors, brandColors, selection, textStyles: resolvedTextStyles } = useTheme();
   const { fontScale } = useWindowDimensions();
   const reduceMotion = useReduceMotion();
   const reduceTransparency = useReduceTransparency();
@@ -147,7 +147,7 @@ export const BoardLookPreviewCard = React.memo(function BoardLookPreviewCard({
     height: layout.thumbHeight,
     borderWidth: style.borderWidth,
     backgroundColor: systemColors.tertiaryBackground,
-    borderColor: selected ? brandColors.primary : systemColors.separator,
+    borderColor: selected ? selection.checkmark : systemColors.separator,
   };
 
   // The feature this screen is selling is "lit holds glow", so the chosen card
