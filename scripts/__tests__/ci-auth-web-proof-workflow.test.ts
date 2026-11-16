@@ -22,7 +22,7 @@ const providerProofFiles = [
   'provider-security-google-reauth.proof.ts',
   'provider-owned-signin-auth.proof.ts',
 ];
-const cookieProofFiles = ['browser-proof-cookies.proof.ts', 'provider-security-cookie-recovery.proof.ts'];
+const cookieProofFile = 'browser-proof-cookies.proof.ts';
 const task = 'vp run test:auth-web-credential-proof';
 
 describe('database-backed backend/web credential proof placement', () => {
@@ -90,16 +90,14 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(step?.if).not.toContain('needs.changes');
     expect(step?.['continue-on-error']).toBeUndefined();
   });
-  it('runs both actual-cookie proofs explicitly in the required post-install task', () => {
+  it('runs the actual-cookie proof explicitly in the required post-install task', () => {
     const configuration = readFileSync('packages/web/auth-proofs/browser-proof-cookies.vite.config.ts', 'utf8');
     const types = JSON.parse(readFileSync('packages/web/auth-proofs/tsconfig.json', 'utf8')) as {
       include: string[];
     };
-    for (const file of cookieProofFiles) {
-      expect(existsSync(`packages/web/auth-proofs/${file}`)).toBe(true);
-      expect(configuration).toContain(`'auth-proofs/${file}'`);
-      expect(types.include).toContain(file);
-    }
+    expect(existsSync(`packages/web/auth-proofs/${cookieProofFile}`)).toBe(true);
+    expect(configuration).toContain(`'auth-proofs/${cookieProofFile}'`);
+    expect(types.include).toContain(cookieProofFile);
     const tasks = readFileSync('vite.config.ts', 'utf8');
     const start = tasks.indexOf("'test:auth-browser-proof-cookies':");
     expect(start).toBeGreaterThanOrEqual(0);

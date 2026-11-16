@@ -38,9 +38,11 @@ Assigning `token.exp` alone is insufficient because NextAuth overwrites it.
 Cookie expiry is capped separately. A canonical candidate is only the backend's
 private opaque proposal; no framework JWE is substituted for it.
 
-The server-only candidate issuer and synchronous response preflight are shared
-with direct unlink commands. Unlink does not simulate an OAuth callback: the
-issuer decodes the actual original JWE, validates its proof and deadline, copies
+The server-only candidate issuer and synchronous response preflight were shared
+with the direct unlink commands. #7596 deleted that unlink publication and the
+Settings link client; B5 rebuilds them on the shared-domain session. The
+first-password writer still uses the claims-free path described here. That path
+does not simulate an OAuth callback: the issuer decodes the actual original JWE, validates its proof and deadline, copies
 its profile claims and uses the primary SID, next generation and conservative
 provenance before applying the same real-codec checks. Historical missing SID
 and generation retain the centrally admitted credential lineage and default

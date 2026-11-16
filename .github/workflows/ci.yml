@@ -1583,11 +1583,10 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: packages/web
         run: vp exec playwright install --with-deps chromium
-      - name: Run versioned proof cookies and result recovery
+      - name: Run versioned proof cookies
         if: ${{ !cancelled() }}
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
         run: vp run test:auth-browser-proof-cookies
 
   # Mirror-on qualification repeats the complete current-store suite. It owns

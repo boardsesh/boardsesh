@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
@@ -68,14 +70,16 @@ describe('auth compatibility CI has an independent complete budget', () => {
       compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
     ).toHaveLength(1);
   });
-  it('runs cookie recovery after Chromium', () => {
+  it('runs the versioned proof-cookie proof after Chromium against the owned database', () => {
     const install = compatibility.steps.findIndex(
       (step) => step.run === 'vp exec playwright install --with-deps chromium',
     );
     const proof = compatibility.steps.findIndex((step) => step.run === 'vp run test:auth-browser-proof-cookies');
     expect(install).toBeGreaterThanOrEqual(0);
     expect(proof).toBeGreaterThan(install);
-    expect(compatibility.steps[proof].env?.AUTH_PROTOTYPE_REDIS_URL).toBe('redis://localhost:6380');
+    expect(compatibility.steps[proof].env).toEqual({
+      AUTH_PROTOTYPE_DATABASE_URL: 'postgresql://postgres:postgres@localhost:5433/postgres',
+    });
   });
   it('targets web auth/proof inputs without widening the baseline backend trigger', () => {
     const source = readFileSync('.github/workflows/ci.yml', 'utf8');

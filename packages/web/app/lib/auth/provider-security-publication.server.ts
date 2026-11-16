@@ -96,7 +96,7 @@ export function normalizedLegacyCandidate(original: JWT, proof: WebCredentialPro
   return claims;
 }
 
-/** Shared actual-credential issuer for callback linking and direct unlinking.
+/** Shared actual-credential issuer for callback linking and the first-password writer.
  * Without callback claims, retain the actual JWE's profile and normalize only
  * SID/generation and conservative primary authentication provenance.
  * This does not run signIn, infer freshness, or reconstruct an opaque bearer. */
