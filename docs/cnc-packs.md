@@ -920,7 +920,7 @@ Backend, all fail-closed when unset:
 | `STRIPE_PRICE_CNC_PERSONAL` | The personal tier cannot be sold. |
 | `STRIPE_PRICE_CNC_COMMERCIAL` | The commercial tier cannot be sold. |
 | `CNC_TRANSPORT` | Set `pgboss` for the outbound-only deployment; unset retains legacy HTTP compatibility. |
-| `CNC_RELEASE_MODE` | Set `beta` for the restricted sandbox launch. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and checkout. `public` requires a separately approved launch. |
+| `CNC_RELEASE_MODE` | Set `beta` for the restricted sandbox launch. Missing/unknown mode in pg-boss refuses new private computations, uploads, previews and checkout. `public` is selected only after actual GST confirmation and the live checkout cutover. |
 | `CNC_BETA_USER_IDS` | Comma-separated exact account IDs authorized for beta. Empty or malformed lists deny access. Beta checkout requires a test/sandbox Stripe secret or restricted key. Existing owner downloads remain available. |
 | `CNC_GENERATOR_SHA` | In pg-boss mode, requests refuse without the reviewed 40-character generator SHA. Must match the image. |
 | `CNC_WORKER_URL` | Legacy HTTP transport only; leave unset in pg-boss production. |
@@ -942,16 +942,24 @@ best-effort: the order is already paid and durable by the time one runs.
 
 ## The web surface
 
-Three routes, all under `/build-plans` and all server-gated by the `cnc-packs`
-flag through `requireCncPacksFlag()` in `build-plans-page.ts`. The gate is a
-`notFound()`, not a hidden button: the manufacturing licence ships marked DRAFT
-until the Australian IP review lands, so the shop must not be reachable at all —
-and every page carries `noindex, follow` on top, because noindex alone would
-still leave a publicly browsable shop.
+The shop routes under `/build-plans` are server-gated by `cnc-packs`; disabled
+visitors receive `notFound()`. The licence alone has a public-contract exception:
+exact web `CNC_RELEASE_MODE=public` serves it without identity lookup or PostHog,
+including while the storefront flag is off. Missing, unknown and `beta` values
+retain the licence's existing flag gate and DRAFT copy. Other shop and order
+routes keep their existing access gates.
+
+Explicitly setting web `CNC_RELEASE_MODE=public` removes only the licence's
+editorial DRAFT, pending-review and placeholder wording. The terms, jurisdiction,
+prices and informational/no-legal-advice footer remain unchanged. All build-plan
+routes retain `noindex, follow`, and the sitemap remains empty through the initial
+public rollout. This preparation can deploy while web mode is absent without
+changing the test-user beta.
 
 | Route | What it is |
 | --- | --- |
 | `/build-plans` | The hero and the configurator. Server-renders the catalogue, then hands it to a client component for the choosing. |
+| `/build-plans/licence` | Manufacturing terms; independently available only in exact web public mode. |
 | `/build-plans/orders` | The buyer's own orders, newest first. |
 | `/build-plans/orders/[licenceId]` | One order: status timeline, the configuration it was bought under, and the download button once it is ready. |
 
@@ -1033,81 +1041,93 @@ is a write cost paid for a guess.
 
 ## Launch
 
-Current owner scope is a **test-user beta only**, pending actual GST registration
-([issue 7518](https://github.com/boardsesh/boardsesh/issues/7518)). Target the
-two owner-approved accounts in PostHog and the backend `CNC_BETA_USER_IDS`
-allowlist; anonymous and other accounts must stay off. Set
-`CNC_RELEASE_MODE=beta` and use only a Stripe sandbox key for beta checkout.
-Do not add a Stripe tax registration on an assumption,
-make real verification charges, or widen the flag without a later explicit
-launch approval. Owner licence/printed-plan approval was recorded on 2026-11-14;
-that approval does not prove tax registration is complete.
+Current scope remains the two-account **test-user beta**, pending actual GST
+registration ([issue 7518](https://github.com/boardsesh/boardsesh/issues/7518)).
+The owner authorized preparing the public release now and launching after GST
+confirmation. Owner licence/printed-plan approval was recorded on 2026-11-14
+(the deployment conversation's “I approve now” reply); it does not assert an
+independent lawyer review or prove that tax registration is complete. Do not
+repeat that approval request. The remaining external launch condition is actual
+GST confirmation, followed by the prepared operational cutover below.
 
+### Prepare while GST is pending
 
-The flag is off and the pages are `noindex` because the manufacturing licence
-ships marked DRAFT pending an Australian IP review — not because the code is
-unfinished. Launch is therefore mostly owner actions, in this order. Steps 1-5
-can all be done before anything is visible to anyone.
-
-1. **Stripe.** Create the two AUD prices (personal, commercial single-build) and
-   put their ids in `STRIPE_PRICE_CNC_PERSONAL` / `STRIPE_PRICE_CNC_COMMERCIAL`.
-   Enable Stripe Tax with the AU GST registration. Add the webhook endpoint at
-   `https://<backend>/api/cnc/stripe/webhook` for `checkout.session.completed`,
-   `checkout.session.async_payment_succeeded`,
+1. Stage and verify the live AUD tax-inclusive Personal (14900 cents) and
+   Commercial single-build (75000 cents) prices, and the owned webhook at
+   `https://ws.boardsesh.com/api/cnc/stripe/webhook`. Require all five events:
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.async_payment_failed`, `checkout.session.expired` and
-   `charge.refunded`, and set its signing secret as `STRIPE_WEBHOOK_SECRET`.
-   Set the Terms-of-Service URL on the Checkout branding settings to
-   `https://www.boardsesh.com/build-plans/licence` — Checkout collects the
-   licence acceptance against that URL, so it has to resolve before the first
-   real sale even though the page is still `noindex`.
-2. **Dedicated homelab worker.** Provision the CNC VM using the homelab's
-   source-controlled Ansible configuration. Pre-create restricted logins for
-   `cnc-interactive` and `cnc-generation`, append them to
-   `MIGRATION_WORKER_ROLES`, and apply the additive schema, queue and grants
-   before starting consumers. Pin the composite image by digest, including both
-   its application and generator SHAs. Configure each role's verified primary
-   URL, private R2 credentials and build identity; only generation receives
-   `FINGERPRINT_SECRET`. Preserve that durable secret on every redeploy.
-3. **Backend env.** Set `CNC_TRANSPORT=pgboss`, `CNC_GENERATOR_SHA`, and
-   `CNC_DOWNLOAD_TOKEN_SECRET`. Do not set `CNC_WORKER_URL` or the shared HTTP
-   worker secret. Verify local `/health`, `/version`, queue processing and private
-   downloads before unpausing consumers. Keep the feature flag off during setup.
-4. **Lawyer sign-off.** The Australian IP review of the licence text and of the
-   Kilter-derived engrave layer. This is the actual gate; everything else is
-   reversible and this is not.
-5. **Review a printed A3 set.** Generate one pack per size, print the A3 PDFs,
-   and check the dimensions against the built wall. The generator's goldens
-   prove it did not change; they do not prove it was right the first time.
-6. **Flip `cnc-packs` in PostHog.** Ramp it rather than jumping to 100% — the
-   pages and the footer link read the same flag, so a
-   percentage rollout is also how the first real checkouts are throttled.
-   The sitemap stays empty while the pages remain `noindex`.
-   `FEATURE_FLAG_OVERRIDES=cnc-packs=false` on the web service is the kill
-   switch if something goes wrong; it does not need a deploy.
+   `charge.refunded`. Store the new signing secret in the Homelab vault without
+   printing it. The staging helper leaves the live webhook **disabled**; preparation
+   neither enables it nor activates live credentials in production.
+2. Keep backend `CNC_RELEASE_MODE=beta`, its sandbox key/prices/webhook secret,
+   the exact two `CNC_BETA_USER_IDS`, and their PostHog targeting unchanged.
+   Keep web mode missing or `beta`: the licence remains DRAFT, every build-plan
+   route stays noindex, and anonymous/other accounts remain excluded.
+3. Verify the existing pinned pg-boss workers, build receipts, restricted roles,
+   private R2 uploads, owner-only complete downloads and monitoring. Preserve
+   `FINGERPRINT_SECRET` and `CNC_DOWNLOAD_TOKEN_SECRET`. No VM recreation or legacy
+   HTTP worker URL/secret is needed. The currently deployed generator source
+   `6c6a11d7c6dc6ba42c4ab69d06a2344a29366586` still emits unconditional DRAFT text
+   in full-pack `LICENCE.txt` (`packaging/licence.py`) and `README_CNC.txt`
+   (`packaging/templates/README_CNC.txt.j2`). Prepare a separately reviewed,
+   immutable publication-ready renderer image with those editorial notices
+   removed and substantive clauses unchanged; verify a complete full pack.
+   Prepare its future pin change without activating it before GST confirmation.
+   Retain today's beta pin now. Preview `NOT FOR MANUFACTURE` remains required.
+4. Record live Stripe Tax/registration status and the required Checkout
+   Terms-of-Service URL, `https://www.boardsesh.com/build-plans/licence`.
+   `automatic_tax.enabled` and `consent_collection` do not configure those
+   account settings. Do not create a GST registration on an assumption or make
+   real verification charges. A sandbox Tax success is not live readiness.
 
-Then, and only once the flag has been at 100% for long enough to trust,
-**a follow-up PR retires the gate**. Not part of the launch itself — pinning
-the dashboard to 100% and leaving the code alone would keep a PostHog round trip
-in front of every render of a page that is now public, and would keep it failing
-closed when PostHog is down. Following `docs/feature-flags.md`, that PR:
+### Cut over only after actual GST confirmation
 
-- drops `requireCncPacksFlag()` and its `notFound()` from the four
-  `/build-plans*` routes, and removes `CNC_PACKS_FLAG` from
-  `packages/web/app/flags.ts` and `SERVER_FEATURE_FLAG_KEYS`;
-- swaps `createNoIndexMetadata` for `createPageMetadata` with a `path` on
-  `/build-plans` and `/build-plans/licence`, which is what emits the canonical
-  and the five-locale `alternates.languages` hreflang block. `/build-plans/orders`
-  and `/build-plans/orders/[licenceId]` stay `noindex` — they are per-buyer
-  utility pages;
-- replaces the empty pre-launch result in `build-plans-entries.ts` with the public list, so the
-  sitemap shard publishes unconditionally, and adds `/build-plans/licence` to it
-  (a unit test refuses any listed path with no `page.tsx` behind it);
-- rewrites the gate's tests as "this route renders" rather than deleting them;
-- archives the `cnc-packs` flag in the PostHog dashboard.
+1. Confirm actual GST registration, the live Stripe preflight and the reviewed
+   publication-ready full-pack release. Turn the storefront flag off and set
+   backend `CNC_RELEASE_MODE=disabled`; redeploy its current image. Reconcile all
+   pending sandbox Checkout sessions and asynchronous payments before replacing
+   the single active Stripe key/signing secret: wait for settlement or explicitly
+   expire unpaid sandbox sessions and verify their final state. Preserve orders,
+   artifacts and the sandbox configuration for rollback; do not treat test orders
+   as live purchases. With new creation disabled, pause both consumers, promote
+   the reviewed publication-ready image/app/generator pins and matching backend
+   `CNC_GENERATOR_SHA` together, then verify the paused release before resuming.
+   Use the homelab's typed-boolean pause/promotion procedure.
+2. While the backend stays disabled, stage matching live `STRIPE_SECRET_KEY`,
+   `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_CNC_PERSONAL` and
+   `STRIPE_PRICE_CNC_COMMERCIAL`. Redeploy the current backend image and verify
+   it has loaded these bindings while release mode remains disabled. Verify
+   identities, AUD 14900/75000-cent amounts, inclusive-tax behavior and GST
+   readiness. Retain `CNC_TRANSPORT=pgboss`, the
+   reviewed publication-ready generator pin and download secret. The stored beta
+   allowlist can remain; public mode ignores it.
+3. Set **web** `CNC_RELEASE_MODE=public` and deploy its current image. Verify the
+   anonymous Terms URL returns 200 with approved wording while the storefront flag
+   remains off and backend disabled. Confirm the live Checkout Terms-of-Service
+   URL is `https://www.boardsesh.com/build-plans/licence`. Substantive clauses,
+   amounts, jurisdiction and noindex must remain unchanged.
+4. Enable the owned staged **live** webhook, then read back its enabled state,
+   exact URL, API version, matching signing-secret receipt and all five events
+   listed above. Verify delivery readiness before changing backend mode. The
+   preparation helper intentionally does not perform this activation. Avoid real
+   verification charges.
+5. Only then set backend `CNC_RELEASE_MODE=public` and redeploy; verify health.
+   Widen `cnc-packs` deliberately and remove only a conflicting CNC entry from
+   production `FEATURE_FLAG_OVERRIDES`, preserving unrelated overrides. Wait for
+   the web's 60-second cache; verify public configuration/preview, live catalogue,
+   owned downloads and monitoring. Keep noindex/empty sitemap through the initial
+   rollout. For an incident, close the storefront and disable backend release
+   mode, then follow the homelab durable-pause/rollback runbook. Leave the public
+   Terms URL available; preserve secrets, orders and schema.
 
-The order matters in one place only: **do not remove the flag before the licence
-page exists and the lawyer has signed it off.** The gate is the only thing
-keeping a DRAFT licence out of Google.
+Once the public flag has been stable at 100%, a separate PR can retire the gate
+under `docs/feature-flags.md`. That later work removes `requireCncPacksFlag()`
+and its `notFound()` from the public build-plan routes, retires `CNC_PACKS_FLAG`,
+adds indexable metadata and sitemap entries for `/build-plans` and
+`/build-plans/licence`, and archives the PostHog flag. Orders remain noindex
+utility pages. This preparation does none of that and adds no further lawyer or
+printed-plan approval step.
 
 ### Follow-ups, not built
 
