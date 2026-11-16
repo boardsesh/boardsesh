@@ -1,5 +1,6 @@
 import 'server-only';
 import { resolvePublicAuthOrigin } from './canonical-auth-url';
+import { isAcceptableProviderOAuthCookieHeader } from './provider-oauth-cookie-header.server';
 import type { AuthServiceEnvironment } from '@boardsesh/auth-protocol/transport';
 
 export class PublicAuthRequestError extends Error {
@@ -30,20 +31,15 @@ export function requirePublicAuthRequest(
     throw new PublicAuthRequestError(403);
   return origin;
 }
+/** The same Cookie header rules the Google and Apple routes keep, so the two cannot drift. */
 export function boundedAuthCookiePairs(header: string | null): readonly { name: string; content: string }[] {
   if (!header) return [];
-  if (Buffer.byteLength(header) > 32_768) throw new PublicAuthRequestError(400);
-  for (let index = 0; index < header.length; index++) {
-    const code = header.charCodeAt(index);
-    if ((code < 32 && code !== 9) || code === 127) throw new PublicAuthRequestError(400);
-  }
-  const pairs = header.split(';');
-  if (pairs.length > 128) throw new PublicAuthRequestError(400);
-  return pairs
+  if (!isAcceptableProviderOAuthCookieHeader(header)) throw new PublicAuthRequestError(400);
+  return header
+    .split(';')
     .filter((pair) => pair.trim())
     .map((pair) => {
       const separator = pair.indexOf('=');
-      if (separator <= 0) throw new PublicAuthRequestError(400);
       return { name: pair.slice(0, separator).trim(), content: pair.slice(separator + 1).trim() };
     });
 }
