@@ -379,7 +379,10 @@ on the elevated #1C1C1E rather than a static #000.
 ### Selection (`theme.selection`)
 
 `{ text: label, checkmark: accent, fill: systemFill }`. The selected item's title stays the label
-colour, an accent checkmark marks it, and a neutral wash may sit behind it. Selection is a state,
+colour, an accent checkmark marks it, and the `fill` wash may sit behind it. That wash is grey on
+iOS (`systemFill`) and on Material, but violet-tinted on Liquid Glass off iOS, whose fallback
+`fill` is `rgba(109, 40, 217, 0.1)` in light. The active-row look is still being chosen, so treat
+the fill as provisional. Selection is a state,
 not a link. `ClimbListRow`'s violet wash and bar (`selectedRowColors`) predate the role and move in
 wave W1.
 

@@ -112,8 +112,8 @@ export default function AcknowledgementsScreen() {
     router.push('/licenses');
   }, [router]);
 
-  // Variant-aware header from the shared hook: a transparent blur header on Liquid
-  // Glass (iOS), an opaque M3 app bar on Material — including the forced-Material-
+  // Variant-aware header from the shared hook: a transparent header on Liquid Glass
+  // (iOS), an opaque M3 app bar on Material — including the forced-Material-
   // on-iOS / Android paths where a transparent header would slide content under the
   // status bar.
   const screenOptions = useStackScreenOptions();

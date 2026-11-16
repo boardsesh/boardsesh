@@ -191,7 +191,8 @@ type Theme = {
   surfaces: Surfaces;
   /**
    * The selected or current item (Velvet Send v2): `label` text, an `accent`
-   * checkmark, a `systemFill` wash. Selection is never violet text.
+   * checkmark, a `fill` wash (grey on iOS and Material, violet-tinted on Liquid
+   * Glass off iOS). Selection is never violet text.
    */
   selection: SelectionColors;
   /**

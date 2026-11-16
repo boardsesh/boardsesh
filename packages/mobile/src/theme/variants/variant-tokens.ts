@@ -138,7 +138,7 @@ export function resolveSurfaces(inputs: RoleColorInputs): Surfaces {
 /**
  * The selected or current item in a list: the board you're on, the picked option,
  * the active filter. Selection is a state, not a link, so the text stays the label
- * colour, a checkmark in the accent marks it, and a neutral fill can sit behind
+ * colour, a checkmark in the accent marks it, and the `fill` wash can sit behind
  * it. Violet text and icons are only for things you can tap (HIG Color: "if you use
  * your brand color to indicate that a borderless button is interactive, using the
  * same or similar color to stylize noninteractive text is confusing").
@@ -148,7 +148,12 @@ export type SelectionColors = {
   text: ColorValue;
   /** The checkmark beside it: `accent`. */
   checkmark: ColorValue;
-  /** An optional row or cell wash: `systemFill`. */
+  /**
+   * An optional row or cell wash: the resolved `fill`. Grey on iOS (`systemFill`)
+   * and on Material; violet-tinted on Liquid Glass off iOS, where the fallback
+   * ladder's `fill` is `rgba(109, 40, 217, 0.1)` in light. Not final: the
+   * active-row look is still being chosen.
+   */
   fill: ColorValue;
 };
 

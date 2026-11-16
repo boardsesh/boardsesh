@@ -118,7 +118,7 @@ describe('Velvet Send v2 roles', () => {
     });
   });
 
-  it('keeps selection off violet text: label text, accent checkmark, neutral fill', () => {
+  it('keeps selection off violet text: label text, accent checkmark, the resolved fill', () => {
     expect(resolveSelectionColors(inputs)).toEqual({ text: '#LABEL', checkmark: '#ACCENT', fill: '#FILL' });
   });
 
