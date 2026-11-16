@@ -1,3 +1,4 @@
+import { captureMetroRuntimeEnv } from './lib/capture-metro-runtime';
 import { createCppStoryCapture, cppStorySourceSha256 } from './lib/cpp-story-provenance';
 import { guardSimulatorCommand } from './lib/ios-simulator-lease';
 import { CPP_MAESTRO_TIMEOUT_MS, IOS_MAESTRO_TIMEOUT_MS } from './mobile-screenshot-maestro';
@@ -4425,7 +4426,10 @@ function runIosLocales(
       return 1;
     }
     const localeTarget = localeTargets[localeIndex];
-    const metroEnv = buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession);
+    const metroEnv = captureMetroRuntimeEnv(
+      buildScreenshotSessionEnv(options, process.env, localeTarget.appLocale, backendSession),
+      MOBILE_DIR,
+    );
     console.log(
       `${LOG} Starting Metro on ${METRO_PORT} (backend=${options.backend}, theme=${options.theme}, flow=${options.flow}, locale=${localeTarget.appLocale}${options.variant ? `, variant=${options.variant}` : ''}${options.fixtures !== 'off' ? `, fixtures=${options.fixtures}` : ''})...`,
     );
@@ -4637,7 +4641,8 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       : [{ appLocale: 'en-US' as const, appStoreLocales: [] }];
   const variant = (options.variant ?? (platform === 'ios' ? 'liquidGlass' : 'material')) as StoryVariant;
   const storySourceSha256 = options.cpp ? cppStorySourceSha256() : undefined;
-  const metroEnv = buildStoryEnv(process.env);
+  const storyEnv = buildStoryEnv(process.env);
+  const metroEnv = platform === 'ios' ? captureMetroRuntimeEnv(storyEnv, MOBILE_DIR) : storyEnv;
   const metro = startMetro(metroEnv);
   let nativeBackend: ScreenshotBackendSession | null = null;
   try {
