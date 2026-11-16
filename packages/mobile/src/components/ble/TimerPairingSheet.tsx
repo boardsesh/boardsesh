@@ -131,7 +131,7 @@ const TimerRow = memo(function TimerRow({
 export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProps) {
   const { t } = useTranslation('boards');
   const { t: tSettings } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   const controllerRef = useRef<RogueTimerController | null>(null);
   if (controllerRef.current === null) controllerRef.current = new RogueTimerController();

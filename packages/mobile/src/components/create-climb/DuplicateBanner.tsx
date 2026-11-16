@@ -21,7 +21,7 @@ type DuplicateBannerProps = {
  */
 export function DuplicateBanner({ name, onView, onDismiss }: DuplicateBannerProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <View style={[styles.banner, { backgroundColor: systemColors.fill }]}>
       <View style={styles.bannerText}>

@@ -139,7 +139,7 @@ function UndoSnackbarGlass({
   bottom,
   undoRef,
 }: UndoSnackbarBodyProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   useEffect(() => {
     if (!visible) return undefined;

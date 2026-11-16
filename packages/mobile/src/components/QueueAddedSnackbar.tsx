@@ -103,7 +103,7 @@ function QueueAddedSnackbarGlass({
   duration = DEFAULT_DURATION,
   queueAdded = { kind: 'added' },
 }: QueueAddedSnackbarProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { t } = useTranslation('session');
   const bottomChrome = useBottomChromeMetrics();
 

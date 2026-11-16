@@ -29,7 +29,7 @@ export const HomeSessionSection = memo(function HomeSessionSection() {
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { sessionId } = useQueueSessionId();
   // The Session tab's own query key, so the two share one cached answer.
   const summaryQuery = useSessionSummary(sessionId);

@@ -343,7 +343,7 @@ const GymRow = memo(function GymRow({
  * label is resolved by the caller (a literal `t(...)`) so the i18n key stays static.
  */
 const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => void; label: string }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}

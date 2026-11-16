@@ -176,7 +176,7 @@ export function SetterPickerList({
   emptyLabel,
 }: SetterPickerListProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
 
   const [searchInput, setSearchInput] = useState('');

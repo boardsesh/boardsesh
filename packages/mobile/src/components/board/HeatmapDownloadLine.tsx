@@ -38,7 +38,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
   testID,
 }: HeatmapDownloadLineProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { confirmAndDownload } = useConfirmBoardDownload();
   const nudge = useOfflineNudge({ surface: 'hold_heatmap', board });
 
