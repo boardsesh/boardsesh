@@ -13,7 +13,13 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { authEmailProjection, logbookChanges, users } from '@boardsesh/db/schema';
+import {
+  authEmailProjection,
+  authEmailReservationMembers,
+  authEmailReservations,
+  logbookChanges,
+  users,
+} from '@boardsesh/db/schema';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { userMutations } from '../graphql/resolvers/users/mutations';
@@ -21,7 +27,7 @@ import { userQueries } from '../graphql/resolvers/users/queries';
 
 // Hoist mock variables so they're available before module evaluation
 const { mockDb, txCalls } = vi.hoisted(() => {
-  const txCalls: Array<{ method: string; args: unknown[] }> = [];
+  const txCalls: Array<{ method: string; args: unknown[]; table?: unknown }> = [];
 
   const mockDb = {
     select: vi.fn().mockReturnValue({
@@ -106,11 +112,12 @@ function setupTransactionMock(options?: {
         return Promise.resolve([{ present: false }]);
       }),
       select: vi.fn().mockImplementation((columns: unknown) => {
-        const call = { method: 'select', columns, args: [] as unknown[] };
+        const call = { method: 'select', columns, args: [] as unknown[], table: undefined as unknown };
         return {
           from: vi.fn().mockImplementation((table: unknown) => ({
             where: vi.fn().mockImplementation((...args: unknown[]) => {
               call.args = args;
+              call.table = table;
               txCalls.push(call);
               return Promise.resolve(
                 table === authEmailProjection ? (options?.manifestRows ?? []) : (options?.draftClimbs ?? []),
@@ -215,13 +222,36 @@ describe('deleteAccount mutation', () => {
     expect(result).toBe(true);
   });
 
-  it('refuses legacy deletion when a current projection exists, before content changes', async () => {
+  it.each(['current-store', 'better-auth'])(
+    'refuses legacy deletion when an enforced %s projection exists, before content changes',
+    async (writerAuthority) => {
+      setupTransactionMock({ manifestRows: [{ phase: 'enforced', writerAuthority }] });
+
+      await expect(
+        userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
+      ).rejects.toThrow('STALE_AUTHORITY');
+      expect(txCalls.some((call) => call.method === 'delete' || call.method === 'update')).toBe(false);
+    },
+  );
+
+  it('deletes with a prepared projection, then releases its projected addresses after the users delete', async () => {
+    // Between `auth-authority prepare` and `activate` (#7591).
     setupTransactionMock({ manifestRows: [{ phase: 'prepared', writerAuthority: 'current-store' }] });
 
-    await expect(
-      userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx()),
-    ).rejects.toThrow('STALE_AUTHORITY');
-    expect(txCalls.some((call) => call.method === 'delete' || call.method === 'update')).toBe(false);
+    expect(await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx())).toBe(true);
+    const userDelete = txCalls.findIndex((call) => call.method === 'delete' && call.table === users);
+    const membershipRead = txCalls.findIndex(
+      (call) => call.method === 'select' && call.table === authEmailReservationMembers,
+    );
+    expect(userDelete).toBeGreaterThan(-1);
+    expect(membershipRead).toBeGreaterThan(userDelete);
+  });
+
+  it('reads no projection rows when no projection exists', async () => {
+    expect(await userMutations.deleteAccount({}, { input: { removeSetterName: false } }, makeAuthCtx())).toBe(true);
+    expect(
+      txCalls.some((call) => call.table === authEmailReservationMembers || call.table === authEmailReservations),
+    ).toBe(false);
   });
 
   it.each([
