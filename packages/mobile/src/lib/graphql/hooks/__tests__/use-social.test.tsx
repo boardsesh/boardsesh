@@ -96,7 +96,9 @@ beforeEach(() => {
 });
 
 describe('useFollowers', () => {
-  it('cancels its original native request on unmount and never publishes its late rows', async () => {
+  it('finishes its native request into the cache after the screen unmounts', async () => {
+    // As before account views: native keys carry no account, and sign-out
+    // clears the whole cache, which cancels whatever is still in flight.
     let complete!: (response: { followers: FollowConnection }) => void;
     requestMock.mockImplementation(
       () => new Promise<{ followers: FollowConnection }>((resolve) => (complete = resolve)),
@@ -108,11 +110,15 @@ describe('useFollowers', () => {
     expect(queryClient.getQueryCache().getAll()[0].queryKey).toEqual(['followers', 'profile-user']);
 
     unmount();
-    expect(requestSignals[0].aborted).toBe(true);
+    expect(requestSignals[0].aborted).toBe(false);
     await act(async () => {
       complete({ followers: makeFollowConnection(0) });
     });
-    expect(queryClient.getQueryData(['followers', 'profile-user'])).toBeUndefined();
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<InfiniteData<FollowConnection>>(['followers', 'profile-user'])?.pages[0].users,
+      ).toHaveLength(30),
+    );
     queryClient.clear();
   });
 

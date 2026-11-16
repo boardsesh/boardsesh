@@ -223,6 +223,15 @@ it and immediately before its own state, navigation or cache publication.
 `mutateAsync` alone cannot qualify that later continuation. Signals cancel work
 before lookup and after actual body decoding without replaying mutations.
 
+Native and wholly legacy (unscoped) requests keep their original lifetime. A
+caller's signal only refuses to start a write for an action it already retired.
+Once sent, the write finishes after its screen unmounts, and the mutation's own
+rollback or cache update runs. The screen's later toast or navigation stays
+retired with its action. Queries do not read TanStack's signal, so a read whose
+last observer unmounts finishes into the cache instead of being cancelled and
+reverted. Sign-out already clears the native cache, which cancels whatever is
+still in flight. Selected browser views keep the cancellation described above.
+
 The actual profile and admin reads and profile-update cache effects now use these
 adapters. Profile updates refresh only their original view's cache. That
 query/cache slice did not adopt EditProfileScreen's later UI continuation or
