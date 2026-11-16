@@ -103,6 +103,9 @@ load. Every launch and retry still needs a fresh app readiness signal.
 Start at the run's summary page. The `verdict` job writes the table: one row per
 job with pass, fail, cancelled or not run, how long it took, and a note.
 
+Durations are optional. If GitHub's jobs API is unavailable or rate-limited,
+the table shows `n/a`; the verdict still uses the actual job results from `needs`.
+
 For a red smoke, the note is the failure class:
 
 | Class | Meaning | Where to look |
