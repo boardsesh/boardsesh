@@ -65,10 +65,17 @@ vi.mock('react-native', () => ({
   },
 }));
 
-// Sheet renders its children + footer so the composer is interactable.
+// Sheet renders its children + footer so the composer is interactable, and a
+// close control standing in for the swipe-down.
 vi.mock('../../Sheet', () => ({
-  Sheet: ({ children, footer }: { children?: ReactNode; footer?: ReactNode }) =>
-    createElement('div', null, children, footer),
+  Sheet: ({ children, footer, onClose }: { children?: ReactNode; footer?: ReactNode; onClose?: () => void }) =>
+    createElement(
+      'div',
+      null,
+      children,
+      footer,
+      createElement('button', { 'data-testid': 'close-sheet', onClick: onClose }),
+    ),
 }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetTextInput: ({
@@ -100,6 +107,28 @@ function renderSheet() {
   const sheetRef = { current: null };
   return render(<CommentSheet sheetRef={sheetRef} entityId="entity-1" entityType="session" onClose={() => {}} />);
 }
+
+describe('CommentSheet draft across close and reopen', () => {
+  // SessionsTab clears the comment target on close and sets it again on reopen;
+  // the sheet stays mounted, so a half-typed comment is still there (#7596 A4,
+  // the revert of #7554, which dropped it on every close).
+  it('keeps a typed draft when the sheet closes and reopens on the same session', () => {
+    const sheetRef = { current: null };
+    const onClose = vi.fn();
+    const sheetFor = (entityId: string | null) => (
+      <CommentSheet sheetRef={sheetRef} entityId={entityId} entityType="session" onClose={onClose} />
+    );
+    const { getByTestId, rerender } = render(sheetFor('entity-1'));
+    fireEvent.change(getByTestId('comment-input'), { target: { value: 'half a thought' } });
+
+    fireEvent.click(getByTestId('close-sheet'));
+    expect(onClose).toHaveBeenCalledOnce();
+    rerender(sheetFor(null));
+    rerender(sheetFor('entity-1'));
+
+    expect((getByTestId('comment-input') as HTMLInputElement).value).toBe('half a thought');
+  });
+});
 
 describe('CommentSheet submit error handling', () => {
   beforeEach(() => {
