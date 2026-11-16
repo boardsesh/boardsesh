@@ -301,6 +301,34 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
   );
 });
 
+/** Two empty lines: the placeholder's title box holds both at any text size. */
+const PLACEHOLDER_TITLE = ' \n ';
+const PLACEHOLDER_LINE = ' ';
+
+/**
+ * A card while Near you's search runs: this card's own boxes (the art, the
+ * two-line title, the subtitle line) with nothing in them, so a row of them is
+ * as tall as the cards that replace it, at any text size. The empty art tile is
+ * all it draws. Hidden from screen readers; its row says what is happening.
+ */
+export function BoardDiscoveryCardPlaceholder() {
+  const { systemColors } = useTheme();
+  const thumbStyle = { backgroundColor: systemColors.tertiaryBackground, borderColor: systemColors.separator };
+  return (
+    <View style={styles.container} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+      <View style={[styles.thumb, thumbStyle]} />
+      <Text variant="subheadline" emphasized numberOfLines={TITLE_LINES} style={styles.title}>
+        {PLACEHOLDER_TITLE}
+      </Text>
+      <View style={styles.subtitleLine}>
+        <Text variant="caption1" numberOfLines={1}>
+          {PLACEHOLDER_LINE}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     width: DISCOVERY_CARD_WIDTH,

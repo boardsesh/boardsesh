@@ -76,7 +76,10 @@ const openAppSettingsMock = vi.hoisted(() => vi.fn());
 const refetchNearbyMock = vi.hoisted(() => vi.fn());
 const setPendingRecognitionMock = vi.hoisted(() => vi.fn());
 const locationOptions = vi.hoisted(() => ({ last: undefined as { retryAfterDenial?: boolean } | undefined }));
-const trackingCtrl = vi.hoisted(() => ({ entryArgs: [] as Array<string | null> }));
+const trackingCtrl = vi.hoisted(() => ({
+  entryArgs: [] as Array<string | null>,
+  nearbyCounts: [] as Array<number | null>,
+}));
 const trackMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn());
 const choiceProps = vi.hoisted(() => ({ last: null as ChoiceProps | null }));
@@ -254,8 +257,9 @@ vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
 }));
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../src/lib/onboarding/use-first-board-picker-tracking', () => ({
-  useFirstBoardPickerTracking: (entry: string | null) => {
+  useFirstBoardPickerTracking: (entry: string | null, nearbyResultCount: number | null) => {
     trackingCtrl.entryArgs.push(entry);
+    trackingCtrl.nearbyCounts.push(nearbyResultCount);
     return chooseFirstBoardPathMock;
   },
 }));
@@ -332,6 +336,10 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   },
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
+  NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
+    searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
+}));
 // The banner's own copy and buttons are its own suite's; here, which one shows and what it calls.
 vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
   NearbyLocationBanner: ({
@@ -448,6 +456,7 @@ beforeEach(() => {
   markOnboardingSeenMock.mockResolvedValue(undefined);
   requestLocationIfAllowedMock.mockResolvedValue(undefined);
   trackingCtrl.entryArgs = [];
+  trackingCtrl.nearbyCounts = [];
   choiceProps.last = null;
   inRangeProps.last = null;
   carouselProps.last = null;
@@ -493,8 +502,9 @@ describe('the picker in first-board mode', () => {
     expect(slot.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('mobile.emptyTitle')).toBeNull();
     expect(screen.queryByText('mobile.onboardingPrompt')).toBeNull();
-    // Near you belongs to "At a gym" here, not to the screen.
-    expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
+    // Near you belongs to "At a gym" here, not to the screen: no shelf, no banner.
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    expect(screen.queryByTestId('location-banner')).toBeNull();
   });
 
   // "Where do you climb?" already carries the + menu's choices as its cards.
@@ -518,8 +528,10 @@ describe('the picker in first-board mode', () => {
   it('does not ask for location until "At a gym" is tapped', () => {
     render(createElement(BoardSelection));
     expect(requestLocationMock).not.toHaveBeenCalled();
-    // Not even the silent read: the question comes with its reason.
+    // Not even the silent read, nor one when the app comes back: the question
+    // comes with its reason.
     expect(requestLocationIfAllowedMock).not.toHaveBeenCalled();
+    expect(locationOptions.last).toEqual({ retryAfterDenial: true, rereadWhenActive: false });
     expect(choice().gymState).toBe('idle');
 
     act(() => {
@@ -528,6 +540,20 @@ describe('the picker in first-board mode', () => {
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('gym');
     expect(choice().gymState).toBe('searching');
+  });
+
+  // `First Board Picker Skipped` reads this count: no search, no count.
+  it('counts no boards near them until "At a gym" is tapped', () => {
+    state.nearbyBoards = [gymWall];
+    const { rerender } = render(createElement(BoardSelection));
+    expect(trackingCtrl.nearbyCounts.every((count) => count === null)).toBe(true);
+
+    act(() => {
+      choice().onGym();
+    });
+    state.locationStatus = 'granted';
+    rerender(createElement(BoardSelection));
+    expect(trackingCtrl.nearbyCounts.at(-1)).toBe(1);
   });
 
   it('shows the boards near the gym once location answers', () => {
@@ -915,10 +941,11 @@ describe("the ordinary picker's Near you", () => {
   });
 
   // Allowed, with the fix still on its way: looking, never a row that asks.
-  it('says it is looking once location is allowed, before the fix lands', () => {
+  // Your boards sits right under Near you: placeholder cards hold the space.
+  it("holds Near you's space with placeholder cards once location is allowed, before the fix lands", () => {
     state.locationPermission = 'granted';
     render(createElement(BoardSelection));
-    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
     expect(screen.queryByTestId('location-banner')).toBeNull();
   });
 
@@ -959,11 +986,12 @@ describe("the ordinary picker's Near you", () => {
     expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
   });
 
-  it('says it is looking while location and the list load', () => {
+  it('holds the space while location and the list load', () => {
     state.locationStatus = 'loading';
     state.locationPermission = 'granted';
     render(createElement(BoardSelection));
-    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
+    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
   });
 
   it('shows the boards it found, with the map beside the title', () => {
@@ -1337,6 +1365,6 @@ describe("the In range slot's ways forward for a board it can't name", () => {
     rerender(createElement(BoardSelection));
 
     expect(screen.queryByText('mobile.firstBoard.nearbyEmptyMoonboard')).toBeNull();
-    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
   });
 });

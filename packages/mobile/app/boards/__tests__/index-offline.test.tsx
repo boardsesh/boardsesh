@@ -127,6 +127,10 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   InRangeSection: () => createElement('div', { 'data-testid': 'in-range' }),
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
+  NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
+    searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
+}));
 vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
   NearbyLocationBanner: ({ permission }: { permission: string }) =>
     createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),

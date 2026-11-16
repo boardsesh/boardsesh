@@ -202,9 +202,14 @@ first-board mode before "At a gym"), is still searching, or the search failed.
 `First Board Picker Skipped` carries the same count as it stood when the picker
 closed. Near you shows only once location is allowed, above Your boards; without
 it the foot of the picker has a banner instead, with Allow location while the
-system prompt can still ask and Open Settings once only Settings can. Its button
-sends no event of its own: the opening's `locationStatus` and the picks'
-`section` tell the two layouts apart. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
+system prompt can still ask and Open Settings once only Settings can (in a
+browser, a refusal is final: the line shows alone). Its button sends no event of
+its own: the opening's `locationStatus` and the picks' `section` tell the two
+layouts apart. While Near you searches, placeholder cards as tall as its cards
+hold its space, and the answer keeps at least that height (cards, or the quiet
+line centred in it), so Your boards never moves under a pick that lands as the
+search answers. Under "Where do you climb?" location waits for "At a gym": it is
+not read on open or when the app comes back. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
 `sameConfig` compares board type, layout, size and hold sets. A failed
 restoration records unknown (`null`) rather than claiming there was no board.
 `source` distinguishes onboarding, explicit Session returns, and other picker

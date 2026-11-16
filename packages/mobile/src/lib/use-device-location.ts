@@ -10,7 +10,7 @@
 // instead of crashing.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 export type Coords = { latitude: number; longitude: number };
 
@@ -21,15 +21,24 @@ export type LocationStatus = 'idle' | 'loading' | 'granted' | 'denied' | 'unavai
  * - `unknown`: not read yet, or no location module to read it from.
  * - `ask`: a prompt can still ask (never asked, or Android after one refusal).
  * - `blocked`: refused for good (iOS after a refusal, Android "Don't ask
- *   again"); only Settings can turn it on.
+ *   again", any refusal in a browser); only Settings can turn it on.
  * - `granted`.
  */
 export type LocationPermission = 'unknown' | 'ask' | 'blocked' | 'granted';
 
-/** expo-location's answer, as a `LocationPermission`. */
-export function locationPermissionFrom(answer: { status: string; canAskAgain?: boolean }): LocationPermission {
+/**
+ * expo-location's answer, as a `LocationPermission`. In a browser a refusal is
+ * final whatever `canAskAgain` says (expo-location's web answer is always
+ * true): the browser never shows its prompt again, so asking would be a dead
+ * button. Only the site's settings can undo it.
+ */
+export function locationPermissionFrom(
+  answer: { status: string; canAskAgain?: boolean },
+  platform: string = Platform.OS,
+): LocationPermission {
   if (answer.status === 'granted') return 'granted';
-  return answer.status === 'denied' && answer.canAskAgain === false ? 'blocked' : 'ask';
+  if (answer.status !== 'denied') return 'ask';
+  return platform === 'web' || answer.canAskAgain === false ? 'blocked' : 'ask';
 }
 
 export type DeviceLocation = {

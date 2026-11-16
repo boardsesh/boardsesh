@@ -211,6 +211,10 @@ vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
     ),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
+  NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
+    searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
+}));
 vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
   NearbyLocationBanner: ({ permission }: { permission: string }) =>
     createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),

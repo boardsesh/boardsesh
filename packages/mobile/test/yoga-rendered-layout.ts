@@ -7,13 +7,19 @@
  * an icon) takes the size `leafSize` answers. A layout style this does not
  * handle throws, so a test never passes on a layout it silently ignored.
  */
-import Yoga, { Align, Direction, Edge, FlexDirection, Gutter, Wrap, type Node as YogaNode } from 'yoga-layout';
+import Yoga, { Align, Direction, Edge, FlexDirection, Gutter, Justify, Wrap, type Node as YogaNode } from 'yoga-layout';
 
 const ALIGN: Record<string, Align> = {
   center: Align.Center,
   'flex-start': Align.FlexStart,
   'flex-end': Align.FlexEnd,
   stretch: Align.Stretch,
+};
+const JUSTIFY: Record<string, Justify> = {
+  center: Justify.Center,
+  'flex-start': Justify.FlexStart,
+  'flex-end': Justify.FlexEnd,
+  'space-between': Justify.SpaceBetween,
 };
 const EDGES: Record<string, Edge> = {
   Top: Edge.Top,
@@ -42,6 +48,8 @@ function applyLayout(node: YogaNode, style: Record<string, unknown>) {
       node.setFlexWrap(value === 'wrap' ? Wrap.Wrap : Wrap.NoWrap);
     } else if (key === 'alignItems') {
       node.setAlignItems(ALIGN[String(value)] as Align);
+    } else if (key === 'justifyContent') {
+      node.setJustifyContent(JUSTIFY[String(value)] as Justify);
     } else if (key === 'gap') {
       node.setGap(Gutter.All, Number(value));
     } else if (key === 'columnGap') {
@@ -58,6 +66,12 @@ function applyLayout(node: YogaNode, style: Record<string, unknown>) {
       node.setFlexBasis(Number(value));
     } else if (key === 'minWidth') {
       node.setMinWidth(value as number | `${number}%`);
+    } else if (key === 'width') {
+      node.setWidth(value as number | `${number}%`);
+    } else if (key === 'height') {
+      node.setHeight(value as number | `${number}%`);
+    } else if (key === 'minHeight') {
+      node.setMinHeight(value as number | `${number}%`);
     } else if (LAYOUT_KEY.test(key)) {
       throw new Error(`yoga-rendered-layout does not lay out "${key}"`);
     }

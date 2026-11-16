@@ -15,6 +15,7 @@ const appState = vi.hoisted(() => ({
   listeners: new Set<(next: string) => void>(),
 }));
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
   AppState: {
     addEventListener: (_type: string, listener: (next: string) => void) => {
       appState.listeners.add(listener);
@@ -35,6 +36,16 @@ describe('locationPermissionFrom', () => {
     [{ status: 'denied', canAskAgain: false }, 'blocked'],
   ])('%j → %s', (answer, permission) => {
     expect(locationPermissionFrom(answer)).toBe(permission);
+  });
+
+  // A browser never shows its prompt again after a refusal, whatever
+  // expo-location's web answer says: Allow location would be a dead button.
+  it.each([
+    [{ status: 'denied', canAskAgain: true }, 'blocked'],
+    [{ status: 'undetermined', canAskAgain: true }, 'ask'],
+    [{ status: 'granted', canAskAgain: true }, 'granted'],
+  ])('in a browser, %j → %s', (answer, permission) => {
+    expect(locationPermissionFrom(answer, 'web')).toBe(permission);
   });
 });
 

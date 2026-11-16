@@ -50,13 +50,13 @@ export function NearbyQuietStatus({
   let line: string;
   let action: ReactElement | null = null;
   switch (state) {
-    // Not asked yet, or no answer: the picker shows the location banner instead of Near you.
+    // Not asked yet: the picker shows the location banner instead of Near you.
+    // Searching: placeholder cards hold the space (NearbyReservedSlot).
+    // Found: the cards themselves.
     case 'idle':
+    case 'searching':
     case 'found':
       return null;
-    case 'searching':
-      line = t('mobile.firstBoard.searching');
-      break;
     case 'none_nearby':
       line = nearbyEmptyLine(t, boardType);
       // Narrowed, the header's action is Show all, so the map is offered here.

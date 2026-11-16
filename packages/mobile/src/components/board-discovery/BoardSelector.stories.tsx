@@ -26,6 +26,7 @@ import { FirstBoardChoice } from './FirstBoardChoice';
 import { InRangeSection } from './InRangeSection';
 import { NearbyLocationBanner } from './NearbyLocationBanner';
 import { NearbyQuietStatus } from './NearbyQuietStatus';
+import { NearbyReservedSlot } from './NearbyReservedSlot';
 import type { PickerTopView } from './picker-top-view';
 
 const noop = () => {};
@@ -127,7 +128,7 @@ const MOONBOARD_ROW = {
 type SelectorState = {
   top: PickerTopView<DiscoveryBoardItem>;
   yourBoards: DiscoveryBoardItem[];
-  nearby: 'results' | 'empty';
+  nearby: 'results' | 'empty' | 'searching';
   /** Location permission: Near you above Your boards when granted (the default), the banner at the foot otherwise. */
   location?: 'granted' | 'ask' | 'blocked';
   firstRun?: boolean;
@@ -225,6 +226,12 @@ const STATES = {
     top: { ...QUIET_TOP, notice: { kind: 'permission_card' }, content: { kind: 'none' } },
     yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
+  },
+  // The search still out: placeholder cards hold Near you's space above Your boards.
+  nearbySearching: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'searching',
   },
   nearbyEmpty: {
     top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
@@ -340,6 +347,10 @@ function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { 
           menuCapabilities={NEARBY_MENU}
           onMenuAction={noop}
         />
+      ) : state.nearby === 'searching' ? (
+        <NearbyReservedSlot searching quiet>
+          {null}
+        </NearbyReservedSlot>
       ) : (
         <NearbyQuietStatus
           state="none_nearby"
@@ -448,6 +459,7 @@ const stories: StoryModule = {
     unnamed: selectorStory('Only a MoonBoard it cannot name, and no gym known', 'unnamed'),
     unnamedAtGym: selectorStory('A MoonBoard it cannot name, above At Crux', 'unnamedAtGym'),
     permission: selectorStory('Asking for Bluetooth first', 'permission'),
+    nearbySearching: selectorStory('Near you searching: placeholder cards above Your boards', 'nearbySearching'),
     nearbyEmpty: selectorStory('Nothing within 20 km: Near you keeps its Map', 'nearbyEmpty'),
     noLocation: selectorStory('Location never asked: Allow location at the foot, no Near you', 'noLocation'),
     locationDenied: selectorStory('Location refused: Open Settings at the foot, no Near you', 'locationDenied'),
