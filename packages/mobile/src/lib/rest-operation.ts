@@ -1,4 +1,3 @@
-import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import { authenticatedFetch } from './auth-interceptor';
 import { captureAuthenticatedResponse } from './authenticated-response-scope';
 import { BACKEND_URL } from './env';
@@ -134,77 +133,4 @@ export function createRestOperation(
 
 export function captureRestOperation(options?: RestOperationOptions): RestOperation {
   return createRestOperation(undefined, options);
-}
-
-/** Closed one-use unlink dispatch. Its physical proof has the same original
- * response policy as reads; ownership/retention belongs to its caller. */
-export type RestUnlinkOperation = Readonly<{
-  assertView(): void;
-  assertAttemptCurrent(): void;
-  unlinkJson<T>(boardType: AuroraBoardName): Promise<RestJsonDelivery<T>>;
-  subscribe(listener: () => void): () => void;
-  dispose(): void;
-}>;
-
-export function createUnlinkRestOperation(
-  _originalView: string | undefined,
-  options: RestOperationOptions = {},
-): RestUnlinkOperation {
-  const controller = new AbortController();
-  const callerSignal = options.signal;
-  const signal = callerSignal ? AbortSignal.any([callerSignal, controller.signal]) : controller.signal;
-  let consumed = false;
-  const assertActive = () => {
-    if (signal.aborted) throw createRestAbortError();
-  };
-
-  return Object.freeze({
-    assertView: assertActive,
-    // A veto only: native adds no account-generation or response policy.
-    assertAttemptCurrent: assertActive,
-    async unlinkJson<T>(boardType: AuroraBoardName): Promise<RestJsonDelivery<T>> {
-      if (consumed) throw new Error('REST operation already used');
-      consumed = true;
-      assertActive();
-      if (!AURORA_BOARDS.includes(boardType)) {
-        throw new TypeError('Unsupported unlink board');
-      }
-
-      let response: Response | undefined;
-      try {
-        response = await authenticatedFetch(`${BACKEND_URL.replace(/\/+$/, '')}/api/aurora-credentials`, {
-          method: 'DELETE',
-          headers: new Headers({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ boardType }),
-          // Native queries previously ignored TanStack cancellation. Only an
-          // explicit operation caller opts into forwarding a fetch signal.
-          ...(callerSignal ? { signal } : {}),
-        });
-        // Own the original response before a post-await cancellation check.
-        assertActive();
-        const assertResponse = captureAuthenticatedResponse(response);
-        const assertCurrent = () => {
-          assertActive();
-          assertResponse();
-        };
-        assertCurrent();
-        let body: RestBody<T>;
-        try {
-          const decoded = (await response.json()) as T;
-          assertCurrent();
-          body = Object.freeze({ kind: 'json', value: decoded });
-        } catch (error) {
-          assertCurrent();
-          body = Object.freeze({ kind: 'decode-error', error });
-        }
-        return Object.freeze({ response, body, assertCurrent });
-      } catch (error) {
-        await discardUnreadResponse(response);
-        assertActive();
-        throw error;
-      }
-    },
-    subscribe: () => () => {},
-    dispose: () => controller.abort(),
-  });
 }

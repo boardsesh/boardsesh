@@ -5,7 +5,7 @@ import type { ImportProgressEvent, ImportResult, StrippedAuroraExportData } from
 import { authenticatedFetch } from './auth-interceptor';
 import { parseDeepLinkQueryParams } from './deep-link-query';
 import { BACKEND_URL } from './env';
-import type { RestOperation, RestReadOutcome, RestGetPath, RestUnlinkOperation } from './rest-operation';
+import type { RestOperation, RestReadOutcome, RestGetPath } from './rest-operation';
 
 const CHUNK_SIZE = 500;
 const KILTER_REDIRECT_URL = 'com.boardsesh.app://board-credentials/kilter';
@@ -635,28 +635,4 @@ export async function streamMoonBoardImport(
 
   const result = await readStreamingMoonBoardImportResponse(response, onEvent);
   onEvent({ type: 'complete', results: result });
-}
-
-/** Only this command's actual physical response can supply its outcome guard. */
-export async function unlinkAuroraCredentialWithReceipt(
-  operation: RestUnlinkOperation,
-  boardType: AuroraBoardName,
-): Promise<RestReadOutcome<DeleteCredentialResult>> {
-  const delivery = await operation.unlinkJson<DeleteCredentialResult>(boardType);
-  const assertCurrent = delivery.assertCurrent;
-  try {
-    assertCurrent();
-    if (!delivery.response.ok) {
-      const payload = delivery.body.kind === 'json' ? (delivery.body.value as { error?: string; code?: string }) : {};
-      assertCurrent();
-      throw new BoardAccountError(errorCodeForResponse(delivery.response, payload));
-    }
-    if (delivery.body.kind === 'decode-error') throw delivery.body.error;
-    const result = delivery.body.value;
-    assertCurrent();
-    return Object.freeze({ ok: true, result, assertCurrent });
-  } catch (error) {
-    assertCurrent();
-    return Object.freeze({ ok: false, error, assertCurrent });
-  }
 }
