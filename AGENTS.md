@@ -187,7 +187,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/websocket-implementation.md` — WebSocket party session architecture
 - `docs/user-media-storage.md` — the two Cloudflare R2 buckets behind avatars, gym images, beta thumbnails and user data exports: why R2 rather than Tigris, the named-bucket env contract, the no-ACL rule R2 forces, and the Railway-bucket migration runbook
 - `docs/boardsesh-grade.md` — Boardsesh grade: the data-science-backed universal climb grade (data sources + quirks, the empirical-Bayes model and every coefficient, validation gates, limitations, rejected alternatives, contributor roadmap)
-- `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web still on the legacy rose/sage palette, pending migration)
+- `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web consumes it dark-only; chrome, motion, accessibility and web wiring live in `docs/mobile-chrome.md`, `docs/mobile-motion.md`, `docs/mobile-accessibility.md`, `docs/web-velvet-send.md`)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
 - `docs/crowdsourced-qa.md` — the PR test-plan + risk gate (`@boardsesh/pr-body`, `pr-test-plan.yml`), and the tester loop that turns it into `qa-approved` / `qa-declined` labels

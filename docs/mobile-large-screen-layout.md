@@ -11,7 +11,7 @@ the bottom accessory, Music's MiniPlayer (HIG Tab bars: "tab bars with an attach
 MiniPlayer in Music"), and tapping it, or any climb, opens the full-screen `/play` player, as on iPhone
 (HIG: "Don't change your app's functionality based on the space it occupies"). The accessory zooms
 into the player. The accessory shows the bar's climb, the last one you opened, not always the
-current one (see `nativeAccessory` in [ai-design-guidelines.md](./ai-design-guidelines.md#aesthetic-vs-capability)). `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
+current one (see `nativeAccessory` in [mobile-chrome.md](./mobile-chrome.md#aesthetic-vs-capability)). `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
 to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
 drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the
 accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
