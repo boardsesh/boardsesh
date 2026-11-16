@@ -40,6 +40,22 @@
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
           "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
@@ -138,6 +154,22 @@
         "packages/mobile/src/lib/error-reporting.ts": {
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
@@ -245,6 +277,22 @@
         "packages/mobile/src/lib/error-reporting.ts": {
           "sha256": "76ba2043aae54c1734fbbd7f3c5b33946c1d7b57b1527fe741c5e1acba90db9b",
           "gitBlob": "951cd6345abdb6ff3f7186c398a59a39e0a30e15"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "778cdd59a18029924b212308522c47125c315818c64fbb87d8c36f4748ed202c",
@@ -357,6 +405,22 @@
           "sha256": "76ba2043aae54c1734fbbd7f3c5b33946c1d7b57b1527fe741c5e1acba90db9b",
           "gitBlob": "951cd6345abdb6ff3f7186c398a59a39e0a30e15"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "778cdd59a18029924b212308522c47125c315818c64fbb87d8c36f4748ed202c",
           "gitBlob": "75f8e40b20362e1024d5836b1970a8352e9087e9"
@@ -459,6 +523,22 @@
         "packages/mobile/src/lib/error-reporting.ts": {
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
@@ -575,6 +655,22 @@
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
           "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
@@ -677,6 +773,22 @@
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
           "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
@@ -778,6 +890,22 @@
         "packages/mobile/src/lib/auth-session.ts": {
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
@@ -888,6 +1016,22 @@
         "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
@@ -1039,6 +1183,22 @@
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "0b341e37b037c2fc4c689d47aefb1d28886d8dc598f1c8336e5b720a01ff3c7f",
           "gitBlob": "60cd8041d80b60bbaf12cfea7288232ac0ee2dfc"
@@ -1189,6 +1349,22 @@
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "c068fa2762cc80bd0cb3dda4d6e849eb213f6c175da003b83a1e5568e0014eaa",
           "gitBlob": "29d68a9e13a2e51deb53c315bcbb7a9ab5291ea0"
@@ -1278,6 +1454,22 @@
         "packages/mobile/src/lib/error-reporting.ts": {
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
@@ -1378,6 +1570,22 @@
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
           "gitBlob": "948296b001401e375a4b6c6365bb28816cb217fd"
@@ -1476,6 +1684,22 @@
         "packages/mobile/src/lib/error-reporting.ts": {
           "sha256": "800eada709671f9637cc7b3b4008c15f8a0a76ba5364ae66e33d5e19d5ed45d2",
           "gitBlob": "6536bf129bcf6e9b32dc136fb1eb5d103a4c3c9c"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "543ccd83e615ac9f1f99af23cf7c66e26923154df8c130b256f93a9e59a5ded0",
@@ -1592,6 +1816,22 @@
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
           "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
@@ -1694,6 +1934,22 @@
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "6f2a2b44335f5243a0224305290c02aaab76f5d648d2365ca0ee648de1c85c58",
+          "gitBlob": "74f9bdd7cacb2f12f1fe0676ae7791da91fa9b94"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
           "gitBlob": "cba38a0d64e8581d81b82c1bb0fec3e47ccec8f0"
@@ -1795,6 +2051,22 @@
         "packages/mobile/src/lib/auth-session.ts": {
           "sha256": "5d05903b4b151ba13836b9a05768c17a88b262860a47d08f4e92cb540cf4f709",
           "gitBlob": "bc93538613beda2fe50aa22c8b5b0bbebe5ce5ad"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
@@ -1905,6 +2177,22 @@
         "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "3d3c491f42b37c9ed8440d06af2115dc0385a47d41a562e46f7e363ad5d1c467",
@@ -2056,6 +2344,22 @@
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
         },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
+        },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "0b341e37b037c2fc4c689d47aefb1d28886d8dc598f1c8336e5b720a01ff3c7f",
           "gitBlob": "60cd8041d80b60bbaf12cfea7288232ac0ee2dfc"
@@ -2205,6 +2509,22 @@
         "packages/mobile/src/lib/connectivity/backend-unavailable-error.ts": {
           "sha256": "8cb430341fc7496bf9d4ae3923b5b477fb58d30021a0556325d0533a907b08aa",
           "gitBlob": "bdfd5ed896742541aab07b1ca0971c532c0a9e58"
+        },
+        "packages/mobile/src/lib/watch-pairing.ts": {
+          "sha256": "7660bdb0e03af2d3acde90ff343bdfaa0e4ffb24dfd2b844fb3e8f4484dd6a61",
+          "gitBlob": "9897a0df93ee73a1b7a461bb669c7cca29f4cbba"
+        },
+        "packages/shared/watch-pairing/src/index.ts": {
+          "sha256": "b27dc15fe87e9ec8a9a715c2b930553aa3db8c7a5c338d2a867e2c325c0429b1",
+          "gitBlob": "39685dfd2165ae7bb43ffa913178840497b6231d"
+        },
+        "packages/shared/watch-pairing/src/types.ts": {
+          "sha256": "94c5e8632fd73c18529ec0caa2e894f7e613eeafcfb32d5e157dbe570cbaaf08",
+          "gitBlob": "498ffb5faad9c2e15d4f2d9c2cc2b3441fc6b1e1"
+        },
+        "packages/shared/watch-pairing/src/countdown.ts": {
+          "sha256": "115cd16c30bcd8ab00ec33b042f378a4b9dabed90727d9b75d9b0a87124cae27",
+          "gitBlob": "6e13a25d6a561d66088e0f7704ca87588868c223"
         },
         "packages/mobile/src/hooks/use-native-oauth-sign-in.ts": {
           "sha256": "c068fa2762cc80bd0cb3dda4d6e849eb213f6c175da003b83a1e5568e0014eaa",

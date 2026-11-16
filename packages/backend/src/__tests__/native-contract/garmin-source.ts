@@ -66,13 +66,15 @@ function replayGarminFunction(source: string, label: string, name: string, scope
     .replace(/("(?:\\.|[^"\\\n])*")\s*=>/g, '$1:')
     .replace(/\.size\(\)|\.length\(\)/g, '.length')
     .replace(/\.add\(/g, '.push(');
+  // The bound object has a reserved name: recorded parameters such as
+  // AuthState.empty(scope, revision) must not shadow it.
   const context = createContext({
-    scope,
+    __recordedScope: scope,
     __dictionary: (candidate: unknown) =>
       candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate),
   });
   new Script('String.prototype.equals = function(other) { return String(this) === other; };').runInContext(context);
-  const replay = new Script(`(function (${parameters}) { with (scope) { ${body} } })`, {
+  const replay = new Script(`(function (${parameters}) { with (__recordedScope) { ${body} } })`, {
     filename: `${label}:${name}`,
   }).runInContext(context) as (...arguments_: unknown[]) => unknown;
   return (...arguments_: unknown[]) => Reflect.apply(replay, undefined, arguments_);
