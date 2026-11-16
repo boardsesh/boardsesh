@@ -6,11 +6,11 @@
 // board picker's in-range rows can name it the next time this phone hears it
 // (quickstart-scan-rows.ts).
 //
-// A box is bound two ways:
-//   - a connect to it from a board succeeded (useBoardBluetooth, where it also
-//     records the reconnect handle in known-board-devices-store.ts);
-//   - the climber picked a board for an unnamed in-range row through "Use my
-//     location" or "Search gyms" (`rememberRecognizedBoardDevice`).
+// A box is bound when a connect to it from a board succeeds (useBoardBluetooth,
+// where it also records the reconnect handle in known-board-devices-store.ts).
+// `rememberRecognizedBoardDevice` is also exported for the picker's in-range
+// slot to bind a box when the climber picks a board for an unnamed row; that
+// call is not wired yet (the slot's UI lands in a later PR).
 //
 // This is identity only, and kept apart from the reconnect handles on purpose.
 // Those are reconnect *targets*: 8 at most, and a hang-up stamps them to expire

@@ -20,12 +20,17 @@
 //     phone connects to a board, or `stop()` (a pick). The 'inactive' iOS state
 //     (the Bluetooth alert itself, Control Center) is not the background.
 //   - It claims ble-plx's one scan and never takes it from the rest timer or an
-//     Android connect: a held scan hides the slot ('busy').
+//     Android connect: a held scan leaves the button ('busy'). Its own claim is
+//     pre-emptible: any other scan takes the radio at once, and this one ends
+//     keeping what it heard.
+//   - A start still waiting on the radio never starts it in the background
+//     (it would spend one of Android's 5 scan starts per 30 s), unless the
+//     start asked for permission: Android reports its dialog as the background.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { readBluetoothAuthorization } from '../../lib/ble/bluetooth-authorization';
+import { hasBluetoothAuthorizationRead, readBluetoothAuthorization } from '../../lib/ble/bluetooth-authorization';
 import { useBluetoothConnectedStatus } from '../../lib/ble/bluetooth-status-store';
 import { bluetoothTransport } from '../../lib/ble/transport-runtime';
 import { hasAndroidBleScanPermissions } from '../../lib/ble/use-ble-permissions';
@@ -67,12 +72,16 @@ function canScanHere(): boolean {
   return Platform.OS !== 'web' && bluetoothTransport() === undefined;
 }
 
+function readIosPermission(): PickerScanPermission {
+  return pickerScanPermissionFromAuthorization(readBluetoothAuthorization(), hasBluetoothAuthorizationRead());
+}
+
 function initialPermission(): PickerScanPermission {
-  return Platform.OS === 'ios' ? pickerScanPermissionFromAuthorization(readBluetoothAuthorization()) : 'checking';
+  return Platform.OS === 'ios' ? readIosPermission() : 'checking';
 }
 
 async function readPermission(): Promise<PickerScanPermission> {
-  if (Platform.OS !== 'android') return pickerScanPermissionFromAuthorization(readBluetoothAuthorization());
+  if (Platform.OS !== 'android') return readIosPermission();
   // A check that threw reads as not granted: the button's request finds out.
   return (await hasAndroidBleScanPermissions()) === true ? 'granted' : 'not_asked';
 }
@@ -91,6 +100,17 @@ export function usePickerBoardScan({
 }): PickerScan {
   const canScan = canScanHere();
   const connectedToBoard = useBluetoothConnectedStatus();
+
+  // Checked by the scan right before it claims the radio. A start that asked
+  // for permission may still read Android's dialog as the background then, so
+  // it goes on; any other start in the background is dropped and noted.
+  const startAskedForPermissionRef = useRef(false);
+  const startDroppedInBackgroundRef = useRef(false);
+  const mayStartRadio = useCallback(() => {
+    if (AppState.currentState !== 'background' || startAskedForPermissionRef.current) return true;
+    startDroppedInBackgroundRef.current = true;
+    return false;
+  }, []);
   const {
     status,
     unavailableReason,
@@ -102,6 +122,7 @@ export function usePickerBoardScan({
     retryLookup,
   } = useQuickstartScan({
     slotPolicy: 'claim',
+    mayStartRadio,
     knownBoards,
   });
 
@@ -122,8 +143,8 @@ export function usePickerBoardScan({
   }, []);
 
   // The latest scan state, for callbacks that must not re-subscribe on it.
-  const scanStateRef = useRef({ status, unavailableReason, starting, connectedToBoard });
-  scanStateRef.current = { status, unavailableReason, starting, connectedToBoard };
+  const scanStateRef = useRef({ status, unavailableReason, starting, connectedToBoard, permission });
+  scanStateRef.current = { status, unavailableReason, starting, connectedToBoard, permission };
 
   // Foreground and background. 'inactive' (the iOS Bluetooth alert, Control
   // Center) keeps the scan: it is not the background.
@@ -181,10 +202,19 @@ export function usePickerBoardScan({
     (trigger: BoardScanTrigger) => {
       const attempt = startAttemptRef.current + 1;
       startAttemptRef.current = attempt;
+      startAskedForPermissionRef.current = scanStateRef.current.permission !== 'granted';
+      startDroppedInBackgroundRef.current = false;
       setStarting(true);
       const settle = () => {
         if (!mountedRef.current || startAttemptRef.current !== attempt) return;
         setStarting(false);
+        if (startDroppedInBackgroundRef.current) {
+          // Never reached the radio: the app is in the background now (its
+          // AppState event may still be on the way), and a scan the slot
+          // started by itself may start again once the app is back.
+          setAppActive(AppState.currentState !== 'background');
+          if (trigger === 'picker_auto') setAutoStartUsed(false);
+        }
         // The request may have changed the answer (an iOS Allow, an Android grant).
         void readPermission().then((nextPermission) => {
           if (mountedRef.current) setPermission(nextPermission);

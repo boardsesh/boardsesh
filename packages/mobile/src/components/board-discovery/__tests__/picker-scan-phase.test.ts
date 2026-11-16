@@ -148,8 +148,14 @@ describe('resolvePickerScan', () => {
       autoStart: false,
     },
     {
-      name: 'hides when the rest timer or a connect holds the scan, rather than claim "no boards"',
+      name: 'offers the button when the rest timer or a connect held the scan, rather than claim "no boards"',
       inputs: { scanStatus: 'busy' },
+      phase: 'tap_to_scan',
+      autoStart: false,
+    },
+    {
+      name: 'still hides a held scan once the phone connects to a board',
+      inputs: { scanStatus: 'busy', connectedToBoard: true },
       phase: 'hidden',
       autoStart: false,
     },
@@ -219,15 +225,21 @@ describe('resolvePickerScan', () => {
 
 describe('pickerScanPermissionFromAuthorization', () => {
   it.each([
-    { authorization: 'notDetermined', permission: 'not_asked' },
-    { authorization: 'allowedAlways', permission: 'granted' },
-    { authorization: 'denied', permission: 'blocked' },
-    { authorization: 'restricted', permission: 'blocked' },
+    { authorization: 'notDetermined', hasNativeRead: true, permission: 'not_asked' },
+    { authorization: 'allowedAlways', hasNativeRead: true, permission: 'granted' },
+    { authorization: 'denied', hasNativeRead: true, permission: 'blocked' },
+    { authorization: 'restricted', hasNativeRead: true, permission: 'blocked' },
     // A binary without the native read asked at launch: a scan never prompts there.
-    { authorization: null, permission: 'granted' },
-  ] as const)('reads iOS $authorization as $permission', ({ authorization, permission }) => {
-    expect(pickerScanPermissionFromAuthorization(authorization)).toBe(permission);
-  });
+    { authorization: null, hasNativeRead: false, permission: 'granted' },
+    // The read exists but threw or answered something unknown: the question
+    // may be open, and a scan by itself would raise the alert unasked.
+    { authorization: null, hasNativeRead: true, permission: 'not_asked' },
+  ] as const)(
+    'reads iOS $authorization (native read: $hasNativeRead) as $permission',
+    ({ authorization, hasNativeRead, permission }) => {
+      expect(pickerScanPermissionFromAuthorization(authorization, hasNativeRead)).toBe(permission);
+    },
+  );
 });
 
 describe('isWithinPickerScanCooldown', () => {

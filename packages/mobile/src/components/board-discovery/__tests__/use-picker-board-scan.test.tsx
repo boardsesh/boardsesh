@@ -36,12 +36,14 @@ vi.mock('react-native', () => ({
 
 const bluetooth = vi.hoisted(() => ({
   authorization: 'allowedAlways' as BluetoothAuthorization | null,
+  hasNativeRead: true,
   androidGranted: true as boolean | null,
   connected: false,
   transportInstalled: false,
 }));
 vi.mock('../../../lib/ble/bluetooth-authorization', () => ({
   readBluetoothAuthorization: vi.fn(() => bluetooth.authorization),
+  hasBluetoothAuthorizationRead: vi.fn(() => bluetooth.hasNativeRead),
 }));
 vi.mock('../../../lib/ble/use-ble-permissions', () => ({
   hasAndroidBleScanPermissions: vi.fn(async () => bluetooth.androidGranted),
@@ -55,8 +57,9 @@ vi.mock('../../../lib/ble/transport-runtime', () => ({
 const settings = vi.hoisted(() => ({ openAppSettings: vi.fn(async () => true) }));
 vi.mock('../../../lib/open-app-settings', () => settings);
 
-// The shared scan composition, driven by hand: each test sets the status the
-// radio would have reached.
+// The shared scan composition, driven by hand. A start reaches the radio at
+// once by default (status 'scanning'), as a real one does after its awaits;
+// tests that need it to wait install their own `start`.
 const scan = vi.hoisted(() => ({
   status: 'idle' as BoardScanStatus,
   unavailableReason: null as BoardScanUnavailableReason | null,
@@ -66,10 +69,10 @@ const scan = vi.hoisted(() => ({
   reset: vi.fn(),
   finish: vi.fn(),
   retryLookup: vi.fn(),
-  options: null as unknown,
+  options: null as { slotPolicy?: string; mayStartRadio?: () => boolean; knownBoards?: unknown } | null,
 }));
 vi.mock('../use-quickstart-scan', () => ({
-  useQuickstartScan: (options: unknown) => {
+  useQuickstartScan: (options: { slotPolicy?: string; mayStartRadio?: () => boolean; knownBoards?: unknown }) => {
     scan.options = options;
     return {
       status: scan.status,
@@ -115,6 +118,7 @@ beforeEach(async () => {
   appState.currentState = 'active';
   appState.handlers = [];
   bluetooth.authorization = 'allowedAlways';
+  bluetooth.hasNativeRead = true;
   bluetooth.androidGranted = true;
   bluetooth.connected = false;
   bluetooth.transportInstalled = false;
@@ -122,7 +126,9 @@ beforeEach(async () => {
   scan.unavailableReason = null;
   scan.rows = [];
   scan.lookup = 'none';
-  scan.start.mockReset().mockResolvedValue(undefined);
+  scan.start.mockReset().mockImplementation(async () => {
+    scan.status = 'scanning';
+  });
   scan.reset.mockReset();
   scan.finish.mockReset();
   scan.retryLookup.mockReset();
@@ -143,9 +149,28 @@ describe('usePickerBoardScan on open', () => {
 
     await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
     expect(result.current.phase).toBe('scanning');
-    expect(scan.options).toEqual({ slotPolicy: 'claim', knownBoards: MY_BOARDS });
+    expect(scan.options).toEqual({ slotPolicy: 'claim', mayStartRadio: expect.any(Function), knownBoards: MY_BOARDS });
     rerender({ focused: true, autoStart: true });
     expect(scan.start).toHaveBeenCalledOnce();
+    expect(result.current.phase).toBe('scanning');
+  });
+
+  it('asks with the button, never by itself, when the iOS read failed: the question may be open', async () => {
+    bluetooth.authorization = null;
+    bluetooth.hasNativeRead = true;
+    const { result } = renderPickerScan();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.phase).toBe('needs_permission');
+    expect(scan.start).not.toHaveBeenCalled();
+  });
+
+  it('scans by itself on an iOS binary with no native read, which asked at launch', async () => {
+    bluetooth.authorization = null;
+    bluetooth.hasNativeRead = false;
+    renderPickerScan();
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
   });
 
   it('never asks on open while the iOS question is unanswered: only the button asks', async () => {
@@ -215,10 +240,20 @@ describe('usePickerBoardScan on open', () => {
     expect(startTriggers()).toEqual(['picker_tap']);
   });
 
-  it('hides when another owner holds the scan', () => {
-    scan.status = 'busy';
+  it('offers the button again when another owner held the scan', async () => {
+    scan.start.mockImplementation(async () => {
+      scan.status = 'busy';
+    });
     const { result } = renderPickerScan();
-    expect(result.current.phase).toBe('hidden');
+    await waitFor(() => expect(result.current.phase).toBe('tap_to_scan'));
+    expect(startTriggers()).toEqual(['picker_auto']);
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.phase).toBe('scanning'));
+    expect(startTriggers()).toEqual(['picker_auto', 'picker_tap']);
   });
 });
 
@@ -415,5 +450,76 @@ describe('usePickerBoardScan after Settings', () => {
     const { result } = renderPickerScan();
     act(() => result.current.retryLookup());
     expect(scan.retryLookup).toHaveBeenCalledOnce();
+  });
+});
+
+// A start waits on the permission and the radio before it claims the scan. If
+// the app went to the background meanwhile, starting the radio would spend one
+// of Android's 5 scan starts per 30 s on a scan nobody sees.
+describe('usePickerBoardScan never starts the radio in the background', () => {
+  /** A start that waits until the test lets it reach the radio, where it asks the gate. */
+  function startThatWaitsForRadio() {
+    let reachRadio: () => void = () => {};
+    scan.start.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          reachRadio = () => {
+            if (scan.options?.mayStartRadio?.() !== false) scan.status = 'scanning';
+            resolve();
+          };
+        }),
+    );
+    return { reachRadio: () => reachRadio() };
+  }
+
+  it('drops a start that reaches the radio in the background, and scans by itself once the app is back', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    const { result } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+
+    expect(scan.status).toBe('idle');
+    expect(scan.finish).not.toHaveBeenCalled();
+    expect(scan.start).toHaveBeenCalledOnce();
+
+    scan.start.mockImplementation(async () => {
+      scan.status = 'scanning';
+    });
+    fireAppState('active');
+    await waitFor(() => expect(startTriggers()).toEqual(['picker_auto', 'picker_auto']));
+    expect(result.current.phase).toBe('scanning');
+  });
+
+  it('lets a start that asked for permission through: Android reports its dialog as the background', async () => {
+    platform.OS = 'android';
+    bluetooth.androidGranted = false;
+    const { reachRadio } = startThatWaitsForRadio();
+    const { result } = renderPickerScan();
+    await waitFor(() => expect(result.current.phase).toBe('needs_permission'));
+
+    act(() => result.current.start());
+    fireAppState('background');
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+
+    expect(scan.status).toBe('scanning');
+  });
+
+  it('lets a start through while the app is in the foreground', async () => {
+    const { reachRadio } = startThatWaitsForRadio();
+    renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+    await act(async () => {
+      reachRadio();
+      await Promise.resolve();
+    });
+    expect(scan.status).toBe('scanning');
   });
 });

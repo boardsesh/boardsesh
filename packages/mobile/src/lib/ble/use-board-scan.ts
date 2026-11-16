@@ -63,9 +63,11 @@ export type BoardScanTrigger = 'sheet' | 'picker_auto' | 'picker_tap';
  * How a scan gets ble-plx's one scan (ble-scan-slot.ts).
  * - 'take': whatever holds it loses it, as the quickstart sheet always has. The
  *   climber opened the sheet to scan.
- * - 'claim': only while nobody holds it, else the scan ends at 'busy'. The
- *   picker's in-range slot scans without being asked, so it must never stop the
- *   rest timer's scan (rogue-timer-ble.ts) or an Android connect's (adapter.ts).
+ * - 'claim': only while nobody holds it, else the scan ends at 'busy', and any
+ *   other scan may take it over (it then ends at 'done', keeping what it heard).
+ *   The picker's in-range slot scans without being asked, so it must never stop
+ *   the rest timer's scan (rogue-timer-ble.ts) or an Android connect's
+ *   (adapter.ts), nor make one of them fail as busy.
  */
 export type BoardScanSlotPolicy = 'take' | 'claim';
 
@@ -78,7 +80,8 @@ export type BoardScanSlotPolicy = 'take' | 'claim';
  */
 export type BoardScanUnavailableReason = 'permission_denied' | BluetoothUnavailableReason;
 
-type BoardScanOutcome = 'completed' | 'stopped' | 'error';
+/** 'preempted': a 'claim' scan gave the radio to a scan someone asked for. */
+type BoardScanOutcome = 'completed' | 'stopped' | 'error' | 'preempted';
 
 export type BoardScan = {
   status: BoardScanStatus;
@@ -107,7 +110,19 @@ export type BoardScan = {
   finish: () => void;
 };
 
-export function useBoardScan({ slotPolicy = 'take' }: { slotPolicy?: BoardScanSlotPolicy } = {}): BoardScan {
+export function useBoardScan({
+  slotPolicy = 'take',
+  mayStartRadio,
+}: {
+  slotPolicy?: BoardScanSlotPolicy;
+  /**
+   * Asked once more right before the radio starts, after the permission and
+   * power checks have awaited: false drops the start, leaving the status as it
+   * was. The picker's in-range slot uses it to not start a scan in the
+   * background.
+   */
+  mayStartRadio?: () => boolean;
+} = {}): BoardScan {
   const [status, setStatus] = useState<BoardScanStatus>('idle');
   const [unavailableReason, setUnavailableReason] = useState<BoardScanUnavailableReason | null>(null);
   const [serials, setSerials] = useState<string[]>([]);
@@ -127,6 +142,8 @@ export function useBoardScan({ slotPolicy = 'take' }: { slotPolicy?: BoardScanSl
   // who asked for the start in progress (`start` sets it, the scan reads it).
   const triggerRef = useRef<BoardScanTrigger>('sheet');
   const requestedTriggerRef = useRef<BoardScanTrigger>('sheet');
+  const mayStartRadioRef = useRef(mayStartRadio);
+  mayStartRadioRef.current = mayStartRadio;
   // A device event can land in the BLE callback just after unmount; gate the
   // state writes so we don't setState on an unmounted component.
   const mountedRef = useRef(true);
@@ -208,10 +225,20 @@ export function useBoardScan({ slotPolicy = 'take' }: { slotPolicy?: BoardScanSl
       return;
     }
 
+    if (mayStartRadioRef.current && !mayStartRadioRef.current()) return;
+
     // The one scan ble-plx runs. A 'claim' scan skips rather than stop another
     // owner's; nothing has been reset yet, so a skipped scan changes nothing
-    // but its status.
-    if (slotPolicy === 'claim' && !claimBleScan(scanToken.current)) {
+    // but its status. Once running, it gives way to any other scan: it stops
+    // its radio before that scan starts and ends keeping what it heard.
+    const giveWay = () => {
+      if (!isCurrentScanAttempt() || !scanningRef.current) return;
+      scanAttemptRef.current += 1;
+      void getBleManager().stopDeviceScan();
+      stop('preempted');
+      setStatus('done');
+    };
+    if (slotPolicy === 'claim' && !claimBleScan(scanToken.current, { preemptible: true, onPreempted: giveWay })) {
       setStatus('busy');
       return;
     }

@@ -616,7 +616,9 @@ export const SHARED_EVENTS = {
   // trigger }.
   // `outcome`: 'completed' (the 15 s window ran out), 'stopped' (the sheet
   // closed, the picker left the screen or went to the background, or a board was
-  // picked first), 'error' (the scan errored).
+  // picked first), 'error' (the scan errored), 'preempted' (2026-11, picker
+  // scans only: another Bluetooth scan, such as the rest timer's connect, took
+  // the radio).
   // `found_count` is the number of distinct board serials heard, before GraphQL
   // resolves them to boards. It stays serials-only so its series doesn't break.
   // `serialless_count` (2026-10) counts boards heard with no serial, one per BLE

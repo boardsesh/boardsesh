@@ -17,6 +17,7 @@ vi.mock('../../../../modules/live-activity/src/index', async () => {
 
 import {
   allowsBluetoothUse,
+  hasBluetoothAuthorizationRead,
   isBluetoothAuthorizationRefused,
   readBluetoothAuthorization,
   requestBluetoothAuthorization,
@@ -53,6 +54,33 @@ describe('readBluetoothAuthorization', () => {
       },
     };
     expect(readBluetoothAuthorization()).toBeNull();
+  });
+});
+
+// A null read is either "nothing to read" or "the read failed". Only the first
+// may count as already asked: the board picker scans by itself on that.
+describe('hasBluetoothAuthorizationRead', () => {
+  it('is false without the BoardBle module (Android, web)', () => {
+    expect(hasBluetoothAuthorizationRead()).toBe(false);
+  });
+
+  it('is false on an iOS binary older than the native read', () => {
+    nativeBluetoothAuthorizationHarness.nativeModule = {};
+    expect(hasBluetoothAuthorizationRead()).toBe(false);
+  });
+
+  it('is true when the read exists, even when it throws or answers something unknown', () => {
+    nativeBluetoothAuthorizationHarness.nativeModule = {
+      getBluetoothAuthorization: () => {
+        throw new Error('bridge gone');
+      },
+    };
+    expect(readBluetoothAuthorization()).toBeNull();
+    expect(hasBluetoothAuthorizationRead()).toBe(true);
+
+    nativeBluetoothAuthorizationHarness.nativeModule = { getBluetoothAuthorization: () => 'unknown' };
+    expect(readBluetoothAuthorization()).toBeNull();
+    expect(hasBluetoothAuthorizationRead()).toBe(true);
   });
 });
 

@@ -36,10 +36,13 @@ export type QuickstartScan = Pick<
 
 export function useQuickstartScan({
   slotPolicy,
+  mayStartRadio,
   knownBoards,
 }: {
   /** How the scan gets ble-plx's one scan; see `BoardScanSlotPolicy`. Defaults to 'take'. */
   slotPolicy?: BoardScanSlotPolicy;
+  /** Asked right before the radio starts; false drops the start (see `useBoardScan`). */
+  mayStartRadio?: () => boolean;
   /**
    * The climber's own and followed boards, which a serial-less box this phone
    * recognises by its Bluetooth id may be named as. Absent: no box is
@@ -49,6 +52,7 @@ export function useQuickstartScan({
 } = {}): QuickstartScan {
   const { status, unavailableReason, serials, advertisedTypes, devices, start, reset, finish } = useBoardScan({
     slotPolicy,
+    mayStartRadio,
   });
   // Scoped to what each controller announced. Aurora reuses a serial across
   // board apps, so unscoped this would offer a stranger's Kilter board for an

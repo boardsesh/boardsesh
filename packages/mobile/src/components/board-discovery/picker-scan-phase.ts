@@ -20,7 +20,7 @@ import type { BluetoothAuthorization } from '../../lib/ble/bluetooth-authorizati
 import type { QuickstartLookupState } from './quickstart-scan-rows';
 
 export type PickerScanPhase =
-  /** Not shown: a browser, Bluetooth LE unsupported (a simulator, known only after a try), a phone already connected to a board, or another scan holds the radio. */
+  /** Not shown: a browser, Bluetooth LE unsupported (a simulator, known only after a try), or a phone already connected to a board. */
   | 'hidden'
   /** Bluetooth not allowed yet. The button asks (the iOS alert, the Android dialog), then scans. */
   | 'needs_permission'
@@ -28,7 +28,7 @@ export type PickerScanPhase =
   | 'blocked_denied'
   /** Bluetooth is off. */
   | 'blocked_off'
-  /** Ready, waiting for a tap: auto-scan is switched off, or a picker scan ended under 30 s ago. */
+  /** Ready, waiting for a tap: auto-scan is switched off, a picker scan ended under 30 s ago, or another scan held the radio. */
   | 'tap_to_scan'
   /** Scanning, or about to. Rows may already hold boards heard so far. */
   | 'scanning'
@@ -78,10 +78,18 @@ export type PickerScanResolution = {
   autoStart: boolean;
 };
 
-/** iOS authorization as the slot reads it. Null is a binary without the native read, which asked at launch, so a scan never prompts there. */
+/**
+ * iOS authorization as the slot reads it. A null read is 'granted' only on a
+ * binary with no native read (`hasNativeRead` false), which asked at launch, so
+ * a scan never prompts there. A null from a binary that has the read is a read
+ * that threw or answered something unknown: the question may still be open,
+ * and scanning by itself would show the alert, so the button asks instead.
+ */
 export function pickerScanPermissionFromAuthorization(
   authorization: BluetoothAuthorization | null,
+  hasNativeRead: boolean,
 ): PickerScanPermission {
+  if (authorization === null) return hasNativeRead ? 'not_asked' : 'granted';
   if (authorization === 'notDetermined') return 'not_asked';
   if (authorization === 'denied' || authorization === 'restricted') return 'blocked';
   return 'granted';
@@ -137,10 +145,10 @@ export function resolvePickerScan(inputs: PickerScanInputs): PickerScanResolutio
 function resolvePhase(inputs: PickerScanInputs, scansByItself: boolean): PickerScanPhase {
   if (!inputs.canScan || inputs.connectedToBoard) return 'hidden';
   switch (inputs.scanStatus) {
-    // Another owner holds ble-plx's one scan (the rest timer, an Android
-    // connect). Saying "no boards in range" would be untrue, so say nothing.
+    // Another owner held ble-plx's one scan (the rest timer, an Android
+    // connect). "No boards in range" would be untrue; the button tries again.
     case 'busy':
-      return 'hidden';
+      return 'tap_to_scan';
     case 'unavailable':
       return phaseForUnavailable(inputs.unavailableReason);
     case 'scanning':

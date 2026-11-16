@@ -1067,6 +1067,75 @@ describe('useBoardScan for the board picker', () => {
     releaseBleScan(restTimerScan);
   });
 
+  it('gives the radio to a scan someone asked for, ending at done with what it heard', async () => {
+    const { result, unmount } = renderHook(() => useBoardScan({ slotPolicy: 'claim' }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+    act(() => {
+      scanCallback()(null, { id: 'moon-1', localName: 'MoonBoard A', rssi: -60 });
+    });
+
+    // The rest timer's connect claims the scan, then starts its own.
+    const restTimerScan = Symbol('rest-timer');
+    let stopsBeforeHandOver = -1;
+    act(() => {
+      expect(claimBleScan(restTimerScan)).toBe(true);
+      stopsBeforeHandOver = mockBleManager.stopDeviceScan.mock.calls.length;
+    });
+
+    // Its listener is gone before the new scan starts: ble-plx would keep it.
+    expect(stopsBeforeHandOver).toBe(1);
+    expect(currentBleScanOwner()).toBe(restTimerScan);
+    expect(result.current.status).toBe('done');
+    expect(result.current.devices).toHaveLength(1);
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'preempted',
+      found_count: 0,
+      serialless_count: 1,
+      moonboard_count: 1,
+      trigger: 'picker_auto',
+    });
+
+    // Late advertisements, the old timeout and unmounting touch nothing of the
+    // rest timer's.
+    act(() => {
+      scanCallback()(null, { id: 'moon-2', localName: 'MoonBoard B', rssi: -50 });
+      vi.advanceTimersByTime(15_000);
+    });
+    unmount();
+    expect(mockBleManager.stopDeviceScan).toHaveBeenCalledOnce();
+    expect(currentBleScanOwner()).toBe(restTimerScan);
+    expect(
+      analytics.track.mock.calls.filter(([eventName]) => eventName === 'Board Quickstart Scan Finished'),
+    ).toHaveLength(1);
+    releaseBleScan(restTimerScan);
+  });
+
+  it('does not start the radio when the gate says no at the last moment', async () => {
+    const mayStartRadio = vi.fn(() => false);
+    const { result } = renderHook(() => useBoardScan({ slotPolicy: 'claim', mayStartRadio }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+
+    expect(mayStartRadio).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('idle');
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+    expect(currentBleScanOwner()).toBeNull();
+  });
+
+  it('asks the gate only once the permission and the radio checks are done', async () => {
+    mockBleManager.state.mockResolvedValue('PoweredOff');
+    const mayStartRadio = vi.fn(() => true);
+    const { result } = renderHook(() => useBoardScan({ slotPolicy: 'claim', mayStartRadio }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+    expect(result.current.status).toBe('unavailable');
+    expect(mayStartRadio).not.toHaveBeenCalled();
+  });
+
   it('still takes the slot for the sheet, as it always has', async () => {
     claimBleScan(Symbol('rest-timer'));
     const { result } = renderHook(() => useBoardScan());
