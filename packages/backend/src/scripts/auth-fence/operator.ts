@@ -27,10 +27,13 @@ export function operatorClient(
 }
 
 export function parseOperatorArguments(
-  arguments_: readonly string[],
+  argumentsWithBoundary: readonly string[],
   commands: readonly string[],
   additionalFlags: readonly string[] = [],
 ) {
+  // `vp run <task> -- <arguments>` forwards the `--` itself. Drop that one leading
+  // boundary so the documented runbook form and the bare form parse the same.
+  const arguments_ = argumentsWithBoundary[0] === '--' ? argumentsWithBoundary.slice(1) : argumentsWithBoundary;
   const command = arguments_[0]?.startsWith('--') || !arguments_[0] ? commands[0] : arguments_[0];
   if (!commands.includes(command)) throw new Error('INVALID_ARGUMENTS');
   const options = new Map<string, string>();

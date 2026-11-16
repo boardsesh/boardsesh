@@ -63,7 +63,12 @@ ours attached, so this tool manages its declared settings through the API.
   overwritten once set. This covers secrets and the provider-managed
   `AWS_BASE_ENDPOINT`, so merging cannot restore a stale storage endpoint. For
   `PostGIS - PG18`, this also asserts that `PG_TLS_SERVER_CERT` and
-  `PG_TLS_SERVER_KEY` are present without reading either value into git.
+  `PG_TLS_SERVER_KEY` are present without reading either value into git. An
+  **optional** secret (`optionalVars`) is declared by name too, but absence is not
+  drift: only an unfilled `<placeholder>` is reported, and the tool never writes
+  it. `WEB_DATABASE_URL` on `boardsesh-web` is one: the web's own `boardsesh_web`
+  login for the BA-04 writer fence, set by the owner from runbook #7430
+  ([fence commands](./better-auth-writer-fence-proof.md#operator-commands)).
 - **The OTA cache variables.** `boardsesh-ota-v3` needs `REDIS_HOST`,
   `REDIS_PORT` and `REDIS_PASSWORD` set (by name only; they are Railway references
   to the shared Redis), and two public values pinned exactly: `CACHE_MODE` must be

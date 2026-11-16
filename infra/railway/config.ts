@@ -243,6 +243,17 @@ export interface ForbiddenEnvVar {
   reason: string;
 }
 
+/**
+ * A secret variable which may be absent: an owner sets it when a rollout step
+ * calls for it. Declared by name only, like a presence-only RequiredEnvVar, so
+ * its value is never printed and never written. When present it must not be an
+ * unfilled placeholder. Absence is not drift.
+ */
+export interface OptionalEnvVar {
+  name: string;
+  reason: string;
+}
+
 /** A variable which may be absent, but must use one of these safe values when present. */
 export interface OptionalConstrainedEnvVar {
   name: string;
@@ -322,6 +333,7 @@ export interface ServiceDesired {
   name: string;
   management: ServiceManagement;
   requiredVars: RequiredEnvVar[];
+  optionalVars?: OptionalEnvVar[];
   optionalConstrainedVars?: OptionalConstrainedEnvVar[];
   requiredConstrainedVars?: RequiredConstrainedEnvVar[];
   requiredOneOfVars?: RequiredOneOfEnvVars[];
@@ -786,6 +798,15 @@ export const desiredRailwayState: RailwayDesiredState = {
         {
           name: 'SMTP_PASSWORD',
           reason: 'Required to authenticate the SMTP transport for credential-account emails.',
+        },
+      ],
+      optionalVars: [
+        {
+          name: 'WEB_DATABASE_URL',
+          reason:
+            "The web's own connection string for the restricted boardsesh_web login (BA-04 writer fence). " +
+            'Unset, the web keeps DATABASE_URL. Set it only in the rehearsed switch in runbook #7430: the role ' +
+            'must exist and verify, and while web sign-in still writes identity tables itself, this login breaks it.',
         },
       ],
       optionalConstrainedVars: [

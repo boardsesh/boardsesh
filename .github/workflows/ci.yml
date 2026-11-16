@@ -977,7 +977,7 @@ jobs:
       - name: better-auth-boundary (Better Auth stays out of web, mobile and production backend code)
         id: better-auth-boundary
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts scripts/__tests__/ci-credential-writer-workflow.test.ts --maxWorkers=2 --reporter=agent
+        run: vp test run --project scripts scripts/__tests__/better-auth-boundary.test.ts scripts/__tests__/ci-auth-mirror-workflow.test.ts scripts/__tests__/ci-auth-web-proof-workflow.test.ts scripts/__tests__/ci-auth-compatibility-workflow.test.ts scripts/__tests__/ci-credential-writer-workflow.test.ts scripts/__tests__/ci-auth-fence-workflow.test.ts --maxWorkers=2 --reporter=agent
 
       # Last on purpose: `vp run codegen` rewrites generated files in the
       # working tree, and no earlier guard should see that.
@@ -1729,6 +1729,83 @@ jobs:
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
           retention-days: 7
 
+  # BA-04 web writer fence (docs/better-auth-writer-fence-proof.md). Its own PG18
+  # cluster, not a step of test-credential-writer: roles are cluster-wide, the
+  # fence proof refuses to start while boardsesh_web or boardsesh_identity_writer
+  # exists, and the credential proofs leave both behind. It reuses that job's
+  # bootstrap to apply the canonical journal, restores a schema-only dump into a
+  # disposable database, applies the fence through the operator CLI, then proves
+  # the web login gets 42501 on every identity table while its ticks and
+  # playlists still write, and the separate identity writer still writes credentials.
+  test-auth-fence:
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.sharedDeps == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: ghcr.io/boardsesh/boardsesh-postgres-postgis@sha256:98ed9b18b9ef23d4f0aec136bab51b600b8343a19b5f39c78c2c8deab1e96c91
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: epic6975_credential_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+      - name: Apply the canonical journal to a fresh database
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+          PGDATABASE: epic6975_credential_ci
+          CREDENTIAL_WRITER_PROOF_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/epic6975_credential_ci
+        run: bash packages/backend/scripts/bootstrap-credential-writer-proof-database.sh
+      # The runner's pg_dump is older than the PG18 server and refuses to dump it;
+      # the service container's own pg_dump matches.
+      - name: Dump the migrated schema (no rows)
+        run: |
+          docker exec "${{ job.services.postgres.id }}" \
+            pg_dump --username=postgres --schema-only --dbname=epic6975_credential_ci > "$RUNNER_TEMP/auth-fence-schema.sql"
+          test -s "$RUNNER_TEMP/auth-fence-schema.sql"
+      - name: Run the full-schema writer fence proof
+        env:
+          AUTH_FENCE_TEST_SCHEMA_FILE: ${{ runner.temp }}/auth-fence-schema.sql
+          AUTH_FENCE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+        run: |
+          mkdir -p packages/backend/test-results
+          vp run test:auth-fence --reporter=junit --outputFile.junit=./test-results/junit-auth-fence.xml
+          test -s packages/backend/test-results/junit-auth-fence.xml
+          vp exec node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const xml = readFileSync('packages/backend/test-results/junit-auth-fence.xml', 'utf8');
+          const fullSchema = [...xml.matchAll(/<testcase\b[^>]*full-schema[^>]*>/g)].length;
+          if (/<skipped(?:\s|\/|>)/.test(xml)) throw new Error('A writer fence case was skipped');
+          if (fullSchema < 16) throw new Error(`Expected at least 16 full-schema fence cases, ran ${fullSchema}`);
+          NODE
+      - name: Upload writer fence proof results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-auth-fence
+          path: packages/backend/test-results/junit-auth-fence.xml
+          retention-days: 7
+
   aurora-circuit-arbitration:
     needs: [changes]
     if: needs.changes.outputs.auroraCircuitArbitration == 'true' || needs.changes.outputs.rootCi == 'true'
@@ -2136,6 +2213,7 @@ jobs:
       - test-auth-compatibility
       - test-auth-mirror
       - test-credential-writer
+      - test-auth-fence
       - aurora-circuit-arbitration
       - test-ocr
       - test-location-sync-integration

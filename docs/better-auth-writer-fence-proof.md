@@ -261,11 +261,98 @@ new role cannot revoke an already running process's different database identity.
 Emergency re-grants are allowed only before S3. They never remove cutoff rows,
 restore passwords or close the later session/rollout gates.
 
-Full-schema QA restores a schema-only dump of the local migrated development
-image into a disposable database, never a production dump or an account-row
-copy. The isolated test config accepts `AUTH_FENCE_TEST_SCHEMA_FILE` plus a
-loopback-only `AUTH_FENCE_TEST_DATABASE_URL`; it never falls back to the product
-connection string. The fixture refuses an existing `boardsesh_web` role and
-removes only its own temporary database and role. The ordinary unit suite
-checks argument validation, read-only defaults, future identity classification,
-cutoff reads, rollback output and non-bypassable activation gates.
+Full-schema QA restores a schema-only dump of a migrated database into a
+disposable database, never a production dump or an account-row copy. The
+isolated test config accepts `AUTH_FENCE_TEST_SCHEMA_FILE` plus a loopback-only
+`AUTH_FENCE_TEST_DATABASE_URL`; it never falls back to the product connection
+string. The fixture refuses to start while `boardsesh_web` or
+`boardsesh_identity_writer` exists in the cluster, and removes only its own
+temporary database and those two roles. The ordinary unit suite checks argument
+validation, read-only defaults, future identity classification, cutoff reads,
+rollback output, fixed refusal codes and non-bypassable activation gates.
+
+### CI proof
+
+The required `test-auth-fence` job in `ci.yml` runs whenever backend, shared or
+root CI inputs change. It owns a PG18.6/PostGIS cluster on the same pinned image
+as `test-credential-writer`, but not that job's cluster: roles are cluster-wide
+and the credential proofs leave both roles behind. It applies the full canonical
+journal with the credential bootstrap, dumps the schema with the server's own
+`pg_dump`, then runs `vp run test:auth-fence`. A JUnit check fails the job if any
+case is skipped or fewer than 16 full-schema cases ran. The run proves, on the
+current journal:
+
+- the fence applies through the operator CLI's `plan` hash and `verify` passes;
+- connected as `boardsesh_web`, `INSERT`, `UPDATE`, `DELETE` and `TRUNCATE` on
+  every identity table fails with SQLSTATE `42501`. The tables come from the
+  catalogue (46 on the current journal, plus the test's own
+  `auth_future_identity`), checked against a named list so an empty catalogue
+  cannot pass;
+- the web login still inserts, edits and deletes a tick and a playlist, and the
+  delete triggers still write their `logbook_changes` and `sync_deletions` rows;
+- after `boardsesh_identity_writer` receives the reviewed
+  `private-browser-renewal-v1` grants, it qualifies, inserts a user, inserts and
+  changes a password and adds and removes a session, while `verify` still passes
+  and the web login still gets `42501` on `user_credentials`;
+- reopening one identity write (`GRANT INSERT ON users`) makes `verify` refuse
+  with `IDENTITY_WRITE_PATH`.
+
+Local reproduction needs any PG18 cluster without those two roles, a migrated
+database to dump, and the same two variables:
+
+```sh
+pg_dump --schema-only --dbname=<migrated-local-database> > /tmp/fence-schema.sql
+AUTH_FENCE_TEST_SCHEMA_FILE=/tmp/fence-schema.sql \
+AUTH_FENCE_TEST_DATABASE_URL=postgresql://postgres:<password>@127.0.0.1:<port>/postgres \
+  vp run test:auth-fence
+```
+
+Author run on 2026-11-16, PG18.6/PostGIS 3.6.4, 317-entry journal: 24/24 cases
+(8 unit, 16 full-schema) in 8.5 seconds. A deliberate `GRANT DELETE ON
+oauth_session TO boardsesh_web` made the per-table case fail and name that
+statement.
+
+### Operator commands
+
+`vp run auth:fence` wraps `packages/backend/src/scripts/auth-fence.ts`. The
+three modes, with `plan` as the default:
+
+| Mode | Transaction | Output |
+| --- | --- | --- |
+| `plan` | read-only, repeatable read | `-- SHA-256: <hash>`, every `CREATE ROLE`/`REVOKE`/`GRANT`/`ALTER DEFAULT PRIVILEGES` statement, then the emergency re-grant SQL as `-- ROLLBACK:` comments |
+| `verify` | read-only, repeatable read | `{"mode":"verify","role":"boardsesh_web","verified":true,"catalogSha256":…}` |
+| `apply` | read committed, 2 s lock timeout | `{"mode":"applied","sha256":…,"evidence":{…}}` after `verifyFence` passes inside the same transaction |
+
+`apply` refuses without `--plan-sha256` (`PLAN_SHA256_REQUIRED`) and refuses a
+hash the live catalogue no longer produces (`PLAN_CHANGED`); `plan` and `verify`
+refuse a hash. A refusal prints one fixed code, such as `UNSAFE_WEB_ROLE`,
+`IDENTITY_WRITE_PATH` or `SQLSTATE_55P03`, and exits 1; driver messages and URLs
+are never printed. The plan never contains a password: `apply` creates
+`boardsesh_web` without one, and the owner sets it separately.
+
+```sh
+export AUTH_OPERATOR_DATABASE_URL='postgresql://<admin>@<host>:5432/<db>?sslmode=verify-full'
+vp run auth:fence -- plan --confirm-host <host>
+vp run auth:fence -- apply --confirm-host <host> --plan-sha256 <hash-from-plan>
+vp run auth:fence -- verify --confirm-host <host>
+```
+
+The leading `--` is optional; the operator parser drops exactly one.
+
+### Web connection string
+
+The web server builds its shared pool in `packages/web/app/lib/db/db.ts`, which
+calls `applyWebDatabaseUrl()` from `@boardsesh/db/client` before the first pool.
+That process then reads `WEB_DATABASE_URL` and falls back to `DATABASE_URL` when
+it is unset or blank, so production is unchanged until the owner sets it. The
+backend never calls it, so a stray copy on the backend service changes nothing.
+`READ_REPLICA_URL` is unchanged. `infra/railway/config.ts` declares
+`WEB_DATABASE_URL` on `boardsesh-web` as an optional secret: absence is not
+drift, only an unfilled placeholder is reported, and `railway:apply` never
+writes it.
+
+Setting it is a rollout step, not a configuration fix. While web sign-in,
+registration and password reset still write identity tables from the web
+(see the [writer inventory](./better-auth-writer-inventory.md)), pointing the
+web at `boardsesh_web` makes those writes fail with `42501`. The order and the
+gates belong to #7430.

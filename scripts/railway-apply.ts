@@ -487,6 +487,7 @@ async function fetchVariables(
     const hasVariableAssertions =
       declared.requiredVars.length > 0 ||
       (declared.forbiddenVars?.length ?? 0) > 0 ||
+      (declared.optionalVars?.length ?? 0) > 0 ||
       (declared.optionalConstrainedVars?.length ?? 0) > 0 ||
       (declared.requiredConstrainedVars?.length ?? 0) > 0 ||
       (declared.requiredOneOfVars?.length ?? 0) > 0;

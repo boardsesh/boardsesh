@@ -155,8 +155,39 @@ export function isProductionSentryEnvironment(): boolean {
   return resolveSentryEnvironment() === 'production';
 }
 
+/**
+ * The web server's own connection string (BA-04, docs/better-auth-writer-fence-proof.md).
+ * It is meant for the restricted `boardsesh_web` LOGIN on the same database as
+ * DATABASE_URL. Unset or empty, the web keeps DATABASE_URL, so nothing changes
+ * until an operator sets it. Only a process that called `applyWebDatabaseUrl()`
+ * reads it: a copy left on the backend service changes nothing there.
+ */
+export const WEB_DATABASE_URL_VARIABLE = 'WEB_DATABASE_URL';
+
+// On globalThis, like the pool cache, so a Next.js module re-evaluation keeps it.
+const globalForConfig = globalThis as unknown as { __boardseshWebDatabaseUrl?: boolean };
+
+/** Marks this process as the web server. Use `applyWebDatabaseUrl()` from ./postgres. */
+export function markWebDatabaseUrlProcess(): void {
+  globalForConfig.__boardseshWebDatabaseUrl = true;
+}
+
+export function isWebDatabaseUrlProcess(): boolean {
+  return globalForConfig.__boardseshWebDatabaseUrl === true;
+}
+
+/** WEB_DATABASE_URL, trimmed, or undefined when it is unset or blank. */
+export function readWebDatabaseUrl(): string | undefined {
+  return process.env[WEB_DATABASE_URL_VARIABLE]?.trim() || undefined;
+}
+
+/** The primary connection string for this process, before the local-dev default. */
+function primaryConnectionString(): string | undefined {
+  return (isWebDatabaseUrlProcess() ? readWebDatabaseUrl() : undefined) ?? process.env.DATABASE_URL;
+}
+
 export function getConnectionConfig(): ConnectionConfig {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = primaryConnectionString();
   const readReplicaUrl = process.env.READ_REPLICA_URL || null;
   const isLocal = isLocalDevelopment();
   const isTest = isTestEnvironment();
