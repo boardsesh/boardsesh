@@ -127,17 +127,20 @@ vi.mock('../Text', async () => {
       variant,
       numberOfLines,
       accessibilityLabel,
+      tone,
     }: {
       children?: ReactNode;
       style?: unknown;
       variant?: string;
       numberOfLines?: number;
       accessibilityLabel?: string;
+      tone?: string;
     }) =>
       createElement(
         'span',
         {
           'data-variant': variant,
+          'data-tone': tone,
           'data-lines': numberOfLines,
           'aria-label': accessibilityLabel,
           'data-style': JSON.stringify(flattenStyle(style)),
@@ -278,7 +281,8 @@ describe('the default climb row', () => {
 
     expect(styleOf(name)).toEqual({ fontWeight: '600', flexShrink: 1 });
     expect(name?.getAttribute('data-lines')).toBe('1');
-    expect(styleOf(detail)).toEqual({ opacity: 0.6 });
+    expect(detail?.getAttribute('data-tone')).toBe('secondary');
+    expect(styleOf(detail)).toEqual({});
     expect(detail?.getAttribute('data-lines')).toBe('1');
     expect(styleOf(grade)).toEqual({
       fontWeight: '700',
@@ -503,7 +507,8 @@ describe('the community grade switch', () => {
     ]);
     // The token is part of the one detail line, in that line's style.
     const detail = container.querySelector('[data-variant="footnote"]');
-    expect(styleOf(detail)).toEqual({ opacity: 0.6 });
+    expect(detail?.getAttribute('data-tone')).toBe('secondary');
+    expect(styleOf(detail)).toEqual({});
     expect(detail?.getAttribute('data-lines')).toBe('1');
   });
 

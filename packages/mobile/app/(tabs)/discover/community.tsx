@@ -284,10 +284,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.errors.loadTitle')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.errors.loadDescription')}
         </Text>
         <PressableSurface
@@ -306,10 +306,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="people" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.emptyFollowing.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.emptyFollowing.description')}
         </Text>
       </View>
@@ -318,10 +318,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="search" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.noMatches.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.noMatches.description')}
         </Text>
         <PressableSurface
@@ -340,10 +340,10 @@ export default function CommunityPlaylistsScreen() {
     listEmpty = (
       <View style={[styles.centered, styles.stateBlock]}>
         <Icon name="playlist" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.stateTitle}>
+        <Text tone="secondary" variant="headline" style={styles.stateTitle}>
           {t('library.community.empty.title')}
         </Text>
-        <Text variant="subheadline" style={styles.stateSubtitle}>
+        <Text tone="tertiary" variant="subheadline" style={styles.stateSubtitle}>
           {t('library.community.empty.description')}
         </Text>
       </View>
@@ -531,11 +531,9 @@ const styles = StyleSheet.create({
   },
   stateTitle: {
     marginTop: spacing[3],
-    opacity: 0.6,
     textAlign: 'center',
   },
   stateSubtitle: {
-    opacity: 0.4,
     textAlign: 'center',
   },
   stateCta: {

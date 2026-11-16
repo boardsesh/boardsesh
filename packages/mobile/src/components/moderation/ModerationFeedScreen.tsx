@@ -380,7 +380,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
           ) : showError ? (
             <View style={styles.stateBlock}>
               <Icon name="error" size={32} color={systemColors.error} />
-              <Text variant="headline" style={styles.stateTitle}>
+              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
                 {t('mobile.moderation.loadError')}
               </Text>
               <View style={styles.stateCta}>
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[8],
     gap: spacing[2],
   },
-  stateTitle: { marginTop: spacing[3], opacity: 0.75, textAlign: 'center' },
+  stateTitle: { marginTop: spacing[3], textAlign: 'center' },
   stateBody: { textAlign: 'center' },
   stateCta: { marginTop: spacing[3] },
   footer: { paddingVertical: spacing[5], alignItems: 'center' },

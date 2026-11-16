@@ -224,13 +224,23 @@ vi.mock('../Text', async () => {
     numberOfLines?: number;
     accessibilityLabel?: string;
     accessibilityElementsHidden?: boolean;
+    tone?: string;
   };
   return {
-    Text: ({ children, style, variant, numberOfLines, accessibilityLabel, accessibilityElementsHidden }: TextProps) =>
+    Text: ({
+      children,
+      style,
+      variant,
+      tone,
+      numberOfLines,
+      accessibilityLabel,
+      accessibilityElementsHidden,
+    }: TextProps) =>
       createElement(
         'span',
         {
           'data-variant': variant,
+          'data-tone': tone,
           'data-lines': numberOfLines,
           'aria-label': accessibilityLabel,
           'data-silent': accessibilityElementsHidden ? 'true' : undefined,
@@ -692,7 +702,8 @@ describe('the detail line: sends, rating, setter and the community grade', () =>
     ]);
     const docked = container.querySelector('[data-variant="footnote"]');
     // The name gives way when the row is narrow, never the token.
-    expect(styleOf(docked)).toEqual({ opacity: 0.6, marginStart: 6, flexShrink: 0 });
+    expect(docked?.getAttribute('data-tone')).toBe('secondary');
+    expect(styleOf(docked)).toEqual({ marginStart: 6, flexShrink: 0 });
     expect(docked?.getAttribute('data-lines')).toBe('1');
   });
 

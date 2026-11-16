@@ -79,7 +79,7 @@ function OnboardingCardComponent({
         {body}
       </Text>
       {footnote ? (
-        <Text variant="footnote" color={bodyColor} style={styles.footnote}>
+        <Text variant="footnote" tone="secondary" color={bodyColor} style={styles.footnote}>
           {footnote}
         </Text>
       ) : null}
@@ -118,6 +118,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 340,
     marginTop: spacing[4],
-    opacity: 0.75,
   },
 });

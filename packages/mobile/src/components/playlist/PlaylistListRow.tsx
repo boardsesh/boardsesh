@@ -86,7 +86,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
           <Text variant="body" numberOfLines={1} style={styles.name}>
             {name}
           </Text>
-          <Text variant="subheadline" numberOfLines={1} style={styles.meta}>
+          <Text tone="secondary" variant="subheadline" numberOfLines={1}>
             {metaLabel}
           </Text>
         </View>
@@ -119,9 +119,6 @@ const styles = StyleSheet.create({
   },
   name: {
     fontWeight: '600',
-  },
-  meta: {
-    opacity: 0.6,
   },
   gradePill: {
     paddingHorizontal: spacing[2],

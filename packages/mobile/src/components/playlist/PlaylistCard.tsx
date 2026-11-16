@@ -94,7 +94,7 @@ export const PlaylistCard = memo(function PlaylistCard({
         <Text variant="subheadline" numberOfLines={1} style={styles.scrollName}>
           {name}
         </Text>
-        <Text variant="caption1" numberOfLines={1} style={styles.meta}>
+        <Text tone="secondary" variant="caption1" numberOfLines={1}>
           {displayMeta}
         </Text>
       </PressableSurface>
@@ -113,7 +113,7 @@ export const PlaylistCard = memo(function PlaylistCard({
         <Text variant="subheadline" numberOfLines={1} style={styles.gridName}>
           {name}
         </Text>
-        <Text variant="caption1" numberOfLines={1} style={styles.meta}>
+        <Text tone="secondary" variant="caption1" numberOfLines={1}>
           {displayMeta}
         </Text>
       </View>
@@ -140,9 +140,6 @@ const styles = StyleSheet.create({
   },
   scrollName: {
     fontWeight: '600',
-  },
-  meta: {
-    opacity: 0.6,
   },
   gradeOverlay: {
     position: 'absolute',

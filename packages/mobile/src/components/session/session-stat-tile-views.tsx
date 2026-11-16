@@ -45,7 +45,7 @@ export function GradeTileView({ grade, displayGrade }: { grade: string; displayG
       <Text variant="title2" color={gradeColor}>
         {displayGrade}
       </Text>
-      <Text variant="caption1" color={gradeColor} style={styles.gradeLabel} numberOfLines={1}>
+      <Text variant="caption1" color={withAlpha(gradeColor, 0.85)} numberOfLines={1}>
         {t('sessionFeedCard.hardest')}
       </Text>
     </View>
@@ -62,5 +62,4 @@ const styles = StyleSheet.create({
     gap: spacing[1],
   },
   valueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
-  gradeLabel: { opacity: 0.85 },
 });

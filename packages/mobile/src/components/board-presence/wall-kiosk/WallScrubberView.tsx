@@ -92,7 +92,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
           <Text
             variant="caption2"
             color={systemColors.secondaryLabel}
-            style={[styles.navLabel, !canStepOlder && styles.labelDim]}
+            style={[styles.navLabel, !canStepOlder && disabledLabelStyle]}
           >
             {t('mobile.boardPresence.kiosk.scrubOldestLabel')}
           </Text>
@@ -108,7 +108,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
           <Text
             variant="caption2"
             color={systemColors.secondaryLabel}
-            style={[styles.navLabel, !canStepOlder && styles.labelDim]}
+            style={[styles.navLabel, !canStepOlder && disabledLabelStyle]}
           >
             {t('mobile.boardPresence.kiosk.scrubOlderLabel')}
           </Text>
@@ -124,7 +124,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
           <Text
             variant="caption2"
             color={systemColors.secondaryLabel}
-            style={[styles.navLabel, !canStepNewer && styles.labelDim]}
+            style={[styles.navLabel, !canStepNewer && disabledLabelStyle]}
           >
             {t('mobile.boardPresence.kiosk.scrubNewerLabel')}
           </Text>
@@ -290,6 +290,9 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
 
 export const WallScrubberView = memo(WallScrubberViewComponent);
 
+// A step button with nowhere to go: the whole label fades, a state and not a tone.
+const disabledLabelStyle = { opacity: 0.35 } as const; // text-dim-ok: a disabled step button, a state and not a tone
+
 const styles = StyleSheet.create({
   root: { gap: spacing[3] },
   navGroup: {
@@ -314,9 +317,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
     fontWeight: '600',
-  },
-  labelDim: {
-    opacity: 0.35,
   },
   browseHistory: {
     flexDirection: 'row',
