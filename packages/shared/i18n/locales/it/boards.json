@@ -231,7 +231,8 @@
         "editWall": "Modifica la Spraywall"
       },
       "nearbyMap": "Mappa",
-      "showNearby": "Mostra i pannelli vicino a te",
+      "allowLocation": "Consenti posizione",
+      "locationBanner": "La posizione è disattivata. Attivala per vedere i pannelli vicino a te.",
       "manage": "Gestisci",
       "nearbyAllAbove": "Nessun altro pannello entro 20 km",
       "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"

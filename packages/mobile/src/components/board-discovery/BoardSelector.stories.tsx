@@ -24,7 +24,9 @@ import { BoardSelectorView } from './BoardSelectorView';
 import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
 import { FirstBoardChoice } from './FirstBoardChoice';
 import { InRangeSection } from './InRangeSection';
+import { NearbyLocationBanner } from './NearbyLocationBanner';
 import { NearbyQuietStatus } from './NearbyQuietStatus';
+import { NearbyReservedSlot } from './NearbyReservedSlot';
 import type { PickerTopView } from './picker-top-view';
 
 const noop = () => {};
@@ -126,7 +128,9 @@ const MOONBOARD_ROW = {
 type SelectorState = {
   top: PickerTopView<DiscoveryBoardItem>;
   yourBoards: DiscoveryBoardItem[];
-  nearby: 'results' | 'empty';
+  nearby: 'results' | 'empty' | 'searching';
+  /** Location permission: Near you above Your boards when granted (the default), the banner at the foot otherwise. */
+  location?: 'granted' | 'ask' | 'blocked';
   firstRun?: boolean;
 };
 
@@ -223,10 +227,30 @@ const STATES = {
     yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
+  // The search still out: placeholder cards hold Near you's space above Your boards.
+  nearbySearching: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'searching',
+  },
   nearbyEmpty: {
     top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
     yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'empty',
+  },
+  // At home, location never asked: no Near you, the banner at the foot asks.
+  noLocation: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+    location: 'ask',
+  },
+  // Location refused for good: the banner sends the climber to Settings.
+  locationDenied: {
+    top: { ...QUIET_TOP, heardNothing: true, content: { kind: 'none' } },
+    yourBoards: [onIt(GARAGE), CRUX_HOMEWALL_YOURS, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+    location: 'blocked',
   },
   firstRun: {
     top: { ...QUIET_TOP, notice: { kind: 'permission_card' }, content: { kind: 'none' } },
@@ -245,7 +269,9 @@ function artKeys(state: SelectorState): string[] {
   const painted = [...topItems, ...state.yourBoards].filter((item) => item.boardName !== 'spray');
   return [
     ...painted.map((item) => `art:${item.key}`),
-    ...(state.nearby === 'results' && !state.firstRun ? NEARBY_BOARDS.map((item) => `card:${item.key}`) : []),
+    ...(state.nearby === 'results' && !state.firstRun && (state.location ?? 'granted') === 'granted'
+      ? NEARBY_BOARDS.map((item) => `card:${item.key}`)
+      : []),
   ];
 }
 
@@ -302,6 +328,7 @@ function StoryCard(props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>) {
 
 function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { stateName: StateName }) {
   const state: SelectorState = STATES[stateName];
+  const location = state.location ?? 'granted';
   const { t } = useTranslation('boards');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
@@ -320,11 +347,14 @@ function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { 
           menuCapabilities={NEARBY_MENU}
           onMenuAction={noop}
         />
+      ) : state.nearby === 'searching' ? (
+        <NearbyReservedSlot searching quiet>
+          {null}
+        </NearbyReservedSlot>
       ) : (
         <NearbyQuietStatus
           state="none_nearby"
           allShownAbove={false}
-          onSearchNearby={noop}
           onRetryNearby={noop}
           onOpenSettings={noop}
           onFindGymOnMap={noop}
@@ -380,7 +410,12 @@ function SelectorStory({ onReady, onError, stateName }: StoryRenderControls & { 
               </ShelfSection>
             ) : undefined
           }
-          nearbySection={nearbySection}
+          nearbySection={location === 'granted' ? nearbySection : undefined}
+          locationBanner={
+            location === 'granted' ? undefined : (
+              <NearbyLocationBanner permission={location} onAllowLocation={noop} onOpenSettings={noop} />
+            )
+          }
           firstBoardChoice={
             <FirstBoardChoice
               gymState="idle"
@@ -424,7 +459,10 @@ const stories: StoryModule = {
     unnamed: selectorStory('Only a MoonBoard it cannot name, and no gym known', 'unnamed'),
     unnamedAtGym: selectorStory('A MoonBoard it cannot name, above At Crux', 'unnamedAtGym'),
     permission: selectorStory('Asking for Bluetooth first', 'permission'),
+    nearbySearching: selectorStory('Near you searching: placeholder cards above Your boards', 'nearbySearching'),
     nearbyEmpty: selectorStory('Nothing within 20 km: Near you keeps its Map', 'nearbyEmpty'),
+    noLocation: selectorStory('Location never asked: Allow location at the foot, no Near you', 'noLocation'),
+    locationDenied: selectorStory('Location refused: Open Settings at the foot, no Near you', 'locationDenied'),
     firstRun: selectorStory('First run: asking for Bluetooth, then where you climb', 'firstRun'),
   },
 };

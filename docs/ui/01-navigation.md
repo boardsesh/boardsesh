@@ -196,11 +196,21 @@ persisted. The opening carries `locationStatus` as known then (`idle`,
 `loading`, `granted`, `denied` or `unavailable`; mostly `idle`, since the
 "already allowed?" read is still out). The pick carries `nearbyResultCount`,
 how many boards the Near you search had returned by then (after a board-type
-filter, before boards already shown above are left out): `0` for "Nothing
+filter, before boards shown elsewhere in the picker are left out): `0` for "Nothing
 within 20 km", `null` when the picker did not search (location not allowed, or
 first-board mode before "At a gym"), is still searching, or the search failed.
 `First Board Picker Skipped` carries the same count as it stood when the picker
-closed. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
+closed. Near you shows only once location is allowed, above Your boards; without
+it the foot of the picker has a banner instead, with Allow location while the
+system prompt can still ask and Open Settings once only Settings can (in a
+browser, a refusal is final: the line shows alone). Its button sends no event of
+its own: the opening's `locationStatus` and the picks' `section` tell the two
+layouts apart. While Near you searches, placeholder cards as tall as its cards
+hold its space, so Your boards never moves under a pick that lands as the search
+answers: cards keep at least that height, and a quiet line (nothing new within
+20 km, a failed search) keeps it too, centred, once the climber has touched the
+picker; before any touch it gives the space back. Under "Where do you climb?" location waits for "At a gym": it is
+not read on open or when the app comes back. The gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
 `sameConfig` compares board type, layout, size and hold sets. A failed
 restoration records unknown (`null`) rather than claiming there was no board.
 `source` distinguishes onboarding, explicit Session returns, and other picker

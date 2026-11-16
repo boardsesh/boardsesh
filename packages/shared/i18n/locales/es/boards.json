@@ -231,7 +231,8 @@
         "editWall": "Editar Spraywall"
       },
       "nearbyMap": "Mapa",
-      "showNearby": "Ver plafones cerca de ti",
+      "allowLocation": "Permitir ubicación",
+      "locationBanner": "La ubicación está desactivada. Actívala para ver plafones cerca de ti.",
       "manage": "Gestionar",
       "nearbyAllAbove": "No hay más plafones a menos de 20 km",
       "yourBoardsAllAbove": "Todos tus plafones están más arriba"

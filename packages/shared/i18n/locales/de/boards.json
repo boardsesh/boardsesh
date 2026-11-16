@@ -231,7 +231,8 @@
         "editWall": "Spraywall bearbeiten"
       },
       "nearbyMap": "Karte",
-      "showNearby": "Boards in deiner Nähe anzeigen",
+      "allowLocation": "Standort erlauben",
+      "locationBanner": "Standort ist aus. Schalte ihn ein, um Boards in deiner Nähe zu sehen.",
       "manage": "Verwalten",
       "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km",
       "yourBoardsAllAbove": "Alle deine Boards stehen weiter oben"

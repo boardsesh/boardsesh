@@ -24,7 +24,9 @@ import { DiscoveryBoardArt } from '../../src/components/board-discovery/Discover
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
 import { InRangeSection } from '../../src/components/board-discovery/InRangeSection';
 import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
+import { NearbyLocationBanner } from '../../src/components/board-discovery/NearbyLocationBanner';
 import { NearbyQuietStatus } from '../../src/components/board-discovery/NearbyQuietStatus';
+import { NearbyReservedSlot } from '../../src/components/board-discovery/NearbyReservedSlot';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import {
   buildPickerTopView,
@@ -384,10 +386,15 @@ export default function BoardSelection() {
     wasFocused.current = isFocused;
   }, [isFocused, dropHeldBox]);
 
-  // Both the "At a gym" choice and Near you offer Open Settings after a
-  // denial, so a second tap has to be able to ask again: a climber coming back
-  // from Settings gets their gyms from that tap, not from reopening the picker.
-  const location = useDeviceLocation({ retryAfterDenial: true });
+  // Both the "At a gym" choice and the location banner offer Open Settings
+  // after a denial, so a second tap has to be able to ask again, and a climber
+  // coming back from Settings with location on gets Near you without one. Not
+  // under "Where do you climb?": there location waits for the "At a gym" tap,
+  // so coming back to the app must not fetch it either.
+  const location = useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: !firstBoardMode });
+  // Near you is for a climber who allowed location; everyone else gets the
+  // banner at the foot of the picker, with the one way to turn it on.
+  const locationAllowed = location.permission === 'granted';
   // Set by the In range slot's "Use my location" on a board it heard but
   // couldn't name: the nearby list then holds only that board type, so a
   // climber at a MoonBoard picks from the MoonBoards around them. Filtered by
@@ -533,11 +540,12 @@ export default function BoardSelection() {
   const [gymChosen, setGymChosen] = useState(false);
   // One reading of the nearby search for both layouts. The "At a gym" choice
   // counts as asked once it is tapped; Near you once location has been asked
-  // for at all (on open when already allowed, a tap, or the onboarding preload).
+  // for at all (on open when already allowed, a tap, or the onboarding preload),
+  // or is allowed and about to be: never "not asked" while it shows.
   // It reads what the search returned, not what is left once the boards shown
   // above are out: "Nothing within 20 km" must never stand for "already listed".
   const nearbySearch = firstBoardGymState({
-    chosen: showFirstBoardChoice ? gymChosen : location.status !== 'idle',
+    chosen: showFirstBoardChoice ? gymChosen : location.status !== 'idle' || locationAllowed,
     locationStatus: location.status,
     // Any request in flight, not only the first load: a retry after an error
     // keeps the query in `error` while it runs, and should read as searching.
@@ -754,17 +762,21 @@ export default function BoardSelection() {
     : showFirstBoardChoice
       ? undefined
       : { label: t('mobile.discovery.nearbyMap'), onPress: openGymMap };
-  const nearbySection =
+  const nearbyCarousel =
     nearbyItems.length > 0 ? (
-      <ShelfSection title={nearbyTitle} action={nearbyAction}>
-        <BoardCarousel
-          items={nearbyItems}
-          onSelect={onSelectNearbyBoard}
-          menuCapabilities={showCardMenus ? NEARBY_MENU_CAPABILITIES : undefined}
-          onMenuAction={showCardMenus ? onNearbyMenuAction : undefined}
-        />
-      </ShelfSection>
+      <BoardCarousel
+        items={nearbyItems}
+        onSelect={onSelectNearbyBoard}
+        menuCapabilities={showCardMenus ? NEARBY_MENU_CAPABILITIES : undefined}
+        onMenuAction={showCardMenus ? onNearbyMenuAction : undefined}
+      />
     ) : null;
+  // The boards "At a gym" found, under "Where do you climb?".
+  const nearbySection = nearbyCarousel ? (
+    <ShelfSection title={nearbyTitle} action={nearbyAction}>
+      {nearbyCarousel}
+    </ShelfSection>
+  ) : null;
   // Download for offline, scoped to boards the user owns or follows. The menu
   // only offers it with the engine's platform gate open, so it never shows in
   // the Expo browser app (offline-downloads-enabled.web.ts hard-returns false)
@@ -1237,23 +1249,44 @@ export default function BoardSelection() {
   const onRetryNearby = useCallback(() => {
     void refetchNearby();
   }, [refetchNearby]);
-  // Near you in the ordinary layout: the boards it found, or one quiet line
-  // under the header (which keeps Map): ask for location, still looking,
-  // nothing within 20 km, a failed lookup, location off, or every board it
-  // found already shown above.
-  const nearbyPanel = nearbySection ?? (
+  // Near you in the ordinary layout, above Your boards once location is
+  // allowed: the boards it found, or one quiet line under the header (which
+  // keeps Map): still looking, nothing within 20 km, a failed lookup, no fix,
+  // or every board it found already shown elsewhere in the picker.
+  // Your boards sits right under it, so the search's answer, a second or
+  // three after open, must not move it: placeholder cards hold the space while
+  // it searches, and the answer keeps at least that height (NearbyReservedSlot).
+  // Cards already on screen stay through a search again (a fresh fix).
+  const nearbyPanel = locationAllowed ? (
     <ShelfSection title={nearbyTitle} action={nearbyAction}>
-      <NearbyQuietStatus
-        state={nearbySearch}
-        allShownAbove={nearbySearch === 'found' && nearbyItems.length === 0}
-        onSearchNearby={searchNearby}
-        onRetryNearby={onRetryNearby}
-        onOpenSettings={onOpenLocationSettings}
-        onFindGymOnMap={openGymMap}
-        boardType={nearbyBoardType}
-      />
+      <NearbyReservedSlot
+        searching={nearbySearch === 'searching' && nearbyCarousel === null}
+        quiet={nearbyCarousel === null}
+      >
+        {nearbyCarousel ?? (
+          <NearbyQuietStatus
+            state={nearbySearch}
+            allShownAbove={nearbySearch === 'found' && nearbyItems.length === 0}
+            onRetryNearby={onRetryNearby}
+            onOpenSettings={onOpenLocationSettings}
+            onFindGymOnMap={openGymMap}
+            boardType={nearbyBoardType}
+          />
+        )}
+      </NearbyReservedSlot>
     </ShelfSection>
-  );
+  ) : undefined;
+  // Without location, the foot of the picker says what it would show, with
+  // Allow location while the prompt can still ask and Open Settings after.
+  // Nothing before the permission is read, so the banner never flashes.
+  const locationBanner =
+    location.permission === 'ask' || location.permission === 'blocked' ? (
+      <NearbyLocationBanner
+        permission={location.permission}
+        onAllowLocation={searchNearby}
+        onOpenSettings={onOpenLocationSettings}
+      />
+    ) : undefined;
 
   // The offline branch must not be swallowed by the loading spinner: the very first
   // offline render is still "fetching" before the retryer pauses.
@@ -1375,6 +1408,7 @@ export default function BoardSelection() {
       inRangeSection={inRangeSection}
       myBoardsSection={myBoardsSection}
       nearbySection={nearbyPanel}
+      locationBanner={locationBanner}
       hasBoards={hasBoards}
       onEmptySetUpBoard={onEmptySetUpBoard}
       onEmptyAddSprayWall={onEmptyAddSprayWall}

@@ -11,7 +11,43 @@ const expoLocation = vi.hoisted(() => ({
 
 vi.mock('expo-location', () => expoLocation);
 
-import { useDeviceLocation } from '../use-device-location';
+const appState = vi.hoisted(() => ({
+  listeners: new Set<(next: string) => void>(),
+}));
+vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  AppState: {
+    addEventListener: (_type: string, listener: (next: string) => void) => {
+      appState.listeners.add(listener);
+      return { remove: () => appState.listeners.delete(listener) };
+    },
+  },
+}));
+
+import { locationPermissionFrom, useDeviceLocation } from '../use-device-location';
+
+describe('locationPermissionFrom', () => {
+  it.each([
+    [{ status: 'granted', canAskAgain: true }, 'granted'],
+    [{ status: 'undetermined', canAskAgain: true }, 'ask'],
+    // Android after one refusal: the prompt can still ask.
+    [{ status: 'denied', canAskAgain: true }, 'ask'],
+    // iOS after a refusal, Android "Don't ask again": only Settings.
+    [{ status: 'denied', canAskAgain: false }, 'blocked'],
+  ])('%j → %s', (answer, permission) => {
+    expect(locationPermissionFrom(answer)).toBe(permission);
+  });
+
+  // A browser never shows its prompt again after a refusal, whatever
+  // expo-location's web answer says: Allow location would be a dead button.
+  it.each([
+    [{ status: 'denied', canAskAgain: true }, 'blocked'],
+    [{ status: 'undetermined', canAskAgain: true }, 'ask'],
+    [{ status: 'granted', canAskAgain: true }, 'granted'],
+  ])('in a browser, %j → %s', (answer, permission) => {
+    expect(locationPermissionFrom(answer, 'web')).toBe(permission);
+  });
+});
 
 describe('useDeviceLocation', () => {
   beforeEach(() => {
@@ -37,6 +73,65 @@ describe('useDeviceLocation', () => {
 
     expect(result.current.status).toBe(status);
     expect(expoLocation.requestForegroundPermissionsAsync).toHaveBeenCalledTimes(asked ? 1 : 0);
+  });
+
+  // The picker offers Allow location or Open Settings before anything is asked.
+  it('reads the permission without asking', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
+    const { result } = renderHook(() => useDeviceLocation());
+    expect(result.current.permission).toBe('unknown');
+
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+
+    expect(result.current.permission).toBe('blocked');
+    expect(expoLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+  });
+
+  it('takes the permission from the answer to the prompt', async () => {
+    expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
+    const { result } = renderHook(() => useDeviceLocation({ retryAfterDenial: true }));
+
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(result.current.permission).toBe('blocked');
+
+    expoLocation.requestForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    await act(async () => {
+      await result.current.request();
+    });
+    expect(result.current.permission).toBe('granted');
+  });
+
+  // Back from Settings with location turned on: the search starts by itself.
+  it('reads again when the app comes back, when asked to', async () => {
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied', canAskAgain: false });
+    const { result, unmount } = renderHook(() => useDeviceLocation({ retryAfterDenial: true, rereadWhenActive: true }));
+    await act(async () => {
+      await result.current.requestIfAllowed();
+    });
+    expect(result.current.permission).toBe('blocked');
+
+    expoLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' });
+    await act(async () => {
+      for (const listener of appState.listeners) listener('background');
+    });
+    expect(result.current.permission).toBe('blocked');
+    await act(async () => {
+      for (const listener of appState.listeners) listener('active');
+    });
+    await waitFor(() => expect(result.current.status).toBe('granted'));
+    expect(result.current.permission).toBe('granted');
+
+    unmount();
+    expect(appState.listeners.size).toBe(0);
+  });
+
+  it('does not listen for the app coming back unless asked to', () => {
+    renderHook(() => useDeviceLocation());
+    expect(appState.listeners.size).toBe(0);
   });
 
   it('requestIfAllowed stays idle when the permission read throws', async () => {

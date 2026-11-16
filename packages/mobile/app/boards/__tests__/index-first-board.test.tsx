@@ -36,7 +36,7 @@ import { renderWithNativeTextCheck as render } from '../../../test/native-text-c
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { FirstBoardGymState } from '../../../src/lib/boards/first-board-gym-state';
-import type { LocationStatus } from '../../../src/lib/use-device-location';
+import type { LocationPermission, LocationStatus } from '../../../src/lib/use-device-location';
 import type { QuickstartRow } from '../../../src/components/board-discovery/quickstart-scan-rows';
 
 type Children = { children?: ReactNode };
@@ -76,7 +76,10 @@ const openAppSettingsMock = vi.hoisted(() => vi.fn());
 const refetchNearbyMock = vi.hoisted(() => vi.fn());
 const setPendingRecognitionMock = vi.hoisted(() => vi.fn());
 const locationOptions = vi.hoisted(() => ({ last: undefined as { retryAfterDenial?: boolean } | undefined }));
-const trackingCtrl = vi.hoisted(() => ({ entryArgs: [] as Array<string | null> }));
+const trackingCtrl = vi.hoisted(() => ({
+  entryArgs: [] as Array<string | null>,
+  nearbyCounts: [] as Array<number | null>,
+}));
 const trackMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn());
 const choiceProps = vi.hoisted(() => ({ last: null as ChoiceProps | null }));
@@ -116,6 +119,8 @@ const state = vi.hoisted(() => ({
   nearbyPaused: false,
   nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
+  /** Null reads it from the status: granted, refused for good after a denial, else askable. */
+  locationPermission: null as LocationPermission | null,
   autoScanEnabled: true,
   // False while a route pushed over the picker (the builder, the gym map) is on top.
   focused: true,
@@ -226,6 +231,9 @@ vi.mock('../../../src/lib/use-device-location', () => ({
     locationOptions.last = options;
     return {
       status: state.locationStatus,
+      permission:
+        state.locationPermission ??
+        (state.locationStatus === 'granted' ? 'granted' : state.locationStatus === 'denied' ? 'blocked' : 'ask'),
       coords: state.locationStatus === 'granted' ? { latitude: 1, longitude: 2 } : null,
       request: requestLocationMock,
       requestIfAllowed: requestLocationIfAllowedMock,
@@ -249,8 +257,9 @@ vi.mock('../../../src/lib/onboarding/onboarding-storage', () => ({
 }));
 vi.mock('../../../src/lib/analytics', () => ({ track: trackMock }));
 vi.mock('../../../src/lib/onboarding/use-first-board-picker-tracking', () => ({
-  useFirstBoardPickerTracking: (entry: string | null) => {
+  useFirstBoardPickerTracking: (entry: string | null, nearbyResultCount: number | null) => {
     trackingCtrl.entryArgs.push(entry);
+    trackingCtrl.nearbyCounts.push(nearbyResultCount);
     return chooseFirstBoardPathMock;
   },
 }));
@@ -327,6 +336,28 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   },
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyReservedSlot', () => ({
+  NearbyReservedSlot: ({ searching, children }: { searching: boolean; children?: ReactNode }) =>
+    searching ? createElement('div', { 'data-testid': 'near-you-placeholder' }) : children,
+}));
+// The banner's own copy and buttons are its own suite's; here, which one shows and what it calls.
+vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
+  NearbyLocationBanner: ({
+    permission,
+    onAllowLocation,
+    onOpenSettings,
+  }: {
+    permission: string;
+    onAllowLocation: () => void;
+    onOpenSettings: () => void;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'location-banner', 'data-permission': permission },
+      createElement('button', { type: 'button', onClick: onAllowLocation }, 'banner:allow'),
+      createElement('button', { type: 'button', onClick: onOpenSettings }, 'banner:settings'),
+    ),
+}));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
 // The held box as the module keeps it, and what each bind remembered from it,
@@ -389,6 +420,7 @@ vi.mock('../../../src/components/TextAction', async () => {
   return {
     TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
       h('button', { type: 'button', onClick: onPress }, label),
+    textActionOverhang: () => ({ top: 4, bottom: 20 }),
   };
 });
 // Your boards and the offline list are rows now; the suite drives them as it
@@ -424,6 +456,7 @@ beforeEach(() => {
   markOnboardingSeenMock.mockResolvedValue(undefined);
   requestLocationIfAllowedMock.mockResolvedValue(undefined);
   trackingCtrl.entryArgs = [];
+  trackingCtrl.nearbyCounts = [];
   choiceProps.last = null;
   inRangeProps.last = null;
   carouselProps.last = null;
@@ -442,6 +475,7 @@ beforeEach(() => {
   state.nearbyPaused = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
+  state.locationPermission = null;
   state.autoScanEnabled = true;
   state.focused = true;
   recognitionHold.held = null;
@@ -468,8 +502,9 @@ describe('the picker in first-board mode', () => {
     expect(slot.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('mobile.emptyTitle')).toBeNull();
     expect(screen.queryByText('mobile.onboardingPrompt')).toBeNull();
-    // Near you belongs to "At a gym" here, not to the screen.
-    expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
+    // Near you belongs to "At a gym" here, not to the screen: no shelf, no banner.
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    expect(screen.queryByTestId('location-banner')).toBeNull();
   });
 
   // "Where do you climb?" already carries the + menu's choices as its cards.
@@ -493,8 +528,10 @@ describe('the picker in first-board mode', () => {
   it('does not ask for location until "At a gym" is tapped', () => {
     render(createElement(BoardSelection));
     expect(requestLocationMock).not.toHaveBeenCalled();
-    // Not even the silent read: the question comes with its reason.
+    // Not even the silent read, nor one when the app comes back: the question
+    // comes with its reason.
     expect(requestLocationIfAllowedMock).not.toHaveBeenCalled();
+    expect(locationOptions.last).toEqual({ retryAfterDenial: true, rereadWhenActive: false });
     expect(choice().gymState).toBe('idle');
 
     act(() => {
@@ -503,6 +540,20 @@ describe('the picker in first-board mode', () => {
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('gym');
     expect(choice().gymState).toBe('searching');
+  });
+
+  // `First Board Picker Skipped` reads this count: no search, no count.
+  it('counts no boards near them until "At a gym" is tapped', () => {
+    state.nearbyBoards = [gymWall];
+    const { rerender } = render(createElement(BoardSelection));
+    expect(trackingCtrl.nearbyCounts.every((count) => count === null)).toBe(true);
+
+    act(() => {
+      choice().onGym();
+    });
+    state.locationStatus = 'granted';
+    rerender(createElement(BoardSelection));
+    expect(trackingCtrl.nearbyCounts.at(-1)).toBe(1);
   });
 
   it('shows the boards near the gym once location answers', () => {
@@ -534,7 +585,7 @@ describe('the picker in first-board mode', () => {
     choice().onOpenSettings();
     expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
     // Back from Settings, one more tap on "At a gym" has to be able to ask again.
-    expect(locationOptions.last).toEqual({ retryAfterDenial: true });
+    expect(locationOptions.last).toMatchObject({ retryAfterDenial: true });
   });
 
   // `preset` opens the builder with a layout and size chosen, so Save works at
@@ -723,6 +774,7 @@ describe('the ordinary onboarding picker', () => {
   // gym finder's side is pinned in app/gyms/__tests__/index.test.tsx).
   it('opens the gym map as an onboarding pick', () => {
     state.params = { source: 'onboarding' };
+    state.locationPermission = 'granted';
     render(createElement(BoardSelection));
 
     fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
@@ -735,6 +787,7 @@ describe('the ordinary onboarding picker', () => {
 
   it('opens the gym map as an ordinary switch outside onboarding', () => {
     state.params = {};
+    state.locationPermission = 'granted';
     render(createElement(BoardSelection));
 
     fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
@@ -835,38 +888,80 @@ describe("the ordinary picker's Near you", () => {
   });
 
   // A climber who already allowed location gets their gyms on open, with no
-  // prompt; everyone else gets one row that asks.
+  // prompt; everyone else gets the banner, which asks.
   it('searches on open only when location is already allowed', () => {
     render(createElement(BoardSelection));
     expect(requestLocationIfAllowedMock).toHaveBeenCalledOnce();
     expect(requestLocationMock).not.toHaveBeenCalled();
   });
 
-  it('offers one row that asks, before location was ever asked', () => {
+  it('reads location again when the app comes back, so a grant in Settings shows Near you', () => {
+    render(createElement(BoardSelection));
+    expect(locationOptions.last).toEqual({ retryAfterDenial: true, rereadWhenActive: true });
+  });
+
+  // Never asked: no Near you; the banner at the foot asks, and its tap is the prompt.
+  it('puts Allow location at the foot instead of Near you, before location was ever asked', () => {
     render(createElement(BoardSelection));
 
-    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
-    expect(screen.queryByText('mobile.firstBoard.locationOff')).toBeNull();
-    expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
-    fireEvent.click(screen.getByText('mobile.discovery.showNearby'));
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    // Location off: Near you holds no space at all.
+    expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
+    const banner = screen.getByTestId('location-banner');
+    expect(banner.getAttribute('data-permission')).toBe('ask');
+    const yourBoards = screen.getByText('mobile.discovery.yourBoardsTitle');
+    expect(yourBoards.compareDocumentPosition(banner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByText('banner:allow'));
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
   });
 
-  it('says location is off and offers Settings', () => {
+  // Android after one refusal: the prompt can still ask.
+  it('keeps asking from the banner while the prompt can still ask after a denial', () => {
+    state.locationStatus = 'denied';
+    state.locationPermission = 'ask';
+    render(createElement(BoardSelection));
+    expect(screen.getByTestId('location-banner').getAttribute('data-permission')).toBe('ask');
+  });
+
+  // Refused for good: only Settings can turn it on.
+  it('sends the climber to Settings from the banner once location is refused for good', () => {
     state.locationStatus = 'denied';
     render(createElement(BoardSelection));
 
-    expect(screen.getByText('mobile.firstBoard.locationOff')).toBeTruthy();
-    expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
-    fireEvent.click(screen.getByText('mobile.firstBoard.openSettings'));
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    expect(screen.getByTestId('location-banner').getAttribute('data-permission')).toBe('blocked');
+    expect(screen.queryByTestId('near-you-placeholder')).toBeNull();
+    fireEvent.click(screen.getByText('banner:settings'));
     expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
-    expect(locationOptions.last).toEqual({ retryAfterDenial: true });
   });
 
-  it('reads a failed fix the same as a denial', () => {
-    state.locationStatus = 'unavailable';
+  // Before the permission is read there is nothing to say either way.
+  it('shows neither Near you nor the banner before the permission is read', () => {
+    state.locationPermission = 'unknown';
     render(createElement(BoardSelection));
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    expect(screen.queryByTestId('location-banner')).toBeNull();
+  });
+
+  // Allowed, with the fix still on its way: looking, never a row that asks.
+  // Your boards sits right under Near you: placeholder cards hold the space.
+  it("holds Near you's space with placeholder cards once location is allowed, before the fix lands", () => {
+    state.locationPermission = 'granted';
+    render(createElement(BoardSelection));
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
+    expect(screen.queryByTestId('location-banner')).toBeNull();
+  });
+
+  // Allowed, but no fix (Location Services off for the whole phone).
+  it('reads a failed fix as location off, inside Near you, and offers Settings', () => {
+    state.locationStatus = 'unavailable';
+    state.locationPermission = 'granted';
+    render(createElement(BoardSelection));
+    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
     expect(screen.getByText('mobile.firstBoard.locationOff')).toBeTruthy();
+    fireEvent.click(screen.getByText('mobile.firstBoard.openSettings'));
+    expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('location-banner')).toBeNull();
   });
 
   // One quiet line; the shelf's header keeps Map, so there is no second map link.
@@ -894,10 +989,12 @@ describe("the ordinary picker's Near you", () => {
     expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
   });
 
-  it('says it is looking while location and the list load', () => {
+  it('holds the space while location and the list load', () => {
     state.locationStatus = 'loading';
+    state.locationPermission = 'granted';
     render(createElement(BoardSelection));
-    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
+    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
   });
 
   it('shows the boards it found, with the map beside the title', () => {
@@ -914,12 +1011,14 @@ describe("the ordinary picker's Near you", () => {
     expect(carouselProps.byFirstKey.get('near-wall')?.onMenuAction).toBeTypeOf('function');
   });
 
-  // Your boards sits above Near you.
-  it('lists Your boards before Near you', () => {
+  // With location allowed, Near you sits above Your boards, and no banner.
+  it('lists Near you before Your boards once location is allowed', () => {
+    state.locationStatus = 'granted';
     render(createElement(BoardSelection));
     const yourBoards = screen.getByText('mobile.discovery.yourBoardsTitle');
     const nearYou = screen.getByText('mobile.discovery.nearbyTitle');
-    expect(yourBoards.compareDocumentPosition(nearYou) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(nearYou.compareDocumentPosition(yourBoards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('location-banner')).toBeNull();
   });
 });
 
@@ -1269,6 +1368,6 @@ describe("the In range slot's ways forward for a board it can't name", () => {
     rerender(createElement(BoardSelection));
 
     expect(screen.queryByText('mobile.firstBoard.nearbyEmptyMoonboard')).toBeNull();
-    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
+    expect(screen.getByTestId('near-you-placeholder')).toBeTruthy();
   });
 });
