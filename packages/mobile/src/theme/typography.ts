@@ -1,4 +1,4 @@
-import { type TextProps, type TextStyle } from 'react-native';
+import { type TextStyle } from 'react-native';
 
 /**
  * Apple Human Interface Guidelines type scale.
@@ -221,35 +221,6 @@ export const emphasizedWeightsByVariant = {
   liquidGlass: emphasizedWeights,
   material: materialEmphasizedWeights,
 } as const satisfies Record<'liquidGlass' | 'material', Record<TextVariant, FontWeight>>;
-
-/** The Dynamic Type text styles React Native's iOS `Text` can scale by. */
-export type DynamicTypeRamp = NonNullable<TextProps['dynamicTypeRamp']>;
-
-/**
- * The Dynamic Type ramp each text style scales on (iOS only). Without it every
- * React Native `Text` scales on the body curve, so a large title grows as fast as
- * body text at accessibility sizes and a caption grows too slowly. Each style
- * takes the UIKit text style of the same name.
- *
- * `label` (every top-bar and header button) takes `body`: it is body-sized
- * (17/22, the size of a UIKit bar item), it is regular weight like body, and it
- * sits beside body-sized text in the bar, so the two should grow together.
- * `headline` is the other 17pt style, but it is the semibold row title.
- */
-export const dynamicTypeRamps = {
-  largeTitle: 'largeTitle',
-  title1: 'title1',
-  title2: 'title2',
-  title3: 'title3',
-  headline: 'headline',
-  body: 'body',
-  callout: 'callout',
-  subheadline: 'subheadline',
-  footnote: 'footnote',
-  caption1: 'caption1',
-  caption2: 'caption2',
-  label: 'body',
-} as const satisfies Record<TextVariant, DynamicTypeRamp>;
 
 /**
  * Max Dynamic Type multiplier for labels inside fixed-height glass chrome — the

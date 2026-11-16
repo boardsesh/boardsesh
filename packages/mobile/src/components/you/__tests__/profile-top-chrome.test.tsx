@@ -51,7 +51,6 @@ const materialTabs = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios' },
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   useWindowDimensions: () => ({ width: 402, height: 874, fontScale: ctrl.fontScale }),
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>

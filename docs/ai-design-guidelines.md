@@ -388,7 +388,7 @@ wave W1.
 `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap
 ("Closest", "Ready to review", "On it"), so it never competes with the accent beside it.
 
-### Text: tone, emphasized, Dynamic Type
+### Text: tone and emphasized
 
 - **`tone`**: `primary` (default), `secondary`, `tertiary` resolve to `label`, `secondaryLabel`,
   `tertiaryLabel`. Step text down with a tone, never with `opacity`: an opacity dim mixes the text
@@ -398,9 +398,6 @@ wave W1.
   and `title2`, Semibold for every other style. On Material it is the M3 Expressive emphasized
   weight: Medium for display, headline, title large and body roles, Bold for title medium and the
   labels. Use it instead of a `fontWeight` override. Bold Text steps it up once more.
-- **Dynamic Type ramp**: on iOS each `variant` scales on the UIKit text style of the same name
-  (`dynamicTypeRamp`), so a large title grows less than body text at accessibility sizes and a
-  caption more. `label` scales on `body`, the 17pt regular style it sits beside in a bar.
 
 ### Guards
 

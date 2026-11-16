@@ -1,12 +1,11 @@
 import {
-  Platform,
   Text as RNText,
   type TextProps as RNTextProps,
   type TextStyle,
   type ColorValue,
   StyleSheet,
 } from 'react-native';
-import { dynamicTypeRamps, emphasizedWeightsByVariant, textStyles, type TextVariant } from '../theme/typography';
+import { emphasizedWeightsByVariant, textStyles, type TextVariant } from '../theme/typography';
 import { useBoldText } from '../hooks/use-bold-text';
 import { boldTextWeight } from '../theme/accessible-typography';
 import { useOptionalTheme, type ResolvedSystemColors } from '../providers/theme-provider';
@@ -110,10 +109,6 @@ export function Text({
     <RNText
       allowFontScaling
       maxFontSizeMultiplier={0}
-      // Scale on the matching UIKit text style's curve, so a title grows less than
-      // body text at accessibility sizes and a caption more (HIG Typography). An
-      // explicit `dynamicTypeRamp` in props still wins.
-      dynamicTypeRamp={Platform.OS === 'ios' ? dynamicTypeRamps[variant] : undefined}
       style={[
         typeStyle,
         emphasisStyle,
