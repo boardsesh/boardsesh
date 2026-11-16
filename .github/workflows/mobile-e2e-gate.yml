@@ -405,9 +405,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --paginate \
+          if ! gh api --paginate \
             "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
-            --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/gate-run-jobs.json"
+            --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/gate-run-jobs.json"; then
+            echo '::warning::Cannot fetch optional job durations; reporting n/a.'
+            printf '%s\n' '{"jobs":[]}' > "$RUNNER_TEMP/gate-run-jobs.json"
+          fi
 
       # Exits non-zero only when a BLOCKING job failed. See the rules at the top
       # of scripts/mobile-e2e-gate-verdict.ts.
