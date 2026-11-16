@@ -24,10 +24,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Find the current PR and test artifacts
         id: inspect
         uses: actions/github-script@v7
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const run = context.payload.workflow_run;
             const repository = `${context.repo.owner}/${context.repo.repo}`;
@@ -87,6 +98,7 @@ jobs:
         env:
           PR_NUMBER: ${{ steps.inspect.outputs.pr-number }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: pullRequest } = await github.rest.pulls.get({
               ...context.repo, pull_number: Number(process.env.PR_NUMBER),
@@ -137,6 +149,7 @@ jobs:
           REPORT_FAILED: ${{ steps.report.outputs.failed }}
           REPORT_SKIPPED: ${{ steps.report.outputs.skipped }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             if (process.env.REPORT_OUTCOME !== 'success') throw new Error('JUnit parsing did not succeed');
             const count = (name) => {

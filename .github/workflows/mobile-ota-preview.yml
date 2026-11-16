@@ -179,10 +179,21 @@ jobs:
       source_base_ref: ${{ steps.pin.outputs.source_base_ref }}
       main_sha: ${{ steps.pin.outputs.main_sha }}
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Decide action + resolve PR
         id: decide
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const repoFull = `${context.repo.owner}/${context.repo.repo}`;
             let action = 'skip';
@@ -384,6 +395,7 @@ jobs:
           HEAD_SHA: ${{ steps.decide.outputs.head_sha }}
           PR_NATIVE_RESET: ${{ steps.decide.outputs.needs_reset }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: Number(process.env.PR_NUMBER) });
             if (pr.state !== 'open' || pr.head.sha !== process.env.HEAD_SHA) throw new Error('Preview head moved before base pinning.');
@@ -452,6 +464,16 @@ jobs:
       actions: write
       contents: write
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Check out the sandbox helper
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -465,6 +487,7 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { handOffToSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
             await handOffToSandbox({
@@ -491,6 +514,16 @@ jobs:
       pull-requests: write
       issues: write
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Note that the preview branch is rebuilding
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
@@ -498,6 +531,7 @@ jobs:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const branch = process.env.BRANCH;
             const prNumber = Number(process.env.PR_NUMBER);
@@ -561,6 +595,16 @@ jobs:
       pull-requests: read
     environment: ota-preview-unattended
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       # The delete below wipes what the latest deployment says is live. If this run
       # then dies before `publish` creates a new deployment, that old `success`
       # would tell the base-push refresh the preview is intact. Mark it first; a
@@ -570,6 +614,7 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const task = `ota-preview-pr-${process.env.PR_NUMBER}`;
             const { data: deployments } = await github.rest.repos.listDeployments({
@@ -593,6 +638,7 @@ jobs:
           OTA_ADMIN_PASSWORD: ${{ secrets.OTA_ADMIN_PASSWORD }}
           OTA_APP_ID: '007e6fd7-f200-448c-9449-8d48ba5d51fc'
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const branch = process.env.BRANCH;
             if (!/^pr-[1-9][0-9]*$/.test(branch || '')) {
@@ -699,6 +745,16 @@ jobs:
       summary: ${{ steps.candidates.outputs.summary }}
       failed: ${{ steps.candidates.outputs.failed }}
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       # A manual request can wait behind another branch mutation. Re-check the
       # gate's pinned SHA before any deployment or PR-code execution so a queued
       # stale request cannot republish an older commit.
@@ -708,6 +764,7 @@ jobs:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -739,6 +796,7 @@ jobs:
           SOURCE_BASE_REF: ${{ needs.gate.outputs.source_base_ref }}
           SOURCE_BASE_SHA: ${{ needs.gate.outputs.source_base_sha }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const headSha = process.env.HEAD_SHA;
             const dep = await github.rest.repos.createDeployment({
@@ -816,6 +874,7 @@ jobs:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: currentPr } = await github.rest.pulls.get({
               ...context.repo, pull_number: Number(process.env.PR_NUMBER),
@@ -865,6 +924,7 @@ jobs:
           FAILED: ${{ steps.candidates.outputs.failed }}
           CANDIDATE_OUTCOME: ${{ steps.candidates.outcome }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const failed = process.env.FAILED === 'true' || process.env.CANDIDATE_OUTCOME !== 'success';
             const state = failed ? 'failure' : process.env.PUBLISHED === 'true' ? 'success' : 'inactive';
@@ -895,6 +955,16 @@ jobs:
       issues: write
       deployments: write
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Announce preview on the PR
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
@@ -907,6 +977,7 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           NEEDS_RESET: ${{ needs.gate.outputs.needs_reset }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const branch = process.env.BRANCH;
             const prNumber = Number(process.env.PR_NUMBER);
@@ -998,6 +1069,16 @@ jobs:
       HAS_OTA_ADMIN: ${{ secrets.OTA_ADMIN_PASSWORD != '' }}
       BRANCH: ${{ needs.gate.outputs.branch }}
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Reject a stale cleanup decision
         id: fresh
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -1006,6 +1087,7 @@ jobs:
           HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
           CLEANUP_REASON: ${{ needs.gate.outputs.cleanup_reason }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -1063,6 +1145,7 @@ jobs:
           # wording so we don't claim "Removed" when the delete was skipped or failed.
           DELETE_OUTCOME: ${{ steps.delete.outcome }}
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const branch = process.env.BRANCH;
             const prNumber = Number(process.env.PR_NUMBER);
@@ -1147,6 +1230,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
+      # every workflow. An app installation token has its own, larger budget (#7659).
+      # Falls back to GITHUB_TOKEN if the app is not configured.
+      - name: Mint API token
+        id: api_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: ${{ vars.OTA_PUSH_APP_ID }}
+          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
       - name: Check out the sandbox helper
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -1158,6 +1251,7 @@ jobs:
       - name: Delete this run's sandbox branch
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
+          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { deleteOwnSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
             await deleteOwnSandbox({ github, context, core, workflowKey: 'ota-preview' });
