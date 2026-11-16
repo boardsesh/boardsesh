@@ -1,31 +1,18 @@
 'use client';
 
 import { getSession, signIn, type SignInOptions, type SignInResponse } from 'next-auth/react';
-import { z } from 'zod';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
 import { publicBrowserPasswordReady } from './browser-password-readiness';
 import { canonicalPasswordOptionsSchema, signInCanonicalPassword } from './canonical-password-signin';
 import { publicProviderSecurityReady } from './provider-security-readiness';
-import { readCanonicalBrowserCoordinator, signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
+import { signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
-import { startCanonicalProviderSignin } from './canonical-provider-start';
 import { browserSessionGuard } from './session-guard';
 
 export const WEB_SESSION_REFRESH_EVENT = 'boardsesh-web-session-refresh';
 const EPOCH_KEY = Symbol.for('boardsesh.web-session-intent.epoch-v1');
 const refreshedViewRevisions = new WeakMap<object, number>();
-const providerOptions = z
-  .object({
-    callbackUrl: z.string().max(4096).optional(),
-    redirect: z.boolean().optional(),
-    providerSecurityOperation: z.enum(['link', 'reauthenticate-google']).optional(),
-    providerSecurityOperationKey: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .optional(),
-  })
-  .strict();
 type EpochGlobal = typeof globalThis & { [key: symbol]: { epoch: number } | undefined };
 
 function epochState(): { epoch: number } {
@@ -99,7 +86,6 @@ async function signInThroughReadyPath(
   context: { readonly signal?: AbortSignal } | undefined,
   { coordinatorReady, providerReady, passwordReady }: SignInReadiness,
 ): Promise<SignInResponse | undefined> {
-  const selectedProvider = provider !== 'credentials' && (coordinatorReady || providerReady);
   if (provider === 'credentials' && (coordinatorReady || providerReady || passwordReady)) {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -135,51 +121,8 @@ async function signInThroughReadyPath(
       context?.signal?.removeEventListener('abort', abort);
     }
   }
-  if (selectedProvider) {
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    if (context?.signal?.aborted) abort();
-    else context?.signal?.addEventListener('abort', abort, { once: true });
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-    try {
-      const origin = getCanonicalBrowserOrigin();
-      if (!coordinatorReady || !providerReady || !origin || typeof window === 'undefined')
-        throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
-      const parsed = providerOptions.parse(options ?? {});
-      if ((parsed.providerSecurityOperation === undefined) !== (parsed.providerSecurityOperationKey === undefined))
-        throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
-      await startCanonicalProviderSignin(
-        {
-          canonicalOrigin: origin,
-          provider,
-          callbackUrl: parsed.callbackUrl ?? '/',
-          signal: controller.signal,
-          ...(parsed.providerSecurityOperation && parsed.providerSecurityOperationKey
-            ? {
-                operation: {
-                  purpose: parsed.providerSecurityOperation,
-                  operationKey: parsed.providerSecurityOperationKey,
-                },
-              }
-            : {}),
-        },
-        {
-          currentOrigin: window.location.origin,
-          locks: navigator.locks,
-          preflight: parsed.providerSecurityOperation
-            ? readCanonicalBrowserCoordinator
-            : signInCanonicalBrowserCoordinator,
-          send: fetch,
-          navigate: (destination) => window.location.assign(destination),
-        },
-      );
-      return undefined;
-    } catch {
-      return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
-    } finally {
-      clearTimeout(timeout);
-      context?.signal?.removeEventListener('abort', abort);
-    }
-  }
+  // #7596 removed the selected Google/Apple start. While a gate is on, a
+  // legacy sign-in would write a NextAuth cookie the selected reader ignores.
+  if (coordinatorReady || providerReady) return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
   return await signIn(provider, options);
 }

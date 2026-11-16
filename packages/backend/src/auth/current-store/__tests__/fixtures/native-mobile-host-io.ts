@@ -6,12 +6,7 @@ import { mock } from 'node:test';
 export const mobileSourceRoot = new URL('../../../../../../mobile/', import.meta.url);
 const mobileRequire = createRequire(new URL('package.json', mobileSourceRoot));
 
-export interface NativeBrowserHost {
-  addUrlListener(listener: (event: { url: string }) => void): { remove(): void };
-  openBrowser(url: string): Promise<unknown>;
-  dismissBrowser(): void;
-}
-export function installNativeMobileHostBindings(platform: 'ios' | 'android' = 'ios', browser?: NativeBrowserHost) {
+export function installNativeMobileHostBindings(platform: 'ios' | 'android' = 'ios') {
   type StoreOptions = { keychainService?: string };
   const secureValues = new Map<string, string>();
   const secureWrites: { key: string; namespace: string }[] = [];
@@ -36,8 +31,7 @@ export function installNativeMobileHostBindings(platform: 'ios' | 'android' = 'i
       Platform: { OS: platform, select: (options: Record<string, unknown>) => options[platform] ?? options.default },
       AppState: { currentState: 'active', addEventListener: () => ({ remove() {} }) },
       Linking: {
-        addEventListener: (_event: string, listener: (event: { url: string }) => void) =>
-          browser ? browser.addUrlListener(listener) : { remove() {} },
+        addEventListener: () => ({ remove() {} }),
         getInitialURL: async () => null,
         openURL: unusedHost,
         canOpenURL: async () => false,
@@ -64,9 +58,9 @@ export function installNativeMobileHostBindings(platform: 'ios' | 'android' = 'i
       AppleAuthenticationScope: { FULL_NAME: 0, EMAIL: 1 },
     });
     nativeModule('expo-web-browser', {
-      openBrowserAsync: browser ? (url: string) => browser.openBrowser(url) : unusedHost,
+      openBrowserAsync: unusedHost,
       openAuthSessionAsync: unusedHost,
-      dismissBrowser: browser ? () => browser.dismissBrowser() : unusedHost,
+      dismissBrowser: unusedHost,
       maybeCompleteAuthSession: unusedHost,
     });
     nativeModule('expo-crypto', {

@@ -81,11 +81,11 @@ content-target probe per backend process.
 
 The explicit `private-native-handoff-v1` profile extends the reviewed
 first-password profile with native refresh-token insertion. Earlier profiles
-continue to reject that extra permission. Selected browser transfers spend
-their capability and create the native pair in one qualified transaction.
-Receipt cleanup and first-password scrubbing keep using compatible qualified
-profiles after browser features switch off. See
-[selected browser to native sign-in](./better-auth-native-browser-handoff.md).
+continue to reject that extra permission. The browser-to-native handoff that
+used it was removed by #7596; no backend command requests the profile now. It
+stays selectable, and first-password scrubbing still accepts it, until the
+provider flows are rebuilt on the new browser session and the profile can be
+retired.
 
 The explicit `private-browser-renewal-v1` profile extends the native-handoff
 profile with `SELECT` and `INSERT` on `auth_browser_renewals` and column

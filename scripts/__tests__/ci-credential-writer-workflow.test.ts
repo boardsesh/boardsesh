@@ -224,12 +224,21 @@ describe('owned credential writer CI boundary', () => {
       expect(browserRenewalConfiguration).toContain(file);
       expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(true);
     }
+    // The handoff proofs left with the handoff (#7596); the kept handler proofs
+    // still run under the native-handoff contract.
     for (const file of [
-      'native-handoff-credential-writer.proof.ts',
       'provider-security-http.proof.ts',
       'first-password-http.proof.ts',
+      'anonymous-provider-http.proof.ts',
     ])
       expect(nativeHandoffConfiguration).toContain(file);
+    for (const file of [
+      'native-handoff-credential-writer.proof.ts',
+      'native-provider-creation-credential-writer.proof.ts',
+    ]) {
+      expect(nativeHandoffConfiguration).not.toContain(file);
+      expect(existsSync(`packages/backend/src/auth/authority/__tests__/${file}`)).toBe(false);
+    }
     for (const file of [
       'provider-security-http.proof.ts',
       'first-password-credential-writer.proof.ts',

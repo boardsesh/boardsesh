@@ -8,14 +8,12 @@ import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import { readCanonicalBrowserCoordinator } from '@/app/lib/auth/browser-coordinator-client';
 import { publicBrowserCoordinatorReady } from '@/app/lib/auth/browser-coordinator-readiness';
 import { publicProviderSecurityReady } from '@/app/lib/auth/provider-security-readiness';
-import { startCanonicalProviderSignin } from '@/app/lib/auth/canonical-provider-start';
 
 const ALLOWED_PROVIDERS = new Set(['google', 'apple']);
 
-function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string | null }) {
+function NativeStartInner() {
   const { t } = useTranslation('auth');
   const params = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
@@ -68,33 +66,10 @@ function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string
       }
     };
     void (async () => {
-      const coordinatorReady = publicBrowserCoordinatorReady();
-      const providerReady = publicProviderSecurityReady();
-      if (coordinatorReady || providerReady) {
-        if (
-          !coordinatorReady ||
-          !providerReady ||
-          !canonicalAuthOrigin ||
-          (provider !== 'google' && provider !== 'apple')
-        )
-          throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
-        await startCanonicalProviderSignin(
-          { canonicalOrigin: canonicalAuthOrigin, provider, callbackUrl, signal: controller.signal },
-          {
-            currentOrigin: window.location.origin,
-            locks: navigator.locks,
-            preflight: readCanonicalBrowserCoordinator,
-            send: fetch,
-            beforeSignin: prepareAttribution,
-            navigate: (destination) => {
-              if (!active || controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
-              submitted.current = true;
-              window.location.assign(destination);
-            },
-          },
-        );
-        return;
-      }
+      // #7596 removed the selected provider start. While a gate is on, the
+      // legacy form would write a NextAuth cookie the selected reader ignores.
+      if (publicBrowserCoordinatorReady() || publicProviderSecurityReady())
+        throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
       await prepareAttribution();
       if (!active) return;
       if (controller.signal.aborted) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
@@ -121,7 +96,7 @@ function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string
       controller.abort();
       if (currentAttempt.current === controller) currentAttempt.current = null;
     };
-  }, [provider, callbackUrl, canonicalAuthOrigin]);
+  }, [provider, callbackUrl]);
 
   if (!provider || !ALLOWED_PROVIDERS.has(provider)) {
     return (
@@ -170,7 +145,7 @@ function NativeStartInner({ canonicalAuthOrigin }: { canonicalAuthOrigin: string
   );
 }
 
-export default function NativeStartClient({ canonicalAuthOrigin = null }: { canonicalAuthOrigin?: string | null }) {
+export default function NativeStartClient() {
   return (
     <Suspense
       fallback={
@@ -186,7 +161,7 @@ export default function NativeStartClient({ canonicalAuthOrigin = null }: { cano
         </Box>
       }
     >
-      <NativeStartInner canonicalAuthOrigin={canonicalAuthOrigin} />
+      <NativeStartInner />
     </Suspense>
   );
 }

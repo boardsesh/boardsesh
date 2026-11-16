@@ -36,11 +36,6 @@ import {
   type BrowserReplacementPreparation,
 } from '../browser-binding';
 import {
-  BROWSER_BINDING_COOKIE,
-  presentedBrowserBinding,
-  serializeBrowserBindingCookie,
-} from '../browser-binding-cookie';
-import {
   captureIdentityAuthority,
   switchIdentityAuthority,
   type IdentityAuthorityName,
@@ -1709,30 +1704,7 @@ describe('dark stable browser binding under the selected identity authority', ()
     expect(await pending).toEqual({ status: 'conflict' });
     expect((await environment.database.select().from(authBrowserBindings))[0].version).toBe(0);
   });
-  it('keeps the binding cookie identical across selections and refuses ambiguous presented names', async () => {
-    const created = await binding();
-    const before = serializeBrowserBindingCookie(
-      created.token,
-      created.cursor,
-      'https://www.boardsesh.test',
-      '.boardsesh.test',
-    );
-    const selected = await login(created.token);
-    expect(
-      serializeBrowserBindingCookie(created.token, selected.cursor, 'https://www.boardsesh.test', '.boardsesh.test'),
-    ).toBe(before);
-    expect(before).toContain('HttpOnly; Secure; SameSite=Lax; Domain=.boardsesh.test');
-    expect(presentedBrowserBinding(`${BROWSER_BINDING_COOKIE}=${created.token}`)).toEqual({
-      status: 'present',
-      token: created.token,
-    });
-    expect(
-      presentedBrowserBinding(`${BROWSER_BINDING_COOKIE}=${created.token}; ${BROWSER_BINDING_COOKIE}=${created.token}`),
-    ).toEqual({ status: 'invalid' });
-    expect(presentedBrowserBinding(`${BROWSER_BINDING_COOKIE}.0=${created.token}`)).toEqual({ status: 'invalid' });
-    expect(() =>
-      serializeBrowserBindingCookie(created.token, created.cursor, 'https://evil.example', '.boardsesh.test'),
-    ).toThrow('BROWSER_BINDING_COOKIE_SCOPE_INVALID');
+  it('keeps the public bootstrap closed', () => {
     expect(BROWSER_BINDING_PUBLIC_BOOTSTRAP_READY).toBe(false);
     expect(assertBrowserBindingPublicBootstrap).toThrow('BROWSER_BINDING_COORDINATOR_UNQUALIFIED');
   });
