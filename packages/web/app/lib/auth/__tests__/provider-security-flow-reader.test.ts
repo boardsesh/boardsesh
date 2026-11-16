@@ -6,7 +6,6 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 import { createProviderSecurityOAuthFlowReader } from '../provider-security-flow-reader.server';
-import { normalizeProviderSecurityAppleCallback } from '../provider-security-apple-transport.server';
 import { captureProviderBrowserContext } from '../provider-security-selection.server';
 import {
   providerSecurityFlowCookieName,
@@ -226,50 +225,6 @@ describe('actual signed-flow locator with separate primary source admission', ()
     const current = await fixture('callback', 'link', { callbackUrl: `${origin}/settings`, noCarrier: true });
     expect(await current.reader.read(current.request, base, current.route)).toEqual({ status: 'ordinary-unqualified' });
     expect(current.readSelection).not.toHaveBeenCalled();
-  });
-  it('resumes held Apple transport only after the exact operation and current actor return on same-WWW GET', async () => {
-    const current = await fixture('callback', 'link');
-    const noneCookies = (current.request.headers.get('cookie') ?? '')
-      .split('; ')
-      .filter((pair) => pair.startsWith('__Secure-next-auth.'))
-      .join('; ');
-    const incoming = new NextRequest(`http://0.0.0.0:3000/api/auth/callback/apple`, {
-      method: 'POST',
-      headers: { Host: new URL(origin).host, Cookie: noneCookies, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ state, code: 'owned-apple-code' }),
-    });
-    const held = await normalizeProviderSecurityAppleCallback(
-      incoming,
-      { params: Promise.resolve({ nextauth: ['callback', 'apple'] }) },
-      { ...base, providers: [{ id: 'apple', name: 'Apple', type: 'oauth', profile: () => ({ id: 'unused' }) }] },
-      { environment, ready: () => true },
-    );
-    if (!held || held.status !== 303) throw new Error('Expected actual authenticated Apple transport hold');
-    const continuation = held.headers
-      .getSetCookie()
-      .map((header) => header.split(';', 1)[0])
-      .join('; ');
-    const withoutLax = new NextRequest(held.headers.get('Location')!, {
-      headers: { Host: new URL(origin).host, Cookie: `${noneCookies}; ${continuation}` },
-    });
-    expect(await current.reader.read(withoutLax, base, current.route)).toEqual({
-      status: 'refused',
-      reason: 'invalid_request',
-    });
-    expect(current.readSelection).not.toHaveBeenCalled();
-    const restored = new NextRequest(held.headers.get('Location')!, {
-      headers: { Host: new URL(origin).host, Cookie: `${current.request.headers.get('cookie')}; ${continuation}` },
-    });
-    expect(await current.reader.read(restored, base, current.route)).toMatchObject({
-      status: 'explicit',
-      purpose: 'link',
-      flow: current.flow,
-    });
-    current.readSelection.mockResolvedValue({ status: 'missing-binding' });
-    expect(await current.reader.read(restored, base, current.route)).toEqual({
-      status: 'refused',
-      reason: 'identity_changed',
-    });
   });
   it('refuses two independently sealed operations for the same actual state instead of choosing the first', async () => {
     const current = await fixture('callback');

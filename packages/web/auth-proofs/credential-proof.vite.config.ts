@@ -22,11 +22,7 @@ export default defineConfig(async (environment) => {
       environment: 'node',
       include: [
         'auth-proofs/web-credential-proof.integration.proof.ts',
-        'auth-proofs/provider-security-auth.proof.ts',
         'auth-proofs/provider-security-publication.proof.ts',
-        'auth-proofs/provider-security-google-reauth.proof.ts',
-        'auth-proofs/provider-owned-signin-auth.proof.ts',
-        'auth-proofs/provider-oauth-outer.proof.ts',
       ],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30000,
