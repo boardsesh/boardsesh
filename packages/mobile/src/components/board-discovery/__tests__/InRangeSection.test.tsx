@@ -44,8 +44,30 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('../../Card', () => ({ Card: ({ children }: Children) => createElement('section', null, children) }));
 vi.mock('../../Button', () => ({
-  Button: ({ title, onPress, loading }: { title: string; onPress: () => void; loading?: boolean }) =>
-    createElement('button', { type: 'button', onClick: onPress, 'data-loading': loading ? 'yes' : 'no' }, title),
+  Button: ({
+    title,
+    onPress,
+    loading,
+    style,
+    maxFontSizeMultiplier,
+  }: {
+    title: string;
+    onPress: () => void;
+    loading?: boolean;
+    style?: { height?: number };
+    maxFontSizeMultiplier?: number;
+  }) =>
+    createElement(
+      'button',
+      {
+        type: 'button',
+        onClick: onPress,
+        'data-loading': loading ? 'yes' : 'no',
+        'data-height': style?.height ?? 'auto',
+        'data-max-font-scale': maxFontSizeMultiplier ?? 'none',
+      },
+      title,
+    ),
 }));
 vi.mock('../../PressableSurface', () => ({
   PressableSurface: ({
@@ -481,6 +503,15 @@ describe('InRangeSection', () => {
     expect(handlers.onUseMyLocation).toHaveBeenCalledExactlyOnceWith(row);
     expect(handlers.onSearchGyms).toHaveBeenCalledExactlyOnceWith(row);
     expect(handlers.onOwnBoard).toHaveBeenCalledExactlyOnceWith(row);
+  });
+
+  // A filled and a tonal button measure differently from the same label: the
+  // pair shares one pinned height, labels capped where they still fit it.
+  it('draws Use my location and Search gyms at one height', () => {
+    renderSlot({ kind: 'none' }, { unnamed: MOONBOARD });
+    const pair = ['Use my location', 'Search gyms'].map((name) => screen.getByRole('button', { name }));
+    expect(pair.map((button) => button.getAttribute('data-height'))).toEqual(['44', '44']);
+    expect(pair.map((button) => button.getAttribute('data-max-font-scale'))).toEqual(['1.3', '1.3']);
   });
 
   // The gym of the board you're on doesn't say what this box is.

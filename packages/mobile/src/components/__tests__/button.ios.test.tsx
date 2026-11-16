@@ -24,6 +24,7 @@ import type { ViewStyle } from 'react-native';
 
 const hostCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const buttonCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+const imageCalls = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios', select: (options: Record<string, unknown>) => options.ios ?? options.default },
@@ -42,7 +43,11 @@ vi.mock('@expo/ui/swift-ui', () => {
     buttonCalls.props.push(props);
     return createElement('div', null, props.children);
   };
-  return { Button: SwiftUIButton, HStack: passthrough, Image: () => null, ProgressView: () => null, Text: passthrough };
+  const Image = (props: Record<string, unknown>) => {
+    imageCalls.props.push(props);
+    return null;
+  };
+  return { Button: SwiftUIButton, HStack: passthrough, Image, ProgressView: () => null, Text: passthrough };
 });
 vi.mock('@expo/ui/swift-ui/modifiers', () => {
   const modifier =
@@ -97,6 +102,26 @@ function modifierArg(kind: string): unknown {
 beforeEach(() => {
   hostCalls.props = [];
   buttonCalls.props = [];
+  imageCalls.props = [];
+});
+
+// @expo/ui draws a symbol with no font at a fixed 24pt, far bigger than a
+// small button's label. The icon takes the label's font instead, as a SwiftUI
+// Label does: sized by the button's size, scaled by Dynamic Type.
+describe('iOS Button icon', () => {
+  it.each([
+    ['small', 'footnote'],
+    ['medium', 'callout'],
+    ['large', 'body'],
+  ] as const)('a %s button sets its icon in the label font (%s)', (size, textStyle) => {
+    render(<Button title="Search gyms" onPress={vi.fn()} variant="tonal" size={size} icon="gym" />);
+
+    const image = imageCalls.props.at(-1);
+    const imageFont = (image?.modifiers as Modifier[] | undefined)?.find((entry) => entry.kind === 'font');
+    expect(imageFont?.args[0]).toEqual({ textStyle, weight: 'regular' });
+    expect(imageFont?.args[0]).toEqual(modifierArg('font'));
+    expect(image?.size).toBeUndefined();
+  });
 });
 
 // HIG Buttons: only the prominent (filled) call to action is semibold; bordered

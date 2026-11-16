@@ -450,6 +450,8 @@ function UnnamedCard({
             title={t('mobile.inRange.useMyLocation')}
             size="small"
             icon="location"
+            style={styles.pairedButton}
+            maxFontSizeMultiplier={PAIRED_BUTTON_MAX_FONT_SCALE}
             onPress={() => onUseMyLocation(row)}
           />
           <Button
@@ -457,6 +459,8 @@ function UnnamedCard({
             size="small"
             variant="tonal"
             icon="gym"
+            style={styles.pairedButton}
+            maxFontSizeMultiplier={PAIRED_BUTTON_MAX_FONT_SCALE}
             onPress={() => onSearchGyms(row)}
           />
         </View>
@@ -510,6 +514,14 @@ function LookupFailedCard({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/**
+ * The unnamed card's two buttons: the 44pt tap target as their one height, and
+ * labels that stop growing at 1.3x, where a small button's label still fits it
+ * (the tick bar's cap, TICK_ACTION_MAX_FONT_SCALE).
+ */
+const PAIRED_BUTTON_HEIGHT = 44;
+const PAIRED_BUTTON_MAX_FONT_SCALE = 1.3;
+
 const styles = StyleSheet.create({
   gutter: {
     paddingHorizontal: spacing[4],
@@ -543,8 +555,14 @@ const styles = StyleSheet.create({
   actionsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing[2],
     marginTop: spacing[1],
+  },
+  // A filled and a tonal button measure differently from the same label (each
+  // native style pads its own way), so the pair shares one pinned height.
+  pairedButton: {
+    height: PAIRED_BUTTON_HEIGHT,
   },
   textAction: {
     alignItems: 'flex-start',
