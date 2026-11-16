@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/auth-protocol/account-email';
 import { accountEmailCandidates } from '@boardsesh/db/queries/account-email';
 import { authSubjectCutoffs, userCredentials, users } from '@boardsesh/db/schema/auth';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { CurrentStoreFoundationError } from './foundation-context';
 import {
@@ -159,7 +159,7 @@ export async function registerWebPassword(
   });
 }
 
-export interface WebPasswordCandidate {
+interface WebPasswordCandidate {
   readonly userId: string;
   readonly email: string;
   readonly name: string | null;
@@ -252,7 +252,7 @@ function sameCredentialMembers(before: readonly WebPasswordCandidate[], after: r
 }
 
 /** Private verifier state; never serialize the candidate hashes or password. */
-export interface PreparedWebPasswordAuthentication {
+interface PreparedWebPasswordAuthentication {
   readonly receipt: IdentityAuthorityReceipt;
   readonly email: string;
   readonly snapshot: readonly WebPasswordCandidate[];
@@ -261,7 +261,7 @@ export interface PreparedWebPasswordAuthentication {
 
 /**
  * Runs one sign-in's whole group of compares in a single turn. The staged
- * password command passes its process-wide gate; browser publication passes none.
+ * password command passes its process-wide gate.
  */
 export type PasswordCompareSlot = <Result>(compares: () => Promise<Result>) => Promise<Result>;
 
@@ -277,8 +277,8 @@ function oneAtATime(verify: PasswordVerifier): PasswordVerifier {
   };
 }
 
-/** Both ordinary login and browser publication use this one byte-preserving verifier. */
-export async function prepareWebPasswordAuthentication(
+/** Compares the password before any user lock is taken. */
+async function prepareWebPasswordAuthentication(
   database: DbInstance,
   authority: WebPasswordAuthority,
   email: string,
@@ -315,26 +315,20 @@ export async function prepareWebPasswordAuthentication(
   return { ...prepared, email, matchedUserId: matched?.userId ?? null };
 }
 
-/** Publication includes the observed source owner in the SAME ordered lock
- * statement, before any binding lock. A no-match request takes no user lock. */
-export async function lockWebPasswordAuthentication(
+/** A no-match request takes no user lock. */
+async function lockWebPasswordAuthentication(
   transaction: CurrentStoreTransaction,
   prepared: PreparedWebPasswordAuthentication,
-  publicationSourceUserIds?: readonly string[],
 ): Promise<WebPasswordCandidate | null> {
   if (prepared.matchedUserId === null) return null;
   await boundSignInLockWaits(transaction);
-  const additionalUserIds = [...new Set(publicationSourceUserIds ?? [])];
-  const predicate = additionalUserIds.length
-    ? or(accountEmailCandidates(prepared.email), inArray(users.id, additionalUserIds))
-    : accountEmailCandidates(prepared.email);
   const lockedUsers = await transaction
     .select({ id: users.id })
     .from(users)
-    .where(predicate)
+    .where(accountEmailCandidates(prepared.email))
     .orderBy(users.id)
-    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1 + additionalUserIds.length)
-    .for(publicationSourceUserIds === undefined ? 'key share' : 'update');
+    .limit(ACCOUNT_EMAIL_CANDIDATE_LIMIT + 1)
+    .for('key share');
   // A later statement sees a reset that committed while the lock was waiting.
   const current = lockedUsers.length
     ? await addressSnapshot(
@@ -346,17 +340,6 @@ export async function lockWebPasswordAuthentication(
     : [];
   const selected = current.find((candidate) => candidate.userId === prepared.matchedUserId);
   return selected && sameCredentialMembers(prepared.snapshot, current) && !selected.deleted ? selected : null;
-}
-
-/** Caller holds the target user lock; only its authoritative credential is read. */
-export async function readWebPasswordCandidateInTransaction(
-  transaction: CurrentStoreTransaction,
-  receipt: IdentityAuthorityReceipt,
-  userId: string,
-): Promise<WebPasswordCandidate | null> {
-  const [owner] = await transaction.select({ email: users.email }).from(users).where(eq(users.id, userId));
-  if (!owner) return null;
-  return (await addressSnapshot(transaction, owner.email, receipt, [userId]))[0] ?? null;
 }
 
 /** One-request password/UID verification snapshot, NOT a continuing credential. */

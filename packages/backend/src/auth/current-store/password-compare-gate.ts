@@ -9,9 +9,9 @@
  * keeps this route's share of each stall to one slice.
  *
  * What this does NOT bound: it covers the staged web password command only.
- * Registration, password reset and set-password hashes, the browser-password
- * prepare path and every native compare still run beside it, so the loop can
- * still see several slices at once.
+ * Registration, password reset and set-password hashes and every native
+ * compare still run beside it, so the loop can still see several slices at
+ * once.
  */
 export const PASSWORD_COMPARE_CONCURRENCY = 1;
 /** Sign-ins that may wait for their turn: about 3 s of work at 200 ms each. */

@@ -3,11 +3,7 @@
 import { getSession, signIn, type SignInOptions, type SignInResponse } from 'next-auth/react';
 import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors';
 import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
-import { publicBrowserPasswordReady } from './browser-password-readiness';
-import { canonicalPasswordOptionsSchema, signInCanonicalPassword } from './canonical-password-signin';
 import { publicProviderSecurityReady } from './provider-security-readiness';
-import { readCanonicalBrowserCoordinator } from './browser-coordinator-client';
-import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
 import { browserSessionGuard } from './session-guard';
 
 export const WEB_SESSION_REFRESH_EVENT = 'boardsesh-web-session-refresh';
@@ -52,14 +48,9 @@ export async function signInWithSessionIntent(
   const localChange = browserSessionGuard().expectLocalChange();
   const coordinatorReady = publicBrowserCoordinatorReady();
   const providerReady = publicProviderSecurityReady();
-  const passwordReady = publicBrowserPasswordReady();
   let signedIn = false;
   try {
-    const result = await signInThroughReadyPath(provider, options, context, {
-      coordinatorReady,
-      providerReady,
-      passwordReady,
-    });
+    const result = await signInThroughReadyPath(provider, options, context, { coordinatorReady, providerReady });
     signedIn = !result?.error;
     return result;
   } finally {
@@ -69,60 +60,24 @@ export async function signInWithSessionIntent(
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.
-    if (!coordinatorReady && !providerReady && !passwordReady && epoch === captureWebSessionEpoch())
-      void getSession().catch(() => {});
+    if (!coordinatorReady && !providerReady && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
   }
 }
 
 type SignInReadiness = {
   readonly coordinatorReady: boolean;
   readonly providerReady: boolean;
-  readonly passwordReady: boolean;
 };
 
 async function signInThroughReadyPath(
   provider: 'credentials' | 'apple' | 'google',
   options: SignInOptions | undefined,
   context: { readonly signal?: AbortSignal } | undefined,
-  { coordinatorReady, providerReady, passwordReady }: SignInReadiness,
+  { coordinatorReady, providerReady }: SignInReadiness,
 ): Promise<SignInResponse | undefined> {
-  if (provider === 'credentials' && (coordinatorReady || providerReady || passwordReady)) {
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    if (context?.signal?.aborted) abort();
-    else context?.signal?.addEventListener('abort', abort, { once: true });
-    const timeout = setTimeout(abort, 15_000);
-    try {
-      const origin = getCanonicalBrowserOrigin();
-      if (!coordinatorReady || !passwordReady || !origin || typeof window === 'undefined')
-        throw new Error('PASSWORD_SIGNIN_UNAVAILABLE');
-      const parsed = canonicalPasswordOptionsSchema.parse(options ?? {});
-      return await signInCanonicalPassword(
-        {
-          canonicalOrigin: origin,
-          email: parsed.email,
-          password: parsed.password,
-          callbackUrl: parsed.callbackUrl ?? '/',
-          redirect: parsed.redirect ?? true,
-          signal: controller.signal,
-        },
-        {
-          currentOrigin: window.location.origin,
-          locks: navigator.locks,
-          preflight: readCanonicalBrowserCoordinator,
-          send: fetch,
-          navigate: (destination) => window.location.assign(destination),
-        },
-      );
-    } catch {
-      return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
-    } finally {
-      clearTimeout(timeout);
-      context?.signal?.removeEventListener('abort', abort);
-    }
-  }
-  // #7596 removed the selected Google/Apple start. While a gate is on, a
-  // legacy sign-in would write a NextAuth cookie the selected reader ignores.
+  // #7596 removed the selected password writer and the selected Google/Apple
+  // start. While a gate is on, a legacy sign-in would write a NextAuth cookie
+  // the selected reader ignores, and metadata preflight cannot authorize it.
   if (coordinatorReady || providerReady) return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
   return await signIn(provider, options);
 }

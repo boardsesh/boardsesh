@@ -2,7 +2,6 @@ import { assertNativeRevocationActivationConfiguration } from './auth/authority/
 import { assertWebSessionWriterActivationConfiguration } from './auth/current-store/web-session-configuration';
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
-import { handleBrowserPassword } from './handlers/browser-password';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleFirstPassword } from './handlers/first-password';
@@ -801,10 +800,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/browser-binding/v1/')) {
         await handleBrowserBinding(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/browser-password/v1/')) {
-        await handleBrowserPassword(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {

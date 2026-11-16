@@ -22,14 +22,6 @@ export interface AnonymousProviderResponseAdmission {
   readonly cursor: Readonly<{ bindingId: string; version: number; bindingExpiresAt: string }>;
   readonly complete: AuthResponseAdmissionCompletion;
 }
-/** A separate credentials-only scope. No OAuth scope or public request header
- * can authorize this source-free installed framework preparation. */
-export interface AnonymousPasswordResponseAdmission {
-  readonly purpose: 'password-prepare';
-  readonly canonicalOrigin: string;
-  readonly cursor: Readonly<{ bindingId: string; version: number; bindingExpiresAt: string }>;
-  readonly complete: AuthResponseAdmissionCompletion;
-}
 
 function deniedAuthResponse(action: string): Response {
   return NextResponse.json(action === 'session' ? {} : { error: 'Authentication required' }, {
@@ -70,15 +62,12 @@ async function selectedResponseAdmission(
   invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
   completeAdmission?: AuthResponseAdmissionCompletion,
   anonymousProvider?: AnonymousProviderResponseAdmission,
-  anonymousPassword?: AnonymousPasswordResponseAdmission,
 ): Promise<Response | null> {
   try {
     const cookieHeader = request.headers.get('cookie');
     const before = await browserConsumerFacade.observe(cookieHeader);
-    if (before.status === 'legacy')
-      return anonymousProvider || anonymousPassword ? selectedRefusal('unavailable') : null;
+    if (before.status === 'legacy') return anonymousProvider ? selectedRefusal('unavailable') : null;
     if (before.status !== 'admitted' && before.status !== 'anonymous') return selectedRefusal(before.status);
-    if (anonymousProvider && anonymousPassword) return selectedRefusal('unavailable');
     if (
       anonymousProvider &&
       (before.status !== 'anonymous' ||
@@ -89,35 +78,11 @@ async function selectedResponseAdmission(
         !/^\/api\/auth\/(?:signin|callback)\/(?:google|apple)$/.test(request.nextUrl.pathname))
     )
       return selectedRefusal('conflict');
-    if (anonymousPassword) {
-      const origin = new URL(anonymousPassword.canonicalOrigin);
-      if (
-        anonymousPassword.purpose !== 'password-prepare' ||
-        origin.protocol !== 'https:' ||
-        origin.origin !== anonymousPassword.canonicalOrigin ||
-        request.nextUrl.origin !== anonymousPassword.canonicalOrigin ||
-        request.headers.get('host') !== origin.host ||
-        request.headers.get('origin') !== anonymousPassword.canonicalOrigin ||
-        (request.headers.has('sec-fetch-site') && request.headers.get('sec-fetch-site') !== 'same-origin') ||
-        before.status !== 'anonymous' ||
-        before.cursor.bindingId !== anonymousPassword.cursor.bindingId ||
-        before.cursor.version !== anonymousPassword.cursor.version ||
-        before.cursor.bindingExpiresAt !== anonymousPassword.cursor.bindingExpiresAt ||
-        action !== 'callback' ||
-        request.method !== 'POST' ||
-        request.nextUrl.pathname !== '/api/auth/callback/credentials' ||
-        !/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers.get('content-type') ?? '')
-      )
-        return selectedRefusal('conflict');
-    }
     // A durable selected logout needs its separately qualified exact-response
     // backend ACK. The legacy sign-out acknowledgment cannot stand in for it.
     if (
       action === 'signout' ||
-      (before.status === 'anonymous' &&
-        !anonymousProvider &&
-        !anonymousPassword &&
-        !['session', 'csrf', 'providers'].includes(action))
+      (before.status === 'anonymous' && !anonymousProvider && !['session', 'csrf', 'providers'].includes(action))
     )
       return selectedRefusal('unavailable');
     const response =
@@ -152,7 +117,6 @@ async function selectedResponseAdmission(
       response.headers.set('Cache-Control', 'private, no-store');
       // Anonymous observation is never an authenticated provider actor ACK.
       anonymousProvider?.complete(response);
-      anonymousPassword?.complete(response);
     }
     return response;
   } catch {
@@ -206,17 +170,9 @@ export async function withAuthResponseAdmission(
   invoke: (completeSignOut: SignOutCompletion) => Promise<Response>,
   completeAdmission?: AuthResponseAdmissionCompletion,
   anonymousProvider?: AnonymousProviderResponseAdmission,
-  anonymousPassword?: AnonymousPasswordResponseAdmission,
 ): Promise<Response> {
   const [action] = (await context.params).nextauth;
-  const selected = await selectedResponseAdmission(
-    request,
-    action,
-    invoke,
-    completeAdmission,
-    anonymousProvider,
-    anonymousPassword,
-  );
+  const selected = await selectedResponseAdmission(request, action, invoke, completeAdmission, anonymousProvider);
   if (selected) return selected;
   // Clearing a cookie needs no proof the account still exists, so an outage must
   // not stop a climber signing out. A known denial still answers as before.

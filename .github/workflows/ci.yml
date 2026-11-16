@@ -1716,17 +1716,6 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:browser-renewal-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-renewal-credential-writer.xml
           test -s packages/backend/test-results/junit-browser-renewal-credential-writer.xml
-      - name: Run ordinary password publication under exact profiles3 and6 serially
-        run: |
-          mkdir -p packages/backend/test-results
-          vp run test:browser-password-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-password-credential-writer.xml
-          test -s packages/backend/test-results/junit-browser-password-credential-writer.xml
-          vp exec node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
-          const xml = readFileSync('packages/backend/test-results/junit-browser-password-credential-writer.xml', 'utf8');
-          const cases = [...xml.matchAll(/<testcase\b/g)].length;
-          if (cases !== 44 || /<skipped(?:\s|\/|>)/.test(xml)) throw new Error('Expected all 44 browser password proof cases');
-          NODE
       - name: Upload credential proof results
         uses: actions/upload-artifact@v4
         if: always()
@@ -1738,7 +1727,6 @@ jobs:
             packages/backend/test-results/junit-first-password-credential-writer.xml
             packages/backend/test-results/junit-native-handoff-credential-writer.xml
             packages/backend/test-results/junit-browser-renewal-credential-writer.xml
-            packages/backend/test-results/junit-browser-password-credential-writer.xml
           retention-days: 7
 
   aurora-circuit-arbitration:

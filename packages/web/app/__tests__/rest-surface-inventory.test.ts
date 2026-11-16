@@ -1,12 +1,12 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 46
+ * The standing inventory oracle for issue #1889 (REST surface audit: 42
  * routes in total, classified after the board renderer moved to Railway in
  * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
- * route and its prewarm cron were retired). The 46 include four
- * browser-password facades (#7557), two canonical coordinator facades, and
- * ordinary sign-in ACK. The renewal, the five staged first-password browser
- * facades, the three expired-binding recovery facades and the six staged
- * provider Settings facades went with #7596.
+ * route and its prewarm cron were retired). The 42 include two canonical
+ * coordinator facades and ordinary sign-in ACK. The renewal, the five staged
+ * first-password browser facades, the three expired-binding recovery facades,
+ * the six staged provider Settings facades and the four browser-password
+ * facades went with #7596.
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -106,10 +106,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
   // Exact current proof-cookie ACK only; no credential recovery or cookie writes.
   'app/api/internal/auth/provider-signin/acknowledge/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-password/prepare/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-password/commit/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-password/confirm/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-password/acknowledge/route.ts': 'keep-staged',
 
   // Canonical coordinator bootstrap remains disabled until joined browser QA.
   'app/api/internal/auth/browser-coordinator/observe/route.ts': 'keep-staged',
@@ -272,8 +268,8 @@ describe('REST surface inventory (issue #1889)', () => {
 
   it('counts exactly the audited surface', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
-    // staged provider/browser-password deltas are tracked in #7430; the closed
+    // staged provider deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(46);
+    expect(derived.size).toBe(42);
   });
 });

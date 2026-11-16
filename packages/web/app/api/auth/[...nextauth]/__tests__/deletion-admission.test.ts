@@ -18,6 +18,7 @@ const controls = vi.hoisted(() => ({
   // failed read in auth-options stamps 0).
   generations: new Map<string, number>(),
   signInStamp: 0,
+  authorizeCalls: 0,
 }));
 const secret = 'owned-mounted-deletion-fixture-secret';
 vi.mock('@/app/lib/auth/auth-options', async () => {
@@ -29,7 +30,10 @@ vi.mock('@/app/lib/auth/auth-options', async () => {
       providers: [
         CredentialsProvider({
           credentials: { email: {}, password: {} },
-          authorize: async () => ({ id: controls.userId, email: `${controls.userId}@example.invalid` }),
+          authorize: async () => {
+            controls.authorizeCalls += 1;
+            return { id: controls.userId, email: `${controls.userId}@example.invalid` };
+          },
         }),
       ],
       callbacks: {
@@ -135,6 +139,7 @@ beforeEach(async () => {
   controls.presented = [];
   controls.generations.clear();
   controls.signInStamp = 0;
+  controls.authorizeCalls = 0;
   cookies = new Map();
   const response = await invoke('csrf');
   remember(response);
@@ -215,5 +220,45 @@ describe('actual public NextAuth deletion publication', () => {
     expect(response.status).toBe(503);
     expect(response.headers.getSetCookie()).toEqual([]);
     expect(cookies.get('next-auth.session-token')).toBe(previous);
+  });
+});
+
+// The route has no credentials fence of its own: under a selected binding
+// mode the admission layer refuses before the NextAuth handler runs, so the
+// legacy password writer is never reached.
+describe('selected binding mode and the raw credentials callback', () => {
+  it.each(['backend-staging', 'invalid-selection-mode'])(
+    'refuses %s before authorize, admission or any cookie write',
+    async (mode) => {
+      vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', mode);
+      const response = await login();
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ error: 'unavailable' });
+      expect(response.headers.get('X-Boardsesh-Credential-Authority')).toBe('unavailable');
+      expect(response.headers.getSetCookie()).toEqual([]);
+      expect(controls.authorizeCalls).toBe(0);
+      expect(controls.presented).toEqual([]);
+    },
+  );
+
+  it('refuses an encoded credentials path the same way', async () => {
+    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'backend-staging');
+    const response = await invoke('callback/%63redentials', {
+      email: 'fixture@example.invalid',
+      password: 'fixture-only',
+      csrfToken,
+      json: 'true',
+      callbackUrl: origin,
+    });
+    expect(response.status).toBe(503);
+    expect(response.headers.getSetCookie()).toEqual([]);
+    expect(controls.authorizeCalls).toBe(0);
+  });
+
+  it('still reaches authorize once the binding mode is legacy', async () => {
+    vi.stubEnv('CURRENT_STORE_BROWSER_BINDING_MODE', 'legacy');
+    const response = await login();
+    expect(response.status).toBe(200);
+    expect(controls.authorizeCalls).toBe(1);
   });
 });
