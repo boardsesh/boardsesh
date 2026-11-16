@@ -7,7 +7,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const auth = vi.hoisted(() => ({ isAuthenticated: true }));
 const getAuroraCredentials = vi.hoisted(() => vi.fn());
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => auth }));
-vi.mock('../../aurora-credentials', () => ({ getAuroraCredentials }));
+vi.mock('../../auth-interceptor', () => ({
+  authenticatedFetch: async () => Response.json(await getAuroraCredentials()),
+}));
+vi.mock('expo-web-browser', () => ({ openAuthSessionAsync: vi.fn() }));
+vi.mock('../../env', () => ({ BACKEND_URL: 'https://backend.owned.test' }));
 
 import { AURORA_CREDENTIALS_QUERY_KEY } from '../board-account-query-keys';
 import { useBoardAccountCredentials } from '../use-board-account-credentials';

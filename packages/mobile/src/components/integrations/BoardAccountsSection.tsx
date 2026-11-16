@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
@@ -12,7 +12,7 @@ import {
   AURORA_UNSYNCED_QUERY_KEY,
 } from '../../lib/integrations/board-account-query-keys';
 import { invalidateOwnDataAfterImport } from '../../lib/integrations/board-import-completion';
-import { pendingSyncRefetchInterval } from '../../lib/integrations/use-board-account-credentials';
+import { useAuroraCredentialsRead, useAuroraUnsyncedRead } from '../../lib/integrations/use-board-account-reads';
 import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
 import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
@@ -44,8 +44,6 @@ import { extractGraphqlCode, isGraphqlRateLimitedError } from '../../lib/graphql
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
   deleteAuroraCredential,
-  getAuroraCredentials,
-  getAuroraUnsyncedCounts,
   streamAuroraImport,
   streamMoonBoardImport,
   type AuroraCredentialStatus,
@@ -296,16 +294,8 @@ export function BoardAccountsSection() {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
 
-  const credentialsQuery = useQuery({
-    queryKey: AURORA_CREDENTIALS_QUERY_KEY,
-    queryFn: getAuroraCredentials,
-    refetchInterval: pendingSyncRefetchInterval,
-  });
-  const unsyncedQuery = useQuery({
-    queryKey: AURORA_UNSYNCED_QUERY_KEY,
-    queryFn: getAuroraUnsyncedCounts,
-    enabled: credentialsQuery.isSuccess,
-  });
+  const credentialsQuery = useAuroraCredentialsRead();
+  const unsyncedQuery = useAuroraUnsyncedRead(credentialsQuery.isSuccess);
 
   const kilterOauthLinkingEnabled = useFeatureFlag('kilter-oauth-linking') === true;
 
