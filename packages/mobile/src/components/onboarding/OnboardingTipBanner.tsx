@@ -8,14 +8,12 @@ import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { borderRadius, spacing } from '../../theme/tokens';
 
-/**
- * The close glyph draws 24 pt (16 pt plus its padding); the slop takes the
- * target to iOS's 44 pt and Material's 48 dp without growing the banner.
- */
-const CLOSE_HIT_SLOP = Platform.OS === 'android' ? 12 : 10;
+// Keep the whole target inside the banner's bounds; hitSlop is clipped by
+// parent bounds and cannot provide a dependable close control on its own.
+const CLOSE_TARGET_SIZE = Platform.OS === 'android' ? 48 : 44;
 
 type OnboardingTipBannerProps = {
-  /** Already-translated one-line tip copy. */
+  /** Already-translated tip copy. */
   text: string;
   /** Already-translated accessibility label for the close button. */
   dismissLabel: string;
@@ -33,7 +31,7 @@ type OnboardingTipBannerProps = {
 };
 
 /**
- * A single dismissible, one-line just-in-time tip. Used for the board-history
+ * A dismissible just-in-time tip. Used for the board-history
  * reveal banner on Climbs and the contextual feature tips (workout / crew / record).
  * No animation, so it's Reduce-Motion-safe by construction; the copy + close
  * button are separate accessibility elements. The host owns the "show once"
@@ -94,7 +92,6 @@ function OnboardingTipBannerComponent({
         onPress={onDismiss}
         accessibilityRole="button"
         accessibilityLabel={dismissLabel}
-        hitSlop={CLOSE_HIT_SLOP}
         style={styles.close}
       >
         <Icon name="close" size={16} color={systemColors.secondaryLabel} />
@@ -125,6 +122,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   close: {
-    padding: spacing[1],
+    minWidth: CLOSE_TARGET_SIZE,
+    minHeight: CLOSE_TARGET_SIZE,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
