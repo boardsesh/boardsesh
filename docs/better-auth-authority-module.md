@@ -1,8 +1,10 @@
 # First-party authority module (BA-04 PR 6)
 
 `packages/backend/src/auth/authority/authority.ts` constructs a Better Auth
-instance against a caller-owned Drizzle transaction. It has no production
-imports or mounted route. Deploying the module adds six empty tables; it does
+instance against a caller-owned Drizzle transaction. It has no mounted route.
+Its only production importer is the staged web password code in
+`auth/current-store/web-password.ts`, which runs only when its mode is on.
+Deploying the module adds six empty tables; it does
 not import identities, mirror credentials, issue replacement sessions, change
 any `CURRENT_STORE_*` selector, or enable the authority switch. The activation
 gates in the BA-04 plan and owner runbook #7430 still apply.
@@ -47,13 +49,13 @@ does not mount a request wrapper or claim those later issuance guarantees.
 `auth_verification` is a token store without a user foreign key.
 `auth_credential_lineage`, `auth_session_denials`, and `auth_migration_epochs`
 have no foreign keys; deleting a user cannot erase revocation evidence.
-Migration 0305 creates only these six tables, their indexes, and the two
+Migration 0306 creates only these six tables, their indexes, and the two
 cascade constraints. The generated snapshot changes no existing table.
 
 ## Proofs
 
 Run `vp run test:auth-authority`. Every suite creates a fresh, randomly named
-localhost database, applies the backend users fixture plus the generated 0305
+localhost database, applies the backend users fixture plus the generated 0306
 migration, and drops only that owned database. It does not use the shared
 backend test database or restart any service. CI runs this proof separately
 from the shared backend fixtures, with at most two workers.

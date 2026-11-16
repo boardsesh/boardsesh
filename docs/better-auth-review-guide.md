@@ -1,30 +1,14 @@
 # Better Auth implementation review guide
 
-This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-06. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and its child issues remain open.**
+This is the review entry point for [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975). Updated 2026-11-16. The accepted direction is in [better-auth-migration.md](./better-auth-migration.md). Every switch and the order to turn them on is in [better-auth-rollout.md](./better-auth-rollout.md). **No production authority switch, identity backfill, account merge, account deletion or production grant change has been performed. The epic and every child issue except BA-01 remain open.**
 
 BA-05 was re-scoped on 2026-11-16 by [#7596](https://github.com/boardsesh/boardsesh/issues/7596). Its design is in [better-auth-browser-session.md](./better-auth-browser-session.md). Docs carrying a "Superseded by #7596" banner describe browser binding code that is being removed. Row #7299 below is where the publication decisions behind that design started.
 
-## Review order
+## What happened to the review stack
 
-| PR | Review scope | Dependency |
-| --- | --- | --- |
-| [#7280](https://github.com/boardsesh/boardsesh/pull/7280) | Isolated Better Auth 1.7.17 migration, legacy credential and OAuth lifecycle proofs | Based on main; no production handler adoption |
-| [#7282](https://github.com/boardsesh/boardsesh/pull/7282) | Existing native password policy extracted into the backend service | Based on main |
-| [#7283](https://github.com/boardsesh/boardsesh/pull/7283) | Generated reservation, projection, cutoff and security-event foundation | Based on main; migration 0290; no activation/backfill |
-| [#7284](https://github.com/boardsesh/boardsesh/pull/7284) | Public NextAuth callback delegation proof using real HTTP and OIDC | Stacked on #7283; test fixtures only |
-| [#7285](https://github.com/boardsesh/boardsesh/pull/7285) | Default-off web registration and password delegation | Stacked on #7284; includes #7282 through an explicit prerequisite merge |
-| [#7286](https://github.com/boardsesh/boardsesh/pull/7286) | Default-off UID-bound verification and resend | Stacked on #7285; migration 0291 |
-| [#7287](https://github.com/boardsesh/boardsesh/pull/7287) | Independently opted-in native registration reservations | Stacked on #7286 |
-| [#7288](https://github.com/boardsesh/boardsesh/pull/7288) | Independently opted-in native Apple/Google identity reservations | Stacked on #7287 |
-| [#7289](https://github.com/boardsesh/boardsesh/pull/7289) | Paired UID-bound password recovery and unconditional web/mobile capability redaction | Stacked on #7288; migration 0292 |
-| [#7290](https://github.com/boardsesh/boardsesh/pull/7290) | Actual App Router/configured-provider callbacks and browser actor-cookie proof | Stacked on #7289; test fixtures only |
-| [#7299](https://github.com/boardsesh/boardsesh/pull/7299) | Server encoding versus cookie publication, rolling renewal and delayed-response browser races | Stacked on #7290; test fixtures only |
-| [#7300](https://github.com/boardsesh/boardsesh/pull/7300) | Default-off backend web OAuth identity writes, durable flow binding and stateless Apple continuation | Stacked on #7299; migration 0293; no authority activation |
-| [#7301](https://github.com/boardsesh/boardsesh/pull/7301) | Independently opted-in fixed shared-board owner reservation and strict identity reuse | Stacked on #7300; no new schema or activation |
-| [#7302](https://github.com/boardsesh/boardsesh/pull/7302) | Fixed recommendations and hold-classifier identities under the actual durable job-attempt fence | Stacked on #7301; default-off; no new schema or grants |
-| [#7303](https://github.com/boardsesh/boardsesh/pull/7303) | Shared whole-gym planner, caller-owned location apply and cooperative SQL checkpoints | Stacked on #7302; existing callers preserved; no authority adoption |
-| [#7307](https://github.com/boardsesh/boardsesh/pull/7307) | Atomic deletion cutoff/event and retained email reservations in the existing GraphQL flow | Stacked on #7303; independently selected; no schema, grants or activation |
-| [#7316](https://github.com/boardsesh/boardsesh/pull/7316) | Primary deletion admission, native issuance and active sockets; web acceptance and original-account mobile deletion | Stacked on #7307; capable backend required before web readers |
+The ten-plus stacked PRs this guide used to list (#7282 to #7316) were closed as superseded. Their code landed on main through the consolidated PRs #7323 and #7350, then #7437 to #7443, #7456 to #7459, #7462 to #7467, #7471 and #7482 to #7505. The proof branch PR #7280 and the catalog check #7321 merged on 2026-11-09. Read the slice notes below for design and measured evidence; each note's PR number and migration number is the one it had at the time and may differ from main (the foundation tables are in `0291`, the authority tables in `0306`). To review what is merged now, start from the switch table in the rollout doc and follow its links.
+
+Direction changed on 2026-11-16: [#7596](https://github.com/boardsesh/boardsesh/issues/7596) deletes the browser binding, renewal, expired-binding, proof-cookie, lease and coordinator design that the browser notes describe. Those notes (`better-auth-browser-*`, `better-auth-renewed-web-lineage`, `better-auth-session-publication`, `better-auth-expired-browser-binding`, `better-auth-web-credential-proofs`) describe code that is on main behind gates that return `false` and that will be removed.
 
 The [shared-board system owner slice](./better-auth-system-board-owner.md)
 adopts the fixed nonhuman user creation behind its own default-off selector.
@@ -104,7 +88,7 @@ preserving ordinary local development image targets and the general script
 helpers. This removes an accidental remote identity-write path; deployed role
 fencing and all remaining current-store writers still require their own proof.
 
-These are unmerged review candidates. Each PR's exact head, checks, review threads and description are the current readiness record; historical green results do not qualify a changed head. The separate proof branch is not a production credential authority. The latest current-store branch contains the preceding implementation notes; #7280 carries its own detailed proof ledger, [better-auth-implementation.md](https://github.com/boardsesh/boardsesh/blob/feat/6975-better-auth/docs/better-auth-implementation.md).
+The paragraphs above are history from when these slices were unmerged review candidates; their green-check and "ready" statements are not current readiness. The acceptance ledger in [better-auth-implementation.md](./better-auth-implementation.md) is the current record. The proof branch is not a production credential authority.
 
 The [password recovery follow-up](./better-auth-password-recovery.md) records the paired UID-bound issuer/consumer and measured QA. Credential delegation remains default-off. Its reset-link headers, shared web/mobile Sentry redaction and fixed legacy-route diagnostics apply in every mode. Privacy coverage is partial: actual trailing-slash 308 first hops omit the configured headers, and the pinned development renderer overrides browser cache control. Production activation requires validated first-hop protection; canonical-page checks and telemetry tests do not close that gate.
 
