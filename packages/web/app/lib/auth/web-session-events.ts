@@ -5,6 +5,7 @@ import { AUTH_BACKEND_UNAVAILABLE } from '@boardsesh/auth-protocol/client-errors
 import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
 import { publicBrowserPasswordReady } from './browser-password-readiness';
 import { canonicalPasswordOptionsSchema, signInCanonicalPassword } from './canonical-password-signin';
+import { publicProviderSecurityReady } from './provider-security-readiness';
 import { signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
 import { browserSessionGuard } from './session-guard';
@@ -50,11 +51,13 @@ export async function signInWithSessionIntent(
   // This tab's own sign-in: the guard drops older responses but keeps the page.
   const localChange = browserSessionGuard().expectLocalChange();
   const coordinatorReady = publicBrowserCoordinatorReady();
+  const providerReady = publicProviderSecurityReady();
   const passwordReady = publicBrowserPasswordReady();
   let signedIn = false;
   try {
     const result = await signInThroughReadyPath(provider, options, context, {
       coordinatorReady,
+      providerReady,
       passwordReady,
     });
     signedIn = !result?.error;
@@ -66,12 +69,14 @@ export async function signInWithSessionIntent(
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.
-    if (!coordinatorReady && !passwordReady && epoch === captureWebSessionEpoch()) void getSession().catch(() => {});
+    if (!coordinatorReady && !providerReady && !passwordReady && epoch === captureWebSessionEpoch())
+      void getSession().catch(() => {});
   }
 }
 
 type SignInReadiness = {
   readonly coordinatorReady: boolean;
+  readonly providerReady: boolean;
   readonly passwordReady: boolean;
 };
 
@@ -79,9 +84,9 @@ async function signInThroughReadyPath(
   provider: 'credentials' | 'apple' | 'google',
   options: SignInOptions | undefined,
   context: { readonly signal?: AbortSignal } | undefined,
-  { coordinatorReady, passwordReady }: SignInReadiness,
+  { coordinatorReady, providerReady, passwordReady }: SignInReadiness,
 ): Promise<SignInResponse | undefined> {
-  if (provider === 'credentials' && (coordinatorReady || passwordReady)) {
+  if (provider === 'credentials' && (coordinatorReady || providerReady || passwordReady)) {
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (context?.signal?.aborted) abort();
@@ -116,5 +121,8 @@ async function signInThroughReadyPath(
       context?.signal?.removeEventListener('abort', abort);
     }
   }
+  // #7596 removed the selected Google/Apple start. While a gate is on, a
+  // legacy sign-in would write a NextAuth cookie the selected reader ignores.
+  if (coordinatorReady || providerReady) return { error: AUTH_BACKEND_UNAVAILABLE, status: 503, ok: false, url: null };
   return await signIn(provider, options);
 }
