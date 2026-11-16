@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 
 // Explicit owned canonical0315 fixture; legacy profile receipts stay distinct.
+// Renewal custody is gone (#7596), but the private-browser-renewal-v1 contract
+// stays selectable by operators until B5, so the kept proofs still run under it.
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   resolve: {
@@ -13,9 +15,8 @@ export default defineConfig({
   test: {
     name: 'browser-renewal-proof',
     environment: 'node',
-    env: { AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-browser-renewal-v1', CURRENT_STORE_BROWSER_RENEWAL_MODE: 'legacy' },
+    env: { AUTH_CREDENTIAL_HTTP_CONTRACT: 'private-browser-renewal-v1' },
     include: [
-      'src/auth/authority/__tests__/browser-renewal-credential-writer.proof.ts',
       'src/auth/authority/__tests__/expired-browser-binding-credential-writer.proof.ts',
       'src/auth/authority/__tests__/public-expired-browser-binding.proof.ts',
       'src/auth/authority/__tests__/credential-writer-http.proof.ts',

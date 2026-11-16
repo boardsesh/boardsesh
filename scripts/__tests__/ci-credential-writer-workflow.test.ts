@@ -215,7 +215,6 @@ describe('owned credential writer CI boundary', () => {
     expect(providerConfiguration).toContain('provider-credential-writer.proof.ts');
     expect(providerConfiguration).toContain('provider-security-http.proof.ts');
     for (const file of [
-      'browser-renewal-credential-writer.proof.ts',
       'expired-browser-binding-credential-writer.proof.ts',
       'public-expired-browser-binding.proof.ts',
       'provider-security-http.proof.ts',

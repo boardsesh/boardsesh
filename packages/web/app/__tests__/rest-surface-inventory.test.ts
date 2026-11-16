@@ -4,7 +4,7 @@
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
  * its prewarm cron were retired, plus six staged provider Settings facades
  * and five staged first-password browser facades, two canonical coordinator
- * facades, ordinary sign-in ACK, renewal, and explicit expired-binding recovery).
+ * facades, ordinary sign-in ACK, and explicit expired-binding recovery).
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -129,8 +129,6 @@ const VERDICTS: Record<string, Verdict> = {
   // Canonical coordinator bootstrap remains disabled until joined browser QA.
   'app/api/internal/auth/browser-coordinator/observe/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/initialize/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-coordinator/renew/prepare/route.ts': 'keep-staged',
-  'app/api/internal/auth/browser-coordinator/renew/commit/route.ts': 'keep-staged',
   // Explicit sign-in only; expired-binding retirement stays publicly disabled.
   'app/api/internal/auth/browser-coordinator/signin/prepare/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/signin/commit/route.ts': 'keep-staged',
@@ -295,6 +293,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider/first-password/browser-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(62);
+    expect(derived.size).toBe(60);
   });
 });

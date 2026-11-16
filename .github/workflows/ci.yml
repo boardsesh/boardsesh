@@ -1718,7 +1718,7 @@ jobs:
           mkdir -p packages/backend/test-results
           vp run test:native-handoff-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-native-handoff-credential-writer.xml
           test -s packages/backend/test-results/junit-native-handoff-credential-writer.xml
-      - name: Run ordinary browser renewal and compatible handler proofs serially
+      - name: Run credential proofs under the private-browser-renewal-v1 contract serially
         run: |
           mkdir -p packages/backend/test-results
           vp run test:browser-renewal-credential-writer --reporter=junit --outputFile.junit=./test-results/junit-browser-renewal-credential-writer.xml
