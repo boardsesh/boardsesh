@@ -5,6 +5,7 @@ import { betaLinkIdentity } from '@boardsesh/shared-schema';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
+import { SHELF_HEADER_CONTENT_GAP, ShelfHeader } from '../ShelfHeader';
 import { Text } from '../Text';
 import { BetaVideoCard, BETA_CARD_HEIGHT, BETA_CARD_WIDTH } from '../play-drawer/BetaVideoCard';
 import { useScopedRouter as useRouter } from '../../lib/routing/scoped-navigation';
@@ -148,10 +149,8 @@ export const HomeBetaSection = memo(function HomeBetaSection({ boardType, layout
 
   return (
     <View style={styles.section} testID="home-section-beta">
-      <Text variant="title3" accessibilityRole="header" style={styles.heading}>
-        {title}
-      </Text>
-      {body}
+      <ShelfHeader title={title} />
+      <View style={styles.body}>{body}</View>
     </View>
   );
 });
@@ -213,9 +212,8 @@ const styles = StyleSheet.create({
   section: {
     paddingBottom: spacing[5],
   },
-  heading: {
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
+  body: {
+    paddingTop: SHELF_HEADER_CONTENT_GAP,
   },
   listContent: {
     paddingHorizontal: LIST_INSET,
