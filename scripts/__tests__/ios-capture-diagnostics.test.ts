@@ -110,3 +110,15 @@ describe('live CPP simulator diagnostic preservation', () => {
     }
   });
 });
+
+it('collects visual-story launch evidence before simulator shutdown', () => {
+  const runner = readFileSync(new URL('../mobile-screenshots.ts', import.meta.url), 'utf8');
+  const visual = runner.slice(runner.indexOf('function runVisualStories('), runner.indexOf('function runPlatform('));
+  expect(visual.indexOf('deviceLogStream = startIosDeviceLogStream')).toBeLessThan(
+    visual.indexOf('const launchArgs = iosSimulatorLaunchArgs'),
+  );
+  expect(visual).toMatch(/writeFileSync\(\s*join\(captureDir, 'ios-launch\.json'\)/);
+  expect(visual).toContain("join(diagnosticDir, 'failure-screen.png')");
+  expect(visual.indexOf('preserveIosCaptureDiagnostics(')).toBeLessThan(visual.indexOf("['simctl', 'shutdown'"));
+  expect(visual).toContain("deviceLogStream?.kill('SIGTERM')");
+});

@@ -190,6 +190,7 @@ import { iosCampaignPhoneScene, iosCampaignDuoScene } from './lib/ios-campaign-p
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
 import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
+import { waitForIosCaptureReady } from './lib/ios-capture-ready';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -2060,12 +2061,12 @@ function judgeSmokeAttempt(input: SmokeAttemptInput): number {
 }
 
 /** Stream the simulator's crash-relevant log lines to IOS_DEVICE_LOG_PATH until killed. */
-function startIosDeviceLogStream(udid: string): ChildProcess {
+function startIosDeviceLogStream(udid: string, predicate = IOS_CRASH_LOG_PREDICATE): ChildProcess {
   writeFileSync(IOS_DEVICE_LOG_PATH, '');
   const logFile = openSync(IOS_DEVICE_LOG_PATH, 'a');
   const stream = spawn(
     'xcrun',
-    ['simctl', 'spawn', udid, 'log', 'stream', '--style', 'compact', '--predicate', IOS_CRASH_LOG_PREDICATE],
+    ['simctl', 'spawn', udid, 'log', 'stream', '--style', 'compact', '--level', 'info', '--predicate', predicate],
     { stdio: ['ignore', logFile, 'ignore'] },
   );
   closeSync(logFile);
@@ -4624,9 +4625,44 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       let succeeded = false;
       let hingeLog: string | null = null;
       let nativeActivityStarted = false;
+      let deviceLogStream: ChildProcess | null = null;
+      const reportDirectories = descriptor ? iosDiagnosticReportDirectories(device.udid) : [];
+      const reportBaseline = snapshotIosDiagnosticReports(reportDirectories);
+      const preserveNativeFailure = () => {
+        // Collect while this simulator and app are still alive. Post-job log
+        // collection runs after shutdown and otherwise loses launch failures.
+        if (descriptor && process.env.SCREENSHOT_DEBUG_DIR) {
+          try {
+            const diagnosticDir = preserveIosCaptureDiagnostics({
+              udid: device.udid,
+              debugDir: process.env.SCREENSHOT_DEBUG_DIR,
+              nativeLogPath: IOS_DEVICE_LOG_PATH,
+              reportDirectories,
+              baseline: reportBaseline,
+              runCommand: (args) => runCapture('xcrun', args, undefined, 15000),
+            });
+            const launchLog = join(captureDir, 'ios-launch.json');
+            if (existsSync(launchLog)) copyFileSync(launchLog, join(diagnosticDir, 'ios-launch.json'));
+            runCapture(
+              'xcrun',
+              ['simctl', 'io', device.udid, 'screenshot', join(diagnosticDir, 'failure-screen.png')],
+              undefined,
+              15000,
+            );
+          } catch (error) {
+            console.error(
+              `${LOG} Story native diagnostic collection failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      };
       try {
         if (descriptor) {
           bootDevice(device);
+          deviceLogStream = startIosDeviceLogStream(
+            device.udid,
+            'process == "Boardsesh" OR eventMessage CONTAINS "com.boardsesh.app" OR subsystem BEGINSWITH "expo"',
+          );
           if (usesDuoStoreFlow(options, descriptor)) hingeLog = prepareDuoHinge(device.udid);
           applyCleanStatusBar(device.udid);
           if (runCapture('xcrun', ['simctl', 'install', device.udid, appPath]).status !== 0)
@@ -4637,13 +4673,34 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
           connectDevClient('adb', device.udid, []);
           applyCleanAndroidStatusBar(device.udid);
         }
-        const rootOffset = metroLogOffset(METRO_LOG_PATH);
-        if (descriptor) {
-          if (runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv()).status !== 0)
-            throw new Error('Story app launch failed');
-        } else launchDevClient('adb', device.udid);
-        if (!waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH))
-          throw new Error('Isolated story root did not become ready within 120 seconds');
+        let rootOffset = metroLogOffset(METRO_LOG_PATH);
+        const launchStoryApp = () => {
+          const launchArgs = iosSimulatorLaunchArgs(device.udid);
+          const launchResult = runCapture('xcrun', launchArgs, simulatorLaunchEnv());
+          writeFileSync(
+            join(captureDir, 'ios-launch.json'),
+            JSON.stringify({ args: launchArgs, ...launchResult }, null, 2),
+          );
+          if (launchResult.status !== 0) throw new Error(`Story app launch failed: ${launchResult.stderr}`);
+        };
+        if (descriptor) launchStoryApp();
+        else launchDevClient('adb', device.udid);
+        const waitForRoot = () => waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH) !== null;
+        const rootReady = descriptor
+          ? waitForIosCaptureReady({
+              waitReady: waitForRoot,
+              beforeRetry: (attempt) => {
+                preserveNativeFailure();
+                console.log(`${LOG} Story root not ready; terminating and re-launching (attempt ${attempt}/3)...`);
+              },
+              relaunch: () => {
+                runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
+                rootOffset = metroLogOffset(METRO_LOG_PATH);
+                launchStoryApp();
+              },
+            })
+          : waitForRoot();
+        if (!rootReady) throw new Error('Isolated story root did not become ready after bounded launch attempts');
         for (const localeTarget of localeTargets) {
           const passes: Array<{ captures: VisualStoryCapture[]; inner: boolean }> = [];
           if (options.cpp && options.cpp !== 'all') {
@@ -4798,7 +4855,14 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
             console.error(`${LOG} ${error instanceof Error ? error.message : String(error)}`);
           }
         }
-        if (!succeeded) preserveFailedRunArtifacts(captureDir);
+        try {
+          if (!succeeded) {
+            preserveNativeFailure();
+            preserveFailedRunArtifacts(captureDir);
+          }
+        } finally {
+          deviceLogStream?.kill('SIGTERM');
+        }
         rmSync(captureDir, { recursive: true, force: true });
         if (descriptor) {
           if (hingeLog) setDuoPose(device.udid, 'closed', hingeLog);
