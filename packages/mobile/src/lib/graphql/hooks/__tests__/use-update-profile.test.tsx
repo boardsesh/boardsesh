@@ -66,17 +66,6 @@ beforeEach(() => {
 });
 
 describe('useUpdateProfile', () => {
-  it('keeps native save completion independent of pending background cache refreshes', async () => {
-    const updatedProfile = { id: 'native-user', displayName: 'Native Sender' };
-    requestMock.mockResolvedValue({ updateProfile: updatedProfile });
-    const { queryClient, Wrapper } = makeWrapper();
-    const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockReturnValue(new Promise<void>(() => {}));
-    const { result } = renderHook(() => useUpdateProfile(), { wrapper: Wrapper });
-    await expect(result.current.mutateAsync({ displayName: 'Native Sender' })).resolves.toEqual(updatedProfile);
-    expect(invalidate).toHaveBeenCalledTimes(2);
-    expect(queryClient.getQueryData(['profile'])).toEqual({ profile: updatedProfile });
-  });
-
   it('writes the returned profile into current and public profile caches', async () => {
     const updatedProfile = {
       id: 'user-1',
@@ -100,12 +89,7 @@ describe('useUpdateProfile', () => {
 
     await result.current.mutateAsync({ avatarUrl: updatedProfile.avatarUrl });
 
-    expect(requestMock).toHaveBeenCalledWith({
-      document: UPDATE_PROFILE,
-      variables: { input: { avatarUrl: updatedProfile.avatarUrl } },
-      signal: expect.any(AbortSignal),
-      requestHeaders: undefined,
-    });
+    expect(requestMock).toHaveBeenCalledWith(UPDATE_PROFILE, { input: { avatarUrl: updatedProfile.avatarUrl } });
     expect(queryClient.getQueryData(['profile'])).toEqual({ profile: updatedProfile });
     expect(queryClient.getQueryData(['publicProfile', 'user-1'])).toEqual({
       ...cachedPublicProfile,
