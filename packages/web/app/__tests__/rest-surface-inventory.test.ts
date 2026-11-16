@@ -1,10 +1,11 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 58
+ * The standing inventory oracle for issue #1889 (REST surface audit: 57
  * routes classified after the board renderer moved to Railway in #4715, the
  * Railway healthcheck route landed in #3798, and the hold-heatmap route and
- * its prewarm cron were retired, plus six staged provider Settings facades
- * and five staged first-password browser facades, two canonical coordinator
- * facades, ordinary sign-in ACK, and explicit expired-binding recovery).
+ * its prewarm cron were retired, plus six staged provider Settings facades,
+ * two canonical coordinator facades, ordinary sign-in ACK, and explicit
+ * expired-binding recovery). The five staged first-password browser facades
+ * went with #7596.
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -69,7 +70,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (33) ---
+  // --- /api/internal/* (32) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -119,13 +120,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/auth/browser-password/confirm/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-password/acknowledge/route.ts': 'keep-staged',
 
-  // Account-bound first-password presentation (#6975/#7516). The backend owns
-  // eligibility and password publication; the public readiness gate stays false.
-  'app/api/internal/auth/first-password/context/route.ts': 'keep-staged',
-  'app/api/internal/auth/first-password/request/route.ts': 'keep-staged',
-  'app/api/internal/auth/first-password/read/route.ts': 'keep-staged',
-  'app/api/internal/auth/first-password/submit/route.ts': 'keep-staged',
-  'app/api/internal/auth/first-password/acknowledge/route.ts': 'keep-staged',
   // Canonical coordinator bootstrap remains disabled until joined browser QA.
   'app/api/internal/auth/browser-coordinator/observe/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-coordinator/initialize/route.ts': 'keep-staged',
@@ -291,8 +285,8 @@ describe('REST surface inventory (issue #1889)', () => {
 
   it('counts exactly the audited surface', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
-    // staged provider/first-password/browser-password deltas are tracked in #7430; the closed
+    // staged provider/browser-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(60);
+    expect(derived.size).toBe(55);
   });
 });

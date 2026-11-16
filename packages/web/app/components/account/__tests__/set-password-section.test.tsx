@@ -343,3 +343,31 @@ it('clears both secrets and refreshes account identity when a different tab chan
   expect((screen.getByLabelText('Confirm Password') as HTMLInputElement).value).toBe('');
   expect(saved).not.toHaveBeenCalled();
 });
+
+it('keeps the ordinary set-password form for an Apple-only account with a known session', async () => {
+  const saved = vi.fn();
+  mockFetch.mockImplementation(async () => Response.json({ success: true }));
+  render(
+    <SetPasswordSection
+      hasPassword={false}
+      userEmail="synthetic@example.com"
+      linkedProviders={['apple']}
+      onPasswordSet={saved}
+      onAccountChanged={vi.fn()}
+      expectedSession={{ userId: 'synthetic-owner', authSessionId: 'synthetic-sid' }}
+    />,
+  );
+  expect(screen.getByText(/signed in with Apple/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'new-password' } });
+  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'new-password' } });
+  fireEvent.click(screen.getByText('Set Password'));
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+  const [path, init] = mockFetch.mock.calls[0] as [string, { body: string }];
+  expect(path).toBe('/api/internal/set-password');
+  expect(JSON.parse(init.body)).toEqual({
+    password: 'new-password',
+    confirmPassword: 'new-password',
+    expectedUserId: 'synthetic-owner',
+    expectedAuthSessionId: 'synthetic-sid',
+  });
+});
