@@ -217,7 +217,7 @@
       },
       "open": {
         "title": "Enregistre ton app",
-        "body": "Connecte-toi, accepte les conditions développeur et crée une app dans la console. Tu reçois tout de suite un client ID, et un client secret si ton serveur échange le code. Si ton compte n'est pas encore activé, la console te le dit.",
+        "body": "Connecte-toi en tant que développeur activé, accepte les conditions développeur et crée une app dans la console. Tu reçois tout de suite un client ID, et un client secret si ton serveur échange le code. Si ton compte n'est pas encore activé, la console te le dit.",
         "action": "Ouvre la console développeur"
       }
     },
@@ -254,11 +254,11 @@
       "title": "Les règles qui piègent les développeurs",
       "items": {
         "consent": "Une app sans client secret, et toute app native, affiche l'écran de consentement à chaque autorisation. prompt=none ne renvoie jamais de code ; il renvoie error=consent_required. Garde le refresh token plutôt que d'autoriser de nouveau. Seule une app web confidentielle avec une redirection https est mémorisée.",
-        "redirect": "Les redirect URI sont comparés comme des chaînes exactes, 10 par app au plus. Utilise https, une adresse loopback (http://127.0.0.1 ou http://[::1], port ignoré) ou un schéma privé contenant un point. http://localhost et les jokers sont refusés.",
-        "redirectChange": "Ajouter ou remplacer un redirect URI oblige chaque grimpeur qui a approuvé ton app à l'approuver de nouveau. En retirer un, ou modifier le nom ou les liens, non.",
+        "redirect": "Les redirect URI sont comparés comme des chaînes exactes, {{max}} par app au plus. Utilise https, une adresse loopback (http://127.0.0.1 ou http://[::1], port ignoré) ou un schéma privé contenant un point. http://localhost et les jokers sont refusés.",
+        "redirectChange": "Ajouter ou remplacer un redirect URI oblige chaque grimpeur qui a approuvé ton app à l'approuver de nouveau. En retirer un, ou modifier le nom ou les liens, non. Les tokens que tu as déjà continuent de marcher jusqu'à ce que le grimpeur soit sollicité de nouveau.",
         "pkce": "PKCE avec S256 est obligatoire pour toute app. Envoie resource=https://api.boardsesh.com/v1 pour autoriser, échanger un code et renouveler. L'API refuse les tokens émis sans lui.",
-        "code": "Un code dure 60 secondes et ne sert qu'une fois. L'envoyer deux fois met aussi fin aux tokens qu'il a émis : relance l'autorisation au lieu de réessayer.",
-        "tokens": "Un access token dure 1 heure. Un refresh token dure 90 jours et change à chaque usage : stocke le nouveau avant d'utiliser le nouvel access token, et ne renouvelle jamais en parallèle pour un même grimpeur.",
+        "code": "Un code dure {{seconds}} secondes et ne sert qu'une fois. L'envoyer deux fois met aussi fin aux tokens qu'il a émis : relance l'autorisation au lieu de réessayer.",
+        "tokens": "Un access token dure 1 heure. Un refresh token dure {{days}} jours et change à chaque usage : stocke le nouveau avant d'utiliser le nouvel access token, et ne renouvelle jamais en parallèle pour un même grimpeur.",
         "signin": "Un grimpeur dont la dernière connexion remonte à plus de 30 jours, ou précède son dernier changement de mot de passe, se reconnecte avant l'écran de consentement.",
         "disconnect": "Si un grimpeur déconnecte ton app, réinitialise son mot de passe ou supprime son compte, l'API répond 401 invalid_token et un renouvellement répond invalid_grant. Affiche un état Reconnecter Boardsesh, arrête d'appeler pour ce grimpeur et supprime ce que tu avais stocké."
       }
@@ -272,18 +272,19 @@
       "exchangeLabel": "Requête de token",
       "exchangeResponseLabel": "Réponse de token",
       "sync": "Lis ensuite le carnet. La première fois, omets cursor et suis le curseur de chaque réponse. Synchronise quand le grimpeur ouvre ton app, et en arrière-plan au plus toutes les 15 minutes par grimpeur.",
-      "syncLabel": "Requête et réponse des changements du carnet"
+      "syncLabel": "Requête et réponse des changements du carnet",
+      "confidential": "Une app confidentielle, qui garde un client secret sur son serveur, envoie aussi client_secret dans le corps (client_secret_post) ou en HTTP Basic (client_secret_basic), selon ce qu'elle a enregistré. Une app publique n'envoie que client_id."
     },
     "limits": {
       "title": "Limites",
       "items": {
-        "api": "API : 120 requêtes par minute par grimpeur et 6 000 par minute par app.",
-        "token": "Endpoint de tokens : 10 renouvellements par minute par grimpeur, et 60 échanges de code ou révocations par minute par app et par IP cliente.",
+        "api": "API : {{climber}} requêtes par minute par grimpeur et {{app}} par minute par app.",
+        "token": "Endpoint de tokens : {{refresh}} renouvellements par minute par grimpeur, et {{exchange}} échanges de code ou révocations par minute par app et par IP cliente.",
         "fullSync": "Lancer un téléchargement complet : 2 par minute par grimpeur. Un 503 avec Retry-After sur un téléchargement veut dire d'attendre au moins ce délai.",
         "page": "limit va de 1 à 200 et vaut 100 par défaut. Une page peut être vide et avoir quand même hasMore: true.",
         "history": "Les changements sont gardés 90 jours. Un curseur plus ancien répond 410 cursor_expired ; relance un téléchargement complet sans curseur.",
         "body": "Un corps de requête de plus de 64 Ko répond 413.",
-        "caps": "Accès anticipé : 10 apps par compte développeur et, par app, {{live}} grimpeurs connectés en même temps et {{perDay}} nouveaux en 24 heures.",
+        "caps": "Accès anticipé : {{apps}} apps par compte développeur et, par app, {{live}} grimpeurs connectés en même temps et {{perDay}} nouveaux en 24 heures.",
         "headers": "Chaque réponse porte Boardsesh-Request-Id et les en-têtes RateLimit. Un 429 porte Retry-After en secondes."
       }
     },

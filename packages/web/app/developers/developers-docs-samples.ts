@@ -8,9 +8,22 @@ export const API_HOST = 'https://api.boardsesh.com';
 export const OPENAPI_URL = `${API_HOST}/v1/openapi.json`;
 export const SUPPORT_EMAIL = 'support@boardsesh.com';
 
-/** Early-access caps per app (docs/integration-platform.md, "Rules enforced without a human"). */
+/**
+ * The numbers the page states. The backend owns them and none lives in a
+ * package the web may import, so `__tests__/docs-limits-drift.test.ts` reads
+ * the backend source and fails when one of these differs.
+ */
 export const EARLY_ACCESS_LIVE_CLIMBERS = 25;
 export const EARLY_ACCESS_NEW_PER_DAY = 20;
+export const APPS_PER_DEVELOPER = 10;
+export const REDIRECT_URIS_PER_APP = 10;
+export const ACCESS_TOKEN_SECONDS = 3600;
+export const REFRESH_TOKEN_DAYS = 90;
+export const CODE_SECONDS = 60;
+export const API_PER_CLIMBER = 120;
+export const API_PER_APP = 6000;
+export const TOKEN_EXCHANGE_PER_APP_AND_IP = 60;
+export const REFRESH_PER_CLIMBER = 10;
 
 export const AUTHORIZE_SAMPLE = `GET ${API_HOST}/api/auth/oauth2/authorize
     ?response_type=code
@@ -33,7 +46,7 @@ export const TOKEN_SAMPLE = `curl -X POST ${API_HOST}/api/auth/oauth2/token \\
 export const TOKEN_RESPONSE_SAMPLE = `{
   "token_type": "Bearer",
   "access_token": "2YotnFZFEjr1zCsicMWpAA...",
-  "expires_in": 3600,
+  "expires_in": ${ACCESS_TOKEN_SECONDS},
   "refresh_token": "tGzv3JOkF0XG5Qx2TlKWIA...",
   "scope": "logbook:read profile:read offline_access"
 }`;
@@ -62,5 +75,5 @@ export const ERRORS = [
   { status: '403', code: 'insufficient_scope', key: 'insufficientScope' },
   { status: '410', code: 'cursor_expired', key: 'cursorExpired' },
   { status: '429', code: 'rate_limited', key: 'rateLimited' },
-  { status: '503', code: 'Retry-After', key: 'busy' },
+  { status: '503', code: null, key: 'busy' },
 ] as const;

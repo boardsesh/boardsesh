@@ -217,7 +217,7 @@
       },
       "open": {
         "title": "Register your app",
-        "body": "Sign in, accept the developer terms and create an app in the console. You get a client ID straight away, and a client secret if your server exchanges the code. If your account isn't enabled yet, the console says so.",
+        "body": "Sign in as an enabled developer, accept the developer terms and create an app in the console. You get a client ID straight away, and a client secret if your server exchanges the code. If your account isn't enabled yet, the console says so.",
         "action": "Open the developer console"
       }
     },
@@ -254,11 +254,11 @@
       "title": "Rules that catch developers out",
       "items": {
         "consent": "An app without a client secret, and every native app, shows the consent screen on every authorization. prompt=none never returns a code; it returns error=consent_required. Keep the refresh token instead of authorizing again. Only a confidential web app with an https redirect is remembered.",
-        "redirect": "Redirect URIs match as exact strings, up to 10 per app. Use https, a loopback address (http://127.0.0.1 or http://[::1], port ignored) or a private-use scheme with a dot in it. http://localhost and wildcards are refused.",
-        "redirectChange": "Adding or replacing a redirect URI asks every climber who approved your app to approve it again. Removing one, or editing the name or links, does not.",
+        "redirect": "Redirect URIs match as exact strings, up to {{max}} per app. Use https, a loopback address (http://127.0.0.1 or http://[::1], port ignored) or a private-use scheme with a dot in it. http://localhost and wildcards are refused.",
+        "redirectChange": "Adding or replacing a redirect URI asks every climber who approved your app to approve it again. Removing one, or editing the name or links, does not. Tokens you already hold keep working until the climber is asked again.",
         "pkce": "PKCE with S256 is required for every app. Send resource=https://api.boardsesh.com/v1 when you authorize, exchange a code and refresh. Tokens issued without it are refused by the API.",
-        "code": "A code lasts 60 seconds and works once. Sending it twice also ends the tokens it issued, so restart authorization instead of retrying.",
-        "tokens": "An access token lasts 1 hour. A refresh token lasts 90 days and changes on every use: store the new one before you use the new access token, and never refresh for one climber in parallel.",
+        "code": "A code lasts {{seconds}} seconds and works once. Sending it twice also ends the tokens it issued, so restart authorization instead of retrying.",
+        "tokens": "An access token lasts 1 hour. A refresh token lasts {{days}} days and changes on every use: store the new one before you use the new access token, and never refresh for one climber in parallel.",
         "signin": "A climber who last signed in more than 30 days ago, or before their last password change, signs in again before the consent screen.",
         "disconnect": "If a climber disconnects, resets their password or deletes their account, the API answers 401 invalid_token and a refresh answers invalid_grant. Show a Reconnect Boardsesh state, stop calling for that climber and delete what you stored."
       }
@@ -272,18 +272,19 @@
       "exchangeLabel": "Token request",
       "exchangeResponseLabel": "Token response",
       "sync": "Then read the logbook. Leave cursor out the first time and follow the cursor in each answer. Sync when the climber opens your app, and in the background no more than every 15 minutes per climber.",
-      "syncLabel": "Logbook changes request and response"
+      "syncLabel": "Logbook changes request and response",
+      "confidential": "A confidential app, one that keeps a client secret on its server, also sends client_secret in the body (client_secret_post) or as HTTP Basic (client_secret_basic), whichever it registered. A public app sends only client_id."
     },
     "limits": {
       "title": "Limits",
       "items": {
-        "api": "API: 120 requests a minute per climber and 6,000 a minute per app.",
-        "token": "Token endpoint: 10 refreshes a minute per climber, and 60 code exchanges or revokes a minute per app per client IP.",
+        "api": "API: {{climber}} requests a minute per climber and {{app}} a minute per app.",
+        "token": "Token endpoint: {{refresh}} refreshes a minute per climber, and {{exchange}} code exchanges or revokes a minute per app per client IP.",
         "fullSync": "Starting a full download: 2 a minute per climber. A 503 with Retry-After on a download means wait at least that long.",
         "page": "limit runs from 1 to 200 and defaults to 100. A page can be empty and still have hasMore: true.",
         "history": "Changes are kept for 90 days. An older cursor answers 410 cursor_expired; start a full download without a cursor.",
         "body": "A request body over 64 KB answers 413.",
-        "caps": "Early access: 10 apps per developer account, and per app {{live}} climbers connected at once and {{perDay}} new ones in 24 hours.",
+        "caps": "Early access: {{apps}} apps per developer account, and per app {{live}} climbers connected at once and {{perDay}} new ones in 24 hours.",
         "headers": "Every response carries Boardsesh-Request-Id and RateLimit headers. A 429 carries Retry-After in seconds."
       }
     },

@@ -9,14 +9,22 @@ import { getDeveloperDocsState } from '@/app/lib/developer-apps/docs-access';
 import { NOINDEX_FOLLOW_ROBOTS, createNoIndexMetadata, createPageMetadata } from '@/app/lib/seo/metadata';
 import DocsCodeBlock from './docs-code-block';
 import {
+  API_PER_APP,
+  API_PER_CLIMBER,
+  APPS_PER_DEVELOPER,
   AUTHORIZE_SAMPLE,
+  CODE_SECONDS,
   EARLY_ACCESS_LIVE_CLIMBERS,
   EARLY_ACCESS_NEW_PER_DAY,
   ERRORS,
   OPENAPI_URL,
+  REDIRECT_URIS_PER_APP,
+  REFRESH_PER_CLIMBER,
+  REFRESH_TOKEN_DAYS,
   SCOPES,
   SUPPORT_EMAIL,
   SYNC_SAMPLE,
+  TOKEN_EXCHANGE_PER_APP_AND_IP,
   TOKEN_RESPONSE_SAMPLE,
   TOKEN_SAMPLE,
 } from './developers-docs-samples';
@@ -67,7 +75,22 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function DevelopersPage() {
   const state = getDeveloperDocsState();
   if (state === 'unavailable') notFound();
-  const { t } = await getServerTranslation('developers');
+  const { t, locale } = await getServerTranslation('developers');
+  const number = new Intl.NumberFormat(locale);
+  // The figures the rules and limits state, interpolated so one constant feeds
+  // the page, every locale and the drift test against the backend.
+  const figures = {
+    live: EARLY_ACCESS_LIVE_CLIMBERS,
+    perDay: EARLY_ACCESS_NEW_PER_DAY,
+    apps: APPS_PER_DEVELOPER,
+    max: REDIRECT_URIS_PER_APP,
+    seconds: CODE_SECONDS,
+    days: REFRESH_TOKEN_DAYS,
+    climber: API_PER_CLIMBER,
+    app: number.format(API_PER_APP),
+    refresh: REFRESH_PER_CLIMBER,
+    exchange: TOKEN_EXCHANGE_PER_APP_AND_IP,
+  };
 
   return (
     <PageShell eyebrow={t('page.eyebrow')} title={t('docs.title')} lead={t('docs.lead')}>
@@ -123,7 +146,7 @@ export default async function DevelopersPage() {
       <PageSection title={t('docs.rules.title')}>
         <ProseList>
           {RULE_ITEMS.map((item) => (
-            <li key={item}>{t(`docs.rules.items.${item}`)}</li>
+            <li key={item}>{t(`docs.rules.items.${item}`, figures)}</li>
           ))}
         </ProseList>
       </PageSection>
@@ -134,6 +157,7 @@ export default async function DevelopersPage() {
         <Prose>{t('docs.requests.exchange')}</Prose>
         <DocsCodeBlock label={t('docs.requests.exchangeLabel')}>{TOKEN_SAMPLE}</DocsCodeBlock>
         <DocsCodeBlock label={t('docs.requests.exchangeResponseLabel')}>{TOKEN_RESPONSE_SAMPLE}</DocsCodeBlock>
+        <Prose>{t('docs.requests.confidential')}</Prose>
         <Prose>{t('docs.requests.sync')}</Prose>
         <DocsCodeBlock label={t('docs.requests.syncLabel')}>{SYNC_SAMPLE}</DocsCodeBlock>
       </PageSection>
@@ -141,7 +165,7 @@ export default async function DevelopersPage() {
       <PageSection title={t('docs.limits.title')}>
         <ProseList>
           {LIMIT_ITEMS.map((item) => (
-            <li key={item}>{t(`docs.limits.items.${item}`)}</li>
+            <li key={item}>{t(`docs.limits.items.${item}`, figures)}</li>
           ))}
         </ProseList>
       </PageSection>
@@ -150,9 +174,7 @@ export default async function DevelopersPage() {
         <ProseList>
           {ERRORS.map(({ status, code, key }) => (
             <li key={key}>
-              <code>
-                {status} {code}
-              </code>
+              <code>{code ? `${status} ${code}` : status}</code>
               {': '}
               {t(`docs.errors.items.${key}`)}
             </li>

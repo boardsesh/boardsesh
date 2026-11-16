@@ -217,7 +217,7 @@
       },
       "open": {
         "title": "Registra la tua app",
-        "body": "Accedi, accetta i termini per sviluppatori e crea un'app nella console. Ricevi subito un client ID, e un client secret se il tuo server scambia il codice. Se il tuo account non è ancora abilitato, la console te lo dice.",
+        "body": "Accedi come sviluppatore abilitato, accetta i termini per sviluppatori e crea un'app nella console. Ricevi subito un client ID, e un client secret se il tuo server scambia il codice. Se il tuo account non è ancora abilitato, la console te lo dice.",
         "action": "Apri la console per sviluppatori"
       }
     },
@@ -254,11 +254,11 @@
       "title": "Le regole che sorprendono gli sviluppatori",
       "items": {
         "consent": "Un'app senza client secret, e ogni app nativa, mostra la schermata di consenso a ogni autorizzazione. prompt=none non restituisce mai un codice; restituisce error=consent_required. Conserva il refresh token invece di autorizzare di nuovo. Solo un'app web confidenziale con reindirizzamento https viene ricordata.",
-        "redirect": "I redirect URI si confrontano come stringhe esatte, fino a 10 per app. Usa https, un indirizzo loopback (http://127.0.0.1 o http://[::1], porta ignorata) o uno schema privato che contenga un punto. http://localhost e i caratteri jolly vengono rifiutati.",
-        "redirectChange": "Aggiungere o sostituire un redirect URI chiede a ogni climber che ha approvato la tua app di approvarla di nuovo. Toglierne uno, o modificare nome e link, no.",
+        "redirect": "I redirect URI si confrontano come stringhe esatte, fino a {{max}} per app. Usa https, un indirizzo loopback (http://127.0.0.1 o http://[::1], porta ignorata) o uno schema privato che contenga un punto. http://localhost e i caratteri jolly vengono rifiutati.",
+        "redirectChange": "Aggiungere o sostituire un redirect URI chiede a ogni climber che ha approvato la tua app di approvarla di nuovo. Toglierne uno, o modificare nome e link, no. I token che hai già continuano a funzionare finché al climber non viene chiesto di nuovo.",
         "pkce": "PKCE con S256 è obbligatorio per ogni app. Invia resource=https://api.boardsesh.com/v1 quando autorizzi, scambi un codice e rinnovi. L'API rifiuta i token emessi senza.",
-        "code": "Un codice dura 60 secondi e vale una volta sola. Inviarlo due volte chiude anche i token che ha emesso: riavvia l'autorizzazione invece di riprovare.",
-        "tokens": "Un access token dura 1 ora. Un refresh token dura 90 giorni e cambia a ogni uso: salva il nuovo prima di usare il nuovo access token e non rinnovare mai in parallelo per lo stesso climber.",
+        "code": "Un codice dura {{seconds}} secondi e vale una volta sola. Inviarlo due volte chiude anche i token che ha emesso: riavvia l'autorizzazione invece di riprovare.",
+        "tokens": "Un access token dura 1 ora. Un refresh token dura {{days}} giorni e cambia a ogni uso: salva il nuovo prima di usare il nuovo access token e non rinnovare mai in parallelo per lo stesso climber.",
         "signin": "Un climber che ha acceduto l'ultima volta più di 30 giorni fa, o prima dell'ultimo cambio di password, accede di nuovo prima della schermata di consenso.",
         "disconnect": "Se un climber scollega l'app, reimposta la password o elimina l'account, l'API risponde 401 invalid_token e un rinnovo risponde invalid_grant. Mostra uno stato Ricollega Boardsesh, smetti di chiamare per quel climber e cancella quello che avevi salvato."
       }
@@ -272,18 +272,19 @@
       "exchangeLabel": "Richiesta del token",
       "exchangeResponseLabel": "Risposta del token",
       "sync": "Poi leggi il diario. La prima volta ometti cursor e segui il cursore di ogni risposta. Sincronizza quando il climber apre la tua app e, in background, al massimo ogni 15 minuti per climber.",
-      "syncLabel": "Richiesta e risposta dei cambiamenti del diario"
+      "syncLabel": "Richiesta e risposta dei cambiamenti del diario",
+      "confidential": "Un'app confidenziale, che tiene un client secret sul proprio server, invia anche client_secret nel corpo (client_secret_post) o come HTTP Basic (client_secret_basic), a seconda di quello che ha registrato. Un'app pubblica invia solo client_id."
     },
     "limits": {
       "title": "Limiti",
       "items": {
-        "api": "API: 120 richieste al minuto per climber e 6.000 al minuto per app.",
-        "token": "Endpoint dei token: 10 rinnovi al minuto per climber, e 60 scambi di codice o revoche al minuto per app e per IP del client.",
+        "api": "API: {{climber}} richieste al minuto per climber e {{app}} al minuto per app.",
+        "token": "Endpoint dei token: {{refresh}} rinnovi al minuto per climber, e {{exchange}} scambi di codice o revoche al minuto per app e per IP del client.",
         "fullSync": "Avviare un download completo: 2 al minuto per climber. Un 503 con Retry-After su un download significa aspettare almeno quel tempo.",
         "page": "limit va da 1 a 200 e vale 100 per default. Una pagina può essere vuota e avere comunque hasMore: true.",
         "history": "I cambiamenti restano per 90 giorni. Un cursore più vecchio risponde 410 cursor_expired; avvia un download completo senza cursore.",
         "body": "Un corpo della richiesta oltre 64 KB risponde 413.",
-        "caps": "Accesso anticipato: 10 app per account sviluppatore e, per app, {{live}} climber collegati contemporaneamente e {{perDay}} nuovi in 24 ore.",
+        "caps": "Accesso anticipato: {{apps}} app per account sviluppatore e, per app, {{live}} climber collegati contemporaneamente e {{perDay}} nuovi in 24 ore.",
         "headers": "Ogni risposta porta Boardsesh-Request-Id e gli header RateLimit. Un 429 porta Retry-After in secondi."
       }
     },
