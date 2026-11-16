@@ -7,9 +7,15 @@ change from ordinary OAuth identity resolution. Rollout remains tracked in
 #7430. #7596 deleted the selected flow reader, the explicit link publication
 factory, the Google reauthentication web seam, owned-account and anonymous
 Google/Apple sign-in and the sign-in ACK; B5 rebuilds the provider flows on the
-new browser session. What is left on www is the server-only client and the
-candidate issuer below. No route or page reaches them any more; their tests and
-the `auth-proofs` publication proof are their last callers.
+new browser session. What is left on www, in `packages/web/app/lib/auth/`, is
+the server-only client (`provider-security-command-client.server.ts`), the
+candidate issuer below (`provider-security-publication.server.ts`) and the flow
+and actor-selection helpers (`provider-security-flow.server.ts`,
+`provider-security-selection.server.ts`). No route or page reaches them any
+more; their tests and the `auth-proofs` publication proof are their last
+callers. The client's owned-account sign-in reply check has had no caller since
+the owned sign-in publication went. The next #7596 slice deletes these four
+files and this doc.
 
 The server-only client uses the frozen private provider-security protocol with
 explicit 192 KiB request and 128 KiB response budgets. It captures submitted
