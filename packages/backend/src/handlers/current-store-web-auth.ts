@@ -34,8 +34,10 @@ import { consumeEmailVerification, resendEmailVerification } from '../auth/curre
 import { consumePasswordRecovery, requestPasswordRecovery } from '../auth/current-store/password-recovery';
 import {
   passwordCompareGate,
+  PasswordCompareAbortedError,
   PasswordComparesSaturatedError,
   PASSWORD_COMPARES_RETRY_AFTER_SECONDS,
+  type PasswordCompareGate,
 } from '../auth/current-store/password-compare-gate';
 import {
   passwordLoginLimiter,
@@ -65,15 +67,20 @@ export function currentStoreWebAuthConfiguration(
   };
 }
 
-/**
- * Default-off private service transport. No CORS/cookie/public-token authority.
- * `passwordLimits` is the shared sign-in limiter; tests pass their own.
- */
+/** The password command's per-client limiter and compare gate. Tests pass their own. */
+export interface StagedSignInGuards {
+  readonly limits: PasswordLoginLimiter;
+  readonly gate: PasswordCompareGate;
+}
+
+const processSignInGuards: StagedSignInGuards = { limits: passwordLoginLimiter, gate: passwordCompareGate };
+
+/** Default-off private service transport. No CORS/cookie/public-token authority. */
 export async function handleCurrentStoreWebAuth(
   request: IncomingMessage,
   response: ServerResponse,
   database?: DbInstance,
-  passwordLimits: PasswordLoginLimiter = passwordLoginLimiter,
+  signInGuards: StagedSignInGuards = processSignInGuards,
 ): Promise<void> {
   let configuration: ReturnType<typeof currentStoreWebAuthConfiguration>;
   try {
@@ -158,32 +165,33 @@ export async function handleCurrentStoreWebAuth(
     return;
   }
   let passwordAttempt: PasswordLoginAttempt | undefined;
+  // A sign-in still waiting for its compare when the web server gives up is dropped unrun.
+  const callerGone = new AbortController();
+  response.once('close', () => {
+    if (!response.writableFinished) callerGone.abort();
+  });
+  if (response.destroyed) callerGone.abort();
   try {
     if (command.operation === 'password') {
-      // Sign-in has no process-wide budget a client could spend for everyone:
-      // per-client and per-address limits shared through Redis, then the
-      // compare gate, which sheds load only when this process is out of CPU.
-      passwordAttempt = await passwordLimits.admit({
-        email: command.payload.email,
-        clientAddress: command.clientAddress,
-        keySecret: configuration.rpcSecret,
-      });
-      // Refuse before any database work when the compare would be refused anyway.
-      if (passwordCompareGate.isFull(passwordAttempt.lane)) throw new PasswordComparesSaturatedError();
+      const { limits, gate } = signInGuards;
+      // Shed before creating any Redis key or reading the database.
+      if (gate.isFull()) throw new PasswordComparesSaturatedError();
+      // The per-client limit, shared through Redis. A sign-in with no public
+      // client address takes the per-process budget instead (180 a minute).
+      passwordAttempt = await limits.admit({ clientAddress: command.clientAddress });
     } else {
       // Process-wide backstop behind the web route's per-client limits, which do
       // the real work: the backend only ever sees the web server as its peer.
       // This is not claimed as distributed production abuse protection.
       checkRateLimit(`current-store-web-auth:${operation}`, operation === 'register' ? 60 : 180, 60_000);
     }
-    const compareLane = passwordAttempt?.lane ?? 'repeat';
     const commandDatabase = database ?? (await getCredentialDatabase());
     const result = authCommandReplySchema.parse(
       command.operation === 'register'
         ? await registerWebPassword(commandDatabase, configuration.authority, command)
         : command.operation === 'password'
-          ? await authenticateWebPassword(commandDatabase, configuration.authority, command, (compare) =>
-              passwordCompareGate.run(compareLane, compare),
+          ? await authenticateWebPassword(commandDatabase, configuration.authority, command, (compares) =>
+              signInGuards.gate.run(compares, callerGone.signal),
             )
           : command.operation === 'verify-email'
             ? await consumeEmailVerification(commandDatabase, configuration.authority, command)
@@ -203,6 +211,8 @@ export async function handleCurrentStoreWebAuth(
   } catch (error) {
     // No verdict was reached, so the attempt is not counted.
     await passwordAttempt?.giveBack();
+    // Nobody is left to answer.
+    if (error instanceof PasswordCompareAbortedError) return;
     if (error instanceof PasswordComparesSaturatedError) {
       sendJson(
         response,

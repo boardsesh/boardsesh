@@ -87,7 +87,7 @@ export const passwordCommandSchema = z
      * The visitor address the web server trusts, ungrouped (IPv6 is grouped by
      * `/64` on the backend). The backend keys its per-client sign-in limit on it
      * and believes it only because the command carries the RPC secret. Absent,
-     * or not a public address, the backend applies no per-client limit.
+     * or not a public address, the sign-in takes the backend's per-process budget.
      */
     clientAddress: z.union([z.ipv4(), z.ipv6()]).optional(),
     payload: z.object({ email: z.string().min(1), password: z.string().min(1) }).strict(),
