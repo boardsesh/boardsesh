@@ -7,7 +7,7 @@ import NativeStartClient from '../native-start-client';
 const { selection, getCsrfToken, gates } = vi.hoisted(() => ({
   selection: { provider: 'facebook', callbackUrl: '' },
   getCsrfToken: vi.fn<() => Promise<string | undefined>>(async () => undefined),
-  gates: { coordinator: false, provider: false },
+  gates: { provider: false },
 }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () =>
@@ -17,16 +17,12 @@ vi.mock('next/navigation', () => ({
     }),
 }));
 vi.mock('next-auth/react', () => ({ getCsrfToken }));
-vi.mock('@/app/lib/auth/browser-coordinator-readiness', () => ({
-  publicBrowserCoordinatorReady: () => gates.coordinator,
-}));
 vi.mock('@/app/lib/auth/provider-security-readiness', () => ({ publicProviderSecurityReady: () => gates.provider }));
 vi.mock('react-i18next', () => ({
   useTranslation: (namespace: string) => ({ t: (key: string) => tFromCatalog(namespace, key) }),
 }));
 
 beforeEach(() => {
-  gates.coordinator = false;
   gates.provider = false;
   selection.callbackUrl = '';
   getCsrfToken.mockReset().mockResolvedValue(undefined);
@@ -54,7 +50,7 @@ describe('native browser provider start', () => {
     await waitFor(() => expect(getCsrfToken).toHaveBeenCalledOnce());
     expect(container.querySelector('form')?.getAttribute('action')).toBe(`/api/auth/signin/${provider}`);
   });
-  it.each(['coordinator', 'provider'] as const)(
+  it.each(['provider'] as const)(
     'shows retry without attribution, CSRF or a form post while the %s gate is on',
     async (gate) => {
       gates[gate] = true;

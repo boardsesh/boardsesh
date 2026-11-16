@@ -1,25 +1,18 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
-  coordinator: false,
   provider: false,
-  preflight: vi.fn(),
   legacy: vi.fn(),
   session: vi.fn(),
 }));
 vi.mock('next-auth/react', () => ({ signIn: fixture.legacy, getSession: fixture.session }));
-vi.mock('../browser-coordinator-readiness', () => ({ publicBrowserCoordinatorReady: () => fixture.coordinator }));
 vi.mock('../provider-security-readiness', () => ({ publicProviderSecurityReady: () => fixture.provider }));
-vi.mock('../browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: fixture.preflight }));
-import { registerCanonicalBrowserOrigin, getCanonicalBrowserOrigin } from '../canonical-browser-origin';
 import { signInWithSessionIntent } from '../web-session-events';
 
 const origin = 'https://www.provider-intent.example.test';
 let send: ReturnType<typeof vi.fn<typeof fetch>>;
 beforeEach(() => {
-  fixture.coordinator = false;
   fixture.provider = false;
-  fixture.preflight.mockReset();
   fixture.legacy.mockReset().mockResolvedValue({ ok: true, status: 200, error: undefined, url: null });
   fixture.session.mockReset().mockResolvedValue(null);
   send = vi.fn<typeof fetch>(async () => Response.json({}));
@@ -34,37 +27,20 @@ describe('shared WWW sign-in wrapper', () => {
   it.each(['google', 'apple'] as const)('hands %s to the legacy NextAuth sign-in', async (provider) => {
     expect((await signInWithSessionIntent(provider, { callbackUrl: '/' }))?.ok).toBe(true);
     expect(fixture.legacy).toHaveBeenCalledExactlyOnceWith(provider, { callbackUrl: '/' });
-    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     expect(fixture.session).toHaveBeenCalledOnce();
   });
-  it.each([
-    ['google', 'coordinator'],
-    ['apple', 'coordinator'],
-    ['google', 'provider'],
-    ['apple', 'provider'],
-  ] as const)('refuses %s while the %s gate is on, with no legacy fallback', async (provider, gate) => {
-    fixture[gate] = true;
-    expect(await signInWithSessionIntent(provider, { callbackUrl: '/' })).toMatchObject({ ok: false, status: 503 });
-    expect(fixture.legacy).not.toHaveBeenCalled();
-    expect(fixture.session).not.toHaveBeenCalled();
-    expect(fixture.preflight).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
-  });
-  it('keeps registration scoped and refuses conflicting static authorities', () => {
-    const first = registerCanonicalBrowserOrigin(origin);
-    const second = registerCanonicalBrowserOrigin(origin);
-    expect(getCanonicalBrowserOrigin()).toBe(origin);
-    first();
-    expect(getCanonicalBrowserOrigin()).toBe(origin);
-    const other = registerCanonicalBrowserOrigin('https://other.example.test');
-    expect(getCanonicalBrowserOrigin()).toBeNull();
-    other();
-    expect(getCanonicalBrowserOrigin()).toBe(origin);
-    second();
-    expect(getCanonicalBrowserOrigin()).toBeNull();
-  });
-  it('keeps the existing credential call contract intact with the public gates false', async () => {
+  it.each(['google', 'apple'] as const)(
+    'refuses %s while the provider security gate is on, with no legacy fallback',
+    async (provider) => {
+      fixture.provider = true;
+      expect(await signInWithSessionIntent(provider, { callbackUrl: '/' })).toMatchObject({ ok: false, status: 503 });
+      expect(fixture.legacy).not.toHaveBeenCalled();
+      expect(fixture.session).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps the existing credential call contract intact with the public gate false', async () => {
     await signInWithSessionIntent('credentials', {
       redirect: false,
       email: 'owned@example.test',
@@ -78,8 +54,8 @@ describe('shared WWW sign-in wrapper', () => {
     expect(send).not.toHaveBeenCalled();
     expect(fixture.session).toHaveBeenCalledOnce();
   });
-  it('refuses qualified credentials without a selected password publisher', async () => {
-    fixture.coordinator = true;
+  it('refuses credentials while the provider security gate is on', async () => {
+    fixture.provider = true;
     expect(
       await signInWithSessionIntent('credentials', {
         redirect: false,
@@ -89,7 +65,6 @@ describe('shared WWW sign-in wrapper', () => {
     ).toMatchObject({ ok: false, status: 503 });
     expect(fixture.legacy).not.toHaveBeenCalled();
     expect(fixture.session).not.toHaveBeenCalled();
-    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
 });

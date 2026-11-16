@@ -122,7 +122,7 @@ export default function SocialLoginButtons({ callbackUrl = '/', disabled = false
         return;
       }
 
-      const response = await signIn(provider, { callbackUrl }, { signal: controller.signal });
+      const response = await signIn(provider, { callbackUrl });
       if (response?.error) throw new Error('PROVIDER_SIGNIN_UNAVAILABLE');
     } catch {
       if (mounted.current && !controller.signal.aborted) setFailed(true);

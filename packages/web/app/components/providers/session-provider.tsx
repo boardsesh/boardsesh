@@ -4,10 +4,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Session } from 'next-auth';
 import { getSession, SessionContext, type SessionContextValue } from 'next-auth/react';
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
-import { BROWSER_COORDINATOR_FRAME_PATH } from '@boardsesh/auth-protocol/browser-coordinator';
-import { publicBrowserCoordinatorReady } from '../../lib/auth/browser-coordinator-readiness';
-import { readCanonicalBrowserCoordinator } from '../../lib/auth/browser-coordinator-client';
-import { registerCanonicalBrowserOrigin } from '../../lib/auth/canonical-browser-origin';
 import {
   beginWebSessionIntent,
   captureWebSessionEpoch,
@@ -87,7 +83,6 @@ async function readSessionJson(response: Response, signal: AbortSignal): Promise
 type SessionProviderWrapperProps = {
   children: ReactNode;
   enableExpoAuthBridge?: boolean;
-  canonicalBrowserOrigin?: string;
 };
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
@@ -99,7 +94,6 @@ const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : us
 export default function SessionProviderWrapper({
   children,
   enableExpoAuthBridge = false,
-  canonicalBrowserOrigin,
 }: SessionProviderWrapperProps) {
   const [acceptedView, setAcceptedView] = useState<{ session: Session | null; retired: boolean }>({
     session: null,
@@ -117,114 +111,101 @@ export default function SessionProviderWrapper({
   const suspendedRef = useRef(false);
   const broadcastIdentityRef = useRef<string | null>(null);
 
-  useIsomorphicLayoutEffect(() => registerCanonicalBrowserOrigin(canonicalBrowserOrigin), [canonicalBrowserOrigin]);
-
   useIsomorphicLayoutEffect(() => {
     // Every owned cookie fetch uses the same origin-scoped lock. It does not
     // coordinate top-level callbacks or other origins.
     installNextAuthCookieFetchLock();
   }, []);
 
-  const update = useCallback(
-    async (payload?: unknown): Promise<Session | null> => {
-      if (suspendedRef.current) return null;
+  const update = useCallback(async (payload?: unknown): Promise<Session | null> => {
+    if (suspendedRef.current) return null;
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    const sequence = ++requestSequenceRef.current;
+    activeControllerRef.current?.abort();
+    const epoch = captureWebSessionEpoch();
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    const ownsResult = () =>
+      mountedRef.current &&
+      !suspendedRef.current &&
+      requestSequenceRef.current === sequence &&
+      captureWebSessionEpoch() === epoch;
+    const scheduleInitialRetry = () => {
+      if (!ownsResult() || settledRef.current || retryTimerRef.current !== null) return;
+      const retryDelay = retryDelayRef.current;
+      retryDelayRef.current = Math.min(retryDelay * 2, 30_000);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (ownsResult() && !settledRef.current) requestWebSessionRefresh(epoch);
+      }, retryDelay);
+    };
+    const deadline = setTimeout(() => {
+      controller.abort();
+      // A body reader can outlive abort. Initial recovery must not depend on
+      // that old promise settling; its eventual result still has to be owned.
+      scheduleInitialRetry();
+    }, 15_000);
+    try {
+      let requestInit: RequestInit = { cache: 'no-store', signal: controller.signal };
+      if (payload !== undefined) {
+        const csrfResponse = await fetch('/api/auth/csrf', requestInit);
+        const csrfBody = await readSessionJson(csrfResponse, controller.signal);
+        if (!ownsResult()) return sessionRef.current;
+        if (controller.signal.aborted) throw new Error('Session update is unavailable');
+        if (
+          !csrfResponse.ok ||
+          typeof csrfBody !== 'object' ||
+          csrfBody === null ||
+          !('csrfToken' in csrfBody) ||
+          typeof csrfBody.csrfToken !== 'string'
+        ) {
+          throw new Error('Session update is unavailable');
+        }
+        requestInit = {
+          ...requestInit,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csrfToken: csrfBody.csrfToken, data: payload }),
+        };
+      }
+      const response = await fetch('/api/auth/session', requestInit);
+      const body = await readSessionJson(response, controller.signal);
+      if (!ownsResult()) return sessionRef.current;
+      if (controller.signal.aborted) throw new Error('Session authority is unavailable');
+      if (!response.ok) throw new Error('Session authority is unavailable');
+      const acceptedSession = parseSession(body);
+      // An account change made in another tab or app is never shown in this
+      // page: the guard clears its caches and reloads it from the root.
+      if (browserSessionGuard().accept(sessionViewerOf(acceptedSession)) === 'retire') {
+        setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
+        return sessionRef.current;
+      }
+      sessionRef.current = acceptedSession;
+      settledRef.current = true;
+      retryDelayRef.current = 1000;
       if (retryTimerRef.current !== null) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      const sequence = ++requestSequenceRef.current;
-      activeControllerRef.current?.abort();
-      const epoch = captureWebSessionEpoch();
-      const controller = new AbortController();
-      activeControllerRef.current = controller;
-      const ownsResult = () =>
-        mountedRef.current &&
-        !suspendedRef.current &&
-        requestSequenceRef.current === sequence &&
-        captureWebSessionEpoch() === epoch;
-      const scheduleInitialRetry = () => {
-        if (!ownsResult() || settledRef.current || retryTimerRef.current !== null) return;
-        const retryDelay = retryDelayRef.current;
-        retryDelayRef.current = Math.min(retryDelay * 2, 30_000);
-        retryTimerRef.current = setTimeout(() => {
-          retryTimerRef.current = null;
-          if (ownsResult() && !settledRef.current) requestWebSessionRefresh(epoch);
-        }, retryDelay);
-      };
-      const deadline = setTimeout(() => {
-        controller.abort();
-        // A body reader can outlive abort. Initial recovery must not depend on
-        // that old promise settling; its eventual result still has to be owned.
-        scheduleInitialRetry();
-      }, 15_000);
-      try {
-        if (publicBrowserCoordinatorReady()) {
-          if (!canonicalBrowserOrigin) throw new Error('Session authority is unavailable');
-          await readCanonicalBrowserCoordinator(canonicalBrowserOrigin, controller.signal);
-          if (!ownsResult() || controller.signal.aborted) return sessionRef.current;
-        }
-        let requestInit: RequestInit = { cache: 'no-store', signal: controller.signal };
-        if (payload !== undefined) {
-          const csrfResponse = await fetch('/api/auth/csrf', requestInit);
-          const csrfBody = await readSessionJson(csrfResponse, controller.signal);
-          if (!ownsResult()) return sessionRef.current;
-          if (controller.signal.aborted) throw new Error('Session update is unavailable');
-          if (
-            !csrfResponse.ok ||
-            typeof csrfBody !== 'object' ||
-            csrfBody === null ||
-            !('csrfToken' in csrfBody) ||
-            typeof csrfBody.csrfToken !== 'string'
-          ) {
-            throw new Error('Session update is unavailable');
-          }
-          requestInit = {
-            ...requestInit,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ csrfToken: csrfBody.csrfToken, data: payload }),
-          };
-        }
-        const response = await fetch('/api/auth/session', requestInit);
-        const body = await readSessionJson(response, controller.signal);
-        if (!ownsResult()) return sessionRef.current;
-        if (controller.signal.aborted) throw new Error('Session authority is unavailable');
-        if (!response.ok) throw new Error('Session authority is unavailable');
-        const acceptedSession = parseSession(body);
-        // An account change made in another tab or app is never shown in this
-        // page: the guard clears its caches and reloads it from the root.
-        if (browserSessionGuard().accept(sessionViewerOf(acceptedSession)) === 'retire') {
-          setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
-          return sessionRef.current;
-        }
-        sessionRef.current = acceptedSession;
-        settledRef.current = true;
-        retryDelayRef.current = 1000;
-        if (retryTimerRef.current !== null) {
-          clearTimeout(retryTimerRef.current);
-          retryTimerRef.current = null;
-        }
-        setAcceptedView({ session: acceptedSession, retired: false });
-        setSettled(true);
-        return acceptedSession;
-      } catch {
-        // Uncertainty leaves both the accepted owner and credential state intact.
-        // Only an unknown initial owner retries, and the timer always reads GET
-        // through the public refresh event instead of replaying an update POST.
-        scheduleInitialRetry();
-        return sessionRef.current;
-      } finally {
-        clearTimeout(deadline);
-        if (activeControllerRef.current === controller) activeControllerRef.current = null;
-      }
-    },
-    [canonicalBrowserOrigin],
-  );
+      setAcceptedView({ session: acceptedSession, retired: false });
+      setSettled(true);
+      return acceptedSession;
+    } catch {
+      // Uncertainty leaves both the accepted owner and credential state intact.
+      // Only an unknown initial owner retries, and the timer always reads GET
+      // through the public refresh event instead of replaying an update POST.
+      scheduleInitialRetry();
+      return sessionRef.current;
+    } finally {
+      clearTimeout(deadline);
+      if (activeControllerRef.current === controller) activeControllerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
-    // The canonical utility frame owns coordination only. Its layout must not
-    // recursively create another frame or roll a separate NextAuth cookie.
-    if (publicBrowserCoordinatorReady() && window.location.pathname === BROWSER_COORDINATOR_FRAME_PATH) return;
     mountedRef.current = true;
     suspendedRef.current = false;
     void update();
