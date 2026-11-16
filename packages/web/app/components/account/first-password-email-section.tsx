@@ -7,6 +7,7 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import { z } from 'zod';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 const contextSchema = z
   .object({
@@ -46,7 +47,7 @@ function OwnedFirstPasswordEmailSection({ expectedSession, onAccountChanged }: F
     pending.current = attempt;
     setState('sending');
     try {
-      const current = await fetch('/api/internal/auth/first-password/context', {
+      const current = await guardedFetch('/api/internal/auth/first-password/context', {
         cache: 'no-store',
         signal: attempt.signal,
       });
@@ -61,7 +62,7 @@ function OwnedFirstPasswordEmailSection({ expectedSession, onAccountChanged }: F
         await onAccountChanged?.();
         return;
       }
-      const result = await fetch('/api/internal/auth/first-password/request', {
+      const result = await guardedFetch('/api/internal/auth/first-password/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',

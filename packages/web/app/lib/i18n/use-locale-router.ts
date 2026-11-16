@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { applyLocale, stripLocalePrefix } from './locale-href';
 import { DEFAULT_LOCALE, isSupportedLocale, type Locale } from './config';
+import { isSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
 
 function useActiveLocale(): Locale {
   const { i18n } = useTranslation();
@@ -24,21 +25,25 @@ type RouterPrefetchOptions = Parameters<ReturnType<typeof useRouter>['prefetch']
 export function useLocaleRouter() {
   const router = useRouter();
   const activeLocale = useActiveLocale();
+  // Navigation asked for by a render from before an account change is dropped.
+  const generation = useSessionGeneration();
 
   const push = useCallback(
     (href: string, options?: RouterPushOptions) => {
+      if (!isSessionGenerationCurrent(generation)) return;
       const target = applyLocale(href, activeLocale);
       return options === undefined ? router.push(target) : router.push(target, options);
     },
-    [router, activeLocale],
+    [router, activeLocale, generation],
   );
 
   const replace = useCallback(
     (href: string, options?: RouterReplaceOptions) => {
+      if (!isSessionGenerationCurrent(generation)) return;
       const target = applyLocale(href, activeLocale);
       return options === undefined ? router.replace(target) : router.replace(target, options);
     },
-    [router, activeLocale],
+    [router, activeLocale, generation],
   );
 
   const prefetch = useCallback(

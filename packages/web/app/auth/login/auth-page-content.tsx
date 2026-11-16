@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect, useId } from 'react';
+import { useCallback, useState, useEffect, useId, useRef } from 'react';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Typography from '@mui/material/Typography';
@@ -106,8 +106,12 @@ export default function AuthPageContent() {
     }
   }, [error, t, router, pathnameWithoutLocale, searchParams]);
 
-  // Show success message when email is verified
+  // Show success message when email is verified. showMessage changes when the
+  // account does (a sign-in here), so the link is greeted once.
+  const greetedVerifiedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (greetedVerifiedRef.current === verified) return;
+    greetedVerifiedRef.current = verified;
     if (verified === 'true') {
       showMessage(t('login.toasts.verified'), 'success');
     }

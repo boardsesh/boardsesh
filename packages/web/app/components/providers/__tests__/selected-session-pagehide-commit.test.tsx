@@ -19,6 +19,14 @@ function blockSubscription() {
 }
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: control.refresh }) }));
 vi.mock('@/app/lib/auth/nextauth-cookie-fetch-lock', () => ({ installNextAuthCookieFetchLock: () => {} }));
+// Selected mode is superseded by #7596 and deleted with this file in A5. These
+// tests pin its own owner switching; the #7596 retire-and-reload on an account
+// change is covered by session-provider-guard.test.tsx.
+vi.mock('@/app/lib/auth/session-guard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/app/lib/auth/session-guard')>();
+  const guard = actual.createSessionGuard({ reloadPage: () => {}, requestSessionCheck: () => {} });
+  return { ...actual, browserSessionGuard: () => ({ ...guard, accept: () => 'publish' as const }) };
+});
 vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference: async () => {} }));
 vi.mock('@/app/lib/auth/browser-backend-client', () => ({
   browserBackendClient: new Proxy(

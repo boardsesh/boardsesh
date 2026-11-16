@@ -166,10 +166,7 @@ describe('SetPasswordSection', () => {
 
     it('calls API and shows success on valid submission', async () => {
       const onPasswordSet = vi.fn();
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ message: 'Password set successfully.' }),
-      });
+      mockFetch.mockImplementation(async () => Response.json({ message: 'Password set successfully.' }));
 
       render(
         <SetPasswordSection
@@ -205,10 +202,7 @@ describe('SetPasswordSection', () => {
     });
 
     it('shows error message on API failure', async () => {
-      mockFetch.mockResolvedValue({
-        ok: false,
-        json: () => Promise.resolve({ error: 'Password already set.' }),
-      });
+      mockFetch.mockImplementation(async () => Response.json({ error: 'Password already set.' }, { status: 400 }));
 
       render(
         <SetPasswordSection
@@ -283,10 +277,7 @@ describe('SetPasswordSection', () => {
       });
 
       // Resolve the fetch to clean up
-      resolveFetch!({
-        ok: true,
-        json: () => Promise.resolve({ message: 'Password set successfully.' }),
-      });
+      resolveFetch!(Response.json({ message: 'Password set successfully.' }));
 
       await waitFor(() => {
         const button = screen.getByRole('button', { name: /Set Password/i });
@@ -311,7 +302,7 @@ describe('SetPasswordSection', () => {
 
 it('offers a translated reauthentication route and never claims the password was saved', async () => {
   const saved = vi.fn();
-  mockFetch.mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'reauthentication_required' }) });
+  mockFetch.mockImplementation(async () => Response.json({ error: 'reauthentication_required' }, { status: 403 }));
   render(
     <SetPasswordSection
       hasPassword={false}
@@ -333,7 +324,7 @@ it('offers a translated reauthentication route and never claims the password was
 it('clears both secrets and refreshes account identity when a different tab changed accounts', async () => {
   const saved = vi.fn();
   const changed = vi.fn().mockResolvedValue(undefined);
-  mockFetch.mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: 'identity_changed' }) });
+  mockFetch.mockImplementation(async () => Response.json({ error: 'identity_changed' }, { status: 409 }));
   render(
     <SetPasswordSection
       hasPassword={false}

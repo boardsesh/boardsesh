@@ -3,6 +3,7 @@ import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-req
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 import {
   captureBrowserBackendRequestScope,
   createBrowserBackendGraphQLTransport,
@@ -40,17 +41,15 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
   }
 
   // Server renders already forward their own admitted lease. Browser clients
-  // instead retain the exact local owner scope from their original token.
-  const scope = typeof window === 'undefined' ? null : captureBrowserBackendRequestScope(authToken);
+  // go through the session guard: a response that lands after the account
+  // changed rejects with SessionSupersededError instead of reaching the caller.
+  if (typeof window === 'undefined') return new GraphQLClient(url, { headers });
+  const scope = captureBrowserBackendRequestScope(authToken);
   return new GraphQLClient(url, {
     headers,
     ...(scope
-      ? createBrowserBackendGraphQLTransport({
-          client: browserBackendClient,
-          scope,
-          fetch: (...parameters) => fetch(...parameters),
-        })
-      : {}),
+      ? createBrowserBackendGraphQLTransport({ client: browserBackendClient, scope, fetch: guardedFetch })
+      : { fetch: guardedFetch }),
   });
 }
 

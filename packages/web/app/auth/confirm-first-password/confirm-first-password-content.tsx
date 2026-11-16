@@ -11,6 +11,7 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { publicFirstPasswordReady } from '@/app/lib/auth/first-password-readiness';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 type Confirmation = { operationKey: string; confirmationToken: string };
 const pendingSchema = z.object({ outcome: z.enum(['pending', 'prepared']), expiresAt: z.iso.datetime() }).strict();
@@ -57,7 +58,7 @@ export default function ConfirmFirstPasswordContent() {
     pending.current = attempt;
     void (async () => {
       try {
-        const result = await fetch('/api/internal/auth/first-password/read', {
+        const result = await guardedFetch('/api/internal/auth/first-password/read', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           cache: 'no-store',
@@ -104,7 +105,7 @@ export default function ConfirmFirstPasswordContent() {
     setState('saving');
     setInvalidPassword(false);
     try {
-      const result = await fetch('/api/internal/auth/first-password/submit', {
+      const result = await guardedFetch('/api/internal/auth/first-password/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',

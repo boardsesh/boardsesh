@@ -53,6 +53,7 @@ import FollowButton from '@/app/components/ui/follow-button';
 import PlaylistPreviewSquare from '@/app/components/playlists/playlist-preview-square';
 import { recordPlaylistOpen } from '@/app/lib/recent-playlists-db';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { isSessionSuperseded } from '@/app/lib/auth/session-guard';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
@@ -180,6 +181,8 @@ export default function PlaylistDetailContent({
       hasPlaylistDataRef.current = true;
       setPlaylist(response.playlist);
     } catch (err) {
+      // A reply for an earlier account: the fetch for the current one owns the state.
+      if (isSessionSuperseded(err)) return;
       console.error('Error fetching playlist:', err);
       // Keep the SSR-rendered content on screen if a background refetch
       // hits a transient network error — we'd rather show slightly stale

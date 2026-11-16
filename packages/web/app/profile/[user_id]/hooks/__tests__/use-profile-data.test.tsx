@@ -8,6 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { GET_USER_CLIMB_PERCENTILE, GET_USER_PROFILE_STATS, GET_USER_TICKS } from '@boardsesh/graphql/operations';
+import { browserSessionGuard, isSessionSuperseded } from '@/app/lib/auth/session-guard';
 import { useProfileData } from '../use-profile-data';
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({ useWsAuthToken: () => ({ token: 'viewer-token' }) }));
@@ -68,11 +69,7 @@ describe('useProfileData', () => {
     mockRequest.mockResolvedValue({ userClimbPercentile: null });
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-      } as Response),
+      vi.fn().mockImplementation(async () => Response.json({})),
     );
   });
 
@@ -145,10 +142,8 @@ describe('useProfileData', () => {
   });
 
   it('fetches missing profile, ticks, stats, and percentile data on mount', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
+    vi.mocked(fetch).mockImplementation(async () =>
+      Response.json({
         id: 'user-1',
         email: 'test@example.com',
         name: 'Fetched User',
@@ -159,7 +154,7 @@ describe('useProfileData', () => {
         followingCount: 2,
         isFollowedByMe: false,
       }),
-    } as Response);
+    );
 
     mockRequest.mockImplementation(async (request: { document: unknown; variables?: Record<string, unknown> }) => {
       const { document: query, variables } = request;
@@ -316,11 +311,7 @@ describe('useProfileData', () => {
   });
 
   it('flags notFound when the profile endpoint returns 404', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    } as Response);
+    vi.mocked(fetch).mockImplementation(async () => Response.json({}, { status: 404 }));
 
     const { result } = renderProfileDataHook(() => useProfileData('missing-user'));
 
@@ -453,10 +444,8 @@ describe('useProfileData', () => {
       if (query === GET_USER_CLIMB_PERCENTILE) throw new Error('percentile boom');
       return {};
     });
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
+    vi.mocked(fetch).mockImplementation(async () =>
+      Response.json({
         id: 'user-1',
         email: undefined,
         name: 'Test',
@@ -467,7 +456,7 @@ describe('useProfileData', () => {
         followingCount: 0,
         isFollowedByMe: false,
       }),
-    } as Response);
+    );
 
     renderProfileDataHook(() => useProfileData('user-1'));
 
@@ -479,5 +468,62 @@ describe('useProfileData', () => {
     });
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it('shows a profile failure once, even when showMessage changes with the account', async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      vi.mocked(fetch).mockImplementation(async () => Response.json({}, { status: 500 }));
+      const beforeSwitch = vi.fn();
+      mockUseSnackbar.mockReturnValue({ showMessage: beforeSwitch });
+      const { rerender } = renderProfileDataHook(() => useProfileData('user-1'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(beforeSwitch).toHaveBeenCalledExactlyOnceWith('Failed to load profile data', 'error');
+
+      const afterSwitch = vi.fn();
+      mockUseSnackbar.mockReturnValue({ showMessage: afterSwitch });
+      rerender();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(afterSwitch).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows nothing for a profile reply superseded by a new login, and retries it once', async () => {
+    vi.useFakeTimers();
+    delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[Symbol.for('boardsesh.web-session-guard.v1')];
+    const guard = browserSessionGuard();
+    guard.accept({ userId: 'user-1', authSessionId: 'login-1' });
+    let loginCount = 1;
+    vi.mocked(fetch).mockImplementation(async () => {
+      // The account logs in again while each request is out.
+      loginCount += 1;
+      guard.accept({ userId: 'user-1', authSessionId: `login-${loginCount}` });
+      return Response.json({}, { status: 500 });
+    });
+    const showMessage = vi.fn();
+    mockUseSnackbar.mockReturnValue({ showMessage });
+    try {
+      const { queryClient } = renderProfileDataHook(() => useProfileData('user-1'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(isSessionSuperseded(queryClient.getQueryState(['userProfile', 'user-1'])?.error)).toBe(true);
+      const profileRequests = vi
+        .mocked(fetch)
+        .mock.calls.filter(([input]) => typeof input === 'string' && input.startsWith('/api/internal/profile/'));
+      expect(profileRequests).toHaveLength(2);
+      expect(showMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -42,6 +42,7 @@ import {
   type GymPhotoEncodingPlan,
 } from './photo-image-utils';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 /**
  * Downscale + re-encode via canvas per the plan. The canvas is filled white
@@ -159,7 +160,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
       formData.append('photo', uploadFile);
       formData.append('gymUuid', gym.uuid);
 
-      const response = await fetch(`${backendBaseUrl}/api/gym-photos`, {
+      const response = await guardedFetch(`${backendBaseUrl}/api/gym-photos`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         body: formData,
@@ -210,7 +211,7 @@ export default function GymPhotoUploader({ gym, onGymChange }: GymPhotoUploaderP
       // Best-effort object cleanup — the photo is already gone from the page,
       // so a failure here is not the owner's problem.
       try {
-        await fetch(`${backendBaseUrl}/api/gym-photos?gymUuid=${encodeURIComponent(gym.uuid)}`, {
+        await guardedFetch(`${backendBaseUrl}/api/gym-photos?gymUuid=${encodeURIComponent(gym.uuid)}`, {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         });

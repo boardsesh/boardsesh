@@ -10,6 +10,9 @@ import {
 } from '@/app/lib/auth/web-session-events';
 
 const LOCK_INSTALLATION_KEY = Symbol.for('boardsesh.nextauth-cookie-fetch-lock.state-v1');
+const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
+const reload = vi.hoisted(() => vi.fn<() => void>());
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange: reload }));
 const coordinator = vi.hoisted(() => ({
   ready: false,
   read: vi.fn<() => Promise<void>>(),
@@ -23,6 +26,8 @@ vi.mock('@/app/lib/auth/browser-coordinator-client', () => ({
 
 function clearLockInstallation(): void {
   delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[LOCK_INSTALLATION_KEY];
+  delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[GUARD_KEY];
+  reload.mockReset();
 }
 
 class MockBroadcastChannel {
@@ -490,8 +495,7 @@ describe('SessionProviderWrapper auth bridge', () => {
   it('waits for the shared cookie lock before refreshing the local NextAuth session', async () => {
     const requestLock = createNamedFifoLockRequest();
     vi.stubGlobal('navigator', { locks: { request: requestLock } });
-    serverSession = session('user-a', 'login-a');
-    await renderSettledSession('authenticated:user-a:login-a');
+    await renderSettledSession('unauthenticated:none:none');
     const channel = MockBroadcastChannel.instances[0];
     let releaseCookieMutation!: () => void;
     const cookieMutation = requestLock(
@@ -534,7 +538,7 @@ describe('SessionProviderWrapper auth bridge', () => {
     expect(channel?.listeners.size).toBe(0);
   });
 
-  it('refreshes the local NextAuth provider from the prior login to anonymous', async () => {
+  it('retires the page instead of publishing a sign-out made in the Expo app', async () => {
     serverSession = session('user-a', 'login-a');
     const { unmount } = await renderSettledSession('authenticated:user-a:login-a');
     const channel = MockBroadcastChannel.instances[0];
@@ -542,7 +546,8 @@ describe('SessionProviderWrapper auth bridge', () => {
     serverSession = null;
     act(() => channel?.emit({ type: 'auth-token-cleared', sourceId: 'expo-tab-a' }));
 
-    await waitFor(() => expect(screen.getByText('unauthenticated:none:none')).toBeTruthy());
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(screen.getByText('loading:none:none')).toBeTruthy();
 
     unmount();
     expect(channel?.close).toHaveBeenCalledOnce();

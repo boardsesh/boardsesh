@@ -3,6 +3,7 @@ import { getWebClientIdentity } from '@/app/lib/client-identity';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import type { CircuitPlaylistSyncErrorReason } from '@boardsesh/shared-schema/sync-error-codes';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 export type AuroraCredentialStatus = {
   boardType: string;
@@ -76,7 +77,7 @@ async function requestBackendJson<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(endpoint(transport, path), {
+  const response = await guardedFetch(endpoint(transport, path), {
     ...init,
     headers: buildRequestHeaders(init.headers, transport.authToken, Boolean(init.body)),
   });

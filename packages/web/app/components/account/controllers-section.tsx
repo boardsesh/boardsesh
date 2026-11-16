@@ -33,6 +33,7 @@ import { getBoardSelectorOptions } from '@/app/lib/board-constants';
 import type { BoardName } from '@/app/lib/types';
 import styles from './controllers-section.module.css';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 // Get board config data (synchronous - from generated data)
 const boardSelectorOptions = getBoardSelectorOptions();
@@ -240,7 +241,7 @@ export default function ControllersSection() {
 
   const fetchControllers = async () => {
     try {
-      const response = await fetch('/api/internal/controllers');
+      const response = await guardedFetch('/api/internal/controllers');
       if (response.ok) {
         const data = await response.json();
         setControllers(data.controllers);
@@ -311,7 +312,7 @@ export default function ControllersSection() {
   }) => {
     setIsSaving(true);
     try {
-      const response = await fetch('/api/internal/controllers', {
+      const response = await guardedFetch('/api/internal/controllers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -349,7 +350,7 @@ export default function ControllersSection() {
   const handleRemove = async (controllerId: string) => {
     setRemovingId(controllerId);
     try {
-      const response = await fetch('/api/internal/controllers', {
+      const response = await guardedFetch('/api/internal/controllers', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ controllerId }),
