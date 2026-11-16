@@ -1,11 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import {
   GET_CLIMB_PROPOSALS,
   type GetClimbProposalsResponse,
   type GetClimbProposalsVariables,
 } from '@boardsesh/graphql/operations/proposals';
 import type { Proposal } from '@boardsesh/shared-schema';
-import { useHttpFiniteQuery } from '../use-http-finite-query';
-import { useHttpQueryScope } from '../use-http-query-scope';
+import { getHttpClient } from '../client';
 import { PROPOSALS_PAGE_SIZE, climbProposalsKey } from './use-browse-proposals';
 
 /** Long enough that swiping back and forth through the queue doesn't re-fetch. */
@@ -45,14 +45,16 @@ type UseClimbProposalsArgs = {
  * array this hook hands back is a `select` view, not the cached value.
  */
 export function useClimbProposals({ climbUuid, boardType, enabled = true }: UseClimbProposalsArgs) {
-  const scope = useHttpQueryScope();
-  return useHttpFiniteQuery({
-    queryKey: climbProposalsKey(climbUuid, scope.scoped ? boardType : undefined),
-    queryFn: async (operation) => {
+  return useQuery({
+    queryKey: climbProposalsKey(climbUuid),
+    queryFn: async () => {
       const variables: GetClimbProposalsVariables = {
         input: { climbUuid, boardType, limit: PROPOSALS_PAGE_SIZE },
       };
-      return operation.request<GetClimbProposalsResponse, GetClimbProposalsVariables>(GET_CLIMB_PROPOSALS, variables);
+      return getHttpClient().request<GetClimbProposalsResponse, GetClimbProposalsVariables>(
+        GET_CLIMB_PROPOSALS,
+        variables,
+      );
     },
     select: selectProposals,
     enabled: enabled && !!climbUuid && !!boardType,

@@ -25,8 +25,6 @@ type HttpFiniteQuery<Result, Selected = Result> = {
   enabled: boolean;
   staleTime: number;
   refetchOnWindowFocus?: false;
-  networkMode?: 'always';
-  retry?: 1;
 };
 
 /** This finite family needs the full operation's exact-error assertion after
