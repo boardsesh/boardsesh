@@ -1,0 +1,115 @@
+name: Partner OAuth E2E
+
+# The real-browser journey for partner OAuth (#6981 F18): register an app,
+# consent, sync the logbook, disconnect. `vp run test:e2e:partner-oauth` starts
+# its own backend and www, so this job needs only the dev database stack that
+# the task's `db:up` dependency brings up.
+#
+# Three ways in, none of them per-PR heavy work:
+#   - schedule: nightly on main, off the Expo-web smoke's 15:23 slot.
+#   - workflow_dispatch: on demand, on any branch.
+#   - pull_request: only when partner OAuth code (or this spec) changes.
+# A red nightly posts to the Discord deploy channel; a PR or dispatch run has a
+# person watching it, so it does not.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '47 16 * * *' # daily, 16:47 UTC
+  pull_request:
+    paths:
+      - 'packages/backend/src/auth/partner/**'
+      - 'packages/backend/src/handlers/partner-*.ts'
+      - 'packages/backend/src/handlers/public-api/**'
+      - 'packages/web/app/oauth/**'
+      - 'packages/web/app/developers/**'
+      - 'packages/web/app/lib/partner-oauth/**'
+      - 'packages/web/app/components/account/connected-apps-section.tsx'
+      - 'packages/shared/auth-protocol/src/partner-oauth*'
+      - 'packages/web/partner-oauth-e2e/**'
+      - 'packages/web/playwright.partner-oauth.config.ts'
+      - '.github/workflows/partner-oauth-e2e.yml'
+
+concurrency:
+  group: partner-oauth-e2e-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  partner-oauth:
+    name: Partner OAuth journey
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: '22.x'
+          cache: true
+
+      # Cache the pnpm store, not node_modules (see e2e-tests.yml for why).
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(vp exec pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore pnpm store cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        run: vp exec playwright install --with-deps chromium
+        working-directory: packages/web
+
+      - name: Run the partner OAuth journey
+        # db:up (dev-db compose stack) comes from the vp task graph.
+        run: vp run test:e2e:partner-oauth
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-partner-oauth
+          path: packages/web/playwright-report/partner-oauth/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test results and server logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results-partner-oauth
+          path: packages/web/test-results/partner-oauth/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # DISCORD_DEPLOY_WEBHOOK is an environment secret (Production), so the post
+  # lives in its own job, as in e2e-tests.yml. Production admits main, the only
+  # ref the schedule runs on.
+  notify-nightly:
+    name: Report a red nightly journey
+    needs: [partner-oauth]
+    if: ${{ always() && github.event_name == 'schedule' && needs.partner-oauth.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+    steps:
+      - name: Tell Discord the nightly journey failed
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISCORD_DEPLOY_WEBHOOK:-}" ]; then
+            echo "::warning::The nightly partner OAuth journey failed but DISCORD_DEPLOY_WEBHOOK is not readable here."
+            exit 0
+          fi
+          jq -n --arg content "The nightly partner OAuth journey failed on main: ${RUN_URL}" \
+            '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post the Discord notification (see status above)"

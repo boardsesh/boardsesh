@@ -27,7 +27,8 @@ export default defineConfig({
   outputDir: 'test-results/partner-oauth/artifacts',
   use: {
     browserName: 'chromium',
-    trace: 'retain-on-failure',
+    // CI keeps the HTML report and server logs; a trace adds size, not signal.
+    trace: process.env.CI ? 'off' : 'retain-on-failure',
     screenshot: 'only-on-failure',
     actionTimeout: 20_000,
     // next dev compiles a route the first time it is asked for it.
