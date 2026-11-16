@@ -29,8 +29,6 @@ packages/backend/src/auth/current-store/__tests__/fixtures/nextauth-public-handl
 packages/backend/src/auth/current-store/__tests__/web-oauth-actor.test.ts
 packages/backend/src/auth/current-store/__tests__/web-oauth-identity.test.ts
 packages/backend/src/auth/partner/__tests__/partner-consent.test.ts
-packages/backend/src/auth/prototype/__tests__/legacy-web-bridge.test.ts
-packages/backend/src/auth/prototype/__tests__/process-restart.test.ts
 packages/db/package.json
 packages/web/app/__tests__/home-page-content.test.tsx
 packages/web/app/api/auth/[...nextauth]/__tests__/deletion-admission.test.ts
@@ -48,6 +46,7 @@ packages/web/app/aurora-migration/aurora-migration-content.tsx
 packages/web/app/auth/login/__tests__/auth-page-callback-url.test.tsx
 packages/web/app/auth/login/__tests__/auth-page-locale-router.test.tsx
 packages/web/app/auth/login/__tests__/auth-page-server-errors.test.tsx
+packages/web/app/auth/login/__tests__/auth-page-verified-toast.test.tsx
 packages/web/app/auth/login/auth-page-content.tsx
 packages/web/app/auth/native-start/__tests__/native-start-client.test.tsx
 packages/web/app/auth/native-start/native-start-client.tsx
@@ -93,6 +92,7 @@ packages/web/app/components/providers/__tests__/analytics-identity.test.tsx
 packages/web/app/components/providers/__tests__/selected-session-consumers.test.tsx
 packages/web/app/components/providers/__tests__/selected-session-page-lifecycle.test.tsx
 packages/web/app/components/providers/__tests__/selected-session-pagehide-commit.test.tsx
+packages/web/app/components/providers/__tests__/session-provider-guard.test.tsx
 packages/web/app/components/providers/__tests__/session-provider.test.tsx
 packages/web/app/components/providers/analytics-identity.tsx
 packages/web/app/components/providers/query-client-provider.tsx
@@ -169,6 +169,7 @@ packages/web/app/lib/auth/provider-security-auth.server.ts
 packages/web/app/lib/auth/provider-security-flow-reader.server.ts
 packages/web/app/lib/auth/provider-security-google-reauth.server.ts
 packages/web/app/lib/auth/provider-security-publication.server.ts
+packages/web/app/lib/auth/session-guard.ts
 packages/web/app/lib/auth/set-password-command.server.ts
 packages/web/app/lib/auth/types.ts
 packages/web/app/lib/auth/web-oauth-auth.server.ts
@@ -190,11 +191,11 @@ packages/web/app/setter/[setter_username]/__tests__/setter-page-ssr.test.tsx
 packages/web/app/setter/[setter_username]/setter-follow-island.tsx
 packages/web/app/settings/__tests__/settings-page-content.test.tsx
 packages/web/app/settings/settings-page-content.tsx
-packages/web/auth-prototype/browser-proof-cookies.proof.ts
-packages/web/auth-prototype/provider-oauth-outer.proof.ts
-packages/web/auth-prototype/provider-owned-signin-auth.proof.ts
-packages/web/auth-prototype/provider-security-auth.proof.ts
-packages/web/auth-prototype/provider-security-google-reauth.proof.ts
-packages/web/auth-prototype/provider-security-publication.proof.ts
-packages/web/auth-prototype/web-credential-proof.integration.proof.ts
+packages/web/auth-proofs/browser-proof-cookies.proof.ts
+packages/web/auth-proofs/provider-oauth-outer.proof.ts
+packages/web/auth-proofs/provider-owned-signin-auth.proof.ts
+packages/web/auth-proofs/provider-security-auth.proof.ts
+packages/web/auth-proofs/provider-security-google-reauth.proof.ts
+packages/web/auth-proofs/provider-security-publication.proof.ts
+packages/web/auth-proofs/web-credential-proof.integration.proof.ts
 packages/web/package.json
