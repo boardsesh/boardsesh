@@ -85,7 +85,7 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
 
   const statusQuery = useQuery({
     queryKey: httpScope.key(queryKey),
-    queryFn: async ({ signal }) => {
+    queryFn: async (context) => {
       httpScope.assertView();
       requireCurrentSession(credentialGeneration);
       if (
@@ -98,7 +98,9 @@ export function useUserDataExport(userId: string, boardType: BoardName) {
         const cachedStatus = viewCache.getQueryData<UserDataExportStatus>(queryKey);
         if (cachedStatus) return cachedStatus;
       }
-      const operation = httpScope.create({ signal });
+      // Native reads leave TanStack's signal alone, so a status read whose
+      // screen unmounts still lands in the cache (see use-http-query.ts).
+      const operation = httpScope.create(httpScope.scoped ? { signal: context.signal } : undefined);
       const response = await operation.request<GetUserDataExportResponse, GetUserDataExportVariables>(
         GET_USER_DATA_EXPORT,
         period ? { boardType, period } : { boardType },

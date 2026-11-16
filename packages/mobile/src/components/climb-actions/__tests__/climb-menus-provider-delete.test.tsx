@@ -18,6 +18,7 @@ const io = vi.hoisted(() => ({
   confirm: vi.fn<(options: unknown) => Promise<boolean>>(),
   showToast: vi.fn(),
   request: vi.fn<(options: { variables: unknown; signal: AbortSignal }) => Promise<unknown>>(),
+  removeFromDevice: vi.fn(async () => {}),
   executorMounts: 0,
 }));
 
@@ -40,7 +41,7 @@ vi.mock('../../AppMenu', () => ({
 }));
 vi.mock('../../../offline/pending-tick', () => ({ hasQueuedTickForClimb: io.pendingTick }));
 vi.mock('../../../offline/assert-climb-delete-ready', () => ({ assertClimbDeleteReady: async () => {} }));
-vi.mock('../../../offline/remove-deleted-climb', () => ({ removeDeletedClimbFromDevice: async () => {} }));
+vi.mock('../../../offline/remove-deleted-climb', () => ({ removeDeletedClimbFromDevice: io.removeFromDevice }));
 vi.mock('../../../lib/auth-store', () => ({
   captureAuthCredentialGeneration: () => 1,
   isAuthCredentialGenerationCurrent: () => true,
@@ -53,7 +54,6 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 vi.mock('../../../db', () => ({ getDatabaseHandle: () => null }));
 vi.mock('../../../db/queries/get-favorite-status-local', () => ({ getPendingFavoriteOverridesLocal: vi.fn() }));
-vi.mock('../../../lib/privacy/privacy-cache', () => ({ getCredentialGeneration: () => 0 }));
 vi.mock('../../../hooks/use-privacy-scoped-state', () => ({ usePrivacyScopedState: useState }));
 vi.mock('../../../hooks/use-is-climb-favorited', () => ({ useIsClimbFavorited: () => false }));
 vi.mock('../../../lib/error-reporting', () => ({ reportHandledError: vi.fn() }));
@@ -119,6 +119,7 @@ vi.mock('../../create-climb/use-create-climb-navigation', async (importOriginal)
 });
 
 import { ClimbMenu, ClimbMenusProvider, useClimbMenu } from '../ClimbActionsMenu';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 const climb = { uuid: 'own-climb', name: 'Pinch Traverse', userId: 'viewer', frames: 'p1r12' } as Climb;
 const board = { boardName: 'spray', layoutId: 7, sizeId: 1, setIds: '1', angle: 40 };
@@ -135,17 +136,21 @@ function Row({ target }: { target: ClimbActionsTarget }) {
   const menu = useClimbMenu(target);
   return <ClimbMenu rows={menu.rows} menuKey={menu.menuKey} />;
 }
-function renderRow(target: ClimbActionsTarget) {
+function renderRows(...targets: ClimbActionsTarget[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const view = render(
     <QueryClientProvider client={client}>
       <ClimbMenusProvider currentUserId="viewer" isAuthenticated activeBoardConfig={board}>
-        <Row target={target} />
+        {targets.map((target) => (
+          <Row key={target.climb.uuid} target={target} />
+        ))}
       </ClimbMenusProvider>
     </QueryClientProvider>,
   );
   return { ...view, client };
 }
+const renderRow = (target: ClimbActionsTarget) => renderRows(target);
+const deleteRow = (index = 0) => fireEvent.click(screen.getAllByText('mobile.climbActions.deleteClimb.row')[index]);
 
 beforeEach(() => {
   io.executorMounts = 0;
@@ -153,6 +158,7 @@ beforeEach(() => {
   io.confirm.mockReset().mockResolvedValue(true);
   io.showToast.mockReset();
   io.request.mockReset().mockResolvedValue({ deleteClimb: true });
+  io.removeFromDevice.mockClear();
 });
 afterEach(cleanup);
 
@@ -191,6 +197,79 @@ describe('Delete from a row menu, after the menu has closed', () => {
     expect(io.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.pendingTick', 'error');
     expect(io.confirm).not.toHaveBeenCalled();
     expect(io.request).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it('finishes and says so when the provider unmounts mid-flow, without closing anything', async () => {
+    const tick = deferred<boolean>();
+    io.pendingTick.mockReturnValueOnce(tick.promise);
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const view = renderRow({ climb, boardConfig: board, dismissPlayerAndWait });
+
+    deleteRow();
+    await waitFor(() => expect(io.pendingTick).toHaveBeenCalledOnce());
+    view.unmount();
+    await act(async () => tick.resolve(false));
+    await waitFor(() => expect(io.showToast).toHaveBeenCalled());
+
+    // The dialog and toast are app-level: the climber's delete still lands.
+    expect(io.confirm).toHaveBeenCalledOnce();
+    expect(io.request).toHaveBeenCalledOnce();
+    expect(io.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
+    // Closing the player is the unmounted surface's own step.
+    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+    view.client.clear();
+  });
+
+  it('writes and says nothing for a late response after sign-out clears the cache', async () => {
+    const response = deferred<unknown>();
+    io.request.mockReturnValueOnce(response.promise);
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const { client } = renderRow({ climb, boardConfig: board, dismissPlayerAndWait });
+
+    deleteRow();
+    await waitFor(() => expect(io.request).toHaveBeenCalledOnce());
+    act(() => {
+      invalidateCredentialSnapshots();
+      client.clear();
+    });
+    await act(async () => response.resolve({ deleteClimb: true }));
+    // Settle every continuation the late body could reach.
+    await act(async () => {});
+
+    expect(io.showToast).not.toHaveBeenCalled();
+    expect(io.removeFromDevice).not.toHaveBeenCalled();
+    expect(client.getQueryCache().getAll()).toHaveLength(0);
+    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+  });
+
+  it('runs another climb’s Delete while the first is still asking, and ignores a repeat', async () => {
+    const answers: ((confirmed: boolean) => void)[] = [];
+    io.confirm.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const other = { ...climb, uuid: 'own-climb-2', name: 'Heel Hook Arete' } as Climb;
+    const { client } = renderRows({ climb, boardConfig: board }, { climb: other, boardConfig: board });
+
+    deleteRow(0);
+    await waitFor(() => expect(io.confirm).toHaveBeenCalledTimes(1));
+    deleteRow(1);
+    await waitFor(() => expect(io.confirm).toHaveBeenCalledTimes(2));
+    // A second tap on the first climb while its dialog is up does nothing.
+    deleteRow(0);
+    await act(async () => {});
+    expect(io.pendingTick).toHaveBeenCalledTimes(2);
+    expect(io.confirm).toHaveBeenCalledTimes(2);
+
+    await act(async () => answers.forEach((answer) => answer(true)));
+    await waitFor(() => expect(io.request).toHaveBeenCalledTimes(2));
+    expect(io.request.mock.calls.map(([{ variables }]) => variables)).toEqual([
+      { uuid: 'own-climb', boardType: 'spray' },
+      { uuid: 'own-climb-2', boardType: 'spray' },
+    ]);
     client.clear();
   });
 });

@@ -108,12 +108,15 @@ const onPress = vi.fn();
 function captureAction() {
   let current = true;
   const controller = new AbortController();
+  const assertView = () => {
+    if (!current) throw new Error('Retired row action');
+  };
   return {
     signal: controller.signal,
-    assertView() {
-      if (!current) throw new Error('Retired row action');
-    },
+    assertView,
     isCurrent: () => current,
+    assertOwner: assertView,
+    isOwnerCurrent: () => current,
     finish() {
       current = false;
     },

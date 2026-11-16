@@ -134,7 +134,8 @@ export function ClimbMenusProvider({
   );
   const complete = useCallback(() => setSelection(null), [setSelection]);
   // Delete closes the menu (`complete`, which unmounts the executor) before it
-  // asks and sends. Owned by the executor, its flow would stop right there.
+  // asks and sends. A browser view's flow stops with its owner, so the
+  // executor cannot own it; owned here, every row shares one per-climb guard.
   const requestDeleteClimb = useDeleteClimbAction();
   const runtime = useMemo(
     () => ({ currentUserId, isAuthenticated, execute, queueStore }),

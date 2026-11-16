@@ -145,17 +145,23 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
         input.displayName = trimmedName;
       }
 
+      // The upload, the save and their toasts are the climber's own and follow
+      // the action's owner: on native they finish after a swipe back, and stop
+      // only for an account change. Going back is this screen's own step.
       let avatarUploadFailed = false;
       let assertOriginalUpload: (() => void) | undefined;
       if (pickedAvatar) {
         try {
-          const uploaded = await uploadAvatarWithReceipt({ ...pickedAvatar }, profile.id, action);
-          action.assertView();
+          const uploaded = await uploadAvatarWithReceipt({ ...pickedAvatar }, profile.id, {
+            assertView: action.assertOwner,
+            signal: action.signal,
+          });
+          action.assertOwner();
           uploaded.assertCurrent();
           assertOriginalUpload = uploaded.assertCurrent;
           input.avatarUrl = uploaded.result;
         } catch (error) {
-          action.assertView();
+          action.assertOwner();
           // Keep the name edit, but leave the selected photo here for retry.
           avatarUploadFailed = true;
           reportError(error);
@@ -169,21 +175,22 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
         return;
       }
 
-      action.assertView();
+      action.assertOwner();
       assertOriginalUpload?.();
       const saved = await updateProfile.mutateWithReceipt(input, { signal: action.signal });
-      action.assertView();
+      action.assertOwner();
       assertOriginalUpload?.();
       saved.assertCurrent();
       if (avatarUploadFailed) return;
       // showToast fires the success/error haptic itself based on the variant.
       showToast(t('profile.saved'), 'success');
-      action.assertView();
+      // Already swiped back: going back again would leave the screen under it.
+      if (!action.isCurrent()) return;
       assertOriginalUpload?.();
       saved.assertCurrent();
       router.back();
     } catch (error) {
-      if (!action.isCurrent()) return;
+      if (!action.isOwnerCurrent()) return;
       reportError(error);
       showToast(t('profile.saveError'), 'error');
     } finally {

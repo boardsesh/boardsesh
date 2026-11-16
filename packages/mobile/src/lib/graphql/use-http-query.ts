@@ -16,7 +16,7 @@ import {
   type UseInfiniteQueryOptions,
   type UseInfiniteQueryResult,
 } from '@tanstack/react-query';
-import { useCallback, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { useHttpQueryScope, type HttpQueryOperation, type HttpQueryScope } from './use-http-query-scope';
 
@@ -590,9 +590,13 @@ export function useHttpInfiniteQuery<
   // `configured` and its closures are new every render. Read them from a ref so
   // the callback, which a list's renderItem depends on, changes only with what
   // decides the source: the client, the view, the key, and whether it pages.
+  // Written on commit: a render React throws away must not leave a committed
+  // callback reading a key it never committed.
   const keyHash = hashKey(actualKey);
   const latestPaging = useRef({ scope, keyHash, configured });
-  latestPaging.current = { scope, keyHash, configured };
+  useLayoutEffect(() => {
+    latestPaging.current = { scope, keyHash, configured };
+  });
   const capturePageSource = useCallback(() => {
     const latest = latestPaging.current;
     if (!pageDelivery || !enabled || latest.scope !== scope || latest.keyHash !== keyHash) throw pageHeld();

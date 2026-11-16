@@ -223,14 +223,25 @@ it and immediately before its own state, navigation or cache publication.
 `mutateAsync` alone cannot qualify that later continuation. Signals cancel work
 before lookup and after actual body decoding without replaying mutations.
 
-Native and wholly legacy (unscoped) requests keep their original lifetime. A
-caller's signal only refuses to start a write for an action it already retired.
-Once sent, the write finishes after its screen unmounts, and the mutation's own
-rollback or cache update runs. The screen's later toast or navigation stays
-retired with its action. Queries do not read TanStack's signal, so a read whose
-last observer unmounts finishes into the cache instead of being cancelled and
-reverted. Sign-out already clears the native cache, which cancels whatever is
-still in flight. Selected browser views keep the cancellation described above.
+Native and wholly legacy (unscoped) requests outlive the screen that started
+them and end with the account. This includes Expo web today, whose browser
+consumers are not yet selected; its account fence is the captured view in the
+web operation. Every native operation records the credential generation it
+started under. After a sign-in or sign-out it sends nothing more, and its
+delivery, cache facade and mutation callbacks refuse. A late response therefore
+cannot write the old account's data into the cache sign-out just cleared.
+
+Screen unmount ends neither a native read nor a native write. The wrapper
+queries, and the bulk vote-summary and data-export status reads, leave
+TanStack's signal getter alone, so a read whose last observer unmounts finishes
+into the cache instead of being cancelled and reverted. A caller's signal only
+refuses to start a write for an action it already retired. A native UI action
+keeps two checks. `assertView` retires the screen's own state and navigation on
+unmount. `assertOwner` lets the write, an avatar upload before it, and its
+app-level toast finish after unmount, and ends only when the account changes,
+which is also the only thing that aborts the action's signal. Selected browser
+views keep the cancellation described above, and there `assertOwner` equals
+`assertView`.
 
 The actual profile and admin reads and profile-update cache effects now use these
 adapters. Profile updates refresh only their original view's cache. That
@@ -266,8 +277,10 @@ and rolling-cookie publication retain their separate qualification gates.
 Each profile UI action captures its original view and mounted lifetime before
 opening the image picker or awaiting compression, local image bytes, upload or
 profile save. Selected forms use the opaque view key; native and legacy forms
-retain their existing key and credential policy. Unmount and Strict Mode cleanup
-abort owned pending actions. A later view or remount cannot revive one.
+retain their existing key and credential policy. In a selected form, unmount and
+Strict Mode cleanup abort owned pending actions. A later view or remount cannot
+revive one. A native form's upload, save and toast finish after unmount and end
+only at an account change (see "Captured query and mutation callers").
 
 The avatar uploader exposes a receipt alongside its derived URL. On web, that
 receipt comes only from the actual authenticated Response's private original

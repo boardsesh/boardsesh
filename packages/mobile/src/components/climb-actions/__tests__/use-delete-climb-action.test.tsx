@@ -29,6 +29,7 @@ vi.mock('../../../offline/pending-tick', () => ({ hasQueuedTickForClimb: ctrl.ha
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: ctrl.showToast }) }));
 
 import { useDeleteClimbAction } from '../use-delete-climb-action';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 const climb = { uuid: 'climb-1' };
 
@@ -154,6 +155,85 @@ describe('useDeleteClimbAction (#5960)', () => {
 
     expect(ctrl.confirm).toHaveBeenCalledTimes(1);
     expect(ctrl.mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again for a different climb while the first is still asking', async () => {
+    const answers: ((value: boolean) => void)[] = [];
+    ctrl.confirm.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = result.current(climb, 'spray');
+      second = result.current({ uuid: 'climb-2' }, 'spray');
+      await result.current(climb, 'spray');
+    });
+    await act(async () => {
+      answers.forEach((answer) => answer(true));
+      await Promise.all([first, second]);
+    });
+
+    expect(ctrl.confirm).toHaveBeenCalledTimes(2);
+    expect(ctrl.mutateAsync.mock.calls.map(([variables]) => variables)).toEqual([
+      { uuid: 'climb-1', boardType: 'spray' },
+      { uuid: 'climb-2', boardType: 'spray' },
+    ]);
+  });
+
+  it('on native, finishes and says so after the player unmounts, without closing it again', async () => {
+    let answer!: (value: boolean) => void;
+    ctrl.confirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const onDeleted = vi.fn();
+    const { result, unmount } = renderHook(() => useDeleteClimbAction());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current(climb, 'spray', onDeleted);
+    });
+    unmount();
+    await act(async () => {
+      answer(true);
+      await pending;
+    });
+
+    expect(ctrl.mutateAsync).toHaveBeenCalledOnce();
+    expect(ctrl.showToast).toHaveBeenCalledExactlyOnceWith('mobile.climbActions.deleteClimb.success', 'success');
+    expect(onDeleted).not.toHaveBeenCalled();
+  });
+
+  it('on native, sends nothing for a confirm answered after sign-out', async () => {
+    let answer!: (value: boolean) => void;
+    ctrl.confirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = result.current(climb, 'spray');
+    });
+    invalidateCredentialSnapshots();
+    await act(async () => {
+      answer(true);
+      await pending;
+    });
+
+    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    expect(ctrl.showToast).not.toHaveBeenCalled();
   });
 });
 

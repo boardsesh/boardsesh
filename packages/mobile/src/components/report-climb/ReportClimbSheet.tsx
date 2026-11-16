@@ -212,20 +212,25 @@ function OwnedReportClimbSheet({
     const { input } = built;
     void sendReport({ input }, { signal: action.signal })
       .then((receipt) => {
-        action.assertView();
+        // The report and its toast are the climber's own: on native they land
+        // after the sheet unmounts, and stop only for an account change. The
+        // form reset and close belong to a sheet that is still here.
+        action.assertOwner();
         receipt.assertCurrent();
         const result = receipt.result;
         track(SHARED_EVENTS.ClimbReported, { kind, boardType: boardName, status: result.status });
         // The success toast plays the haptic.
         const copy = reportToastCopy(result.status, kind, result.proposal);
-        action.assertView();
-        receipt.assertCurrent();
-        resetForm();
-        // Toast AFTER the close request: a toast raised while the sheet is up
-        // renders behind it and self-dismisses where nobody sees it.
-        action.assertView();
-        receipt.assertCurrent();
-        onClose();
+        if (action.isCurrent()) {
+          receipt.assertCurrent();
+          resetForm();
+          // Toast AFTER the close request: a toast raised while the sheet is up
+          // renders behind it and self-dismisses where nobody sees it.
+          action.assertView();
+          receipt.assertCurrent();
+          onClose();
+        }
+        action.assertOwner();
         receipt.assertCurrent();
         showToast(t(copy.textI18nKey, copy.params), 'success');
       })

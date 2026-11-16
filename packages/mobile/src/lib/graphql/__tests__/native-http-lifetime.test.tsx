@@ -20,6 +20,7 @@ vi.mock('../client', () => ({
 import { useHttpMutation } from '../use-http-mutation';
 import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
 import { useHttpActionScope } from '../use-http-action-scope';
+import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
 
 function deferred<Result>() {
   let resolve!: (result: Result) => void;
@@ -201,6 +202,121 @@ describe('native reads finish into the cache', () => {
     view.unmount();
     expect(seen!.signal.aborted).toBe(true);
     client.clear();
+  });
+});
+
+describe('native requests end with the account that started them', () => {
+  function signOut(client: QueryClient) {
+    act(() => {
+      invalidateCredentialSnapshots();
+      client.clear();
+    });
+  }
+
+  it('writes nothing from a read answered after sign-out clears the cache', async () => {
+    const { client, wrapper } = harness();
+    const response = deferred<{ groupedNotifications: { unreadCount: number } }>();
+    transport.request.mockReturnValueOnce(response.promise);
+    renderHook(
+      () =>
+        useHttpQuery({
+          queryKey: ['groupedNotifications'],
+          queryFn: async (_context, operation) => {
+            const page = await operation.request<{ groupedNotifications: { unreadCount: number } }>('{ page }');
+            // The bell badge rides along on the first page, as useGroupedNotifications does.
+            operation.cache(client).setQueryData(['unreadCount'], page.groupedNotifications.unreadCount);
+            return page;
+          },
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(transport.request).toHaveBeenCalledOnce());
+
+    signOut(client);
+    await act(async () => response.resolve({ groupedNotifications: { unreadCount: 4 } }));
+    await act(async () => {});
+
+    expect(client.getQueryData(['unreadCount'])).toBeUndefined();
+    expect(client.getQueryData(['groupedNotifications'])).toBeUndefined();
+    client.clear();
+  });
+
+  it('runs none of a write’s callbacks when it is answered after sign-out', async () => {
+    const { client, wrapper } = harness();
+    const response = deferred<unknown>();
+    transport.request.mockReturnValueOnce(response.promise);
+    const events: string[] = [];
+    const view = renderHook(
+      () =>
+        useHttpMutation({
+          mutationFn: (_input: void, operation) => operation.request('mutation { vote }'),
+          onSuccess: () => {
+            events.push('saved');
+            client.setQueryData(['bulkVoteSummaries'], ['old account']);
+          },
+          onError: () => {
+            events.push('rolled back');
+          },
+        }),
+      { wrapper },
+    );
+    let saved!: Promise<unknown>;
+    act(() => {
+      saved = view.result.current.mutateWithReceipt();
+    });
+    await waitFor(() => expect(transport.request).toHaveBeenCalledOnce());
+
+    signOut(client);
+    await act(async () => {
+      response.resolve({ vote: true });
+      await saved.catch(() => {});
+    });
+
+    await expect(saved).rejects.toMatchObject({ status: 'superseded' });
+    expect(events).toEqual([]);
+    expect(client.getQueryData(['bulkVoteSummaries'])).toBeUndefined();
+    client.clear();
+  });
+
+  it('never sends an old account’s write under the next account', async () => {
+    const { client, wrapper } = harness();
+    const preparing = deferred<void>();
+    const view = renderHook(
+      () =>
+        useHttpMutation({
+          onMutate: () => preparing.promise,
+          mutationFn: (_input: void, operation) => operation.request('mutation { vote }'),
+        }),
+      { wrapper },
+    );
+    let saved!: Promise<unknown>;
+    act(() => {
+      saved = view.result.current.mutateWithReceipt();
+    });
+
+    signOut(client);
+    await act(async () => {
+      preparing.resolve();
+      await saved.catch(() => {});
+    });
+
+    await expect(saved).rejects.toMatchObject({ status: 'superseded' });
+    expect(transport.request).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it('ends an action’s signal at sign-out, not when its screen unmounts', () => {
+    const view = renderHook(() => useHttpActionScope());
+    const action = view.result.current.capture();
+    view.unmount();
+    expect(action.signal.aborted).toBe(false);
+    expect(action.isCurrent()).toBe(false);
+    expect(action.isOwnerCurrent()).toBe(true);
+
+    invalidateCredentialSnapshots();
+    expect(action.signal.aborted).toBe(true);
+    expect(action.isOwnerCurrent()).toBe(false);
+    action.finish();
   });
 });
 

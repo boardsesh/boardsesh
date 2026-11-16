@@ -226,8 +226,10 @@ function bulkVoteSummaryChunkQuery(
     // caller's order, which is what keeps an append-only feed's earlier
     // chunks cached as it pages.
     queryKey: scope.key(['bulkVoteSummaries', entityType, [...chunk].sort()]),
-    queryFn: async ({ signal }: QueryFunctionContext): Promise<BulkVoteSummaries> => {
-      const operation = scope.create({ signal });
+    queryFn: async (context: QueryFunctionContext): Promise<BulkVoteSummaries> => {
+      // Native reads leave TanStack's signal alone, so one whose feed unmounts
+      // still lands in the cache (see `callerContext` in use-http-query.ts).
+      const operation = scope.create(scope.scoped ? { signal: context.signal } : undefined);
       operation.assertView();
       const response = await operation.request<GetBulkVoteSummariesQueryResponse>(GET_BULK_VOTE_SUMMARIES, {
         input: { entityType, entityIds: chunk },
