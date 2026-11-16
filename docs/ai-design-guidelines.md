@@ -39,7 +39,7 @@ component APIs are identical in both; surfaces, elevation, motion and type follo
 
 Variant (aesthetic) is separate from capability (real iOS 26 glass or a fallback): Liquid Glass on an
 older iPhone is the variant with degraded chrome, not Material. Cross-variant components expose one
-prop API and route internally; never hand-write `variant === '…'`. Prefer, in order: a token resolved
+prop API and route internally; never hand-write `variant === '…'`. Mobile still renders light (`userInterfaceStyle: automatic`), so the light values below are live. Prefer, in order: a token resolved
 in the provider (`theme.actionColors`, `theme.chartColors`, `theme.radii`, `theme.textStyles`),
 `createVariantComponent` for a whole-subtree swap, `selectByVariant` for a one-off
 (`vp run check:mobile-variants` blocks raw compares in `src/components/`). Glass is for controls over
@@ -98,7 +98,7 @@ color to indicate that a borderless button is interactive, using the same or sim
 noninteractive text is confusing."_
 
 - **Surfaces (`theme.surfaces`).** Two page styles, each a `{ page, card, tile }` ladder: `plain` (a feed, a shelf, a climb list: `systemBackground` / `secondarySystemBackground` / `tertiarySystemBackground`) and `grouped` (inset-grouped rows like Settings: the `…Grouped…` trio). iOS resolves base vs elevated itself, so a page drawn in a sheet steps up (the React Navigation ground in dark is `surfaces.plain.page`, not a static `#000`). Material and Liquid Glass off iOS take the same steps from their own ladders.
-- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primary at 18% }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash sits behind the row (the current climb's look in the Climbs list, on every variant). A surface, not violet text. Selection is a state, not a link.
+- **Selection (`theme.selection`).** `{ text: label, checkmark: accent, fill: primary at 18% }`. The title stays `label`, set semibold with `<Text emphasized>`; an accent checkmark marks it; a violet wash sits behind the row (the current climb's look in the Climbs list, on every variant: `#6D28D9` light, `#A78BFA` dark, each at 18%). A surface, not violet text. Selection is a state, not a link.
 - **Status (`theme.status`).** `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap ("Ready to review", "On it").
 - **Guards.** `no-violet-selection.test.ts` (a selection flag choosing `brandColors.primary`: use `theme.selection`) and `no-text-opacity-dim.test.ts` (a `StyleSheet` opacity on a `<Text>`: use `tone`). Their allowlists only shrink.
 - **Scroll edges.** iOS 26 draws its own (no forced pre-26 blur, `useHeaderBlurEffect`). HIG Layout: _"Instead of applying a solid or semi-opaque background color beneath controls, use a scroll edge effect to visually elevate controls above content."_
@@ -198,12 +198,12 @@ MiniPlayer; `primaryContainer` `#EADDFF` / `#4F378B`, ink `#21005D` / `#EADDFF`)
 climb-row wash; (5) data (heat ramp, grade colours, holds, playlist swatch). Everything else is grey.
 
 **Tertiary-label placement.** `tertiaryLabel` clears 4.5:1 only on the lower steps. Dark: page, card,
-lowest, low, base, high. Light: page, card, lowest, low. Never above that; use `secondaryLabel`.
+lowest, low, base, high (4.68:1). Light: page, card, lowest, low (4.63:1). Never above that; use `secondaryLabel`.
 `material-theme-contrast.test.ts` pins every pairing in this section.
 
 **Compose, nav bar, www.** `ComposeHost` seeds Android Compose from `primaryFill` plus `composeSurfaceColorOverrides`,
 so menus and dialogs sit on the same greys. The Android phone nav bar overlays tab roots at `m3.surface` 92% dark /
-85% light so it can hide on scroll. `theme.m3` exposes the MD3 role palette on Material only. www stays violet on
+85% light so it can hide on scroll, with a 24dp fade above its top edge; dark needs the extra cover so the violet label stays 4.5:1 over white content. `theme.m3` exposes the MD3 role palette on Material only. www stays violet on
 purpose (`packages/web/app/theme/theme-config.ts`; video renders read the frozen `marketingSurfaces`).
 
 ### Data ramp (`theme.heatRamp`)
@@ -257,8 +257,8 @@ scale sets `largeTitle`/`title1`/`title2` bold (a brand choice; HIG's default is
 - **`tone`**: `primary` (default), `secondary`, `tertiary` resolve to `label`, `secondaryLabel`, `tertiaryLabel`. Step text down with a tone, never `opacity`, which mixes into the ground and ignores Increase Contrast. An explicit `color` wins.
 - **`emphasized`**: the style's emphasized weight (`emphasizedWeights`). Liquid Glass follows HIG's Emphasized column: Bold for `largeTitle`, `title1`, `title2`, Semibold elsewhere. Material uses M3 Expressive: Medium for display, headline, title large and body roles, Bold for title medium and labels. Use it instead of a `fontWeight` override; Bold Text steps it up once more.
 - **Dynamic Type ramps.** On iOS each variant scales on the UIKit text style of the same name (`dynamicTypeRamp`, `theme/dynamic-type.ts`); `label` scales on `body`. React Native's single `fontScale` table matches body only up to xxxLarge (AX3: 2.643 against body's 2.353). JS layout sized around non-body text, or body above xxxLarge, uses `textFontScale(variant, fontScale, Platform.OS)`. The ramp follows the `Text`'s `variant`, not its final size. An `Icon` beside footnote or caption text takes `textVariant`. Threshold switches (`fontScale > 1.3`) stay on `fontScale`.
-- **Uncapped by default.** Content `Text` and native `Button` accept the full accessibility range: grow and wrap, no blanket cap. Fixed-height chrome opts into a cap (`CHROME_LABEL_MAX_FONT_SCALE` 1.2) and a Large Content Viewer. Never write numeric `fontSize` literals; use `useTypographyStyles`. A number that changes in place takes `<Text numeric>` (tabular figures).
-- **Buttons.** `size="large"` is the single filled call to action of a full-screen form, gate or dead end (auth submit, "Sign in to join", retry on a full-screen error); everything else is `medium`; `small` inside cards. iOS labels are semibold when the drawn style is prominent; Android is M3 `labelLarge` (14/500).
+- **Uncapped by default.** Content `Text` and native `Button` accept the full accessibility range: grow and wrap, no blanket cap. Fixed-height chrome opts into a cap (`CHROME_LABEL_MAX_FONT_SCALE` 1.2) and a Large Content Viewer, only where it has no competing long-press gesture; count badges use `caption2`, capped at 1.3. AX1–AX5 growth per style: [mobile-accessibility.md](./mobile-accessibility.md#dynamic-type-ramp). Never write numeric `fontSize` literals; use `useTypographyStyles`. A number that changes in place takes `<Text numeric>` (tabular figures).
+- **Buttons.** `size="large"` is the single filled call to action of a full-screen form, gate or dead end (auth submit, "Sign in to join", retry on a full-screen error); the tick action bar and rest-timer transport row are `large` too (an iOS `large` Button with a numeric `height` draws at `.regular`, so the pin sets the height, #5663); everything else is `medium`; `small` inside cards. iOS labels are semibold when the drawn style is prominent; Android is M3 `labelLarge` (14/500).
 - **Section headers** are sentence case: footnote semibold in `secondaryLabel` on Liquid Glass, titleSmall in `onSurfaceVariant` on Material. Never uppercase UI strings with a locale-blind `toUpperCase()`.
 
 **A V-grade is never cut.** "V" always renders with its number (`V1`, `V14`, `V5+`), never "V…" or
@@ -333,16 +333,15 @@ Shadows `xs`…`xl` carry iOS shadow keys and Android `elevation` (1, 2, 4, 8, 1
 
 ## Components
 
-In `packages/mobile/src/components/`, each with a story (`dev/stories/<id>`). Reach for these before
-hand-rolling a heading, row, pill or placard. Props and edge cases are in each file's header.
+In `packages/mobile/src/components/`, each with a story (`dev/stories/<id>`). Reach for these before hand-rolling a heading, row, pill or placard. Full props, spacing numbers and accessibility rules: [velvet-components.md](./velvet-components.md).
 
-- **`ShelfHeader` / `ShelfSection`**: the heading of a shelf (Home sections, picker groups). Title 3 emphasized, a VoiceOver heading, 16pt gutter, no minimum height; "See all" is accent text with a chevron reaching its target through its own padding. `ShelfSection` adds `children` and owns spacing: 8pt header to content, 28pt to the next shelf.
-- **`TextAction`**: a borderless accent text button that adds no height to its row. Negative-margin padding brings the target to 44pt (Liquid Glass) or 48dp (Material); not `hitSlop`, which Fabric ignores outside the parent's bounds. `reach` (`even` / `up` / `down`) says where the extra height goes so stacked actions don't overlap.
-- **`InsetGroupedList`**: the inset-grouped `Card`. Rows run to its edges and own the 16pt gutter; hairlines inset to where the text starts; rows clip to its corners. Other rows build from `insetGroupedRowStyles`.
-- **`ArtRow`**: a row of an `InsetGroupedList` leading with art (board, playlist, icon) in a 36 or 44pt slot. `titleVariant` headline (Home rows) or body (a list to choose from, such as the board picker). `selected` takes `theme.selection` and reports to assistive tech; an element accessory (a ⋯ button) sits beside the row's target, not inside it; a long press also needs `longPressAccessibilityLabel`. Presses dip in opacity, never scale.
-- **`StatusPill`**: something you can't tap. `theme.status` fill, caption 1 emphasized; it never shrinks or truncates, so put it beside text that can.
-- **`EmptyState`**: `screen` fills and centres, `section` centres inside a longer page, `quiet` is one secondary footnote line at the gutter with a trailing `TextAction`, for a shelf that came back empty.
-- **`BoardThumbnail`** (`components/boards/`): a board's bare art in a 36×44 or 44×56 slot (or a square), keeping its aspect ratio with a `separator` hairline and no tile; spray walls show the cached photo, else a camera glyph.
+- **`ShelfHeader` / `ShelfSection`**: the heading of a shelf of content; title 3 emphasized, a VoiceOver heading; 8pt to content, 28pt between shelves.
+- **`TextAction`**: a borderless accent text button that adds no height to its row; 44pt (Liquid Glass) / 48dp (Material) target.
+- **`InsetGroupedList`**: the inset-grouped `Card`; rows own the 16pt gutter.
+- **`ArtRow`**: a row leading with art (board, playlist, icon); `selected` takes `theme.selection`; presses dip in opacity, never scale.
+- **`StatusPill`**: something you can't tap; never shrinks or truncates.
+- **`EmptyState`**: `screen`, `section` or `quiet` (one footnote line plus a `TextAction`).
+- **`BoardThumbnail`**: a board's bare art in a 36×44 or 44×56 slot; spray walls show the cached photo.
 - **Other primitives** (`components/index.ts`): `Text`, `Button`, `Card`, `ListRow`, `Avatar`, `Badge`, `Separator`, `SectionHeader`, `Sheet`, `ModalSheet`, `GlassSurface`, `Icon`, `SegmentedControl`, `Toast`, `SwitchRow`. Prefer them over raw RN host components. Touch feedback goes through `PressableSurface` (Material ripple on Android, scale or opacity spring on iOS), never a hand-rolled `AnimatedPressable`.
 
 ---

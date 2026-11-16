@@ -104,3 +104,46 @@ Device QA remains required: iPhone/iPad AX1–AX5 plus Bold Text, VoiceOver/Talk
 hold editing and queue boundaries, native slider drag/accessibility commits,
 keyboard-visible form submission, RTL semantic navigation, and Reduce Motion.
 Linux typechecking/tests/bundles cannot validate UIKit/SwiftUI layout or gestures.
+
+## Dynamic Type, count badges and button sizes
+
+Moved from [ai-design-guidelines.md](./ai-design-guidelines.md).
+
+### Dynamic Type ramp
+
+- **Dynamic Type ramp**: on iOS each `variant` scales on the UIKit text style of the same name
+  (`dynamicTypeRamp`, `src/theme/dynamic-type.ts`); `label` scales on `body`. Without a ramp, React
+  Native scales every `Text` by one multiplier table, the one `fontScale` reports, which equals the
+  body curve up to xxxLarge and runs ahead of it at the accessibility sizes (AX3: 2.643 against
+  body's 2.353). Against that table, titles now grow much less, body, headline and label are 8–13%
+  smaller at AX1–AX5, and footnote and captions grow up to 14% more at xLarge–xxxLarge. JS layout
+  that sizes itself around non-body text, or around body text above xxxLarge, must use
+  `textFontScale(variant, fontScale, Platform.OS)` instead of `fontScale`, or it drifts from the text
+  it sits beside. A 1.5 cap does not make `fontScale` safe: it never engages below AX1. The ramp
+  follows the `Text`'s `variant`, not its final size, so a body `Text` restyled to 34pt still asks
+  for `'body'`. An `Icon` beside footnote or caption text takes `textVariant` to match. Layout
+  switches keyed on a threshold (`fontScale > 1.3`) pick a content size category and stay on
+  `fontScale`.
+
+### Content text, chrome caps and count badges
+
+**Dynamic Type.** Content `Text` and native `Button` default to an uncapped font scale (`0`) and
+accept the full accessibility text range. Grow and wrap content rather than introducing a blanket
+cap. Fixed-height chrome opts into an explicit cap: the queue capsule and iOS 26 bottom accessory
+use `CHROME_LABEL_MAX_FONT_SCALE` = `1.2`, with a native Large Content Viewer for their climb labels.
+Only wrap chrome that has no competing long-press gesture; the viewer reveals the full name and
+grade, then opens the player on release. Binaries without that native module keep the ordinary view.
+Explicit native button caps resolve to a Dynamic Type step on iOS and the requested scale on
+Android. Count badges use `caption2` in a min-size box capped at `1.3` (`count-badge-style.ts`).
+
+### Button sizes and weights
+
+**Button sizes and weights.** `size="large"` is for the single filled call to action of a
+full-screen form, gate or dead end: auth submits, "Sign in to join", the retry on a full-screen
+error (Join, session unavailable, spray scan), send recovery. The tick action bar and the rest
+timer's transport row are large too; on iOS a `large` button with a numeric pinned `height` draws at
+`.regular` control size (with a `body` label) so the pin sets the height (#5663). Everything else is `medium`: empty states and retries inside
+a tab, buttons in sheets, secondary actions, and a dismiss like Done on a dead end. Use `small`
+inside cards. On iOS the label is semibold when the drawn style is prominent (filled, or an
+outlined/tonal button drawn as a solid scrim pill over board art) and regular otherwise. On
+Android every tier is M3 labelLarge (14/500).

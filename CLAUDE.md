@@ -144,6 +144,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/mobile-motion.md` — mobile springs, timings, variant-aware motion, the haptics rules and the Queue Undo contract (timers, screen-reader focus)
 - `docs/mobile-accessibility.md` — mobile accessibility details: Differentiate Without Color hold shapes, Large Content Viewer, brand accent asset, per-screen accessibility behaviour, device QA list
 - `docs/web-velvet-send.md` — how `packages/web` consumes Velvet Send: dark-only, the foreground/fill violet split, token parity tests, the two border tokens
+- `docs/velvet-components.md` — Velvet Send component catalogue in full: ShelfHeader, TextAction, InsetGroupedList, ArtRow, StatusPill, EmptyState, BoardThumbnail props, spacing numbers and accessibility rules
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/keychain-namespaces.md` — the two iOS keychain namespaces behind every SecureStore key: why the v2 service exists, the v2-first read order, the freshness stamp that tells a stale v2 copy from a fresh one, the tombstone contract, what an OTA rollback and roll-forward each cost, and where phase 2 (#4128) lands
 - `docs/db-migrations.md` — migration numbering, `when`-not-number apply order, the collision/renumber bot, when it hands work back, and the out-of-band `CONCURRENTLY` pattern for indexing a large write-hot table
