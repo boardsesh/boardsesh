@@ -1,12 +1,12 @@
 # Better Auth rollout: every switch, and the order to turn them on
 
-Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975), rollout issue BA-09 [#6983](https://github.com/boardsesh/boardsesh/issues/6983). Owner steps with paste-ready commands live in runbook issue [#7430](https://github.com/boardsesh/boardsesh/issues/7430). Read against `main` on 2026-11-16.
+Parent: [epic #6975](https://github.com/boardsesh/boardsesh/issues/6975), rollout issue BA-09 [#6983](https://github.com/boardsesh/boardsesh/issues/6983). Owner steps with paste-ready commands live in runbook issue [#7430](https://github.com/boardsesh/boardsesh/issues/7430).
 
 This file answers one question: what can change how sign-in works in production, and in what order. It was written from the code (`grep` for `CURRENT_STORE_`, `AUTH_`, `PARTNER_OAUTH`, `BROWSER_DELEGATION` and `developer-console`), not from the older docs.
 
 ## The state today
 
-- **Nothing in the repo turns any switch below on for production.** Every switch is unset or at its first value, so production runs the old NextAuth and native paths.
+- **Nothing in the repo sets any switch below.** Check Railway for the live values; do not assume them from this file.
 - **The owner flips every switch.** Agents prepare commands and read production. They do not change production variables, flags or the database.
 - **Only `PARTNER_OAUTH_MODE` is checked by `infra/railway/config.ts`** (web service: it must be `off`, `hold`, `allowlist` or `open`). No plan catches a typo in any other row. The code does: an unknown value throws at startup or on the first request, except where the row says "reads as off".
 - **Unset, empty or `legacy` means off** for every `CURRENT_STORE_*` mode and for `AUTH_WATCH_PAIRING_MODE`.
@@ -23,7 +23,7 @@ Where a row says **Both**, set it on the web service and the backend service. **
 | `PARTNER_OAUTH_SECRETS` | Backend | `version:value,version:value`, newest first; each value at least 32 characters; versions 0 to 999,999,999 (unset) | Seals tokens and the `c3.` logbook cursors. | A mode other than `off` | Not a switch. Rotate by putting a new version first; dropping an old version sends its cursors back to a full sync (410). |
 | `PARTNER_DEVELOPER_TERMS_VERSION` | Backend | A published terms version (the code constant) | **Ignored in production.** Registration opens when the owner approves the terms and the constant changes in a reviewed PR. Outside production the variable overrides it. | Owner approves `LEGAL.md`, `/legal` and the developer terms text (#7411) | Not applicable. |
 | `developer-console` (PostHog server flag, `packages/web/app/flags.ts`) | Web | On or off for a person; off if PostHog is unreachable (off) | Shows `/developers/apps` and `/developers/terms` to the people it targets. The backend checks mode and allowlist again. | A mode other than `off`; the flag created and targeted at the allowlisted developers | Turn the flag off. The pages become 404. |
-| `BETTER_AUTH_TELEMETRY` | Backend | Must stay **unset** | Nothing. Setting it makes the partner authority refuse to start, because it would override the telemetry-off setting. | Not applicable | Unset it. |
+| `BETTER_AUTH_TELEMETRY` | Backend | Must be unset, empty, `0` or `false` | Nothing. Any other value makes the partner authority refuse to start, because it would override the telemetry-off setting. | Not applicable | Unset it or set it to `0`. |
 
 Connected apps (Settings, Disconnect) works in every mode, `off` and `hold` included.
 
@@ -33,14 +33,17 @@ These are not modes. Most `CURRENT_STORE_*` modes below need them, and a missing
 
 | Switch | Where | Values (default) | What it does | Needs first | Back out |
 | --- | --- | --- | --- | --- | --- |
-| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any staged writer mode in section 3 is on. |
+| `AUTH_CUTOFF_ENFORCEMENT` | Backend | `enforce`, `observe` (`enforce`; any other value is a startup error) | `enforce` refuses every credential that a cutoff, denial or generation bump rejects. `observe` admits and logs them (the pre-BA-04 behaviour). | Nothing | Leave it unset. The backend refuses to start with `observe` while any member of `STAGED_WRITER_MODE_ENV` (`authority-configuration.ts`) is on: `CURRENT_STORE_BROWSER_BINDING_MODE`, `_BROWSER_RENEWAL_MODE`, `CURRENT_STORE_WEB_AUTH_MODE`, `_WEB_OAUTH_MODE`, `_NATIVE_REGISTRATION_MODE`, `_NATIVE_OAUTH_MODE`, `_SYSTEM_BOARD_OWNER_MODE`, `_ACCOUNT_DELETION_MODE`, `_SET_PASSWORD_MODE`, `_PROVIDER_SECURITY_MODE`, `_FIRST_PASSWORD_MODE`, `_WEB_SIGNOUT_MODE`, `AUTH_WATCH_PAIRING_MODE`, `_BATCH_SYSTEM_USERS_MODE`, `_LOCATION_SYNC_MODE`. The proof, fixed-owner order and Google auth-time modes are not in the list. |
 | `CURRENT_STORE_AUTH_RPC_SECRET` | Both | At least 32 bytes, no surrounding spaces, different from `NEXTAUTH_SECRET` and `CRON_SECRET` (unset) | Signs private web-to-backend commands. | Nothing | Unset it after the modes that use it are off. |
 | `CURRENT_STORE_AUTH_PROJECTION_ID` and `CURRENT_STORE_AUTH_WRITER_EPOCH` | Backend | The current projection id; a positive integer up to 2,147,483,647 (unset) | Tell every staged writer which authority row to expect. A mismatch is refused as stale. | `auth-authority prepare` for the id. Every staged writer also refuses with `AUTHORITY_NOT_ENFORCED` until `activate` succeeds (section "Code gates"). | Unset them after the modes are off. |
 | `CURRENT_STORE_DELETED_EMAIL_KEY` | Backend | At least 32 bytes, different from the other secrets (unset) | Keys the address digest kept for 90 days after an account is deleted. Every staged mode needs it, because an unknown address also looks up a digest. | Nothing | **Never rotate it.** Rotating frees every address deleted in the last 90 days. Keep a copy in 1Password. |
 | `CURRENT_STORE_AUTH_BACKEND_ORIGIN` | Web | Backend origin URL (unset) | Where the web sends private commands. | The backend modes it serves | Unset after the mode is off. |
 | `EMAIL_VERIFICATION_ENABLED` | Backend | `true` or anything else (existing setting) | Staged writers copy it into their authority record. | Not an epic switch | Existing behaviour. |
 | `DEBUG_SQL` | Backend | Must not be `true` while a staged writer is on | Staged modes refuse to run with SQL logging on, because it would log credentials. | Not applicable | Unset it. |
-| `AUTH_IDENTITY_DATABASE_URL` and `AUTH_IDENTITY_DATABASE_CONTRACT` | Backend | A connection string for the dedicated credential-writer role: same host, port and database as `DATABASE_URL`, a different user and password. The contract is `private-web-v1` (default), `private-browser-v1`, `private-provider-v1`, `private-first-password-v1`, `private-native-handoff-v1` or `private-browser-renewal-v1`. | Opens the separate pool the staged credential writers and their maintenance jobs use. A wrong or shared role is refused at startup of that pool. | The fence role and grants from `auth-fence apply` | Unset both. |
+| `AUTH_IDENTITY_DATABASE_URL` and `AUTH_IDENTITY_DATABASE_CONTRACT` | Backend | A connection string for the dedicated credential-writer role: same host, port and database as `DATABASE_URL`, a different user and password. The contract is `private-web-v1` (default), `private-browser-v1`, `private-provider-v1`, `private-first-password-v1`, `private-native-handoff-v1` or `private-browser-renewal-v1`. | Opens the separate pool the staged credential writers and their maintenance jobs use. A wrong or shared role is refused at startup of that pool. | The owner creates the role `boardsesh_identity_writer`; no repo script does (`auth-fence apply` creates `boardsesh_web`, a different role). The connection user must be exactly that name. Hosts other than loopback need `sslmode=verify-full`. See [better-auth-credential-database.md](./better-auth-credential-database.md) | Unset both. |
+| `AUTH_OPERATOR_DATABASE_URL` | Operator shell | Administrative connection string (unset) | Input to `auth-fence`, `auth-authority`, `auth:import-identities` and `auth:revoke-sessions`; used with `--confirm-host`. Not read by any service. | The reviewed plan hash, trusted CA in `NODE_EXTRA_CA_CERTS` | Unset it. |
+| `ACCOUNT_EMAIL_RESOLVE_DATABASE_URL` | Operator shell | Connection string for the intended database; never falls back to `DATABASE_URL` (unset) | Input to `resolve-account-emails.ts`. | Private evidence and decisions files | Unset it. |
+| `AUTH_IDENTITY_AUDIT_DATABASE_URL` | Operator shell | A local PostgreSQL URL only (unset) | Input to `audit-auth-identities.ts`; production URLs are refused. | Nothing | Unset it. |
 
 ## 3. Staged writer modes (`CURRENT_STORE_*` and `AUTH_WATCH_PAIRING_MODE`)
 
@@ -85,7 +88,7 @@ Each moves one kind of credential write from the old path into the backend's cur
 | `CURRENT_STORE_BROWSER_PASSWORD_MODE` | Both | `legacy`, `backend-staging` (`legacy`) | Publishes password credentials through the binding. | Deleted by #7596. Needs binding. |
 | `BROWSER_DELEGATION_SECRET` | Backend only | At least 32 UTF-8 bytes, different from the cookie, RPC, cron and deleted-email keys (unset) | Signs the 120-second backend leases (`bsbd1_` tokens). | Deleted by #7596. Never set it on the web or in a public environment. |
 | Proof cookies (`BROWSER_PROOF_COOKIE_PREFIX`, no env switch) | Web | Active only under binding | Carry browser proofs in cookies. | Deleted by #7596. |
-| Eight `*-readiness.ts` functions | Web (seven), Expo web (one) | Each returns `false` in code | Would open the public pages for binding, renewal, expired binding, browser password, coordinator, consumers and Expo consumers. | #7596 replaces them with one mode switch. First password and provider security each also have one, and those two are **kept**, with their publication layer rewritten. |
+| Eight readiness functions that return `false` in code | Web (seven), Expo web (one) | No variable changes them | Open the public pages. Files in `packages/web/app/lib/auth/`: `browser-consumer-readiness.ts`, `browser-coordinator-readiness.ts`, `browser-password-readiness.ts`, `browser-renewal-readiness.ts`, `expired-browser-binding-readiness.ts`, plus `first-password-readiness.ts` and `provider-security-readiness.ts`; and `packages/mobile/src/lib/browser-consumer-readiness.web.ts`. Binding has no file of its own. | The first five and the Expo one are replaced by #7596's single mode switch. First password and provider security are **kept**, with their publication layer rewritten. |
 
 ## Code gates
 
@@ -96,10 +99,10 @@ A code gate is a constant or an assertion. No variable, flag or script option cl
 | Gate | What it waits for |
 | --- | --- |
 | `GARMIN_OFFLINE_TICK_QUEUE_PRESERVATION` | Proof that the Garmin watch keeps its offline tick queue on a rejected refresh and on a same-account re-pair, including installed older watch builds. The owner has only a test watch, and public release is planned for December. Real-watch QA with the original signing key is still open. #7442 (owner-scoped outbox) is merged. |
-| `STAGED_WEB_PROOF_GENERATION_STAMP` | The staged web sign-in proof carrying the account generation, with the cookie window closed, and evidence that every still-valid older web cookie (including no-session-id cookies) logs out safely. Also blocks the web sign-out writer: the backend refuses to start with `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`. The owner must also confirm the old sign-in issuers are retired (the old Vercel project's deployments and rollback issuers). |
+| `STAGED_WEB_PROOF_GENERATION_STAMP` | The staged web sign-in proof carrying the account generation, with the cookie window closed, and evidence that every still-valid older web cookie (including no-session-id cookies) logs out safely.  The owner must also confirm the old sign-in issuers are retired (the old Vercel project's deployments and rollback issuers). |
 | `NATIVE_REVOKE_RESET_LOCK_ORDER` | Native sign-out and password reset taking their locks in the BA-04 order, proved against real PostgreSQL with concurrent calls. #7440 added the reviewed lock-order fix and the inactive generation writer. The gate stays until the list in the source is emptied in a reviewed PR. |
 
-**Startup assertions** (`packages/backend/src/index.ts`) refuse to boot: `AUTH_CUTOFF_ENFORCEMENT=observe` with any staged writer on; `AUTH_IDENTITY_MIRROR=on`; `AUTH_NATIVE_REVOCATION_MODE=generation`; `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging`; `AUTH_LEGACY_BRIDGE_MODE=on` without both of the last two.
+**Startup assertions** (`packages/backend/src/index.ts`) refuse to boot: `AUTH_CUTOFF_ENFORCEMENT=observe` with any staged writer on; `AUTH_IDENTITY_MIRROR=on`; `AUTH_NATIVE_REVOCATION_MODE=generation`; `CURRENT_STORE_WEB_SIGNOUT_MODE=backend-staging` (its own assertion in `web-session-configuration.ts`, not tied to a gate constant); `AUTH_LEGACY_BRIDGE_MODE=on` without both of the last two.
 
 ## Order to turn things on
 
@@ -109,9 +112,9 @@ Each step names what must be true first. Stop at the first step whose condition 
 
 Nothing else in this document has to be on. Full runbook: "Running partner OAuth" in [integration-platform.md](./integration-platform.md). Owner items still open in #7430 before the first switch-on: developer terms approval, the connection budget, and the `api.boardsesh.com` domain. Nightly CI for the browser journey is open as #7605.
 
-1. **Before stage A:** set `PARTNER_OAUTH_SECRETS` and `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` on the backend, create the `developer-console` flag, set `DB_POOL_MAX=4` on the web.
-2. **Stage A (3 days):** `PARTNER_OAUTH_MODE=allowlist` on the web, then the backend. The owner's test app and test accounts only. Rehearse `hold` and `off`.
-3. **Stage B (7 days):** add the Sequence and DivePeaks developers to the allowlist and the flag. Needs stage A clean.
+1. **Before stage A:** see "Before the first switch-on" in [integration-platform.md](./integration-platform.md). In short: `NEXTAUTH_SECRET` and `PARTNER_OAUTH_SECRETS` (backend variables) exist before the mode switch, `PARTNER_OAUTH_DEVELOPER_ALLOWLIST` is set on the backend, the `developer-console` flag targets the allowlisted developers, the AASA exclusions have been live 7 days, and `DB_POOL_MAX=4` is set on the web.
+2. **Stage A:** `PARTNER_OAUTH_MODE=allowlist` on the web, then the backend. The owner's test app and test accounts only. Rehearse `hold` and `off`. Stage lengths and caps are in "Stages" in the same doc.
+3. **Stage B:** add the Sequence and DivePeaks developers to the allowlist and the flag. Needs stage A clean.
 4. **Stage C:** real climbers connect. Same caps (25 live, 20 new in 24 hours per app).
 5. **Stage D:** `PARTNER_OAUTH_MODE=open`. Needs BA-02 shipped or registration that proves the email, the milestone 2 docs, a second independent security review, a Cloudflare rule for floods from many IPv6 /48s, and the email to a climber when an app connects. Until then `open` registers the same allowlisted developers as `allowlist`.
 
