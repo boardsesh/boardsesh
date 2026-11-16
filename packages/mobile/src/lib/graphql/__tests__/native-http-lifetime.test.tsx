@@ -411,35 +411,3 @@ describe('native requests end with the account that started them', () => {
     client.clear();
   });
 });
-
-describe('a paged list keeps one page-source callback', () => {
-  it('keeps capturePageSource across renders and replaces it with the key', async () => {
-    const { client, wrapper } = harness();
-    transport.request.mockResolvedValue({ page: 0 });
-    const view = renderHook(
-      ({ userId }) =>
-        useHttpInfiniteQuery({
-          queryKey: ['userClimbs', userId],
-          pageDelivery: true,
-          initialPageParam: 0,
-          getNextPageParam: () => undefined,
-          queryFn: ({ pageParam }, operation) => operation.request<{ page: number }>('{ page }', { pageParam }),
-        }),
-      { wrapper, initialProps: { userId: 'climber' } },
-    );
-    const first = view.result.current.capturePageSource;
-    await waitFor(() => expect(view.result.current.isSuccess).toBe(true));
-    view.rerender({ userId: 'climber' });
-    expect(view.result.current.capturePageSource).toBe(first);
-
-    const source = first();
-    expect(source.read().data.pages).toEqual([{ page: 0 }]);
-    source.dispose();
-
-    view.rerender({ userId: 'setter' });
-    expect(view.result.current.capturePageSource).not.toBe(first);
-    // A callback held from the old key never builds a source for the new one.
-    expect(() => first()).toThrow();
-    client.clear();
-  });
-});

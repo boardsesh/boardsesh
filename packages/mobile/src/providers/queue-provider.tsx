@@ -4,7 +4,6 @@ import {
   useState,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useMemo,
   useSyncExternalStore,
@@ -143,11 +142,6 @@ import {
   type NextClimbCaller,
 } from './queue/queue-contexts';
 import { createBoardFeedSuggestionSource } from '../lib/playlists/board-feed-suggestion-source';
-import {
-  bindTrackPublicationSink,
-  MAX_PENDING_TRACK_PUBLICATIONS,
-  type TrackPublication,
-} from '../lib/playlists/track-pager';
 import { createBoardSuggestionCompatibilityCache } from './queue/board-suggestion-compatibility-cache';
 import { useCrossBoardAddGate } from './queue/use-cross-board-add-gate';
 import { useQueueRegrade } from './queue/use-queue-regrade';
@@ -614,41 +608,6 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const [rawPlaylistSuggestionSource, setPlaylistSuggestionSourceState] = useState<PlaylistSuggestionSource | null>(
     null,
   );
-  const sourcePublications = useRef({ mounted: true, epoch: 0, pending: new Map<object, TrackPublication>() });
-  const [committedSourcePublications, setCommittedSourcePublications] = useState<readonly object[]>([]);
-  useLayoutEffect(() => {
-    const owner = sourcePublications.current;
-    owner.mounted = true;
-    return () => {
-      owner.mounted = false;
-      owner.epoch += 1;
-      for (const publication of owner.pending.values()) {
-        try {
-          publication.settle(null);
-        } catch {
-          publication.release();
-        }
-      }
-      owner.pending.clear();
-    };
-  }, []);
-  useLayoutEffect(() => {
-    if (!committedSourcePublications.length) return;
-    const acknowledged = new Set(committedSourcePublications);
-    for (const id of acknowledged) {
-      const publication = sourcePublications.current.pending.get(id);
-      sourcePublications.current.pending.delete(id);
-      if (publication) {
-        try {
-          publication.settle(rawPlaylistSuggestionSource);
-        } catch {
-          publication.release();
-        }
-      }
-    }
-    // This marks cleanup only. It never clones or rewrites the data source.
-    setCommittedSourcePublications((previous) => previous.filter((id) => !acknowledged.has(id)));
-  }, [committedSourcePublications, rawPlaylistSuggestionSource]);
   // The board key a suggestion source must carry to still be usable. Angle is
   // absent by construction (`getQueueBoardKey` excludes it), so tilting the wall
   // keeps the feed alive; a layout, size or set change retires it.
@@ -3564,55 +3523,20 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // activation. Mirrors the reducer's REFRESH semantics. Says whether it took
   // the source, so a caller waiting on the refresh knows its track is the one
   // the climber walks (#6664).
-  const refreshPlaylistSuggestionSource = useMemo(
-    () =>
-      bindTrackPublicationSink((source: PlaylistSuggestionSource, publication?: TrackPublication): boolean => {
-        if (publication) {
-          const owner = sourcePublications.current;
-          const epoch = owner.epoch;
-          try {
-            publication.assertCurrent();
-            if (
-              !owner.mounted ||
-              owner.pending.size >= MAX_PENDING_TRACK_PUBLICATIONS ||
-              owner.pending.has(publication.id) ||
-              !publication.claim()
-            ) {
-              publication.settle(null);
-              return false;
-            }
-          } catch {
-            publication.settle(null);
-            return false;
-          }
-          owner.pending.set(publication.id, publication);
-          // A claimed NEW id changes this same fiber's mark state FIRST,
-          // setting its pending lane before the guarded data setter. Otherwise
-          // React may cache eager data and reuse it after the original cause
-          // retires during suspension. Keep both setters in one lane/batch;
-          // neither updater consumes/releases, including during replay.
-          setCommittedSourcePublications((previous) =>
-            previous.includes(publication.id) ? previous : [...previous, publication.id],
-          );
-          setPlaylistSuggestionSourceState((current) => {
-            if (!owner.mounted || owner.epoch !== epoch || credentialGeneration !== getCredentialGeneration())
-              return current;
-            return publication.apply(current, (held) => withPlaylistTrackPlace(source, held));
-          });
-          return true;
-        }
-        const sameAccount = credentialGeneration === getCredentialGeneration();
-        // The refresh is built from the list, not from the walk: it keeps the
-        // held track's place in Up next and its last detour (#6777), or the list
-        // would forget where to pick up while a queued climb plays, and Previous
-        // what it came back from.
-        setPlaylistSuggestionSourceState((current) =>
-          sameAccount && current && playlistSuggestionSourceMatches(current, source)
-            ? withPlaylistTrackPlace(source, current)
-            : current,
-        );
-        return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);
-      }),
+  const refreshPlaylistSuggestionSource = useCallback(
+    (source: PlaylistSuggestionSource): boolean => {
+      const sameAccount = credentialGeneration === getCredentialGeneration();
+      // The refresh is built from the list, not from the walk: it keeps the
+      // held track's place in Up next and its last detour (#6777), or the list
+      // would forget where to pick up while a queued climb plays, and Previous
+      // what it came back from.
+      setPlaylistSuggestionSourceState((current) =>
+        sameAccount && current && playlistSuggestionSourceMatches(current, source)
+          ? withPlaylistTrackPlace(source, current)
+          : current,
+      );
+      return sameAccount && playlistSuggestionSourceMatches(playlistSuggestionSourceRef.current, source);
+    },
     [credentialGeneration],
   );
 
