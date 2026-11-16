@@ -14,13 +14,16 @@
 // open -> closed moves it back to the outer one. Progress lines go to the file
 // named by BOARDSESH_DUO_HINGE_LOG.
 //
-// Simulator-only test plumbing. It never ships in the app and runs in no
-// process but the simulator's SpringBoard.
+// Simulator-only test plumbing. It never ships in the app. Functional hooks
+// run only in SpringBoard; constructor entry diagnostics identify other loads.
 
 #import <Foundation/Foundation.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <notify.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 // Mirrors the struct SBDisplayToolServiceCoordinator's
 // performDisplaySwapWithSettings:completion: takes ({qdqqBqdd}). Only the
@@ -58,6 +61,16 @@ static id BoardseshDuoInit(id self, SEL _cmd, id contentMode, id poseProvider, i
 }
 
 __attribute__((constructor)) static void BoardseshDuoHingeLoad(void) {
+  // C-only entry evidence: do not invoke Foundation before recording which process loaded us.
+  const char *logPath = getenv("BOARDSESH_DUO_HINGE_LOG");
+  if (logPath) {
+    FILE *file = fopen(logPath, "a");
+    if (file) {
+      const char *processName = getprogname();
+      fprintf(file, "entry process=%s pid=%d\n", processName ? processName : "unknown", (int)getpid());
+      fclose(file);
+    }
+  }
   if (![[[NSProcessInfo processInfo] processName] isEqualToString:@"SpringBoard"]) return;
   Class coordinatorClass = objc_getClass("SBDisplayToolServiceCoordinator");
   SEL initSelector = sel_registerName(
