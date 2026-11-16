@@ -167,7 +167,9 @@ or authorizes first-party cutover or partner launch.
 (6975, 2) authority gate with the shared 2-second lock deadline, then the real
 `users` table lock. Its reservation inserts use batches of 500 rather than two
 network round trips per address. The manifest stays `prepared`; preparation is
-not a capability fence.
+not a capability fence. Account deletion keeps working while the manifest is
+only prepared; it is unavailable only from `activate` until the staged deletion
+mode is deployed ([deletion during cutover](./better-auth-account-deletion.md#deletion-during-cutover)).
 
 `activate` independently reads effective live catalog permissions on the same
 transaction connection, locks `users`, rebuilds reservations from current users,

@@ -55,10 +55,12 @@ import {
   type ReservedDeletionSubject,
 } from '../../../auth/current-store/account-deletion';
 import {
-  assertLegacyAccountDeletionAllowed,
   beginIdentityAccountDeletion,
+  beginLegacyAccountDeletion,
   deleteIdentityAccount,
   recordIdentityAccountDeletion,
+  releasePreparedAccountEmails,
+  type LegacyDeletionProjection,
 } from '../../../auth/authority/account-deletion';
 import { CurrentStoreFoundationError } from '../../../auth/current-store/foundation-context';
 
@@ -343,8 +345,9 @@ export const userMutations = {
             const deletionExecution = deletionCommand
               ? await beginIdentityAccountDeletion(tx, deletionCommand)
               : undefined;
+            let legacyProjection: LegacyDeletionProjection = 'none';
             if (!deletionExecution) {
-              await assertLegacyAccountDeletionAllowed(tx);
+              legacyProjection = await beginLegacyAccountDeletion(tx);
               await lockCooperativeFixedSystemOwnerTransaction(tx, ownerOrderMode);
             }
             const sprayWalls = await deleteAccountSprayWalls(tx, userId);
@@ -424,7 +427,12 @@ export const userMutations = {
             // boardClimbs.userId has onDelete: 'set null', so published climbs
             // will have their userId set to null (preserved).
             if (deletionExecution) await deleteIdentityAccount(tx, deletionExecution);
-            else await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+            else {
+              await tx.delete(dbSchema.users).where(eq(dbSchema.users.id, userId));
+              // Between `auth-authority prepare` and `activate`: no plaintext
+              // address of this account may stay in the projection.
+              if (legacyProjection === 'prepared') await releasePreparedAccountEmails(tx, userId);
+            }
 
             // logbook_changes has no users FK, so the cascade leaves it alone, and
             // the cascaded tick deletes just wrote one row per tick naming this
