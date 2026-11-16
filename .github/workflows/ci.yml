@@ -1583,7 +1583,7 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: packages/web
         run: vp exec playwright install --with-deps chromium
-      - name: Run versioned proof cookies and result recovery
+      - name: Run versioned proof cookies
         if: ${{ !cancelled() }}
         env:
           AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres

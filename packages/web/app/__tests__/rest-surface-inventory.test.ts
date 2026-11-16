@@ -1,12 +1,12 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 52
+ * The standing inventory oracle for issue #1889 (REST surface audit: 46
  * routes in total, classified after the board renderer moved to Railway in
  * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
- * route and its prewarm cron were retired). The 52 include six staged provider
- * Settings facades, four browser-password facades (#7557), two canonical
- * coordinator facades, and ordinary sign-in ACK. The renewal, the five staged
- * first-password browser facades and the three expired-binding recovery
- * facades went with #7596.
+ * route and its prewarm cron were retired). The 46 include four
+ * browser-password facades (#7557), two canonical coordinator facades, and
+ * ordinary sign-in ACK. The renewal, the five staged first-password browser
+ * facades, the three expired-binding recovery facades and the six staged
+ * provider Settings facades went with #7596.
  *
  * A classification table living only in an issue body or a doc goes stale the
  * moment a route is added or removed without anyone re-reading it — exactly
@@ -71,7 +71,7 @@ const VERDICTS: Record<string, Verdict> = {
   // so a transient blip can't fail a deploy or start a restart loop. ---
   'app/api/health/route.ts': 'keep-external',
 
-  // --- /api/internal/* (27) ---
+  // --- /api/internal/* (21) ---
   // Party-session / kiosk auth bridge — never delete.
   'app/api/internal/ws-auth/route.ts': 'keep-external',
   // No web consumer, but no production surface either (404s outside
@@ -104,16 +104,6 @@ const VERDICTS: Record<string, Verdict> = {
   'app/api/internal/profile/route.ts': 'keep-caller',
   'app/api/internal/profile/[userId]/route.ts': 'keep-caller',
   'app/api/internal/feature-flags/route.ts': 'keep-caller',
-  // Provider Settings browser facades (#6975/#7501): the backend owns all
-  // commands, these routes enforce browser Host/Origin and response publication.
-  // Their literal-false public readiness and actual HTTPS/PG caller proofs stay
-  // required while the card/OAuth composition and rollout remain unfinished.
-  'app/api/internal/auth/provider-security/methods/route.ts': 'keep-staged',
-  'app/api/internal/auth/provider-security/resume/route.ts': 'keep-staged',
-  'app/api/internal/auth/provider-security/intent/route.ts': 'keep-staged',
-  'app/api/internal/auth/provider-security/reauthenticate-password/route.ts': 'keep-staged',
-  'app/api/internal/auth/provider-security/unlink/route.ts': 'keep-staged',
-  'app/api/internal/auth/provider-security/acknowledge/route.ts': 'keep-staged',
   // Exact current proof-cookie ACK only; no credential recovery or cookie writes.
   'app/api/internal/auth/provider-signin/acknowledge/route.ts': 'keep-staged',
   'app/api/internal/auth/browser-password/prepare/route.ts': 'keep-staged',
@@ -284,6 +274,6 @@ describe('REST surface inventory (issue #1889)', () => {
     // Keep the original #1889 audit plus explicit later deltas reconciled. The
     // staged provider/browser-password deltas are tracked in #7430; the closed
     // audit stays historical.
-    expect(derived.size).toBe(52);
+    expect(derived.size).toBe(46);
   });
 });
