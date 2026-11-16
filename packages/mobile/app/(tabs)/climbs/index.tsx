@@ -800,7 +800,7 @@ function ClimbListInner() {
   // controls when they sit over the list instead of above its clip.
   const restoreTopClearanceRef = useRef(0);
   restoreTopClearanceRef.current = -listTopOffset + (filterInTopChrome ? 0 : searchBarHeight);
-  // Whether the climber has dragged or flung the list since the last page ask:
+  // Whether the climber has scrolled the list since the last page ask:
   // the fence that stops zero-height rows paging a whole search in. It wraps the
   // scroll-edge and chrome handlers, read through a ref so neither rebuilds it.
   const forwardedScrollRef = useRef<ForwardedScrollHandlers>({});
@@ -1011,7 +1011,8 @@ function ClimbListInner() {
    * Fetch the next page if `shouldFetchNextPage` says so. One page per call,
    * never a drain: the `isLoadingMoreRef` latch holds until that page settles,
    * an ask the climber did not cause only goes ahead when the last one made
-   * progress, and after a search's first ask each one needs a drag or fling.
+   * progress, and after a search's first ask each one needs the climber to
+   * have scrolled the list.
    */
   const maybeFetchNextPage = useCallback(
     (trigger: NextPageTrigger) => {

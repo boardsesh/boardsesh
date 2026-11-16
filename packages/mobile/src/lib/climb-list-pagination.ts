@@ -24,11 +24,13 @@
  * every landed page looks like the end of the list and the next one is asked
  * for straight away. A Galaxy S26 Ultra loaded eleven pages that way, mounted
  * all 318 rows, and ran out of native memory. So after a search's first
- * next-page ask, each further ask needs the climber to have dragged or flung
- * the list since the previous one (`climberScrolledSinceLastFetch`). A fling
- * keeps scrolling after an ask goes out, so it still loads page after page.
+ * next-page ask, each further ask needs the climber to have scrolled the list
+ * since the previous one (`climberScrolledSinceLastFetch`): a drag, a fling, or
+ * the list moving by any other means, such as VoiceOver, TalkBack or a mouse
+ * wheel. Zero-height rows never move the list. A fling keeps scrolling after an
+ * ask goes out, so it still loads page after page.
  *
- * The cost: on Android a list shorter than the screen cannot be dragged, so it
+ * The cost: on Android a list shorter than the screen cannot scroll, so it
  * stops after one extra page. Two pages of real rows always overflow a phone or
  * tablet, so in practice only zero-height rows, the case being fenced, stop.
  */
@@ -79,8 +81,9 @@ export type NextPageInput = {
   /** `loadedCount` when this screen last asked for a page; null before the first ask. */
   loadedCountAtLastFetch: number | null;
   /**
-   * The climber dragged or flung the list since this screen last asked for a
-   * page. Programmatic scrolls and layout passes do not count.
+   * The climber scrolled the list since this screen last asked for a page: a
+   * drag or fling, or the list moving on by another input. A layout pass that
+   * leaves the list where it was does not count.
    */
   climberScrolledSinceLastFetch: boolean;
   /** Index of the first row on screen. Zero means the climber is still at the top. */

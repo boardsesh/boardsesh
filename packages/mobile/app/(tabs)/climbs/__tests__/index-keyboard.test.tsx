@@ -1577,6 +1577,44 @@ describe('ClimbList rows scrolling under the pinned filter chips', () => {
       await settle();
       expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
     });
+
+    // VoiceOver, TalkBack, a mouse wheel and a keyboard never send a drag.
+    it('keeps paging for a climber who scrolls without touching the list', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(0)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(900)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(2);
+    });
+
+    it('forgets a fling when the list remounts for a new column count', async () => {
+      const { findByText } = render(<ClimbList />);
+      await findByText('Paged 0');
+      act(() => mocks.listClipLayout?.({ nativeEvent: { layout: { width: 390, height: 1000 } } }));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+
+      // Coasting when the list goes to two columns: the old list's end event
+      // never arrives, so the new list's first scroll event is not a fling.
+      act(() => {
+        mocks.listScrollProps.onScrollBeginDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onScrollEndDrag?.(scrollEvent(0));
+        mocks.listScrollProps.onMomentumScrollBegin?.();
+      });
+      act(() => mocks.listClipLayout?.({ nativeEvent: { layout: { width: 914, height: 1000 } } }));
+      expect(mocks.listNumColumns).toBe(2);
+      act(() => mocks.listScrollProps.onScroll?.(scrollEvent(0)));
+      everyRowOnScreen();
+      await settle();
+      expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('tells the blur once rows are under the chips, and again when the list is back at rest', async () => {

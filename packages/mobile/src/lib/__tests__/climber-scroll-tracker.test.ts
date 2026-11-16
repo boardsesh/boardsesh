@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
-import { createClimberScrollTracker } from '../climber-scroll-tracker';
+import { CLIMBER_SCROLL_MIN_DISTANCE, createClimberScrollTracker } from '../climber-scroll-tracker';
 
 const scrollEvent = {
   nativeEvent: { contentOffset: { x: 0, y: 120 } },
@@ -28,6 +28,41 @@ describe('createClimberScrollTracker', () => {
     expect(tracker.hasScrolled()).toBe(false);
     tracker.handlers.onScroll(scrollEvent);
     expect(tracker.hasScrolled()).toBe(true);
+  });
+
+  // VoiceOver, TalkBack, a mouse wheel and a keyboard move the list with no drag.
+  describe('a scroll with no gesture behind it', () => {
+    const scrollTo = (offsetY: number) =>
+      ({ nativeEvent: { contentOffset: { x: 0, y: offsetY } } }) as unknown as NativeSyntheticEvent<NativeScrollEvent>;
+
+    it('counts once the list has moved far enough from where it was at the reset', () => {
+      const tracker = createClimberScrollTracker(() => undefined);
+      tracker.handlers.onScroll(scrollTo(400));
+      tracker.reset();
+      tracker.handlers.onScroll(scrollTo(400 + CLIMBER_SCROLL_MIN_DISTANCE - 1));
+      expect(tracker.hasScrolled()).toBe(false);
+      tracker.handlers.onScroll(scrollTo(400 + CLIMBER_SCROLL_MIN_DISTANCE));
+      expect(tracker.hasScrolled()).toBe(true);
+    });
+
+    it('measures from the latest reset, not the first', () => {
+      const tracker = createClimberScrollTracker(() => undefined);
+      tracker.handlers.onScroll(scrollTo(0));
+      tracker.handlers.onScroll(scrollTo(800));
+      tracker.reset();
+      tracker.handlers.onScroll(scrollTo(810));
+      expect(tracker.hasScrolled()).toBe(false);
+    });
+
+    it('only records where the list is on its first event after forgetGesture', () => {
+      const tracker = createClimberScrollTracker(() => undefined);
+      tracker.handlers.onScroll(scrollTo(0));
+      tracker.forgetGesture();
+      tracker.handlers.onScroll(scrollTo(2000));
+      expect(tracker.hasScrolled()).toBe(false);
+      tracker.handlers.onScroll(scrollTo(2000 + CLIMBER_SCROLL_MIN_DISTANCE));
+      expect(tracker.hasScrolled()).toBe(true);
+    });
   });
 
   // A slow, steady drag keeps paging because of this.
