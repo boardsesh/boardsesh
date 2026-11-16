@@ -80,6 +80,30 @@ describe('ThemeProvider on iOS Liquid Glass', () => {
     expect(theme.current.systemColors.fill).toBe('systemFill');
   });
 
+  it('builds the v2 page ladders from the adaptive iOS system backgrounds', async () => {
+    const theme = await renderTheme('dark');
+    expect(theme.current.surfaces).toEqual({
+      plain: {
+        page: 'systemBackground',
+        card: 'secondarySystemBackground',
+        tile: 'tertiarySystemBackground',
+      },
+      grouped: {
+        page: 'systemGroupedBackground',
+        card: 'secondarySystemGroupedBackground',
+        tile: 'tertiarySystemGroupedBackground',
+      },
+    });
+  });
+
+  it('resolves selection and status to label, accent and the system fills', async () => {
+    const theme = await renderTheme('light');
+    expect(theme.current.selection.text).toBe('label');
+    expect(theme.current.selection.checkmark).toBe(theme.current.systemColors.accent);
+    expect(theme.current.selection.fill).toBe('systemFill');
+    expect(theme.current.status).toEqual({ fill: 'tertiarySystemFill', label: 'secondaryLabel' });
+  });
+
   it('routes errors through the adaptive systemRed', async () => {
     const theme = await renderTheme('dark');
     expect(theme.current.systemColors.error).toBe('systemRed');
