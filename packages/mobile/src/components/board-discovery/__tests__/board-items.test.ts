@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { userBoardToItem, userBoardsToItems, boardRowsToItems, findOwnedBoardForConfig } from '../board-items';
+import {
+  userBoardToItem,
+  userBoardsToItems,
+  boardRowsToItems,
+  findOwnedBoardForConfig,
+  pickerTopBoardsToItems,
+} from '../board-items';
 
 const board = {
   uuid: 'b-1',
@@ -114,6 +120,36 @@ describe('boardRowsToItems', () => {
       { key: 'board:t', board: tension },
     ]);
     expect(items.map((item) => [item.key, item.title])).toEqual([['board:t', 'Tension']]);
+  });
+});
+
+describe('pickerTopBoardsToItems', () => {
+  const gymBoard = { ...board, gymUuid: 'gym-crux', gymName: 'Crux', name: 'Crux - Cave' } as unknown as UserBoard;
+
+  it("keeps the top's key, shown name and selection", () => {
+    const items = pickerTopBoardsToItems([
+      { key: 'b-1', board: gymBoard, title: 'Cave', selected: true },
+      { key: 'other', board: { ...gymBoard, uuid: 'other', name: 'Arch' }, title: 'Arch', selected: false },
+    ]);
+    expect(items.map((item) => [item.key, item.title, item.isActive])).toEqual([
+      ['b-1', 'Cave', true],
+      ['other', 'Arch', false],
+    ]);
+  });
+
+  // At {gym} names the gym in its title: its rows lead with what the wall is.
+  it('drops the gym from the subtitles in the within-gym scope', () => {
+    const [global] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }]);
+    const [withinGym] = pickerTopBoardsToItems([{ key: 'b-1', board: gymBoard, title: 'Cave', selected: false }], {
+      labelOptions: { scope: 'within-gym' },
+    });
+    expect(global?.subtitle).toBe('Crux');
+    expect(withinGym?.subtitle).toBe('Original');
+  });
+
+  it('leaves out a board the card cannot draw', () => {
+    const unknownType = { ...board, boardType: 'not-a-board' } as unknown as UserBoard;
+    expect(pickerTopBoardsToItems([{ key: 'b-1', board: unknownType, title: 'X', selected: true }])).toEqual([]);
   });
 });
 

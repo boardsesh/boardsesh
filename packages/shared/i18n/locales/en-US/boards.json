@@ -290,7 +290,6 @@
       "name": "Board name"
     },
     "bluetooth": {
-      "noResults": "No boards in range",
       "unavailable": "Turn on Bluetooth to scan",
       "needSignalTitle": "Found a board, need signal",
       "needSignalBody": "We heard it but can't look it up offline.",
@@ -298,6 +297,7 @@
     },
     "inRange": {
       "title": "In range",
+      "atGym": "At {{gym}}",
       "inFrontOfYou": "In front of you",
       "permissionTitle": "Spot the board you're at",
       "permissionBody": "Boardsesh listens for boards over Bluetooth, so the one in front of you is the first thing you see.",
@@ -310,20 +310,15 @@
       "scanAgain": "Scan again",
       "lookingTitle": "Looking for boards…",
       "lookingBody": "Stand near the wall. Boards that are switched on show up here.",
-      "gymWalls": "{{gym}} · {{count}} walls",
-      "closest": "Closest",
       "showAll": "Show all {{count}} boards",
       "moonboardTitle": "A MoonBoard is in range",
       "moonboardBody": "MoonBoards don't send a serial number, so tell us where you are and we'll find this one.",
       "typeTitle": "A {{board}} board is in range",
       "bareNameBody": "Its box doesn't say which board it is, so tell us where you are and we'll find this one.",
       "unknownSetupBody": "We don't know its setup yet, so tell us where you are and we'll find this one.",
-      "alsoMoonboard": "A MoonBoard is also in range",
-      "alsoType": "A {{board}} board is also in range",
       "alsoNeedSignal": "Another board is in range. We need signal to name it.",
       "useMyLocation": "Use my location",
-      "searchGyms": "Search gyms",
-      "alsoAt": "Also at {{gym}}"
+      "searchGyms": "Search gyms"
     },
     "addBoard": {
       "aria": "Add a board",

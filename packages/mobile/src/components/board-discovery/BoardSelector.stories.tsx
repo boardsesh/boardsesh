@@ -16,7 +16,7 @@ import {
   type DiscoveryBoardItem,
 } from './BoardDiscoveryCardView';
 import { BoardSelectorSection, BoardSelectorView } from './BoardSelectorView';
-import type { InRangeView } from './in-range-view';
+import type { PickerTopView } from './picker-top-view';
 import { InRangeSection, type InRangeBoardArtProps } from './InRangeSection';
 const noop = () => {};
 const EMPTY_BOARD = { ...STORY_CLIMBS[0], frames: '' };
@@ -56,18 +56,22 @@ const NEARBY_BOARDS: DiscoveryBoardItem[] = [
   { ...STORY_BOARD, key: 'nearby-close', title: 'Crux Kilter', subtitle: 'Kilter · 40°', distanceMeters: 2 },
   { ...STORY_BOARD, key: 'nearby-far', title: 'Boulder Box', subtitle: 'Kilter · 12 x 12', distanceMeters: 3240 },
 ];
-// The walls one phone hears at Crux, closest first.
+// One Crux wall heard by a climber on a board somewhere else: the hero.
 const IN_RANGE_HERO: DiscoveryBoardItem = {
   ...STORY_BOARD,
-  key: 'board:crux-kilter',
+  key: 'crux-kilter',
   title: 'Crux Kilter Original',
   subtitle: 'Crux · 12 x 12',
 };
-const IN_RANGE_ROWS: DiscoveryBoardItem[] = [
-  IN_RANGE_HERO,
-  { ...STORY_BOARD, key: 'board:crux-homewall', title: 'Crux Homewall', subtitle: 'Crux · 10 x 12' },
-  { ...STORY_BOARD, key: 'board:crux-spray', title: 'Crux Training Wall', subtitle: 'Crux · 7 x 10' },
+// Crux's roster as At Crux lists it: A to Z, the subtitles without the gym,
+// the board the climber is on (Crux Homewall) in place.
+const AT_CRUX_ROWS: DiscoveryBoardItem[] = [
+  { ...STORY_BOARD, key: 'crux-homewall', title: 'Crux Homewall', subtitle: '10 x 12', isActive: true },
+  { ...IN_RANGE_HERO, subtitle: '12 x 12' },
+  { ...STORY_BOARD, key: 'crux-training', title: 'Crux Training Wall', subtitle: '7 x 10' },
 ];
+// Your boards while At Crux lists the board the climber is on: it shows once, up there.
+const BOARDS_AWAY_FROM_GARAGE: DiscoveryBoardItem[] = BOARDS.map((board) => ({ ...board, isActive: false }));
 const IN_RANGE_MOONBOARD = {
   kind: 'moonboard',
   key: 'moonboard:moonboard',
@@ -75,34 +79,54 @@ const IN_RANGE_MOONBOARD = {
   rssi: -55,
   deviceId: 'MOON-BOX',
 } as const;
+const AT_CRUX = { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', rows: AT_CRUX_ROWS } as const;
 const IN_RANGE_STORY_STATES = {
-  hero: { content: { kind: 'hero', board: IN_RANGE_HERO, also: null }, scanning: false },
-  // Three walls at Crux, with a MoonBoard it can't name heard behind them.
-  gymRows: {
-    content: {
-      kind: 'board_rows',
-      boards: IN_RANGE_ROWS,
-      gymName: 'Crux',
-      also: { kind: 'unnamed', row: IN_RANGE_MOONBOARD },
-    },
+  hero: {
+    notice: null,
+    content: { kind: 'hero', board: IN_RANGE_HERO },
     scanning: false,
+    heardNothing: false,
   },
-  // The MoonBoard is the strongest signal: it leads, the named Kilter follows.
+  // The scan heard Crux walls: the gym's whole roster, not only what it heard.
+  atGym: { notice: null, content: { ...AT_CRUX, source: 'scan' }, scanning: false, heardNothing: false },
+  // The scan still listening, the gym already known from the board the climber is on.
+  atGymScanning: {
+    notice: null,
+    content: { ...AT_CRUX, source: 'active_board' },
+    scanning: true,
+    heardNothing: false,
+  },
+  // The scan switched off (`picker-auto-scan-kill`): the Scan card, and At Crux still.
+  atGymScanOff: {
+    notice: { kind: 'tap_to_scan' },
+    content: { ...AT_CRUX, source: 'active_board' },
+    scanning: false,
+    heardNothing: false,
+  },
+  // Only a MoonBoard it can't name, and no gym known: its three ways forward.
   unnamed: {
-    content: { kind: 'unnamed', row: IN_RANGE_MOONBOARD, boards: [IN_RANGE_HERO] },
+    notice: null,
+    content: { kind: 'unnamed', row: IN_RANGE_MOONBOARD },
     scanning: false,
+    heardNothing: false,
   },
-  permission: { content: { kind: 'permission_card' }, scanning: false },
-} satisfies Record<string, InRangeView<DiscoveryBoardItem>>;
+  permission: { notice: { kind: 'permission_card' }, content: { kind: 'none' }, scanning: false, heardNothing: false },
+} satisfies Record<string, PickerTopView<DiscoveryBoardItem>>;
 type InRangeStoryState = keyof typeof IN_RANGE_STORY_STATES;
 
 /** The art each state draws, so the story is ready only once all of it painted. */
 function inRangeArtKeys(state: InRangeStoryState | null): string[] {
-  if (state === 'hero' || state === 'unnamed') return [`in-range:${IN_RANGE_HERO.key}`];
-  if (state === 'gymRows') return IN_RANGE_ROWS.map((item) => `in-range:${item.key}`);
+  if (state === 'hero') return [`in-range:${IN_RANGE_HERO.key}`];
+  if (state === 'atGym' || state === 'atGymScanning' || state === 'atGymScanOff') {
+    return AT_CRUX_ROWS.map((item) => `in-range:${item.key}`);
+  }
   return [];
 }
 
+/** Your boards as each state leaves it: without the board At Crux already lists. */
+function yourBoardsFor(state: InRangeStoryState | null): DiscoveryBoardItem[] {
+  return state === 'atGym' || state === 'atGymScanning' || state === 'atGymScanOff' ? BOARDS_AWAY_FROM_GARAGE : BOARDS;
+}
 const YOUR_BOARDS_MENU: BoardCardMenuCapabilities = {
   canPin: true,
   canDownload: true,
@@ -149,9 +173,10 @@ function SelectorStory({
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
   const displayed = useRef(new Set<string>());
+  const yourBoards = yourBoardsFor(inRangeState);
   const expectedKeys = useMemo(
     () => [
-      ...BOARDS.map((board) => board.key),
+      ...yourBoardsFor(inRangeState).map((board) => board.key),
       ...(withNearby ? NEARBY_BOARDS.map((board) => board.key) : []),
       ...inRangeArtKeys(inRangeState),
     ],
@@ -200,7 +225,7 @@ function SelectorStory({
             <BoardSelectorSection title={t('mobile.discovery.yourBoardsTitle')}>
               <BoardCarouselView
                 Card={StoryCard}
-                items={BOARDS}
+                items={yourBoards}
                 onSelect={noop}
                 menuCapabilities={YOUR_BOARDS_MENU}
                 onMenuAction={noop}
@@ -240,14 +265,26 @@ const stories: StoryModule = {
       readiness: 'explicit',
       render: (controls) => <SelectorStory {...controls} inRangeState="hero" withNearby={false} />,
     },
-    inRangeGymRows: {
-      name: 'In range: three walls at one gym, closest first, and a MoonBoard it cannot name',
+    atGym: {
+      name: 'At Crux: the gym the scan heard, its walls A to Z, the board you are on in place',
       layout: 'fullscreen',
       readiness: 'explicit',
-      render: (controls) => <SelectorStory {...controls} inRangeState="gymRows" withNearby={false} />,
+      render: (controls) => <SelectorStory {...controls} inRangeState="atGym" withNearby={false} />,
+    },
+    atGymScanning: {
+      name: 'At Crux while the scan still listens, the gym known from the board you are on',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <SelectorStory {...controls} inRangeState="atGymScanning" withNearby={false} />,
+    },
+    atGymScanOff: {
+      name: 'At Crux with the scan waiting for a tap',
+      layout: 'fullscreen',
+      readiness: 'explicit',
+      render: (controls) => <SelectorStory {...controls} inRangeState="atGymScanOff" withNearby={false} />,
     },
     inRangeUnnamed: {
-      name: 'In range: a MoonBoard it cannot name leads, a named board follows',
+      name: 'In range: only a MoonBoard it cannot name, and no gym known',
       layout: 'fullscreen',
       readiness: 'explicit',
       render: (controls) => <SelectorStory {...controls} inRangeState="unnamed" withNearby={false} />,

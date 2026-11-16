@@ -34,7 +34,7 @@ type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress?: () => void };
 type CarouselItem = Pick<
   DiscoveryBoardItem,
-  'key' | 'title' | 'isViewerOwner' | 'isPinned' | 'offlineState' | 'sprayImport'
+  'key' | 'title' | 'isActive' | 'isViewerOwner' | 'isPinned' | 'offlineState' | 'sprayImport'
 >;
 type CarouselProps = {
   items: CarouselItem[];
@@ -84,13 +84,20 @@ const scanCtrl = vi.hoisted(() => ({
 }));
 const inRangeProps = vi.hoisted(() => ({
   last: null as {
-    view: { content: { kind: string; board?: { key: string } } };
+    view: {
+      content: {
+        kind: string;
+        board?: { key: string };
+        gymName?: string;
+        source?: string;
+        rows?: { key: string; title: string; isActive?: boolean }[];
+      };
+    };
     onPickBoard: (item: { key: string }) => void;
   } | null,
 }));
-const alsoAtProps = vi.hoisted(() => ({
-  last: null as { anchor: UserBoard; onSelectBoard: (board: UserBoard) => void } | null,
-}));
+// The gym roster the screen asked for last, by gym uuid.
+const gymBoardsArgs = vi.hoisted(() => ({ last: undefined as string | null | undefined }));
 const navigationMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
 
 const state = vi.hoisted(() => ({
@@ -108,6 +115,8 @@ const state = vi.hoisted(() => ({
   // A live progress read that no longer lists a wall the board list called an import.
   liveImportCleared: false,
   myBoardsInputs: [] as unknown[],
+  gymRosters: {} as Record<string, unknown[]>,
+  locationStatus: 'idle' as string,
 }));
 
 const board = (overrides: Partial<UserBoard> & { uuid: string; name: string }): UserBoard =>
@@ -187,12 +196,6 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
     return null;
   },
 }));
-vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({
-  AlsoAtGymSection: (props: NonNullable<(typeof alsoAtProps)['last']>) => {
-    alsoAtProps.last = props;
-    return null;
-  },
-}));
 // The + in the top bar: one button per way to add a board.
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
   AddBoardMenu: ({ onSelect }: { onSelect: (kind: string) => void }) =>
@@ -255,6 +258,10 @@ vi.mock('@boardsesh/offline-sync', () => ({
 }));
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
+  useGymBoards: (gymUuid: string | null) => {
+    gymBoardsArgs.last = gymUuid;
+    return { data: gymUuid ? state.gymRosters[gymUuid] : undefined };
+  },
   useMyBoards: (input: unknown) => {
     state.myBoardsInputs.push(input);
     return {
@@ -302,7 +309,7 @@ vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
 }));
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({
-    status: 'idle',
+    status: state.locationStatus,
     coords: undefined,
     request: vi.fn(),
     requestIfAllowed: vi.fn(async () => {}),
@@ -452,7 +459,9 @@ beforeEach(() => {
   scanCtrl.phase = 'hidden';
   scanCtrl.rows = [];
   inRangeProps.last = null;
-  alsoAtProps.last = null;
+  gymBoardsArgs.last = undefined;
+  state.gymRosters = {};
+  state.locationStatus = 'idle';
   state.activeBoardGeneration = 0;
   state.source = undefined;
   state.profile = { id: 'me' };
@@ -593,13 +602,47 @@ describe('the card menu on Your boards', () => {
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['gym', 'mine']);
   });
 
-  // The one thing the server cannot order, because it lives in AsyncStorage on
-  // this device.
-  it('hoists the active board to the front', () => {
+  // No hoist: with nothing above listing it, the board you're on keeps the
+  // server's place, marked.
+  it('keeps the active board in its place, marked, when nothing above lists it', () => {
     state.myBoards = [gymBoard, myWall];
-    state.activeBoard = { uuid: 'mine' };
+    state.activeBoard = myWall;
     render(createElement(BoardSelection));
-    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['mine', 'gym']);
+    expect(carouselProps.last?.items.map((item) => [item.key, item.isActive])).toEqual([
+      ['gym', false],
+      ['mine', true],
+    ]);
+    expect(inRangeProps.last?.view.content.kind).toBe('none');
+  });
+
+  // The board you're on shows once: At {gym} lists it, so Your boards does not.
+  it('leaves out every board At {gym} lists, the active one included', () => {
+    const crux = { gymUuid: 'gym-crux', gymName: 'Crux' };
+    const cruxKilter = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
+    const cruxMoon = board({ uuid: 'crux-moon', name: 'Crux MoonBoard', boardType: 'moonboard', ...crux });
+    state.myBoards = [cruxKilter, myWall, cruxMoon];
+    state.activeBoard = cruxKilter;
+    state.gymRosters = { 'gym-crux': [cruxKilter, cruxMoon] };
+    render(createElement(BoardSelection));
+
+    expect(gymBoardsArgs.last).toBe('gym-crux');
+    expect(inRangeProps.last?.view.content.rows?.map((row) => [row.key, row.isActive])).toEqual([
+      ['crux-kilter', true],
+      ['crux-moon', false],
+    ]);
+    expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['mine']);
+    // Still a climber with boards: no empty state.
+    expect(screen.queryByText('No boards yet')).toBeNull();
+  });
+
+  it('shows no empty state when every board is At {gym}', () => {
+    const crux = { gymUuid: 'gym-crux', gymName: 'Crux' };
+    const cruxKilter = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
+    state.myBoards = [cruxKilter];
+    state.activeBoard = cruxKilter;
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('No boards yet')).toBeNull();
+    expect(screen.queryByText('Your boards')).toBeNull();
   });
 
   it('never injects a stored active board the list does not contain', () => {
@@ -1204,37 +1247,140 @@ describe('where a pick came from', () => {
     await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledOnce());
   });
 
-  // The walls at the in-range board's gym, one tap each; nothing connects
-  // without the tap (#7117).
-  it('anchors "Also at" on the board in range and tags its picks as gym_walls', async () => {
+  // At {gym}: the walls of the gym the scan heard, one tap each; nothing
+  // connects without the tap (#7117). A pick says it came from the scan.
+  it('lists the gym the scan heard, and tags its picks as bluetooth with their place', async () => {
     const crux = { gymUuid: 'gym-crux', gymName: 'Crux' };
-    const inRangeWall = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
-    const otherWall = board({ uuid: 'crux-moon', name: 'Crux MoonBoard', boardType: 'moonboard', ...crux });
+    const cruxKilter = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
+    const cruxTension = board({ uuid: 'crux-tension', name: 'Crux Tension', boardType: 'tension', ...crux });
+    const cruxMoon = board({ uuid: 'crux-moon', name: 'Crux MoonBoard', boardType: 'moonboard', ...crux });
     scanCtrl.phase = 'done';
     scanCtrl.rows = [
-      { kind: 'board', key: 'board:crux-kilter', board: inRangeWall, rssi: -50, recognizedBy: 'serial' },
+      { kind: 'board', key: 'board:crux-tension', board: cruxTension, rssi: -40, recognizedBy: 'serial' },
+      { kind: 'board', key: 'board:crux-kilter', board: cruxKilter, rssi: -50, recognizedBy: 'serial' },
     ];
+    state.gymRosters = { 'gym-crux': [cruxKilter, cruxMoon, cruxTension] };
     render(createElement(BoardSelection));
 
-    expect(alsoAtProps.last?.anchor.uuid).toBe('crux-kilter');
+    const content = inRangeProps.last?.view.content;
+    expect(content).toMatchObject({ kind: 'at_gym', gymName: 'Crux', source: 'scan' });
+    // A to Z, not by signal.
+    expect(content?.rows?.map((row) => row.key)).toEqual(['crux-kilter', 'crux-moon', 'crux-tension']);
     expect(setActiveBoardMock).not.toHaveBeenCalled();
-    act(() => alsoAtProps.last?.onSelectBoard(otherWall));
+    act(() => inRangeProps.last?.onPickBoard({ key: 'crux-moon' }));
 
     expect(scanCtrl.stop).toHaveBeenCalledOnce();
     await waitFor(() =>
       expect(trackMock).toHaveBeenCalledWith(
         'Board Picker Selection Completed',
-        expect.objectContaining({ pickSource: 'gym_walls' }),
+        expect.objectContaining({ pickSource: 'bluetooth', section: 'at_gym', position: 1 }),
+      ),
+    );
+    expect(setActiveBoardMock).toHaveBeenCalledWith(cruxMoon);
+  });
+
+  // The scan heard nothing named: the gym of the board you're on, and its
+  // picks are the gym walls, not the scan.
+  it('lists the gym of the active board when nothing is in range, and tags its picks as gym_walls', async () => {
+    const highPoint = { gymUuid: 'gym-hp', gymName: 'High Point' };
+    const activeWall = board({ uuid: 'hp-kilter', name: 'High Point Kilter', ...highPoint });
+    const otherWall = board({ uuid: 'hp-moon', name: 'High Point MoonBoard', boardType: 'moonboard', ...highPoint });
+    state.activeBoard = activeWall;
+    state.gymRosters = { 'gym-hp': [activeWall, otherWall] };
+    render(createElement(BoardSelection));
+
+    expect(inRangeProps.last?.view.content).toMatchObject({ kind: 'at_gym', source: 'active_board' });
+    act(() => inRangeProps.last?.onPickBoard({ key: 'hp-moon' }));
+
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'gym_walls', section: 'at_gym', position: 1, sameBoard: false }),
       ),
     );
   });
 
-  it('anchors "Also at" on the active board when nothing is in range', () => {
-    state.activeBoard = board({ uuid: 'gym', name: 'High Point Orlando', gymUuid: 'gym-hp', gymName: 'High Point' });
+  // A board in Your boards binds as that fuller copy, not the roster's narrower read.
+  it('binds the copy from Your boards when one of its walls is picked At {gym}', async () => {
+    const highPoint = { gymUuid: 'gym-hp', gymName: 'High Point' };
+    const activeWall = board({ uuid: 'hp-kilter', name: 'High Point Kilter', ...highPoint });
+    const followedWall = board({ uuid: 'hp-moon', name: 'High Point MoonBoard', boardType: 'moonboard', ...highPoint });
+    const rosterCopy = { ...followedWall, name: 'High Point MoonBoard (roster)' } as UserBoard;
+    state.myBoards = [followedWall, myWall];
+    state.activeBoard = activeWall;
+    state.gymRosters = { 'gym-hp': [activeWall, rosterCopy] };
     render(createElement(BoardSelection));
-    expect(alsoAtProps.last?.anchor.uuid).toBe('gym');
+
+    act(() => inRangeProps.last?.onPickBoard({ key: 'hp-moon' }));
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(followedWall));
   });
 
+  // The one board heard somewhere else, with Climb here.
+  it('reports the hero as its own section', async () => {
+    const nearbyWall = board({ uuid: 'crux-kilter', name: 'Crux Kilter', gymUuid: 'gym-crux', gymName: 'Crux' });
+    state.activeBoard = myWall;
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [{ kind: 'board', key: 'board:crux-kilter', board: nearbyWall, rssi: -50, recognizedBy: 'serial' }];
+    render(createElement(BoardSelection));
+
+    expect(inRangeProps.last?.view.content.kind).toBe('hero');
+    act(() => inRangeProps.last?.onPickBoard({ key: 'crux-kilter' }));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'bluetooth', section: 'hero', position: 0 }),
+      ),
+    );
+  });
+
+  it('reports a Your boards card with its place in the list', async () => {
+    state.myBoards = [gymBoard, myWall];
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marco garage' }));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'your_boards', section: 'your_boards', position: 1 }),
+      ),
+    );
+  });
+
+  // Near you leaves out boards already shown above it.
+  it('leaves out of Near you the boards already shown above, and counts the opening with what it found', async () => {
+    const nearbyWall = board({ uuid: 'nearby', name: 'Crux Kilter', ownerId: 'setter-1' });
+    state.activeBoard = null;
+    state.locationStatus = 'granted';
+    state.nearbyBoards = [myWall, nearbyWall];
+    render(createElement(BoardSelection));
+
+    expect(carouselProps.byFirstKey.get('nearby')?.items.map((item) => item.key)).toEqual(['nearby']);
+    // The opening waits for the "already allowed?" read, then counts what the
+    // search returned, the board shown above included.
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Opened',
+        expect.objectContaining({ nearbyResultCount: 2, locationStatus: 'granted' }),
+        expect.anything(),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Crux Kilter' }));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'nearby', section: 'near_you', position: 0 }),
+      ),
+    );
+  });
+
+  it('draws no Near you when every board it found is already shown above', () => {
+    state.locationStatus = 'granted';
+    state.nearbyBoards = [myWall];
+    render(createElement(BoardSelection));
+    expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+    expect(carouselProps.byFirstKey.has('mine')).toBe(true);
+    expect([...carouselProps.byFirstKey.keys()]).toEqual(['mine']);
+  });
   // Without `source` a gym picked on the map during onboarding would never close
   // out first-run; without `from` the map would count a second picker opening.
   it('hands the gym finder its source and says the picker opened it', () => {

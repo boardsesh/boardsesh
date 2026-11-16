@@ -103,7 +103,7 @@ vi.mock('expo-router', () => ({
 }));
 
 // The In range slot's scan, and the sections built on it, as stand-ins: their
-// own suites cover them (use-picker-board-scan, in-range-view, InRangeSection).
+// own suites cover them (use-picker-board-scan, picker-top-view, InRangeSection).
 const scanCtrl = vi.hoisted(() => ({ focused: null as boolean | null }));
 vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => ({
   usePickerBoardScan: (options: { focused: boolean }) => {
@@ -126,7 +126,6 @@ vi.mock('../../../src/components/board-discovery/use-in-range-location-hint', ()
 vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   InRangeSection: () => createElement('div', { 'data-testid': 'in-range' }),
 }));
-vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({ AlsoAtGymSection: () => null }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
@@ -181,6 +180,7 @@ vi.mock('@boardsesh/offline-sync', () => ({
 vi.mock('../../../src/lib/graphql/hooks', () => ({
   useMyBoards: () => ({ ...state.myBoards, refetch: vi.fn() }),
   useNearbyBoards: () => ({ data: undefined, isLoading: false }),
+  useGymBoards: () => ({ data: undefined }),
   useProfile: () => ({ data: { id: 'me' } }),
   useDeleteBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),
   useUnfollowBoard: () => ({ mutateAsync: vi.fn(), isPending: false, variables: undefined }),

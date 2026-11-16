@@ -10,8 +10,9 @@ import { Text } from '../Text';
 
 /**
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
- * In range, Also at {gym}, Your boards (or the empty state), Near you. First
- * run swaps Your boards and Near you for "Where do you climb?" under In range.
+ * the top (At {gym}, the board heard somewhere else, or what the scan needs;
+ * see picker-top-view.ts), Your boards (or the empty state), Near you. First
+ * run swaps Your boards and Near you for "Where do you climb?" under the top.
  * The ways to add a board live in the screen's top bar.
  *
  * Presentational: the screen hands in each section ready-made.
@@ -24,7 +25,6 @@ export function BoardSelectorView({
   firstBoardChoice,
   fromOnboarding,
   inRangeSection,
-  alsoAtGymSection,
   myBoardsSection,
   nearbySection,
   hasBoards,
@@ -38,10 +38,8 @@ export function BoardSelectorView({
   showFirstBoardChoice: boolean;
   firstBoardChoice?: ReactNode;
   fromOnboarding: boolean;
-  /** What the phone hears over Bluetooth; see InRangeSection. */
+  /** The top of the picker: At {gym}, the hero, or the scan's card; see InRangeSection. */
   inRangeSection?: ReactNode;
-  /** The other walls at the in-range (or active) board's gym. */
-  alsoAtGymSection?: ReactNode;
   myBoardsSection?: ReactNode;
   nearbySection?: ReactNode;
   hasBoards: boolean;
@@ -71,7 +69,6 @@ export function BoardSelectorView({
         {showFirstBoardChoice ? (
           <>
             {inRangeSection}
-            {alsoAtGymSection}
             {firstBoardChoice}
             {/* A new account can already have boards: one it built on the web,
                 or one it followed before a sign-out cleared the active board. */}
@@ -86,7 +83,6 @@ export function BoardSelectorView({
             ) : null}
 
             {inRangeSection}
-            {alsoAtGymSection}
 
             {hasBoards ? (
               myBoardsSection
@@ -122,18 +118,14 @@ export function BoardSelectorView({
 
 export function BoardSelectorSection({
   title,
-  caption,
   trailing,
   children,
 }: {
   title: string;
-  /** A line under the title (In range's "{gym} · 3 walls"). */
-  caption?: string;
-  /** Right-aligned section control or status (Near you's Map, In range's spinner). */
+  /** Right-aligned section control or status (Near you's Map, the scan's spinner). */
   trailing?: ReactNode;
   children: ReactNode;
 }) {
-  const { systemColors } = useTheme();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -141,11 +133,6 @@ export function BoardSelectorSection({
           <Text variant="title3" accessibilityRole="header">
             {title}
           </Text>
-          {caption ? (
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {caption}
-            </Text>
-          ) : null}
         </View>
         {trailing}
       </View>

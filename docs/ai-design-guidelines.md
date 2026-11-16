@@ -440,7 +440,7 @@ above holds. Selection is a state, not a link. `ClimbListRow` still builds the s
 ### Status (`theme.status`)
 
 `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap
-("Closest", "Ready to review", "On it"), so it never competes with the accent beside it.
+("Ready to review", "On it"), so it never competes with the accent beside it.
 
 ### Text: tone, emphasized, Dynamic Type
 

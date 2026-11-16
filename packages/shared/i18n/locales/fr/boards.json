@@ -290,7 +290,6 @@
       "name": "Nom de la board"
     },
     "bluetooth": {
-      "noResults": "Aucune board à portée",
       "unavailable": "Active le Bluetooth pour rechercher",
       "needSignalTitle": "Board trouvée, il faut du réseau",
       "needSignalBody": "On l'a captée, mais on ne peut pas la chercher hors ligne.",
@@ -298,6 +297,7 @@
     },
     "inRange": {
       "title": "À portée",
+      "atGym": "À {{gym}}",
       "inFrontOfYou": "Devant toi",
       "permissionTitle": "Repère la board où tu es",
       "permissionBody": "Boardsesh écoute les boards en Bluetooth, pour que celle qui est devant toi s'affiche en premier.",
@@ -310,20 +310,15 @@
       "scanAgain": "Chercher à nouveau",
       "lookingTitle": "Recherche de boards…",
       "lookingBody": "Approche-toi de la board. Les boards sous tension s'affichent ici.",
-      "gymWalls": "{{gym}} · {{count}} boards",
-      "closest": "La plus proche",
       "showAll": "Voir les {{count}} boards",
       "moonboardTitle": "Une MoonBoard est à portée",
       "moonboardBody": "Les MoonBoard n'indiquent pas leur numéro de série : dis-nous où tu es et on la retrouvera.",
       "typeTitle": "Une board {{board}} est à portée",
       "bareNameBody": "Son boîtier n'indique pas laquelle c'est : dis-nous où tu es et on la retrouvera.",
       "unknownSetupBody": "On ne connaît pas encore sa configuration : dis-nous où tu es et on la retrouvera.",
-      "alsoMoonboard": "Une MoonBoard est aussi à portée",
-      "alsoType": "Une board {{board}} est aussi à portée",
       "alsoNeedSignal": "Une autre board est à portée. Il faut du réseau pour l'identifier.",
       "useMyLocation": "Utiliser ma position",
-      "searchGyms": "Chercher une salle",
-      "alsoAt": "Aussi à {{gym}}"
+      "searchGyms": "Chercher une salle"
     },
     "addBoard": {
       "aria": "Ajouter une board",

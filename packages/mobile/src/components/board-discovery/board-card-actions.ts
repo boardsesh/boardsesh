@@ -1,6 +1,6 @@
-// The order the picker and onboarding list a climber's boards in. Pure, so the
-// ordering rules are unit-testable without rendering. Which actions a card
-// offers lives in `board-card-menu.ts`.
+// The order the picker and onboarding list a climber's boards in, and which
+// boards a list leaves out. Pure, so the rules are unit-testable without
+// rendering. Which actions a card offers lives in `board-card-menu.ts`.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { boardIsOwnedBy } from './manage-items';
@@ -30,16 +30,17 @@ export function sortViewerOwnedFirst(boards: readonly UserBoard[], currentUserId
 }
 
 /**
- * The active board first, everything else in the order the server gave.
+ * The boards not already shown higher up the picker, in the order given.
  *
- * The server cannot do this itself: the active board lives in AsyncStorage on
- * the device, so `myBoards` has never heard of it. Hoist-only — a board that is
- * not in the list is never injected, so a stale stored board cannot conjure a
- * card. Mirrors what the offline branch already does in `offline-board-items`.
+ * The board you're on and its gym's walls sit at the top of the picker (At
+ * {gym}, see picker-top-view.ts); Your boards and Near you leave out what the
+ * top already lists, so a board shows once. The board you're on keeps its
+ * place when the top does not list it: the server's order (pins, then last
+ * opened, #4884) is the one the climber learned.
  */
-export function hoistActiveBoard(boards: readonly UserBoard[], activeUuid: string | null | undefined): UserBoard[] {
-  if (activeUuid == null) return [...boards];
-  const active = boards.find((board) => board.uuid === activeUuid);
-  if (!active) return [...boards];
-  return [active, ...boards.filter((board) => board.uuid !== activeUuid)];
+export function withoutBoardsShown<Board extends { uuid: string }>(
+  boards: readonly Board[],
+  shownUuids: ReadonlySet<string>,
+): Board[] {
+  return shownUuids.size === 0 ? [...boards] : boards.filter((board) => !shownUuids.has(board.uuid));
 }

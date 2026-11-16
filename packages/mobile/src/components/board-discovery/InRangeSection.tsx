@@ -13,22 +13,26 @@ import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { BoardSelectorSection } from './BoardSelectorView';
-import type { InRangeAlso, InRangeView, UnnamedInRangeRow } from './in-range-view';
+import {
+  collapsedAtGymRows,
+  type PickerScanNotice,
+  type PickerTopContent,
+  type PickerTopView,
+  type UnnamedInRangeRow,
+} from './picker-top-view';
 
 /** Side of the hero's board art, in points. */
 const HERO_ART_SIZE = 88;
 /** Side of a row's board art, in points. */
 const ROW_ART_SIZE = 52;
-/** Board rows shown before "Show all": the strongest signals. */
-const COLLAPSED_ROW_COUNT = 3;
 
 export type InRangeBoardArtProps = { item: DiscoveryBoardItem; size: number };
 
 /**
- * What to say instead of "No boards in range" when Android is plausibly
- * withholding the scan's results (see `useAndroidScanLocationHint`): grant
- * location on old binaries, or turn Location on on Android 6 to 11. The action
- * rescans when it works.
+ * What to say when the scan heard nothing and Android is plausibly
+ * withholding its results (see `useAndroidScanLocationHint`): grant location
+ * on old binaries, or turn Location on on Android 6 to 11. The action rescans
+ * when it works.
  */
 export type InRangeLocationHint = {
   kind: 'grant_location' | 'enable_location_services';
@@ -37,31 +41,49 @@ export type InRangeLocationHint = {
 };
 
 export type InRangeSectionProps = {
-  view: InRangeView<DiscoveryBoardItem>;
+  view: PickerTopView<DiscoveryBoardItem>;
   /** Draws a board's art in a square: the real art in the app, a fixture in stories. */
   BoardArt: ComponentType<InRangeBoardArtProps>;
   /** Continue, Scan and Scan again: asks for Bluetooth when it has to, then scans. */
   onStart: () => void;
   onOpenSettings: () => void;
   onRetryLookup: () => void;
-  /** Climb here on the hero, or a tap on a row. */
+  /** Climb here on the hero, or a tap on a row At {gym}. */
   onPickBoard: (item: DiscoveryBoardItem) => void;
   /** The three ways forward for a board it heard but cannot name. */
   onUseMyLocation: (row: UnnamedInRangeRow) => void;
   onSearchGyms: (row: UnnamedInRangeRow) => void;
   onOwnBoard: (row: UnnamedInRangeRow) => void;
-  /** Replaces the nothing-heard line when Android hides the results; null otherwise. */
+  /** Shown when the scan heard nothing and Android hides the results; null otherwise. */
   locationHint?: InRangeLocationHint | null;
 };
 
+/** The notices that are one quiet line rather than a card. */
+type QuietNotice = Extract<PickerScanNotice, { kind: 'blocked_denied' | 'blocked_off' | 'unreachable' }>;
+
+function isQuietNotice(notice: PickerScanNotice | null): notice is QuietNotice {
+  return notice?.kind === 'blocked_denied' || notice?.kind === 'blocked_off' || notice?.kind === 'unreachable';
+}
+
+/** Whether the "In range" section has a card: the scan's own, or what leads when it is not a gym. */
+function hasInRangeCard(notice: PickerScanNotice | null, content: PickerTopContent<DiscoveryBoardItem>): boolean {
+  const noticeCard =
+    notice?.kind === 'permission_card' ||
+    notice?.kind === 'tap_to_scan' ||
+    (notice?.kind === 'lookup_failed' && !notice.besideHeardBoards);
+  return noticeCard || content.kind === 'hero' || content.kind === 'unnamed' || content.kind === 'looking';
+}
+
 /**
- * The board picker's In range slot: what the phone hears over Bluetooth, first
- * thing on the screen. Presentational: `inRangeView` (in-range-view.ts) decides
- * what shows, and the screen owns the scan, the picks and navigation.
- *
- * The states that are not about a board (Bluetooth off, refused or unreachable,
- * nothing heard) are one quiet line with one button and no section title, so a
- * climber at home is not shown an empty card on every open.
+ * The top of the board picker. Presentational: `decidePickerTop` and
+ * `buildPickerTopView` (picker-top-view.ts) decide what shows, and the screen
+ * owns the scan, the picks and navigation. Top to bottom:
+ * - the scan's quiet line (Bluetooth off, refused or unreachable), with no
+ *   section title, so a climber at home is not shown an empty card;
+ * - the Android location hint, when the scan heard nothing because of it;
+ * - "In range": the scan's own card (Continue, Scan, need signal) and the hero,
+ *   the box it cannot name, or the placeholder while it looks;
+ * - "At {gym}": the gym's walls A to Z, the board you're on among them.
  */
 export function InRangeSection({
   view,
@@ -76,11 +98,71 @@ export function InRangeSection({
   locationHint = null,
 }: InRangeSectionProps) {
   const { t } = useTranslation('boards');
-  const { content, scanning } = view;
+  const { notice, content, scanning, heardNothing } = view;
+  const needSignalBeside = notice?.kind === 'lookup_failed' && notice.besideHeardBoards;
+  const unnamedActions = { onUseMyLocation, onSearchGyms, onOwnBoard };
+  // One spinner while the scan listens: by At {gym}'s title when there is one.
+  const spinner = scanning ? <ActivityIndicator size="small" /> : null;
 
-  switch (content.kind) {
-    case 'none':
-      return null;
+  return (
+    <>
+      {isQuietNotice(notice) ? (
+        <QuietNoticeLine notice={notice} onStart={onStart} onOpenSettings={onOpenSettings} />
+      ) : null}
+      {heardNothing && locationHint ? <LocationHintBlock hint={locationHint} /> : null}
+      {hasInRangeCard(notice, content) ? (
+        <BoardSelectorSection title={t('mobile.inRange.title')} trailing={content.kind === 'at_gym' ? null : spinner}>
+          <View style={[styles.slot, styles.stack]}>
+            {notice?.kind === 'permission_card' ? (
+              <PromptCard
+                title={t('mobile.inRange.permissionTitle')}
+                body={t('mobile.inRange.permissionBody')}
+                action={t('mobile.inRange.continue')}
+                onAction={onStart}
+              />
+            ) : notice?.kind === 'tap_to_scan' ? (
+              <PromptCard title={t('mobile.inRange.scanTitle')} action={t('mobile.inRange.scan')} onAction={onStart} />
+            ) : notice?.kind === 'lookup_failed' && !notice.besideHeardBoards ? (
+              <LookupFailedCard onRetry={onRetryLookup} />
+            ) : null}
+            {content.kind === 'looking' ? (
+              <LookingCard />
+            ) : content.kind === 'hero' ? (
+              <>
+                <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
+                {needSignalBeside ? <NeedSignalRow onRetry={onRetryLookup} /> : null}
+              </>
+            ) : content.kind === 'unnamed' ? (
+              <UnnamedCard row={content.row} {...unnamedActions} />
+            ) : null}
+          </View>
+        </BoardSelectorSection>
+      ) : null}
+      {content.kind === 'at_gym' ? (
+        <BoardSelectorSection title={t('mobile.inRange.atGym', { gym: content.gymName })} trailing={spinner}>
+          <View style={[styles.slot, styles.stack]}>
+            {/* Keyed by the gym, so Show all closes when the top moves to another gym. */}
+            <BoardRows key={content.gymUuid} items={content.rows} BoardArt={BoardArt} onPick={onPickBoard} />
+            {needSignalBeside ? <NeedSignalRow onRetry={onRetryLookup} /> : null}
+          </View>
+        </BoardSelectorSection>
+      ) : null}
+    </>
+  );
+}
+
+/** Bluetooth off, refused for good or unreachable: one quiet line and the button that can fix it. */
+function QuietNoticeLine({
+  notice,
+  onStart,
+  onOpenSettings,
+}: {
+  notice: QuietNotice;
+  onStart: () => void;
+  onOpenSettings: () => void;
+}) {
+  const { t } = useTranslation('boards');
+  switch (notice.kind) {
     case 'blocked_denied':
       return canOpenAppSettings() ? (
         <QuietLine
@@ -99,82 +181,7 @@ export function InRangeSection({
       return (
         <QuietLine text={t('mobile.inRange.unreachable')} action={t('mobile.inRange.scanAgain')} onAction={onStart} />
       );
-    case 'none_in_range':
-      return locationHint ? (
-        <LocationHintBlock hint={locationHint} />
-      ) : (
-        <QuietLine text={t('mobile.bluetooth.noResults')} action={t('mobile.inRange.scanAgain')} onAction={onStart} />
-      );
-    default:
-      break;
   }
-
-  const caption =
-    content.kind === 'board_rows' && content.gymName
-      ? t('mobile.inRange.gymWalls', { gym: content.gymName, count: content.boards.length })
-      : undefined;
-  const unnamedActions = { onUseMyLocation, onSearchGyms, onOwnBoard };
-
-  return (
-    <BoardSelectorSection
-      title={t('mobile.inRange.title')}
-      caption={caption}
-      trailing={scanning ? <ActivityIndicator size="small" /> : null}
-    >
-      <View style={[styles.slot, styles.stack]}>
-        {content.kind === 'permission_card' ? (
-          <PromptCard
-            title={t('mobile.inRange.permissionTitle')}
-            body={t('mobile.inRange.permissionBody')}
-            action={t('mobile.inRange.continue')}
-            onAction={onStart}
-          />
-        ) : content.kind === 'tap_to_scan' ? (
-          <PromptCard title={t('mobile.inRange.scanTitle')} action={t('mobile.inRange.scan')} onAction={onStart} />
-        ) : content.kind === 'looking' ? (
-          <LookingCard />
-        ) : content.kind === 'hero' ? (
-          <>
-            <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
-            {content.also ? (
-              <AlsoRow
-                key={alsoRowKey(content.also)}
-                also={content.also}
-                onRetryLookup={onRetryLookup}
-                {...unnamedActions}
-              />
-            ) : null}
-          </>
-        ) : content.kind === 'board_rows' ? (
-          <>
-            <BoardRows items={content.boards} markClosest BoardArt={BoardArt} onPick={onPickBoard} />
-            {content.also ? (
-              <AlsoRow
-                key={alsoRowKey(content.also)}
-                also={content.also}
-                onRetryLookup={onRetryLookup}
-                {...unnamedActions}
-              />
-            ) : null}
-          </>
-        ) : content.kind === 'unnamed' ? (
-          <>
-            <UnnamedCard row={content.row} {...unnamedActions} />
-            {content.boards.length > 0 ? (
-              <BoardRows items={content.boards} markClosest={false} BoardArt={BoardArt} onPick={onPickBoard} />
-            ) : null}
-          </>
-        ) : content.kind === 'lookup_failed' ? (
-          <>
-            <LookupFailedCard onRetry={onRetryLookup} />
-            {content.boards.length > 0 ? (
-              <BoardRows items={content.boards} markClosest={false} BoardArt={BoardArt} onPick={onPickBoard} />
-            ) : null}
-          </>
-        ) : null}
-      </View>
-    </BoardSelectorSection>
-  );
 }
 
 /** One footnote line and an optional text button, with no section title. */
@@ -336,19 +343,24 @@ const HeroCard = memo(function HeroCard({
   );
 });
 
+/** The board you're on, for `collapsedAtGymRows`. */
+function isSelectedItem(item: DiscoveryBoardItem): boolean {
+  return item.isActive === true;
+}
+
 /**
- * Named boards in one rounded block, strongest first. With `markClosest` they
- * lead the slot and the first carries the Closest pill; under a box the phone
- * can't name, they are only what else is around.
+ * At {gym}'s walls in one rounded block, in the order the top gives (A to Z).
+ * The slot sits in the picker's ScrollView, where a virtualised list can't
+ * nest, and a big gym holds a dozen walls, so a long gym shows its first few
+ * until the climber asks for the rest, always with the board you're on among
+ * them (`collapsedAtGymRows`).
  */
 function BoardRows({
   items,
-  markClosest,
   BoardArt,
   onPick,
 }: {
   items: readonly DiscoveryBoardItem[];
-  markClosest: boolean;
   BoardArt: ComponentType<InRangeBoardArtProps>;
   onPick: (item: DiscoveryBoardItem) => void;
 }) {
@@ -356,18 +368,14 @@ function BoardRows({
   const { systemColors, brandColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const expand = useCallback(() => setExpanded(true), []);
-  // The slot sits in the picker's ScrollView, where a virtualised list can't
-  // nest, and nothing caps how many boards a scan names (a big gym can hold a
-  // dozen). So only the strongest few mount until the climber asks for the
-  // rest, as the gym-walls switcher does.
-  const shownItems = expanded ? items : items.slice(0, COLLAPSED_ROW_COUNT);
+  const shownItems = expanded ? items : collapsedAtGymRows(items, isSelectedItem);
   const separator = <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />;
   return (
     <View style={[styles.rowsBlock, { backgroundColor: systemColors.secondaryBackground }]}>
       {shownItems.map((item, index) => (
         <View key={item.key}>
           {index > 0 ? separator : null}
-          <InRangeBoardRowView item={item} closest={markClosest && index === 0} BoardArt={BoardArt} onPick={onPick} />
+          <InRangeBoardRowView item={item} BoardArt={BoardArt} onPick={onPick} />
         </View>
       ))}
       {shownItems.length < items.length ? (
@@ -386,22 +394,24 @@ function BoardRows({
 
 const InRangeBoardRowView = memo(function InRangeBoardRowView({
   item,
-  closest,
   BoardArt,
   onPick,
 }: {
   item: DiscoveryBoardItem;
-  closest: boolean;
   BoardArt: ComponentType<InRangeBoardArtProps>;
   onPick: (item: DiscoveryBoardItem) => void;
 }) {
-  const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const handlePick = useCallback(() => onPick(item), [item, onPick]);
-  const closestLabel = t('mobile.inRange.closest');
-  const label = [item.title, item.subtitle, closest ? closestLabel : null].filter(Boolean).join(', ');
+  const label = [item.title, item.subtitle].filter(Boolean).join(', ');
   return (
-    <PressableSurface onPress={handlePick} accessibilityRole="button" accessibilityLabel={label} style={styles.row}>
+    <PressableSurface
+      onPress={handlePick}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: item.isActive === true }}
+      style={styles.row}
+    >
       <View style={[styles.rowArt, { backgroundColor: systemColors.tertiaryBackground }]}>
         <BoardArt item={item} size={ROW_ART_SIZE} />
       </View>
@@ -415,13 +425,6 @@ const InRangeBoardRowView = memo(function InRangeBoardRowView({
           </Text>
         ) : null}
       </View>
-      {closest ? (
-        <View style={[styles.pill, { backgroundColor: brandColors.primaryFill }]}>
-          <Text variant="caption2" color={brandColors.onPrimary}>
-            {closestLabel}
-          </Text>
-        </View>
-      ) : null}
     </PressableSurface>
   );
 });
@@ -510,63 +513,20 @@ function UnnamedCard({ row, ...actions }: UnnamedActionsProps & { row: UnnamedIn
 }
 
 /**
- * Keyed by the box it stands for: a row left open for a MoonBoard closes when a
- * different box takes its place, rather than open on that box's actions.
+ * Serials the lookup could not name, beside boards the scan did name: one
+ * compact line with Retry under them.
  */
-function alsoRowKey(also: InRangeAlso): string {
-  return also.kind === 'unnamed' ? also.row.key : 'lookup_failed';
-}
-
-/**
- * What else is in range under a named lead, as one compact row. A box it can't
- * name opens its three ways forward on a tap; serials it couldn't look up carry
- * Retry.
- */
-function AlsoRow({
-  also,
-  onRetryLookup,
-  ...actions
-}: UnnamedActionsProps & { also: InRangeAlso; onRetryLookup: () => void }) {
+function NeedSignalRow({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const toggle = useCallback(() => setExpanded((open) => !open), []);
-  if (also.kind === 'lookup_failed') {
-    return (
-      <View style={[styles.alsoRow, { backgroundColor: systemColors.secondaryBackground }]}>
-        <View style={styles.inline}>
-          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
-            {t('mobile.inRange.alsoNeedSignal')}
-          </Text>
-          <Button title={t('mobile.errorRetry')} size="small" variant="text" onPress={onRetryLookup} />
-        </View>
-      </View>
-    );
-  }
-  const { row } = also;
-  const label =
-    row.kind === 'moonboard'
-      ? t('mobile.inRange.alsoMoonboard')
-      : t('mobile.inRange.alsoType', { board: formatBoardDisplayName(row.boardType) });
   return (
-    <View style={[styles.alsoRow, { backgroundColor: systemColors.secondaryBackground }]}>
-      <PressableSurface
-        onPress={toggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        style={styles.alsoHeader}
-      >
-        <Icon name="bluetooth" size={15} color={systemColors.secondaryLabel} />
-        <Text variant="subheadline" style={styles.flexText}>
-          {label}
+    <View style={[styles.needSignalRow, { backgroundColor: systemColors.secondaryBackground }]}>
+      <View style={styles.inline}>
+        <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
+          {t('mobile.inRange.alsoNeedSignal')}
         </Text>
-        <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={13} color={systemColors.tertiaryLabel} />
-      </PressableSurface>
-      {expanded ? (
-        <View style={styles.alsoActions}>
-          <UnnamedActions row={row} {...actions} />
-        </View>
-      ) : null}
+        <Button title={t('mobile.errorRetry')} size="small" variant="text" onPress={onRetry} />
+      </View>
     </View>
   );
 }
@@ -680,23 +640,10 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingLeft: ROW_ART_SIZE + spacing[3],
   },
-  pill: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  alsoRow: {
+  needSignalRow: {
     borderRadius: borderRadius.lg,
     paddingHorizontal: spacing[3],
-  },
-  alsoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
     minHeight: 44,
-  },
-  alsoActions: {
-    paddingBottom: spacing[3],
-    gap: spacing[1],
+    justifyContent: 'center',
   },
 });

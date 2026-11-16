@@ -7,14 +7,13 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { addBoardRoute } from '../../src/components/board-discovery/add-board-route';
 import { AddBoardMenu } from '../../src/components/board-discovery/AddBoardMenu';
-import { AlsoAtGymSection } from '../../src/components/board-discovery/AlsoAtGymSection';
-import { hoistActiveBoard } from '../../src/components/board-discovery/board-card-actions';
+import { withoutBoardsShown } from '../../src/components/board-discovery/board-card-actions';
 import type {
   BoardCardMenuAction,
   BoardCardMenuCapabilities,
   BoardCardMenuVia,
 } from '../../src/components/board-discovery/board-card-menu';
-import { boardRowsToItems, userBoardsToItems } from '../../src/components/board-discovery/board-items';
+import { pickerTopBoardsToItems, userBoardsToItems } from '../../src/components/board-discovery/board-items';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
 import type { DiscoveryBoardItem } from '../../src/components/board-discovery/BoardDiscoveryCard';
@@ -24,18 +23,20 @@ import {
 } from '../../src/components/board-discovery/BoardSelectorView';
 import { DiscoveryBoardArt } from '../../src/components/board-discovery/DiscoveryBoardArt';
 import { FirstBoardChoice } from '../../src/components/board-discovery/FirstBoardChoice';
-import {
-  alsoAtGymAnchor,
-  inRangeView,
-  mapInRangeBoards,
-  type InRangeBoardRow,
-  type InRangeView,
-  type UnnamedInRangeRow,
-} from '../../src/components/board-discovery/in-range-view';
 import { InRangeSection } from '../../src/components/board-discovery/InRangeSection';
 import { nearbyListTitle } from '../../src/components/board-discovery/nearby-board-type-copy';
 import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
+import {
+  buildPickerTopView,
+  decidePickerTop,
+  mapPickerTopBoards,
+  pickerTopBoardUuids,
+  pickerTopGymUuid,
+  pickerTopPicks,
+  type PickerTopView,
+  type UnnamedInRangeRow,
+} from '../../src/components/board-discovery/picker-top-view';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
 import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
@@ -53,6 +54,7 @@ import {
   type BoardPickerAddSurface,
 } from '../../src/lib/boards/board-picker-add-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
+import { boardUuidOrNull } from '../../src/lib/boards/board-identity';
 import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
 import {
   BUILDER_PRESET_PARAM_VALUE,
@@ -65,11 +67,12 @@ import {
   clearPendingBoardRecognition,
   setPendingBoardRecognition,
 } from '../../src/lib/boards/pending-board-recognition';
-import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
-import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
+import { useActivateBoard, type BoardPickSection, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
+import { pickerNearbyOpenedState, useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
 import {
   useDeleteBoard,
+  useGymBoards,
   useMyBoards,
   useNearbyBoards,
   usePinBoard,
@@ -129,6 +132,15 @@ function ownershipAllows(item: DiscoveryBoardItem, action: 'edit' | 'unfollow' |
 /** The board type the Near you list is narrowed to, and the layout it was set in. */
 type NearbyTypeFilter = { boardType: BoardName; inFirstBoardChoice: boolean };
 
+/** Where a pick on this screen happened, for `Board Picker Selection Completed`. */
+type PickerPick = { pickSource: BoardPickSource; section?: BoardPickSection; position?: number | null };
+
+/** A card's 0-based place in the list it is drawn in, or null when it is not there. */
+function positionOf(items: readonly DiscoveryBoardItem[], key: string): number | null {
+  const position = items.findIndex((item) => item.key === key);
+  return position === -1 ? null : position;
+}
+
 export default function BoardSelection() {
   const { isAuthenticated, refreshAuthState } = useAuth();
   const bottomChrome = useBottomChromeMetrics();
@@ -162,13 +174,6 @@ export default function BoardSelection() {
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
   const { data: activeBoard, isError: boardRestoreFailed } = useActiveBoard();
-  const trackBoardSelection = useBoardPickerAnalytics({
-    activeBoard,
-    restoreFailed: boardRestoreFailed,
-    returnTo: boardReturnTo,
-    fromOnboarding,
-    fromNoBoard,
-  });
   const clearActiveBoard = useClearActiveBoardIfCurrentGeneration();
   const { clearSession } = useQueueActions();
   const deleteBoard = useDeleteBoard();
@@ -190,7 +195,8 @@ export default function BoardSelection() {
   const currentUserId = profile?.id ?? storedUserId;
 
   const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
-  const detailPickSource = useRef<BoardPickSource>('your_boards');
+  // Where the open detail sheet was opened from, so its Climb here reports that.
+  const detailPick = useRef<PickerPick>({ pickSource: 'your_boards' });
   const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
   useEffect(() => {
     if (!isAuthenticated) closeBoardDetails();
@@ -290,10 +296,10 @@ export default function BoardSelection() {
     [isLocalOnly, offlineCards, myBoards, activeBoard, downloadedScopeKeys],
   );
 
-  // The In range slot: what the phone hears over Bluetooth, scanned by itself
-  // on open unless the remote switch says to wait for a tap. Only while this
-  // screen is on top and showing the online layout: the offline list and the
-  // error state have no slot to fill.
+  // The Bluetooth scan behind the top of the picker, run by itself on open
+  // unless the remote switch says to wait for a tap. Only while this screen is
+  // on top and showing the online layout: the offline list and the error state
+  // have no top to fill.
   const isFocused = useIsFocused();
   const pickerAutoScanEnabled = usePickerAutoScanEnabled();
   const pickerScan = usePickerBoardScan({
@@ -310,6 +316,20 @@ export default function BoardSelection() {
     stop: stopScan,
     retryLookup,
   } = pickerScan;
+  // The top of the picker: At {gym} (the gym the scan heard, else the one the
+  // board you're on is at), the one board heard somewhere else, or a box it
+  // can't name. Two steps, because the gym's roster is a query keyed on the
+  // gym the first step picks; see picker-top-view.ts.
+  const topDecision = useMemo(
+    () => decidePickerTop({ phase: scanPhase, rows: scanRows, lookup: scanLookup, activeBoard }),
+    [scanPhase, scanRows, scanLookup, activeBoard],
+  );
+  // Only for the online layout, the one that draws the top.
+  const showsTop = isAuthenticated && !isLocalOnly && !isError;
+  const { data: topGymRoster } = useGymBoards(showsTop ? pickerTopGymUuid(topDecision) : null);
+  const topView = useMemo(() => buildPickerTopView(topDecision, topGymRoster), [topDecision, topGymRoster]);
+  // Your boards and Near you leave these out, so a board shows once.
+  const topBoardUuids = useMemo(() => pickerTopBoardUuids(topView), [topView]);
   // A box held for the next bind (pending-board-recognition.ts) belongs to this
   // picker visit. The gym map and the builder are pushed over the picker, so
   // they bind, and use the hold, before this unmounts; anything after the
@@ -339,6 +359,11 @@ export default function BoardSelection() {
   // denial, so a second tap has to be able to ask again: a climber coming back
   // from Settings gets their gyms from that tap, not from reopening the picker.
   const location = useDeviceLocation({ retryAfterDenial: true });
+  // Whether the on-open "is location already allowed?" read has answered (see
+  // the effect that runs it). Until it has, an idle location may be one about
+  // to search, so `Board Picker Opened` waits for it. First-board mode runs no
+  // such read: there Near you searches only from a tap.
+  const [locationCheckedOnOpen, setLocationCheckedOnOpen] = useState(firstBoardMode);
   // Set by the In range slot's "Use my location" on a board it heard but
   // couldn't name: the nearby list then holds only that board type, so a
   // climber at a MoonBoard picks from the MoonBoards around them. Filtered by
@@ -382,27 +407,32 @@ export default function BoardSelection() {
     if (isError) void refreshAuthState();
   }, [isError, refreshAuthState]);
 
-  const activateBoard = useActivateBoard({
-    source: fromOnboarding ? 'onboarding' : undefined,
-    returnTo: boardReturnTo,
-    isLocalOnly,
-    onBound: trackBoardSelection,
-  });
-
   // Only the user's OWN boards carry a download state.
   const boardOfflineState = useBoardOfflineState();
   // The translated word a spray-wall row leads with. One object for every list
   // on this screen, so none of their memos churn.
   const labelOptions = useSprayLabelOptions();
+  // At {gym} names the gym in its title, so its rows lead with what each wall
+  // is, as the board sheet's gym walls do.
+  const gymLabelOptions = useSprayLabelOptions('within-gym');
+
+  // The top's boards as its rows draw them.
+  const topDisplay = useMemo<PickerTopView<DiscoveryBoardItem>>(
+    () =>
+      mapPickerTopBoards(topView, (boards, kind) =>
+        pickerTopBoardsToItems(boards, { labelOptions: kind === 'at_gym' ? gymLabelOptions : labelOptions }),
+      ),
+    [topView, labelOptions, gymLabelOptions],
+  );
 
   const myBoardItems = useMemo(
-    // The server now orders these: pinned first, then by when you last opened
-    // the board, then never-opened by when you added it (#4884). All this adds
-    // is the board you're on, which the server cannot know — it lives in
-    // AsyncStorage on this device. `currentUserId` stamps `isViewerOwner` once
-    // per list build so no row ever scans back into `myBoards` for it.
+    // The server orders these: pinned first, then by when you last opened the
+    // board, then never-opened by when you added it (#4884). The board you're
+    // on keeps its place, marked, unless the top already lists it: it shows
+    // once. `currentUserId` stamps `isViewerOwner` once per list build so no
+    // row ever scans back into `myBoards` for it.
     () =>
-      userBoardsToItems(hoistActiveBoard(myBoards, activeBoard?.uuid), {
+      userBoardsToItems(withoutBoardsShown(myBoards, topBoardUuids), {
         activeUuid: activeBoard?.uuid,
         offlineStateFor: boardOfflineState,
         currentUserId,
@@ -410,9 +440,23 @@ export default function BoardSelection() {
         labelOptions,
         importStatusStale,
       }),
-    [myBoards, activeBoard?.uuid, boardOfflineState, currentUserId, pinnedOverrides, labelOptions, importStatusStale],
+    [
+      myBoards,
+      topBoardUuids,
+      activeBoard?.uuid,
+      boardOfflineState,
+      currentUserId,
+      pinnedOverrides,
+      labelOptions,
+      importStatusStale,
+    ],
   );
-  const nearbyItems = useMemo(
+  // Whether the account has a board this screen can draw, shown at the top or
+  // in Your boards. It decides the empty state and the board actions, so a
+  // climber whose every board is At {gym} is not told they have none.
+  const hasBoards = useMemo(() => myBoards.some((board) => toBoardName(board.boardType) !== null), [myBoards]);
+  // Everything the Near you search returned, as cards.
+  const nearbyResultItems = useMemo(
     () =>
       userBoardsToItems(
         // Also filtered here: while a newly filtered search loads, the query
@@ -424,6 +468,64 @@ export default function BoardSelection() {
       ),
     [nearby?.boards, nearbyBoardType, activeBoard?.uuid, labelOptions],
   );
+  // Near you leaves out boards already shown above it (the top and Your
+  // boards). Not under "Where do you climb?", which draws Near you above Your
+  // boards, and not while it is narrowed to one type: that search is for the
+  // box the climber stands at, and a pick from it is what names the box, so
+  // every candidate stays in it.
+  const leavesOutBoardsShownAbove = !showFirstBoardChoice && nearbyBoardType === null;
+  const nearbyItems = useMemo(() => {
+    if (!leavesOutBoardsShownAbove) return nearbyResultItems;
+    const myBoardUuids = new Set(myBoards.map((board) => board.uuid));
+    return nearbyResultItems.filter((item) => !topBoardUuids.has(item.key) && !myBoardUuids.has(item.key));
+  }, [leavesOutBoardsShownAbove, nearbyResultItems, myBoards, topBoardUuids]);
+
+  // First-board mode's "At a gym" answer; see the handlers below.
+  const [gymChosen, setGymChosen] = useState(false);
+  // One reading of the nearby search for both layouts. The "At a gym" choice
+  // counts as asked once it is tapped; Near you once location has been asked
+  // for at all (on open when already allowed, a tap, or the onboarding preload).
+  // It reads what the search returned, not what is left once the boards shown
+  // above are out: "Nothing within 20 km" must never stand for "already listed".
+  const nearbySearch = firstBoardGymState({
+    chosen: showFirstBoardChoice ? gymChosen : location.status !== 'idle',
+    locationStatus: location.status,
+    // Any request in flight, not only the first load: a retry after an error
+    // keeps the query in `error` while it runs, and should read as searching.
+    nearbyLoading: isNearbySearching,
+    nearbyFailed: isNearbyError,
+    nearbyCount: nearbyResultItems.length,
+  });
+  // The same search for `Board Picker Opened`, read the same in every layout:
+  // the climber's choice does not change what the search came to.
+  const nearbyOpened = pickerNearbyOpenedState({
+    checkedOnOpen: locationCheckedOnOpen,
+    outcome: firstBoardGymState({
+      chosen: location.status !== 'idle',
+      locationStatus: location.status,
+      nearbyLoading: isNearbySearching,
+      nearbyFailed: isNearbyError,
+      nearbyCount: nearbyResultItems.length,
+    }),
+    resultCount: nearbyResultItems.length,
+    locationStatus: location.status,
+  });
+  const trackBoardSelection = useBoardPickerAnalytics({
+    activeBoard,
+    restoreFailed: boardRestoreFailed,
+    returnTo: boardReturnTo,
+    fromOnboarding,
+    fromNoBoard,
+    nearby: nearbyOpened,
+  });
+
+  const activateBoard = useActivateBoard({
+    source: fromOnboarding ? 'onboarding' : undefined,
+    returnTo: boardReturnTo,
+    isLocalOnly,
+    onBound: trackBoardSelection,
+  });
+
   const offlineItems = useMemo(
     () => userBoardsToItems(offlineRows, { activeUuid: activeBoard?.uuid, labelOptions }),
     [offlineRows, activeBoard?.uuid, labelOptions],
@@ -441,18 +543,18 @@ export default function BoardSelection() {
   //   leaving a deleted board active. Every other board stays pickable.
   const boardActionsInFlight = useRef<Set<string>>(new Set());
 
-  // Every pick on this screen: a card, a row in range, a wall at the gym, the
-  // detail sheet's Climb here. The scan ends first, so a pick never leaves the
-  // radio running (the bind may connect next, and a phone holding a board link
-  // must not scan). An unfinished wall opens its import instead of binding,
-  // and a board being edited, unfollowed or deleted is not picked at all. A
-  // held box goes too, unless this is the Near you pick it was held for
+  // Every pick on this screen: a card, a row at the top, the detail sheet's
+  // Climb here. The scan ends first, so a pick never leaves the radio running
+  // (the bind may connect next, and a phone holding a board link must not
+  // scan). An unfinished wall opens its import instead of binding, and a board
+  // being edited, unfollowed or deleted is not picked at all. A held box goes
+  // too, unless this is the Near you pick it was held for
   // (`nearbyPickNamesHeldBox`).
   const pickBoard = useCallback(
-    (board: UserBoard, pickSource: BoardPickSource) => {
+    (board: UserBoard, pick: PickerPick) => {
       if (boardActionsInFlight.current.has(board.uuid)) return;
       const namesHeldBox =
-        pickSource === 'nearby' &&
+        pick.pickSource === 'nearby' &&
         nearbyBoardType !== null &&
         nearbyPickNamesHeldBox.current === nearbyBoardType &&
         toBoardName(board.boardType) === nearbyBoardType;
@@ -463,17 +565,17 @@ export default function BoardSelection() {
         router.push(importRoute);
         return;
       }
-      void activateBoard(board, { pickSource });
+      void activateBoard(board, pick);
     },
     [nearbyBoardType, dropHeldBox, stopScan, unfinishedWallUuids, router, activateBoard],
   );
 
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
-  // activate. `pickSource` is the section the card sits in, not the list the
-  // lookup happened to hit: a board you follow can also be Near you, and the
-  // event should say where you tapped.
+  // activate. `pick` is the section the card sits in, not the list the lookup
+  // happened to hit: a board you follow can also be Near you (under "Where do
+  // you climb?"), and the event should say where you tapped.
   const activateItem = useCallback(
-    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
+    (item: DiscoveryBoardItem, pick: PickerPick) => {
       // A no-op, not a toast: the card's own tap haptic has already answered.
       if (boardActionsInFlight.current.has(item.key)) return;
       const board =
@@ -483,7 +585,7 @@ export default function BoardSelection() {
         // network list — without this an offline tap is dead.
         offlineRows.find((b) => b.uuid === item.key);
       if (board) {
-        pickBoard(board, pickSource);
+        pickBoard(board, pick);
       } else {
         // The item's UserBoard should always be in one of the lists it came
         // from; if a refetch dropped it between render and tap, give feedback
@@ -493,9 +595,36 @@ export default function BoardSelection() {
     },
     [myBoards, nearby?.boards, offlineRows, pickBoard, showToast, t],
   );
-  const onSelectMyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'your_boards'), [activateItem]);
-  const onSelectNearbyBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'nearby'), [activateItem]);
-  const onSelectOfflineBoard = useCallback((item: DiscoveryBoardItem) => activateItem(item, 'offline'), [activateItem]);
+  // One `findIndex` per tap for the card's place, never per row.
+  const myBoardPick = useCallback(
+    (item: DiscoveryBoardItem): PickerPick => ({
+      pickSource: 'your_boards',
+      section: 'your_boards',
+      position: positionOf(myBoardItems, item.key),
+    }),
+    [myBoardItems],
+  );
+  const nearbyPick = useCallback(
+    (item: DiscoveryBoardItem): PickerPick => ({
+      pickSource: 'nearby',
+      section: 'near_you',
+      position: positionOf(nearbyItems, item.key),
+    }),
+    [nearbyItems],
+  );
+  const onSelectMyBoard = useCallback(
+    (item: DiscoveryBoardItem) => activateItem(item, myBoardPick(item)),
+    [activateItem, myBoardPick],
+  );
+  const onSelectNearbyBoard = useCallback(
+    (item: DiscoveryBoardItem) => activateItem(item, nearbyPick(item)),
+    [activateItem, nearbyPick],
+  );
+  const onSelectOfflineBoard = useCallback(
+    (item: DiscoveryBoardItem) =>
+      activateItem(item, { pickSource: 'offline', section: 'offline', position: positionOf(offlineItems, item.key) }),
+    [activateItem, offlineItems],
+  );
   const detailBoardsByUuid = useMemo(() => {
     const boards = new Map<string, UserBoard>();
     for (const board of myBoards) boards.set(board.uuid, board);
@@ -504,21 +633,21 @@ export default function BoardSelection() {
     return boards;
   }, [myBoards, nearby?.boards, activeBoard]);
   const openBoardDetails = useCallback(
-    (item: DiscoveryBoardItem, pickSource: BoardPickSource) => {
+    (item: DiscoveryBoardItem, pick: PickerPick) => {
       const board = detailBoardsByUuid.get(item.key);
       if (!board) return;
-      detailPickSource.current = pickSource;
+      detailPick.current = pick;
       setDetailBoard(board);
     },
     [detailBoardsByUuid],
   );
   const onMyBoardDetails = useCallback(
-    (item: DiscoveryBoardItem) => openBoardDetails(item, 'your_boards'),
-    [openBoardDetails],
+    (item: DiscoveryBoardItem) => openBoardDetails(item, myBoardPick(item)),
+    [openBoardDetails, myBoardPick],
   );
   const onNearbyBoardDetails = useCallback(
-    (item: DiscoveryBoardItem) => openBoardDetails(item, 'nearby'),
-    [openBoardDetails],
+    (item: DiscoveryBoardItem) => openBoardDetails(item, nearbyPick(item)),
+    [openBoardDetails, nearbyPick],
   );
   // Onboarding draws plain cards in both carousels: no ⋯ and no hold. The first
   // screen a new account sees carries the choice of board and nothing else, the
@@ -538,13 +667,16 @@ export default function BoardSelection() {
     [showCardMenus, onSelectNearbyBoard, onNearbyBoardDetails],
   );
   const onActiveBoardDetails = useCallback(() => {
-    if (activeBoard) setDetailBoard(activeBoard);
+    if (!activeBoard) return;
+    // The active spray wall's details row sits in no section.
+    detailPick.current = { pickSource: 'your_boards' };
+    setDetailBoard(activeBoard);
   }, [activeBoard]);
   const onSetActiveFromDetails = useCallback(
     (board: UserBoard) => {
       closeBoardDetails();
       // `pickBoard` skips a board whose edit, unfollow or delete is running.
-      pickBoard(board, detailPickSource.current);
+      pickBoard(board, detailPick.current);
     },
     [pickBoard, closeBoardDetails],
   );
@@ -725,7 +857,7 @@ export default function BoardSelection() {
   // Gates Edit, Unfollow and Delete in every card's menu. Also off with no
   // boards, with no resolvable identity, and offline — where every action behind
   // it is a network mutation. Onboarding has no card menu at all (below).
-  const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
+  const canEditBoards = hasBoards && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
   // Same family of gates as canEditBoards, minus the identity requirement: a pin
   // is the viewer's own state and does not depend on knowing who owns the board.
   // Offline is still out — the mutation could not reach the server.
@@ -835,9 +967,11 @@ export default function BoardSelection() {
     if (fromOnboarding && !firstBoardMode) void requestLocation();
   }, [fromOnboarding, firstBoardMode, requestLocation]);
   // Everyone else who already allowed location gets Near you on open, with no
-  // prompt. The rest see "Show boards near you", which asks.
+  // prompt. The rest see "Show boards near you", which asks. It answers once
+  // the fix is in, or at once when location is not allowed.
   useEffect(() => {
-    if (!firstBoardMode) void requestLocationIfAllowed();
+    if (firstBoardMode) return;
+    void requestLocationIfAllowed().finally(() => setLocationCheckedOnOpen(true));
   }, [firstBoardMode, requestLocationIfAllowed]);
   // Never a dead tap (#5654). With location allowed it takes a fresh fix: a
   // climber who has moved since "Nothing within 20 km" gets a search from where
@@ -882,7 +1016,6 @@ export default function BoardSelection() {
 
   // First-board mode's answers. Each one is the existing flow behind it, plus
   // the choice event; see FirstBoardChoice.
-  const [gymChosen, setGymChosen] = useState(false);
   const onFirstBoardGym = useCallback(() => {
     chooseFirstBoardPath('gym');
     dropHeldBox();
@@ -914,34 +1047,24 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     startScan();
   }, [chooseFirstBoardPath, startScan]);
-  const inRange = useMemo(
-    () => inRangeView(scanPhase, scanRows, { lookup: scanLookup }),
-    [scanPhase, scanRows, scanLookup],
-  );
-  const inRangeRowsByKey = useMemo(() => {
-    const rowsByKey = new Map<string, InRangeBoardRow>();
-    for (const row of scanRows) if (row.kind === 'board') rowsByKey.set(row.key, row);
-    return rowsByKey;
-  }, [scanRows]);
-  const inRangeDisplay = useMemo<InRangeView<DiscoveryBoardItem>>(
-    () => ({
-      scanning: inRange.scanning,
-      content: mapInRangeBoards(inRange.content, (rows) =>
-        boardRowsToItems(rows, { activeUuid: activeBoard?.uuid, labelOptions }),
-      ),
-    }),
-    [inRange, activeBoard?.uuid, labelOptions],
-  );
-  const onPickInRangeBoard = useCallback(
+  // A row at the top (At {gym}, or the hero's Climb here). A pick the scan led
+  // to is the first-board "scan" path; a wall At {gym} because of the board
+  // you're on is not. A board in Your boards binds as that fuller copy: the
+  // gym's roster is a narrower read of the same board.
+  const topPicks = useMemo(() => pickerTopPicks(topView), [topView]);
+  const onPickTopBoard = useCallback(
     (item: DiscoveryBoardItem) => {
-      const row = inRangeRowsByKey.get(item.key);
-      if (!row) return;
-      chooseFirstBoardPath('scan');
+      const topPick = topPicks.get(item.key);
+      if (!topPick) return;
+      if (topPick.pickSource === 'bluetooth') chooseFirstBoardPath('scan');
+      const uuid = boardUuidOrNull(topPick.board.uuid);
+      const board = (uuid ? myBoards.find((saved) => saved.uuid === uuid) : undefined) ?? topPick.board;
+      const { pickSource, section, position } = topPick;
       // A box held from an earlier tap on a row it couldn't name is not this
       // board: `pickBoard` drops it for every pick but the Near you one.
-      pickBoard(row.board, 'bluetooth');
+      pickBoard(board, { pickSource, section, position });
     },
-    [inRangeRowsByKey, chooseFirstBoardPath, pickBoard],
+    [topPicks, chooseFirstBoardPath, myBoards, pickBoard],
   );
   // The three ways forward for a board it heard but couldn't name (a MoonBoard,
   // a box with no serial, a serial nobody has saved). Each one ends the scan and
@@ -1004,17 +1127,17 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     retryLookup();
   }, [chooseFirstBoardPath, retryLookup]);
-  // Android can withhold what a scan heard; the nothing-heard line then says
-  // why and offers the fix, which rescans when it works.
-  const locationHint = useInRangeLocationHint(inRange.content.kind === 'none_in_range', startScan);
+  // Android can withhold what a scan heard; when it heard nothing, the top
+  // says why and offers the fix, which rescans when it works.
+  const locationHint = useInRangeLocationHint(topView.heardNothing, startScan);
   const inRangeSection = (
     <InRangeSection
-      view={inRangeDisplay}
+      view={topDisplay}
       BoardArt={DiscoveryBoardArt}
       onStart={onInRangeStart}
       onOpenSettings={onOpenBluetoothSettings}
       onRetryLookup={onInRangeRetryLookup}
-      onPickBoard={onPickInRangeBoard}
+      onPickBoard={onPickTopBoard}
       onUseMyLocation={onInRangeUseMyLocation}
       onSearchGyms={onInRangeSearchGyms}
       onOwnBoard={onInRangeOwnBoard}
@@ -1022,57 +1145,40 @@ export default function BoardSelection() {
     />
   );
 
-  // "Also at {gym}": the other walls at the in-range board's gym, else at the
-  // active board's. A tap binds that wall; nothing connects without one.
-  const alsoAtAnchor = useMemo(() => alsoAtGymAnchor(inRange.content, activeBoard), [inRange.content, activeBoard]);
-  const onSelectGymWall = useCallback((board: UserBoard) => pickBoard(board, 'gym_walls'), [pickBoard]);
-  const alsoAtGymSection = alsoAtAnchor ? (
-    <AlsoAtGymSection anchor={alsoAtAnchor} onSelectBoard={onSelectGymWall} />
-  ) : null;
-
   const onOpenLocationSettings = useCallback(() => {
     void openAppSettings();
   }, []);
   const onRetryNearby = useCallback(() => {
     void refetchNearby();
   }, [refetchNearby]);
-  // One reading of the nearby search for both layouts. The "At a gym" choice
-  // counts as asked once it is tapped; Near you once location has been asked
-  // for at all (on open when already allowed, a tap, or the onboarding preload).
-  const nearbySearch = firstBoardGymState({
-    chosen: showFirstBoardChoice ? gymChosen : location.status !== 'idle',
-    locationStatus: location.status,
-    // Any request in flight, not only the first load: a retry after an error
-    // keeps the query in `error` while it runs, and should read as searching.
-    nearbyLoading: isNearbySearching,
-    nearbyFailed: isNearbyError,
-    nearbyCount: nearbyItems.length,
-  });
-
   // Near you in the ordinary layout: the boards it found, or, before location
   // was ever asked, one row that asks; otherwise what the search came to
-  // (looking, nothing within 20 km, a failed lookup, location off).
-  const nearbyPanel = nearbySection ?? (
-    <Section title={nearbyTitle} trailing={nearbyTrailing}>
-      {nearbySearch === 'idle' ? (
-        <PressableSurface onPress={searchNearby} accessibilityRole="button" style={styles.showNearbyRow}>
-          <Icon name="location" size={17} color={brandColors.primary} />
-          <Text variant="body" color={brandColors.primary}>
-            {t('mobile.discovery.showNearby')}
-          </Text>
-        </PressableSurface>
-      ) : (
-        <NearbySearchStatus
-          state={nearbySearch}
-          onFindGymOnMap={openGymMap}
-          onOpenSettings={onOpenLocationSettings}
-          onRetryNearby={onRetryNearby}
-          boardType={nearbyBoardType}
-          onShowAll={showAllNearby}
-        />
-      )}
-    </Section>
-  );
+  // (looking, nothing within 20 km, a failed lookup, location off). Nothing at
+  // all when every board it found is already shown above it.
+  const nearbyAllShownAbove = nearbySearch === 'found' && nearbyItems.length === 0;
+  const nearbyPanel = nearbyAllShownAbove
+    ? null
+    : (nearbySection ?? (
+        <Section title={nearbyTitle} trailing={nearbyTrailing}>
+          {nearbySearch === 'idle' ? (
+            <PressableSurface onPress={searchNearby} accessibilityRole="button" style={styles.showNearbyRow}>
+              <Icon name="location" size={17} color={brandColors.primary} />
+              <Text variant="body" color={brandColors.primary}>
+                {t('mobile.discovery.showNearby')}
+              </Text>
+            </PressableSurface>
+          ) : (
+            <NearbySearchStatus
+              state={nearbySearch}
+              onFindGymOnMap={openGymMap}
+              onOpenSettings={onOpenLocationSettings}
+              onRetryNearby={onRetryNearby}
+              boardType={nearbyBoardType}
+              onShowAll={showAllNearby}
+            />
+          )}
+        </Section>
+      ));
 
   // The offline branch must not be swallowed by the loading spinner: the very first
   // offline render is still "fetching" before the retryer pauses.
@@ -1190,10 +1296,9 @@ export default function BoardSelection() {
       showFirstBoardChoice={showFirstBoardChoice}
       fromOnboarding={fromOnboarding}
       inRangeSection={inRangeSection}
-      alsoAtGymSection={alsoAtGymSection}
       myBoardsSection={myBoardsSection}
       nearbySection={nearbyPanel}
-      hasBoards={myBoardItems.length > 0}
+      hasBoards={hasBoards}
       onEmptySetUpBoard={onEmptySetUpBoard}
       onEmptyAddSprayWall={onEmptyAddSprayWall}
       firstBoardChoice={

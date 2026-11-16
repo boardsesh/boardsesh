@@ -290,7 +290,6 @@
       "name": "Board-Name"
     },
     "bluetooth": {
-      "noResults": "Keine Boards in Reichweite",
       "unavailable": "Schalt Bluetooth ein, um zu suchen",
       "needSignalTitle": "Board gefunden, Empfang nötig",
       "needSignalBody": "Wir haben es erkannt, können es offline aber nicht nachschlagen.",
@@ -298,6 +297,7 @@
     },
     "inRange": {
       "title": "In Reichweite",
+      "atGym": "In {{gym}}",
       "inFrontOfYou": "Vor dir",
       "permissionTitle": "Finde das Board, an dem du stehst",
       "permissionBody": "Boardsesh sucht über Bluetooth nach Boards, damit du das Board vor dir als Erstes siehst.",
@@ -310,20 +310,15 @@
       "scanAgain": "Nochmal suchen",
       "lookingTitle": "Suche nach Boards…",
       "lookingBody": "Stell dich nah ans Board. Eingeschaltete Boards erscheinen hier.",
-      "gymWalls": "{{gym}} · {{count}} Boards",
-      "closest": "Am nächsten",
       "showAll": "Alle {{count}} Boards anzeigen",
       "moonboardTitle": "Ein MoonBoard ist in Reichweite",
       "moonboardBody": "MoonBoards senden keine Seriennummer. Sag uns, wo du bist, dann finden wir dieses.",
       "typeTitle": "Ein {{board}} Board ist in Reichweite",
       "bareNameBody": "Seine Box verrät nicht, welches Board es ist. Sag uns, wo du bist, dann finden wir es.",
       "unknownSetupBody": "Sein Setup kennen wir noch nicht. Sag uns, wo du bist, dann finden wir es.",
-      "alsoMoonboard": "Auch ein MoonBoard ist in Reichweite",
-      "alsoType": "Auch ein {{board}} Board ist in Reichweite",
       "alsoNeedSignal": "Noch ein Board ist in Reichweite. Zum Erkennen brauchen wir Empfang.",
       "useMyLocation": "Meinen Standort verwenden",
-      "searchGyms": "Hallen suchen",
-      "alsoAt": "Auch in {{gym}}"
+      "searchGyms": "Hallen suchen"
     },
     "addBoard": {
       "aria": "Board hinzufügen",

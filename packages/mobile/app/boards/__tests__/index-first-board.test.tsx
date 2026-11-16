@@ -22,7 +22,7 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 // gym tap rather than on open, each answer wired to the flow behind it, and an
 // onboarding bind that lands on Climbs. The block's own rendering has its own
 // suite (FirstBoardChoice.test.tsx), so here it is a prop-capturing stub, and so
-// is the In range slot (InRangeSection; its decisions are in-range-view.test.ts).
+// is the In range slot (InRangeSection; its decisions are picker-top-view.test.ts).
 //
 // It also pins the two other ways into the same states: Climbs' "Find my
 // board" (source=no_board), which gets the block only for an account with no
@@ -190,6 +190,7 @@ function nearbyBoardsResult() {
 }
 
 vi.mock('../../../src/lib/graphql/hooks', () => ({
+  useGymBoards: () => ({ data: undefined }),
   useMyBoards: () => ({
     data: { boards: state.myBoards },
     isLoading: false,
@@ -325,7 +326,6 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
     return createElement('div', { 'data-testid': 'in-range', 'data-kind': props.view.content.kind });
   },
 }));
-vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({ AlsoAtGymSection: () => null }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
@@ -610,7 +610,7 @@ describe('the In range scan', () => {
     expect(inRange().view.content.kind).toBe('hero');
 
     await act(async () => {
-      inRange().onPickBoard({ key: 'board:gym-wall' });
+      inRange().onPickBoard({ key: 'gym-wall' });
     });
 
     expect(scanCtrl.stop).toHaveBeenCalledOnce();
@@ -618,7 +618,7 @@ describe('the In range scan', () => {
     expect(markOnboardingSeenMock).toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(
       'Board Picker Selection Completed',
-      expect.objectContaining({ pickSource: 'bluetooth' }),
+      expect.objectContaining({ pickSource: 'bluetooth', section: 'hero', position: 0 }),
     );
   });
 
@@ -630,7 +630,7 @@ describe('the In range scan', () => {
     render(createElement(BoardSelection));
 
     await act(async () => {
-      inRange().onPickBoard({ key: 'board:gym-wall' });
+      inRange().onPickBoard({ key: 'gym-wall' });
     });
 
     expect(clearPendingRecognitionMock).toHaveBeenCalled();
@@ -781,7 +781,11 @@ describe('the picker opened from Climbs with no board', () => {
     expect(routerMock.dismissTo).toHaveBeenCalledWith('/(tabs)/climbs');
     expect(markOnboardingSeenMock).not.toHaveBeenCalled();
     expect(trackMock).not.toHaveBeenCalledWith('Onboarding Board Activated', expect.anything());
-    expect(trackMock).toHaveBeenCalledWith('Board Picker Opened', expect.objectContaining({ source: 'no_board' }));
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Picker Opened',
+      expect.objectContaining({ source: 'no_board' }),
+      expect.anything(),
+    );
   });
 });
 
