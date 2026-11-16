@@ -17,16 +17,15 @@ is an unrecognised token: anonymous where authentication is optional and 401
 where it is required, like any other unknown bearer. The PostgreSQL core and
 transport tests went with it.
 
-The client half below is still in the repository and still dark. The www issuer
-(`packages/web/app/lib/auth/browser-backend-token.server.ts`) posts to the
-removed command, so it can only fail closed. The Expo web lease consumers still
-handle `bsbd1_` leases. This page goes with them.
+The www issuer (`browser-backend-token.server.ts`) and the server facade that
+called it went in the PR that closed #7594. The Expo web lease consumers still
+handle `bsbd1_` leases and are still dark. This page goes with them.
 
 ## Clients
 
-The private reply includes the exact database issuance time. The web checks
-the issuer-clock duration, debits the entire observed roundtrip, and returns
-an earlier effective expiry plus `usableForMs`. Browser and Expo web consumers
+The private reply included the exact database issuance time. The www issuer
+checked the issuer-clock duration, debited the entire observed roundtrip, and
+returned an earlier effective expiry plus `usableForMs`. Browser and Expo web consumers
 must debit their own roundtrip and use a monotonic in-memory deadline. They
 must suppress delayed replies after account, SID, generation or cursor changes.
 No bearer belongs in persistent browser storage or a coordinator channel.
