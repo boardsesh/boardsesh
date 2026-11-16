@@ -144,14 +144,10 @@
       "cancel": "Abbrechen",
       "deleteError": "Dieses Board ließ sich nicht löschen. Versuch es nochmal.",
       "unfollowError": "Das Folgen ließ sich nicht beenden. Versuch es nochmal.",
-      "editAria": "{{name}} bearbeiten",
       "deleteAria": "{{name}} löschen",
-      "unfollowAria": "{{name}} nicht mehr folgen",
       "unfollowTitle": "Nicht mehr folgen?",
       "unfollowMessage": "„{{name}}“ ist dein aktives Board. Wenn du nicht mehr folgst, verschwindet es aus deinen Boards und die Auswahl wird gelöscht.",
       "unfollowConfirm": "Nicht mehr folgen",
-      "edit": "Bearbeiten",
-      "done": "Fertig",
       "deleteWallTitle": "Spraywall löschen?",
       "deleteWallMessage": "„{{name}}“ löschen? Die Fotos und Boulder sind danach nicht mehr verfügbar. Das lässt sich nicht rückgängig machen.",
       "deleteSuccess": "„{{name}}“ gelöscht"
@@ -218,7 +214,7 @@
       "nearbyTitle": "In deiner Nähe",
       "nearbyShowing": "Zeigt Boards in der Nähe",
       "yourBoardsTitle": "Deine Boards",
-      "activeBadge": "Aktiv",
+      "onIt": "Du bist hier",
       "ownedBadgeAria": "Dein Board",
       "followingBadgeAria": "Du folgst",
       "popularTitle": "Beliebte Setups",
@@ -227,14 +223,21 @@
       "createTile": "Erstellen",
       "followed": "{{name}} zu deinen Boards hinzugefügt",
       "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen",
-      "pinAria": "{{name}} anpinnen",
-      "unpinAria": "{{name}} abpinnen",
       "pinnedBadgeAria": "Angepinnt",
       "pinError": "Deine angepinnten Boards ließen sich nicht aktualisieren",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoards in deiner Nähe",
       "nearbyTitleType": "{{board}}-Boards in deiner Nähe",
-      "nearbyShowAll": "Alle zeigen"
+      "nearbyShowAll": "Alle zeigen",
+      "cardActionsAria": "Aktionen für {{name}}",
+      "menu": {
+        "climbHere": "Hier klettern",
+        "pin": "Anpinnen",
+        "unpin": "Abpinnen",
+        "download": "Für offline herunterladen",
+        "edit": "Board bearbeiten",
+        "editWall": "Spraywall bearbeiten"
+      }
     },
     "create": {
       "screenTitle": "Richte dein Board ein",
@@ -337,7 +340,6 @@
         "shareLinkUnlistedHint": "Nur die Leute, denen du den Link schickst."
       },
       "details": "Details",
-      "detailsAria": "Details für {{name}} öffnen",
       "activeSprayDetails": "{{name}} · Spraywall-Details",
       "share": {
         "shareLink": "Link teilen",

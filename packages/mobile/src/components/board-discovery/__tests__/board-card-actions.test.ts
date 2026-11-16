@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { boardCardAction, sortViewerOwnedFirst, hoistActiveBoard, type BoardCardAction } from '../board-card-actions';
+import { sortViewerOwnedFirst, hoistActiveBoard } from '../board-card-actions';
 
 const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
   ({
@@ -14,42 +14,8 @@ const board = (overrides: Partial<UserBoard> & { uuid: string }): UserBoard =>
     ...overrides,
   }) as unknown as UserBoard;
 
-describe('boardCardAction', () => {
-  it('offers a pencil on your own board and Following on one you follow', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: false })).toBe('edit');
-    expect(boardCardAction({ isViewerOwner: false, isEditing: false })).toBe('unfollow');
-  });
-
-  it('turns the slot destructive in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: true, isEditing: true })).toBe('delete');
-  });
-
-  // Delete is owner-only server-side, so a followed board must never reach a
-  // mutation the backend is going to reject.
-  it('never offers delete on a board the viewer does not own, even in edit mode', () => {
-    expect(boardCardAction({ isViewerOwner: false, isEditing: true })).toBe('unfollow');
-  });
-
-  // Inside `myBoards` every non-owned board is one you already follow, so a
-  // "Follow" resting state is unreachable. The real work here is the suppression
-  // below: it fails the typecheck if anyone widens the union. The runtime half
-  // proves the helper never invents a fourth value — and never returns null,
-  // since suppressing the slot entirely is the caller's job, not this helper's.
-  it('only ever returns a member of the three-value union', () => {
-    // @ts-expect-error — 'follow' is deliberately not part of BoardCardAction.
-    const rejected: BoardCardAction = 'follow';
-    expect(rejected).toBe('follow');
-
-    const produced = new Set<BoardCardAction>();
-    for (const isViewerOwner of [true, false]) {
-      for (const isEditing of [true, false]) {
-        produced.add(boardCardAction({ isViewerOwner, isEditing }));
-      }
-    }
-    expect([...produced].sort()).toEqual(['delete', 'edit', 'unfollow']);
-  });
-});
-
+// Which actions a card offers moved to board-card-menu.ts, with its table test
+// in board-card-menu.test.ts. This file keeps the list ordering.
 describe('sortViewerOwnedFirst', () => {
   const mine = board({ uuid: 'mine', ownerId: 'me' });
   const alsoMine = board({ uuid: 'also-mine', ownerId: 'me' });

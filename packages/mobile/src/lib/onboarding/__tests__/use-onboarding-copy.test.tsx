@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
 import { useOnboardingBoardCopy, useOnboardingCopy } from '../use-onboarding-copy';
 
 const PROMPT_KEYS = ['title', 'body', 'footnote', 'continue'] as const;
-const BOARD_KEYS = ['title', 'body', 'offlineHint', 'findAnother', 'findFirst', 'offlineSkip', 'downloadAria'] as const;
+const BOARD_KEYS = ['title', 'body', 'offlineHint', 'findAnother', 'findFirst', 'offlineSkip'] as const;
 
 describe('useOnboardingCopy', () => {
   beforeEach(() => {
@@ -71,13 +71,11 @@ describe('useOnboardingCopy', () => {
         seen.push(key);
         return key;
       };
-      const { result } = renderHook(() => useOnboardingBoardCopy());
-      // `downloadAria` is only read when the label function is called, so pull it
-      // through here rather than expecting it from the render alone.
-      result.current.downloadLabelFor('Kilter 12x12');
+      renderHook(() => useOnboardingBoardCopy());
       for (const key of BOARD_KEYS) {
         expect(seen).toContain(`mobile.onboarding.board.${key}`);
       }
+      expect(seen).toHaveLength(BOARD_KEYS.length);
     });
 
     it('stays stable across renders so the carousel keeps its memo', () => {

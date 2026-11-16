@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { BluetoothQuickstartSheet } from '../../src/components/board-discovery/BluetoothQuickstartSheet';
-import {
-  boardCardAction,
-  hoistActiveBoard,
-  type BoardCardAction,
-} from '../../src/components/board-discovery/board-card-actions';
+import { hoistActiveBoard } from '../../src/components/board-discovery/board-card-actions';
+import type {
+  BoardCardMenuAction,
+  BoardCardMenuCapabilities,
+  BoardCardMenuVia,
+} from '../../src/components/board-discovery/board-card-menu';
 import { popularConfigToItem, userBoardsToItems } from '../../src/components/board-discovery/board-items';
 import { BoardCarousel } from '../../src/components/board-discovery/BoardCarousel';
 import { BoardDetailSheet } from '../../src/components/board-discovery/BoardDetailSheet';
@@ -32,6 +33,7 @@ import { PressableSurface } from '../../src/components/PressableSurface';
 import { Text } from '../../src/components/Text';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useStoredUserId } from '../../src/hooks/use-current-user-id';
+import { trackBoardCardAction } from '../../src/lib/boards/board-card-action-analytics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { firstBoardGymState } from '../../src/lib/boards/first-board-gym-state';
 import {
@@ -59,7 +61,6 @@ import {
   useActiveBoard,
   useClearActiveBoardIfCurrentGeneration,
 } from '../../src/lib/graphql/use-active-board';
-import { hapticSelection } from '../../src/lib/haptics';
 import { trackNudgeAccepted } from '../../src/lib/offline-nudges/nudge-analytics';
 import { useFirstBoardPickerTracking } from '../../src/lib/onboarding/use-first-board-picker-tracking';
 import { openAppSettings } from '../../src/lib/open-app-settings';
@@ -84,6 +85,15 @@ import { spacing } from '../../src/theme/tokens';
 // `boardConnection` is always undefined, and a fresh `[]` per render would
 // recompute the offline rows on every commit.
 const EMPTY_BOARDS: UserBoard[] = [];
+
+// Near you boards belong to other people: their cards offer Climb here and
+// Details, nothing that manages a board.
+const NEARBY_MENU_CAPABILITIES: BoardCardMenuCapabilities = {
+  canPin: false,
+  canDownload: false,
+  canOpenDetails: true,
+  canManage: false,
+};
 
 /** The board type the Near you list is narrowed to, and the layout it was set in. */
 type NearbyTypeFilter = { boardType: BoardName; inFirstBoardChoice: boolean };
@@ -142,16 +152,12 @@ export default function BoardSelection() {
 
   // Who is looking, so a card can tell your own wall from a gym you follow.
   // Deliberately NOT a gate: unlike /boards/manage, a missing id must never stop
-  // you switching boards. It only removes the Edit control and the per-card
-  // ownership badge — degraded, never blocked.
+  // you switching boards. It only takes Edit, Unfollow and Delete out of the
+  // card menu — degraded, never blocked.
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const { userId: storedUserId } = useStoredUserId(isAuthenticated && !profile?.id);
   const currentUserId = profile?.id ?? storedUserId;
 
-  // iOS-style edit mode for the "Your boards" carousel. Local state inside a
-  // `presentation: 'modal'` route, so it cannot survive a dismiss: every one of
-  // the twelve places that open this picker gets it switched off.
-  const [isEditingBoards, setIsEditingBoards] = useState(false);
   const [detailBoard, setDetailBoard] = useState<UserBoard | null>(null);
   const detailPickSource = useRef<BoardPickSource>('your_boards');
   const closeBoardDetails = useCallback(() => setDetailBoard(null), []);
@@ -160,7 +166,7 @@ export default function BoardSelection() {
   }, [isAuthenticated, closeBoardDetails]);
 
   // Pins the climber toggled since this modal opened, so the glyph flips under
-  // the finger without waiting for a refetch. Deliberately does NOT reorder: the
+  // the menu without waiting for a refetch. Deliberately does NOT reorder: the
   // pin mutation invalidates `myBoards` with `refetchType: 'none'`, so the new
   // order lands the next time the picker is opened rather than sliding the card
   // out from under the tap that made it.
@@ -406,6 +412,16 @@ export default function BoardSelection() {
     (item: DiscoveryBoardItem) => openBoardDetails(item, 'nearby'),
     [openBoardDetails],
   );
+  // Near you's card menu: the two rows NEARBY_MENU_CAPABILITIES offers.
+  const onNearbyMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
+      if (action !== 'climb_here' && action !== 'details') return;
+      trackBoardCardAction({ action, via, section: 'nearby' });
+      if (action === 'climb_here') onSelectNearbyBoard(item);
+      else onNearbyBoardDetails(item);
+    },
+    [onSelectNearbyBoard, onNearbyBoardDetails],
+  );
   const onActiveBoardDetails = useCallback(() => {
     if (activeBoard) setDetailBoard(activeBoard);
   }, [activeBoard]);
@@ -440,12 +456,18 @@ export default function BoardSelection() {
           ) : null
         }
       >
-        <BoardCarousel items={nearbyItems} onSelect={onSelectNearbyBoard} onDetails={onNearbyBoardDetails} />
+        <BoardCarousel
+          items={nearbyItems}
+          onSelect={onSelectNearbyBoard}
+          menuCapabilities={NEARBY_MENU_CAPABILITIES}
+          onMenuAction={onNearbyMenuAction}
+        />
       </Section>
     ) : null;
-  // Tap-to-download, scoped to boards the user owns or follows. Gated on the
-  // engine's platform gate so the glyph never renders in the Expo browser app
-  // (offline-downloads-enabled.web.ts hard-returns false) or with offline off.
+  // Download for offline, scoped to boards the user owns or follows. The menu
+  // only offers it with the engine's platform gate open, so it never shows in
+  // the Expo browser app (offline-downloads-enabled.web.ts hard-returns false)
+  // or with offline off.
   const onDownloadMyBoard = useCallback(
     (item: DiscoveryBoardItem) => {
       const board = myBoards.find((candidate) => candidate.uuid === item.key);
@@ -455,9 +477,9 @@ export default function BoardSelection() {
         if (!confirmed) return;
         // This surface deliberately has no impression event — a card scrolling
         // past in a carousel is not a suggestion the way a prompt is — so the
-        // accept is what joins the glyph to the download funnel. Without it the
-        // widest-reach discovery surface ships blind, which is the failure
-        // epic #4319 exists to fix. Never arm-only: the glyph is online-only.
+        // accept is what joins the menu row to the download funnel. Without it
+        // the widest-reach discovery surface ships blind, which is the failure
+        // epic #4319 exists to fix. Never arm-only: the row is online-only.
         trackNudgeAccepted(
           {
             surface: 'board_card',
@@ -472,53 +494,22 @@ export default function BoardSelection() {
     },
     [myBoards, confirmAndDownload, downloadedScopeKeys, unfinishedWallUuids],
   );
-  const downloadLabelFor = useCallback(
-    (item: DiscoveryBoardItem) => t('mobile.offline.makeAvailableAria', { name: item.title }),
-    [t],
-  );
 
-  // Ownership resolves off the flag the item already carries. `undefined` means
-  // we could not tell, and an unknown board gets no slot at all rather than a
-  // control offering to unfollow the user's own wall.
-  const myBoardActionFor = useCallback(
-    (item: DiscoveryBoardItem): BoardCardAction =>
-      item.isViewerOwner === undefined
-        ? null
-        : boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards }),
-    [isEditingBoards],
-  );
-  const myBoardActionLabelFor = useCallback(
-    (item: DiscoveryBoardItem) => {
-      switch (myBoardActionFor(item)) {
-        case 'edit':
-          return t('mobile.manage.editAria', { name: item.title });
-        case 'delete':
-          return t('mobile.manage.deleteAria', { name: item.title });
-        case 'unfollow':
-          return t('mobile.manage.unfollowAria', { name: item.title });
-        // No slot renders for a board whose ownership did not resolve, so there
-        // is no action to label. Exhaustive rather than a fallthrough, so a
-        // future action can't inherit the wrong string.
-        case null:
-          return '';
-      }
-    },
-    [myBoardActionFor, t],
-  );
-
-  // One `find` per tap — the shape `onSelectMyBoard` already uses — never per row.
+  // One `find` per pick — the shape `onSelectMyBoard` already uses — never per row.
   const runMyBoardAction = useCallback(
-    async (item: DiscoveryBoardItem) => {
+    async (item: DiscoveryBoardItem, action: 'edit' | 'unfollow' | 'delete') => {
       const board = myBoards.find((candidate) => candidate.uuid === item.key);
       if (!board) {
         showToast(t('mobile.boardSwitchError'), 'error');
         return;
       }
-      // Unreachable from the UI — a board whose ownership did not resolve renders
-      // no slot at all — but bail explicitly rather than let a coercion collapse
-      // "unknown" into "followed" and offer to unfollow the user's own wall.
+      // Unreachable from the UI — the menu offers none of these on a board whose
+      // ownership did not resolve — but bail explicitly rather than let a
+      // coercion collapse "unknown" into "followed" and unfollow the user's own
+      // wall. Edit and delete are owner-only, and unfollow is for boards you do
+      // not own: a mismatch is a stale row, so it runs nothing.
       if (item.isViewerOwner === undefined) return;
-      const action = boardCardAction({ isViewerOwner: item.isViewerOwner, isEditing: isEditingBoards });
+      if (item.isViewerOwner !== (action !== 'unfollow')) return;
       if (action === 'edit') {
         router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
         return;
@@ -548,43 +539,37 @@ export default function BoardSelection() {
             await clearSession({ notifyServer: true });
             await clearActiveBoard(activeBoardGeneration);
           }
-          // Leave edit mode after an irreversible removal: the carousel has just
-          // reflowed under a finger that is still over a red button.
-          setIsEditingBoards(false);
           showToast(t('mobile.manage.deleteSuccess', { name: board.name }), 'success');
         } catch {
           showToast(t('mobile.manage.deleteError'), 'error');
         }
         return;
       }
-      if (action === 'unfollow') {
-        // Unfollow is reversible and stays one tap — except on the active board,
-        // where it also clears the selection out from under a live session.
-        if (wasActive) {
-          const confirmed = await confirm({
-            title: t('mobile.manage.unfollowTitle'),
-            message: t('mobile.manage.unfollowMessage', { name: board.name }),
-            confirmLabel: t('mobile.manage.unfollowConfirm'),
-            cancelLabel: t('mobile.manage.cancel'),
-            destructive: true,
-          });
-          if (!confirmed) return;
+      // Unfollow is reversible and stays one tap — except on the active board,
+      // where it also clears the selection out from under a live session.
+      if (wasActive) {
+        const confirmed = await confirm({
+          title: t('mobile.manage.unfollowTitle'),
+          message: t('mobile.manage.unfollowMessage', { name: board.name }),
+          confirmLabel: t('mobile.manage.unfollowConfirm'),
+          cancelLabel: t('mobile.manage.cancel'),
+          destructive: true,
+        });
+        if (!confirmed) return;
+      }
+      try {
+        await unfollowBoardAsync(board.uuid);
+        forgetOfflineBoard(board.uuid);
+        if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+          await clearSession({ notifyServer: true });
+          await clearActiveBoard(activeBoardGeneration);
         }
-        try {
-          await unfollowBoardAsync(board.uuid);
-          forgetOfflineBoard(board.uuid);
-          if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
-            await clearSession({ notifyServer: true });
-            await clearActiveBoard(activeBoardGeneration);
-          }
-        } catch {
-          showToast(t('mobile.manage.unfollowError'), 'error');
-        }
+      } catch {
+        showToast(t('mobile.manage.unfollowError'), 'error');
       }
     },
     [
       myBoards,
-      isEditingBoards,
       router,
       activeBoard?.uuid,
       confirm,
@@ -596,64 +581,78 @@ export default function BoardSelection() {
       t,
     ],
   );
-  const onMyBoardAction = useCallback(
-    (item: DiscoveryBoardItem) => {
-      void runMyBoardAction(item);
-    },
-    [runMyBoardAction],
-  );
-  // Edit mode already disables the card body, but the handler guards it too.
-  const onSelectMyBoardCard = useCallback(
-    (item: DiscoveryBoardItem) => {
-      if (isEditingBoards) return;
-      onSelectMyBoard(item);
-    },
-    [isEditingBoards, onSelectMyBoard],
-  );
-  // Read straight off the mutations, so there is no second copy of "which board
-  // is busy" to keep in sync.
-  const pendingActionKey = deleteBoard.isPending
-    ? (deleteBoard.variables ?? null)
-    : unfollowBoard.isPending
-      ? (unfollowBoard.variables ?? null)
-      : null;
 
-  const onTogglePin = useCallback(
-    (item: DiscoveryBoardItem) => {
-      const nextPinned = !item.isPinned;
+  const setBoardPinned = useCallback(
+    (item: DiscoveryBoardItem, pinned: boolean) => {
       setPinnedOverrides((previous) => {
         const next = new Map(previous);
-        next.set(item.key, nextPinned);
+        next.set(item.key, pinned);
         return next;
       });
-      pinBoardMutate({ boardUuid: item.key, pinned: nextPinned });
+      pinBoardMutate({ boardUuid: item.key, pinned });
     },
     [pinBoardMutate],
   );
 
-  const pinLabelFor = useCallback(
-    (item: DiscoveryBoardItem) =>
-      item.isPinned
-        ? t('mobile.discovery.unpinAria', { name: item.title })
-        : t('mobile.discovery.pinAria', { name: item.title }),
-    [t],
-  );
-
-  // Gates the Edit/Done toggle AND the whole per-card action slot. Onboarding is
-  // the reason the two share a predicate: the first screen a new account ever
-  // sees must not carry a board action of any kind, and gating only the toggle
-  // would have left the followed-board glyph live there. Also off with no boards,
-  // with no resolvable identity, and offline — where every action behind it is a
-  // network mutation.
+  // Gates Edit, Unfollow and Delete in every card's menu. Off during onboarding:
+  // the first screen a new account ever sees must not carry a way to remove a
+  // board. Also off with no boards, with no resolvable identity, and offline —
+  // where every action behind it is a network mutation.
   const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
   // Same family of gates as canEditBoards, minus the identity requirement: a pin
   // is the viewer's own state and does not depend on knowing who owns the board.
   // Offline is still out — the mutation could not reach the server — and so is
   // onboarding, whose first screen carries no board controls at all.
   const canPinBoards = !isLocalOnly && !fromOnboarding && isAuthenticated;
-  useEffect(() => {
-    if (isEditingBoards && !canEditBoards) setIsEditingBoards(false);
-  }, [isEditingBoards, canEditBoards]);
+  const myBoardMenuCapabilities = useMemo<BoardCardMenuCapabilities>(
+    () => ({
+      canPin: canPinBoards,
+      canDownload: offlineDownloadsEnabled,
+      canOpenDetails: true,
+      canManage: canEditBoards,
+    }),
+    [canPinBoards, offlineDownloadsEnabled, canEditBoards],
+  );
+
+  // Every row of a "Your boards" card menu lands here, from the ⋯, the hold or
+  // a screen-reader action. The menu only offers what the capabilities above
+  // allow; the gates are checked again here, so a row drawn before the climber
+  // went offline cannot run a mutation that would fail.
+  const onMyBoardMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
+      trackBoardCardAction({ action, via, section: 'your_boards' });
+      switch (action) {
+        case 'climb_here':
+          onSelectMyBoard(item);
+          return;
+        case 'pin':
+        case 'unpin':
+          if (canPinBoards) setBoardPinned(item, action === 'pin');
+          return;
+        case 'download':
+          if (offlineDownloadsEnabled) onDownloadMyBoard(item);
+          return;
+        case 'details':
+          onMyBoardDetails(item);
+          return;
+        case 'edit':
+        case 'unfollow':
+        case 'delete':
+          if (canEditBoards) void runMyBoardAction(item, action);
+          return;
+      }
+    },
+    [
+      onSelectMyBoard,
+      canPinBoards,
+      setBoardPinned,
+      offlineDownloadsEnabled,
+      onDownloadMyBoard,
+      onMyBoardDetails,
+      canEditBoards,
+      runMyBoardAction,
+    ],
+  );
 
   const onManageBoards = useCallback(() => {
     router.push('/boards/manage');
@@ -673,42 +672,12 @@ export default function BoardSelection() {
 
   const myBoardsSection =
     myBoardItems.length > 0 ? (
-      <Section
-        title={t('mobile.discovery.yourBoardsTitle')}
-        trailing={
-          canEditBoards ? (
-            <PressableSurface
-              onPress={() => {
-                hapticSelection();
-                setIsEditingBoards((previous) => !previous);
-              }}
-              accessibilityRole="button"
-              style={styles.sectionAction}
-            >
-              <Text variant="body" color={brandColors.primary}>
-                {isEditingBoards ? t('mobile.manage.done') : t('mobile.manage.edit')}
-              </Text>
-            </PressableSurface>
-          ) : null
-        }
-      >
+      <Section title={t('mobile.discovery.yourBoardsTitle')}>
         <BoardCarousel
           items={myBoardItems}
-          onSelect={onSelectMyBoardCard}
-          onDetails={onMyBoardDetails}
-          onDownload={offlineDownloadsEnabled ? onDownloadMyBoard : undefined}
-          downloadLabelFor={downloadLabelFor}
-          actionFor={canEditBoards ? myBoardActionFor : undefined}
-          actionLabelFor={myBoardActionLabelFor}
-          onAction={canEditBoards ? onMyBoardAction : undefined}
-          deleteActionTitle={t('mobile.manage.deleteConfirm')}
-          unfollowActionTitle={t('mobile.manage.unfollowConfirm')}
-          onTogglePin={canPinBoards ? onTogglePin : undefined}
-          // Gated with its handler: the card ignores a label it has no control
-          // for, but the carousel would still resolve one per row.
-          pinLabelFor={canPinBoards ? pinLabelFor : undefined}
-          isEditing={isEditingBoards}
-          pendingActionKey={pendingActionKey}
+          onSelect={onSelectMyBoard}
+          menuCapabilities={myBoardMenuCapabilities}
+          onMenuAction={onMyBoardMenuAction}
         />
         {/* Inside the section because that is what it drills into; gone with the
             section when there are no boards to manage or download. */}

@@ -144,14 +144,10 @@
       "cancel": "Cancelar",
       "deleteError": "No se pudo eliminar ese plafón. Inténtalo de nuevo.",
       "unfollowError": "No se pudo dejar de seguir ese plafón. Inténtalo de nuevo.",
-      "editAria": "Editar {{name}}",
       "deleteAria": "Eliminar {{name}}",
-      "unfollowAria": "Dejar de seguir {{name}}",
       "unfollowTitle": "¿Dejar de seguir?",
       "unfollowMessage": "\"{{name}}\" es tu plafón activo. Al dejar de seguirlo, se quita de tus plafones y se borra la selección.",
       "unfollowConfirm": "Dejar de seguir",
-      "edit": "Editar",
-      "done": "Listo",
       "deleteWallTitle": "¿Eliminar el Spraywall?",
       "deleteWallMessage": "¿Eliminar \"{{name}}\"? Sus fotos y bloques dejarán de estar disponibles. No se puede deshacer.",
       "deleteSuccess": "\"{{name}}\" eliminado"
@@ -218,7 +214,7 @@
       "nearbyTitle": "Cerca de ti",
       "nearbyShowing": "Mostrando cercanos",
       "yourBoardsTitle": "Tus plafones",
-      "activeBadge": "Activo",
+      "onIt": "Estás aquí",
       "ownedBadgeAria": "Tu plafón",
       "followingBadgeAria": "Siguiendo",
       "popularTitle": "Configuraciones populares",
@@ -227,14 +223,21 @@
       "createTile": "Crear",
       "followed": "{{name}} añadido a tus plafones",
       "followError": "No se pudo añadir {{name}} a tus plafones",
-      "pinAria": "Fijar {{name}}",
-      "unpinAria": "Desfijar {{name}}",
       "pinnedBadgeAria": "Fijado",
       "pinError": "No se pudieron actualizar tus plafones fijados",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "Plafones MoonBoard cerca de ti",
       "nearbyTitleType": "Plafones {{board}} cerca de ti",
-      "nearbyShowAll": "Ver todos"
+      "nearbyShowAll": "Ver todos",
+      "cardActionsAria": "Acciones para {{name}}",
+      "menu": {
+        "climbHere": "Escalar aquí",
+        "pin": "Fijar",
+        "unpin": "Desfijar",
+        "download": "Descargar para usar sin conexión",
+        "edit": "Editar plafón",
+        "editWall": "Editar Spraywall"
+      }
     },
     "create": {
       "screenTitle": "Configura tu plafón",
@@ -337,7 +340,6 @@
         "shareLinkUnlistedHint": "Solo quien reciba el enlace."
       },
       "details": "Detalles",
-      "detailsAria": "Abrir los detalles de {{name}}",
       "activeSprayDetails": "{{name}} · detalles del Spraywall",
       "share": {
         "shareLink": "Compartir enlace",

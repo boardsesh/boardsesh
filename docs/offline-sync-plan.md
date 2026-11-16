@@ -1792,7 +1792,7 @@ bounded by eligibility and dismiss-forever only.
 | Surface      | Where                                                         |
 | ------------ | ------------------------------------------------------------- |
 | `no_catalog` | boards-picker `isLocalOnly` empty state + a new climbs branch |
-| `board_card` | download glyph on the Your Boards carousel                    |
+| `board_card` | Download for offline in a Your Boards card menu (⋯ or hold)   |
 | `whats_new`  | curated card pinned above the generated changelog timeline    |
 
 ### Arming is not downloading

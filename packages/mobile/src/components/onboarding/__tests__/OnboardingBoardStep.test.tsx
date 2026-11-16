@@ -9,8 +9,8 @@ const offlineStateCtrl = vi.hoisted(() => ({ state: 'off' as string }));
 const carouselCtrl = vi.hoisted(() => ({
   items: [] as { key: string; title: string }[],
   onSelect: null as ((item: { key: string }) => void) | null,
-  onDownload: null as ((item: { key: string }) => void) | null,
-  downloadLabelFor: null as ((item: { key: string; title: string }) => string) | null,
+  menuCapabilities: null as Record<string, boolean> | null,
+  onMenuAction: null as ((item: { key: string }, action: string, via: string) => void) | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -63,13 +63,13 @@ vi.mock('../../board-discovery/BoardCarousel', () => ({
   BoardCarousel: (props: {
     items: { key: string; title: string }[];
     onSelect: (item: { key: string }) => void;
-    onDownload?: (item: { key: string }) => void;
-    downloadLabelFor?: (item: { key: string; title: string }) => string;
+    menuCapabilities?: Record<string, boolean>;
+    onMenuAction?: (item: { key: string }, action: string, via: string) => void;
   }) => {
     carouselCtrl.items = props.items;
     carouselCtrl.onSelect = props.onSelect;
-    carouselCtrl.onDownload = props.onDownload ?? null;
-    carouselCtrl.downloadLabelFor = props.downloadLabelFor ?? null;
+    carouselCtrl.menuCapabilities = props.menuCapabilities ?? null;
+    carouselCtrl.onMenuAction = props.onMenuAction ?? null;
     return createElement('div', { 'data-testid': 'carousel' });
   },
 }));
@@ -90,7 +90,6 @@ vi.mock('../../../lib/onboarding/use-onboarding-copy', () => ({
     findAnother: 'Find another board',
     findFirst: 'Find my board',
     offlineSkip: 'Skip for now',
-    downloadLabelFor: (name: string) => `Keep ${name} on this phone`,
   }),
 }));
 
@@ -138,7 +137,8 @@ describe('OnboardingBoardStep', () => {
     offlineStateCtrl.state = 'off';
     carouselCtrl.items = [];
     carouselCtrl.onSelect = null;
-    carouselCtrl.onDownload = null;
+    carouselCtrl.menuCapabilities = null;
+    carouselCtrl.onMenuAction = null;
     cleanup();
   });
 
@@ -174,17 +174,33 @@ describe('OnboardingBoardStep', () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  it('offers a per-card download, labelled with the board it would save', () => {
+  // The download moved off the board art into the card menu; this step offers
+  // it there and nothing else a board could be managed with.
+  it('offers Download for offline in the card menu, and no board management', () => {
     const { props } = renderStep();
 
-    expect(carouselCtrl.downloadLabelFor?.({ key: 'board-1', title: 'Klimmuur' })).toBe('Keep Klimmuur on this phone');
-    carouselCtrl.onDownload?.({ key: 'board-1' });
+    expect(carouselCtrl.menuCapabilities).toEqual({
+      canPin: false,
+      canDownload: true,
+      canOpenDetails: false,
+      canManage: false,
+    });
+    carouselCtrl.onMenuAction?.({ key: 'board-1' }, 'download', 'menu_button');
     expect(props.onDownload).toHaveBeenCalledWith(BOARDS[0]);
+    expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  it('hides the download glyph where the engine cannot run', () => {
+  it('binds the board from the menu’s Climb here, as a tap does', () => {
+    const { props } = renderStep();
+
+    carouselCtrl.onMenuAction?.({ key: 'board-2' }, 'climb_here', 'long_press');
+    expect(props.onSelect).toHaveBeenCalledWith(BOARDS[1]);
+    expect(props.onDownload).not.toHaveBeenCalled();
+  });
+
+  it('offers no download where the engine cannot run', () => {
     renderStep({ offlineDownloadsEnabled: false });
-    expect(carouselCtrl.onDownload).toBeNull();
+    expect(carouselCtrl.menuCapabilities?.canDownload).toBe(false);
   });
 
   describe('with boards to choose from', () => {

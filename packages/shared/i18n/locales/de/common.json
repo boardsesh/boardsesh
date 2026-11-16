@@ -742,11 +742,10 @@
       "board": {
         "title": "Auf welchem Board kletterst du?",
         "body": "Jedes Board hat seinen eigenen Verlauf. Wähl das, auf dem du kletterst, und du siehst die Begehungen von allen anderen darauf.",
-        "offlineHint": "Tipp auf den Pfeil, um ein Board auf diesem Handy zu behalten. Es öffnet sofort und läuft auch, wenn das Hallen-WLAN streikt.",
+        "offlineHint": "Lade ein Board über sein Menü herunter, um es auf diesem Handy zu behalten. Es öffnet sofort und läuft auch, wenn das Hallen-WLAN streikt.",
         "findAnother": "Anderes Board finden",
         "findFirst": "Mein Board finden",
-        "offlineSkip": "Jetzt nicht",
-        "downloadAria": "{{name}} auf diesem Handy behalten"
+        "offlineSkip": "Jetzt nicht"
       },
       "boardRevealTip": "Tippe auf die Uhr, um die zuletzt an diesem Board beleuchteten Boulder zu sehen.",
       "quickActionsTip": "Drück lange auf einen Boulder für Schnellaktionen wie Warteschlange, Eintrag und Playlists.",

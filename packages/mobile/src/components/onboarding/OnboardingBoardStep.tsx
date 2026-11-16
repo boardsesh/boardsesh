@@ -10,6 +10,7 @@ import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCard';
 import { userBoardsToItems } from '../board-discovery/board-items';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { sortViewerOwnedFirst } from '../board-discovery/board-card-actions';
+import type { BoardCardMenuAction, BoardCardMenuCapabilities } from '../board-discovery/board-card-menu';
 import { useBoardOfflineState } from '../board-discovery/use-board-offline-state';
 import { useOnboardingBoardCopy } from '../../lib/onboarding/use-onboarding-copy';
 import { useBlockBack } from './use-block-back';
@@ -53,7 +54,8 @@ export type OnboardingBoardStepProps = {
  * on the phone opens instantly and works on gym wifi that has given up.
  *
  * Reuses `BoardCarousel` / `BoardDiscoveryCard` rather than growing a second
- * board slider — same cards, same download glyph, same active tick as `/boards`.
+ * board slider — same cards, same menu (Download for offline), same active tick
+ * as `/boards`.
  *
  * **There is no exit** (issue #4961), with exactly one exception: a climber who
  * is offline with nothing cached cannot be shown a usable choice, and stranding
@@ -106,15 +108,22 @@ export function OnboardingBoardStep({
     [findBoard, onSelect],
   );
 
-  const handleDownload = useCallback(
-    (item: DiscoveryBoardItem) => {
-      const board = findBoard(item.key);
-      if (board) onDownload(board);
-    },
-    [findBoard, onDownload],
+  // The card menu offers Climb here and, for a board not on the phone yet,
+  // Download for offline. Nothing else: this step has no pins, details or
+  // board management, only the choice of board.
+  const menuCapabilities = useMemo<BoardCardMenuCapabilities>(
+    () => ({ canPin: false, canDownload: offlineDownloadsEnabled, canOpenDetails: false, canManage: false }),
+    [offlineDownloadsEnabled],
   );
-
-  const downloadLabelFor = useCallback((item: DiscoveryBoardItem) => copy.downloadLabelFor(item.title), [copy]);
+  const handleMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction) => {
+      const board = findBoard(item.key);
+      if (!board) return;
+      if (action === 'climb_here') onSelect(board);
+      if (action === 'download') onDownload(board);
+    },
+    [findBoard, onSelect, onDownload],
+  );
 
   const hasBoards = items.length > 0;
 
@@ -158,8 +167,8 @@ export function OnboardingBoardStep({
             <BoardCarousel
               items={items}
               onSelect={handleSelect}
-              onDownload={offlineDownloadsEnabled ? handleDownload : undefined}
-              downloadLabelFor={downloadLabelFor}
+              menuCapabilities={menuCapabilities}
+              onMenuAction={handleMenuAction}
             />
             {offlineDownloadsEnabled ? (
               <View style={styles.copy}>

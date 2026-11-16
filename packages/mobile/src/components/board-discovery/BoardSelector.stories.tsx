@@ -7,6 +7,7 @@ import { StoryBoard } from '../../dev/stories/StoryBoard';
 import type { StoryModule, StoryRenderControls } from '../../dev/stories/types';
 import { useTheme } from '../../providers/theme-provider';
 import { SheetTopBar } from '../SheetTopBar';
+import type { BoardCardMenuCapabilities } from './board-card-menu';
 import { BoardCarouselView } from './BoardCarouselView';
 import {
   BoardDiscoveryCardView,
@@ -31,7 +32,40 @@ const BOARDS: DiscoveryBoardItem[] = [
     isPinned: true,
     offlineState: 'downloaded',
   },
+  {
+    ...STORY_BOARD,
+    key: 'gym',
+    title: 'Bergen Klatresenter Danmarksplass',
+    subtitle: 'Kilter · 12 x 12',
+    isViewerOwner: false,
+    offlineState: 'downloading',
+  },
+  {
+    ...STORY_BOARD,
+    key: 'club',
+    title: 'Club wall',
+    subtitle: 'Kilter · 7 x 10',
+    isViewerOwner: false,
+    offlineState: 'off',
+  },
 ];
+const NEARBY_BOARDS: DiscoveryBoardItem[] = [
+  { ...STORY_BOARD, key: 'nearby-close', title: 'Crux Kilter', subtitle: 'Kilter · 40°', distanceMeters: 2 },
+  { ...STORY_BOARD, key: 'nearby-far', title: 'Boulder Box', subtitle: 'Kilter · 12 x 12', distanceMeters: 3240 },
+];
+const STORY_BOARD_KEYS = [...BOARDS, ...NEARBY_BOARDS].map((board) => board.key);
+const YOUR_BOARDS_MENU: BoardCardMenuCapabilities = {
+  canPin: true,
+  canDownload: true,
+  canOpenDetails: true,
+  canManage: true,
+};
+const NEARBY_MENU: BoardCardMenuCapabilities = {
+  canPin: false,
+  canDownload: false,
+  canOpenDetails: true,
+  canManage: false,
+};
 function StoryCard(props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>) {
   const { onDisplayed, onError } = useContext(ReadyContext);
   const onReady = useCallback(() => onDisplayed(props.item.key), [props.item.key, onDisplayed]);
@@ -55,7 +89,7 @@ function SelectorStory({ onReady, onError }: StoryRenderControls) {
   const onDisplayed = useCallback(
     (id: string) => {
       displayed.current.add(id);
-      if (BOARDS.every((board) => displayed.current.has(board.key))) onReady();
+      if (STORY_BOARD_KEYS.every((key) => displayed.current.has(key))) onReady();
     },
     [onReady],
   );
@@ -82,7 +116,24 @@ function SelectorStory({ onReady, onError }: StoryRenderControls) {
           hasBoards
           myBoardsSection={
             <BoardSelectorSection title={t('mobile.discovery.yourBoardsTitle')}>
-              <BoardCarouselView Card={StoryCard} items={BOARDS} onSelect={noop} />
+              <BoardCarouselView
+                Card={StoryCard}
+                items={BOARDS}
+                onSelect={noop}
+                menuCapabilities={YOUR_BOARDS_MENU}
+                onMenuAction={noop}
+              />
+            </BoardSelectorSection>
+          }
+          nearbySection={
+            <BoardSelectorSection title={t('mobile.discovery.nearbyTitle')}>
+              <BoardCarouselView
+                Card={StoryCard}
+                items={NEARBY_BOARDS}
+                onSelect={noop}
+                menuCapabilities={NEARBY_MENU}
+                onMenuAction={noop}
+              />
             </BoardSelectorSection>
           }
         />

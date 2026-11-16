@@ -742,11 +742,10 @@
       "board": {
         "title": "Sur quelle board tu grimpes ?",
         "body": "Chaque board garde son propre historique. Choisis celle que tu grimpes et tu verras les croix de tous les autres qui y passent.",
-        "offlineHint": "Touche la flèche pour garder une board sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
+        "offlineHint": "Télécharge une board depuis son menu pour la garder sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
         "findAnother": "Trouver une autre board",
         "findFirst": "Trouver ma board",
-        "offlineSkip": "Plus tard",
-        "downloadAria": "Garder {{name}} sur ce téléphone"
+        "offlineSkip": "Plus tard"
       },
       "boardRevealTip": "Touche l’horloge pour voir les blocs allumés sur ce mur.",
       "quickActionsTip": "Appuie longuement sur un bloc pour des actions rapides : file, croix, listes.",

@@ -124,7 +124,6 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
         'mobile.boardSwitchError': 'Could not switch board',
-        'mobile.manage.edit': 'Edit',
         'mobile.manage.done': 'Done',
         'myBoards.title': 'Manage boards',
       };
@@ -270,35 +269,26 @@ vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
   BoardCarousel: ({
     items,
     onSelect,
-    onDownload,
-    actionFor,
-    onAction,
+    menuCapabilities,
+    onMenuAction,
   }: {
     items: CarouselItem[];
     onSelect: (item: CarouselItem) => void;
-    onDownload?: (item: CarouselItem) => void;
-    actionFor?: (item: CarouselItem) => string | null;
-    onAction?: (item: CarouselItem) => void;
+    menuCapabilities?: { canDownload: boolean };
+    onMenuAction?: (item: CarouselItem, action: 'download', via: 'menu_button') => void;
   }) =>
     createElement(
       'div',
-      { 'data-testid': 'carousel', 'data-has-actions': onAction === undefined ? 'no' : 'yes' },
+      { 'data-testid': 'carousel', 'data-has-actions': onMenuAction === undefined ? 'no' : 'yes' },
       items.map((item) =>
         createElement('span', { key: item.key }, [
           createElement('button', { key: 'select', type: 'button', onClick: () => onSelect(item) }, item.title),
-          actionFor && onAction
+          // Only the Your Boards carousel offers it; the menu's Download for
+          // offline is what fires the board-card accept event.
+          menuCapabilities?.canDownload && onMenuAction
             ? createElement(
                 'button',
-                { key: 'action', type: 'button', onClick: () => onAction(item) },
-                `${actionFor(item) ?? 'none'} ${item.title}`,
-              )
-            : null,
-          // Only the Your Boards carousel is handed one; the download glyph is
-          // what fires the board-card accept event.
-          onDownload
-            ? createElement(
-                'button',
-                { key: 'download', type: 'button', onClick: () => onDownload(item) },
+                { key: 'download', type: 'button', onClick: () => onMenuAction(item, 'download', 'menu_button') },
                 `download ${item.title}`,
               )
             : null,
@@ -476,9 +466,9 @@ describe('board picker with no usable network list', () => {
   });
 
   // Every board action on this screen is a server mutation, so the offline branch
-  // offers none of them — and no Edit control either, since there is nothing
-  // behind it that could succeed.
-  it('offers no per-card action and no Edit control on the offline branch', () => {
+  // draws plain cards with no menu, since there is nothing behind one that
+  // could succeed.
+  it('offers no card menu on the offline branch', () => {
     state.isOffline = true;
     state.connectivityReason = 'device_offline';
     state.offlineCards = [downloadedBoard];

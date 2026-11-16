@@ -144,14 +144,10 @@
       "cancel": "Cancel",
       "deleteError": "Couldn't delete that board. Try again.",
       "unfollowError": "Couldn't unfollow that board. Try again.",
-      "editAria": "Edit {{name}}",
       "deleteAria": "Delete {{name}}",
-      "unfollowAria": "Unfollow {{name}}",
       "unfollowTitle": "Stop following?",
       "unfollowMessage": "\"{{name}}\" is your active board. Unfollowing drops it from your boards and clears the selection.",
       "unfollowConfirm": "Unfollow",
-      "edit": "Edit",
-      "done": "Done",
       "deleteWallTitle": "Delete Spraywall?",
       "deleteWallMessage": "Delete \"{{name}}\"? Its photos and climbs will no longer be available. This cannot be undone.",
       "deleteSuccess": "\"{{name}}\" deleted"
@@ -218,7 +214,7 @@
       "nearbyTitle": "Near you",
       "nearbyShowing": "Showing nearby",
       "yourBoardsTitle": "Your boards",
-      "activeBadge": "Active",
+      "onIt": "On it",
       "ownedBadgeAria": "Your board",
       "followingBadgeAria": "Following",
       "popularTitle": "Popular setups",
@@ -227,14 +223,21 @@
       "createTile": "Create",
       "followed": "Added {{name}} to your boards",
       "followError": "Couldn't add {{name}} to your boards",
-      "pinAria": "Pin {{name}}",
-      "unpinAria": "Unpin {{name}}",
       "pinnedBadgeAria": "Pinned",
       "pinError": "Couldn't update your pinned boards",
       "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoards near you",
       "nearbyTitleType": "{{board}} boards near you",
-      "nearbyShowAll": "Show all"
+      "nearbyShowAll": "Show all",
+      "cardActionsAria": "Actions for {{name}}",
+      "menu": {
+        "climbHere": "Climb here",
+        "pin": "Pin",
+        "unpin": "Unpin",
+        "download": "Download for offline",
+        "edit": "Edit board",
+        "editWall": "Edit Spraywall"
+      }
     },
     "create": {
       "screenTitle": "Set up your board",
@@ -337,7 +340,6 @@
         "shareLinkUnlistedHint": "Only the climbers you send it to."
       },
       "details": "Details",
-      "detailsAria": "Open details for {{name}}",
       "activeSprayDetails": "{{name}} · Spraywall details",
       "share": {
         "shareLink": "Share link",

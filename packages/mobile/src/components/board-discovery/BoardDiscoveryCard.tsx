@@ -4,7 +4,7 @@ import { useSprayWallToken } from '../../lib/spray/use-spray-wall-token';
 import { BoardImageNative } from '../BoardImageNative';
 import { BoardDiscoveryCardView, type BoardDiscoveryCardViewProps } from './BoardDiscoveryCardView';
 export { DISCOVERY_CARD_WIDTH } from './BoardDiscoveryCardView';
-export type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
+export type { BoardCardMenu, DiscoveryBoardItem } from './BoardDiscoveryCardView';
 export const BoardDiscoveryCard = memo(function BoardDiscoveryCard(
   props: Omit<BoardDiscoveryCardViewProps, 'boardImage'>,
 ) {

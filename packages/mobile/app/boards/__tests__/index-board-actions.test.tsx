@@ -15,30 +15,32 @@ vi.mock('../../../src/components/PressableSurface', async () => {
 //
 // #4623: "Change board" and "My Boards" were two drawer rows with the same glyph
 // and the same chevron onto two screens showing the same boards with disjoint
-// affordances. /boards now carries the board actions, so this suite pins the
-// three things that move: the per-card ownership action, Edit/Done, and the fact
-// that a picker opened mid-session must still switch boards when the identity
-// lookup fails.
+// affordances. /boards now carries the board actions, in each card's menu (the
+// ⋯ and the hold), so this suite pins what the menu offers where, what each row
+// does, and the fact that a picker opened mid-session must still switch boards
+// when the identity lookup fails.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
+import type {
+  BoardCardMenuAction,
+  BoardCardMenuCapabilities,
+  BoardCardMenuVia,
+} from '../../../src/components/board-discovery/board-card-menu';
+import type { DiscoveryBoardItem } from '../../../src/components/board-discovery/BoardDiscoveryCard';
 
 type Children = { children?: ReactNode };
 type ButtonProps = { title: string; onPress?: () => void };
-type CarouselItem = { key: string; title: string; isViewerOwner?: boolean; isPinned?: boolean };
+type CarouselItem = Pick<
+  DiscoveryBoardItem,
+  'key' | 'title' | 'isViewerOwner' | 'isPinned' | 'offlineState' | 'sprayImport'
+>;
 type CarouselProps = {
   items: CarouselItem[];
   onSelect: (item: CarouselItem) => void;
-  onDetails?: (item: CarouselItem) => void;
-  actionFor?: (item: CarouselItem) => string | null;
-  actionLabelFor?: (item: CarouselItem) => string;
-  onAction?: (item: CarouselItem) => void;
-  onTogglePin?: (item: CarouselItem) => void;
-  onDownload?: (item: CarouselItem) => void;
-  pinLabelFor?: (item: CarouselItem) => string;
-  isEditing?: boolean;
-  pendingActionKey?: string | null;
+  menuCapabilities?: BoardCardMenuCapabilities;
+  onMenuAction?: (item: CarouselItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
@@ -66,7 +68,12 @@ type DetailProps = {
   onSetActive: (board: UserBoard) => void;
 };
 const detailProps = vi.hoisted(() => ({ last: null as DetailProps | null }));
-const carouselProps = vi.hoisted(() => ({ last: null as CarouselProps | null }));
+// The last props each carousel was handed, keyed by its first item, so Your
+// boards and Near you can be told apart when both render.
+const carouselProps = vi.hoisted(() => ({
+  last: null as CarouselProps | null,
+  byFirstKey: new Map<string, CarouselProps>(),
+}));
 const trackMock = vi.hoisted(() => vi.fn());
 // The Bluetooth quickstart sheet's props, so a scan pick can be driven directly.
 const bluetoothSheetProps = vi.hoisted(() => ({
@@ -156,11 +163,6 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
         'mobile.discovery.addWallTile': 'Spray wall',
-        'mobile.manage.edit': 'Edit',
-        'mobile.manage.done': 'Done',
-        'mobile.manage.editAria': 'Edit {{name}}',
-        'mobile.manage.deleteAria': 'Delete {{name}}',
-        'mobile.manage.unfollowAria': 'Unfollow {{name}}',
         'mobile.manage.deleteTitle': 'Delete board?',
         'mobile.manage.deleteWallTitle': 'Delete spray wall?',
         'mobile.manage.deleteWallMessage':
@@ -176,8 +178,6 @@ vi.mock('react-i18next', () => ({
         'mobile.emptyTitle': 'No boards yet',
         'mobile.emptySubtitle': 'Search for a board to get started',
         'myBoards.title': 'Manage boards',
-        'mobile.discovery.pinAria': 'Pin {{name}}',
-        'mobile.discovery.unpinAria': 'Unpin {{name}}',
         'mobile.discovery.pinError': "Couldn't update your pinned boards",
       };
       const template = map[key] ?? key;
@@ -334,27 +334,52 @@ vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({
   },
 }));
 
-vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
-  BoardCarousel: (props: CarouselProps) => {
-    carouselProps.last = props;
-    return createElement(
-      'div',
-      { 'data-testid': 'carousel' },
-      props.items.map((item) =>
-        createElement('span', { key: item.key }, [
-          createElement('button', { key: 'select', type: 'button', onClick: () => props.onSelect(item) }, item.title),
-          props.actionFor && props.onAction
-            ? createElement(
+// Renders a select button per card, plus one button per menu row named
+// "<action> <title>". The rows come from the real menu builder, so what this
+// suite clicks is exactly what the card's ⋯ would offer with these capabilities.
+vi.mock('../../../src/components/board-discovery/BoardCarousel', async () => {
+  const { boardCardMenuEntries } = await vi.importActual<
+    typeof import('../../../src/components/board-discovery/board-card-menu')
+  >('../../../src/components/board-discovery/board-card-menu');
+  return {
+    BoardCarousel: (props: CarouselProps) => {
+      carouselProps.last = props;
+      if (props.items[0]) carouselProps.byFirstKey.set(props.items[0].key, props);
+      return createElement(
+        'div',
+        { 'data-testid': 'carousel' },
+        props.items.map((item) => {
+          const rows =
+            props.menuCapabilities && props.onMenuAction
+              ? boardCardMenuEntries(
+                  {
+                    isPinned: item.isPinned === true,
+                    offlineState: item.offlineState,
+                    isViewerOwner: item.isViewerOwner,
+                    isImport: item.sprayImport != null,
+                  },
+                  props.menuCapabilities,
+                )
+              : [];
+          return createElement('span', { key: item.key }, [
+            createElement('button', { key: 'select', type: 'button', onClick: () => props.onSelect(item) }, item.title),
+            ...rows.map((row) =>
+              createElement(
                 'button',
-                { key: 'action', type: 'button', onClick: () => props.onAction?.(item) },
-                `${props.actionFor(item) ?? 'none'} ${item.title}`,
-              )
-            : null,
-        ]),
-      ),
-    );
-  },
-}));
+                {
+                  key: row.action,
+                  type: 'button',
+                  onClick: () => props.onMenuAction?.(item, row.action, 'menu_button'),
+                },
+                `${row.action} ${item.title}`,
+              ),
+            ),
+          ]);
+        }),
+      );
+    },
+  };
+});
 
 const { default: BoardSelection } = await import('../index');
 
@@ -365,6 +390,7 @@ beforeEach(() => {
   unfollowBoardMock.mockResolvedValue(undefined);
   confirmMock.mockResolvedValue(true);
   carouselProps.last = null;
+  carouselProps.byFirstKey.clear();
   detailProps.last = null;
   state.isAuthenticated = true;
   bluetoothSheetProps.last = null;
@@ -382,43 +408,40 @@ beforeEach(() => {
   state.myBoardsInputs = [];
 });
 
-describe('the pin toggle', () => {
+describe('pinning from the card menu', () => {
   it('pins a board that is not pinned yet', () => {
     render(createElement(BoardSelection));
-    carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
+    fireEvent.click(screen.getByRole('button', { name: 'pin High Point Orlando' }));
     expect(pinBoardMock).toHaveBeenCalledWith({ boardUuid: 'gym', pinned: true });
   });
 
   it('unpins one that is', () => {
     state.myBoards = [{ ...myWall, isPinnedByMe: true }, gymBoard];
     render(createElement(BoardSelection));
-    const pinned = carouselProps.last?.items.find((item) => item.key === 'mine');
-    expect(pinned?.isPinned).toBe(true);
-    carouselProps.last?.onTogglePin?.(pinned!);
+    expect(carouselProps.last?.items.find((item) => item.key === 'mine')?.isPinned).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'unpin Marco garage' }));
     expect(pinBoardMock).toHaveBeenCalledWith({ boardUuid: 'mine', pinned: false });
   });
 
   // The regression this whole optimistic design exists for: the glyph flips at
   // once, but the carousel must NOT reorder, or the card slides out from under
-  // the finger that just tapped it. The reorder lands on the next open.
-  it('flips the glyph immediately without moving the card', () => {
+  // the menu that just pinned it. The reorder lands on the next open.
+  it('flips the pin immediately without moving the card', () => {
     render(createElement(BoardSelection));
     const before = carouselProps.last?.items.map((item) => item.key);
     expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(false);
 
-    act(() => {
-      carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'pin High Point Orlando' }));
 
     expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(true);
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(before);
+    // The menu now offers the way back.
+    expect(screen.getByRole('button', { name: 'unpin High Point Orlando' })).toBeTruthy();
   });
 
-  it('puts the glyph back and says so when the pin fails', () => {
+  it('puts the pin back and says so when the pin fails', () => {
     render(createElement(BoardSelection));
-    act(() => {
-      carouselProps.last?.onTogglePin?.({ key: 'gym', title: 'High Point Orlando', isPinned: false });
-    });
+    fireEvent.click(screen.getByRole('button', { name: 'pin High Point Orlando' }));
     expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(true);
 
     act(() => {
@@ -428,32 +451,68 @@ describe('the pin toggle', () => {
     expect(carouselProps.last?.items.find((item) => item.key === 'gym')?.isPinned).toBe(false);
     expect(toastMock.showToast).toHaveBeenCalledWith("Couldn't update your pinned boards", 'error');
   });
-
-  it('labels the toggle for a screen reader, both ways round', () => {
-    render(createElement(BoardSelection));
-    expect(carouselProps.last?.pinLabelFor?.({ key: 'gym', title: 'High Point Orlando', isPinned: false })).toBe(
-      'Pin High Point Orlando',
-    );
-    expect(carouselProps.last?.pinLabelFor?.({ key: 'gym', title: 'High Point Orlando', isPinned: true })).toBe(
-      'Unpin High Point Orlando',
-    );
-  });
 });
 
-describe('the per-card ownership action', () => {
+describe('the card menu on Your boards', () => {
+  it('offers every row on a board the viewer owns', () => {
+    render(createElement(BoardSelection));
+    expect(carouselProps.last?.menuCapabilities).toEqual({
+      canPin: true,
+      canDownload: true,
+      canOpenDetails: true,
+      canManage: true,
+    });
+    for (const action of ['climb_here', 'pin', 'details', 'edit', 'delete']) {
+      expect(screen.getByRole('button', { name: `${action} Marco garage` })).toBeTruthy();
+    }
+  });
+
   it('opens the edit form for a board the viewer owns', () => {
     render(createElement(BoardSelection));
     fireEvent.click(screen.getByRole('button', { name: 'edit Marco garage' }));
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/edit', params: { boardUuid: 'mine' } });
   });
 
-  // The gym-admin pin: canEdit is true on this board and it must NOT produce a
-  // pencil, because inside myBoards `canEdit && !isViewerOwner` is exactly the
+  // The gym-admin pin: canEdit is true on this board and it must NOT produce an
+  // edit row, because inside myBoards `canEdit && !isViewerOwner` is exactly the
   // followed-board case.
-  it('offers unfollow, never edit, on a board the viewer only follows', () => {
+  it('offers unfollow, never edit or delete, on a board the viewer only follows', () => {
     render(createElement(BoardSelection));
     expect(screen.getByRole('button', { name: 'unfollow High Point Orlando' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'edit High Point Orlando' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'delete High Point Orlando' })).toBeNull();
+  });
+
+  it('picks the board from Climb here, as a tap does', async () => {
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'climb_here Marco garage' }));
+    await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'mine' })));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'your_boards' }),
+      ),
+    );
+  });
+
+  // Every row is one Board Card Action, named by the row, the way in, and the
+  // carousel it was picked in.
+  it('reports each row it runs', () => {
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'edit Marco garage' }));
+    expect(trackMock).toHaveBeenCalledWith('Board Card Action', {
+      action: 'edit',
+      via: 'menu_button',
+      section: 'your_boards',
+    });
+    act(() => {
+      carouselProps.last?.onMenuAction?.(carouselProps.last.items[1], 'pin', 'long_press');
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Card Action', {
+      action: 'pin',
+      via: 'long_press',
+      section: 'your_boards',
+    });
   });
 
   // Ownership is stamped once per list build, so a virtualized row never scans
@@ -491,92 +550,55 @@ describe('the per-card ownership action', () => {
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['gym', 'mine']);
   });
 
-  it('labels the action for a screen reader', () => {
+  // Edit mode is gone: the section header carries no Edit/Done toggle, and a
+  // tap on a card always picks the board.
+  it('has no Edit mode', () => {
     render(createElement(BoardSelection));
-    expect(carouselProps.last?.actionLabelFor?.({ key: 'mine', title: 'Marco garage', isViewerOwner: true })).toBe(
-      'Edit Marco garage',
-    );
-    expect(
-      carouselProps.last?.actionLabelFor?.({ key: 'gym', title: 'High Point Orlando', isViewerOwner: false }),
-    ).toBe('Unfollow High Point Orlando');
-  });
-
-  it('reports the in-flight board so only that card shows a spinner', () => {
-    state.deletePending = 'mine';
-    render(createElement(BoardSelection));
-    expect(carouselProps.last?.pendingActionKey).toBe('mine');
-  });
-
-  it('reports no in-flight board at rest', () => {
-    render(createElement(BoardSelection));
-    expect(carouselProps.last?.pendingActionKey).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    expect(screen.queryByText('mobile.manage.edit')).toBeNull();
   });
 });
 
-describe('the Edit / Done control', () => {
-  it('turns the slot destructive for owned and unfollow for followed', () => {
-    render(createElement(BoardSelection));
-    expect(screen.getByRole('button', { name: 'edit Marco garage' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-
-    expect(screen.getByRole('button', { name: 'delete Marco garage' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'unfollow High Point Orlando' })).toBeTruthy();
-    expect(carouselProps.last?.isEditing).toBe(true);
-    expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
-  });
-
-  it('does not render with no boards to manage', () => {
-    state.myBoards = [];
-    render(createElement(BoardSelection));
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-  });
-
-  // The first screen a brand-new account ever sees. A destructive mode has no
-  // business being one tap into it.
-  it('does not render in the onboarding hand-off', () => {
-    state.source = 'onboarding';
-    render(createElement(BoardSelection));
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-  });
-
-  // The gate covers the per-card slot too, not just the toggle. Gating only the
-  // toggle would have left a followed board's glyph live during onboarding — and
-  // for as long as that glyph was a Pressable, that was a one-tap unfollow.
-  it('takes the per-card action slot with it, not just the toggle', () => {
+describe('the card menu during onboarding', () => {
+  // The first screen a brand-new account ever sees. A way to remove a board has
+  // no business being one hold into it, and neither does a pin.
+  it('offers no pin and no board management', () => {
     state.source = 'onboarding';
     render(createElement(BoardSelection));
 
-    expect(carouselProps.last?.actionFor).toBeUndefined();
-    expect(carouselProps.last?.onAction).toBeUndefined();
-    expect(screen.queryByRole('button', { name: 'edit Marco garage' })).toBeNull();
+    expect(carouselProps.last?.menuCapabilities).toMatchObject({ canPin: false, canManage: false });
+    for (const action of ['pin', 'edit', 'delete']) {
+      expect(screen.queryByRole('button', { name: `${action} Marco garage` })).toBeNull();
+    }
     expect(screen.queryByRole('button', { name: 'unfollow High Point Orlando' })).toBeNull();
     // Switching boards is the whole point of the onboarding hand-off and must
     // still work.
     expect(screen.getByRole('button', { name: 'Marco garage' })).toBeTruthy();
   });
 
-  it('does not render when no identity resolved', () => {
-    state.profile = undefined;
-    state.storedUserId = undefined;
+  // Defence in depth: a row drawn before the gate closed still runs nothing.
+  it('refuses a management row that reaches it anyway', async () => {
+    state.source = 'onboarding';
     render(createElement(BoardSelection));
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(carouselProps.last?.actionFor).toBeUndefined();
-  });
+    const owned = carouselProps.last?.items.find((item) => item.key === 'mine');
+    const followed = carouselProps.last?.items.find((item) => item.key === 'gym');
 
-  it('stops a card tap from switching the board while editing', () => {
-    render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Marco garage' }));
-    expect(setActiveBoardMock).not.toHaveBeenCalled();
-    expect(routerMock.dismissTo).not.toHaveBeenCalled();
+    carouselProps.last?.onMenuAction?.(owned!, 'delete', 'accessibility');
+    carouselProps.last?.onMenuAction?.(followed!, 'unfollow', 'accessibility');
+    carouselProps.last?.onMenuAction?.(owned!, 'pin', 'accessibility');
+
+    await Promise.resolve();
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(deleteBoardMock).not.toHaveBeenCalled();
+    expect(unfollowBoardMock).not.toHaveBeenCalled();
+    expect(pinBoardMock).not.toHaveBeenCalled();
   });
 });
 
 describe('deleting a board', () => {
-  it('confirms, deletes, forgets the offline snapshot and leaves edit mode', async () => {
+  it('confirms, deletes and forgets the offline snapshot', async () => {
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledWith('mine'));
@@ -585,14 +607,12 @@ describe('deleting a board', () => {
     // Not the active board, so the selection is left alone.
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
     expect(clearSessionMock).not.toHaveBeenCalled();
-    // The carousel has just reflowed under a finger still over a red button.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy());
+    await waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('"Marco garage" deleted', 'success'));
   });
 
   it('clears the selection when the deleted board was the active one', async () => {
     state.activeBoard = myWall;
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() => expect(clearActiveBoardMock).toHaveBeenCalledTimes(1));
@@ -611,7 +631,6 @@ describe('deleting a board', () => {
         }),
     );
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
     await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledWith('mine'));
     state.activeBoardGeneration += 1;
@@ -625,7 +644,6 @@ describe('deleting a board', () => {
   it('names the spray wall photos and climbs in the confirmation', async () => {
     state.myBoards = [{ ...myWall, boardType: 'spray' }];
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledWith('mine'));
@@ -641,7 +659,6 @@ describe('deleting a board', () => {
   it('does nothing when the confirm is declined', async () => {
     confirmMock.mockResolvedValue(false);
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
@@ -651,7 +668,6 @@ describe('deleting a board', () => {
   it('surfaces a failure instead of silently leaving the board in place', async () => {
     deleteBoardMock.mockRejectedValue(new Error('nope'));
     render(createElement(BoardSelection));
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
 
     await waitFor(() =>
@@ -661,6 +677,17 @@ describe('deleting a board', () => {
     expect(forgetOfflineBoardMock).not.toHaveBeenCalled();
     expect(clearActiveBoardMock).not.toHaveBeenCalled();
     expect(clearSessionMock).not.toHaveBeenCalled();
+  });
+
+  // Delete is owner-only on the server. A stale row that names a followed board
+  // runs nothing rather than a mutation the backend would reject.
+  it('refuses to delete a board the viewer does not own', async () => {
+    render(createElement(BoardSelection));
+    const followed = carouselProps.last?.items.find((item) => item.key === 'gym');
+    carouselProps.last?.onMenuAction?.(followed!, 'delete', 'menu_button');
+    await Promise.resolve();
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(deleteBoardMock).not.toHaveBeenCalled();
   });
 });
 
@@ -710,6 +737,14 @@ describe('unfollowing a board', () => {
       expect(toastMock.showToast).toHaveBeenCalledWith("Couldn't unfollow that board. Try again.", 'error'),
     );
   });
+
+  it('refuses to unfollow a board the viewer owns', async () => {
+    render(createElement(BoardSelection));
+    const owned = carouselProps.last?.items.find((item) => item.key === 'mine');
+    carouselProps.last?.onMenuAction?.(owned!, 'unfollow', 'menu_button');
+    await Promise.resolve();
+    expect(unfollowBoardMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('the drill-in to the manage screen', () => {
@@ -744,33 +779,36 @@ describe('identity resolution never blocks the switcher', () => {
     await waitFor(() => expect(setActiveBoardMock).toHaveBeenCalledTimes(1));
   });
 
-  // Degraded means "no ownership slot", not "everything looks followed" — the
-  // latter would offer to unfollow the user's own wall.
-  it('offers no per-card action with no resolvable user id', async () => {
+  // Degraded means "no management rows", not "everything looks followed" — the
+  // latter would offer to unfollow the user's own wall. A pin is the viewer's
+  // own state, so it stays.
+  it('offers no edit, unfollow or delete with no resolvable user id', () => {
     state.profile = undefined;
     state.storedUserId = undefined;
 
     render(createElement(BoardSelection));
 
     expect(carouselProps.last?.items.every((item) => item.isViewerOwner === undefined)).toBe(true);
-    // Suppressed at the screen, so no slot reaches a card at all.
-    expect(carouselProps.last?.actionFor).toBeUndefined();
-    expect(carouselProps.last?.onAction).toBeUndefined();
-    expect(screen.queryByRole('button', { name: 'none Marco garage' })).toBeNull();
+    expect(carouselProps.last?.menuCapabilities?.canManage).toBe(false);
+    for (const action of ['edit', 'delete', 'unfollow']) {
+      expect(screen.queryByRole('button', { name: `${action} Marco garage` })).toBeNull();
+    }
+    expect(screen.getByRole('button', { name: 'pin Marco garage' })).toBeTruthy();
   });
 
-  // Defence in depth, independent of the screen-level gate above: hand the
-  // handler an item whose ownership never resolved and it must run nothing,
-  // rather than let `undefined` collapse into "followed" and unfollow the user's
-  // own wall.
+  // Defence in depth, independent of the gate above: hand the handler an item
+  // whose ownership never resolved and it must run nothing, rather than let
+  // `undefined` collapse into "followed" and unfollow the user's own wall.
   it('refuses to act on an item whose ownership did not resolve', async () => {
     render(createElement(BoardSelection));
 
-    const onAction = carouselProps.last?.onAction;
-    expect(onAction).toBeTypeOf('function');
-    onAction?.({ key: 'mine', title: 'Marco garage' });
+    const onMenuAction = carouselProps.last?.onMenuAction;
+    expect(onMenuAction).toBeTypeOf('function');
+    for (const action of ['edit', 'unfollow', 'delete'] as const) {
+      onMenuAction?.({ key: 'mine', title: 'Marco garage' }, action, 'menu_button');
+    }
 
-    await waitFor(() => expect(carouselProps.last?.pendingActionKey).toBeNull());
+    await Promise.resolve();
     expect(unfollowBoardMock).not.toHaveBeenCalled();
     expect(deleteBoardMock).not.toHaveBeenCalled();
     expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/edit' }));
@@ -821,6 +859,67 @@ describe('where a pick came from', () => {
     expect(setActiveBoardMock).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'nearby' }));
   });
 
+  // Near you boards belong to other people: their menu is Climb here and
+  // Details, nothing that manages a board.
+  it('offers Near you cards Climb here and Details only', () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+
+    expect(carouselProps.byFirstKey.get('nearby')?.menuCapabilities).toEqual({
+      canPin: false,
+      canDownload: false,
+      canOpenDetails: true,
+      canManage: false,
+    });
+    expect(screen.getByRole('button', { name: 'climb_here Crux Kilter' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'details Crux Kilter' })).toBeTruthy();
+    for (const action of ['pin', 'download', 'edit', 'unfollow', 'delete']) {
+      expect(screen.queryByRole('button', { name: `${action} Crux Kilter` })).toBeNull();
+    }
+  });
+
+  it('picks a Near you board from Climb here and reports it as nearby', async () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'climb_here Crux Kilter' }));
+
+    expect(trackMock).toHaveBeenCalledWith('Board Card Action', {
+      action: 'climb_here',
+      via: 'menu_button',
+      section: 'nearby',
+    });
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'Board Picker Selection Completed',
+        expect.objectContaining({ pickSource: 'nearby' }),
+      ),
+    );
+  });
+
+  it('opens a Near you board’s details without picking it', () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+
+    fireEvent.click(screen.getByRole('button', { name: 'details Crux Kilter' }));
+
+    expect(detailProps.last?.board?.uuid).toBe('nearby');
+    expect(detailProps.last?.visible).toBe(true);
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
+  // The Near you handler only knows two rows; anything else is a stale row.
+  it('runs nothing for a row Near you does not offer', () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+    const nearby = carouselProps.byFirstKey.get('nearby');
+
+    nearby?.onMenuAction?.(nearby.items[0], 'unfollow', 'accessibility');
+
+    expect(unfollowBoardMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
+  });
+
   it('tags a board the Bluetooth scan found as bluetooth', async () => {
     render(createElement(BoardSelection));
 
@@ -849,13 +948,23 @@ describe('where a pick came from', () => {
   });
 });
 
-describe('spray-wall detail sheet reachability', () => {
+describe('detail sheet reachability', () => {
+  // Details used to be a spray-wall-only link. The sheet handles home and gym
+  // boards too, so every card's menu offers it.
+  it('opens the details of a catalogue board, not only a spray wall', () => {
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'details High Point Orlando' }));
+    expect(detailProps.last?.visible).toBe(true);
+    expect(detailProps.last?.board?.uuid).toBe('gym');
+    expect(setActiveBoardMock).not.toHaveBeenCalled();
+  });
+
   it('opens a saved wall without activating it', () => {
     const wall = board({ uuid: 'spray-wall', name: 'Garage wall', boardType: 'spray' });
     state.myBoards = [wall];
     render(createElement(BoardSelection));
     const carousel = carouselProps.last!;
-    act(() => carousel.onDetails?.(carousel.items[0]));
+    act(() => carousel.onMenuAction?.(carousel.items[0], 'details', 'menu_button'));
     expect(detailProps.last?.visible).toBe(true);
     expect(detailProps.last?.board?.uuid).toBe(wall.uuid);
     expect(setActiveBoardMock).not.toHaveBeenCalled();
@@ -880,7 +989,7 @@ describe('spray-wall detail sheet reachability', () => {
     state.myBoards = [wall];
     const mounted = render(createElement(BoardSelection));
     const carousel = carouselProps.last!;
-    act(() => carousel.onDetails?.(carousel.items[0]));
+    act(() => carousel.onMenuAction?.(carousel.items[0], 'details', 'menu_button'));
     state.isAuthenticated = false;
     mounted.rerender(createElement(BoardSelection));
     state.isAuthenticated = true;
@@ -962,8 +1071,8 @@ describe('picking an importing spray wall', () => {
 
     // An unfinished wall has no catalogue to download.
     expect(carouselProps.last?.items.map((item) => item.key)).toEqual(['spray-wall']);
-    expect(carouselProps.last?.onDownload).toBeDefined();
-    carouselProps.last?.onDownload?.(carouselProps.last.items[0]);
+    expect(carouselProps.last?.menuCapabilities?.canDownload).toBe(true);
+    carouselProps.last?.onMenuAction?.(carouselProps.last.items[0], 'download', 'menu_button');
     expect(confirmAndDownloadMock).not.toHaveBeenCalled();
 
     await Promise.resolve();
