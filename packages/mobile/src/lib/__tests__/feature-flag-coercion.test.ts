@@ -4,7 +4,12 @@ const posthogClientMocks = vi.hoisted(() => ({ getPostHogClient: vi.fn() }));
 
 vi.mock('../posthog-client', () => ({ getPostHogClient: posthogClientMocks.getPostHogClient }));
 
-import { readPosthogFeatureFlags, readPosthogFeatureFlagsRequestId, registerRenderSuperProperties } from '../analytics';
+import {
+  readPosthogFeatureFlags,
+  readPosthogFeatureFlagSnapshot,
+  readPosthogFeatureFlagsRequestId,
+  registerRenderSuperProperties,
+} from '../analytics';
 import {
   getPosthogFlagAuthority,
   rememberPosthogFlagResponse,
@@ -155,6 +160,56 @@ describe('registerRenderSuperProperties', () => {
         glowFalloffSource: 'default',
       }),
     ).not.toThrow();
+  });
+});
+
+describe('atomic flag and payload snapshot', () => {
+  const definitions = [{ key: 'aura-gpu-enabled' }];
+  const payload = { version: 1, enabledFamilies: ['tension'], disabledFamilies: [] };
+
+  it('reads the policy and switch from one authorized response without exposure events', () => {
+    rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'gpu-response' });
+    const getFeatureFlag = vi.fn(() => false);
+    const getFeatureFlagPayload = vi.fn(() => payload);
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlag,
+      getFeatureFlagPayload,
+      getFeatureFlagDetails: () => ({ requestId: 'gpu-response' }),
+    });
+    expect(readPosthogFeatureFlagSnapshot(definitions, ['aura-gpu-enabled'])).toEqual({
+      flags: { 'aura-gpu-enabled': false },
+      payloads: { 'aura-gpu-enabled': payload },
+    });
+    expect(getFeatureFlag).toHaveBeenCalledWith('aura-gpu-enabled', { sendEvent: false });
+    expect(getFeatureFlagPayload).toHaveBeenCalledWith('aura-gpu-enabled');
+  });
+
+  it('discards both answers when account authority changes during the read', () => {
+    rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'gpu-response' });
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlag: () => true,
+      getFeatureFlagPayload: () => {
+        setPosthogFlagAuthority('replacement-account');
+        return payload;
+      },
+      getFeatureFlagDetails: () => ({ requestId: 'gpu-response' }),
+    });
+    expect(readPosthogFeatureFlagSnapshot(definitions, ['aura-gpu-enabled'])).toEqual({ flags: {}, payloads: {} });
+  });
+
+  it('keeps an explicit kill when only payload decoding fails', () => {
+    rememberPosthogFlagResponse(getPosthogFlagAuthority(), { requestId: 'gpu-response' });
+    posthogClientMocks.getPostHogClient.mockReturnValue({
+      getFeatureFlag: () => false,
+      getFeatureFlagPayload: () => {
+        throw new Error('bad payload');
+      },
+      getFeatureFlagDetails: () => ({ requestId: 'gpu-response' }),
+    });
+    expect(readPosthogFeatureFlagSnapshot(definitions, ['aura-gpu-enabled'])).toEqual({
+      flags: { 'aura-gpu-enabled': false },
+      payloads: {},
+    });
   });
 });
 

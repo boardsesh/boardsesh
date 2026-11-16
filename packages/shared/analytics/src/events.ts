@@ -1755,6 +1755,8 @@ export const SHARED_EVENTS = {
   // without minting thousands of events; `failures_this_session` still counts
   // past the cap, so a truncated stream is legible as truncated.
   BoardRenderFailed: 'Board Render Failed',
+  AuraGpuFallback: 'Aura GPU Fallback',
+  AuraGpuPrepared: 'Aura GPU Prepared',
   // A saved render preset or CVD palette preset was applied (issue #2202,
   // settings-screen PR). No extra props beyond the common ones — the event IS
   // "the common props now carry a preset_id/palette_id".

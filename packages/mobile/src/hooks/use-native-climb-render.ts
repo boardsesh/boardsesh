@@ -35,6 +35,7 @@ import {
   type BoardArtGeometry,
 } from '@boardsesh/board-art-geometry';
 import { getBoardRenderData } from '../lib/board-details';
+import { useGpuFailureStatus } from '../lib/board-render/gpu-failure-store';
 import {
   activeSprayArt,
   ensureSprayWallLoaded,
@@ -199,9 +200,12 @@ type NativeClimbRenderParams = {
   playSurface?: boolean;
   /** Opt-in live GPU surface; callers gate native API compatibility and flag. */
   gpuSurface?: boolean;
+  gpuApiVersion?: number;
   /** v3 editor keeps an empty transparent native scene as the first-edit baseline. */
   gpuAllowEmpty?: boolean;
   gpuFallbackConfigJson?: string | null;
+  /** Skip the cold PNG hedge only after this static configuration presented. */
+  gpuPresentedConfigJson?: string | null;
   /**
    * The play board's own view layer writes here whether its live stack is held
    * invisible under the opening-art bridge (`BoardImageNative`). Read only when
@@ -1869,8 +1873,10 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayFile = false,
     playSurface = false,
     gpuSurface = false,
+    gpuApiVersion = 0,
     gpuAllowEmpty = false,
     gpuFallbackConfigJson,
+    gpuPresentedConfigJson,
     paintBridgingRef,
     prefetch = false,
     maxVeilOpacity,
@@ -2165,6 +2171,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       layoutId !== 8 ||
       effectiveRenderSettings.mode !== 'aura' ||
       effectiveRenderSettings.boardsesh.softDisc ||
+      effectiveRenderSettings.boardsesh.markStyle === 'fill' ||
+      effectiveRenderSettings.boardsesh.markStyle === 'glow-fill' ||
       extraHoldStates ||
       boardArtChunkPending
     )
@@ -2215,8 +2223,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     extraHoldStates,
     boardArtChunkPending,
   ]);
+  const gpuFailureStatus = useGpuFailureStatus(gpuStaticConfig?.json ?? null, gpuApiVersion);
   const gpuConfigJson = useMemo(() => {
-    if ((!flatFrames && !gpuAllowEmpty) || !gpuStaticConfig || gpuStaticConfig.json === gpuFallbackConfigJson)
+    if (
+      gpuFailureStatus !== 'allowed' ||
+      (!flatFrames && !gpuAllowEmpty) ||
+      !gpuStaticConfig ||
+      gpuStaticConfig.json === gpuFallbackConfigJson
+    )
       return null;
     const rolesSupported = [...flatFrames.matchAll(/r(\d+)/g)].every((match) =>
       [42, 43, 44, 45].includes(Number(match[1])),
@@ -2225,7 +2239,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     const litIds = parseLitHoldIds(flatFrames);
     if (litIds.size > 0 && ![...litIds].some((holdId) => gpuStaticConfig.holdIds.has(holdId))) return null;
     return gpuStaticConfig.json;
-  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson]);
+  }, [gpuStaticConfig, flatFrames, gpuAllowEmpty, gpuFallbackConfigJson, boardName, layoutId, gpuFailureStatus]);
 
   // A stationary carousel must wait for geometry/capability discovery rather
   // than permanently latching its PNG fallback during the first render.
@@ -2234,7 +2248,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     : gpuSurface &&
         (!!flatFrames || gpuAllowEmpty) &&
         requestedBoardRenderMode(boardRenderSettings, boardRenderDefault) === 'aura' &&
-        (boardArtChunkPending || getBoardseshRendererSupport() === null)
+        (boardArtChunkPending || getBoardseshRendererSupport() === null || gpuFailureStatus === 'loading')
       ? 'loading'
       : 'unavailable';
 
@@ -2478,7 +2492,9 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // renderer refused, so this only trips on the pathological case where the
     // fallback itself was somehow recorded.
     setFailedOverlayKey((failedKey) => (failedKey === currentCacheKey ? null : failedKey));
-    if (gpuConfigJson) return;
+    // Prepare exact PNG artwork during a first GPU attempt. A broken device
+    // gets usable art while the watchdog runs; warm frames reuse the GPU scene.
+    if (gpuConfigJson && gpuConfigJson === gpuPresentedConfigJson) return;
     // A v2 GPU binary has Aura support, but the ordinary capability probe may
     // still be resolving on first mount. Do not launch a competing classic PNG.
     if (
@@ -2892,6 +2908,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   }, [
     currentCacheKey,
     gpuConfigJson,
+    gpuPresentedConfigJson,
     gpuSurface,
     // Redundant with `currentCacheKey`, which carries the `_geopending` token —
     // listed so the branch's own input is visible where the effect declares it.

@@ -22,6 +22,7 @@ type ViewProps = {
 
 const recorded = vi.hoisted(() => ({
   motionNative: false,
+  gpuEnabled: true,
   renderSettings: { mode: 'aura', boardsesh: { softDisc: false } },
   onLayout: undefined as ViewProps['onLayout'],
   prefetch: vi.fn(),
@@ -34,13 +35,18 @@ const recorded = vi.hoisted(() => ({
     | undefined,
 }));
 
+vi.mock('../../../lib/board-render/gpu-native-capability', () => ({ climbOverlayGpuApiVersion: 5 }));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGpuApiVersion: 5,
   get NativeMotionClimbOverlayGPU() {
     return recorded.motionNative ? 'NativeMotionClimbOverlayGPU' : null;
   },
 }));
 vi.mock('../../../lib/board-render-settings', () => ({
   useBoardRenderSettings: () => ({ settings: recorded.renderSettings }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useGpuClimbOverlayEnabled: () => recorded.gpuEnabled,
 }));
 
 const sharedThreads = vi.hoisted(() => ({
@@ -288,6 +294,7 @@ function readinessCallbackFor(frames: string): (readiness: BoardArtReadiness) =>
 
 beforeEach(() => {
   recorded.motionNative = false;
+  recorded.gpuEnabled = true;
   recorded.renderSettings = { mode: 'aura', boardsesh: { softDisc: false } };
   recorded.onLayout = undefined;
   _resetPlayBoardPrewarmForTests();
@@ -302,6 +309,23 @@ beforeEach(() => {
   sharedThreads.uiJobs.length = 0;
   sharedThreads.synchronizeJsReads.length = 0;
   vi.stubEnv('EXPO_PUBLIC_SCREENSHOT_MODE', '0');
+});
+
+it('releases stationary motion when the remote GPU switch turns off', () => {
+  recorded.motionNative = true;
+  const pager = restingPager();
+  const props = {
+    ...baseProps,
+    layoutId: 8,
+    pager,
+    prevFrames: 'previous',
+    containerSize: { width: 350, height: 500 },
+  };
+  const { rerender } = render(createElement(SwipeBoardCarousel, props));
+  expect(pager.stationaryMotion.value).toBe(true);
+  recorded.gpuEnabled = false;
+  rerender(createElement(SwipeBoardCarousel, { ...props, containerSize: { ...props.containerSize } }));
+  expect(pager.stationaryMotion.value).toBe(false);
 });
 afterEach(() => vi.unstubAllEnvs());
 

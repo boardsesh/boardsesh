@@ -14,7 +14,7 @@ const posthog = vi.hoisted(() => ({
   emit: (() => {}) as () => void,
 }));
 vi.mock('../../lib/analytics', () => ({
-  readPosthogFeatureFlags: () => ({}),
+  readPosthogFeatureFlagSnapshot: () => ({ flags: {}, payloads: {} }),
   readPosthogFeatureFlagsRequestId: () => posthog.requestId,
   subscribePosthogFeatureFlags: (onChange: () => void) => {
     posthog.emit = onChange;

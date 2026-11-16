@@ -1,3 +1,4 @@
+import { climbOverlayGpuApiVersion, type ClimbOverlayGPUFailureScope } from '../lib/board-render/gpu-native-capability';
 import type { BoardRenderStyle } from '../lib/board-render-style';
 import React, {
   useCallback,
@@ -11,6 +12,8 @@ import React, {
 } from 'react';
 import { View, type ViewStyle } from 'react-native';
 import { NativeFrameClimbOverlayGPU, NativeMotionClimbOverlayGPU } from '../../modules/climb-overlay-gpu/src';
+import { recordGpuConfigFailure } from '../lib/board-render/gpu-failure-store';
+import type { GpuFallbackReason } from '../lib/board-render/gpu-telemetry';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
 import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
@@ -222,8 +225,11 @@ const BoardImageNative = React.memo(function BoardImageNative({
   // Whether the live stack is held invisible under the opening-art bridge, for
   // the play board's paint-timeout telemetry. Written after each commit below.
   const paintBridgingRef = useRef(false);
-  const gpuFlag = useGpuClimbOverlayEnabled();
-  const [gpuFallbackConfigJson, setGpuFallbackConfigJson] = useState<string | null>(null);
+  const gpuFlag = useGpuClimbOverlayEnabled(boardName, layoutId);
+  const [gpuFailure, setGpuFailure] = useState<{ configJson: string; frames: string | null } | null>(null);
+  const [gpuPaintedConfig, setGpuPaintedConfig] = useState<string | null>(null);
+  const gpuFallbackConfigJson =
+    gpuFailure && (gpuFailure.frames === null || gpuFailure.frames === frames) ? gpuFailure.configJson : null;
   const gpuSurface =
     gpuFlag &&
     NativeFrameClimbOverlayGPU !== null &&
@@ -259,8 +265,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
     filledStyle,
     playSurface,
     gpuSurface,
+    gpuApiVersion: climbOverlayGpuApiVersion,
     gpuAllowEmpty: editorSurface && NativeMotionClimbOverlayGPU !== null,
     gpuFallbackConfigJson,
+    gpuPresentedConfigJson: gpuPaintedConfig,
     paintBridgingRef,
     renderWidth,
     backgroundVariant,
@@ -314,7 +322,6 @@ const BoardImageNative = React.memo(function BoardImageNative({
   const gpuRequestId = `${gpuInstanceId}:${currentGpuAttempt.generation}`;
   const currentGpuRequest = useRef<string | null>(null);
   const [gpuPresented, setGpuPresented] = useState<string | null>(null);
-  const [gpuPaintedConfig, setGpuPaintedConfig] = useState<string | null>(null);
   useLayoutEffect(() => {
     currentGpuRequest.current = gpuConfigJson ? gpuRequestId : null;
     return () => {
@@ -325,9 +332,16 @@ const BoardImageNative = React.memo(function BoardImageNative({
     if (currentGpuRequest.current === requestId) setGpuPresented(requestId);
   }, []);
   const handleGpuRelease = useCallback(() => setGpuPaintedConfig(null), []);
-  const handleGpuFailure = useCallback((requestId: string, configJson: string) => {
-    if (currentGpuRequest.current === requestId) setGpuFallbackConfigJson(configJson);
-  }, []);
+  const handleGpuFailure = useCallback(
+    (requestId: string, configJson: string, reason: GpuFallbackReason, failureScope: ClimbOverlayGPUFailureScope) => {
+      if (currentGpuRequest.current !== requestId) return;
+      if (reason === 'cancelled') return;
+      const frameOnly = failureScope !== 'static';
+      setGpuFailure({ configJson, frames: frameOnly ? frames : null });
+      if (!frameOnly) recordGpuConfigFailure(configJson, climbOverlayGpuApiVersion);
+    },
+    [frames],
+  );
   const handleGpuReset = useCallback((requestId: string) => {
     setGpuPresented((previous) => (previous === requestId ? null : previous));
   }, []);
@@ -342,6 +356,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
                 configJson={gpuConfigJson}
                 frames={gpuFrames}
                 requestId={gpuRequestId}
+                boardName={boardName}
                 transition={normalizedGpuTransition}
                 animateEdits={editorSurface}
                 displayMirrored={mirrored ?? false}
@@ -357,6 +372,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       gpuConfigJson,
       gpuFrames,
       gpuRequestId,
+      boardName,
       gpuPresented,
       normalizedGpuTransition,
       editorSurface,

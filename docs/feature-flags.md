@@ -146,6 +146,20 @@ What this means for targeting:
 
 ## Mobile flags
 
+Aura GPU rendering uses `aura-gpu-enabled`. Keep the flag active: **an active 0% release condition disables every GPU surface**, including the stationary swipe carousel, without changing the selected appearance. PNG supplies the same Aura artwork. Missing flags preserve the existing Kilter Homewall path; they do not enable additional catalogue layouts.
+
+The boolean flag carries a versioned JSON payload under `true`:
+
+```json
+{"version":1,"enabledFamilies":[],"disabledFamilies":[]}
+```
+
+`enabledFamilies` is an explicit allowlist of `kilter`, `tension`, `decoy`, `touchstone`, `grasshopper`, `soill`, `moonboard` and `woods`. `disabledFamilies` is optional and defaults to an empty list; a disable wins over an enable and also disables legacy Homewall when it names `kilter`. An explicit remote global or family disable also wins over a local tester override. Unknown versions or malformed lists preserve only the existing Homewall behavior. Custom spray walls remain ineligible. Additional catalogue layouts also require native API 5; flags cannot bypass native capability, appearance or resource checks.
+
+The [production flag](https://us.posthog.com/project/412845/feature-flags/1089342) starts with an empty allowlist. Enable one family only after its release checks pass. Flag values and payloads are read from the same account-owned response, without flag exposure events. The current draft native changes require new handset measurements before enabling additional families.
+
+Static GPU failures are remembered locally by the installed application ID, native version/build, platform and GPU API version, plus a SHA-256 of the static configuration. Up to 64 hashes are retained; raw configurations never enter storage or telemetry. A new native binary starts a new namespace; an OTA update does not clear the latch. While storage or hashing is unresolved, exact PNG artwork starts. Storage failure keeps that JS session on PNG. Frame errors, context loss, cancellation and backgrounding do not persist a static failure.
+
 `privacy-consent-step-kill: true` suppresses the privacy step and disables product analytics,
 replay and attribution publishing. First-party Observe diagnostics remain independent. The choice stays saved. Product capture waits until
 the flag resolution gate completes (cached values or the existing two-second timeout), as well as

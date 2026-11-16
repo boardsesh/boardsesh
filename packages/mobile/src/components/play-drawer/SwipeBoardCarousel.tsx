@@ -23,6 +23,7 @@ import { BoardImageNative } from '../BoardImageNative';
 import { NativeMotionClimbOverlayGPU } from '../../../modules/climb-overlay-gpu/src';
 import { StationaryBoardCarousel } from './StationaryBoardCarousel';
 import { useBoardRenderSettings } from '../../lib/board-render-settings';
+import { useGpuClimbOverlayEnabled } from '../../providers/feature-flags-provider';
 import { useCarouselGesture } from './use-carousel-gesture';
 import { pageOffset, type SwipePager } from './use-swipe-pager';
 import { useZoomPanGesture } from './use-zoom-pan-gesture';
@@ -364,13 +365,17 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   const handleStationaryUnavailable = useCallback(() => {
     setFailedStationaryIdentity(stationaryIdentity);
   }, [stationaryIdentity]);
+  const gpuEnabled = useGpuClimbOverlayEnabled(boardName, layoutId);
   const stationary =
+    gpuEnabled &&
     NativeMotionClimbOverlayGPU !== null &&
     boardName === 'kilter' &&
     layoutId === 8 &&
     !currentFrameOverride &&
     renderSettings.mode !== 'classic' &&
     !renderSettings.boardsesh.softDisc &&
+    renderSettings.boardsesh.markStyle !== 'fill' &&
+    renderSettings.boardsesh.markStyle !== 'glow-fill' &&
     failedStationaryIdentity !== stationaryIdentity;
   const pageArt = useSharedValue<Readonly<Record<number, BoardArtReadiness>>>({});
   const { t } = useTranslation('climbs');

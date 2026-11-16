@@ -26,7 +26,7 @@ vi.mock('../../lib/graphql/hooks/use-followed-authors', async (importOriginal) =
 // never parses it. The three flag readers are what FeatureFlagsProvider itself
 // imports from here.
 vi.mock('../../lib/analytics', () => ({
-  readPosthogFeatureFlags: () => ({}),
+  readPosthogFeatureFlagSnapshot: () => ({ flags: {}, payloads: {} }),
   readPosthogFeatureFlagsRequestId: () => undefined,
   subscribePosthogFeatureFlags: () => () => {},
 }));
