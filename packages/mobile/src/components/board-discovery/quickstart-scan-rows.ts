@@ -41,7 +41,8 @@ export type QuickstartLookupState = 'none' | 'pending' | 'updating' | 'resolved'
 
 /** A lookup's answer: the serials it was asked about, and the boards it named for them. */
 export type QuickstartSerialAnswer = {
-  serials: ReadonlySet<string>;
+  /** In the order the scan heard them. */
+  serials: readonly string[];
   /** After `selectBleBoardCandidates`. */
   boards: readonly UserBoard[];
 };
@@ -80,9 +81,13 @@ export function quickstartLookupState({
  * - still out: `updating`, with the serials heard since held back;
  * - failed: `failed`, with one need-signal row for the serials heard since.
  *
- * `drawn` counts only while every serial it answered is still heard. A scan
- * only adds serials and a new one starts empty, so the last scan's boards are
- * never drawn for this one.
+ * `drawn` counts only when the serials it answered are where this scan's list
+ * starts. A scan only appends serials, in the order it hears them
+ * (`useBoardScan`), so an answer from earlier in this scan always answered the
+ * start of the list. One from another scan does not: a scan that hears S2 and
+ * then S1 again waits for its own first answer rather than draw the last
+ * scan's S1 board ahead of it. The caller also drops `drawn` when a scan
+ * starts over; this keeps a scan whose empty start never rendered just as safe.
  */
 export function carryDrawnAnswer({
   lookup,
@@ -96,9 +101,11 @@ export function carryDrawnAnswer({
   drawn: QuickstartSerialAnswer | null;
 }): { lookup: QuickstartLookupState; answer: QuickstartSerialAnswer | null } {
   if (lookup === 'none') return { lookup, answer: null };
-  const heard = new Set(serials);
-  const stillHeard = drawn !== null && [...drawn.serials].every((serial) => heard.has(serial));
-  if (!stillHeard) return { lookup, answer: null };
+  const answeredThisScan =
+    drawn !== null &&
+    drawn.serials.length <= serials.length &&
+    drawn.serials.every((serial, index) => serials[index] === serial);
+  if (!answeredThisScan) return { lookup, answer: null };
   if (lookup === 'pending') return { lookup: 'updating', answer: drawn };
   return { lookup, answer: drawn };
 }
@@ -201,7 +208,7 @@ export function buildQuickstartRows({
    * (`carryDrawnAnswer`). Absent: every serial heard once `resolved`, and none
    * before.
    */
-  answeredSerials?: ReadonlySet<string>;
+  answeredSerials?: readonly string[];
   lookup: QuickstartLookupState;
   /** Absent: no serial-less box is named. */
   recognition?: QuickstartRecognition;
@@ -248,9 +255,10 @@ export function buildQuickstartRows({
 
   // Which heard serials the lookup has answered: every one once `resolved`,
   // those of the answer still drawn while it is `updating` or `failed`.
-  const carriesAnswer = (lookup === 'updating' || lookup === 'failed') && answeredSerials !== undefined;
-  const isAnswered = (serial: string): boolean =>
-    lookup === 'resolved' || (carriesAnswer && (answeredSerials?.has(serial) ?? false));
+  const carriedSerials =
+    (lookup === 'updating' || lookup === 'failed') && answeredSerials !== undefined ? new Set(answeredSerials) : null;
+  const carriesAnswer = carriedSerials !== null;
+  const isAnswered = (serial: string): boolean => lookup === 'resolved' || (carriedSerials?.has(serial) ?? false);
 
   if (lookup === 'resolved' || carriesAnswer) {
     const matchedSerials = new Set<string>();

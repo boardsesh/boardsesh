@@ -153,7 +153,7 @@ describe('buildQuickstartRows', () => {
     const rows = buildQuickstartRows({
       devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -40), serialDevice('3', 'kilter', -60)],
       boards: [savedBoard('crux', '1')],
-      answeredSerials: new Set(['1', '3']),
+      answeredSerials: ['1', '3'],
       lookup: 'updating',
     });
     expect(kinds(rows)).toEqual(['board:crux', 'unknown_setup:kilter']);
@@ -164,7 +164,7 @@ describe('buildQuickstartRows', () => {
     const rows = buildQuickstartRows({
       devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -70), serialDevice('3', 'kilter', -65)],
       boards: [savedBoard('crux', '1')],
-      answeredSerials: new Set(['1']),
+      answeredSerials: ['1'],
       lookup: 'failed',
     });
     expect(kinds(rows)).toEqual(['board:crux', 'lookup_failed']);
@@ -387,7 +387,7 @@ describe('quickstartLookupState', () => {
 });
 
 describe('carryDrawnAnswer', () => {
-  const drawn = { serials: new Set(['1']), boards: [savedBoard('crux', '1')] };
+  const drawn = { serials: ['1'], boards: [savedBoard('crux', '1')] };
 
   it.each<{
     name: string;
@@ -431,7 +431,7 @@ describe('carryDrawnAnswer', () => {
       keepsAnswer: true,
     },
     // A new scan starts empty, and one that hears other serials never draws
-    // the last scan's boards.
+    // the last scan's boards, even once it hears that scan's serial again.
     {
       name: 'new scan, nothing heard',
       lookup: 'none',
@@ -444,6 +444,14 @@ describe('carryDrawnAnswer', () => {
       name: 'new scan, other serials',
       lookup: 'pending',
       serials: ['2'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serial then the old one',
+      lookup: 'pending',
+      serials: ['2', '1'],
       drewBefore: true,
       expected: 'pending',
       keepsAnswer: false,

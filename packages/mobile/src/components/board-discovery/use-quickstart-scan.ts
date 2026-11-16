@@ -3,7 +3,7 @@
 // builders (quickstart-scan-rows.ts); this only wires the scan and the queries
 // to them, and the slot only renders `rows`.
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useBoardScan, type BoardScan } from '../../lib/ble/use-board-scan';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
@@ -73,16 +73,21 @@ export function useQuickstartScan({
     resolving: isResolvingBoards || isResolvingPreferences,
   });
   const answerForSerialsHeard = useMemo<QuickstartSerialAnswer | null>(
-    () => (lookupForSerialsHeard === 'resolved' ? { serials: new Set(serials), boards: visibleBoards } : null),
+    () => (lookupForSerialsHeard === 'resolved' ? { serials, boards: visibleBoards } : null),
     [lookupForSerialsHeard, serials, visibleBoards],
   );
   // Both queries are keyed on every serial heard, so each new serial starts
   // them over with no answer (no `placeholderData`: a kept answer would call a
   // serial it was never asked about unknown). The last answer drawn is kept
   // here instead, and `carryDrawnAnswer` keeps it up only for the serials it
-  // answered. A ref, not state: it remembers what a render already worked out.
+  // answered, and only within the scan that heard them. Stored once a render
+  // commits, so a render React throws away stores nothing, and dropped when a
+  // scan starts over with no serials.
   const drawnAnswerRef = useRef<QuickstartSerialAnswer | null>(null);
-  if (answerForSerialsHeard) drawnAnswerRef.current = answerForSerialsHeard;
+  useEffect(() => {
+    if (serials.length === 0) drawnAnswerRef.current = null;
+    else if (answerForSerialsHeard) drawnAnswerRef.current = answerForSerialsHeard;
+  }, [serials, answerForSerialsHeard]);
   const { lookup, answer } = carryDrawnAnswer({
     lookup: lookupForSerialsHeard,
     serials,

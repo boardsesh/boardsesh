@@ -136,6 +136,22 @@ async function hear({ serial, boardType, rssi }: SerialHeard, rerender: () => vo
   });
 }
 
+/**
+ * Scan again: the radio drops what it heard. `rendersEmptyStart` false is a
+ * start whose empty lists React folded into the next box heard, so no render
+ * ever saw the scan empty.
+ */
+async function scanAgain({ rendersEmptyStart }: { rendersEmptyStart: boolean }, rerender: () => void) {
+  radio.serials = [];
+  radio.devices = [];
+  radio.advertisedTypes = new Map();
+  if (!rendersEmptyStart) return;
+  await act(async () => {
+    rerender();
+    await settle();
+  });
+}
+
 beforeEach(() => {
   radio.serials = [];
   radio.devices = [];
@@ -189,4 +205,30 @@ describe('useQuickstartScan through a scan that hears a second box', () => {
     await land(['K1', 'T2'], [HOME_KILTER, CRUX_TENSION]);
     expect(summarize(result.current.content)).toBe('board_rows:crux-tension,crux-kilter');
   });
+
+  // The last scan's Kilter must not lead the next scan before its own first
+  // answer lands: the closer Tension that answer names would take the lead
+  // from under the climber's thumb.
+  it.each([{ rendersEmptyStart: true }, { rendersEmptyStart: false }])(
+    'waits for the first answer of a new scan that hears another box and then the last one (empty start rendered: $rendersEmptyStart)',
+    async ({ rendersEmptyStart }) => {
+      const { result, rerender } = renderHook(useInRangeSlot, { wrapper });
+      await hear({ serial: 'K1', boardType: 'kilter', rssi: -45 }, rerender);
+      await land(['K1'], [HOME_KILTER]);
+      expect(summarize(result.current.content)).toBe('hero:crux-kilter');
+
+      await scanAgain({ rendersEmptyStart }, rerender);
+      await hear({ serial: 'T2', boardType: 'tension', rssi: -30 }, rerender);
+      expect(result.current.lookup).toBe('pending');
+      expect(summarize(result.current.content)).toBe('looking');
+
+      await hear({ serial: 'K1', boardType: 'kilter', rssi: -45 }, rerender);
+      expect(result.current.lookup).toBe('pending');
+      expect(summarize(result.current.content)).toBe('looking');
+
+      await land(['T2', 'K1'], [CRUX_TENSION, HOME_KILTER]);
+      expect(result.current.lookup).toBe('resolved');
+      expect(summarize(result.current.content)).toBe('board_rows:crux-tension,crux-kilter');
+    },
+  );
 });
