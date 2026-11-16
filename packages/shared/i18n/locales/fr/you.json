@@ -9,7 +9,8 @@
     "sessions": "Sessions",
     "logbook": "Carnet",
     "social": "Social",
-    "climbs": "Blocs"
+    "climbs": "Blocs",
+    "created": "Créés"
   },
   "mobile": {
     "unknownName": "Grimpeur",

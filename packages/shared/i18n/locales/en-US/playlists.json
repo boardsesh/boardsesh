@@ -141,7 +141,15 @@
         "title": "Smart playlist not found",
         "description": "This smart playlist doesn't exist."
       },
-      "empty": "No climbs in this smart playlist yet."
+      "empty": "No climbs in this smart playlist yet.",
+      "createdClimbs": {
+        "title": "My climbs",
+        "description": "Your published climbs, across all boards.",
+        "empty": {
+          "title": "No published climbs yet",
+          "supporting": "Publish a climb to find it here. Your drafts stay in the editor."
+        }
+      }
     },
     "empty": {
       "title": "No playlists yet",

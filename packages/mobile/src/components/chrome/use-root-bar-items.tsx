@@ -10,6 +10,7 @@ import { useUnreadNotificationCount } from '../../lib/graphql/hooks/use-notifica
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { formatActiveBoardLabel } from '../../lib/boards/active-board-label';
 import { canAdjustBoardAngle } from '../../lib/boards/can-adjust-board-angle';
+import { smartPlaylistHref } from '../../lib/smart-playlists';
 import { WALL_DISPLAY_HREF } from '../../lib/routing/wall-display-link';
 import { hapticLight } from '../../lib/haptics';
 import { useDeviceLayout } from '../../hooks/use-device-layout';
@@ -218,6 +219,10 @@ export function useClimbListBarItems({
     hapticLight();
     onOpenHistory();
   }, [onOpenHistory]);
+  const openMyClimbs = useCallback(
+    () => router.push(smartPlaylistHref('CREATED_CLIMBS', 'other'), { withAnchor: true }),
+    [router],
+  );
   const openViewOptions = useCallback(() => router.push('/(tabs)/climbs/settings/climb-list'), [router]);
   const openWallDisplay = useCallback(() => router.push(WALL_DISPLAY_HREF), [router]);
   const openBoards = useCallback(() => router.push('/boards'), [router]);
@@ -246,6 +251,7 @@ export function useClimbListBarItems({
         identifier: 'root.climbListMenu',
         rows: [
           ...(createRow ? [{ label: createRow.label, symbol: iconMap.plus.ios, onPress: createRow.onPress }] : []),
+          { label: t('mobile.listOptions.myClimbs'), symbol: 'person.crop.rectangle', onPress: openMyClimbs },
           { label: t('mobile.listOptions.viewOptions'), symbol: iconMap['view.options'].ios, onPress: openViewOptions },
           ...(wallDisplayInMenu
             ? [
@@ -272,6 +278,7 @@ export function useClimbListBarItems({
     handleOpenHistory,
     badge,
     badgeColor,
+    openMyClimbs,
     openViewOptions,
     openWallDisplay,
     openBoards,

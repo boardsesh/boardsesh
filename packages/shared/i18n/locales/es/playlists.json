@@ -141,7 +141,15 @@
         "title": "Playlist inteligente no encontrada",
         "description": "Esta playlist inteligente no existe."
       },
-      "empty": "Todavía no hay bloques en esta playlist inteligente."
+      "empty": "Todavía no hay bloques en esta playlist inteligente.",
+      "createdClimbs": {
+        "title": "Mis bloques",
+        "description": "Tus bloques publicados, en todos tus plafones.",
+        "empty": {
+          "title": "Aún no hay bloques publicados",
+          "supporting": "Publica un bloque para encontrarlo aquí. Tus borradores siguen en el editor."
+        }
+      }
     },
     "empty": {
       "title": "Aún no tienes playlists",

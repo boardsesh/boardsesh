@@ -252,7 +252,8 @@
       "viewOptions": "Options d’affichage",
       "history": "Historique de la board, {{board}}",
       "historyTitle": "Historique de la board",
-      "historyHint": "Voir les blocs qui ont été allumés sur ce mur"
+      "historyHint": "Voir les blocs qui ont été allumés sur ce mur",
+      "myClimbs": "Mes blocs"
     },
     "moderation": {
       "title": "Modération",

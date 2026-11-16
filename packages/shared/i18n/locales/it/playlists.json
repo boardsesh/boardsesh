@@ -141,7 +141,15 @@
         "title": "Playlist smart non trovata",
         "description": "Questa playlist smart non esiste."
       },
-      "empty": "Ancora nessun blocco in questa playlist smart."
+      "empty": "Ancora nessun blocco in questa playlist smart.",
+      "createdClimbs": {
+        "title": "I miei blocchi",
+        "description": "I tuoi blocchi pubblicati, su tutti i pannelli.",
+        "empty": {
+          "title": "Nessun blocco pubblicato",
+          "supporting": "Pubblica un blocco per trovarlo qui. Le tue bozze restano nell’editor."
+        }
+      }
     },
     "empty": {
       "title": "Ancora nessuna playlist",

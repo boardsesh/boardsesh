@@ -49,6 +49,18 @@ Three fixes have already shipped against this, and the model below builds on the
 What is left is that each list still decides on its own what a tap means, and the queue
 still collects climbs nobody chose to queue.
 
+## Find climbs you created
+
+In Discover → For You, open **My climbs**. This generated playlist collects
+your published climbs across your boards and linked setter accounts. Pin it
+like the other generated playlists, play it, or add compatible climbs next or
+last in your queue. The Climbs options menu opens the same playlist.
+**You → Created** also keeps the authored list. Neither list inherits the
+active board's search filters. Saving,
+editing, or publishing refreshes that list so a recently opened empty list does
+not hide a new climb. Drafts remain in the create editor's draft picker; other
+climbers' public profiles keep the **Climbs** label.
+
 ## Words we use
 
 The current player uses the wall button and a back chip; the older pill names

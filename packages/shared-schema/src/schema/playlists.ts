@@ -620,6 +620,9 @@ export const playlistsTypeDefs = /* GraphQL */ `
   """
   A computed playlist generated from a user's logbook or favourites, or a
   recommendation computed from the catalog for the user's board.
+  CREATED_CLIMBS is the owner's published work, including linked setter
+  accounts, and is private to that owner. It supports board geometry scoping
+  for playback but does not accept a sort/filter view.
 
   Logbook-derived:
   - FIVE_STARS: climbs the user has rated 5/5
@@ -639,6 +642,7 @@ export const playlistsTypeDefs = /* GraphQL */ `
     MOST_REPEATED
     PROJECTS
     LIKED_CLIMBS
+    CREATED_CLIMBS
     RECOMMENDED_CROWD_FAVORITES
     RECOMMENDED_HIDDEN_GEMS
     RECOMMENDED_AT_LEVEL

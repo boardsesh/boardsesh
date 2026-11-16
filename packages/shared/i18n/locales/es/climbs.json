@@ -252,7 +252,8 @@
       "viewOptions": "Opciones de vista",
       "history": "Historial del plafón, {{board}}",
       "historyTitle": "Historial del plafón",
-      "historyHint": "Mira los bloques que se han iluminado en este muro"
+      "historyHint": "Mira los bloques que se han iluminado en este muro",
+      "myClimbs": "Mis bloques"
     },
     "moderation": {
       "title": "Moderación",

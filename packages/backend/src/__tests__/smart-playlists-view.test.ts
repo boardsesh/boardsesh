@@ -755,7 +755,7 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
       for (const userId of [GUARDED_OWNER, ALIAS_OWNER]) {
         const ownersOwn = makeCtx({ isAuthenticated: true, userId });
         const cards = await playlistQueries.mySmartPlaylistCounts(null, undefined, ownersOwn);
-        for (const type of ['FIVE_STARS', 'MOST_REPEATED', 'PROJECTS', 'LIKED_CLIMBS'] as const) {
+        for (const type of ['FIVE_STARS', 'MOST_REPEATED', 'PROJECTS', 'LIKED_CLIMBS', 'CREATED_CLIMBS'] as const) {
           const header = await fetchSmart({ type, userId, pageSize: 1 }, ownersOwn);
           const card = cards.find((entry) => entry.type === type);
           expect(card?.count, `${userId} ${type}`).toBe(header.totalCount);
@@ -774,6 +774,7 @@ describe('smartPlaylist — views (real DB, #6651)', () => {
         { type: 'MOST_REPEATED', count: 3 },
         { type: 'PROJECTS', count: 2 },
         { type: 'LIKED_CLIMBS', count: 0 },
+        { type: 'CREATED_CLIMBS', count: 0 },
       ]);
       const guardedCards = await playlistQueries.mySmartPlaylistCounts(
         null,

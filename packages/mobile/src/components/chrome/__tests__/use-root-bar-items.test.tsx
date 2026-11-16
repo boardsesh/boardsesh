@@ -203,13 +203,19 @@ describe('useClimbListBarItems', () => {
     expect(menu).toMatchObject({ type: 'menu', label: 'mobile.listOptions.title', icon: { name: 'ellipsis' } });
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
-    const [viewOptions, switchBoard] = menu.menu.items;
+    const [myClimbs, viewOptions, switchBoard] = menu.menu.items;
+    if (myClimbs?.type === 'action') myClimbs.onPress();
+    expect(ctrl.router.push).toHaveBeenCalledExactlyOnceWith(
+      { pathname: '/(tabs)/discover/smart/[type]', params: { type: 'CREATED_CLIMBS', source: 'other' } },
+      { withAnchor: true },
+    );
     if (viewOptions?.type === 'action') viewOptions.onPress();
     if (switchBoard?.type === 'action') switchBoard.onPress();
-    expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
+    expect(ctrl.router.push.mock.calls.slice(1)).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
   });
 
   it('leaves Wall display out on a tablet', () => {
@@ -219,6 +225,7 @@ describe('useClimbListBarItems', () => {
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     // A tablet opens it from the MiniPlayer's ⛶ or the board sheet.
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
@@ -231,6 +238,7 @@ describe('useClimbListBarItems', () => {
     const menu = result.current.find((item) => item.type === 'menu');
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.wallDisplay.open',
       'mobile.boardPresence.switchBoard',
