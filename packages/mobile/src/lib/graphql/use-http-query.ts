@@ -507,7 +507,8 @@ export function useHttpInfiniteQuery<
     }
   };
   type BatchPersister = NonNullable<UseInfiniteQueryOptions<Result, Error, Selected, QueryKey, Param>['persister']>;
-  const persistBatch = async (...[fetchInfinite, context, query]: Parameters<BatchPersister>): Promise<Result> => {
+  const persistBatch = async (...batchArguments: Parameters<BatchPersister>): Promise<Result> => {
+    const [fetchInfinite, context, query] = batchArguments;
     const actualQuery = client.getQueryCache().find({ queryKey: actualKey, exact: true });
     if (!actualQuery || actualQuery !== query) throw pageHeld();
     const ledger = ledgerFor(client, actualQuery);
