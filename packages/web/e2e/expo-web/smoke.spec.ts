@@ -350,7 +350,7 @@ test.describe('expo-web smoke', () => {
   });
 
   test.describe('desktop adaptive shell', () => {
-    test('uses the tablet rail and keeps every play action and deferred section in the detail pane', async ({
+    test('uses the tablet rail and keeps default play actions and deferred sections in the detail pane', async ({
       browser,
     }) => {
       // `screen` is a browser-context option rather than a per-test fixture.
@@ -403,18 +403,15 @@ test.describe('expo-web smoke', () => {
             .first(),
         ).toBeVisible();
 
-        for (const actionName of [
-          'Previous climb',
-          'Log ascent',
-          'Next climb',
-          'Connect Board',
-          'Choose Angle',
-          'Climb actions',
-          'Share climb',
-        ]) {
+        // Previous/Next are optional controls, disabled in fresh preferences.
+        for (const actionName of ['Log ascent', 'Choose Angle', 'Climb actions', 'Share climb']) {
           await expect(page.getByRole('button', { name: actionName, exact: true })).toBeVisible();
         }
-        const queueButton = page.getByRole('button', { name: /^Queue, \d+ climbs$/ });
+        const wallControl = page.getByTestId('play-drawer-wall-control');
+        await expect(wallControl).toBeVisible();
+        await expect(wallControl).toHaveRole('button');
+        await expect(wallControl).toHaveAccessibleName(/\S/);
+        const queueButton = page.getByRole('button', { name: /^Queue, (nothing up next|\d+ climbs?( up next)?)$/ });
         await expect(queueButton).toBeVisible();
 
         const logAscentButton = page.getByRole('button', { name: 'Log ascent', exact: true });
@@ -424,9 +421,9 @@ test.describe('expo-web smoke', () => {
         await dismissSheet(page, saveTickButton);
 
         await tapThroughGestureLayer(queueButton);
-        const editQueueButton = page.getByRole('button', { name: 'Edit queue', exact: true });
-        await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
-        await dismissSheet(page, editQueueButton);
+        const historyToggle = page.getByRole('button', { name: 'Toggle history', exact: true });
+        await expect(historyToggle).toBeVisible({ timeout: 15_000 });
+        await dismissSheet(page, historyToggle);
 
         // Desktop wheel/trackpad scrolling does not emit RN's begin-drag event.
         // Scrolling over the pane must still open the deferred-content gate.
