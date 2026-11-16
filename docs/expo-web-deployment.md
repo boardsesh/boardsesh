@@ -487,7 +487,10 @@ The browser-only `ReanimatedSwipeable` adapter preserves vertical touch scrollin
 in climb and logbook rows. RNGH v3 can replace a gesture configuration after its
 detector sets `touchAction="pan-y"`; that replacement resets the DOM style to
 `none`. The adapter's scoped CSS keeps only the library's immediate pan/tap hosts
-at `pan-y`, including after rerenders. Its wrapper uses `display: contents` and
+at `pan-y`, including after rerenders. The adapter emits a React stylesheet
+resource, hoisted and deduplicated by its `href`, rather than importing CSS:
+Metro's `--no-dev` proxy extracts CSS imports without injecting them into the
+page. This keeps the same policy in the dev proxy and static export. Its wrapper uses `display: contents` and
 forwards the original props and ref. Nested controls retain their own policies;
 horizontal row gestures still reach RNGH.
 
