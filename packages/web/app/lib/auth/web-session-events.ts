@@ -10,6 +10,7 @@ import { publicProviderSecurityReady } from './provider-security-readiness';
 import { readCanonicalBrowserCoordinator, signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
 import { startCanonicalProviderSignin } from './canonical-provider-start';
+import { browserSessionGuard } from './session-guard';
 
 export const WEB_SESSION_REFRESH_EVENT = 'boardsesh-web-session-refresh';
 const EPOCH_KEY = Symbol.for('boardsesh.web-session-intent.epoch-v1');
@@ -60,6 +61,8 @@ export async function signInWithSessionIntent(
   context?: { readonly signal?: AbortSignal },
 ): Promise<SignInResponse | undefined> {
   const epoch = beginWebSessionIntent();
+  // This tab's own sign-in: the guard drops older responses but keeps the page.
+  browserSessionGuard().expectLocalChange();
   const coordinatorReady = publicBrowserCoordinatorReady();
   const providerReady = publicProviderSecurityReady();
   const passwordReady = publicBrowserPasswordReady();
@@ -148,6 +151,7 @@ export async function signInWithSessionIntent(
     }
     return await signIn(provider, options);
   } finally {
+    browserSessionGuard().expectLocalChange();
     requestWebSessionRefresh(epoch);
     // Public notification for already-open NextAuth pages. Its result is never
     // accepted as identity by the owned provider.

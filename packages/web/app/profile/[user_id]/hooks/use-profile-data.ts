@@ -43,6 +43,7 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
 } from '../utils/chart-data-builders';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 type InitialData = {
   /** This server response contains only independently public fallback data. */
@@ -151,7 +152,7 @@ export function useProfileData(userId: string, initialData?: InitialData) {
         assertCurrent();
         return profile;
       }
-      const response = await fetch(`/api/internal/profile/${userId}`, { signal });
+      const response = await guardedFetch(`/api/internal/profile/${userId}`, { signal });
       if (response.status === 404) throw new ProfileNotFoundError();
       if (!response.ok) throw new Error('Failed to fetch profile');
       const body = await response.json();

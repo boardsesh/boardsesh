@@ -68,11 +68,7 @@ describe('useProfileData', () => {
     mockRequest.mockResolvedValue({ userClimbPercentile: null });
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({}),
-      } as Response),
+      vi.fn().mockImplementation(async () => Response.json({})),
     );
   });
 
@@ -145,10 +141,8 @@ describe('useProfileData', () => {
   });
 
   it('fetches missing profile, ticks, stats, and percentile data on mount', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
+    vi.mocked(fetch).mockImplementation(async () =>
+      Response.json({
         id: 'user-1',
         email: 'test@example.com',
         name: 'Fetched User',
@@ -159,7 +153,7 @@ describe('useProfileData', () => {
         followingCount: 2,
         isFollowedByMe: false,
       }),
-    } as Response);
+    );
 
     mockRequest.mockImplementation(async (request: { document: unknown; variables?: Record<string, unknown> }) => {
       const { document: query, variables } = request;
@@ -316,11 +310,7 @@ describe('useProfileData', () => {
   });
 
   it('flags notFound when the profile endpoint returns 404', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-      json: async () => ({}),
-    } as Response);
+    vi.mocked(fetch).mockImplementation(async () => Response.json({}, { status: 404 }));
 
     const { result } = renderProfileDataHook(() => useProfileData('missing-user'));
 
@@ -453,10 +443,8 @@ describe('useProfileData', () => {
       if (query === GET_USER_CLIMB_PERCENTILE) throw new Error('percentile boom');
       return {};
     });
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({
+    vi.mocked(fetch).mockImplementation(async () =>
+      Response.json({
         id: 'user-1',
         email: undefined,
         name: 'Test',
@@ -467,7 +455,7 @@ describe('useProfileData', () => {
         followingCount: 0,
         isFollowedByMe: false,
       }),
-    } as Response);
+    );
 
     renderProfileDataHook(() => useProfileData('user-1'));
 

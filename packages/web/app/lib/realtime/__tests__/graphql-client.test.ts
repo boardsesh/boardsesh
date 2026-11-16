@@ -23,6 +23,7 @@ vi.mock('../websocket-connection-manager', () => ({
 
 import { acquireRealtimeClient as acquireSharedRealtimeClient, createGraphQLClient } from '../graphql-client';
 import { WEB_CLIENT_VERSION } from '@/app/lib/client-identity';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
 
 const BROWSER_IDENTITY = `boardsesh-web/${WEB_CLIENT_VERSION}`;
 
@@ -103,5 +104,18 @@ describe('acquireRealtimeClient', () => {
     expect(old.client.dispose).toHaveBeenCalledOnce();
     expect(renewed.client.dispose).not.toHaveBeenCalled();
     renewed.release();
+  });
+
+  it('closes the shared socket as soon as the account changes, before its holders release it', () => {
+    const guard = browserSessionGuard();
+    guard.accept({ userId: 'user-a', authSessionId: 'login-a' });
+    const held = acquireRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'token-a' });
+
+    guard.accept({ userId: 'user-a', authSessionId: 'login-a2' });
+
+    expect(held.client.dispose).toHaveBeenCalledOnce();
+    const reacquired = acquireRealtimeClient({ url: 'wss://backend.test/graphql', authToken: 'token-a' });
+    expect(reacquired.client).not.toBe(held.client);
+    reacquired.release();
   });
 });

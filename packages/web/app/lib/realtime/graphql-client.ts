@@ -12,6 +12,7 @@ import {
 import { parse } from 'graphql';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { captureBrowserBackendRequestScope } from '@/app/lib/auth/browser-backend-graphql';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
 import { webClientIdentityConnectionParams } from '@/app/lib/client-identity';
 import { connectionManager } from './websocket-connection-manager';
 
@@ -160,8 +161,17 @@ export function createGraphQLClient(
   return client;
 }
 
-type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number };
+type SharedRealtimeClient = { key: string; client: ExtendedClient; holders: number; generation: number };
 let sharedRealtimeClient: SharedRealtimeClient | null = null;
+let watchingSessionGeneration = false;
+
+/** An account change closes the shared socket at once; holders reacquire with their new token. */
+function closeSupersededRealtimeClient(): void {
+  const entry = sharedRealtimeClient;
+  if (!entry || browserSessionGuard().isCurrent(entry.generation)) return;
+  sharedRealtimeClient = null;
+  void entry.client.dispose();
+}
 
 /**
  * The tab's one authenticated realtime socket. graphql-ws multiplexes every
@@ -174,9 +184,20 @@ export function acquireRealtimeClient({ url, authToken }: { url: string; authTok
   client: ExtendedClient;
   release: () => void;
 } {
+  const guard = browserSessionGuard();
+  if (!watchingSessionGeneration) {
+    watchingSessionGeneration = true;
+    guard.subscribe(closeSupersededRealtimeClient);
+  }
+  closeSupersededRealtimeClient();
   const key = `${url}\n${authToken ?? ''}`;
   if (sharedRealtimeClient?.key !== key) {
-    sharedRealtimeClient = { key, client: createGraphQLClient({ url, authToken }), holders: 0 };
+    sharedRealtimeClient = {
+      key,
+      client: createGraphQLClient({ url, authToken }),
+      holders: 0,
+      generation: guard.capture(),
+    };
   }
   const entry = sharedRealtimeClient;
   entry.holders += 1;

@@ -22,6 +22,7 @@ import ConnectedAppsSection from '@/app/components/account/connected-apps-sectio
 import BackButton from '@/app/components/back-button';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { buildAppHandoffUrl } from '@/app/lib/app-handoff';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 /**
  * Web settings keeps only what the app can't do: register an ESP32 controller
@@ -64,7 +65,7 @@ export default function SettingsPageContent() {
 
   const fetchProfile = useCallback(async () => {
     try {
-      const response = await fetch('/api/internal/profile');
+      const response = await guardedFetch('/api/internal/profile');
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }

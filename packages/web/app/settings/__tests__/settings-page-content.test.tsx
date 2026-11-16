@@ -70,10 +70,11 @@ import SettingsPageContent from '../settings-page-content';
 beforeEach(() => {
   vi.clearAllMocks();
   window.history.replaceState({}, '', '/settings');
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ email: 'climber@example.com', hasPassword: false, linkedProviders: ['google'] }),
-  }) as unknown as typeof fetch;
+  global.fetch = vi
+    .fn()
+    .mockImplementation(async () =>
+      Response.json({ email: 'climber@example.com', hasPassword: false, linkedProviders: ['google'] }),
+    ) as unknown as typeof fetch;
 });
 
 async function renderSettings() {
@@ -171,7 +172,9 @@ describe('SettingsPageContent', () => {
   });
 
   it('surfaces a profile fetch failure instead of spinning forever', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }) as unknown as typeof fetch;
+    global.fetch = vi
+      .fn()
+      .mockImplementation(async () => Response.json({}, { status: 500 })) as unknown as typeof fetch;
 
     await renderSettings();
 

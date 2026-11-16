@@ -2,6 +2,7 @@
 
 import { getSession } from 'next-auth/react';
 import { beginWebSessionIntent, requestWebSessionRefresh } from './web-session-events';
+import { browserSessionGuard } from './session-guard';
 
 export const NEXTAUTH_COOKIE_LOCK_NAME = 'boardsesh-nextauth-cookie-v1';
 
@@ -302,6 +303,8 @@ export async function guardedNextAuthSignOut(
   const lockGlobal = globalThis as FetchLockGlobal;
   const state = lockGlobal[LOCK_INSTALLATION_KEY];
   if (!state) throw new Error('NextAuth cookie lock is unavailable');
+  // This tab's own sign-out navigates itself; the session guard must not reload it.
+  browserSessionGuard().expectLocalChange();
 
   const callbackUrl = options.callbackUrl ?? window.location.href;
   const boundedSignal = createBoundedAuthSignal();
@@ -371,6 +374,7 @@ export async function guardedNextAuthSignOut(
     );
   } catch (error) {
     if (signOutStarted) {
+      browserSessionGuard().expectLocalChange();
       broadcastExpoAuthChange({ type: 'credential-rotation' });
       requestWebSessionRefresh(signOutEpoch);
       await getSession();
@@ -388,6 +392,7 @@ export async function guardedNextAuthSignOut(
   // BroadcastChannel reaches Expo and the current NextAuth bridge. Always dual
   // publish NextAuth's storage refresh for already-open pre-deploy tabs and
   // browser message loss, after releasing the non-reentrant outer lock.
+  browserSessionGuard().expectLocalChange();
   requestWebSessionRefresh(signOutEpoch);
   await getSession();
   if (options.redirect ?? true) redirectTo(result.url);

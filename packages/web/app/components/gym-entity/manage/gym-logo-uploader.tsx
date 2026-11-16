@@ -35,6 +35,7 @@ import {
   type GymLogoEncodingPlan,
 } from './logo-image-utils';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 /**
  * Downscale + re-encode via canvas per the plan. JPEG output fills white first
@@ -144,7 +145,7 @@ export default function GymLogoUploader({ gym, logoDisplayUrl, onGymChange }: Gy
       formData.append('logo', uploadFile);
       formData.append('gymUuid', gym.uuid);
 
-      const response = await fetch(`${backendBaseUrl}/api/gym-logos`, {
+      const response = await guardedFetch(`${backendBaseUrl}/api/gym-logos`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, ...webClientIdentityHeaders() },
         body: formData,

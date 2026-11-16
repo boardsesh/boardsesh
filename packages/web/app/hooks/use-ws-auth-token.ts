@@ -8,6 +8,8 @@ import {
   browserBackendSessionKey,
 } from '@boardsesh/auth-protocol/browser-backend-session';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
+import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
 
 type WsAuthResponse = {
   token: string | null;
@@ -85,8 +87,16 @@ export function useWsAuthToken(enabled = true) {
           result.userId !== sessionUserId ||
           (result.authSessionId ?? null) !== authSessionId)
       ) {
+        // The cookie names another login than the page shows: read the session again.
+        requestWebSessionRefresh();
         throw new Error('ws-auth returned a token for a different session identity');
       }
+      // A closure that keeps this token after the account changes is refused by the guard.
+      if (result.token && result.userId)
+        browserSessionGuard().rememberToken(result.token, {
+          userId: result.userId,
+          authSessionId: result.authSessionId ?? '',
+        });
       return result;
     },
     // The NextAuth JWT is long-lived, but revalidate periodically and on

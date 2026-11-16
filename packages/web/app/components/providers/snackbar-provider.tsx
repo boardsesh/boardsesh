@@ -1,10 +1,11 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import Snackbar from '@mui/material/Snackbar';
 import Alert, { type AlertColor } from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import { themeTokens } from '@/app/theme/theme-config';
+import { isSessionGenerationCurrent, useSessionGeneration } from '@/app/hooks/use-session-generation';
 
 type SnackbarAction = {
   label: string;
@@ -35,19 +36,27 @@ export function SnackbarProvider({ children }: { children: React.ReactNode }) {
   // the same millisecond, which corrupts React reconciliation (a duplicate-key
   // snackbar won't dismiss correctly).
   const keyCounterRef = useRef(0);
+  // A caller still holding showMessage from before an account change (say, a
+  // request that came back superseded) shows nothing.
+  const generation = useSessionGeneration();
 
-  const showMessage = useCallback((text: string, severity: AlertColor, action?: SnackbarAction, duration?: number) => {
-    keyCounterRef.current += 1;
-    const key = keyCounterRef.current;
-    setMessages((prev) => [...prev, { key, text, severity, action, duration }]);
-  }, []);
+  const showMessage = useCallback(
+    (text: string, severity: AlertColor, action?: SnackbarAction, duration?: number) => {
+      if (!isSessionGenerationCurrent(generation)) return;
+      keyCounterRef.current += 1;
+      const key = keyCounterRef.current;
+      setMessages((prev) => [...prev, { key, text, severity, action, duration }]);
+    },
+    [generation],
+  );
+  const contextValue = useMemo(() => ({ showMessage }), [showMessage]);
 
   const handleClose = useCallback((key: number) => {
     setMessages((prev) => prev.filter((m) => m.key !== key));
   }, []);
 
   return (
-    <SnackbarContext.Provider value={{ showMessage }}>
+    <SnackbarContext.Provider value={contextValue}>
       {children}
       {messages.map((msg) => (
         <Snackbar

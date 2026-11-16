@@ -54,7 +54,7 @@ let mockFetch: ReturnType<typeof vi.fn>;
 function respondWith(controllers: ControllerInfo[], then?: (input: RequestInfo, init?: RequestInit) => unknown) {
   mockFetch = vi.fn((input: RequestInfo, init?: RequestInit) => {
     if (!init || init.method === undefined) {
-      return Promise.resolve({ ok: true, json: async () => ({ controllers }) });
+      return Promise.resolve(Response.json({ controllers }));
     }
     return Promise.resolve(then?.(input, init));
   });
@@ -134,7 +134,7 @@ describe('ControllersSection', () => {
   });
 
   it('registers a controller and surfaces the API key exactly once', async () => {
-    respondWith([], () => ({ ok: true, json: async () => ({ apiKey: 'esp32-secret-key' }) }));
+    respondWith([], () => Response.json({ apiKey: 'esp32-secret-key' }));
 
     render(<ControllersSection />);
     fireEvent.click(await screen.findByText(t('controllers.add')));
@@ -169,7 +169,7 @@ describe('ControllersSection', () => {
   });
 
   it('registers a Spraywall key with nothing but the board type', async () => {
-    respondWith([], () => ({ ok: true, json: async () => ({ apiKey: 'spray-secret-key' }) }));
+    respondWith([], () => Response.json({ apiKey: 'spray-secret-key' }));
 
     render(<ControllersSection />);
     fireEvent.click(await screen.findByText(t('controllers.add')));
@@ -202,7 +202,7 @@ describe('ControllersSection', () => {
   });
 
   it('deletes a controller through the confirmation popover', async () => {
-    respondWith([makeController()], () => ({ ok: true, json: async () => ({ success: true }) }));
+    respondWith([makeController()], () => Response.json({ success: true }));
 
     render(<ControllersSection />);
     fireEvent.click(await screen.findByText(t('controllers.card.delete')));
@@ -219,7 +219,7 @@ describe('ControllersSection', () => {
   });
 
   it('surfaces the server message when a delete fails', async () => {
-    respondWith([makeController()], () => ({ ok: false, json: async () => ({ error: 'Controller is in use' }) }));
+    respondWith([makeController()], () => Response.json({ error: 'Controller is in use' }, { status: 409 }));
 
     render(<ControllersSection />);
     fireEvent.click(await screen.findByText(t('controllers.card.delete')));

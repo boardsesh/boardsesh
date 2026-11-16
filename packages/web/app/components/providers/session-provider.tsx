@@ -23,9 +23,19 @@ import {
   requestWebSessionRefresh,
   WEB_SESSION_REFRESH_EVENT,
 } from '../../lib/auth/web-session-events';
+import {
+  browserSessionGuard,
+  sessionViewerKey,
+  sessionViewerOf,
+  WEB_SESSION_CHECK_EVENT,
+  type SessionViewer,
+} from '../../lib/auth/session-guard';
 
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
+// ws-auth reads the cookie without rewriting it, unlike NextAuth's session GET.
+const IDENTITY_PROBE_PATH = '/api/internal/ws-auth';
+const FOCUS_CHECK_INTERVAL_MS = 30_000;
 
 function isExpoAuthClearMessage(message: unknown): boolean {
   if (typeof message !== 'object' || message === null || Array.isArray(message)) return false;
@@ -44,6 +54,15 @@ function parseSession(candidate: unknown): Session | null {
   if (typeof user.id !== 'string' || !user.id.trim() || typeof session.expires !== 'string')
     throw new Error('Invalid session response');
   return candidate as Session;
+}
+
+/** The account the cookie names now; undefined when the probe proves nothing. */
+function readProbedViewer(candidate: unknown): SessionViewer | undefined {
+  if (typeof candidate !== 'object' || candidate === null) return undefined;
+  const probe = candidate as Record<string, unknown>;
+  if (probe.authenticated === false) return null;
+  if (probe.authenticated !== true || typeof probe.userId !== 'string') return undefined;
+  return { userId: probe.userId, authSessionId: typeof probe.authSessionId === 'string' ? probe.authSessionId : '' };
 }
 
 async function readSessionJson(response: Response, signal: AbortSignal): Promise<unknown> {
@@ -229,6 +248,12 @@ export default function SessionProviderWrapper({
           clientScopeKeyRef.current = acceptedScopeKey;
           if (typeof window !== 'undefined') window.dispatchEvent(new Event(PRIVACY_REVOKED_EVENT));
         }
+        // An account change made in another tab or app is never shown in this
+        // page: the guard clears its caches and reloads it from the root.
+        if (browserSessionGuard().accept(sessionViewerOf(acceptedSession)) === 'retire') {
+          setAcceptedView((current) => (current.retired ? current : { ...current, retired: true }));
+          return sessionRef.current;
+        }
         sessionRef.current = acceptedSession;
         settledRef.current = true;
         retryDelayRef.current = 1000;
@@ -299,11 +324,46 @@ export default function SessionProviderWrapper({
       suspendedRef.current = false;
       externalRefresh();
     };
+    // Focus and a 401 compare the cookie's account with the published one, and
+    // read the session (which rewrites the cookie) only when they differ.
+    let lastIdentityCheck = Date.now();
+    let identityProbe: AbortController | null = null;
+    const checkIdentity = async (throttled: boolean) => {
+      if (suspendedRef.current || !settledRef.current || identityProbe) return;
+      if (throttled && Date.now() - lastIdentityCheck < FOCUS_CHECK_INTERVAL_MS) return;
+      lastIdentityCheck = Date.now();
+      const probe = new AbortController();
+      identityProbe = probe;
+      const deadline = setTimeout(() => probe.abort(), 15_000);
+      try {
+        const response = await fetch(IDENTITY_PROBE_PATH, { cache: 'no-store', signal: probe.signal });
+        // An outage proves nothing and keeps the accepted session.
+        const probed = response.ok ? readProbedViewer(await response.json()) : undefined;
+        if (
+          probed !== undefined &&
+          identityProbe === probe &&
+          sessionViewerKey(probed) !== browserSessionGuard().viewerKey()
+        )
+          externalRefresh();
+      } catch {
+        /* Transport failure keeps the accepted session. */
+      } finally {
+        clearTimeout(deadline);
+        if (identityProbe === probe) identityProbe = null;
+      }
+    };
+    const focusCheck = () => {
+      if (document.visibilityState !== 'hidden') void checkIdentity(true);
+    };
+    const unauthorizedCheck = () => void checkIdentity(false);
     window.addEventListener(WEB_SESSION_REFRESH_EVENT, refresh);
     window.addEventListener('storage', storageRefresh);
     window.addEventListener('online', refresh);
     window.addEventListener('pagehide', pageHide);
     window.addEventListener('pageshow', pageShow);
+    window.addEventListener('focus', focusCheck);
+    document.addEventListener('visibilitychange', focusCheck);
+    window.addEventListener(WEB_SESSION_CHECK_EVENT, unauthorizedCheck);
     let channel: BroadcastChannel | undefined;
     const onExpoMessage = (event: MessageEvent<unknown>) => {
       if (isExpoAuthClearMessage(event.data)) externalRefresh();
@@ -330,6 +390,11 @@ export default function SessionProviderWrapper({
       window.removeEventListener('online', refresh);
       window.removeEventListener('pagehide', pageHide);
       window.removeEventListener('pageshow', pageShow);
+      window.removeEventListener('focus', focusCheck);
+      document.removeEventListener('visibilitychange', focusCheck);
+      window.removeEventListener(WEB_SESSION_CHECK_EVENT, unauthorizedCheck);
+      identityProbe?.abort();
+      identityProbe = null;
       channel?.removeEventListener('message', onExpoMessage);
       channel?.close();
     };

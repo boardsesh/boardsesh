@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import type { CncArtworkKind } from '@boardsesh/shared-schema';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
+import { guardedFetch } from '@/app/lib/auth/session-guard';
 
 /**
  * Send one logo to `POST /api/cnc/art` and get back the id the order will name.
@@ -157,7 +158,7 @@ export function useCncArtworkUpload(authToken: string | null): CncArtworkUploadS
         const formData = new FormData();
         formData.append('art', file);
 
-        const response = await fetch(`${backendBaseUrl}/api/cnc/art`, {
+        const response = await guardedFetch(`${backendBaseUrl}/api/cnc/art`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${authToken}` },
           body: formData,

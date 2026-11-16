@@ -19,6 +19,7 @@ import {
 } from '@boardsesh/auth-protocol/browser-backend-session';
 import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { publicBrowserConsumersReady } from '@/app/lib/auth/browser-consumer-readiness';
+import { browserSessionGuard } from '@/app/lib/auth/session-guard';
 
 type QueryClientProviderProps = {
   children: ReactNode;
@@ -38,6 +39,11 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   );
 
   const [persister] = useState(() => createIdbPersister());
+  // A page retiring after another tab's account change wipes before it reloads.
+  useEffect(
+    () => browserSessionGuard().registerCleanup(() => clearViewerState(queryClient, persister)),
+    [queryClient, persister],
+  );
   // Reads useSession(), so this provider must mount inside SessionProviderWrapper.
   // See app/layout.tsx for the nesting order.
   const { data: session, status: sessionStatus } = useSession();
@@ -80,8 +86,32 @@ export default function QueryClientProvider({ children }: QueryClientProviderPro
   );
 }
 
+type IdbPersister = ReturnType<typeof createIdbPersister>;
+
+/** Every query, the persisted blob and the build-plans draft belong to one account. */
+function clearViewerState(queryClient: QueryClient, persister: IdbPersister): Promise<unknown> {
+  // Every query may contain viewer-specific authorization, even when it is
+  // not persisted. Cancel before clearing to reject old-account responses.
+  const memory = queryClient.cancelQueries().then(() => {
+    void revokeWebPrivacySnapshots(queryClient);
+    queryClient.clear();
+  });
+  // The persister already swallows IDB errors internally, but log anything
+  // that escapes so a failed wipe is observable instead of silent.
+  // removeClient() is typed as Promisable<void>, so wrap to normalise.
+  const persisted = Promise.resolve(persister.removeClient()).catch((error: unknown) => {
+    console.error('Failed to clear persisted react-query cache on session change:', error);
+  });
+  // The in-progress build-plans draft (a buyer's name and email) lives in
+  // IndexedDB outside the React Query cache, but it is exactly the same kind
+  // of per-user state: it must not survive into the next signed-out visitor
+  // or the next account on this browser. `removePreference` swallows its own
+  // errors.
+  return Promise.all([memory, persisted, removePreference(CNC_CONFIGURATOR_DRAFT_KEY)]);
+}
+
 type SessionCacheBusterProps = {
-  persister: ReturnType<typeof createIdbPersister>;
+  persister: IdbPersister;
   sessionUserId: string | null;
 };
 
@@ -107,24 +137,7 @@ export function SessionCacheBuster({ persister, sessionUserId }: SessionCacheBus
     if (previous === sessionUserId) return;
     if (previous === null) return;
 
-    // Every query may contain viewer-specific authorization, even when it is
-    // not persisted. Cancel before clearing to reject old-account responses.
-    void queryClient.cancelQueries().then(() => {
-      void revokeWebPrivacySnapshots(queryClient);
-      queryClient.clear();
-    });
-    // The persister already swallows IDB errors internally, but log anything
-    // that escapes so a failed sign-out wipe is observable instead of silent.
-    // removeClient() is typed as Promisable<void>, so wrap to normalise.
-    Promise.resolve(persister.removeClient()).catch((error: unknown) => {
-      console.error('Failed to clear persisted react-query cache on session change:', error);
-    });
-    // The in-progress build-plans draft (a buyer's name and email) lives in
-    // IndexedDB outside the React Query cache, but it is exactly the same kind
-    // of per-user state: it must not survive into the next signed-out visitor
-    // or the next account on this browser. `removePreference` swallows its own
-    // errors, so this is fire-and-forget like the persister wipe above.
-    void removePreference(CNC_CONFIGURATOR_DRAFT_KEY);
+    void clearViewerState(queryClient, persister);
   }, [queryClient, persister, sessionUserId]);
 
   return null;
