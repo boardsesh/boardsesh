@@ -32,4 +32,14 @@ module BuildConfig {
 
     // Bounded owned tick queue (refuse new logs when full).
     const TICK_QUEUE_MAX = 25;
+
+    // Dead-letter store for ticks the server refused for good. 25 entries is
+    // about 15KB of the separate 32KB storage value, and holds a full queue
+    // refused at once. When full, only an entry already shown may be dropped.
+    const REJECTED_TICK_MAX = 25;
+
+    // A pre-G2 tick is adopted only when logged at least this long after the
+    // old app's final access token was issued: one day covers a watch clock
+    // set fast by a wrong time zone (at most 14h) with room to spare.
+    const LEGACY_ADOPT_SKEW_SEC = 86400;
 }

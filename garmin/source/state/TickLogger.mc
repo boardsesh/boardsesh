@@ -20,7 +20,14 @@ class TickLogger {
         _lease = null;
         if (!TickQueue.release(completed)) { return; }
         if (!AuthState.sameScope(_context, origin) || !TickQueue.activeContext(_context)) { return; }
-        if (TickQueue.exactAck(code, response, _input["uuid"]) && TickQueue.acknowledge(_context, _input["uuid"])) { return; }
+        var outcome = TickQueue.settle(_context, _input["uuid"], code, response);
+        if (outcome == :success) { return; }
+        if (outcome == :rejected) {
+            // Kept in the dead-letter store, never re-sent; counted on the summary.
+            Feedback.error();
+            Toast.show(WatchUi.loadResource(Rez.Strings.TickRejected));
+            return;
+        }
         Feedback.offlineQueued();
         Toast.show(WatchUi.loadResource(Rez.Strings.QueuedOffline));
     }

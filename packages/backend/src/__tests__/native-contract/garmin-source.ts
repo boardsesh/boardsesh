@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createContext, Script } from 'node:vm';
 import { recordedSource, type GarminRecording } from './recordings';
 
@@ -6,11 +7,30 @@ type Scope = Record<string, unknown>;
 /**
  * Bounded source replay, not a Monkey C runtime or hardware claim. The recorded
  * function body is unchanged except syntax spelling: types, array size/add,
- * dictionary/string type predicates. Unknown syntax fails JavaScript parsing.
- * No SDK, simulator, Attention, test-function invocation, or FIT I/O is involved.
+ * dictionary/string/array type predicates and `"key" =>` dictionary keys.
+ * Unknown syntax fails JavaScript parsing. No SDK, simulator, Attention,
+ * test-function invocation, or FIT I/O is involved.
  */
 export function garminFunction(recording: GarminRecording, path: string, name: string, scope: Scope) {
-  const source = recordedSource(recording, `garmin/source/${path}`);
+  return replayGarminFunction(
+    recordedSource(recording, `garmin/source/${path}`),
+    `${recording.name}:${path}`,
+    name,
+    scope,
+  );
+}
+
+/**
+ * The same replay over the CURRENT checkout's source, for pure functions that
+ * have no recorded checkpoint yet. It proves only what the recorded replay
+ * proves, for the source in this tree.
+ */
+export function currentGarminFunction(path: string, name: string, scope: Scope) {
+  const source = readFileSync(new URL(`../../../../../garmin/source/${path}`, import.meta.url), 'utf8');
+  return replayGarminFunction(source, `current:${path}`, name, scope);
+}
+
+function replayGarminFunction(source: string, label: string, name: string, scope: Scope) {
   // Tokenize comments/strings before locating balanced function braces, so
   // GraphQL literals and comment braces cannot truncate the recorded function.
   const tokenPattern = /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$]*|\s+|./g;
@@ -42,6 +62,8 @@ export function garminFunction(recording: GarminRecording, path: string, name: s
     .replace(/\s+as\s+[\w.]+(?:\s+or\s+[\w.]+)*/g, '')
     .replace(/([\w.]+(?:\["[^"\n]+"\])?)\s+instanceof\s+Lang\.Dictionary/g, '__dictionary($1)')
     .replace(/([\w.]+(?:\["[^"\n]+"\])?)\s+instanceof\s+Lang\.String/g, '(typeof $1 === "string")')
+    .replace(/([\w.]+(?:\["[^"\n]+"\])?)\s+instanceof\s+Lang\.Array/g, 'Array.isArray($1)')
+    .replace(/("(?:\\.|[^"\\\n])*")\s*=>/g, '$1:')
     .replace(/\.size\(\)|\.length\(\)/g, '.length')
     .replace(/\.add\(/g, '.push(');
   const context = createContext({
@@ -51,7 +73,7 @@ export function garminFunction(recording: GarminRecording, path: string, name: s
   });
   new Script('String.prototype.equals = function(other) { return String(this) === other; };').runInContext(context);
   const replay = new Script(`(function (${parameters}) { with (scope) { ${body} } })`, {
-    filename: `${recording.name}:${path}:${name}`,
+    filename: `${label}:${name}`,
   }).runInContext(context) as (...arguments_: unknown[]) => unknown;
   return (...arguments_: unknown[]) => Reflect.apply(replay, undefined, arguments_);
 }

@@ -76,8 +76,9 @@ module OwnedTickOutbox {
     }
 
     // Old entries have no trustworthy owner. Old pairing wrote new tokens
-    // before clearing the old queue, so current credentials cannot label them.
-    // Unknown versions/corrupt storage are refused, never converted to empty.
+    // before clearing the old queue, so current credentials cannot label them;
+    // only adoptOne's logged-after-token proof can. Unknown versions/corrupt
+    // storage are refused, never converted to empty.
     function load(stored) {
         if (stored == null) {
             return { "version" => VERSION, "owners" => {}, "unowned" => [] };
@@ -121,6 +122,59 @@ module OwnedTickOutbox {
         existing.add(_copyTree(tick));
         next["owners"][owner] = existing;
         return next;
+    }
+
+    // The owner's queued tick with this UUID (a copy), or null.
+    function find(envelope, owner, uuid) {
+        if (!(uuid instanceof Lang.String)) { return null; }
+        var pending = forOwner(envelope, owner);
+        for (var tickIndex = 0; tickIndex < pending.size(); tickIndex += 1) {
+            if (pending[tickIndex]["uuid"].equals(uuid)) { return pending[tickIndex]; }
+        }
+        return null;
+    }
+
+    // A quarantined tick is provably `proof`'s owner's when it was logged at
+    // least `skewSeconds` after the old app's final access token was issued
+    // (see LegacyTickProof). The skew covers a watch clock running fast; a
+    // tick without a uuid or a parseable climbedAt stays quarantined.
+    function _provablyLoggedAfter(tick, issuedAt, skewSeconds as Lang.Number) as Lang.Boolean {
+        if (!_validTick(tick) || !_validTree(tick, 3)) { return false; }
+        var loggedAt = TimeUtil.parseIsoUtc(tick["climbedAt"]);
+        return loggedAt != null && loggedAt >= issuedAt + skewSeconds;
+    }
+
+    // Moves the OLDEST provable quarantined tick to the front of `owner`'s
+    // queue. Only when the legacy token's subject is this exact owner; never
+    // for another account, never past the shared capacity, never a UUID the
+    // owner already has queued. Returns null when nothing qualifies.
+    function adoptOne(envelope, owner, proof, skewSeconds as Lang.Number, capacity as Lang.Number) {
+        if (!_validEnvelope(envelope) || !_validOwner(owner) || !(proof instanceof Lang.Dictionary)) { return null; }
+        var subject = proof["owner"];
+        var issuedAt = proof["issuedAt"];
+        if (!(subject instanceof Lang.String) || !subject.equals(owner) ||
+                !(issuedAt instanceof Lang.Number || issuedAt instanceof Lang.Long) ||
+                skewSeconds < 0 || capacity < 1 || ownedCount(envelope) >= capacity) {
+            return null;
+        }
+        var existing = forOwner(envelope, owner);
+        var legacy = envelope["unowned"];
+        for (var legacyIndex = 0; legacyIndex < legacy.size(); legacyIndex += 1) {
+            var tick = legacy[legacyIndex];
+            if (_provablyLoggedAfter(tick, issuedAt, skewSeconds) && find(envelope, owner, tick["uuid"]) == null) {
+                var remaining = [];
+                for (var otherIndex = 0; otherIndex < legacy.size(); otherIndex += 1) {
+                    if (otherIndex != legacyIndex) { remaining.add(_copyTree(legacy[otherIndex])); }
+                }
+                var queue = [_copyTree(tick)];
+                for (var tickIndex = 0; tickIndex < existing.size(); tickIndex += 1) { queue.add(existing[tickIndex]); }
+                var next = _copyTree(envelope);
+                next["unowned"] = remaining;
+                next["owners"][owner] = queue;
+                return next;
+            }
+        }
+        return null;
     }
 
     function acknowledge(envelope, owner, uuid) {

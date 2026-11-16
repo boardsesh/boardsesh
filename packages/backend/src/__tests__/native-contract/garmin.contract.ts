@@ -57,9 +57,15 @@ for (const recording of recordings.garmin) {
           BsRefreshPolicy: { provenUnconsumed: () => false },
           _flight: null,
         };
+        // The server's real success shape: AuthState.responseValid requires userId.
         const payload =
           status === 200
-            ? { jwt: 'fixture-jwt', refreshToken: 'fixture-refresh', expiresAt: '2099-01-01T00:00:00Z' }
+            ? {
+                userId: 'fixture-owner',
+                jwt: 'fixture-jwt',
+                refreshToken: 'fixture-refresh',
+                expiresAt: '2099-01-01T00:00:00Z',
+              }
             : { error: 'ambiguous fixture response' };
         if (!g2) {
           scope._onRefreshFailed = garminFunction(recording, 'net/BsClient.mc', '_onRefreshFailed', scope);
@@ -134,7 +140,16 @@ for (const recording of recordings.garmin) {
         },
       };
       const pairResult = garminFunction(recording, 'views/PairingView.mc', 'onPairResult', scope);
-      pairResult(200, { jwt: 'fixture-jwt', refreshToken: 'fixture-refresh', expiresAt: '2099-01-01T00:00:00Z' }, {});
+      pairResult(
+        200,
+        {
+          userId: 'fixture-owner',
+          jwt: 'fixture-jwt',
+          refreshToken: 'fixture-refresh',
+          expiresAt: '2099-01-01T00:00:00Z',
+        },
+        {},
+      );
       expect(effects).toContain('loading');
       effects.length = 0;
       pairResult(503, null, {});

@@ -10,7 +10,8 @@ using Toybox.System;
 //   * requires explicit pairing after a failed/ambiguous single-use rotation.
 //
 // GraphQL calls POST { query, variables } to /graphql and the caller callback
-// receives the already-unwrapped data.<field> value (or null).
+// receives the already-unwrapped data.<field> value (or null). saveTick is the
+// exception: it receives the raw body so its error codes can be classified.
 //
 // Callbacks receive (code, payload, capturedOrigin); stale results settle only
 // their own lease/flight and never apply state to another login.
@@ -69,8 +70,11 @@ class BsClient {
         _post(BsEndpoints.takeControlUrl(_base), BsEndpoints.takeControlBody(sessionId), cb);
     }
 
+    // The callback receives the RAW GraphQL body, `errors` included:
+    // TickQueue.classifyFlushResult needs the error codes to tell a permanent
+    // refusal from a retry. Other GraphQL calls stay unwrapped.
     function saveTick(input as Lang.Dictionary, cb) as Void {
-        _graphql(BsEndpoints.saveTickGraphqlBody(input), "saveTick", cb);
+        _graphql(BsEndpoints.saveTickGraphqlBody(input), null, cb);
     }
 
     // ---- Internal helpers ---------------------------------------------------
@@ -82,7 +86,7 @@ class BsClient {
         request.fire();
     }
 
-    private function _graphql(body as Lang.Dictionary, field as Lang.String, cb) as Void {
+    private function _graphql(body as Lang.Dictionary, field as Lang.String or Null, cb) as Void {
         var request = new BsRequest(
             self,
             BsEndpoints.graphqlUrl(_base),
