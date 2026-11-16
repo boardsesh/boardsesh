@@ -1,8 +1,10 @@
+import type { AuraGeometryPaths } from '../lib/aura-assets/native-store';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { StyleSheet, type NativeSyntheticEvent } from 'react-native';
 import Animated, { useAnimatedProps, type SharedValue } from 'react-native-reanimated';
 import { useReduceMotion } from '../hooks/use-reduce-motion';
 import {
+  climbOverlayGeometryAssetApiVersion,
   NativeFrameClimbOverlayGPU,
   NativeMotionClimbOverlayGPU,
   type ClimbOverlayGPUReady,
@@ -21,6 +23,7 @@ const AnimatedMotionOverlay = NativeMotionClimbOverlayGPU
 
 type Props = {
   configJson: string;
+  geometryPaths?: AuraGeometryPaths;
   frames: string;
   requestId: string;
   transition?: GpuClimbTransition;
@@ -35,6 +38,7 @@ type Props = {
 /** Mounted only by a visible board stack. API v2 reports drawable presentation. */
 export function GpuClimbOverlay({
   configJson,
+  geometryPaths,
   frames,
   requestId,
   transition,
@@ -111,7 +115,7 @@ export function GpuClimbOverlay({
             editDurationMs,
             lowPowerMode,
             surface: animateEdits ? 'editor' : 'player',
-            apiVersion: NativeMotionClimbOverlayGPU ? 3 : 2,
+            apiVersion: climbOverlayGeometryAssetApiVersion >= 1 ? 4 : NativeMotionClimbOverlayGPU ? 3 : 2,
             reduceMotion,
           }),
         );
@@ -140,6 +144,7 @@ export function GpuClimbOverlay({
       <AnimatedMotionOverlay
         style={StyleSheet.absoluteFill}
         configJson={configJson}
+        {...geometryPaths}
         frames={frames}
         previousFrames={transition?.previousFrames ?? null}
         nextFrames={transition?.nextFrames ?? null}
@@ -160,6 +165,7 @@ export function GpuClimbOverlay({
     <NativeFrameClimbOverlayGPU
       style={StyleSheet.absoluteFill}
       configJson={configJson}
+      {...geometryPaths}
       frames={frames}
       requestId={requestId}
       active

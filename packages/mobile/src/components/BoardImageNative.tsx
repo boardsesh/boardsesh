@@ -10,7 +10,11 @@ import React, {
   type ReactNode,
 } from 'react';
 import { View, type ViewStyle } from 'react-native';
-import { NativeFrameClimbOverlayGPU, NativeMotionClimbOverlayGPU } from '../../modules/climb-overlay-gpu/src';
+import {
+  NativeFrameClimbOverlayGPU,
+  NativeMotionClimbOverlayGPU,
+  climbOverlayGeometryAssetApiVersion,
+} from '../../modules/climb-overlay-gpu/src';
 import { useGpuClimbOverlayEnabled } from '../providers/feature-flags-provider';
 import { GpuClimbOverlay, type GpuClimbTransition } from './GpuClimbOverlay';
 import { isMoonboardBoardName } from '@boardsesh/board-config';
@@ -270,6 +274,18 @@ const BoardImageNative = React.memo(function BoardImageNative({
     fieldColorOverride,
   });
 
+  const gpuGeometryPaths = useMemo(() => {
+    if (!gpuConfigJson || !(climbOverlayGeometryAssetApiVersion >= 1)) return undefined;
+    const { selectAuraGeometryPaths } =
+      require('../lib/aura-assets/native-store') as typeof import('../lib/aura-assets/native-store');
+    const width = Math.min(renderWidth ?? boardWidth, boardWidth);
+    return selectAuraGeometryPaths(
+      { boardType: boardName, layoutId, sizeId },
+      width,
+      Math.round((width * boardHeight) / boardWidth),
+    );
+  }, [gpuConfigJson, boardName, layoutId, sizeId, boardWidth, boardHeight, renderWidth]);
+
   const normalizedGpuTransition = useMemo(
     () =>
       gpuTransition
@@ -339,6 +355,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
             node: (
               <GpuClimbOverlay
                 configJson={gpuConfigJson}
+                geometryPaths={gpuGeometryPaths}
                 frames={gpuFrames}
                 requestId={gpuRequestId}
                 transition={normalizedGpuTransition}
@@ -354,6 +371,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         : undefined,
     [
       gpuConfigJson,
+      gpuGeometryPaths,
       gpuFrames,
       gpuRequestId,
       gpuPresented,

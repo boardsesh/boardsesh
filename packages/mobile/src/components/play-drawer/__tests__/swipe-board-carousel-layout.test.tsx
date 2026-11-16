@@ -35,6 +35,7 @@ const recorded = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGeometryAssetApiVersion: 0,
   get NativeMotionClimbOverlayGPU() {
     return recorded.motionNative ? 'NativeMotionClimbOverlayGPU' : null;
   },

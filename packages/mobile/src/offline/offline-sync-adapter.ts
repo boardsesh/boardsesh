@@ -579,7 +579,7 @@ const readMetered = (state: NetInfoState): boolean =>
  * worse failure: the board stays on the 400+-round-trip crawl and nothing ever
  * says why.
  */
-const isOnUnmeteredNetwork = async (): Promise<boolean> => {
+export const isOnUnmeteredNetwork = async (): Promise<boolean> => {
   if (isConnectionMetered !== null) return !isConnectionMetered;
   try {
     isConnectionMetered = readMetered(await NetInfo.fetch());
