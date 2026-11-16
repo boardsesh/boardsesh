@@ -70,6 +70,8 @@ Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <
 
 For iPhone Duo hinge failures, the capture debug artifact retains the latest image from each display and a `probes.jsonl` log with capture and conversion errors. Failed display reads are unknown, not proof of a dark screen; the runner waits for a known pose before toggling the hinge.
 
+iOS capture and probe jobs allow 90 minutes for the complete shard, including the existing bounded cold-boot retry. In run `43867676396`, the first Pro Max attempt spent 22 minutes booting and exhausting launch retries; the second recovered and captured 13 stories between 13:47 and 14:07 UTC before the old 60-minute job limit interrupted it. The larger job budget leaves time for the remaining captures and artifact upload; individual boot, launch and story readiness deadlines are unchanged.
+
 `mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 
 CPP captures write a `cpp-capture.json` sidecar with `kind: "view-stories"`. It binds the source checkout, exact story/board inventory, locale, device, appearance, and raw PNG hashes. Framing carries that metadata into `presentation.json`; publication checks both sidecars against the current sources and pixels. These fixtures do not claim a verified backend recording. Existing recorded captures keep their separate snapshot provenance and checks. Native Live Activity presentation sources retain their native fixture validation.
