@@ -4,13 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/app/lib/auth/nextauth-cookie-fetch-lock', () => ({ installNextAuthCookieFetchLock: () => {} }));
 vi.mock('@/app/lib/user-preferences-db', () => ({ removePreference: async () => {} }));
+// The session guard retires the page on a switch to another account; these
+// tests restore a new login of the same climber, which the guard publishes.
+const reload = vi.hoisted(() => vi.fn<() => void>());
+vi.mock('@/app/lib/auth/reload-after-account-change', () => ({ reloadAfterAccountChange: reload }));
 import SessionProviderWrapper from '../session-provider';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
 
-function session(userId: string) {
+const GUARD_KEY = Symbol.for('boardsesh.web-session-guard.v1');
+
+function session(authSessionId: string) {
   return {
-    user: { id: userId },
-    authSessionId: `${userId}-login`,
+    user: { id: 'climber-a' },
+    authSessionId,
     expires: '2099-01-01T00:00:00.000Z',
   };
 }
@@ -20,7 +26,7 @@ function Consumer() {
   const { data: current, status } = useSession();
   observed.session = current;
   observed.status = status;
-  return <p>{status === 'authenticated' ? `Signed in as ${current?.user?.id}` : status}</p>;
+  return <p>{status === 'authenticated' ? `Signed in on ${current?.authSessionId}` : status}</p>;
 }
 function renderConsumer() {
   return render(
@@ -32,7 +38,9 @@ function renderConsumer() {
 
 let readSession: ReturnType<typeof vi.fn<typeof fetch>>;
 beforeEach(() => {
-  readSession = vi.fn<typeof fetch>(async () => Response.json(session('climber-a')));
+  delete (globalThis as typeof globalThis & { [key: symbol]: unknown })[GUARD_KEY];
+  reload.mockReset();
+  readSession = vi.fn<typeof fetch>(async () => Response.json(session('login-1')));
   vi.stubGlobal('fetch', readSession);
   observed.session = null;
   observed.status = 'loading';
@@ -45,7 +53,7 @@ afterEach(() => {
 describe('session provider across page suspension', () => {
   it('keeps the accepted session through pagehide', async () => {
     renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     const acceptedBeforeHide = observed.session;
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
@@ -56,19 +64,20 @@ describe('session provider across page suspension', () => {
 
   it('re-reads the session when a suspended page is restored', async () => {
     renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
     });
-    readSession.mockImplementationOnce(async () => Response.json(session('climber-b')));
+    readSession.mockImplementationOnce(async () => Response.json(session('login-2')));
     await act(async () => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
-    await screen.findByText('Signed in as climber-b');
+    await screen.findByText('Signed in on login-2');
     expect(readSession).toHaveBeenCalledTimes(2);
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('does not read the session while the page is suspended', async () => {
     renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
     });
@@ -77,12 +86,12 @@ describe('session provider across page suspension', () => {
       window.dispatchEvent(new Event('online'));
     });
     expect(readSession).toHaveBeenCalledOnce();
-    expect(screen.getByText('Signed in as climber-a')).toBeTruthy();
+    expect(screen.getByText('Signed in on login-1')).toBeTruthy();
   });
 
   it('drops a session body started before pagehide that lands after the restored read', async () => {
     renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     let releaseOldBody: ((body: unknown) => void) | undefined;
     // No body stream: the provider awaits json(), which ignores the abort.
     readSession.mockResolvedValueOnce({
@@ -94,19 +103,19 @@ describe('session provider across page suspension', () => {
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
     });
-    readSession.mockImplementationOnce(async () => Response.json(session('climber-b')));
+    readSession.mockImplementationOnce(async () => Response.json(session('login-2')));
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
     });
-    await screen.findByText('Signed in as climber-b');
-    await act(async () => releaseOldBody?.(session('climber-a')));
-    expect(screen.getByText('Signed in as climber-b')).toBeTruthy();
-    expect(screen.queryByText('Signed in as climber-a')).toBeNull();
+    await screen.findByText('Signed in on login-2');
+    await act(async () => releaseOldBody?.(session('login-1')));
+    expect(screen.getByText('Signed in on login-2')).toBeTruthy();
+    expect(screen.queryByText('Signed in on login-1')).toBeNull();
   });
 
   it('keeps the accepted session when the restored read hits an outage', async () => {
     renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
     });
@@ -117,12 +126,12 @@ describe('session provider across page suspension', () => {
     await waitFor(() => expect(readSession).toHaveBeenCalledTimes(2));
     await act(async () => Promise.resolve());
     expect(observed.status).toBe('authenticated');
-    expect(screen.getByText('Signed in as climber-a')).toBeTruthy();
+    expect(screen.getByText('Signed in on login-1')).toBeTruthy();
   });
 
   it('does not re-read on a first pageshow and removes its listeners on unmount', async () => {
     const { unmount } = renderConsumer();
-    await screen.findByText('Signed in as climber-a');
+    await screen.findByText('Signed in on login-1');
     act(() => {
       window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: false }));
     });
