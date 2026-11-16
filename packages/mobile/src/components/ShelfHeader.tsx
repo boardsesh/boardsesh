@@ -8,6 +8,8 @@ import { spacing } from '../theme/tokens';
 export const SHELF_HEADER_CONTENT_GAP = spacing[2];
 /** From the end of one shelf's content to the next shelf's title. */
 export const SHELF_SECTION_GAP = 28;
+/** The least of the row a shelf title keeps before its action wraps under it. */
+const TITLE_MIN_SHARE = '70%';
 
 export type ShelfHeaderAction = {
   label: string;
@@ -34,7 +36,8 @@ export type ShelfHeaderProps = {
  *
  * It owns the 16pt gutter and no vertical space: there is no 44pt minimum height,
  * so the title sits 8pt above its content instead of floating in a tall bar. The
- * action reaches 44pt through `hitSlop`. Use `ShelfSection` for the spacing
+ * action reaches its tap target (44pt, 48dp on Material) through `hitSlop`, and
+ * drops under the title at large text sizes. Use `ShelfSection` for the spacing
  * between shelves.
  */
 export function ShelfHeader({ title, caption, action, trailing, testID }: ShelfHeaderProps) {
@@ -89,11 +92,21 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[3],
+    // The action and trailing node drop under the title when keeping them beside
+    // it would leave the title less than `TITLE_MIN_SHARE` of the row (an
+    // accessibility text size on a phone), rather than squeezing it.
+    flexWrap: 'wrap',
+    columnGap: spacing[3],
+    rowGap: spacing[1],
   },
   title: {
-    flex: 1,
-    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    // A zero basis clamped to the minimum share: Yoga breaks the line on that
+    // clamped size, so the action stays beside the title at default sizes and
+    // wraps only when the title would fall under the share.
+    flexBasis: 0,
+    minWidth: TITLE_MIN_SHARE,
   },
   caption: {
     marginTop: 2,

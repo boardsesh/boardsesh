@@ -27,6 +27,7 @@ vi.mock('../Text', () => ({
     emphasized,
     color,
     accessibilityRole,
+    style,
   }: {
     children?: ReactNode;
     variant?: string;
@@ -34,10 +35,12 @@ vi.mock('../Text', () => ({
     emphasized?: boolean;
     color?: string;
     accessibilityRole?: string;
+    style?: unknown;
   }) =>
     createElement(
       'span',
       {
+        'data-style': JSON.stringify(style ?? {}),
         'data-variant': variant,
         'data-tone': tone ?? 'primary',
         'data-emphasized': String(emphasized ?? false),
@@ -84,7 +87,8 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader, ShelfSection } from '../ShelfHeader';
-import { TextAction } from '../TextAction';
+import { TEXT_ACTION_MIN_TARGET, TextAction } from '../TextAction';
+import { textStylesByVariant, type TextVariant } from '../../theme/typography';
 
 function styleOf(element: Element | null): Record<string, unknown> {
   return JSON.parse(element?.getAttribute('data-style') ?? '{}') as Record<string, unknown>;
@@ -134,6 +138,21 @@ describe('ShelfHeader', () => {
     expect(onPress).toHaveBeenCalledOnce();
   });
 
+  it('lets the action drop under the title rather than squeeze it at large text sizes', () => {
+    render(<ShelfHeader title="Your boards" action={{ label: 'See all', onPress: vi.fn() }} />);
+    const title = screen.getByRole('heading', { name: 'Your boards' });
+    const titleRow = styleOf(title.parentElement);
+    expect(titleRow.flexDirection).toBe('row');
+    expect(titleRow.flexWrap).toBe('wrap');
+    expect(titleRow.rowGap).toBeGreaterThan(0);
+    // A zero basis clamped to a minimum share: the line breaks only when the
+    // action would leave the title less than that share of the row.
+    const titleStyle = styleOf(title);
+    expect(titleStyle.flexBasis).toBe(0);
+    expect(titleStyle.flexGrow).toBe(1);
+    expect(titleStyle.minWidth).toBe('70%');
+  });
+
   it('renders a trailing node after the action', () => {
     render(<ShelfHeader title="Your boards" trailing={<b data-testid="menu" />} />);
     expect(screen.getByTestId('menu')).toBeTruthy();
@@ -157,11 +176,18 @@ describe('ShelfSection', () => {
 });
 
 describe('TextAction', () => {
-  it('reaches a 44pt target through hitSlop on a 20pt label', () => {
+  it.each([
+    ['liquidGlass', 44],
+    ['material', 48],
+  ] as const)('reaches the %s minimum target (%ipt) through hitSlop on its own line height', (variant, target) => {
+    ctrl.variant = variant;
+    expect(TEXT_ACTION_MIN_TARGET[variant]).toBe(target);
     render(<TextAction label="Retry" onPress={vi.fn()} />);
     const action = screen.getByRole('button', { name: 'Retry' });
     const hitSlop = JSON.parse(action.getAttribute('data-hitslop') ?? '{}') as { top: number; bottom: number };
-    expect(20 + hitSlop.top + hitSlop.bottom).toBeGreaterThanOrEqual(44);
+    const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
+    const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
+    expect(lineHeight + hitSlop.top + hitSlop.bottom).toBeGreaterThanOrEqual(target);
     expect(action.getAttribute('data-feedback')).toBe('opacity');
   });
 
