@@ -3,6 +3,7 @@ import {
   useInfiniteQuery,
   useQueryClient,
   InfiniteQueryObserver,
+  hashKey,
   type QueryClient,
   type Query,
   type InfiniteQueryObserverOptions,
@@ -15,7 +16,7 @@ import {
   type UseInfiniteQueryOptions,
   type UseInfiniteQueryResult,
 } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { useHttpQueryScope, type HttpQueryOperation, type HttpQueryScope } from './use-http-query-scope';
 
@@ -46,6 +47,29 @@ export type HttpQueryOptions<QueryResult, Error, SelectedResult, Key extends Que
     queryFn: (context: HttpQueryContext<Key>, operation: HttpQueryOperation) => Promise<QueryResult>;
   };
 
+/**
+ * The caller's context under its own key. A browser view's read follows its
+ * observers, so it hands over TanStack's signal. Native and wholly legacy reads
+ * never read it: reading the getter (spreading the context does) makes TanStack
+ * cancel and revert the read once its last observer unmounts, where the
+ * original reads finished into the cache. Copying the property descriptors
+ * keeps the getter lazy, so only a queryFn that reads `signal` itself opts in.
+ */
+function callerContext<Context extends { queryKey: QueryKey }, Key extends QueryKey>(
+  scope: HttpQueryScope,
+  context: Context,
+  queryKey: Key,
+): Omit<Context, 'queryKey'> & { queryKey: Key } {
+  if (scope.scoped) return { ...context, queryKey };
+  return Object.defineProperties(
+    {},
+    {
+      ...Object.getOwnPropertyDescriptors(context),
+      queryKey: { value: queryKey, enumerable: true, writable: true, configurable: true },
+    },
+  ) as Omit<Context, 'queryKey'> & { queryKey: Key };
+}
+
 /** The original view is fixed before TanStack invokes its asynchronous query.
  * Cache/effect work inside queryFn uses operation.cache/assertDeliveries too. */
 export function useHttpQuery<
@@ -61,9 +85,9 @@ export function useHttpQuery<
     queryKey: scope.key(queryKey),
     enabled: enabled && scope.isReady(),
     queryFn: async (context) => {
-      const operation = scope.create({ signal: context.signal });
+      const operation = scope.create(scope.scoped ? { signal: context.signal } : undefined);
       operation.assertView();
-      const result = await queryFn({ ...context, queryKey }, operation);
+      const result = await queryFn(callerContext(scope, context, queryKey), operation);
       operation.assertDeliveries();
       return result;
     },
@@ -453,23 +477,28 @@ export function useHttpInfiniteQuery<
     if (strictBatch && !batch) throw pageHeld();
     const { ledger, group } = batch ?? {};
     if (group) assertBatch(group);
-    const operation = scope.create({
-      signal: context.signal,
-      ...(group
+    // Native and wholly legacy reads leave the signal getter alone, as above.
+    const operation = scope.create(
+      scope.scoped
         ? {
-            assertDispatch: () => {
-              try {
-                assertBatch(group);
-              } catch {
-                throw new BrowserBackendConsumerError('superseded');
-              }
-            },
+            signal: context.signal,
+            ...(group
+              ? {
+                  assertDispatch: () => {
+                    try {
+                      assertBatch(group);
+                    } catch {
+                      throw new BrowserBackendConsumerError('superseded');
+                    }
+                  },
+                }
+              : {}),
           }
-        : {}),
-    });
+        : undefined,
+    );
     operation.assertView();
     try {
-      const result = await queryFn({ ...context, queryKey }, operation);
+      const result = await queryFn(callerContext(scope, context, queryKey), operation);
       operation.assertDeliveries();
       if (ledger && group) {
         const page = objectPage(result);
@@ -558,12 +587,23 @@ export function useHttpInfiniteQuery<
     ...(strictBatch ? { structuralSharing: false as const, persister: persistBatch as BatchPersister } : {}),
   };
   const result = useInfiniteQuery<Result, Error, Selected, QueryKey, Param>(configured);
+  // `configured` and its closures are new every render. Read them from a ref so
+  // the callback, which a list's renderItem depends on, changes only with what
+  // decides the source: the client, the view, the key, and whether it pages.
+  // Written on commit: a render React throws away must not leave a committed
+  // callback reading a key it never committed.
+  const keyHash = hashKey(actualKey);
+  const latestPaging = useRef({ scope, keyHash, configured });
+  useLayoutEffect(() => {
+    latestPaging.current = { scope, keyHash, configured };
+  });
   const capturePageSource = useCallback(() => {
-    if (!pageDelivery || !enabled) throw pageHeld();
+    const latest = latestPaging.current;
+    if (!pageDelivery || !enabled || latest.scope !== scope || latest.keyHash !== keyHash) throw pageHeld();
     return captureFixedPageSource(
       client,
       scope,
-      configured as unknown as InfiniteQueryObserverOptions<
+      latest.configured as unknown as InfiniteQueryObserverOptions<
         Result,
         Error,
         InfiniteData<Result, Param>,
@@ -571,6 +611,6 @@ export function useHttpInfiniteQuery<
         Param
       >,
     );
-  }, [client, scope, pageDelivery, enabled, configured]);
+  }, [client, scope, pageDelivery, enabled, keyHash]);
   return pageDelivery ? ({ ...result, capturePageSource } as HttpInfiniteQueryWithPages<Result, Error, Param>) : result;
 }

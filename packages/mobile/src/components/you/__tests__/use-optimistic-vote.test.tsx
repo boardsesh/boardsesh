@@ -16,6 +16,7 @@ vi.mock('../../../lib/graphql/use-http-query-scope', () => ({
 }));
 
 import { useOptimisticVote } from '../use-optimistic-vote';
+import { invalidateCredentialSnapshots } from '../../../lib/privacy/privacy-cache';
 
 type Summary = { upvotes: number; userVote: number };
 const completions: { resolve: (summary: Summary) => void; reject: (error: Error) => void }[] = [];
@@ -159,12 +160,16 @@ describe('original optimistic vote continuations', () => {
     expect(mutate).toHaveBeenCalledOnce();
   });
 
-  it('aborts its original request on unmount', () => {
+  it('keeps its native vote going after unmount, and ends it on sign-out', () => {
+    // A climber who upvotes and switches tab keeps the vote. Only an account
+    // change ends it, so the old account's vote never lands under the next.
     const { result, unmount } = renderHook(() => useOptimisticVote('s1', 5, null));
     act(() => result.current.toggle());
     const options = mutate.mock.calls[0][1] as { signal: AbortSignal };
     expect(options.signal.aborted).toBe(false);
     unmount();
+    expect(options.signal.aborted).toBe(false);
+    invalidateCredentialSnapshots();
     expect(options.signal.aborted).toBe(true);
   });
 });

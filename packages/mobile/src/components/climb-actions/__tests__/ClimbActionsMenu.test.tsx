@@ -63,6 +63,8 @@ vi.mock('../../../providers/queue-provider', () => ({
     nowSlotMode: runtime.nowSlotMode,
   }),
 }));
+// The provider owns the delete flow; climb-menus-provider-delete.test.tsx runs it.
+vi.mock('../use-delete-climb-action', () => ({ useDeleteClimbAction: () => vi.fn(async () => {}) }));
 vi.mock('../use-climb-actions', () => ({
   useClimbActions: (args: { climb: Climb; onAfterAction?: () => void }) => {
     runtime.commands(args);

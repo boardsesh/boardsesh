@@ -190,6 +190,10 @@ vi.mock('../../lib/auth-store', () => ({
   getAuthToken: () => getAuthTokenMock(),
   isAuthCredentialGenerationCurrent: (...args: unknown[]) => isAuthCredentialGenerationCurrentMock(...args),
   isTokenExpiringSoon: () => isTokenExpiringSoonMock(),
+  // A rejected refresh retires its credential before sign-out cleans up. The
+  // generation itself is this file's mock, so the retired one stays current.
+  retireRejectedCredential: (generation: number) =>
+    isAuthCredentialGenerationCurrentMock(generation) ? generation : null,
 }));
 
 // checkAuth reports keychain read failures; record the calls so the

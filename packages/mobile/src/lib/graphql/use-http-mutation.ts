@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useMutation, type DefaultError, type UseMutationOptions } from '@tanstack/react-query';
+import { createAbortError } from './request-timeout';
 import { useHttpQueryScope, type HttpQueryOperation } from './use-http-query-scope';
 
 type Callbacks<Result, Error, Variables, Context> = {
@@ -123,7 +124,13 @@ export function useHttpMutation<Result, Error = DefaultError, Variables = void, 
       const hookSignal = currentOptions.current.signal;
       const callSignal = callbacks.signal;
       const signal = hookSignal && callSignal ? AbortSignal.any([hookSignal, callSignal]) : (callSignal ?? hookSignal);
-      const operation = scope.create({ signal });
+      // A browser view's write follows its caller, so a retired view never
+      // publishes. Native and wholly legacy writes never did: a save the
+      // climber started finishes after its screen goes, and its own rollback
+      // or cache update still runs. There the caller's signal only refuses to
+      // start a write for an action it has already retired.
+      if (!scope.scoped && signal?.aborted) throw signal.reason ?? createAbortError('GraphQL operation aborted');
+      const operation = scope.create(scope.scoped ? { signal } : undefined);
       operation.assertView();
       const invocation: Invocation = Object.freeze({
         variables,

@@ -16,6 +16,9 @@ const saveAsyncMock = vi.hoisted(() => vi.fn());
 const releaseMock = vi.hoisted(() => vi.fn());
 const ownedView = vi.hoisted(() => ({ scoped: false, handle: 'owned-A', revision: 0 }));
 const assertUploadReceipt = vi.hoisted(() => vi.fn());
+const uploadOptions = vi.hoisted(() => ({
+  latest: undefined as { assertView?: () => void; signal?: AbortSignal } | undefined,
+}));
 const assertMutationReceipt = vi.hoisted(() => vi.fn());
 const profileFixture = vi.hoisted(() => ({
   id: '11111111-1111-4111-8111-111111111111',
@@ -153,7 +156,12 @@ vi.mock('../../lib/graphql/use-http-query-scope', () => ({
 }));
 
 vi.mock('../../lib/avatar-upload', () => ({
-  uploadAvatarWithReceipt: async (file: unknown, userId: string) => {
+  uploadAvatarWithReceipt: async (
+    file: unknown,
+    userId: string,
+    options: { assertView?: () => void; signal?: AbortSignal },
+  ) => {
+    uploadOptions.latest = options;
     const assertCurrent = assertUploadReceipt.getMockImplementation() ?? (() => {});
     const result: unknown = await uploadAvatarMock(file, userId);
     return { result, assertCurrent };
@@ -207,6 +215,7 @@ vi.mock('../Text', () => ({
 }));
 
 import { EditProfileScreen } from '../EditProfileScreen';
+import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 
 function saveAction() {
   if (!headerActions.trailing) throw new Error('no top-bar Save');
@@ -344,10 +353,11 @@ describe('EditProfileScreen', () => {
     act(() => saveAction().onPress());
 
     await waitFor(() => {
-      expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({ displayName: 'Alex' });
       expect(showToastMock.mock.calls).toEqual([['profile.avatarUploadFailed', 'warning']]);
       expect(saveAction().loading).toBe(false);
     });
+    // The saved name did not change, so there is nothing else to send.
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
     expect(routerBackMock).not.toHaveBeenCalled();
     expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg');
     expect(saveAction().disabled).toBe(false);
@@ -357,8 +367,7 @@ describe('EditProfileScreen', () => {
     await waitFor(() => expect(routerBackMock).toHaveBeenCalledOnce());
     expect(launchImageLibraryMock).toHaveBeenCalledOnce();
     expect(uploadAvatarMock).toHaveBeenCalledTimes(2);
-    expect(mutateAsyncMock).toHaveBeenLastCalledWith({
-      displayName: 'Alex',
+    expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({
       avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
     });
     expect(showToastMock).toHaveBeenLastCalledWith('profile.saved', 'success');
@@ -580,6 +589,86 @@ describe('EditProfileScreen', () => {
     });
     expect(routerBackMock).not.toHaveBeenCalled();
     expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it('on native, finishes a save after a swipe back and says so, without going back again', async () => {
+    let release!: () => void;
+    mutateAsyncMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ id: 'owned-A' });
+        }),
+    );
+    const { unmount } = render(<EditProfileScreen />);
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: 'Alex' } });
+    act(() => saveAction().onPress());
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledOnce());
+    unmount();
+    await act(async () => release());
+
+    expect(showToastMock).toHaveBeenCalledExactlyOnceWith('profile.saved', 'success');
+    expect(routerBackMock).not.toHaveBeenCalled();
+  });
+
+  it('on native, cancels a save with a new photo when you leave mid-upload: nothing written, no toast', async () => {
+    let finishUpload!: () => void;
+    uploadAvatarMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishUpload = () => resolve('https://ws.example.com/static/avatars/a.jpg?v=1');
+        }),
+    );
+    const { unmount } = render(<EditProfileScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg'),
+    );
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: 'Alex' } });
+    act(() => saveAction().onPress());
+    await waitFor(() => expect(uploadAvatarMock).toHaveBeenCalledOnce());
+
+    unmount();
+    // A slow abandoned photo must never land after a newer edit: leaving
+    // cancels the upload, and its late result is refused.
+    expect(uploadOptions.latest?.signal?.aborted).toBe(true);
+    expect(() => uploadOptions.latest?.assertView?.()).toThrow();
+    await act(async () => finishUpload());
+
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalled();
+    expect(routerBackMock).not.toHaveBeenCalled();
+  });
+
+  it('sends only what changed: a new photo on a named profile leaves the name out', async () => {
+    profileFixture.displayName = 'Alex';
+    render(<EditProfileScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+    await waitFor(() => expect(saveAction().disabled).toBe(false));
+    act(() => saveAction().onPress());
+
+    await waitFor(() => expect(routerBackMock).toHaveBeenCalledOnce());
+    expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({
+      avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
+    });
+  });
+
+  it('on native, says nothing about a save answered after sign-out', async () => {
+    let release!: () => void;
+    mutateAsyncMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ id: 'owned-A' });
+        }),
+    );
+    render(<EditProfileScreen />);
+    fireEvent.change(screen.getByLabelText('profile.displayName.label'), { target: { value: 'Alex' } });
+    act(() => saveAction().onPress());
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledOnce());
+    act(() => invalidateCredentialSnapshots());
+    await act(async () => release());
+
+    expect(showToastMock).not.toHaveBeenCalled();
+    expect(routerBackMock).not.toHaveBeenCalled();
   });
 
   it('rechecks before navigation if its success toast retires the original view synchronously', async () => {

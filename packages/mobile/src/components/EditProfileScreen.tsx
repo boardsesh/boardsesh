@@ -133,15 +133,22 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
     if (savingRef.current || !canSave || !profile?.id) return;
     let action: ReturnType<HttpActionScope['capture']>;
     try {
-      action = actionScope.capture();
+      // A save with a new photo stays with this screen: leaving cancels the
+      // upload and the save, so a slow abandoned photo can never land after a
+      // newer edit. A name-only save is one small request; on native it
+      // finishes after a swipe back and still says so, ending only for an
+      // account change. Going back is this screen's own step either way.
+      action = actionScope.capture({ endsWithScreen: pickedAvatar != null });
     } catch {
       return;
     }
     savingRef.current = true;
     setIsSaving(true);
     try {
+      // Only what the climber changed. A form reopened before an earlier save
+      // landed still shows the old name, and sending it would undo that save.
       const input: UpdateProfileInput = {};
-      if (trimmedName.length > 0) {
+      if (trimmedName.length > 0 && trimmedName !== savedName) {
         input.displayName = trimmedName;
       }
 
@@ -149,13 +156,16 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
       let assertOriginalUpload: (() => void) | undefined;
       if (pickedAvatar) {
         try {
-          const uploaded = await uploadAvatarWithReceipt({ ...pickedAvatar }, profile.id, action);
-          action.assertView();
+          const uploaded = await uploadAvatarWithReceipt({ ...pickedAvatar }, profile.id, {
+            assertView: action.assertOwner,
+            signal: action.signal,
+          });
+          action.assertOwner();
           uploaded.assertCurrent();
           assertOriginalUpload = uploaded.assertCurrent;
           input.avatarUrl = uploaded.result;
         } catch (error) {
-          action.assertView();
+          action.assertOwner();
           // Keep the name edit, but leave the selected photo here for retry.
           avatarUploadFailed = true;
           reportError(error);
@@ -169,21 +179,22 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
         return;
       }
 
-      action.assertView();
+      action.assertOwner();
       assertOriginalUpload?.();
       const saved = await updateProfile.mutateWithReceipt(input, { signal: action.signal });
-      action.assertView();
+      action.assertOwner();
       assertOriginalUpload?.();
       saved.assertCurrent();
       if (avatarUploadFailed) return;
       // showToast fires the success/error haptic itself based on the variant.
       showToast(t('profile.saved'), 'success');
-      action.assertView();
+      // Already swiped back: going back again would leave the screen under it.
+      if (!action.isCurrent()) return;
       assertOriginalUpload?.();
       saved.assertCurrent();
       router.back();
     } catch (error) {
-      if (!action.isCurrent()) return;
+      if (!action.isOwnerCurrent()) return;
       reportError(error);
       showToast(t('profile.saveError'), 'error');
     } finally {
