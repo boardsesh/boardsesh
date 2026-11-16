@@ -21,7 +21,7 @@ These are agent engineering decisions, not new account-selection policy:
 4. Do not claim backend validation makes browser `Set-Cookie` conditional.
 5. Keep source-schema/adoption work gated on actual reader and publication paths.
 
-> **Superseded by #7596.** These five rules were agent engineering decisions, and the browser binding design grew from them. #7596 replaces them with the design in [better-auth-browser-session.md](better-auth-browser-session.md). Rules 1 and 5 lapse, because the new design keeps no publication records or source schema. Rule 2 keeps the stable login SID; whether the 30-day lifetime stays rolling is an open question there. Rule 3 stays: a bridged session never counts as a fresh sign-in. Rule 4 is answered differently: session reads, renewal and set-password emit no `Set-Cookie` at all.
+> **Superseded by #7596.** These five rules were agent engineering decisions, and the browser binding design grew from them. #7596 replaces them with the design in [better-auth-browser-session.md](better-auth-browser-session.md). Rules 1 and 5 lapse, because the new design keeps no publication records or source schema. Rule 2 keeps the stable login SID; whether the 30-day lifetime stays rolling is an open question there. Rule 3 stays: a renewed token's `iat` or `jti` never supplies authentication age. Whether a bridged session can ever count as fresh is open question 2 there. Rule 4 is answered differently: session reads, renewal and set-password emit no `Set-Cookie`, apart from the one read that bridges a legacy cookie.
 
 No production migration, account backfill, owner reassignment, grant change or
 activation is part of this follow-up. Existing V2 commands remain unchanged.

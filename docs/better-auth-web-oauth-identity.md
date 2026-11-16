@@ -330,4 +330,4 @@ registration, deployed IAM, historical receipts, delivery, capable-reader
 retention and mutation-safe restored-database rollback remain launch gates.
 Partner OAuth acceptance is separate from first-party authority migration.
 
-> **Note for #7596.** The re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md) closes the delayed-response races by letting only login and sign-out responses write the session cookie. It coordinates tabs and origins with one client guard and a reload on account change, not a cross-tab protocol. A login racing a later login remains, and #7596 accepts it.
+> **Note for #7596.** The re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md) closes the delayed-response races by letting only login and sign-out responses write the session cookie, apart from the one read that bridges a legacy cookie, which is an open question there. It coordinates tabs and origins with one client guard and a reload on account change, not a cross-tab protocol. A login racing a later login remains, and #7596 accepts it.

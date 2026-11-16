@@ -462,9 +462,10 @@ cross-origin requests and cookies rather than assuming the native Expo plugin
 implements the browser deployment contract.
 
 BA-05 is re-scoped by [#7596](https://github.com/boardsesh/boardsesh/issues/7596):
-one session cookie on the shared parent domain, written only by login and
-sign-out responses, and one guard in each browser client's transport. The
-design, its open questions and its rollout switch are in
+one session cookie on the shared parent domain, written by login and sign-out
+responses and once by the read that bridges a legacy cookie, and one guard in
+each browser client's transport. The design, its open questions and its
+rollout switch are in
 [better-auth-browser-session.md](./better-auth-browser-session.md).
 
 ## Proof gates before rollout
