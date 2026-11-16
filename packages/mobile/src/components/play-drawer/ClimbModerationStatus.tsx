@@ -1,4 +1,8 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo, useInsertionEffect, useRef, useState } from 'react';
+import { hashKey } from '@tanstack/react-query';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
+import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
@@ -27,6 +31,18 @@ type ClimbModerationStatusProps = {
   isHidden: boolean;
 };
 
+// UI provenance only. A cached proposal is admitted input, not a new SDK
+// delivery; every descendant keeps this original parent instead of minting B.
+type ModerationOwner = Readonly<{ assertCurrent(): void }>;
+function isModerationCurrent(owner: ModerationOwner | undefined): boolean {
+  try {
+    owner?.assertCurrent();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The moderation link every block ends with. Owns its own router callback so a
  * banner with three blocks doesn't rebuild three closures in the parent on each
@@ -42,21 +58,40 @@ const ModerationLink = memo(function ModerationLink({
   proposalUuid,
   climbUuid,
   boardType,
+  originalOwner,
 }: {
+  originalOwner?: ModerationOwner;
   label: string;
   proposalUuid: string;
   climbUuid: string;
   boardType: string;
 }) {
   const router = useRouter();
+  const actions = useHttpActionScope();
   const { systemColors } = useTheme();
 
-  const openInModeration = useCallback(() => {
+  const nativeOpenInModeration = useCallback(() => {
     router.push({
       pathname: '/moderation',
       params: { proposalUuid, climbUuid, boardType },
     });
   }, [router, proposalUuid, climbUuid, boardType]);
+  const guardedOpenInModeration = useCallback(() => {
+    let action: ReturnType<typeof actions.capture> | undefined;
+    try {
+      originalOwner?.assertCurrent();
+      action = actions.capture();
+      originalOwner?.assertCurrent();
+      action.assertView();
+      nativeOpenInModeration();
+    } catch {
+      /* A retired link cannot navigate under a later owner. */
+    } finally {
+      action?.finish();
+    }
+  }, [originalOwner, actions, nativeOpenInModeration]);
+  if (!isModerationCurrent(originalOwner)) return null;
+  const openInModeration = originalOwner ? guardedOpenInModeration : nativeOpenInModeration;
 
   return (
     <PressableSurface onPress={openInModeration} accessibilityRole="link" accessibilityLabel={label} hitSlop={8}>
@@ -71,8 +106,15 @@ const ModerationLink = memo(function ModerationLink({
 });
 
 /** One reporter's reason: who said it, when, and what they said. */
-const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
+const ReasonRow = memo(function ReasonRow({
+  comment,
+  originalOwner,
+}: {
+  comment: Comment;
+  originalOwner?: ModerationOwner;
+}) {
   const { systemColors } = useTheme();
+  if (!isModerationCurrent(originalOwner)) return null;
   const author = comment.userDisplayName ?? '';
 
   return (
@@ -93,12 +135,31 @@ const ReasonRow = memo(function ReasonRow({ comment }: { comment: Comment }) {
  * moderation history, which is the overwhelmingly common case: the whole block
  * costs a visible climb one cached query and no pixels.
  */
-export const ClimbModerationStatus = memo(function ClimbModerationStatus({
+const ClimbModerationStatusBody = memo(function ClimbModerationStatusBody({
   climbUuid,
   boardName,
   angle,
   isHidden,
 }: ClimbModerationStatusProps) {
+  const scope = useHttpQueryScope();
+  const lifetime = useRef({ mounted: true });
+  const [origin] = useState(() =>
+    Object.freeze({
+      scoped: scope.scoped,
+      assertCurrent() {
+        if (!scope.scoped || !lifetime.current.mounted) throw new BrowserBackendConsumerError('superseded');
+        scope.assertView();
+      },
+    }),
+  );
+  useInsertionEffect(() => {
+    lifetime.current.mounted = true;
+    return () => {
+      lifetime.current.mounted = false;
+    };
+  }, []);
+  const originalOwner = scope.scoped ? origin : undefined;
+  const originalCurrent = !scope.scoped || (origin.scoped && isModerationCurrent(origin));
   const { t } = useTranslation('session');
   // The quote marks belong to the locale, not to us: `feed.proposalCard.quotedReason`
   // carries “…” / « … » / „…“ per language, and the moderation card already uses it.
@@ -110,7 +171,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
   const { data: proposals } = useClimbProposals({
     climbUuid,
     boardType: boardName,
-    enabled: moderationEnabled,
+    enabled: moderationEnabled && originalCurrent,
   });
 
   const { hidden, openHide, openGradeAtAngle } = useMemo(
@@ -119,7 +180,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
   );
 
   // Reasons hang off the approved hide, so they load only for a hidden climb.
-  const { data: reasonThread } = useComments('proposal', hidden?.uuid, !!hidden);
+  const { data: reasonThread } = useComments('proposal', hidden?.uuid, !!hidden && originalCurrent);
 
   const reasons = useMemo(() => {
     const comments = reasonThread?.comments ?? [];
@@ -143,7 +204,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
   const showHiddenBanner = isHidden || !!hidden;
   const hasAnything = showHiddenBanner || !!openHide || openGradeAtAngle.length > 0;
 
-  if (!moderationEnabled || !hasAnything) return null;
+  if (!originalCurrent || !moderationEnabled || !hasAnything) return null;
 
   return (
     <View style={[styles.container, { borderColor: systemColors.separator }]} testID="climb-moderation-status">
@@ -163,7 +224,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
           {reasons.length > 0 ? (
             <View style={styles.reasonList}>
               {reasons.map((comment) => (
-                <ReasonRow key={comment.uuid} comment={comment} />
+                <ReasonRow key={comment.uuid} comment={comment} {...(originalOwner ? { originalOwner } : {})} />
               ))}
             </View>
           ) : null}
@@ -178,6 +239,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
 
           {hidden ? (
             <ModerationLink
+              {...(originalOwner ? { originalOwner } : {})}
               label={t('mobile.community.moderation.seeInModeration')}
               proposalUuid={hidden.uuid}
               climbUuid={climbUuid}
@@ -205,6 +267,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
             </Text>
           </View>
           <ModerationLink
+            {...(originalOwner ? { originalOwner } : {})}
             label={t('mobile.community.moderation.voteInModeration')}
             proposalUuid={openHide.uuid}
             climbUuid={climbUuid}
@@ -227,6 +290,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
             </Text>
           </View>
           <ModerationLink
+            {...(originalOwner ? { originalOwner } : {})}
             label={t('mobile.community.moderation.voteInModeration')}
             proposalUuid={proposal.uuid}
             climbUuid={climbUuid}
@@ -235,6 +299,20 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
         </View>
       ))}
     </View>
+  );
+});
+
+export const ClimbModerationStatus = memo(function ClimbModerationStatus(props: ClimbModerationStatusProps) {
+  const scope = useHttpQueryScope();
+  return (
+    <ClimbModerationStatusBody
+      {...props}
+      key={
+        scope.scoped
+          ? hashKey(scope.key(['climb-moderation-status', props.climbUuid, props.boardName, props.angle]))
+          : undefined
+      }
+    />
   );
 });
 

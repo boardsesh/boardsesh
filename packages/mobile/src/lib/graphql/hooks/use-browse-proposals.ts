@@ -10,6 +10,7 @@
 
 import type { QueryClient } from '@tanstack/react-query';
 import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
+import { useHttpQueryScope } from '../use-http-query-scope';
 import {
   BROWSE_PROPOSALS,
   GET_CLIMB_PROPOSALS,
@@ -45,8 +46,12 @@ export function browseProposalsKey(filters: BrowseProposalsFilters) {
 }
 
 /** Query key for the proposals on one climb (the pinned deep-link card). */
-export function climbProposalsKey(climbUuid: string) {
-  return [...PROPOSALS_QUERY_KEY, 'climb', climbUuid] as const;
+export function climbProposalsKey(climbUuid: string, boardType?: string) {
+  // Omitted board keeps the installed native key. Selected readers must name
+  // both fields filtered by the resolver, even when the uuid is the same.
+  return boardType === undefined
+    ? ([...PROPOSALS_QUERY_KEY, 'climb', climbUuid] as const)
+    : ([...PROPOSALS_QUERY_KEY, 'climb', climbUuid, 'board', boardType] as const);
 }
 
 export type UseBrowseProposalsInput = BrowseProposalsFilters & {
@@ -108,8 +113,9 @@ export type UseClimbProposalsPinnedInput = {
  * paginating for.
  */
 export function useClimbProposalsPinned({ climbUuid, boardType, enabled }: UseClimbProposalsPinnedInput) {
+  const scope = useHttpQueryScope();
   return useHttpQuery({
-    queryKey: climbProposalsKey(climbUuid ?? ''),
+    queryKey: climbProposalsKey(climbUuid ?? '', scope.scoped ? (boardType ?? '') : undefined),
     queryFn: async (_context, operation) => {
       // Unreachable while `enabled` holds, but the compiler can't see that and a
       // silent request with an empty uuid would 400 in a way nobody could read.

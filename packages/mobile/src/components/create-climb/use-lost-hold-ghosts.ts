@@ -1,4 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
+import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
 import type { BoardName, LitUpHoldsMap } from '@boardsesh/shared-schema';
 import { buildInitialFrames } from '@boardsesh/create-climb-react';
 import type { GetClimbLostHoldsQueryVariables } from '@boardsesh/graphql/operations';
@@ -75,6 +77,72 @@ export function useLostHoldGhosts({
   availableHoldIds,
   sprayWallToken,
 }: UseLostHoldGhostsArgs): LostHoldGhostsState {
+  const scope = useHttpQueryScope();
+  const [originalScope] = useState(() => scope);
+  const lifetime = useRef({ mounted: true, layout: true, epoch: 0 });
+  useInsertionEffect(() => {
+    lifetime.current.mounted = true;
+    return () => {
+      lifetime.current.mounted = false;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    lifetime.current.layout = true;
+    return () => {
+      lifetime.current.layout = false;
+      lifetime.current.epoch += 1;
+    };
+  }, []);
+  const assertOrigin = useCallback(() => {
+    if (!originalScope.scoped || !lifetime.current.mounted) throw new BrowserBackendConsumerError('superseded');
+    originalScope.assertView();
+  }, [originalScope]);
+  let originCurrent = true;
+  if (scope.scoped) {
+    try {
+      assertOrigin();
+    } catch {
+      originCurrent = false;
+    }
+  }
+  const ownerKey = useMemo(
+    () =>
+      scope.scoped
+        ? JSON.stringify([
+            originalScope.scope,
+            board.boardName,
+            board.layoutId,
+            board.sizeId,
+            board.setIds,
+            board.angle,
+            parentClimbUuid,
+            sourceFrames,
+            availableHoldIds ? [...availableHoldIds].sort((left, right) => left - right) : null,
+            sprayWallToken,
+          ])
+        : 'native',
+    [
+      scope.scoped,
+      originalScope,
+      board.boardName,
+      board.layoutId,
+      board.sizeId,
+      board.setIds,
+      board.angle,
+      parentClimbUuid,
+      sourceFrames,
+      availableHoldIds,
+      sprayWallToken,
+    ],
+  );
+  const committedOwner = useRef(Object.freeze({ key: ownerKey }));
+  const owner = useMemo(
+    () => (committedOwner.current.key === ownerKey ? committedOwner.current : Object.freeze({ key: ownerKey })),
+    [ownerKey],
+  );
+  useLayoutEffect(() => {
+    committedOwner.current = owner;
+  }, [owner]);
   const isSpray = board.boardName === SPRAY_BOARD_NAME;
 
   const lostHoldIds = useMemo(() => {
@@ -96,7 +164,8 @@ export function useLostHoldGhosts({
         : null,
     [lostHoldIds.length, parentClimbUuid, board.boardName, board.layoutId, board.sizeId, board.setIds, board.angle],
   );
-  const lostHoldsQuery = useClimbLostHolds(variables);
+  // An old mounted editor must not mint a new viewer's read from its old props.
+  const lostHoldsQuery = useClimbLostHolds(scope.scoped && !originCurrent ? null : variables);
 
   // The live wall, re-read whenever the registry hands over a new copy: the
   // rings are mapped the way its live holds are drawn (photo or generated
@@ -144,5 +213,64 @@ export function useLostHoldGhosts({
     setDismissedIds((previous) => (previous.has(lostHoldId) ? previous : new Set(previous).add(lostHoldId)));
   }, []);
 
-  return useMemo(() => ({ ghosts, ghostTargets, dismissGhost }), [ghosts, ghostTargets, dismissGhost]);
+  const nativeResult = useMemo(() => ({ ghosts, ghostTargets, dismissGhost }), [ghosts, ghostTargets, dismissGhost]);
+  const committedGhosts = useRef(allGhosts);
+  useLayoutEffect(() => {
+    committedGhosts.current = allGhosts;
+  }, [allGhosts]);
+  const [selectedDismissals, setSelectedDismissals] = useState<Readonly<{ owner: object; ids: ReadonlySet<number> }>>();
+  const [, markSelectedDismissal] = useState<object>();
+  const selectedDismissGhost = useCallback(
+    (lostHoldId: number) => {
+      const epoch = lifetime.current.epoch;
+      const admittedGhosts = committedGhosts.current;
+      // Local input after cache admission, never a replacement SDK delivery.
+      const assertCurrent = () => {
+        assertOrigin();
+        if (
+          !lifetime.current.layout ||
+          lifetime.current.epoch !== epoch ||
+          committedOwner.current !== owner ||
+          committedGhosts.current !== admittedGhosts
+        )
+          throw new BrowserBackendConsumerError('superseded');
+      };
+      try {
+        assertCurrent();
+        if (!admittedGhosts.some((ghost) => ghost.id === lostHoldId)) return;
+        hapticSelection();
+        assertCurrent();
+        // Exact NEW mark, then data in this same owner/lane with no callback
+        // between them. React must rerun the pure guard on a later rebase.
+        markSelectedDismissal(Object.freeze({}));
+        setSelectedDismissals((previous) => {
+          try {
+            assertCurrent();
+          } catch {
+            return previous;
+          }
+          const ids = previous?.owner === owner ? previous.ids : new Set<number>();
+          return ids.has(lostHoldId) ? previous : Object.freeze({ owner, ids: new Set(ids).add(lostHoldId) });
+        });
+      } catch {
+        /* Retired local controls cannot clear replacement rings. */
+      }
+    },
+    [assertOrigin, owner],
+  );
+  const selectedGhosts = useMemo(() => {
+    if (!originCurrent) return NO_GHOSTS;
+    return selectedDismissals?.owner === owner
+      ? allGhosts.filter((ghost) => !selectedDismissals.ids.has(ghost.id))
+      : allGhosts;
+  }, [originCurrent, selectedDismissals, owner, allGhosts]);
+  const selectedTargets = useMemo<readonly BoardHoldTarget[]>(
+    () => (selectedGhosts.length === 0 ? NO_TARGETS : selectedGhosts.map(({ id, cx, cy, r }) => ({ id, cx, cy, r }))),
+    [selectedGhosts],
+  );
+  const selectedResult = useMemo(
+    () => ({ ghosts: selectedGhosts, ghostTargets: selectedTargets, dismissGhost: selectedDismissGhost }),
+    [selectedGhosts, selectedTargets, selectedDismissGhost],
+  );
+  return scope.scoped ? selectedResult : nativeResult;
 }
