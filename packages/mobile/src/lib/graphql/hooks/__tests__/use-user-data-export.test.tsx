@@ -19,13 +19,7 @@ const mocks = vi.hoisted(() => ({
   backgrounded: false,
   generation: 1,
 }));
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({
-    request: ({ document, variables }: { document: unknown; variables?: unknown }) =>
-      mocks.request(document, variables),
-  }),
-  getOfflineSyncHttpClient: vi.fn(),
-}));
+vi.mock('../../client', () => ({ getHttpClient: () => ({ request: mocks.request }) }));
 vi.mock('expo-router', () => ({ useIsFocused: () => mocks.focused }));
 vi.mock('../../../../hooks/use-is-offline', () => ({ useIsOffline: () => mocks.offline }));
 vi.mock('../../../app-visibility', () => ({ useIsAppBackgrounded: () => mocks.backgrounded }));
