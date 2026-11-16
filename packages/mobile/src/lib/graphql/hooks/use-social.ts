@@ -37,7 +37,6 @@ import {
 import { batchVoteSummaryEntityIds, type SocialEntityType } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../client';
 import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
-import { useHttpMutation } from '../use-http-mutation';
 import { useHttpQueryScope, type HttpQueryScope } from '../use-http-query-scope';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../notification-actors-key';
 import { useToggleAuthorFollow } from './use-followed-authors';
@@ -198,18 +197,16 @@ export function useUserClimbs(userId: string | undefined, enabled = true) {
  */
 export function useVote() {
   const queryClient = useQueryClient();
-  return useHttpMutation({
-    mutationFn: async (input: VoteMutationVariables['input'], operation) => {
-      const response = await operation.request<VoteMutationResponse>(VOTE, { input });
+  return useMutation({
+    mutationFn: async (input: VoteMutationVariables['input']) => {
+      const response = await getHttpClient().request<VoteMutationResponse>(VOTE, { input });
       return response.vote;
     },
-    onSuccess: (summary, _variables, _context, operation) => {
-      operation
-        .cache(queryClient)
-        .setQueriesData<GetBulkVoteSummariesQueryResponse['bulkVoteSummaries']>(
-          { queryKey: ['bulkVoteSummaries'] },
-          (old) => old?.map((entry) => (entry.entityId === summary.entityId ? summary : entry)),
-        );
+    onSuccess: (summary) => {
+      queryClient.setQueriesData<GetBulkVoteSummariesQueryResponse['bulkVoteSummaries']>(
+        { queryKey: ['bulkVoteSummaries'] },
+        (old) => old?.map((entry) => (entry.entityId === summary.entityId ? summary : entry)),
+      );
     },
   });
 }
@@ -328,16 +325,15 @@ export function useComments(entityType: SocialEntityType, entityId: string | und
 /** Add a comment, refreshing the thread + the session feed's comment counts. */
 export function useAddComment() {
   const queryClient = useQueryClient();
-  return useHttpMutation({
-    mutationFn: async (input: AddCommentMutationVariables['input'], operation) => {
-      const response = await operation.request<AddCommentMutationResponse>(ADD_COMMENT, { input });
+  return useMutation({
+    mutationFn: async (input: AddCommentMutationVariables['input']) => {
+      const response = await getHttpClient().request<AddCommentMutationResponse>(ADD_COMMENT, { input });
       return response.addComment;
     },
-    onSuccess: async (_data, variables, _context, operation) => {
-      const cache = operation.cache(queryClient);
-      await cache.invalidateQueries({ queryKey: ['comments', variables.entityType, variables.entityId] });
-      await cache.invalidateQueries({ queryKey: ['activityFeed'] });
-      await cache.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['comments', variables.entityType, variables.entityId] });
+      void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
     },
   });
 }

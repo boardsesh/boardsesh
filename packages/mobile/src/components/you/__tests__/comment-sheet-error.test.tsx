@@ -18,11 +18,16 @@ vi.mock('../../PressableSurface', async () => {
   };
 });
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
+type MutateOptions = {
+  onSuccess?: () => void;
+  onError?: (error: Error) => void;
+};
+
 const addComment = vi.hoisted(() => ({
-  mutateWithReceipt: vi.fn(),
+  mutate: vi.fn(),
   isPending: false,
 }));
 const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
@@ -32,9 +37,6 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('../../../lib/graphql/hooks', () => ({
   useComments: () => ({ data: { comments: [] }, isPending: false }),
   useAddComment: () => addComment,
-}));
-vi.mock('../../../lib/graphql/use-http-query-scope', () => ({
-  useHttpQueryScope: () => ({ scoped: false, assertView: () => {} }),
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -101,36 +103,40 @@ function renderSheet() {
 
 describe('CommentSheet submit error handling', () => {
   beforeEach(() => {
-    addComment.mutateWithReceipt.mockReset();
+    addComment.mutate.mockReset();
     addComment.isPending = false;
     toast.showToast.mockReset();
   });
 
-  it('clears the draft only after the comment posts successfully', async () => {
-    addComment.mutateWithReceipt.mockResolvedValue({ result: {}, assertCurrent: vi.fn(), dispose: vi.fn() });
+  it('clears the draft only after the comment posts successfully', () => {
+    addComment.mutate.mockImplementation((_input: unknown, options: MutateOptions) => {
+      options.onSuccess?.();
+    });
 
     const { getByTestId } = renderSheet();
     const input = getByTestId('comment-input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'nice send' } });
     fireEvent.click(getByTestId('send'));
 
-    expect(addComment.mutateWithReceipt).toHaveBeenCalledOnce();
-    await waitFor(() => expect(input.value).toBe(''));
+    expect(addComment.mutate).toHaveBeenCalledOnce();
+    expect(input.value).toBe('');
     expect(toast.showToast).not.toHaveBeenCalled();
   });
 
-  it('keeps the draft and shows a persistent inline error when posting fails', async () => {
-    addComment.mutateWithReceipt.mockRejectedValue(new Error('network down'));
+  it('keeps the draft and shows a persistent inline error when posting fails', () => {
+    addComment.mutate.mockImplementation((_input: unknown, options: MutateOptions) => {
+      options.onError?.(new Error('network down'));
+    });
 
     const { getByTestId } = renderSheet();
     const input = getByTestId('comment-input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'nice send' } });
     fireEvent.click(getByTestId('send'));
 
-    expect(addComment.mutateWithReceipt).toHaveBeenCalledOnce();
+    expect(addComment.mutate).toHaveBeenCalledOnce();
     // Draft must survive so the user's text isn't silently lost.
     expect(input.value).toBe('nice send');
-    await waitFor(() => expect(document.body.textContent).toContain('mobile.comments.sendError'));
+    expect(document.body.textContent).toContain('mobile.comments.sendError');
     expect(toast.showToast).not.toHaveBeenCalled();
     fireEvent.change(input, { target: { value: 'nice send again' } });
     expect(document.body.textContent).not.toContain('mobile.comments.sendError');

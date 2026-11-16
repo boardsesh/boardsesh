@@ -1,13 +1,13 @@
-import { type RefObject, useRef, useState } from 'react';
+import { type RefObject, useState } from 'react';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { SocialEntityType } from '@boardsesh/shared-schema';
+import { useScopedSheetError } from '../../hooks/use-scoped-sheet-error';
 import { usePublicationAudience } from '../privacy/use-publication-audience';
 import { PublicationAudiencePicker } from '../privacy/PublicationAudiencePicker';
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { PressableAvatar } from '../PressableAvatar';
 import { useComments, useAddComment } from '../../lib/graphql/hooks';
-import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
 import { formatRelativeTime } from '../../lib/format-relative-time';
 import { hapticLight } from '../../lib/haptics';
 import { CommentSheetView, type CommentSheetComment } from './CommentSheetView';
@@ -34,96 +34,29 @@ export function CommentSheet({
   onClose,
 }: CommentSheetProps) {
   const { t } = useTranslation('you');
+  const { submitError, setSubmitError } = useScopedSheetError(`${entityType}:${entityId ?? ''}`, !!entityId);
+  const [draft, setDraft] = useState('');
   const privacy = usePublicationAudience(entityId ?? '', !!entityId);
 
   const commentsQuery = useComments(entityType, entityId ?? undefined, !!entityId);
   const addComment = useAddComment();
-  const actionScope = useHttpActionScope();
-  const identity = useRef({ entityId, entityType, canComment, view: actionScope.key });
-  if (
-    identity.current.entityId !== entityId ||
-    identity.current.entityType !== entityType ||
-    identity.current.canComment !== canComment ||
-    identity.current.view !== actionScope.key
-  )
-    identity.current = { entityId, entityType, canComment, view: actionScope.key };
-  const currentIdentity = identity.current;
-  const [draftState, setDraftState] = useState<{ identity: typeof currentIdentity; text: string } | null>(null);
-  const [errorState, setErrorState] = useState<{ identity: typeof currentIdentity; message: string } | null>(null);
-  const draft = draftState?.identity === currentIdentity ? draftState.text : '';
-  const submitError = errorState?.identity === currentIdentity ? errorState.message : null;
-  const setDraft = (text: string) => setDraftState({ identity: currentIdentity, text });
-  const setSubmitError = (message: string | null) =>
-    setErrorState(message ? { identity: currentIdentity, message } : null);
   const comments = commentsQuery.data?.comments ?? [];
-
-  const changeDraft = (text: string) => {
-    if (identity.current !== currentIdentity) return;
-    let action: ReturnType<typeof actionScope.capture>;
-    try {
-      action = actionScope.capture();
-    } catch {
-      return;
-    }
-    try {
-      action.assertView();
-      setDraft(text);
-      setSubmitError(null);
-    } finally {
-      action.finish();
-    }
-  };
 
   const submit = () => {
     const body = draft.trim();
-    if (!body || !entityId || !canComment || addComment.isPending || identity.current !== currentIdentity) return;
-    let action: ReturnType<typeof actionScope.capture>;
-    try {
-      action = actionScope.capture();
-    } catch {
-      return;
-    }
-    const isCurrent = () => identity.current === currentIdentity && action.isCurrent();
+    if (!body || !entityId || addComment.isPending) return;
     setSubmitError(null);
     hapticLight();
     // Clear the draft only once the comment lands. On failure keep the text in
     // the composer and surface an inline error above the native sheet. The send
     // button is disabled while the mutation is pending, so no double-send.
-    void (async () => {
-      let receipt: Awaited<ReturnType<typeof addComment.mutateWithReceipt>> | undefined;
-      try {
-        receipt = await addComment.mutateWithReceipt(
-          { entityType, entityId, body, ...(privacy.publication ? { privacy: privacy.publication } : {}) },
-          { signal: action.signal },
-        );
-        receipt.assertCurrent();
-        if (isCurrent()) setDraft('');
-      } catch {
-        if (isCurrent()) setSubmitError(t('mobile.comments.sendError'));
-      } finally {
-        receipt?.dispose();
-        action.finish();
-      }
-    })();
-  };
-
-  const close = () => {
-    if (identity.current !== currentIdentity) return;
-    let action: ReturnType<typeof actionScope.capture>;
-    try {
-      action = actionScope.capture();
-    } catch {
-      return;
-    }
-    try {
-      action.assertView();
-      // A close retires this exact opening immediately, even before its parent
-      // clears the entity prop or reopens the same entity.
-      identity.current = { ...currentIdentity };
-      onClose();
-    } finally {
-      action.finish();
-    }
+    addComment.mutate(
+      { entityType, entityId, body, ...(privacy.publication ? { privacy: privacy.publication } : {}) },
+      {
+        onSuccess: () => setDraft(''),
+        onError: () => setSubmitError(t('mobile.comments.sendError')),
+      },
+    );
   };
 
   return (
@@ -141,9 +74,12 @@ export function CommentSheet({
       renderAvatar={renderCommentAvatar}
       renderAudienceControl={renderCommentAudience}
       formatTime={formatRelativeTime}
-      onChangeDraft={changeDraft}
+      onChangeDraft={(next) => {
+        setDraft(next);
+        setSubmitError(null);
+      }}
       onSubmit={submit}
-      onClose={close}
+      onClose={onClose}
     />
   );
 }
