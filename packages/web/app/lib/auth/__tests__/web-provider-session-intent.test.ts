@@ -3,14 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   coordinator: false,
   provider: false,
-  signIn: vi.fn(),
+  preflight: vi.fn(),
   legacy: vi.fn(),
   session: vi.fn(),
 }));
 vi.mock('next-auth/react', () => ({ signIn: fixture.legacy, getSession: fixture.session }));
 vi.mock('../browser-coordinator-readiness', () => ({ publicBrowserCoordinatorReady: () => fixture.coordinator }));
 vi.mock('../provider-security-readiness', () => ({ publicProviderSecurityReady: () => fixture.provider }));
-vi.mock('../browser-coordinator-client', () => ({ signInCanonicalBrowserCoordinator: fixture.signIn }));
+vi.mock('../browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: fixture.preflight }));
 import { registerCanonicalBrowserOrigin, getCanonicalBrowserOrigin } from '../canonical-browser-origin';
 import { signInWithSessionIntent } from '../web-session-events';
 
@@ -19,7 +19,7 @@ let send: ReturnType<typeof vi.fn<typeof fetch>>;
 beforeEach(() => {
   fixture.coordinator = false;
   fixture.provider = false;
-  fixture.signIn.mockReset();
+  fixture.preflight.mockReset();
   fixture.legacy.mockReset().mockResolvedValue({ ok: true, status: 200, error: undefined, url: null });
   fixture.session.mockReset().mockResolvedValue(null);
   send = vi.fn<typeof fetch>(async () => Response.json({}));
@@ -34,7 +34,7 @@ describe('shared WWW sign-in wrapper', () => {
   it.each(['google', 'apple'] as const)('hands %s to the legacy NextAuth sign-in', async (provider) => {
     expect((await signInWithSessionIntent(provider, { callbackUrl: '/' }))?.ok).toBe(true);
     expect(fixture.legacy).toHaveBeenCalledExactlyOnceWith(provider, { callbackUrl: '/' });
-    expect(fixture.signIn).not.toHaveBeenCalled();
+    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     expect(fixture.session).toHaveBeenCalledOnce();
   });
@@ -48,7 +48,7 @@ describe('shared WWW sign-in wrapper', () => {
     expect(await signInWithSessionIntent(provider, { callbackUrl: '/' })).toMatchObject({ ok: false, status: 503 });
     expect(fixture.legacy).not.toHaveBeenCalled();
     expect(fixture.session).not.toHaveBeenCalled();
-    expect(fixture.signIn).not.toHaveBeenCalled();
+    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
   it('keeps registration scoped and refuses conflicting static authorities', () => {
@@ -89,7 +89,7 @@ describe('shared WWW sign-in wrapper', () => {
     ).toMatchObject({ ok: false, status: 503 });
     expect(fixture.legacy).not.toHaveBeenCalled();
     expect(fixture.session).not.toHaveBeenCalled();
-    expect(fixture.signIn).not.toHaveBeenCalled();
+    expect(fixture.preflight).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
 });

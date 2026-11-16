@@ -74,45 +74,35 @@ function fixture(acknowledge = true) {
 }
 describe('owned canonical frame lifetime', () => {
   it.each(['ready', 'proof-required', 'conflict', 'unavailable'] as const)(
-    'connects explicit sign-in after %s only when primary observation is available',
+    'returns a copy of the cursor only from a ready read (%s) and sends nothing else',
     async (status) => {
       vi.resetModules();
-      const { signInCanonicalBrowserCoordinator } = await import('../browser-coordinator-client');
+      const { readCanonicalBrowserCoordinator } = await import('../browser-coordinator-client');
       const current = fixture();
       const operations: string[] = [];
-      const target = { bindingId: 'b'.repeat(64), version: 0 };
+      const cursor = { bindingId: 'a'.repeat(64), version: 3 };
       current.setConnectOverride((input, port) => {
         const greeting = browserCoordinatorConnectSchema.parse(input);
         port.addEventListener('message', (event: MessageEvent<unknown>) => {
           const request = browserCoordinatorRequestSchema.safeParse(event.data);
           if (!request.success) return;
           operations.push(request.data.command.operation);
-          const result =
-            request.data.command.operation === 'signin'
-              ? { status: 'ready', cursor: target }
-              : status === 'ready'
-                ? { status: 'ready', cursor: { bindingId: 'a'.repeat(64), version: 3 } }
-                : { status };
           port.postMessage({
             ...greeting,
             type: 'result',
             requestId: request.data.requestId,
             operation: request.data.command.operation,
-            result,
+            result: status === 'ready' ? { status: 'ready', cursor } : { status },
           });
         });
         port.start();
         port.postMessage({ ...greeting, type: 'connected' });
       });
-      const pending = signInCanonicalBrowserCoordinator('https://www.boardsesh.test', new AbortController().signal);
+      const pending = readCanonicalBrowserCoordinator('https://www.boardsesh.test', new AbortController().signal);
       current.created[0].dispatchEvent(new Event('load'));
-      if (status === 'unavailable') {
-        await expect(pending).rejects.toThrow('COORDINATOR_UNAVAILABLE');
-        expect(operations).toEqual(['read']);
-      } else {
-        expect(await pending).toEqual(target);
-        expect(operations).toEqual(['read', 'signin']);
-      }
+      if (status === 'ready') expect(await pending).toEqual(cursor);
+      else await expect(pending).rejects.toThrow('COORDINATOR_UNAVAILABLE');
+      expect(operations).toEqual(['read']);
     },
   );
   it.each(['error', 'deadline', 'handshake'] as const)(
@@ -227,7 +217,7 @@ describe('owned canonical frame lifetime', () => {
     expect(current.created[0].remove).not.toHaveBeenCalled();
     body.enqueue(new TextEncoder().encode(JSON.stringify(ready)));
     body.close();
-    await expect(later).resolves.toBeUndefined();
+    await expect(later).resolves.toEqual(ready.cursor);
     expect(send).toHaveBeenCalledTimes(2);
   });
 });

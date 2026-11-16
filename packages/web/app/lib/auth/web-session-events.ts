@@ -6,7 +6,7 @@ import { publicBrowserCoordinatorReady } from './browser-coordinator-readiness';
 import { publicBrowserPasswordReady } from './browser-password-readiness';
 import { canonicalPasswordOptionsSchema, signInCanonicalPassword } from './canonical-password-signin';
 import { publicProviderSecurityReady } from './provider-security-readiness';
-import { signInCanonicalBrowserCoordinator } from './browser-coordinator-client';
+import { readCanonicalBrowserCoordinator } from './browser-coordinator-client';
 import { getCanonicalBrowserOrigin } from './canonical-browser-origin';
 import { browserSessionGuard } from './session-guard';
 
@@ -109,7 +109,7 @@ async function signInThroughReadyPath(
         {
           currentOrigin: window.location.origin,
           locks: navigator.locks,
-          preflight: signInCanonicalBrowserCoordinator,
+          preflight: readCanonicalBrowserCoordinator,
           send: fetch,
           navigate: (destination) => window.location.assign(destination),
         },
