@@ -10,16 +10,22 @@ import { useToast } from '../../providers/toast-provider';
 import { hasQueuedTickForClimb } from '../../offline/pending-tick';
 import { deleteClimbErrorMessage, deleteClimbRefusal } from './delete-climb-rules';
 
+export type RequestDeleteClimb = (
+  climb: Pick<Climb, 'uuid'>,
+  boardName: string,
+  onDeleted?: () => void,
+) => Promise<void>;
+
 /**
  * The delete flow behind the row: an offline refusal, a confirm, the mutation,
  * and a toast either way. `onDeleted` runs after a successful delete, which is
  * where a surface showing the climb (the play drawer) closes itself.
+ *
+ * The flow belongs to the component that calls this hook, and stops when that
+ * component unmounts. The menu closes before the flow starts, so a menu host
+ * that unmounts on close must take the flow from an owner that outlives it.
  */
-export function useDeleteClimbAction(): (
-  climb: Pick<Climb, 'uuid'>,
-  boardName: string,
-  onDeleted?: () => void,
-) => Promise<void> {
+export function useDeleteClimbAction(): RequestDeleteClimb {
   const { t } = useTranslation('climbs');
   const confirm = useConfirm();
   const { showToast } = useToast();

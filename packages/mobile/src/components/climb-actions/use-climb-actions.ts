@@ -39,7 +39,7 @@ import { useClimbModerationEnabled } from '../../providers/feature-flags-provide
 import { useShareClimb } from '../../hooks/use-share-climb';
 import { track } from '../../lib/analytics';
 import { useSprayWallIsArchived } from '../../lib/spray/use-spray-wall-archive';
-import { useDeleteClimbAction } from './use-delete-climb-action';
+import { useDeleteClimbAction, type RequestDeleteClimb } from './use-delete-climb-action';
 
 import { resolveTickMirror } from '../../lib/queue-mirror-orientation';
 import { buildClimbMenuItems, climbAuroraAppUrl } from './climb-menu-items';
@@ -189,6 +189,12 @@ export type UseClimbActionsArgs = {
   favoriteControl?: ClimbActionsFavoriteControl;
   /** Row-menu commands resolve exact favorite state only after selection. */
   resolveFavoriteOnAction?: boolean;
+  /**
+   * The delete flow from a host that outlives this hook. Delete closes the menu
+   * before it confirms, and the row menu's command host unmounts on close,
+   * taking its own copy of the flow with it. Omit it and the hook's own runs.
+   */
+  requestDeleteClimb?: RequestDeleteClimb;
 };
 
 export function useClimbActions({
@@ -213,6 +219,7 @@ export function useClimbActions({
   analyticsContext,
   favoriteControl,
   resolveFavoriteOnAction = false,
+  requestDeleteClimb: hostDeleteClimb,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
   const betaScope = useHttpQueryScope();
@@ -282,7 +289,8 @@ export function useClimbActions({
   // useClimbModerationEnabled). Flipping it in PostHog takes reporting down
   // everywhere at once.
   const moderationEnabled = useClimbModerationEnabled();
-  const requestDeleteClimb = useDeleteClimbAction();
+  const ownDeleteClimb = useDeleteClimbAction();
+  const requestDeleteClimb = hostDeleteClimb ?? ownDeleteClimb;
   // Native share sheet — the same action the play drawer uses.
   const shareClimb = useShareClimb({
     climb,
@@ -598,7 +606,8 @@ export function useClimbActions({
       },
       delete: () => {
         // Close the menu first: the confirm is a system dialog, and it must
-        // not open over a menu that is on its way out.
+        // not open over a menu that is on its way out. The row menu's host
+        // unmounts here, so it passes a `requestDeleteClimb` that outlives it.
         after();
         // Opened from `/play`, the climb on screen is the one being deleted, so
         // the player closes behind it. Everywhere else the list refetches.

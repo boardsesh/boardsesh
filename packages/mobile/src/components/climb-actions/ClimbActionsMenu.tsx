@@ -30,6 +30,7 @@ import { usePrivacyScopedState } from '../../hooks/use-privacy-scoped-state';
 import { getClimbActionPresenters, openPresentedClimbAction } from './climb-action-presenters';
 import { buildClimbMenuItems } from './climb-menu-items';
 import { useClimbActions, type ClimbActionId } from './use-climb-actions';
+import { useDeleteClimbAction, type RequestDeleteClimb } from './use-delete-climb-action';
 
 import { LIST_GROUPS, ALL_BUTTONS_HIDDEN } from './climb-list-menu-options';
 
@@ -132,6 +133,9 @@ export function ClimbMenusProvider({
     [setSelection],
   );
   const complete = useCallback(() => setSelection(null), [setSelection]);
+  // Delete closes the menu (`complete`, which unmounts the executor) before it
+  // asks and sends. Owned by the executor, its flow would stop right there.
+  const requestDeleteClimb = useDeleteClimbAction();
   const runtime = useMemo(
     () => ({ currentUserId, isAuthenticated, execute, queueStore }),
     [currentUserId, isAuthenticated, execute, queueStore],
@@ -146,23 +150,28 @@ export function ClimbMenusProvider({
           currentUserId={currentUserId}
           isAuthenticated={isAuthenticated}
           onComplete={complete}
+          requestDeleteClimb={requestDeleteClimb}
         />
       ) : null}
     </MenuRuntimeContext.Provider>
   );
 }
 
+type CommandHostProps = {
+  selection: Selection;
+  currentUserId: string | null;
+  isAuthenticated: boolean;
+  onComplete: () => void;
+  requestDeleteClimb: RequestDeleteClimb;
+};
+
 function ClimbActionExecutor({
   selection,
   currentUserId,
   isAuthenticated,
   onComplete,
-}: {
-  selection: Selection;
-  currentUserId: string | null;
-  isAuthenticated: boolean;
-  onComplete: () => void;
-}) {
+  requestDeleteClimb,
+}: CommandHostProps) {
   const [target, setTarget] = useState<ClimbActionsTarget | null>(
     selection.target.resolveClimb ? null : selection.target,
   );
@@ -191,6 +200,7 @@ function ClimbActionExecutor({
       currentUserId={currentUserId}
       isAuthenticated={isAuthenticated}
       onComplete={onComplete}
+      requestDeleteClimb={requestDeleteClimb}
     />
   ) : null;
 }
@@ -201,13 +211,8 @@ function ClimbActionRunner({
   currentUserId,
   isAuthenticated,
   onComplete,
-}: {
-  selection: Selection;
-  target: ClimbActionsTarget;
-  currentUserId: string | null;
-  isAuthenticated: boolean;
-  onComplete: () => void;
-}) {
+  requestDeleteClimb,
+}: CommandHostProps & { target: ClimbActionsTarget }) {
   const { openAddToPlaylist } = useDrawerHost();
   // Only a menu opened inside `/play` (it carries the route's dismiss waiter)
   // hands its sheets to the player. A modal route that hosts its own playlist
@@ -227,6 +232,7 @@ function ClimbActionRunner({
     onSelectPlaylist: selectPlaylist,
     onAfterAction: onComplete,
     resolveFavoriteOnAction: true,
+    requestDeleteClimb,
     onTick: presenters ? () => openPresentedClimbAction(presenters, 'tick', target) : undefined,
     onAddBetaVideo: presenters ? () => openPresentedClimbAction(presenters, 'beta', target) : undefined,
     onReportClimb: presenters ? () => openPresentedClimbAction(presenters, 'report', target) : undefined,
