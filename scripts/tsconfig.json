@@ -307,6 +307,8 @@
     "__tests__/ios-capture-diagnostics.test.ts",
     "__tests__/ios-capture-ready.test.ts",
     "lib/ios-capture-ready.ts",
+    "lib/ios-capture-boot.ts",
+    "__tests__/ios-capture-boot.test.ts",
     "lib/ios-capture-diagnostics.ts",
     "lib/ios-duo-hinge.ts",
     "__tests__/ios-duo-*.test.ts",

@@ -15,7 +15,9 @@ Legacy `--to board-view`, `board-sheet`, `session-detail`, `logbook` and `progre
 
 For complete store/help/CPP captures use `vp run mobile:screenshots -- --flow <flow>`. The main runner preserves established device, locale and filename recipes while selecting isolated stories. Run `--flow smoke` separately to exercise real screens against recorded backend responses.
 
-The iOS story runner waits 120 seconds for a fresh `[stories] root ready` marker and allows up to three app relaunches before failing. A successful launch command alone is not readiness. With `SCREENSHOT_DEBUG_DIR` set, each failed launch preserves its launch result, native log, process state, failure screenshot and available crash reports in a separate `ios-native-*` directory before retry or simulator shutdown.
+Before app launch, iOS capture bounds `simctl boot` to 120 seconds and `simctl bootstatus -b` to 180 seconds. Either command failing stops the attempt. Command arguments, budgets, output and exit status are saved under `SCREENSHOT_DEBUG_DIR/ios-boot-*` before failure propagates; without that variable, evidence goes under the system temporary directory's `boardsesh-ios-boot` folder. Command intent is written before execution so an externally canceled command remains identifiable.
+
+The iOS story runner separately waits 120 seconds for a fresh `[stories] root ready` marker and allows up to three app relaunches before failing. A successful launch command alone is not readiness. With `SCREENSHOT_DEBUG_DIR` set, each failed launch preserves its launch result, native log, process state, failure screenshot and available crash reports in a separate `ios-native-*` directory before retry or simulator shutdown.
 
 Production screenshot-driving hooks have been removed. Showcase and tutorial video recorders retain live integration behavior through dev-only transport injection and real application controls. Native Live Activity captures still use the actual system API through the isolated dev setup.
 

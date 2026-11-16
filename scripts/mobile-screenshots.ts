@@ -191,6 +191,7 @@ import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
 import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
 import { waitForIosCaptureReady } from './lib/ios-capture-ready';
+import { bootIosCaptureDevice } from './lib/ios-capture-boot';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -999,7 +1000,7 @@ export function runIosScreenshotMaestro(
   );
 }
 
-function runCapture(
+export function runCapture(
   command: string,
   args: string[],
   env?: NodeJS.ProcessEnv,
@@ -1017,7 +1018,7 @@ function runCapture(
   return {
     status: result.status ?? 1,
     stdout: result.stdout ?? '',
-    stderr: result.stderr ?? result.error?.message ?? '',
+    stderr: [result.stderr, result.error?.message].filter(Boolean).join('\n'),
   };
 }
 
@@ -1233,10 +1234,12 @@ export function resolveBootedIosDevice(name?: string): DeviceInfo | null {
 export function bootDevice(device: DeviceInfo): void {
   if (device.state !== 'Booted') {
     console.log(`${LOG} Booting ${device.name} (${device.udid})...`);
-    // `boot` errors if already booted; ignore that specific case.
-    runCapture('xcrun', ['simctl', 'boot', device.udid]);
   }
-  runCapture('xcrun', ['simctl', 'bootstatus', device.udid, '-b']);
+  bootIosCaptureDevice({
+    device,
+    debugDir: process.env.SCREENSHOT_DEBUG_DIR ?? join(tmpdir(), 'boardsesh-ios-boot'),
+    run: (args, timeoutMs) => runCapture('xcrun', args, undefined, timeoutMs),
+  });
   // Bring up the Simulator window so Maestro's iOS driver has a foreground app.
   spawnSync('open', ['-a', 'Simulator'], { stdio: 'ignore' });
 }
