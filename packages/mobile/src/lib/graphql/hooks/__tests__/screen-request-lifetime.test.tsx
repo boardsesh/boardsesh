@@ -7,9 +7,15 @@
  * The reads are plain useQuery/useInfiniteQuery again: they never read
  * TanStack's abort signal, so a screen closed mid-fetch still fills the cache.
  * The writes are plain useMutation again: a follow-request answer, a mark-read,
- * an auto-sync toggle or a proposal vote sent just before the screen goes away
- * still reaches the server, and its hook-level cache effect (including an
- * optimistic rollback on failure) still runs.
+ * a mark-all-read, an auto-sync toggle, a disconnect, a session export, a
+ * proposal vote, a moderator's verdict or a climb report sent just before the
+ * screen goes away still reaches the server, and its hook-level cache effect
+ * (including an optimistic rollback on failure) still runs.
+ *
+ * Left out on purpose: useDeleteDraftClimb (its own test drives mutationFn and
+ * onSuccess with no component at all, and it keeps the credential-generation
+ * check it had before BA-05), and the export download, which aborts its file
+ * save when the export screen unmounts, as it did before BA-05.
  *
  * Real HTTP through a local node:http server; see helpers/held-graphql-server.
  */
@@ -29,6 +35,7 @@ import {
 
 const transport = vi.hoisted(() => ({ client: null as GraphQLClient | null }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('../../client', () => ({
   getHttpClient: () => {
     if (!transport.client) throw new Error('The local GraphQL server has not started');
@@ -41,17 +48,35 @@ vi.mock('../../../analytics', () => ({ track: analytics.track }));
 vi.mock('../../../../hooks/use-current-user-id', () => ({
   useStoredUserId: () => ({ userId: 'me', isLoading: false }),
 }));
+vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: toast.showToast }) }));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+// expo-updates has no jsdom build; a report only forwards what this returns.
+vi.mock('../../../release-context', () => ({
+  readMobileReleaseContext: () => ({
+    channel: null,
+    branch: null,
+    updateId: null,
+    runtimeVersion: null,
+    isEmbeddedLaunch: null,
+  }),
+}));
 
 import {
   GROUPED_NOTIFICATIONS_QUERY_KEY,
   NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
   useAnswerFollowRequest,
   useGroupedNotifications,
+  useMarkAllAsRead,
   useMarkGroupAsRead,
   useNotificationActors,
   useUnreadNotificationCount,
 } from '../use-notifications';
-import { useIntegrationStatuses, useSetIntegrationAutoSync } from '../use-integrations';
+import {
+  useDisconnectIntegration,
+  useIntegrationStatuses,
+  useSetIntegrationAutoSync,
+  useSyncSessionToIntegration,
+} from '../use-integrations';
 import { useBetaLinkPreview } from '../use-beta-link-preview';
 import { useBoardRecentClimb } from '../use-board-recent-climb';
 import { useFollowingClimbLogs } from '../use-following-climb-logs';
@@ -59,8 +84,10 @@ import { useRecentBetaLinks } from '../use-recent-beta-links';
 import { LOGGED_SETTERS_PAGE_LIMIT, useUserLoggedSetters } from '../use-user-logged-setters';
 import { browseProposalsKey, useBrowseProposals } from '../use-browse-proposals';
 import { useVoteOnProposal } from '../use-vote-on-proposal';
+import { useResolveProposal } from '../use-resolve-proposal';
+import { useReportClimb } from '../use-report-climb';
 import { NOTIFICATION_ACTORS_QUERY_KEY } from '../../notification-actors-key';
-import { followingClimbLogsQueryKey, recentBetaLinksQueryKey } from '../../query-keys';
+import { CLIMB_QUERY_KEY, followingClimbLogsQueryKey, recentBetaLinksQueryKey } from '../../query-keys';
 
 const server = createHeldGraphQLServer();
 
@@ -71,6 +98,7 @@ beforeAll(async () => {
 afterEach(() => {
   server.releaseAll();
   analytics.track.mockReset();
+  toast.showToast.mockReset();
 });
 
 afterAll(async () => {
@@ -115,6 +143,27 @@ const FOLLOWING_LOGS = { items: [], totalCount: 0 };
 const SETTER = { setterUsername: 'route-setter', tickCount: 4 };
 const PROPOSAL_PAGE = { proposals: [], totalCount: 0, hasMore: false };
 const SETTERS_INPUT = { boardTypes: ['kilter'], layoutIds: [1], limit: LOGGED_SETTERS_PAGE_LIMIT };
+const MODERATION_FEED_KEY = browseProposalsKey({ boardType: null, status: 'open' });
+const OPEN_PROPOSAL = {
+  uuid: 'proposal-1',
+  climbUuid: 'climb-1',
+  boardType: 'kilter',
+  type: 'hide',
+  status: 'open',
+  weightedUpvotes: 1,
+  weightedDownvotes: 0,
+  requiredUpvotes: 3,
+  userVote: 0,
+  upvoterCount: 1,
+} as Proposal;
+
+/** The moderation feed's infinite-query envelope holding these proposals. */
+function moderationFeed(proposals: Proposal[]) {
+  return {
+    pages: [{ browseProposals: { proposals, totalCount: proposals.length, hasMore: false } }],
+    pageParams: [0],
+  };
+}
 
 const READS: ReadCase[] = [
   {
@@ -311,29 +360,13 @@ describe('native integration writes outlive the screen that started them', () =>
 describe('native moderation writes outlive the card that started them', () => {
   it('vote: a refusal after the card unmounts still puts the proposal back', async () => {
     const { queryClient, wrapper } = createScreenHost();
-    const feedKey = browseProposalsKey({ boardType: null, status: 'open' });
-    const proposal = {
-      uuid: 'proposal-1',
-      climbUuid: 'climb-1',
-      boardType: 'kilter',
-      type: 'hide',
-      status: 'open',
-      weightedUpvotes: 1,
-      weightedDownvotes: 0,
-      requiredUpvotes: 3,
-      userVote: 0,
-      upvoterCount: 1,
-    } as Proposal;
-    const feed = {
-      pages: [{ browseProposals: { proposals: [proposal], totalCount: 1, hasMore: false } }],
-      pageParams: [0],
-    };
-    queryClient.setQueryData(feedKey, feed);
+    const feed = moderationFeed([OPEN_PROPOSAL]);
+    queryClient.setQueryData(MODERATION_FEED_KEY, feed);
 
     const card = renderHook(() => useVoteOnProposal(), { wrapper });
     act(() => card.result.current.mutate({ proposalUuid: 'proposal-1', value: 1 }));
     const held = await server.nextHeldRequest('VoteOnProposal');
-    await waitFor(() => expect(queryClient.getQueryData(feedKey)).not.toEqual(feed));
+    await waitFor(() => expect(queryClient.getQueryData(MODERATION_FEED_KEY)).not.toEqual(feed));
 
     card.unmount();
     await settleAfterUnmount();
@@ -341,8 +374,141 @@ describe('native moderation writes outlive the card that started them', () => {
 
     held.fail('Voting is closed');
     await mutationSettled(queryClient, 'error');
-    expect(queryClient.getQueryData(feedKey)).toEqual(feed);
-    expect(queryClient.getQueryState(feedKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryData(MODERATION_FEED_KEY)).toEqual(feed);
+    expect(queryClient.getQueryState(MODERATION_FEED_KEY)?.isInvalidated).toBe(true);
     expect(server.countOf('VoteOnProposal')).toBe(1);
+  });
+});
+
+/** One write a screen starts with a tap, and what it leaves behind once it lands. */
+type WriteCase = {
+  name: string;
+  operationName: string;
+  /** What the server answers. */
+  data: unknown;
+  /** The cache the screen was showing when the climber tapped. */
+  seed?: (queryClient: QueryClient) => void;
+  /** Mounts the screen's hook and returns the tap that sends the write. */
+  mount: () => () => void;
+  landed: (queryClient: QueryClient) => void;
+};
+
+const STRAVA_EXPORT = {
+  provider: 'STRAVA',
+  sessionId: 'session-1',
+  externalActivityId: 'activity-1',
+  externalActivityUrl: null,
+  syncedAt: '2026-11-14T10:00:00.000Z',
+  error: null,
+};
+
+const WRITES: WriteCase[] = [
+  {
+    name: 'mark all read',
+    operationName: 'MarkAllNotificationsRead',
+    data: { markAllNotificationsRead: true },
+    seed: (queryClient) => {
+      queryClient.setQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY, {
+        pages: [notificationPage([notificationGroup()], 3)],
+        pageParams: [0],
+      });
+      queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 3);
+    },
+    mount: () => {
+      const { mutate } = useMarkAllAsRead();
+      return () => mutate();
+    },
+    landed: (queryClient) => {
+      expect(queryClient.getQueryData(GROUPED_NOTIFICATIONS_QUERY_KEY)).toEqual({
+        pages: [notificationPage([{ ...notificationGroup(), isRead: true }], 3)],
+        pageParams: [0],
+      });
+      expect(queryClient.getQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY)).toBe(0);
+    },
+  },
+  {
+    name: 'disconnect Strava',
+    operationName: 'DisconnectIntegration',
+    data: { disconnectIntegration: true },
+    seed: (queryClient) => queryClient.setQueryData(['integrationStatuses'], STRAVA_OFF),
+    mount: () => {
+      const { mutate } = useDisconnectIntegration();
+      return () => mutate({ provider: 'STRAVA' });
+    },
+    landed: (queryClient) => {
+      expect(queryClient.getQueryState(['integrationStatuses'])?.isInvalidated).toBe(true);
+      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.IntegrationDisconnected, { integration: 'strava' });
+    },
+  },
+  {
+    name: 'export a session to Strava',
+    operationName: 'SyncSessionToIntegration',
+    data: { syncSessionToIntegration: STRAVA_EXPORT },
+    mount: () => {
+      const { mutate } = useSyncSessionToIntegration();
+      return () => mutate({ provider: 'STRAVA', sessionId: 'session-1' });
+    },
+    landed: () => {
+      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SessionExportedToIntegration, {
+        integration: 'strava',
+        trigger: 'manual',
+      });
+    },
+  },
+  {
+    name: "a moderator's approval",
+    operationName: 'ResolveProposalFeed',
+    data: { resolveProposal: { ...OPEN_PROPOSAL, status: 'approved' } },
+    seed: (queryClient) => queryClient.setQueryData(MODERATION_FEED_KEY, moderationFeed([OPEN_PROPOSAL])),
+    mount: () => {
+      const { mutate } = useResolveProposal();
+      return () => mutate({ proposalUuid: 'proposal-1', status: 'approved' });
+    },
+    landed: (queryClient) => {
+      expect(queryClient.getQueryData(MODERATION_FEED_KEY)).toEqual(
+        moderationFeed([{ ...OPEN_PROPOSAL, status: 'approved' }]),
+      );
+      expect(queryClient.getQueryState(MODERATION_FEED_KEY)?.isInvalidated).toBe(true);
+      expect(toast.showToast).not.toHaveBeenCalled();
+    },
+  },
+  {
+    name: 'report a climb',
+    operationName: 'ReportClimb',
+    data: { reportClimb: { status: 'created', proposal: OPEN_PROPOSAL } },
+    seed: (queryClient) => {
+      queryClient.setQueryData(MODERATION_FEED_KEY, moderationFeed([]));
+      queryClient.setQueryData([...CLIMB_QUERY_KEY, 'climb-1'], { uuid: 'climb-1' });
+    },
+    mount: () => {
+      const { mutate } = useReportClimb();
+      return () =>
+        mutate({
+          input: { climbUuid: 'climb-1', boardType: 'kilter', angle: null, kind: 'hide', reason: 'Duplicate climb' },
+        });
+    },
+    landed: (queryClient) => {
+      expect(queryClient.getQueryState(MODERATION_FEED_KEY)?.isInvalidated).toBe(true);
+      expect(queryClient.getQueryState([...CLIMB_QUERY_KEY, 'climb-1'])?.isInvalidated).toBe(true);
+    },
+  },
+];
+
+describe('native writes started with a tap outlive their screen', () => {
+  it.each(WRITES)('$name: reaches the server and its cache effect runs after the screen unmounts', async (write) => {
+    const { queryClient, wrapper } = createScreenHost();
+    write.seed?.(queryClient);
+    const screen = renderHook(write.mount, { wrapper });
+    act(() => screen.result.current());
+    const held = await server.nextHeldRequest(write.operationName);
+
+    screen.unmount();
+    await settleAfterUnmount();
+    expect(held.aborted).toBe(false);
+
+    held.answer(write.data);
+    await mutationSettled(queryClient, 'success');
+    write.landed(queryClient);
+    expect(server.countOf(write.operationName)).toBe(1);
   });
 });
