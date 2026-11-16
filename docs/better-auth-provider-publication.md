@@ -4,9 +4,8 @@
 
 This prerequisite for epic #6975 separates an explicit Google/Apple method
 change from ordinary OAuth identity resolution. Rollout remains tracked in
-#7430. The selected flow reader and Apple transport normalizer now have
-server-only factories. Public composition, Settings wiring and mode activation
-remain incomplete.
+#7430. The selected flow reader now has a server-only factory. Public
+composition, Settings wiring and mode activation remain incomplete.
 
 The server-only client uses the frozen private provider-security protocol with
 explicit 192 KiB request and 128 KiB response budgets. It captures submitted
