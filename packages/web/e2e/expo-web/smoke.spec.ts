@@ -324,6 +324,25 @@ test.describe('expo-web smoke', () => {
     const centerX = box.x + box.width / 2;
     const dragStartY = box.y + box.height * 0.85;
     const dragEndY = box.y + box.height * 0.15;
+    // A late RNGH config update used to reset the swipeable host to `none`.
+    // Check the browser's actual hit path so a failure identifies that policy
+    // regression; the CDP drag and scroll-distance assertion below still decide
+    // whether touch scrolling works.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ x, y }) => {
+            const policies: string[] = [];
+            for (let element = document.elementFromPoint(x, y); element; element = element.parentElement) {
+              policies.push(getComputedStyle(element).touchAction);
+              if (element.getAttribute('data-testid') === 'climb-list') break;
+            }
+            return policies.filter((policy) => policy === 'none' || policy === 'pan-x');
+          },
+          { x: centerX, y: dragStartY },
+        ),
+      )
+      .toEqual([]);
     const dragSteps = 10;
     await cdpSession.send('Input.dispatchTouchEvent', {
       type: 'touchStart',

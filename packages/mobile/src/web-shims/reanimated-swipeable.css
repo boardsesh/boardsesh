@@ -1,0 +1,14 @@
+/* RNGH v3 resets its detector's pan-y to inline none when a hook replaces its
+ * config. These are only Swipeable's outer pan host and its immediate tap host;
+ * nested row controls keep their own touch policy. The wrapper has no layout box.
+ */
+:is([data-boardsesh-web-swipeable='plain'], [data-boardsesh-web-swipeable='test-id'] > div)
+  > div
+  > div[style*='touch-action'],
+:is([data-boardsesh-web-swipeable='plain'], [data-boardsesh-web-swipeable='test-id'] > div)
+  > div
+  > div
+  > div
+  > div[style*='touch-action'] {
+  touch-action: pan-y !important;
+}
