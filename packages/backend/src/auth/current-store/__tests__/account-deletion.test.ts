@@ -492,6 +492,10 @@ const commandsNamingTheAccount: readonly (readonly [string, () => Promise<() => 
   ],
 ];
 /** Staged-failure lines only: the PostHog erasure step logs its own error when no queue runs. */
+const legacyRefusalLine = '[deleteAccount] Legacy account deletion refused';
+function legacyRefusalLogs() {
+  return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === legacyRefusalLine);
+}
 function stagedFailureLogs() {
   return vi.mocked(logger.error).mock.calls.filter(([line]: unknown[]) => line === stagedFailureLine);
 }
@@ -611,8 +615,8 @@ describe('mounted account deletion and current-store authority', () => {
       expect(await db.select().from(users).where(eq(users.id, otherId))).toHaveLength(1);
     },
   );
-  it.each(['prepared', 'current-store', 'better-auth'] as const)(
-    'refuses legacy deletion with a %s projection before content changes',
+  it.each(['current-store', 'better-auth'] as const)(
+    'refuses legacy deletion with an enforced %s projection before content changes',
     async (selection) => {
       await seedPair();
       await db
@@ -628,19 +632,144 @@ describe('mounted account deletion and current-store authority', () => {
             from: 'current-store',
             to: 'better-auth',
           });
-        if (selection === 'prepared') await transaction.update(authEmailProjection).set({ phase: 'prepared' });
       });
       vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
       vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
-      const before = await snapshot();
       const canonicalBefore = await db.select().from(authAccount).where(eq(authAccount.userId, ownerId));
-      await expect(remove()).rejects.toMatchObject({ code: 'STALE_AUTHORITY' });
-      expect(await snapshot()).toEqual(before);
+      // Between `activate` and the staged redeploy the climber sees the staged
+      // path's generic reply; only the server log names the cause.
+      await expectUnavailableUnchanged();
+      expect(legacyRefusalLogs()).toEqual([[legacyRefusalLine, { failureCode: 'STALE_AUTHORITY' }]]);
       expect(await db.select().from(authAccount).where(eq(authAccount.userId, ownerId))).toEqual(canonicalBefore);
-      expect(effects.publish).not.toHaveBeenCalled();
-      expect(effects.purge).not.toHaveBeenCalled();
     },
   );
+  /** `auth-authority prepare` ran and `activate` did not (#7591): the backend still runs legacy deletion. */
+  async function preparedLegacyDeletion() {
+    await db.update(authEmailProjection).set({ phase: 'prepared' });
+    vi.stubEnv('CURRENT_STORE_ACCOUNT_DELETION_MODE', 'legacy');
+    vi.stubEnv('AUTH_IDENTITY_MIRROR', 'off');
+    // Legacy deletion never needs the digest key, prepared projection or not.
+    vi.stubEnv('CURRENT_STORE_DELETED_EMAIL_KEY', '');
+  }
+  it('keeps legacy deletion working while the projection is only prepared, leaving none of its addresses', async () => {
+    await seedPair();
+    const alias = `Second.${ownerId}@Alias.Example.TEST`;
+    await db.insert(authEmailReservations).values({
+      normalizedEmail: normalizeAccountEmail(alias),
+      basisProjectionId: authority.expectedProjectionId,
+      state: 'owned',
+      ownerUserId: ownerId,
+    });
+    await db
+      .insert(authEmailReservationMembers)
+      .values({ normalizedEmail: normalizeAccountEmail(alias), userId: ownerId });
+    await preparedLegacyDeletion();
+    const before = await snapshot();
+    expect(await remove()).toBe(true);
+    const after = await snapshot();
+    expect(after.users.map((user) => user.id)).toEqual([otherId]);
+    // No address or account ID of the deleted climber stays, and no digest is written.
+    const stored = JSON.stringify({ reservations: after.reservations, members: after.members }).toLowerCase();
+    for (const trace of [ownerId, normalizeAccountEmail(ownerEmail), normalizeAccountEmail(alias)])
+      expect(stored.includes(trace)).toBe(false);
+    expect(after.reservations).toEqual(before.reservations.filter((row) => row.ownerUserId === otherId));
+    expect(after.members).toEqual(before.members.filter((row) => row.userId === otherId));
+    // As before `prepare`: no cutoff or event, and the manifest waits for activation.
+    expect(after.cutoffs).toEqual([]);
+    expect(after.events).toEqual([]);
+    expect(after.projections).toEqual(before.projections);
+  });
+  it('deletes a collision member while prepared without releasing the group or electing the survivor', async () => {
+    await seedPair({ collision: true });
+    await preparedLegacyDeletion();
+    const before = await snapshot();
+    expect(before.reservations).toHaveLength(1);
+    expect(before.members).toHaveLength(2);
+    expect(await remove()).toBe(true);
+    const after = await snapshot();
+    expect(after.reservations).toEqual(before.reservations);
+    expect(after.reservations[0]).toMatchObject({ state: 'blocked_ambiguous', ownerUserId: null });
+    expect(after.members).toEqual(before.members.filter((row) => row.userId !== ownerId));
+    expect(after.users.map((user) => user.id)).toEqual([otherId]);
+  });
+  it('answers a prepared-phase reservation inconsistency with the generic reply and keeps the account', async () => {
+    await seedPair();
+    // The owner's owned key gains a second member. No writer leaves this, so cleanup refuses.
+    await db
+      .insert(authEmailReservationMembers)
+      .values({ normalizedEmail: normalizeAccountEmail(ownerEmail), userId: otherId });
+    await preparedLegacyDeletion();
+    await expectUnavailableUnchanged();
+    expect(legacyRefusalLogs()).toEqual([[legacyRefusalLine, { failureCode: 'RESERVATION_INCONSISTENT' }]]);
+  });
+  it('rolls the whole deletion back when the prepared-phase reservation cleanup fails', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    await preparedLegacyDeletion();
+    const fault = `${triggerName}_cleanup`;
+    await db.execute(
+      sql.raw(`CREATE FUNCTION ${fault}() RETURNS trigger LANGUAGE plpgsql AS $fault$
+      BEGIN RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='${privateMarker}'; END; $fault$`),
+    );
+    await db.execute(
+      sql.raw(
+        `CREATE TRIGGER ${fault} BEFORE DELETE ON public.auth_email_reservations FOR EACH ROW EXECUTE FUNCTION ${fault}()`,
+      ),
+    );
+    try {
+      const before = await snapshot();
+      let failure: unknown;
+      try {
+        await remove();
+      } catch (caught) {
+        failure = caught;
+      }
+      // A database failure keeps the legacy contract: the original error, masked later by the GraphQL layer.
+      expect(postgresErrors.getPostgresErrorCode(failure)).toBe('23514');
+      expect(await snapshot()).toEqual(before);
+      expect(await db.select().from(users).where(eq(users.id, ownerId))).toHaveLength(1);
+      expect(effects.publish).not.toHaveBeenCalled();
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS ${fault} ON public.auth_email_reservations`));
+      await db.execute(sql.raw(`DROP FUNCTION IF EXISTS ${fault}()`));
+    }
+  });
+  it('holds the gate through a prepared-phase legacy deletion, so activation gives up rather than land inside it', async () => {
+    await seedPair({ system: true });
+    await seedBoard();
+    await preparedLegacyDeletion();
+    const accountHold = await holdOnBlocker((transaction) => lockSprayWallAccount(transaction, ownerId));
+    let deletion: Promise<boolean> | undefined;
+    try {
+      // Parked in content, past the gate and the manifest read.
+      deletion = remove();
+      await waitForBlocker(accountHold.backendPid, deletion);
+      const activating = await bounded(
+        db
+          .transaction(async (transaction) => {
+            await lockAuthorityGateExclusively(transaction);
+            await transaction.update(authEmailProjection).set({ phase: 'enforced' });
+          })
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          ),
+        5000,
+      );
+      expect(postgresErrors.getPostgresErrorCode(activating)).toBe('55P03');
+      accountHold.release();
+      await accountHold.held;
+      expect(await bounded(deletion)).toBe(true);
+      const [manifest] = await db.select().from(authEmailProjection);
+      expect(manifest.phase).toBe('prepared');
+      expect(
+        await db.select().from(authEmailReservationMembers).where(eq(authEmailReservationMembers.userId, ownerId)),
+      ).toEqual([]);
+    } finally {
+      accountHold.release();
+      await bounded(Promise.allSettled([accountHold.held, ...(deletion ? [deletion] : [])]));
+    }
+  }, 20000);
   it('deletes through the mounted canonical authority with the current epoch and durable tombstone', async () => {
     await seedPair();
     await db
