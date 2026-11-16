@@ -404,6 +404,24 @@ describe('QueueProvider board switch (#5099)', () => {
     expect(latest().playlistSuggestionSource?.climbs).toHaveLength(3);
   });
 
+  // #7596 A4 reverts #7561: the refresh is one plain callback again, made once
+  // per account, with no publication ledger behind it. The player, the mini
+  // player and the rest timer keep it inside their own memoised callbacks.
+  it('hands out one refresh callback while the climber walks the track', async () => {
+    const { activatedClimb, nextKilterClimb } = await activateKilterBrowse();
+    const refresh = latest().refreshPlaylistSuggestionSource;
+    expect(refresh).toHaveLength(1);
+
+    act(() => {
+      refresh(kilterSource([activatedClimb, nextKilterClimb, makeClimb('kilter-third', 'kilter', 1)], activatedClimb));
+    });
+    await waitFor(() => expect(latest().playlistSuggestionSource?.climbs).toHaveLength(3));
+    act(() => latest().nextClimb());
+    await waitFor(() => expect(latest().state.currentClimbQueueItem?.climb.uuid).toBe('kilter-next'));
+
+    expect(latest().refreshPlaylistSuggestionSource).toBe(refresh);
+  });
+
   it('masks a suggestion source stamped with the board the climber left', async () => {
     await activateKilterBrowse();
 

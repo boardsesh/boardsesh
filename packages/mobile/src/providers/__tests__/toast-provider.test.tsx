@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useEffect, createElement, type ReactNode } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
 
 const native = vi.hoisted(() => ({
   os: 'ios' as 'ios' | 'android' | 'web',
@@ -82,6 +82,33 @@ function ToastLauncher({ variant = 'success' }: { variant?: 'success' | 'error' 
     showToast('Saved', variant, 1000);
   }, [showToast, variant]);
   return createElement('div');
+}
+
+type ToastHandle = ReturnType<typeof useToast>;
+
+/** Hands the provider's context value to the test, so a toast can be shown on cue. */
+function ToastHandleProbe({ onHandle }: { onHandle: (handle: ToastHandle) => void }) {
+  const handle = useToast();
+  useEffect(() => onHandle(handle), [handle, onHandle]);
+  return null;
+}
+
+function renderWithHandle() {
+  let current: ToastHandle | null = null;
+  const view = render(
+    <ToastProvider>
+      <ToastHandleProbe
+        onHandle={(handle) => {
+          current = handle;
+        }}
+      />
+    </ToastProvider>,
+  );
+  const handle = (): ToastHandle => {
+    if (!current) throw new Error('ToastProvider never rendered');
+    return current;
+  };
+  return { ...view, handle };
 }
 
 beforeEach(() => {
@@ -190,5 +217,82 @@ describe('ToastProvider on a retired browser page', () => {
 
     expect(container.textContent).toContain('Saved');
     expect(pageRetirement.isRetired).not.toHaveBeenCalled();
+  });
+});
+
+// #7596 A4 reverts #7564: the app-wide toast list is one plain useState list
+// again, with no guarded entries, no guard that drops a toast when its screen
+// goes, and no feedback deferred to a layout effect. These pin that on phones.
+describe('ToastProvider on phones', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('offers one entry point, showToast', () => {
+    const { handle } = renderWithHandle();
+
+    expect(Object.keys(handle())).toEqual(['showToast']);
+  });
+
+  it('keeps the two newest toasts and lets the oldest go first', () => {
+    const { container, handle } = renderWithHandle();
+
+    act(() => {
+      handle().showToast('First', 'info');
+      handle().showToast('Second', 'info');
+      handle().showToast('Third', 'info');
+    });
+
+    expect(container.textContent).not.toContain('First');
+    expect(container.textContent).toContain('Second');
+    expect(container.textContent).toContain('Third');
+    expect(container.textContent!.indexOf('Second')).toBeLessThan(container.textContent!.indexOf('Third'));
+  });
+
+  it('plays the haptic and the announcement inside showToast, before React draws the toast', () => {
+    const { container, handle } = renderWithHandle();
+
+    act(() => {
+      handle().showToast('Logged', 'success');
+      expect(haptics.hapticSuccess).toHaveBeenCalledTimes(1);
+      expect(native.announceWithOptions).toHaveBeenCalledWith('Logged', { queue: true });
+      expect(container.textContent).not.toContain('Logged');
+    });
+
+    expect(container.textContent).toContain('Logged');
+  });
+
+  it('keeps a toast on screen after the screen that showed it unmounts', () => {
+    const { container, rerender } = render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(container.textContent).toContain('Saved');
+
+    rerender(<ToastProvider>{null}</ToastProvider>);
+
+    expect(container.textContent).toContain('Saved');
+    expect(haptics.hapticSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a toast down after its duration', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+    expect(container.textContent).toContain('Saved');
+
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(container.textContent).toContain('Saved');
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(container.textContent).not.toContain('Saved');
   });
 });
