@@ -57,10 +57,11 @@ export function computeBarTopLabelLayout(
   label: string,
   barWidth: number,
   columnWidth: number,
-  fontScale = 1,
+  labelScale = 1,
 ): BarTopLabelLayout {
-  const lineHeight = Math.ceil(CHART_LABEL_LINE_HEIGHT * fontScale);
-  const textWidth = estimateLabelWidth(label, fontScale);
+  // `labelScale` is the caption2 label's own scale (see `estimateLabelWidth`).
+  const lineHeight = Math.ceil(CHART_LABEL_LINE_HEIGHT * labelScale);
+  const textWidth = estimateLabelWidth(label, labelScale);
 
   if (textWidth <= columnWidth) {
     const width = Math.max(barWidth, Math.min(columnWidth, textWidth));

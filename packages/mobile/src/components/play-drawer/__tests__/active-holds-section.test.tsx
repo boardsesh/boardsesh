@@ -38,6 +38,8 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({
     children,
     style,

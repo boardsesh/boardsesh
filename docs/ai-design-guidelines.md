@@ -442,7 +442,7 @@ above holds. Selection is a state, not a link. `ClimbListRow` still builds the s
 `{ fill: tertiaryFill, label: secondaryLabel }`: a quiet pill for something you can't tap
 ("Closest", "Ready to review", "On it"), so it never competes with the accent beside it.
 
-### Text: tone and emphasized
+### Text: tone, emphasized, Dynamic Type
 
 - **`tone`**: `primary` (default), `secondary`, `tertiary` resolve to `label`, `secondaryLabel`,
   `tertiaryLabel`. Step text down with a tone, never with `opacity`: an opacity dim mixes the text
@@ -452,6 +452,19 @@ above holds. Selection is a state, not a link. `ClimbListRow` still builds the s
   and `title2`, Semibold for every other style. On Material it is the M3 Expressive emphasized
   weight: Medium for display, headline, title large and body roles, Bold for title medium and the
   labels. Use it instead of a `fontWeight` override. Bold Text steps it up once more.
+- **Dynamic Type ramp**: on iOS each `variant` scales on the UIKit text style of the same name
+  (`dynamicTypeRamp`, `src/theme/dynamic-type.ts`); `label` scales on `body`. Without a ramp, React
+  Native scales every `Text` by one multiplier table, the one `fontScale` reports, which equals the
+  body curve up to xxxLarge and runs ahead of it at the accessibility sizes (AX3: 2.643 against
+  body's 2.353). Against that table, titles now grow much less, body, headline and label are 8–13%
+  smaller at AX1–AX5, and footnote and captions grow up to 14% more at xLarge–xxxLarge. JS layout
+  that sizes itself around non-body text, or around body text above xxxLarge, must use
+  `textFontScale(variant, fontScale, Platform.OS)` instead of `fontScale`, or it drifts from the text
+  it sits beside. A 1.5 cap does not make `fontScale` safe: it never engages below AX1. The ramp
+  follows the `Text`'s `variant`, not its final size, so a body `Text` restyled to 34pt still asks
+  for `'body'`. An `Icon` beside footnote or caption text takes `textVariant` to match. Layout
+  switches keyed on a threshold (`fontScale > 1.3`) pick a content size category and stay on
+  `fontScale`.
 
 ### Guards
 

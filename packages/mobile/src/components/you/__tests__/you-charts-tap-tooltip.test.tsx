@@ -34,6 +34,8 @@ import type { ColoredBar } from '../profile-chart-colors';
 // width) so ChartFrame's width-gated render path (`width > 0 ? children(...)
 // : null`) actually reaches the chart instead of staying stuck pre-measure.
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
     useEffect(() => {
       onLayout?.({ nativeEvent: { layout: { width: 320, height: 160, x: 0, y: 0 } } });

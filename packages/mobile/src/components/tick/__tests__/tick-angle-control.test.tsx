@@ -9,6 +9,8 @@ import { createElement, type ReactNode } from 'react';
 // here is that wiring, not the controls themselves.
 
 vi.mock('react-native', () => ({
+  // Layout picks each text line's iOS Dynamic Type ramp from it.
+  Platform: { OS: 'ios' },
   StyleSheet: { create: (styles: unknown) => styles },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   useWindowDimensions: () => ({ fontScale: 1 }),

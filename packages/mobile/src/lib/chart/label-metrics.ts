@@ -22,9 +22,14 @@ const NARROW_GLYPH_WIDTH_EM: Record<string, number> = { ' ': 0.28, '/': 0.32, '.
 /** A hair of breathing room on each side so glyphs never touch the box edge. */
 const LABEL_SIDE_PADDING = 2;
 
-/** Rendered width of a label, in px, at the given accessibility font scale. */
-export function estimateLabelWidth(text: string, fontScale = 1): number {
+/**
+ * Rendered width of a label, in px. `labelScale` is how much the caption2 label
+ * itself has grown: `textFontScale('caption2', fontScale, Platform.OS)`, capped as
+ * the label is. Not raw `fontScale`: on iOS caption2 grows on its own Dynamic
+ * Type ramp, 17/11 = 1.55x at xxxLarge where `fontScale` is 1.353.
+ */
+export function estimateLabelWidth(text: string, labelScale = 1): number {
   let ems = 0;
   for (const glyph of text) ems += NARROW_GLYPH_WIDTH_EM[glyph] ?? GLYPH_WIDTH_EM;
-  return Math.ceil(ems * CHART_LABEL_FONT_SIZE * fontScale) + LABEL_SIDE_PADDING * 2;
+  return Math.ceil(ems * CHART_LABEL_FONT_SIZE * labelScale) + LABEL_SIDE_PADDING * 2;
 }

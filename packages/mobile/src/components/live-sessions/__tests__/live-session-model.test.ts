@@ -385,19 +385,34 @@ describe('planLiveRail', () => {
 
 describe('liveTileLayout', () => {
   it('is 192pt at default text and never smaller', () => {
-    expect(liveTileLayout(1)).toEqual({ height: 192, stacked: false });
-    expect(liveTileLayout(0.82)).toEqual({ height: 192, stacked: false });
+    expect(liveTileLayout(1, 'ios')).toEqual({ height: 192, stacked: false });
+    expect(liveTileLayout(0.823, 'ios')).toEqual({ height: 192, stacked: false });
+    expect(liveTileLayout(0.82, 'android')).toEqual({ height: 192, stacked: false });
   });
 
   it('grows with Dynamic Type and stacks the action above 1.2×', () => {
-    const large = liveTileLayout(1.2);
+    const large = liveTileLayout(1.2, 'android');
     expect(large.stacked).toBe(false);
     expect(large.height).toBeGreaterThan(192);
 
-    const huge = liveTileLayout(1.5);
+    const huge = liveTileLayout(1.5, 'android');
     expect(huge.stacked).toBe(true);
     expect(huge.height).toBeGreaterThan(large.height);
-    // Capped at the Text primitive's 1.5× ceiling.
-    expect(liveTileLayout(3)).toEqual(huge);
+    // The tile stops growing at 1.5×.
+    expect(liveTileLayout(3, 'android')).toEqual(huge);
+  });
+
+  it('grows each line on its own ramp on iOS', () => {
+    // xxxLarge (fontScale 1.353): 114pt of chrome; headline 22 at 23/17, subheadline
+    // 20 at 21/15, two footnote lines 18 at 19/13; stacked, so the footnote stats
+    // line and an 8pt gap too.
+    expect(liveTileLayout(1.353, 'ios')).toEqual({
+      height: Math.ceil(114 + 22 * (23 / 17) + 20 * (21 / 15) + 3 * 18 * (19 / 13) + 8),
+      stacked: true,
+    });
+    // The same tile scaled by fontScale alone came up 7pt short.
+    expect(liveTileLayout(1.353, 'android').height).toBe(Math.ceil(114 + 96 * 1.353 + 8));
+    // AX3 (2.643): every line held at 1.5×.
+    expect(liveTileLayout(2.643, 'ios')).toEqual({ height: Math.ceil(114 + 96 * 1.5 + 8), stacked: true });
   });
 });

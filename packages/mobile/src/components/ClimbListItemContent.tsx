@@ -1,6 +1,6 @@
 import React, { useMemo, type MutableRefObject } from 'react';
 import type { ReadyBoardArtSource } from '../lib/board-render/ready-board-art';
-import { View, StyleSheet, useWindowDimensions } from 'react-native';
+import { Platform, View, StyleSheet, useWindowDimensions } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { Text } from './Text';
@@ -15,6 +15,7 @@ import { useBoardseshGradesActive } from '../hooks/use-display-grade';
 import { usePersonalGradesActive } from '../hooks/use-personal-grades';
 import { climbStatsKnown, isProjectClimb } from '@boardsesh/play-view';
 import { useTheme } from '../providers/theme-provider';
+import { textFontScale } from '../theme/dynamic-type';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { DraftChip, climbChipStyles } from './DraftChip';
@@ -506,6 +507,7 @@ export const ClimbAscentStatusView = React.memo(function ClimbAscentStatusView({
           name={ASCENT_STATUS_ICON[status]}
           size={CLIMB_ROW_DIRECTION_STATUS.iconSize}
           color={systemColors.secondaryLabel}
+          textVariant="caption2"
         />
         <Text
           variant="caption2"
@@ -990,7 +992,10 @@ export const ClimbListItemContentView = React.memo(function ClimbListItemContent
   const { textStyles: rowTextStyles } = useTheme();
   const nameStyle =
     nameLines === 2
-      ? [styles.climbName, { minHeight: (rowTextStyles.body.lineHeight ?? 22) * fontScale * 2 }]
+      ? [
+          styles.climbName,
+          { minHeight: (rowTextStyles.body.lineHeight ?? 22) * textFontScale('body', fontScale, Platform.OS) * 2 },
+        ]
       : styles.climbName;
   const Thumbnail = leaves.Thumbnail;
   // 88×112 in a two-column Climbs list, 76×96 in every other host.

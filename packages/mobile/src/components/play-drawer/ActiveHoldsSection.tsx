@@ -1,5 +1,6 @@
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { textFontScale } from '../../theme/dynamic-type';
 import { useTranslation } from 'react-i18next';
 import type { BoardRenderMode } from '@boardsesh/board-constants/hold-states';
 import { contrastRatio } from '@boardsesh/board-constants/readable-text-color';
@@ -163,7 +164,10 @@ const MarkerChip = memo(function MarkerChip({ marker, size }: { marker: ActiveHo
 function useChipSize(): number {
   const { textStyles } = useTheme();
   const { fontScale } = useWindowDimensions();
-  return Math.round((textStyles.footnote.lineHeight ?? textStyles.footnote.fontSize ?? 0) * fontScale);
+  return Math.round(
+    (textStyles.footnote.lineHeight ?? textStyles.footnote.fontSize ?? 0) *
+      textFontScale('footnote', fontScale, Platform.OS),
+  );
 }
 
 type LineRowProps = {

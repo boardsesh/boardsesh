@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent } from 'react-native';
+import { textFontScale } from '../../theme/dynamic-type';
 import { useTranslation } from 'react-i18next';
 import { PressableSurface } from '../PressableSurface';
 import { SnapCarousel } from '../SnapCarousel';
@@ -100,7 +101,8 @@ export const SprayWallBackgroundCarousel = memo(function SprayWallBackgroundCaro
     options.findIndex((option) => option.key === value),
   );
   const railWidth = measuredWidth || windowWidth;
-  const captionHeight = 24 * Math.min(fontScale, 1.5) + spacing[3];
+  // The caption is subheadline, which grows on its own ramp on iOS.
+  const captionHeight = 24 * Math.min(textFontScale('subheadline', fontScale, Platform.OS), 1.5) + spacing[3];
   const imageHeight = Math.max(168, height - captionHeight - spacing[3] * 2 - 6);
   const aspect = previewSource ? previewSource.frame.width / previewSource.frame.height : 0.75;
   const cardWidth = Math.max(RAIL_MIN_WIDTH, Math.min(railWidth * 0.72, imageHeight * aspect));

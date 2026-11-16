@@ -1,11 +1,25 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 // `theme/tokens` reaches `ios-colors`, which calls these at module load.
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios', select: () => undefined },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+    select: () => undefined,
+  },
   PlatformColor: (name: string) => name,
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
 }));
+
+// The arithmetic below scales every line by `fontScale` itself, which is what
+// Android Text does (and where 1.3 or 1.5 are real settings). iOS scales each
+// line on its own Dynamic Type ramp; that has its own block at the end.
+beforeEach(() => {
+  platform.os = 'android';
+});
 
 import {
   CLIMB_ROW_GUTTER,
@@ -505,5 +519,51 @@ describe('uniform reorder geometry', () => {
     });
     expect(materialHeight).toBeGreaterThanOrEqual(112);
     expect(materialHeight).not.toBe(120);
+  });
+});
+
+describe('climbRowLayout on iOS: each line on its own Dynamic Type ramp', () => {
+  // React Native's fontScale per category on iOS (RCTAccessibilityManager.mm).
+  const XXXLARGE = 1.353;
+  const AX3 = 2.643;
+
+  beforeEach(() => {
+    platform.os = 'ios';
+  });
+
+  const textOnlyAt = (fontScale: number) =>
+    climbRowLayout({
+      display: TEXT_ONLY,
+      surface: DEFAULT_CLIMB_ROW_SURFACE,
+      supportsMirroring: false,
+      fontScale,
+    }).estimatedHeight;
+
+  it('matches the default-size estimate exactly', () => {
+    expect(textOnlyAt(1)).toBe(58);
+  });
+
+  it('grows the footnote detail line on its own ramp at xxxLarge', () => {
+    // Two 22pt body name lines at 23/17, an 18pt footnote line at 19/13, a 2pt gap, 16pt padding.
+    expect(textOnlyAt(XXXLARGE)).toBe(Math.ceil(22 * (23 / 17) * 2 + 18 * (19 / 13) + 2 + 16));
+  });
+
+  it('follows body and footnote at AX3, shorter than scaling by fontScale', () => {
+    const ramped = Math.ceil(22 * (40 / 17) * 2 + 18 * (33 / 13) + 2 + 16);
+    expect(textOnlyAt(AX3)).toBe(ramped);
+    platform.os = 'android';
+    expect(textOnlyAt(AX3)).toBeGreaterThan(ramped);
+  });
+
+  it('caps the tags line after its ramp, as React Native caps a ramped Text', () => {
+    const withTags = { ...TEXT_ONLY, playlistTags: true };
+    const tagsLine = (fontScale: number) =>
+      climbRowLayout({
+        display: withTags,
+        surface: DEFAULT_CLIMB_ROW_SURFACE,
+        supportsMirroring: false,
+        fontScale,
+      }).estimatedHeight - textOnlyAt(fontScale);
+    expect(tagsLine(AX3)).toBe(tagsLine(XXXLARGE));
   });
 });

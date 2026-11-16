@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { Platform } from 'react-native';
 import { spacing } from '../../theme/tokens';
+import { textFontScale } from '../../theme/dynamic-type';
 import type { MoreFormModel, MoreRow, MoreSection } from '../MoreForm.types';
 
 type Translation = (key: string, options?: Record<string, unknown>) => string;
@@ -43,9 +45,12 @@ export const WATCH_PAIR_CODE_TEXT_FIT = {
  * `fontScale` or the code clips at the larger accessibility sizes. It is exactly
  * `WATCH_PAIR_CODE_TEXT_FIT.numberOfLines` lines tall: the code never wraps, and
  * shrinking to fit only makes it shorter.
+ *
+ * The code is a default (`body`) `Text` restyled to large-title size, so on iOS it
+ * grows on the body Dynamic Type ramp, which is shorter than `fontScale` from AX1 up.
  */
 export function watchPairCodeHeight(fontScale: number, lineHeight: number): number {
-  const line = Math.ceil(lineHeight * Math.max(fontScale, 1));
+  const line = Math.ceil(lineHeight * Math.max(textFontScale('body', fontScale, Platform.OS), 1));
   return line * WATCH_PAIR_CODE_TEXT_FIT.numberOfLines + spacing[3] * 2;
 }
 

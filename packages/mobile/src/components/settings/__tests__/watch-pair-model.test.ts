@@ -70,9 +70,13 @@ describe('watchPairCodeHeight', () => {
     expect(watchPairCodeHeight(1, 41)).toBe(41 + 24);
   });
 
+  // This suite runs as iOS, where fontScale is one of React Native's category
+  // values (1.353 = xxxLarge, 2.643 = AX3). The code is a body Text set at
+  // large-title size, so it grows on the body ramp: 23/17 at xxxLarge, 40/17 at AX3.
   it('grows with the climber’s text size and never shrinks below the default', () => {
-    expect(watchPairCodeHeight(2, 41)).toBe(82 + 24);
-    expect(watchPairCodeHeight(0.8, 41)).toBe(41 + 24);
+    expect(watchPairCodeHeight(1.353, 41)).toBe(Math.ceil((41 * 23) / 17) + 24);
+    expect(watchPairCodeHeight(2.643, 41)).toBe(Math.ceil((41 * 40) / 17) + 24);
+    expect(watchPairCodeHeight(0.823, 41)).toBe(41 + 24);
   });
 
   it('stays one line tall at the largest text sizes, because the code shrinks to fit instead of wrapping', () => {
@@ -82,6 +86,7 @@ describe('watchPairCodeHeight', () => {
     expect(WATCH_PAIR_CODE_TEXT_FIT).toMatchObject({ numberOfLines: 1, adjustsFontSizeToFit: true });
     expect(WATCH_PAIR_CODE_TEXT_FIT.minimumFontScale).toBeGreaterThan(0);
     expect(WATCH_PAIR_CODE_TEXT_FIT.minimumFontScale).toBeLessThanOrEqual(0.5);
-    expect(watchPairCodeHeight(3.12, 41)).toBe(Math.ceil(41 * 3.12) + 24);
+    // AX5 (3.571): body is 53pt there.
+    expect(watchPairCodeHeight(3.571, 41)).toBe(Math.ceil((41 * 53) / 17) + 24);
   });
 });

@@ -113,7 +113,7 @@ export const ClimbProgressView = memo(function ClimbProgressView({
       accessibilityRole="text"
       accessibilityLabel={wording.accessibilityLabel}
     >
-      <Icon name={ASCENT_STATUS_ICON[progress.status]} size={13} color={systemColors.label} />
+      <Icon name={ASCENT_STATUS_ICON[progress.status]} size={13} color={systemColors.label} textVariant="footnote" />
       <Text
         variant="footnote"
         numberOfLines={1}

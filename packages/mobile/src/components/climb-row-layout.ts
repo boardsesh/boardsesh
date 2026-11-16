@@ -1,6 +1,8 @@
+import { Platform } from 'react-native';
 import { climbListThumbnailSize, type ClimbListThumbnailSize } from './climb-list-thumbnail-metrics';
 import { spacing } from '../theme/tokens';
 import { textStyles } from '../theme/typography';
+import { textFontScale } from '../theme/dynamic-type';
 import { PROGRESS_MAX_FONT_SCALE } from '../lib/climb-progress';
 import type { ClimbRowDisplay } from '../lib/climb-row-display';
 
@@ -194,8 +196,11 @@ function estimateClimbRowHeight(
   allowNameWrapping: boolean,
   thumbnailHeight: number,
 ): number {
+  // Each line grows on its own text style's Dynamic Type ramp on iOS, as the
+  // `Text` it estimates does; a cap applies after the ramp, as in React Native.
   const lineHeight = (variant: ClimbRowTextVariant, maxFontScale = Infinity): number =>
-    (typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) * Math.min(fontScale, maxFontScale);
+    (typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) *
+    Math.min(textFontScale(variant, fontScale, Platform.OS), maxFontScale);
 
   const lines = [lineHeight('body') * climbRowNameLines(fontScale, allowNameWrapping)];
   if (layout.hasDetailLine) lines.push(lineHeight('footnote'));
@@ -294,7 +299,8 @@ export function climbRowReorderHeight({
   rows: readonly ClimbRowReorderRow[];
 }): number {
   const lineHeight = (variant: ClimbRowTextVariant) =>
-    (input.typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) * fontScale;
+    (input.typeScale?.[variant]?.lineHeight ?? textStyles[variant].lineHeight) *
+    textFontScale(variant, fontScale, Platform.OS);
   let minimumHeight = climbRowLayout({
     ...input,
     fontScale,

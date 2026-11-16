@@ -2,6 +2,7 @@ import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   PixelRatio,
+  Platform,
   View,
   StyleSheet,
   type GestureResponderEvent,
@@ -9,6 +10,7 @@ import {
   type TextStyle,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { textFontScale } from '../../theme/dynamic-type';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
 import type { RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
@@ -571,7 +573,11 @@ export const GroupedBarChart = memo(function GroupedBarChart({
     () => longestBarValue((bars ?? []).flatMap((bar) => bar.values.map((value) => value.value))),
     [bars],
   );
-  const labelFontScale = Math.min(PixelRatio.getFontScale(), MAX_LABEL_FONT_SCALE);
+  // The bar-top count is a caption2 `Text`: on iOS it grows on the caption2 ramp.
+  const labelFontScale = Math.min(
+    textFontScale('caption2', PixelRatio.getFontScale(), Platform.OS),
+    MAX_LABEL_FONT_SCALE,
+  );
   const grades = useMemo(() => (bars ?? []).map((bar) => bar.label), [bars]);
   const handlePress = useCallback(
     (index: number) => {
@@ -640,6 +646,9 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                           color={chartColors.secondaryLabel}
                           numeric
                           numberOfLines={1}
+                          // The same cap `labelFontScale` assumes, so the width
+                          // estimate holds at every text size.
+                          maxFontSizeMultiplier={MAX_LABEL_FONT_SCALE}
                           style={[
                             styles.barTopLabel,
                             labelLayout.rotated

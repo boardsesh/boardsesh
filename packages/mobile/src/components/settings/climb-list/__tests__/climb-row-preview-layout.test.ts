@@ -14,7 +14,12 @@ describe('preview viewport', () => {
     expect(climbRowPreviewLayout(1).windowHeight).toBe(117);
     expect(climbRowPreviewLayout(1).height).toBe(177);
   });
-  it.each([1.3, 1.5, 2])('fits all rows at font scale %s without switch-dependent sizing', (fontScale) => {
+  // React Native's iOS fontScale at xxxLarge and AX3, and the subheadline preset
+  // chips' ramp there (21/15 and 36/15).
+  it.each([
+    { fontScale: 1.353, presetScale: 21 / 15 },
+    { fontScale: 2.643, presetScale: 36 / 15 },
+  ])('fits all rows at font scale $fontScale without switch-dependent sizing', ({ fontScale, presetScale }) => {
     const allFields = { ...DEFAULT_CLIMB_ROW_DISPLAY };
     for (const field of CLIMB_ROW_FIELD_IDS) allFields[field] = true;
     const typeScale: ClimbRowLayoutInput['typeScale'] = { body: { lineHeight: 24 }, footnote: { lineHeight: 20 } };
@@ -29,6 +34,6 @@ describe('preview viewport', () => {
       });
       expect(preview.windowHeight).toBeGreaterThanOrEqual(row.estimatedHeight);
     }
-    expect(preview.height).toBe(preview.windowHeight + 60 * fontScale);
+    expect(preview.height).toBeCloseTo(preview.windowHeight + 60 * presetScale, 6);
   });
 });
