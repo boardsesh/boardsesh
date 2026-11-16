@@ -78,6 +78,8 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
+  IOS_CAPTURE_LOG_PREDICATE,
+  recordIosProcessCommand,
   iosDiagnosticReportDirectories,
   preserveIosCaptureDiagnostics,
   snapshotIosDiagnosticReports,
@@ -2964,7 +2966,13 @@ function captureIosDevice(
   // cannot see a return value — so the last statement of the try flips this.
   let captureSucceeded = false;
   // CPP failures also need live process evidence; post-job collection runs after shutdown.
-  const deviceLogStream = options.flow === 'smoke' || options.cpp ? startIosDeviceLogStream(device.udid) : null;
+  const deviceLogStream =
+    options.flow === 'smoke' || options.cpp
+      ? startIosDeviceLogStream(
+          device.udid,
+          options.flow === 'smoke' ? `(${IOS_CRASH_LOG_PREDICATE}) OR (${IOS_CAPTURE_LOG_PREDICATE})` : undefined,
+        )
+      : null;
   const diagnosticReportDirectories = options.cpp ? iosDiagnosticReportDirectories(device.udid) : [];
   const diagnosticReportBaseline = snapshotIosDiagnosticReports(diagnosticReportDirectories);
   const smokeCrashes = (): NativeCrash[] => findIosNativeCrashes(readTextIfPresent(IOS_DEVICE_LOG_PATH));
@@ -2996,7 +3004,11 @@ function captureIosDevice(
     // then navigates back to its launcher, resetting the React host. Its explicit
     // initial URL branch returns after loading and preserves the app host.
     const checkedProcessCommand = (args: string[]): boolean => {
-      const result = runCapture('xcrun', args, simulatorLaunchEnv());
+      const result = recordIosProcessCommand(
+        process.env.SCREENSHOT_DEBUG_DIR ?? join(tmpdir(), 'boardsesh-ios-process'),
+        args,
+        () => runCapture('xcrun', args, simulatorLaunchEnv()),
+      );
       if (result.status !== 0) {
         console.error(`${LOG} FAILED: ${args.join(' ')} exited ${result.status}: ${result.stderr || result.stdout}`);
       }
@@ -4671,10 +4683,7 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
       try {
         if (descriptor) {
           bootDevice(device);
-          deviceLogStream = startIosDeviceLogStream(
-            device.udid,
-            'process == "Boardsesh" OR eventMessage CONTAINS "com.boardsesh.app" OR subsystem BEGINSWITH "expo"',
-          );
+          deviceLogStream = startIosDeviceLogStream(device.udid, IOS_CAPTURE_LOG_PREDICATE);
           if (usesDuoStoreFlow(options, descriptor)) hingeLog = prepareDuoHinge(device.udid);
           applyCleanStatusBar(device.udid);
           if (runCapture('xcrun', ['simctl', 'install', device.udid, appPath]).status !== 0)

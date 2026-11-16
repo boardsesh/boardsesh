@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { preserveIosCaptureDiagnostics, snapshotIosDiagnosticReports } from '../lib/ios-capture-diagnostics';
+import {
+  preserveIosCaptureDiagnostics,
+  recordIosProcessCommand,
+  snapshotIosDiagnosticReports,
+} from '../lib/ios-capture-diagnostics';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -121,4 +125,46 @@ it('collects visual-story launch evidence before simulator shutdown', () => {
   expect(visual).toContain("join(diagnosticDir, 'failure-screen.png')");
   expect(visual.indexOf('preserveIosCaptureDiagnostics(')).toBeLessThan(visual.indexOf("['simctl', 'shutdown'"));
   expect(visual).toContain("deviceLogStream?.kill('SIGTERM')");
+});
+
+describe('process command evidence without additional simulator commands', () => {
+  it('writes intent before execution and retains each command result separately', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ios-process-evidence-'));
+    roots.push(root);
+    const args = ['simctl', 'launch', 'device', 'com.boardsesh.app', '--initialUrl', 'http://localhost:8081'];
+    const result = { status: 1, stdout: 'launcher output', stderr: 'loader error' };
+    const run = vi.fn(() => {
+      const directory = readdirSync(root)[0];
+      expect(JSON.parse(readFileSync(join(root, directory, 'command.json'), 'utf8'))).toEqual({
+        args,
+        startedAt: expect.any(Number),
+      });
+      return result;
+    });
+    expect(recordIosProcessCommand(root, args, run)).toBe(result);
+    expect(run).toHaveBeenCalledTimes(1);
+    recordIosProcessCommand(root, ['simctl', 'terminate', 'device', 'com.boardsesh.app'], () => ({
+      status: 0,
+      stdout: '',
+      stderr: '',
+    }));
+    const records = readdirSync(root).map((directory) =>
+      JSON.parse(readFileSync(join(root, directory, 'command.json'), 'utf8')),
+    );
+    expect(records).toHaveLength(2);
+    expect(records).toContainEqual({ ...result, args, startedAt: expect.any(Number), durationMs: expect.any(Number) });
+  });
+
+  it('preserves thrown command failures without changing their outcome', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ios-process-evidence-'));
+    roots.push(root);
+    const failure = new Error('spawn failed');
+    expect(() =>
+      recordIosProcessCommand(root, ['simctl', 'launch'], () => {
+        throw failure;
+      }),
+    ).toThrow(failure);
+    const record = JSON.parse(readFileSync(join(root, readdirSync(root)[0], 'command.json'), 'utf8'));
+    expect(record).toMatchObject({ status: null, stderr: 'spawn failed', stdout: '' });
+  });
 });

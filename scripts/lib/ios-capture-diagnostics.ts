@@ -11,6 +11,46 @@ import {
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
+export const IOS_CAPTURE_LOG_PREDICATE =
+  'process == "Boardsesh" OR eventMessage CONTAINS "com.boardsesh.app" OR subsystem BEGINSWITH "expo"';
+
+/** Record existing process commands without issuing any extra simulator work. */
+export function recordIosProcessCommand(
+  debugDir: string,
+  args: string[],
+  run: () => { status: number; stdout: string; stderr: string },
+): { status: number; stdout: string; stderr: string } {
+  mkdirSync(debugDir, { recursive: true });
+  const evidencePath = join(mkdtempSync(join(debugDir, 'ios-process-')), 'command.json');
+  const command = { args, startedAt: Date.now() };
+  // Preserve the command even if cancellation interrupts it.
+  writeFileSync(evidencePath, JSON.stringify(command, null, 2));
+  try {
+    const result = run();
+    writeFileSync(
+      evidencePath,
+      JSON.stringify({ ...command, durationMs: Date.now() - command.startedAt, ...result }, null, 2),
+    );
+    return result;
+  } catch (error) {
+    writeFileSync(
+      evidencePath,
+      JSON.stringify(
+        {
+          ...command,
+          durationMs: Date.now() - command.startedAt,
+          status: null,
+          stdout: '',
+          stderr: error instanceof Error ? error.message : String(error),
+        },
+        null,
+        2,
+      ),
+    );
+    throw error;
+  }
+}
+
 export interface IosDiagnosticReport {
   path: string;
   modifiedMs: number;
