@@ -1,3 +1,3 @@
-// Native keeps its existing credential and transport behavior. The browser
-// supplies its separate fixed-view facade through client.web.ts.
+// Native keeps its existing credential and transport behavior. Expo web
+// builds the same clients in client.web.ts with its session guard's rule.
 export * from './client-default';
