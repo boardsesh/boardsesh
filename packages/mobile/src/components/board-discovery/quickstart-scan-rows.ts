@@ -7,10 +7,24 @@
 // (a MoonBoard, a box that advertises no serial, a serial nobody has saved)
 // says what it is and offers the gym list or the builder, so a climber standing
 // at it is never told "No boards in range".
+//
+// A serial-less box (a MoonBoard, a bare `Kilter Board`) this phone has bound
+// to one of the climber's boards is named by its Bluetooth id instead
+// (recognized-board-devices-store.ts), when the caller passes `recognition`.
 
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
-import { compareBySignal, type QuickstartScanDevice } from '../../lib/ble/quickstart-scan-device';
-import { boardRowKeys } from '../../lib/boards/board-identity';
+import { toBoardName } from '@boardsesh/board-config';
+import {
+  compareBySignal,
+  type QuickstartScanDevice,
+  type QuickstartSeriallessDevice,
+} from '../../lib/ble/quickstart-scan-device';
+import {
+  indexRecognizedBoardDevices,
+  normalizeBoardDeviceId,
+  type RecognizedBoardDevices,
+} from '../../lib/ble/recognized-board-devices-store';
+import { boardRowKeys, boardUuidOrNull } from '../../lib/boards/board-identity';
 
 /**
  * Where the serial lookup stands.
@@ -47,9 +61,15 @@ export function quickstartLookupState({
   return failed ? 'failed' : 'pending';
 }
 
+/**
+ * How a `board` row knows which board it is: its advertised serial matched a
+ * saved board, or this phone recognised a serial-less box by its Bluetooth id.
+ */
+export type QuickstartRowRecognition = 'serial' | 'device_id';
+
 export type QuickstartRow =
-  /** A serial matched a saved board. Tap to make it active. */
-  | { kind: 'board'; key: string; board: UserBoard; rssi: number | null }
+  /** A board we can name. Tap to make it active. */
+  | { kind: 'board'; key: string; board: UserBoard; rssi: number | null; recognizedBy: QuickstartRowRecognition }
   /** A serial nobody has saved a board for. */
   | { kind: 'unknown_setup'; key: string; boardType: BoardName; rssi: number | null }
   /** A MoonBoard. Its controller never says which layout it drives. */
@@ -68,8 +88,36 @@ function strongest(current: number | null | undefined, next: number | null): num
 }
 
 /**
+ * What lets a serial-less box be named. A box is named only when its id is
+ * recognised as a board of the box's own type that is still one of
+ * `knownBoards`: a board the climber unfollowed, or one recognised as another
+ * type, leaves the box unnamed.
+ */
+export type QuickstartRecognition = {
+  /** The ids this phone recognises (recognized-board-devices-store.ts). */
+  devices: RecognizedBoardDevices;
+  /** The climber's own and followed boards. */
+  knownBoards: readonly UserBoard[];
+};
+
+/** The board one serial-less box is, or null when it is not recognised. */
+function recognizedBoardFor(
+  device: QuickstartSeriallessDevice,
+  recognizedById: ReadonlyMap<string, { boardUuid: string; boardType: BoardName }>,
+  knownBoardsByUuid: ReadonlyMap<string, UserBoard>,
+): UserBoard | null {
+  const recognized = recognizedById.get(normalizeBoardDeviceId(device.deviceId));
+  if (!recognized || recognized.boardType !== device.boardType) return null;
+  const board = knownBoardsByUuid.get(recognized.boardUuid);
+  return board && toBoardName(board.boardType) === device.boardType ? board : null;
+}
+
+/**
  * One row per thing the climber can act on, strongest signal first:
  * - each saved board a heard serial resolved to (as the sheet always listed);
+ * - each known board a recognised serial-less box is, one row per board however
+ *   many of its boxes are heard. These don't wait for the serial lookup. A
+ *   board also resolved by serial is listed once, by serial;
  * - one "We don't know its setup yet" row per board type among serials that
  *   resolved to nothing. A serial whose name names no type gets none, because
  *   its next steps need a type;
@@ -85,16 +133,27 @@ export function buildQuickstartRows({
   devices,
   boards,
   lookup,
+  recognition,
 }: {
   devices: readonly QuickstartScanDevice[];
   /** The saved boards the lookup resolved, after `selectBleBoardCandidates`. */
   boards: readonly UserBoard[];
   lookup: QuickstartLookupState;
+  /** Absent: no serial-less box is named (the Bluetooth quickstart sheet). */
+  recognition?: QuickstartRecognition;
 }): QuickstartRow[] {
   const rows: QuickstartRow[] = [];
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
   let strongestSerialSignal: number | null | undefined;
+  const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
+  const knownBoardsByUuid = new Map<string, UserBoard>();
+  for (const board of recognition?.knownBoards ?? []) {
+    const boardUuid = boardUuidOrNull(board.uuid);
+    if (boardUuid) knownBoardsByUuid.set(boardUuid, board);
+  }
+  // Keyed by board uuid: two boxes recognised as one board make one row.
+  const recognizedBoards = new Map<string, { board: UserBoard; rssi: number | null }>();
 
   const addToGroup = (kind: GroupedRowKind, boardType: BoardName, rssi: number | null) => {
     const groupKey = `${kind}:${boardType}`;
@@ -107,7 +166,16 @@ export function buildQuickstartRows({
       signalBySerial.set(device.serial, device.rssi);
       strongestSerialSignal = strongest(strongestSerialSignal, device.rssi);
     } else {
-      addToGroup(device.kind, device.boardType, device.rssi);
+      const recognizedBoard = recognizedBoardFor(device, recognizedById, knownBoardsByUuid);
+      if (recognizedBoard) {
+        const earlier = recognizedBoards.get(recognizedBoard.uuid);
+        recognizedBoards.set(recognizedBoard.uuid, {
+          board: recognizedBoard,
+          rssi: strongest(earlier?.rssi, device.rssi),
+        });
+      } else {
+        addToGroup(device.kind, device.boardType, device.rssi);
+      }
     }
   }
 
@@ -118,11 +186,17 @@ export function buildQuickstartRows({
     const boardKeys = boardRowKeys(boards);
     for (const [boardIndex, board] of boards.entries()) {
       if (board.serialNumber) matchedSerials.add(board.serialNumber);
+      const serialSignal = board.serialNumber ? (signalBySerial.get(board.serialNumber) ?? null) : null;
+      // The same board also heard as a recognised box: one row, by serial,
+      // with the stronger of the two signals.
+      const alsoRecognized = boardUuidOrNull(board.uuid) ? recognizedBoards.get(board.uuid) : undefined;
+      if (alsoRecognized) recognizedBoards.delete(board.uuid);
       rows.push({
         kind: 'board',
         key: `board:${boardKeys[boardIndex]}`,
         board,
-        rssi: board.serialNumber ? (signalBySerial.get(board.serialNumber) ?? null) : null,
+        rssi: alsoRecognized ? strongest(serialSignal, alsoRecognized.rssi) : serialSignal,
+        recognizedBy: 'serial',
       });
     }
     for (const device of devices) {
@@ -131,6 +205,18 @@ export function buildQuickstartRows({
     }
   } else if (lookup === 'failed') {
     rows.push({ kind: 'lookup_failed', key: 'lookup_failed', rssi: strongestSerialSignal ?? null });
+  }
+
+  // Keyed like a serial row for the same board, so a row that turns from
+  // recognised to resolved keeps its place in the list.
+  for (const [boardUuid, recognized] of recognizedBoards) {
+    rows.push({
+      kind: 'board',
+      key: `board:${boardUuid}`,
+      board: recognized.board,
+      rssi: recognized.rssi,
+      recognizedBy: 'device_id',
+    });
   }
 
   for (const [groupKey, group] of groupSignal) {

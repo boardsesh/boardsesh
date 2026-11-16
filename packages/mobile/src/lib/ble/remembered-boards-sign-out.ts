@@ -9,10 +9,13 @@
 // in-memory record directly. It calls `forgetRememberedBoardsOnSignOut`, which
 // tells every mounted useBoardBluetooth (its in-memory record, its per-board
 // handles and the iOS native pairing) and clears both stores itself, so a
-// sign-out with no hook mounted still leaves nothing behind.
+// sign-out with no hook mounted still leaves nothing behind. The boxes this
+// phone recognises by Bluetooth id (recognized-board-devices-store.ts) were
+// bound by the same account, so they go too.
 
 import { clearStoredLastConnectedBoard } from './last-connected-board-store';
 import { setStoredKnownBoardDevices } from './known-board-devices-store';
+import { clearRecognizedBoardDevices } from './recognized-board-devices-store';
 
 type SignOutListener = () => void;
 
@@ -35,5 +38,9 @@ export async function forgetRememberedBoardsOnSignOut(): Promise<void> {
       // One listener's failure must not keep the others, or the stores, remembered.
     }
   }
-  await Promise.allSettled([clearStoredLastConnectedBoard(), setStoredKnownBoardDevices([])]);
+  await Promise.allSettled([
+    clearStoredLastConnectedBoard(),
+    setStoredKnownBoardDevices([]),
+    clearRecognizedBoardDevices(),
+  ]);
 }

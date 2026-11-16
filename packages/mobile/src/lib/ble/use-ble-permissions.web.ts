@@ -20,6 +20,11 @@ export function requestBleRuntimePermissionStatus(_options?: {
   return Promise.resolve(isWebBluetoothAvailable() ? 'granted' : 'unsupported');
 }
 
+// No Android permissions in a browser, as off Android in the native module.
+export function hasAndroidBleScanPermissions(): Promise<boolean | null> {
+  return Promise.resolve(null);
+}
+
 // Browsers have no Android foreground-service notification to ask for.
 export function requestOptionalNotificationPermission(): Promise<void> {
   return Promise.resolve();

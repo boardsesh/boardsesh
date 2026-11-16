@@ -80,6 +80,7 @@ import {
   soonestForgetAfter,
 } from './remembered-board-expiry';
 import { subscribeRememberedBoardsSignOut } from './remembered-boards-sign-out';
+import { forgetRecognizedBoardDevice, rememberRecognizedBoardDevice } from './recognized-board-devices-store';
 import type { BleWriteActivityStore } from './write-activity-store';
 import { getBleEncodingSignature } from './encoding-signature';
 import type { PickerBoardTarget } from './picker-device-target';
@@ -2098,6 +2099,7 @@ export function useBoardBluetooth({
         // Without a full config there is no usable key (the reconnect comparison
         // against currentConfigKey could never match).
         let rememberedConfigKey: string | null = null;
+        let rememberedByDeviceId = false;
         if (
           !('persistConnection' in adapter && adapter.persistConnection === false) &&
           layoutId !== undefined &&
@@ -2110,6 +2112,7 @@ export function useBoardBluetooth({
           } else if (boardName === 'moonboard' || isSerialLessBoxOfBoard(connection.deviceName, boardName)) {
             rememberConnectedBoard({ configKey, deviceId: connection.deviceId });
             rememberedConfigKey = configKey;
+            rememberedByDeviceId = true;
           }
         }
         // A hang-up keeps a remembered board for 10 minutes, but not one this
@@ -2119,6 +2122,16 @@ export function useBoardBluetooth({
         const wrongBoxConnect =
           (getConnectedViaMismatchOverride?.() ?? false) || advertisesAnotherBoard(connection.deviceName, boardName);
         hangUpKeepsBoardRef.current = wrongBoxConnect ? null : rememberedConfigKey;
+        // Identity, not a reconnect target: the board picker's in-range rows
+        // name this serial-less box as this board from now on, on this phone
+        // (recognized-board-devices-store.ts). A wrong-box connect proves the
+        // box is not this board, so a recognition saying it is goes instead.
+        // Fire-and-forget; neither call rejects.
+        if (wrongBoxConnect) {
+          void forgetRecognizedBoardDevice(connection.deviceId, boardUuid);
+        } else if (rememberedByDeviceId) {
+          void rememberRecognizedBoardDevice(connection.deviceId, { uuid: boardUuid, boardType: boardName });
+        }
 
         // Send initial frames if provided. `sendSource: 'connect'` makes the
         // resulting Climb Sent to Board Success/Failure/Skipped attributable to
@@ -2716,6 +2729,8 @@ export function useBoardBluetooth({
         rememberConnectedBoard({ configKey: currentConfigKey, serial });
       } else if (rememberDeviceId) {
         rememberConnectedBoard({ configKey: currentConfigKey, deviceId });
+        // Same identity as a connect records (see connect()); fire-and-forget.
+        void rememberRecognizedBoardDevice(deviceId, { uuid: boardUuid, boardType: boardName });
       }
       // Adoption only takes a box named for this board (or the one paired for
       // it), so a hang-up keeps whatever was just remembered.

@@ -94,6 +94,7 @@ vi.mock('../use-ble-permissions', async (importOriginal) => {
 
 import { useBoardScan } from '../use-board-scan';
 import { HIGH_POWER_BOARD_SCAN_OPTIONS } from '../scan-options';
+import { claimBleScan, currentBleScanOwner, releaseBleScan } from '../ble-scan-slot';
 
 type ScannedDevice = {
   id?: string;
@@ -491,6 +492,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       found_count: 0,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
 
     act(() => {
@@ -600,6 +602,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       found_count: 2,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 
@@ -623,6 +626,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       found_count: 1,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 
@@ -657,6 +661,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       found_count: 0,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 
@@ -699,6 +704,7 @@ describe('useBoardScan unavailable reasons and scan reporting (#5654)', () => {
       found_count: 0,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 });
@@ -799,6 +805,7 @@ describe('useBoardScan keeps boards with no serial', () => {
       found_count: 1,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 
@@ -854,6 +861,7 @@ describe('useBoardScan keeps boards with no serial', () => {
       found_count: 1,
       serialless_count: 3,
       moonboard_count: 2,
+      trigger: 'sheet',
     });
     expect(result.current.status).toBe('done');
   });
@@ -872,6 +880,7 @@ describe('useBoardScan keeps boards with no serial', () => {
       found_count: 0,
       serialless_count: 1,
       moonboard_count: 1,
+      trigger: 'sheet',
     });
     analytics.track.mockClear();
 
@@ -886,6 +895,7 @@ describe('useBoardScan keeps boards with no serial', () => {
       found_count: 0,
       serialless_count: 0,
       moonboard_count: 0,
+      trigger: 'sheet',
     });
   });
 });
@@ -978,5 +988,151 @@ describe('useBoardScan asking for Bluetooth on iOS at the first scan', () => {
 
     expect(nativeBluetoothAuthorizationHarness.requestCount).toBe(0);
     expect(result.current.status).toBe('scanning');
+  });
+});
+
+// The board picker's in-range slot scans by itself on most picker opens, so it
+// says who started each scan, takes ble-plx's one scan only when nobody holds
+// it, and keeps what it heard when it ends early.
+describe('useBoardScan for the board picker', () => {
+  beforeEach(() => {
+    permissionStatusOverride.status = null;
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    resetReactNativePermissionHarness();
+    resetNativeBluetoothAuthorizationHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+    mockBleManager.onStateChange.mockReturnValue({ remove: vi.fn() });
+    // The slot is module state: start every test with nobody holding it.
+    const owner = currentBleScanOwner();
+    if (owner) releaseBleScan(owner);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(['picker_auto', 'picker_tap', 'sheet'] as const)(
+    'reports the %s trigger on the scan it started',
+    async (trigger) => {
+      const { result } = renderHook(() => useBoardScan());
+      await act(async () => {
+        await result.current.start(trigger);
+      });
+      act(() => {
+        vi.advanceTimersByTime(15_000);
+      });
+
+      expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+        outcome: 'completed',
+        found_count: 0,
+        serialless_count: 0,
+        moonboard_count: 0,
+        trigger,
+      });
+    },
+  );
+
+  it('claims a free scan slot and gives it back when the scan ends', async () => {
+    const { result } = renderHook(() => useBoardScan({ slotPolicy: 'claim' }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+
+    expect(result.current.status).toBe('scanning');
+    expect(currentBleScanOwner()).not.toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(currentBleScanOwner()).toBeNull();
+    expect(mockBleManager.stopDeviceScan).toHaveBeenCalledOnce();
+  });
+
+  it("skips, never steals, a scan someone else holds (the rest timer's, an Android connect's)", async () => {
+    const restTimerScan = Symbol('rest-timer');
+    claimBleScan(restTimerScan);
+    const { result, unmount } = renderHook(() => useBoardScan({ slotPolicy: 'claim' }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+
+    expect(result.current.status).toBe('busy');
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+    expect(currentBleScanOwner()).toBe(restTimerScan);
+    unmount();
+    // Nothing started, so nothing is stopped and nothing is reported.
+    expect(mockBleManager.stopDeviceScan).not.toHaveBeenCalled();
+    expect(currentBleScanOwner()).toBe(restTimerScan);
+    expect(analytics.track).not.toHaveBeenCalledWith('Board Quickstart Scan Finished', expect.anything());
+    releaseBleScan(restTimerScan);
+  });
+
+  it('still takes the slot for the sheet, as it always has', async () => {
+    claimBleScan(Symbol('rest-timer'));
+    const { result } = renderHook(() => useBoardScan());
+    await act(async () => {
+      await result.current.start('sheet');
+    });
+
+    expect(result.current.status).toBe('scanning');
+    expect(mockBleManager.startDeviceScan).toHaveBeenCalledOnce();
+  });
+
+  it('finishes early keeping the boards it heard, reported as stopped', async () => {
+    const { result } = renderHook(() => useBoardScan({ slotPolicy: 'claim' }));
+    await act(async () => {
+      await result.current.start('picker_auto');
+    });
+    act(() => {
+      scanCallback()(null, { id: 'moon-1', localName: 'MoonBoard A', rssi: -60 });
+    });
+
+    act(() => {
+      result.current.finish();
+    });
+
+    expect(result.current.status).toBe('done');
+    expect(result.current.devices).toHaveLength(1);
+    expect(currentBleScanOwner()).toBeNull();
+    expect(analytics.track).toHaveBeenCalledWith('Board Quickstart Scan Finished', {
+      outcome: 'stopped',
+      found_count: 0,
+      serialless_count: 1,
+      moonboard_count: 1,
+      trigger: 'picker_auto',
+    });
+    // A late advertisement and the old timeout change nothing.
+    act(() => {
+      scanCallback()(null, { id: 'moon-2', localName: 'MoonBoard B', rssi: -50 });
+      vi.advanceTimersByTime(15_000);
+    });
+    expect(result.current.devices).toHaveLength(1);
+    expect(
+      analytics.track.mock.calls.filter(([eventName]) => eventName === 'Board Quickstart Scan Finished'),
+    ).toHaveLength(1);
+  });
+
+  it('drops a start still waiting on the radio, and stays idle', async () => {
+    mockBleManager.state.mockResolvedValue('Unknown');
+    const stateListeners: Array<(state: string) => void> = [];
+    mockBleManager.onStateChange.mockImplementation((listener: (state: string) => void) => {
+      stateListeners.push(listener);
+      return { remove: vi.fn() };
+    });
+    const { result } = renderHook(() => useBoardScan({ slotPolicy: 'claim' }));
+
+    await act(async () => {
+      const startPromise = result.current.start('picker_auto');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      result.current.finish();
+      stateListeners[0]('PoweredOn');
+      await startPromise;
+    });
+
+    expect(result.current.status).toBe('idle');
+    expect(mockBleManager.startDeviceScan).not.toHaveBeenCalled();
+    expect(currentBleScanOwner()).toBeNull();
   });
 });
