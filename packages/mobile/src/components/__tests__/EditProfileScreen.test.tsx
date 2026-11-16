@@ -353,10 +353,11 @@ describe('EditProfileScreen', () => {
     act(() => saveAction().onPress());
 
     await waitFor(() => {
-      expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({ displayName: 'Alex' });
       expect(showToastMock.mock.calls).toEqual([['profile.avatarUploadFailed', 'warning']]);
       expect(saveAction().loading).toBe(false);
     });
+    // The saved name did not change, so there is nothing else to send.
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
     expect(routerBackMock).not.toHaveBeenCalled();
     expect(screen.getByTestId('avatar').getAttribute('data-uri')).toBe('file://compressed-avatar.jpg');
     expect(saveAction().disabled).toBe(false);
@@ -366,8 +367,7 @@ describe('EditProfileScreen', () => {
     await waitFor(() => expect(routerBackMock).toHaveBeenCalledOnce());
     expect(launchImageLibraryMock).toHaveBeenCalledOnce();
     expect(uploadAvatarMock).toHaveBeenCalledTimes(2);
-    expect(mutateAsyncMock).toHaveBeenLastCalledWith({
-      displayName: 'Alex',
+    expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({
       avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
     });
     expect(showToastMock).toHaveBeenLastCalledWith('profile.saved', 'success');
@@ -610,7 +610,7 @@ describe('EditProfileScreen', () => {
     expect(routerBackMock).not.toHaveBeenCalled();
   });
 
-  it('on native, uploads the photo and saves the name after a swipe back mid-upload', async () => {
+  it('on native, cancels a save with a new photo when you leave mid-upload: nothing written, no toast', async () => {
     let finishUpload!: () => void;
     uploadAvatarMock.mockImplementationOnce(
       () =>
@@ -628,17 +628,28 @@ describe('EditProfileScreen', () => {
     await waitFor(() => expect(uploadAvatarMock).toHaveBeenCalledOnce());
 
     unmount();
-    // Leaving the screen neither cancels the upload nor refuses its result.
-    expect(uploadOptions.latest?.signal?.aborted).toBe(false);
-    expect(() => uploadOptions.latest?.assertView?.()).not.toThrow();
+    // A slow abandoned photo must never land after a newer edit: leaving
+    // cancels the upload, and its late result is refused.
+    expect(uploadOptions.latest?.signal?.aborted).toBe(true);
+    expect(() => uploadOptions.latest?.assertView?.()).toThrow();
     await act(async () => finishUpload());
 
-    await waitFor(() => expect(showToastMock).toHaveBeenCalledWith('profile.saved', 'success'));
-    expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({
-      displayName: 'Alex',
-      avatarUrl: 'https://ws.example.com/static/avatars/a.jpg?v=1',
-    });
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalled();
     expect(routerBackMock).not.toHaveBeenCalled();
+  });
+
+  it('sends only what changed: a new photo on a named profile leaves the name out', async () => {
+    profileFixture.displayName = 'Alex';
+    render(<EditProfileScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'profile.avatar.upload' }));
+    await waitFor(() => expect(saveAction().disabled).toBe(false));
+    act(() => saveAction().onPress());
+
+    await waitFor(() => expect(routerBackMock).toHaveBeenCalledOnce());
+    expect(mutateAsyncMock).toHaveBeenCalledExactlyOnceWith({
+      avatarUrl: 'https://ws.example.com/static/avatars/11111111-1111-4111-8111-111111111111.jpg?v=upload-123',
+    });
   });
 
   it('on native, says nothing about a save answered after sign-out', async () => {

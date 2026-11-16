@@ -16,11 +16,31 @@ vi.mock('../client', () => ({
     throw new Error('Unexpected native offline I/O');
   },
 }));
+// The real auth store drives sign-in, sign-out and token refresh below; only
+// its keychain is in memory.
+vi.mock('expo-secure-store', () => {
+  const storage = new Map<string, string>();
+  return {
+    AFTER_FIRST_UNLOCK: 'after-first-unlock',
+    getItemAsync: async (key: string) => storage.get(key) ?? null,
+    setItemAsync: async (key: string, value: string) => {
+      storage.set(key, value);
+    },
+    deleteItemAsync: async (key: string) => {
+      storage.delete(key);
+    },
+  };
+});
 
 import { useHttpMutation } from '../use-http-mutation';
 import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
 import { useHttpActionScope } from '../use-http-action-scope';
-import { invalidateCredentialSnapshots } from '../../privacy/privacy-cache';
+import {
+  captureAuthCredentialGeneration,
+  clearTokensForGeneration,
+  storeTokens,
+  storeTokensForGeneration,
+} from '../../auth-store';
 
 function deferred<Result>() {
   let resolve!: (result: Result) => void;
@@ -206,9 +226,11 @@ describe('native reads finish into the cache', () => {
 });
 
 describe('native requests end with the account that started them', () => {
+  // As the app signs out: the token clear retires the credential at once,
+  // then the provider clears the cache.
   function signOut(client: QueryClient) {
     act(() => {
-      invalidateCredentialSnapshots();
+      void clearTokensForGeneration(captureAuthCredentialGeneration());
       client.clear();
     });
   }
@@ -313,10 +335,80 @@ describe('native requests end with the account that started them', () => {
     expect(action.isCurrent()).toBe(false);
     expect(action.isOwnerCurrent()).toBe(true);
 
-    invalidateCredentialSnapshots();
+    void clearTokensForGeneration(captureAuthCredentialGeneration());
     expect(action.signal.aborted).toBe(true);
     expect(action.isOwnerCurrent()).toBe(false);
     action.finish();
+  });
+
+  it('refuses a read started signed out once the climber signs in, then retries it as them', async () => {
+    const { client, wrapper } = harness();
+    const anonymous = deferred<{ profile: string | null }>();
+    transport.request.mockReturnValueOnce(anonymous.promise).mockResolvedValueOnce({ profile: 'Alex' });
+    renderHook(
+      () =>
+        useHttpQuery({
+          queryKey: ['profile'],
+          retry: 1,
+          retryDelay: 0,
+          queryFn: (_context, operation) => operation.request<{ profile: string | null }>('{ profile }'),
+        }),
+      { wrapper },
+    );
+    await waitFor(() => expect(transport.request).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      await storeTokens('signed-in-jwt', 'signed-in-refresh', '2026-12-01T00:00:00.000Z');
+    });
+    await act(async () => anonymous.resolve({ profile: null }));
+
+    // The signed-out answer never lands; the retry asks again as the climber.
+    await waitFor(() => expect(client.getQueryData(['profile'])).toEqual({ profile: 'Alex' }));
+    expect(transport.request).toHaveBeenCalledTimes(2);
+    client.clear();
+  });
+
+  it('leaves in-flight reads and writes alone across a token refresh', async () => {
+    const { client, wrapper } = harness();
+    const read = deferred<unknown>();
+    const write = deferred<unknown>();
+    transport.request.mockReturnValueOnce(read.promise).mockReturnValueOnce(write.promise);
+    const events: string[] = [];
+    const view = renderHook(
+      () => ({
+        query: useHttpQuery({
+          queryKey: ['feed'],
+          queryFn: (_context, operation) => operation.request<{ feed: string }>('{ feed }'),
+        }),
+        save: useHttpMutation({
+          mutationFn: (_input: void, operation) => operation.request('mutation { vote }'),
+          onSuccess: () => {
+            events.push('saved');
+          },
+        }),
+      }),
+      { wrapper },
+    );
+    let saved!: Promise<unknown>;
+    act(() => {
+      saved = view.result.current.save.mutateWithReceipt();
+    });
+    await waitFor(() => expect(transport.request).toHaveBeenCalledTimes(2));
+
+    const generation = captureAuthCredentialGeneration();
+    await act(async () => {
+      await storeTokensForGeneration(generation, 'refreshed-jwt', 'refreshed-refresh', '2026-12-02T00:00:00.000Z');
+    });
+    expect(captureAuthCredentialGeneration()).toBe(generation);
+    await act(async () => {
+      read.resolve({ feed: 'sessions' });
+      write.resolve({ vote: true });
+      await saved;
+    });
+
+    await waitFor(() => expect(client.getQueryData(['feed'])).toEqual({ feed: 'sessions' }));
+    expect(events).toEqual(['saved']);
+    client.clear();
   });
 });
 

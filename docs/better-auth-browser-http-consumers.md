@@ -229,7 +229,10 @@ consumers are not yet selected; its account fence is the captured view in the
 web operation. Every native operation records the credential generation it
 started under. After a sign-in or sign-out it sends nothing more, and its
 delivery, cache facade and mutation callbacks refuse. A late response therefore
-cannot write the old account's data into the cache sign-out just cleared.
+cannot write the old account's data into the cache sign-out just cleared. A
+server-rejected refresh during the session check retires the credential the
+same way before its sign-out clears the cache; a token refresh does not. Error
+reporting treats the resulting `superseded` refusal as a cancellation.
 
 Screen unmount ends neither a native read nor a native write. The wrapper
 queries, and the bulk vote-summary and data-export status reads, leave
@@ -237,11 +240,12 @@ TanStack's signal getter alone, so a read whose last observer unmounts finishes
 into the cache instead of being cancelled and reverted. A caller's signal only
 refuses to start a write for an action it already retired. A native UI action
 keeps two checks. `assertView` retires the screen's own state and navigation on
-unmount. `assertOwner` lets the write, an avatar upload before it, and its
-app-level toast finish after unmount, and ends only when the account changes,
-which is also the only thing that aborts the action's signal. Selected browser
-views keep the cancellation described above, and there `assertOwner` equals
-`assertView`.
+unmount. `assertOwner` lets the write and its app-level toast finish after
+unmount, and ends only when the account changes, which is also the only thing
+that aborts the action's signal. Work that must not land after its screen is
+gone captures with `endsWithScreen`, which keeps the browser lifetime on native.
+Selected browser views keep the cancellation described above, and there
+`assertOwner` equals `assertView`.
 
 The actual profile and admin reads and profile-update cache effects now use these
 adapters. Profile updates refresh only their original view's cache. That
@@ -279,8 +283,11 @@ opening the image picker or awaiting compression, local image bytes, upload or
 profile save. Selected forms use the opaque view key; native and legacy forms
 retain their existing key and credential policy. In a selected form, unmount and
 Strict Mode cleanup abort owned pending actions. A later view or remount cannot
-revive one. A native form's upload, save and toast finish after unmount and end
-only at an account change (see "Captured query and mutation callers").
+revive one. A native name-only save and its toast finish after unmount and end
+only at an account change (see "Captured query and mutation callers"). A save
+with a new photo captures with `endsWithScreen`: leaving cancels the upload and
+the save, so a slow abandoned photo cannot land after a newer edit. A save sends
+only the fields the climber changed, never an unchanged name.
 
 The avatar uploader exposes a receipt alongside its derived URL. On web, that
 receipt comes only from the actual authenticated Response's private original

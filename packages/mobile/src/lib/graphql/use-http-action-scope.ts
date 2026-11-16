@@ -27,49 +27,56 @@ export function useHttpActionScope() {
       current.controllers.clear();
     };
   }, []);
-  const capture = useCallback(() => {
-    const current = lifetime.current;
-    const epoch = current.epoch;
-    const assertOriginalView = scope.assertView;
-    const outlivesScreen = !scope.scoped;
-    const controller = new AbortController();
-    let finished = false;
-    const retired = () => controller.signal.reason ?? new BrowserBackendConsumerError('superseded');
-    const assertOwner = () => {
-      if (finished || controller.signal.aborted || (!outlivesScreen && (!current.mounted || epoch !== current.epoch)))
-        throw retired();
-      assertOriginalView();
-    };
-    const assertView = () => {
-      if (!current.mounted || epoch !== current.epoch) throw retired();
-      assertOwner();
-    };
-    assertView();
-    const releaseAccount = outlivesScreen
-      ? subscribeToCredentialChanges(() => controller.abort(new BrowserBackendConsumerError('superseded')))
-      : undefined;
-    if (!outlivesScreen) current.controllers.add(controller);
-    const passes = (check: () => void) => {
-      try {
-        check();
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    return Object.freeze({
-      signal: controller.signal,
-      assertView,
-      isCurrent: () => passes(assertView),
-      assertOwner,
-      isOwnerCurrent: () => passes(assertOwner),
-      finish() {
-        finished = true;
-        current.controllers.delete(controller);
-        releaseAccount?.();
-      },
-    });
-  }, [scope]);
+  /** `endsWithScreen` keeps a native action to its screen, as a browser one is:
+   * for work that must not land after the screen is gone. */
+  const capture = useCallback(
+    (options?: { endsWithScreen?: boolean }) => {
+      const current = lifetime.current;
+      const epoch = current.epoch;
+      const assertOriginalView = scope.assertView;
+      const outlivesScreen = !scope.scoped && !options?.endsWithScreen;
+      const controller = new AbortController();
+      let finished = false;
+      const retired = () => controller.signal.reason ?? new BrowserBackendConsumerError('superseded');
+      const assertOwner = () => {
+        if (finished || controller.signal.aborted || (!outlivesScreen && (!current.mounted || epoch !== current.epoch)))
+          throw retired();
+        assertOriginalView();
+      };
+      const assertView = () => {
+        if (!current.mounted || epoch !== current.epoch) throw retired();
+        assertOwner();
+      };
+      assertView();
+      // Every native action ends with its account, whether or not it ends with
+      // its screen too. A browser view's own retirement covers that there.
+      const releaseAccount = scope.scoped
+        ? undefined
+        : subscribeToCredentialChanges(() => controller.abort(new BrowserBackendConsumerError('superseded')));
+      if (!outlivesScreen) current.controllers.add(controller);
+      const passes = (check: () => void) => {
+        try {
+          check();
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      return Object.freeze({
+        signal: controller.signal,
+        assertView,
+        isCurrent: () => passes(assertView),
+        assertOwner,
+        isOwnerCurrent: () => passes(assertOwner),
+        finish() {
+          finished = true;
+          current.controllers.delete(controller);
+          releaseAccount?.();
+        },
+      });
+    },
+    [scope],
+  );
   return useMemo(
     () => ({
       key: scope.scoped ? (scope.scope ?? 'unavailable-browser-view') : 'native-legacy-view',

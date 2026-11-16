@@ -157,6 +157,18 @@ describe('useDeleteClimbAction (#5960)', () => {
     expect(ctrl.mutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it('lets the same climb ask again once its dialog was cancelled', async () => {
+    ctrl.confirm.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const { result } = renderHook(() => useDeleteClimbAction());
+
+    await act(() => result.current(climb, 'spray'));
+    expect(ctrl.mutateAsync).not.toHaveBeenCalled();
+    await act(() => result.current(climb, 'spray'));
+
+    expect(ctrl.confirm).toHaveBeenCalledTimes(2);
+    expect(ctrl.mutateAsync).toHaveBeenCalledExactlyOnceWith({ uuid: 'climb-1', boardType: 'spray' });
+  });
+
   it('asks again for a different climb while the first is still asking', async () => {
     const answers: ((value: boolean) => void)[] = [];
     ctrl.confirm.mockImplementation(

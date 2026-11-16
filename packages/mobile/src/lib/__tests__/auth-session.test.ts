@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = { generation: 1, current: true };
 const getAuthTokenMock = vi.fn();
+const retireRejectedCredentialMock = vi.fn((generation: number) => (authState.current ? generation + 1 : null));
 const isTokenExpiringSoonMock = vi.fn();
 const deduplicatedRefreshMock = vi.fn();
 const reportHandledErrorMock = vi.hoisted(() => vi.fn());
@@ -17,6 +18,7 @@ vi.mock('../auth-store', () => ({
   getAuthToken: () => getAuthTokenMock(),
   isAuthCredentialGenerationCurrent: () => authState.current,
   isTokenExpiringSoon: () => isTokenExpiringSoonMock(),
+  retireRejectedCredential: (generation: number) => retireRejectedCredentialMock(generation),
 }));
 
 vi.mock('../auth-interceptor', () => ({ deduplicatedRefresh: () => deduplicatedRefreshMock() }));
@@ -37,6 +39,7 @@ import { BackendUnavailableError } from '../connectivity/backend-unavailable-err
 beforeEach(() => {
   authState.generation = 1;
   authState.current = true;
+  retireRejectedCredentialMock.mockClear();
   getAuthTokenMock.mockReset();
   getAuthTokenMock.mockResolvedValue('old-jwt');
   isTokenExpiringSoonMock.mockReset();
@@ -159,10 +162,20 @@ describe('resolveAuthSession refresh status mapping', () => {
     expect(deduplicatedRefreshMock).toHaveBeenCalledOnce();
   });
 
-  it('maps an explicitly rejected refresh to anonymous', async () => {
+  it('maps an explicitly rejected refresh to anonymous, retiring the credential first', async () => {
     deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 } satisfies RefreshResult);
 
-    await expect(resolveAuthSession()).resolves.toEqual({ status: 'anonymous', generation: 1 });
+    // Sign-out clears the cache next; work the rejected credential started is
+    // fenced before that, as an explicit sign-out's token clear fences it.
+    await expect(resolveAuthSession()).resolves.toEqual({ status: 'anonymous', generation: 2 });
+    expect(retireRejectedCredentialMock).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('does not retire the credential when a refresh succeeds', async () => {
+    getAuthTokenMock.mockResolvedValueOnce('old-jwt').mockResolvedValueOnce('fresh-jwt');
+
+    await expect(resolveAuthSession()).resolves.toMatchObject({ status: 'authenticated', generation: 1 });
+    expect(retireRejectedCredentialMock).not.toHaveBeenCalled();
   });
 
   it('keeps the original JWT authenticated when refresh is unavailable', async () => {

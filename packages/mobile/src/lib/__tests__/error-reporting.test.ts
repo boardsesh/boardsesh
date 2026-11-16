@@ -4,6 +4,7 @@ import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error
 import { SchemaNewerThanAppError } from '@boardsesh/offline-sync';
 import { SCHEMA_NEWER_REPORT_KIND } from '../../db/schema-downgrade';
 import { GraphQLTransportClosedError } from '@boardsesh/graphql-client';
+import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { reportError, reportHandledError } from '../error-reporting';
 import { addBreadcrumbToSentry, captureToSentry } from '../sentry';
 import { resetObserveRuntimeForTests, setObserveRuntime } from '../observe-runtime';
@@ -47,6 +48,16 @@ describe('reportHandledError', () => {
     reportHandledError(Object.assign(new Error('aborted'), { name: 'AbortError' }));
     reportHandledError(Object.assign(new Error('cancelled'), { name: 'CancelledError' }));
     expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+  });
+
+  it('drops a request the account or view retired, but reports other consumer refusals', () => {
+    // A write in flight at sign-out is refused with `superseded`: the app did
+    // what was asked. The query and mutation caches report through here.
+    reportHandledError(new BrowserBackendConsumerError('superseded'), { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+
+    reportHandledError(new BrowserBackendConsumerError('denied'), { tags: { source: 'react-query' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledOnce();
   });
 
   it('drops expected auth-required GraphQL errors (a session-only query ran logged-out)', () => {

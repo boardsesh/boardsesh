@@ -282,6 +282,18 @@ export function clearTokensForGeneration(generation: number): Promise<boolean> {
   });
 }
 
+/**
+ * Retire a credential the server rejected, as `clearTokensForGeneration` retires
+ * one it deletes. Sign-out clears the cache next, and work started under this
+ * credential must not write into it afterwards. A token refresh never comes
+ * here: it stores under the current generation. Null when a newer sign-in or
+ * sign-out already owns the credential.
+ */
+export function retireRejectedCredential(generation: number): number | null {
+  if (!isAuthCredentialGenerationCurrent(generation)) return null;
+  return advanceCredentialGeneration();
+}
+
 export async function clearTokens(): Promise<void> {
   await clearTokensForGeneration(captureAuthCredentialGeneration());
 }

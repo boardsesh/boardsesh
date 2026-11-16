@@ -133,21 +133,25 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
     if (savingRef.current || !canSave || !profile?.id) return;
     let action: ReturnType<HttpActionScope['capture']>;
     try {
-      action = actionScope.capture();
+      // A save with a new photo stays with this screen: leaving cancels the
+      // upload and the save, so a slow abandoned photo can never land after a
+      // newer edit. A name-only save is one small request; on native it
+      // finishes after a swipe back and still says so, ending only for an
+      // account change. Going back is this screen's own step either way.
+      action = actionScope.capture({ endsWithScreen: pickedAvatar != null });
     } catch {
       return;
     }
     savingRef.current = true;
     setIsSaving(true);
     try {
+      // Only what the climber changed. A form reopened before an earlier save
+      // landed still shows the old name, and sending it would undo that save.
       const input: UpdateProfileInput = {};
-      if (trimmedName.length > 0) {
+      if (trimmedName.length > 0 && trimmedName !== savedName) {
         input.displayName = trimmedName;
       }
 
-      // The upload, the save and their toasts are the climber's own and follow
-      // the action's owner: on native they finish after a swipe back, and stop
-      // only for an account change. Going back is this screen's own step.
       let avatarUploadFailed = false;
       let assertOriginalUpload: (() => void) | undefined;
       if (pickedAvatar) {
