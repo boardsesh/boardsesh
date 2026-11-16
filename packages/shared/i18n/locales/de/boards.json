@@ -312,6 +312,7 @@
       "lookingBody": "Stell dich nah ans Board. Eingeschaltete Boards erscheinen hier.",
       "gymWalls": "{{gym}} · {{count}} Boards",
       "closest": "Am nächsten",
+      "showAll": "Alle {{count}} Boards anzeigen",
       "moonboardTitle": "Ein MoonBoard ist in Reichweite",
       "moonboardBody": "MoonBoards senden keine Seriennummer. Sag uns, wo du bist, dann finden wir dieses.",
       "typeTitle": "Ein {{board}} Board ist in Reichweite",

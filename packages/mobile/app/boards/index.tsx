@@ -1,4 +1,5 @@
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
+import { toBoardName } from '@boardsesh/board-config';
 import { useIsFocused, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -314,6 +315,25 @@ export default function BoardSelection() {
   // they bind, and use the hold, before this unmounts; anything after the
   // picker closes is about some other box.
   useEffect(() => clearPendingBoardRecognition, []);
+  // The board type "Use my location" filtered Near you to while it held the
+  // box its row stood for. A Near you pick of that type, with that filter still
+  // on, is the one pick on this screen that may name the box: it is what the
+  // hold is for here. Every other pick drops the hold first (`pickBoard`), so a
+  // box the climber walked away from is never named after the board they
+  // picked instead.
+  const nearbyPickNamesHeldBox = useRef<BoardName | null>(null);
+  const dropHeldBox = useCallback(() => {
+    nearbyPickNamesHeldBox.current = null;
+    clearPendingBoardRecognition();
+  }, []);
+  // Back on the picker after the builder or the gym map: a bind there closes
+  // or replaces the picker, so coming back means that flow was abandoned, and
+  // its box with it.
+  const wasFocused = useRef(isFocused);
+  useEffect(() => {
+    if (isFocused && !wasFocused.current) dropHeldBox();
+    wasFocused.current = isFocused;
+  }, [isFocused, dropHeldBox]);
 
   // Both the "At a gym" choice and Near you offer Open Settings after a
   // denial, so a second tap has to be able to ask again: a climber coming back
@@ -419,10 +439,18 @@ export default function BoardSelection() {
   // detail sheet's Climb here. The scan ends first, so a pick never leaves the
   // radio running (the bind may connect next, and a phone holding a board link
   // must not scan). An unfinished wall opens its import instead of binding,
-  // and a board being edited, unfollowed or deleted is not picked at all.
+  // and a board being edited, unfollowed or deleted is not picked at all. A
+  // held box goes too, unless this is the Near you pick it was held for
+  // (`nearbyPickNamesHeldBox`).
   const pickBoard = useCallback(
     (board: UserBoard, pickSource: BoardPickSource) => {
       if (boardActionsInFlight.current.has(board.uuid)) return;
+      const namesHeldBox =
+        pickSource === 'nearby' &&
+        nearbyBoardType !== null &&
+        nearbyPickNamesHeldBox.current === nearbyBoardType &&
+        toBoardName(board.boardType) === nearbyBoardType;
+      if (!namesHeldBox) dropHeldBox();
       stopScan();
       const importRoute = unfinishedSprayWallRoute(board, unfinishedWallUuids);
       if (importRoute) {
@@ -431,7 +459,7 @@ export default function BoardSelection() {
       }
       void activateBoard(board, { pickSource });
     },
-    [stopScan, unfinishedWallUuids, router, activateBoard],
+    [nearbyBoardType, dropHeldBox, stopScan, unfinishedWallUuids, router, activateBoard],
   );
 
   // myBoards / nearby items carry the original UserBoard via uuid; look it up to
@@ -903,8 +931,7 @@ export default function BoardSelection() {
       if (!row) return;
       chooseFirstBoardPath('scan');
       // A box held from an earlier tap on a row it couldn't name is not this
-      // board: the climber picked one the phone can name instead.
-      clearPendingBoardRecognition();
+      // board: `pickBoard` drops it for every pick but the Near you one.
       pickBoard(row.board, 'bluetooth');
     },
     [inRangeRowsByKey, chooseFirstBoardPath, pickBoard],
@@ -916,23 +943,28 @@ export default function BoardSelection() {
   // box stands behind the row, and the scan listened long enough for "one" to
   // mean one: read before `stop()`, which ends the listening. The bind keeps
   // `source`, so it still closes out first-run. Location is asked on the tap,
-  // never when the scan finds the board.
+  // never when the scan finds the board. The row acted on last is the box the
+  // climber is at, so a row with no single box drops an older hold. Returns
+  // whether it holds a box.
   const startUnnamedRowAction = useCallback(
-    (row: UnnamedInRangeRow) => {
+    (row: UnnamedInRangeRow): boolean => {
       const soleBoxHeardLongEnough = listenedLongEnough();
       stopScan();
       chooseFirstBoardPath('scan');
-      if (row.kind !== 'unknown_setup' && row.deviceId && soleBoxHeardLongEnough) {
-        setPendingBoardRecognition({ deviceId: row.deviceId, boardType: row.boardType });
-      }
+      dropHeldBox();
+      if (row.kind === 'unknown_setup' || !row.deviceId || !soleBoxHeardLongEnough) return false;
+      setPendingBoardRecognition({ deviceId: row.deviceId, boardType: row.boardType });
+      return true;
     },
-    [listenedLongEnough, stopScan, chooseFirstBoardPath],
+    [listenedLongEnough, stopScan, chooseFirstBoardPath, dropHeldBox],
   );
   // "Use my location": the boards near the climber, of that type only. In
-  // first-board mode they show under "At a gym", elsewhere in Near you.
+  // first-board mode they show under "At a gym", elsewhere in Near you. A pick
+  // from that filtered list is the one that may name the held box.
   const onInRangeUseMyLocation = useCallback(
     (row: UnnamedInRangeRow) => {
-      startUnnamedRowAction(row);
+      const holdsBox = startUnnamedRowAction(row);
+      nearbyPickNamesHeldBox.current = holdsBox ? row.boardType : null;
       setNearbyFilter({ boardType: row.boardType, inFirstBoardChoice: showFirstBoardChoice });
       if (showFirstBoardChoice) setGymChosen(true);
       searchNearby();

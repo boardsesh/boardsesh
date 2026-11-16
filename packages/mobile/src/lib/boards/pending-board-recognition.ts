@@ -7,7 +7,10 @@
 // you list, the gym map, or the builder. Whichever one binds a board of the
 // box's type next, on any of those routes, is the board that box is: the bind
 // (`useActivateBoard`) hands it to `rememberRecognizedBoardDevice`, and the next
-// picker open names the box straight away.
+// picker open names the box straight away. Back on the picker, only a pick from
+// the Near you list "Use my location" filtered keeps the hold; any other pick,
+// and coming back from the gym map or the builder without a bind, drops it
+// (app/boards/index.tsx).
 //
 // Module state, not React state: the routes that bind do not share a provider
 // with the picker, and the answer only has to outlive one trip through them.

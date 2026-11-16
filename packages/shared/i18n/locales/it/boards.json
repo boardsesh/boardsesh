@@ -312,6 +312,7 @@
       "lookingBody": "Avvicinati al pannello. I pannelli accesi compaiono qui.",
       "gymWalls": "{{gym}} · {{count}} pannelli",
       "closest": "Il più vicino",
+      "showAll": "Mostra tutti e {{count}} i pannelli",
       "moonboardTitle": "C'è una MoonBoard a portata",
       "moonboardBody": "Le MoonBoard non trasmettono un numero di serie, quindi dicci dove sei e la troveremo.",
       "typeTitle": "C'è un pannello {{board}} a portata",

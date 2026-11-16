@@ -312,6 +312,7 @@
       "lookingBody": "Approche-toi de la board. Les boards sous tension s'affichent ici.",
       "gymWalls": "{{gym}} · {{count}} boards",
       "closest": "La plus proche",
+      "showAll": "Voir les {{count}} boards",
       "moonboardTitle": "Une MoonBoard est à portée",
       "moonboardBody": "Les MoonBoard n'indiquent pas leur numéro de série : dis-nous où tu es et on la retrouvera.",
       "typeTitle": "Une board {{board}} est à portée",

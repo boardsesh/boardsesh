@@ -19,6 +19,8 @@ import type { InRangeAlso, InRangeView, UnnamedInRangeRow } from './in-range-vie
 const HERO_ART_SIZE = 88;
 /** Side of a row's board art, in points. */
 const ROW_ART_SIZE = 52;
+/** Board rows shown before "Show all": the strongest signals. */
+const COLLAPSED_ROW_COUNT = 3;
 
 export type InRangeBoardArtProps = { item: DiscoveryBoardItem; size: number };
 
@@ -350,17 +352,34 @@ function BoardRows({
   BoardArt: ComponentType<InRangeBoardArtProps>;
   onPick: (item: DiscoveryBoardItem) => void;
 }) {
-  const { systemColors } = useTheme();
-  // A handful of rows at most (the boards one phone hears at once), so a map
-  // rather than a list.
+  const { t } = useTranslation('boards');
+  const { systemColors, brandColors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const expand = useCallback(() => setExpanded(true), []);
+  // The slot sits in the picker's ScrollView, where a virtualised list can't
+  // nest, and nothing caps how many boards a scan names (a big gym can hold a
+  // dozen). So only the strongest few mount until the climber asks for the
+  // rest, as the gym-walls switcher does.
+  const shownItems = expanded ? items : items.slice(0, COLLAPSED_ROW_COUNT);
+  const separator = <View style={[styles.separator, { backgroundColor: systemColors.separator }]} />;
   return (
     <View style={[styles.rowsBlock, { backgroundColor: systemColors.secondaryBackground }]}>
-      {items.map((item, index) => (
+      {shownItems.map((item, index) => (
         <View key={item.key}>
-          {index > 0 ? <View style={[styles.separator, { backgroundColor: systemColors.separator }]} /> : null}
+          {index > 0 ? separator : null}
           <InRangeBoardRowView item={item} closest={markClosest && index === 0} BoardArt={BoardArt} onPick={onPick} />
         </View>
       ))}
+      {shownItems.length < items.length ? (
+        <>
+          {separator}
+          <PressableSurface onPress={expand} accessibilityRole="button" style={styles.showAll}>
+            <Text variant="subheadline" color={brandColors.primary}>
+              {t('mobile.inRange.showAll', { count: items.length })}
+            </Text>
+          </PressableSurface>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -654,6 +673,12 @@ const styles = StyleSheet.create({
   separator: {
     height: StyleSheet.hairlineWidth,
     marginLeft: ROW_ART_SIZE + spacing[3],
+  },
+  // Lined up with the row titles above it, at a full tap height.
+  showAll: {
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingLeft: ROW_ART_SIZE + spacing[3],
   },
   pill: {
     paddingHorizontal: spacing[2],

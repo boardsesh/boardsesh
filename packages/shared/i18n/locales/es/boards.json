@@ -312,6 +312,7 @@
       "lookingBody": "Acércate al plafón. Los plafones encendidos aparecen aquí.",
       "gymWalls": "{{gym}} · {{count}} plafones",
       "closest": "Más cerca",
+      "showAll": "Ver los {{count}} plafones",
       "moonboardTitle": "Hay un MoonBoard al alcance",
       "moonboardBody": "Los MoonBoard no envían número de serie, así que dinos dónde estás y encontraremos este.",
       "typeTitle": "Hay un plafón {{board}} al alcance",

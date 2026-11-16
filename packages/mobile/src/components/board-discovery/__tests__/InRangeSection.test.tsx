@@ -277,6 +277,33 @@ describe('InRangeSection', () => {
     expect(screen.queryByText(/walls$/)).toBeNull();
   });
 
+  // Nothing caps how many boards a scan names, and the slot sits in a
+  // ScrollView: only the strongest three mount until the climber asks, under
+  // any lead.
+  const EIGHT_WALLS: DiscoveryBoardItem[] = Array.from({ length: 8 }, (_unused, wallIndex) => ({
+    ...KILTER,
+    key: `board:wall-${wallIndex + 1}`,
+    title: `Wall ${wallIndex + 1}`,
+  }));
+  it.each<{ name: string; content: InRangeContent<DiscoveryBoardItem> }>([
+    { name: 'named boards', content: { kind: 'board_rows', boards: EIGHT_WALLS, gymName: 'Crux', also: null } },
+    { name: 'boards behind a box it cannot name', content: { kind: 'unnamed', row: MOONBOARD, boards: EIGHT_WALLS } },
+    { name: 'boards behind a failed lookup', content: { kind: 'lookup_failed', boards: EIGHT_WALLS } },
+  ])('shows the strongest three of eight $name, then all eight after Show all', ({ content }) => {
+    const { container } = renderSlot(content);
+    const shownWalls = () => [...container.querySelectorAll('[data-art]')].map((art) => art.getAttribute('data-art'));
+    expect(shownWalls()).toEqual(['board:wall-1', 'board:wall-2', 'board:wall-3']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 8 boards' }));
+    expect(shownWalls()).toHaveLength(8);
+    expect(screen.queryByRole('button', { name: 'Show all 8 boards' })).toBeNull();
+  });
+
+  it('offers no Show all when every board already shows', () => {
+    renderSlot({ kind: 'board_rows', boards: EIGHT_WALLS.slice(0, 3), gymName: 'Crux', also: null });
+    expect(screen.queryByRole('button', { name: /^Show all/ })).toBeNull();
+  });
+
   it.each<{ row: UnnamedInRangeRow; title: string; body: string }>([
     {
       row: MOONBOARD,

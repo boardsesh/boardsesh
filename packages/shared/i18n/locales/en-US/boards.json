@@ -312,6 +312,7 @@
       "lookingBody": "Stand near the wall. Boards that are switched on show up here.",
       "gymWalls": "{{gym}} · {{count}} walls",
       "closest": "Closest",
+      "showAll": "Show all {{count}} boards",
       "moonboardTitle": "A MoonBoard is in range",
       "moonboardBody": "MoonBoards don't send a serial number, so tell us where you are and we'll find this one.",
       "typeTitle": "A {{board}} board is in range",

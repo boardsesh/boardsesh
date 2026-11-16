@@ -117,6 +117,8 @@ const state = vi.hoisted(() => ({
   nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
   autoScanEnabled: true,
+  // False while a route pushed over the picker (the builder, the gym map) is on top.
+  focused: true,
 }));
 
 const gymWall = {
@@ -152,7 +154,7 @@ vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => state.params,
-  useIsFocused: () => true,
+  useIsFocused: () => state.focused,
   useNavigation: () => navigationMock,
 }));
 
@@ -327,10 +329,28 @@ vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({ Als
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
+// The held box as the module keeps it, and what each bind remembered from it,
+// so a test can say whether a pick named the box.
+type HeldBox = { deviceId: string; boardType: string };
+const recognitionHold = vi.hoisted(() => ({
+  held: null as HeldBox | null,
+  remembered: [] as Array<{ deviceId: string; boardUuid: string }>,
+}));
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
-  setPendingBoardRecognition: setPendingRecognitionMock,
-  clearPendingBoardRecognition: clearPendingRecognitionMock,
-  consumePendingBoardRecognition: vi.fn(async () => {}),
+  setPendingBoardRecognition: (hold: HeldBox) => {
+    recognitionHold.held = hold;
+    setPendingRecognitionMock(hold);
+  },
+  clearPendingBoardRecognition: () => {
+    recognitionHold.held = null;
+    clearPendingRecognitionMock();
+  },
+  consumePendingBoardRecognition: async (board: { uuid: string; boardType: string }) => {
+    const { held } = recognitionHold;
+    if (!held || held.boardType !== board.boardType) return;
+    recognitionHold.held = null;
+    recognitionHold.remembered.push({ deviceId: held.deviceId, boardUuid: board.uuid });
+  },
 }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
@@ -380,6 +400,9 @@ beforeEach(() => {
   state.nearbyError = false;
   state.locationStatus = 'idle';
   state.autoScanEnabled = true;
+  state.focused = true;
+  recognitionHold.held = null;
+  recognitionHold.remembered = [];
   refreshLocationMock.mockResolvedValue(false);
 });
 
@@ -1002,6 +1025,94 @@ describe("the In range slot's ways forward for a board it can't name", () => {
     render(createElement(BoardSelection));
     expect(nearbyArgs.last[4]).toBeUndefined();
     expect(choice().nearbyBoardType).toBeNull();
+  });
+
+  // The box is named only by the pick it was held for: a board of its type from
+  // the Near you list "Use my location" filtered. Any other pick, or a trip off
+  // the picker that came back without a bind, drops it, so MoonBoard B is never
+  // remembered as the climber's own MoonBoard A.
+  describe('naming the held box', () => {
+    const homeMoonboard = { ...moonboardWall, uuid: 'home-moon', name: 'Home MoonBoard' } as UserBoard;
+
+    function renderOrdinaryPicker() {
+      state.params = {};
+      state.myBoards = [homeMoonboard];
+      return render(createElement(BoardSelection));
+    }
+
+    async function pickFromCarousel(key: string, title: string) {
+      await act(async () => {
+        carouselProps.byFirstKey.get(key)?.onSelect({ key, title });
+      });
+    }
+
+    it('names nothing after backing out of the builder and picking from Your boards', async () => {
+      const { rerender } = renderOrdinaryPicker();
+      act(() => {
+        inRange().onOwnBoard(MOONBOARD_ROW);
+      });
+      expect(recognitionHold.held).toEqual({ deviceId: 'MOON-BOX', boardType: 'moonboard' });
+
+      // The builder covers the picker; the climber backs out without saving.
+      state.focused = false;
+      rerender(createElement(BoardSelection));
+      state.focused = true;
+      rerender(createElement(BoardSelection));
+      expect(recognitionHold.held).toBeNull();
+
+      await pickFromCarousel('home-moon', 'Home MoonBoard');
+      expect(setActiveBoardMock).toHaveBeenCalledWith(homeMoonboard);
+      expect(recognitionHold.remembered).toEqual([]);
+    });
+
+    it('names nothing when Search gyms comes back unused', () => {
+      const { rerender } = renderOrdinaryPicker();
+      act(() => {
+        inRange().onSearchGyms(MOONBOARD_ROW);
+      });
+      state.focused = false;
+      rerender(createElement(BoardSelection));
+      state.focused = true;
+      rerender(createElement(BoardSelection));
+      expect(recognitionHold.held).toBeNull();
+    });
+
+    it('names nothing when the climber picks from Your boards after Use my location', async () => {
+      const { rerender } = renderOrdinaryPicker();
+      useMyLocation();
+      state.locationStatus = 'granted';
+      state.nearbyBoards = [moonboardWall];
+      rerender(createElement(BoardSelection));
+
+      await pickFromCarousel('home-moon', 'Home MoonBoard');
+      expect(setActiveBoardMock).toHaveBeenCalledWith(homeMoonboard);
+      expect(recognitionHold.remembered).toEqual([]);
+    });
+
+    it('names the box after the board picked from the list Use my location filtered', async () => {
+      const { rerender } = renderOrdinaryPicker();
+      useMyLocation();
+      state.locationStatus = 'granted';
+      state.nearbyBoards = [moonboardWall];
+      rerender(createElement(BoardSelection));
+
+      await pickFromCarousel('moon-wall', 'Crux MoonBoard');
+      expect(setActiveBoardMock).toHaveBeenCalledWith(moonboardWall);
+      expect(recognitionHold.remembered).toEqual([{ deviceId: 'MOON-BOX', boardUuid: 'moon-wall' }]);
+    });
+
+    it('names nothing once Show all has taken the filter off', async () => {
+      const { rerender } = renderOrdinaryPicker();
+      useMyLocation();
+      state.locationStatus = 'granted';
+      state.nearbyBoards = [moonboardWall, gymWall];
+      rerender(createElement(BoardSelection));
+      fireEvent.click(screen.getByText('mobile.discovery.nearbyShowAll'));
+
+      await pickFromCarousel('moon-wall', 'Crux MoonBoard');
+      expect(setActiveBoardMock).toHaveBeenCalledWith(moonboardWall);
+      expect(recognitionHold.remembered).toEqual([]);
+    });
   });
 
   it('opens the gym map filtered to that type from Search gyms', () => {
