@@ -1,9 +1,10 @@
-import { useHttpQuery } from '../use-http-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   BETA_LINK_PREVIEW,
   type BetaLinkPreviewQueryResponse,
   type BetaLinkPreviewQueryVariables,
 } from '@boardsesh/graphql/operations/beta-links';
+import { getHttpClient } from '../client';
 
 /**
  * Live preview of a shared Instagram/TikTok URL (thumbnail + caption) for the
@@ -15,10 +16,10 @@ import {
  * react-native into unit tests.
  */
 export function useBetaLinkPreview(link: string | undefined) {
-  return useHttpQuery({
+  return useQuery({
     queryKey: ['betaLinkPreview', link],
-    queryFn: (_context, operation) =>
-      operation.request<BetaLinkPreviewQueryResponse, BetaLinkPreviewQueryVariables>(BETA_LINK_PREVIEW, {
+    queryFn: () =>
+      getHttpClient().request<BetaLinkPreviewQueryResponse, BetaLinkPreviewQueryVariables>(BETA_LINK_PREVIEW, {
         link: link!,
       }),
     select: (data) => data.betaLinkPreview,
