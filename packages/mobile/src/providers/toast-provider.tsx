@@ -14,6 +14,7 @@ import { Platform, StyleSheet, View } from 'react-native';
 import { Toast, type ToastVariant, type ToastData, type ToastGuard, isToastGuardCurrent } from '../components/Toast';
 import { hapticSuccess, hapticError } from '../lib/haptics';
 import { announceQueued } from '../lib/announce-queued';
+import { isBrowserPageRetired } from '../lib/browser-page-retirement';
 
 const MAX_VISIBLE_TOASTS = 2;
 const DEFAULT_DURATION = 3000;
@@ -60,6 +61,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   toastsRef.current = toasts;
 
   const showToast = useCallback((message: string, variant: ToastVariant = 'info', duration = DEFAULT_DURATION) => {
+    // A browser page whose account left is cleaning up before it reloads; a
+    // late result from that account must not speak (#7596). Native never asks.
+    if (Platform.OS === 'web' && isBrowserPageRetired()) return;
     const id = String(++nextId);
     const toast: ToastData = { id, message, variant, duration };
 
@@ -83,6 +87,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const showGuardedToast = useCallback(
     (message: string, variant: ToastVariant, guard: ToastGuard, duration = DEFAULT_DURATION) => {
+      if (Platform.OS === 'web' && isBrowserPageRetired()) {
+        guard.release();
+        return;
+      }
       const id = String(++nextId);
       const toast = Object.freeze({ id, message, variant, duration, guard });
       registrations.current.set(id, { toast, feedback: false });

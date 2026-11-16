@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 
 const native = vi.hoisted(() => ({
-  os: 'ios' as 'ios' | 'android',
+  os: 'ios' as 'ios' | 'android' | 'web',
   announce: vi.fn(),
   announceWithOptions: vi.fn() as ReturnType<typeof vi.fn> | undefined,
 }));
@@ -53,6 +53,13 @@ vi.mock('../../components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 
+// The Expo web page latch (#7596). Native resolves the constant-false twin;
+// here it is controllable so a test can prove native never reads it.
+const pageRetirement = vi.hoisted(() => ({ retired: false, isRetired: vi.fn() }));
+vi.mock('../../lib/browser-page-retirement', () => ({
+  isBrowserPageRetired: () => pageRetirement.isRetired(),
+}));
+
 const haptics = vi.hoisted(() => ({ hapticError: vi.fn(), hapticSuccess: vi.fn() }));
 vi.mock('../../lib/haptics', () => haptics);
 
@@ -79,6 +86,9 @@ function ToastLauncher({ variant = 'success' }: { variant?: 'success' | 'error' 
 
 beforeEach(() => {
   native.os = 'ios';
+  pageRetirement.retired = false;
+  pageRetirement.isRetired.mockReset();
+  pageRetirement.isRetired.mockImplementation(() => pageRetirement.retired);
   native.announce.mockClear();
   native.announceWithOptions = vi.fn();
   haptics.hapticSuccess.mockClear();
@@ -141,5 +151,44 @@ describe('ToastProvider feedback', () => {
     );
     expect(haptics.hapticSuccess).toHaveBeenCalledTimes(1);
     expect(haptics.hapticError).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ToastProvider on a retired browser page', () => {
+  it('stays silent on a web page whose account left', () => {
+    native.os = 'web';
+    pageRetirement.retired = true;
+    const { container } = render(
+      <ToastProvider>
+        <ToastLauncher variant="error" />
+      </ToastProvider>,
+    );
+
+    expect(container.textContent).not.toContain('Saved');
+    expect(haptics.hapticError).not.toHaveBeenCalled();
+  });
+
+  it('still shows toasts on a live web page', () => {
+    native.os = 'web';
+    const { container } = render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+
+    expect(container.textContent).toContain('Saved');
+  });
+
+  it.each(['ios', 'android'] as const)('never reads the latch on %s', (os) => {
+    native.os = os;
+    pageRetirement.retired = true;
+    const { container } = render(
+      <ToastProvider>
+        <ToastLauncher />
+      </ToastProvider>,
+    );
+
+    expect(container.textContent).toContain('Saved');
+    expect(pageRetirement.isRetired).not.toHaveBeenCalled();
   });
 });

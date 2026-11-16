@@ -11,6 +11,13 @@ import { readBrowserBackendSessionScope } from '@boardsesh/auth-protocol/browser
 import { expoBrowserBackendClient } from './browser-backend-client.web';
 import { publicExpoBrowserConsumersReady } from './browser-consumer-readiness.web';
 import { coordinateExpoBrowserSession } from './browser-coordinator-client.web';
+import {
+  hasBrowserPageIdentity,
+  isBrowserPageRetired,
+  observeConfirmedBrowserIdentity,
+  reloadRetiredBrowserPage,
+  retireBrowserPageForSignOut,
+} from './browser-page-retirement.web';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -71,8 +78,11 @@ let synchronization: {
   promise: Promise<AuthSessionResult>;
 } | null = null;
 const authTokenChangeListeners = new Set<AuthTokenChangeListener>();
+let lastSessionReadAt = Number.NEGATIVE_INFINITY;
 
 const SESSION_SYNCHRONIZATION_TIMEOUT_MS = 15_000;
+/** Focus re-reads at most this often; every NextAuth session GET rewrites its cookie today. */
+const FOCUS_SESSION_RECHECK_INTERVAL_MS = 30_000;
 const MAX_IDENTITY_PAIR_ATTEMPTS = 3;
 const AUTH_TOKEN_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
@@ -181,6 +191,8 @@ function createAuthTokenChannel(): BroadcastChannel | null {
           clearInMemoryTokens('remote');
           return;
         }
+        // Another tab durably signed this page's account out.
+        retireBrowserPageForSignOut();
         clearInMemoryTokens('remote-signout');
       } catch {
         // A malformed or late page-teardown event cannot break auth startup.
@@ -220,6 +232,63 @@ function createNextAuthStorageListener(): void {
 
 createNextAuthStorageListener();
 
+/**
+ * Who the shared cookie belongs to now, read from ws-auth, which never sets a
+ * cookie (the NextAuth session GET rewrites it). `undefined` means unknown: an
+ * outage is never evidence of a change.
+ */
+async function readCookieIdentityWithoutCookieWrite(): Promise<WebAuthIdentity | null | undefined> {
+  try {
+    const response = await fetch(webApiUrl('/api/internal/ws-auth'), {
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return undefined;
+    const payload: unknown = await response.json();
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return undefined;
+    const candidate = payload as WsAuthResponse;
+    if (candidate.authenticated === false) return null;
+    if (candidate.authenticated !== true) return undefined;
+    return readWebAuthIdentity(candidate) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Ask the provider for a full re-read only when the cookie moved to another login. */
+async function recheckSessionIdentity(): Promise<void> {
+  lastSessionReadAt = Date.now();
+  const generation = sessionGeneration;
+  const observed = await readCookieIdentityWithoutCookieWrite();
+  if (observed === undefined || generation !== sessionGeneration) return;
+  if (confirmedSessionIdentity !== undefined && sameIdentity(confirmedSessionIdentity, observed)) return;
+  notifyAuthTokenChange(backendToken, 'hint');
+}
+
+function createSessionRecheckListeners(): void {
+  if (typeof window === 'undefined') return;
+  // app.boardsesh.com and www are different origins, so a login or sign-out on
+  // www reaches this page only through these re-reads (visibilitychange is
+  // already an AppState re-read in the provider).
+  window.addEventListener('focus', () => {
+    if (Date.now() - lastSessionReadAt < FOCUS_SESSION_RECHECK_INTERVAL_MS) return;
+    void recheckSessionIdentity();
+  });
+  window.addEventListener('pageshow', (event: PageTransitionEvent) => {
+    // Back/forward cache restored this document with its old account tree and
+    // memory token. A retired page reloads; a live one re-reads at once.
+    if (!event.persisted || !hasBrowserPageIdentity()) return;
+    if (isBrowserPageRetired()) {
+      reloadRetiredBrowserPage();
+      return;
+    }
+    void recheckSessionIdentity();
+  });
+}
+
+createSessionRecheckListeners();
+
 function unavailable(
   error: unknown,
   confirmedIdentity?: WebAuthIdentity,
@@ -249,6 +318,8 @@ function rotateForConfirmedIdentity(
   identity: WebAuthIdentity | null,
   generation: number,
 ): { generation: number; changed: boolean } {
+  // Before any listener runs, so every transport already sees a retired page.
+  observeConfirmedBrowserIdentity(identity);
   if (confirmedSessionIdentity === undefined) {
     confirmedSessionIdentity = identity;
     if (identity === null) backendToken = null;
@@ -528,6 +599,7 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
   if (synchronization?.generation === sessionGeneration) return synchronization.promise;
 
   const generation = sessionGeneration;
+  lastSessionReadAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(new Error('Authentication session synchronization timed out')),
