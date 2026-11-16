@@ -27,6 +27,10 @@ export type ClimbOverlayGPUNativeProps = ViewProps & {
 export type ClimbOverlayGPUFrameProps = ClimbOverlayGPUNativeProps & {
   /** configJson must contain frames: ''; only this prop changes per climb. */
   frames: string;
+  /** v4/asset API v1: captured once per static configuration, never per frame. */
+  geometryAssetPath?: string | null;
+  geometryAssetSha256?: string | null;
+  generatedGeometryDirectory?: string | null;
 };
 
 /** v3 keeps the wall fixed while the gesture changes its lit holds. */
@@ -60,14 +64,21 @@ export type ClimbOverlayGPUComparison = {
 
 const nativeModule = requireOptionalNativeModule<{
   apiVersion?: number;
+  assetApiVersion?: number;
   compare?(configJson: string): Promise<ClimbOverlayGPUComparison>;
 }>('ClimbOverlayGPU');
 
+/** Older binaries keep their compatible locally generated rendering path. */
+export const climbOverlayGeometryAssetApiVersion =
+  typeof nativeModule?.assetApiVersion === 'number' && Number.isFinite(nativeModule.assetApiVersion)
+    ? nativeModule.assetApiVersion
+    : 0;
+
 // A binary can support live rendering without the optional diagnostic readback.
-const nativeCompare = nativeModule?.compare;
+const nativeCompare = typeof nativeModule?.compare === 'function' ? nativeModule.compare.bind(nativeModule) : null;
 export const compareClimbOverlayGPU =
   typeof nativeCompare === 'function'
-    ? (configJson: string): Promise<ClimbOverlayGPUComparison> => nativeCompare.call(nativeModule, configJson)
+    ? (configJson: string): Promise<ClimbOverlayGPUComparison> => nativeCompare(configJson)
     : null;
 
 export const NativeClimbOverlayGPU: ComponentType<ClimbOverlayGPUNativeProps> | null = nativeModule

@@ -70,6 +70,7 @@ import { OwnedSprayWallsOfflinePin } from './components/owned-spray-walls-offlin
 import { ConnectivityBridge } from './components/connectivity-bridge';
 import { useMobileClimbActionsData } from './lib/graphql/hooks';
 import { useActiveBoard } from './lib/graphql/use-active-board';
+import { useAuraGeometryPrefetch } from './lib/aura-assets/use-aura-geometry-prefetch';
 import { useActiveBoardSelfHeal } from './lib/boards/use-active-board-self-heal';
 import { useActiveBoardFollowHeal } from './lib/boards/use-active-board-follow-heal';
 import { ensurePlayDrawerSectionsLoaded } from './lib/play-drawer-sections-preference';
@@ -249,6 +250,7 @@ function ClimbActionsDataWrapper({ children }: { children: ReactNode }) {
 // than send an empty `boardType`.
 function BoardProviderWrapper({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
+  useAuraGeometryPrefetch(activeBoard);
   // Reconcile a stored active board that a server-side merge collapsed away
   // after hydration and whenever the app returns to the foreground.
   useActiveBoardSelfHeal();

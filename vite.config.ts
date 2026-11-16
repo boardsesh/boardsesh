@@ -705,6 +705,14 @@ export default defineConfig({
         command: 'tsx scripts/generate-static-assets.ts',
         cache: false,
       },
+      'generate:aura-geometry': {
+        command: 'node --import tsx scripts/prebuild-aura-geometry.ts',
+        cache: false,
+      },
+      'publish:aura-geometry': {
+        command: 'node --import tsx scripts/prebuild-aura-geometry.ts --publish',
+        cache: false,
+      },
       'check:static-assets': {
         command: 'tsx scripts/generate-static-assets.ts --check',
         cache: false,

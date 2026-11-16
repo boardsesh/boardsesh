@@ -2196,7 +2196,15 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     // Homewall's four calibrated roles only. The general Kilter map includes
     // other products that this layout never uses, wasting atlas role stamps.
     const holdStateMap = Object.fromEntries([42, 43, 44, 45].map((code) => [code, roleMap[code]]));
-    return { holdIds, json: JSON.stringify({ ...boardConfig.configBase, hold_state_map: holdStateMap, frames: '' }) };
+    return {
+      holdIds,
+      json: JSON.stringify({
+        ...boardConfig.configBase,
+        hold_state_map: holdStateMap,
+        frames: '',
+        geometry_cache_scope: `${boardName}/${layoutId}-${sizeId}`,
+      }),
+    };
   }, [
     gpuSurface,
     filledStyle,

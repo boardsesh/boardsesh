@@ -78,6 +78,7 @@ vi.mock('../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEna
 vi.mock('../../hooks/use-board-accessibility-summary', () => ({ useBoardAccessibilitySummary: () => 'Board' }));
 vi.mock('../board/MoonBoardGridLabels', () => ({ MoonBoardGridLabels: () => null }));
 vi.mock('../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGeometryAssetApiVersion: 0,
   get NativeMotionClimbOverlayGPU() {
     return controls.nativeAvailable && controls.motionAvailable ? NativeView : null;
   },

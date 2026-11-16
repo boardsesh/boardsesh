@@ -1,0 +1,60 @@
+name: Aura Geometry
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Upload immutable geometry, verify storage and CDN bytes, then export the verified manifest.'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aura-geometry
+  cancel-in-progress: false
+
+jobs:
+  prebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: Production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version: '22.x'
+          cache: false
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Generate all 51 configurations twice
+        if: inputs.publish != true
+        run: vp run generate:aura-geometry -- --out "$RUNNER_TEMP/aura-geometry"
+
+      - name: Generate, publish immutable objects, and verify all CDN bytes
+        if: inputs.publish == true
+        env:
+          STATIC_ASSETS_S3_BUCKET_NAME: ${{ secrets.STATIC_ASSETS_S3_BUCKET_NAME }}
+          STATIC_ASSETS_AWS_ACCESS_KEY_ID: ${{ secrets.STATIC_ASSETS_AWS_ACCESS_KEY_ID }}
+          STATIC_ASSETS_AWS_SECRET_ACCESS_KEY: ${{ secrets.STATIC_ASSETS_AWS_SECRET_ACCESS_KEY }}
+          STATIC_ASSETS_AWS_ENDPOINT_URL: ${{ secrets.STATIC_ASSETS_AWS_ENDPOINT_URL }}
+          STATIC_ASSETS_AWS_REGION: ${{ secrets.STATIC_ASSETS_AWS_REGION }}
+        run: >-
+          vp run publish:aura-geometry --
+          --out "$RUNNER_TEMP/aura-geometry"
+          --release-manifest "$RUNNER_TEMP/aura-geometry/manifest.verified.json"
+
+      - name: Save manifest and preparation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: aura-geometry-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/aura-geometry/manifest.*.json
+            ${{ runner.temp }}/aura-geometry/generation-report.json

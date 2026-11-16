@@ -5,6 +5,7 @@ import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 vi.mock('../../../providers/feature-flags-provider', () => ({ useGpuClimbOverlayEnabled: () => false }));
 vi.mock('../../../../modules/climb-overlay-gpu/src', () => ({
+  climbOverlayGeometryAssetApiVersion: 0,
   NativeFrameClimbOverlayGPU: null,
   NativeMotionClimbOverlayGPU: null,
 }));
