@@ -14,13 +14,17 @@
 // open -> closed moves it back to the outer one. Progress lines go to the file
 // named by BOARDSESH_DUO_HINGE_LOG.
 //
-// Simulator-only test plumbing. It never ships in the app and runs in no
-// process but the simulator's SpringBoard.
+// Simulator-only test plumbing. It never ships in the app. Functional hooks
+// run only in SpringBoard; constructor entry diagnostics identify other loads.
 
 #import <Foundation/Foundation.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <notify.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 // Mirrors the struct SBDisplayToolServiceCoordinator's
 // performDisplaySwapWithSettings:completion: takes ({qdqqBqdd}). Only the
@@ -58,7 +62,19 @@ static id BoardseshDuoInit(id self, SEL _cmd, id contentMode, id poseProvider, i
 }
 
 __attribute__((constructor)) static void BoardseshDuoHingeLoad(void) {
-  if (![[[NSProcessInfo processInfo] processName] isEqualToString:@"SpringBoard"]) return;
+  // Global injection also reaches launchctl and other services. Reject them without Foundation.
+  const char *processName = getprogname();
+  const int isSpringBoard = processName && strcmp(processName, "SpringBoard") == 0;
+  const char *logPath = getenv("BOARDSESH_DUO_HINGE_LOG");
+  if (logPath) {
+    FILE *file = fopen(logPath, "a");
+    if (file) {
+      fprintf(file, "entry process=%s pid=%d\n", processName ? processName : "unknown", (int)getpid());
+      if (!isSpringBoard) fprintf(file, "return non-SpringBoard pid=%d\n", (int)getpid());
+      fclose(file);
+    }
+  }
+  if (!isSpringBoard) return;
   Class coordinatorClass = objc_getClass("SBDisplayToolServiceCoordinator");
   SEL initSelector = sel_registerName(
       "initWithDisplayContentModeCoordinator:devicePoseProvider:windowSceneManager:displayYoinkingCoordinator:");

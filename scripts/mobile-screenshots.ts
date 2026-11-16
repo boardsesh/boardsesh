@@ -191,7 +191,14 @@ import { readIosCampaignPrimaryCapture, type IosCampaignPrimaryCapture } from '.
 import { iosCampaignPhoneScene, iosCampaignDuoScene } from './lib/ios-campaign-phone-scenes';
 import { SEARCH_CLIMBS } from '../packages/mobile/src/lib/graphql/operations';
 import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shared/climb-filters/src/filter-state';
-import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
+import {
+  buildDuoHingeLibrary,
+  captureDuoDisplay,
+  duoHingeLogPath,
+  installDuoHinge,
+  pngIsLit,
+  setDuoPose,
+} from './lib/ios-duo-hinge';
 import { launchIosCaptureReady, waitForIosCaptureReady } from './lib/ios-capture-ready';
 import { bootIosCaptureDevice } from './lib/ios-capture-boot';
 import { snapshotCaptureLogs, waitForCaptureLogLine, type CaptureLogBoundary } from './lib/capture-readiness-logs';
@@ -2935,7 +2942,7 @@ function normalizeCapturedIosScreenshots(captureDir: string, screenshotDevice: I
 
 /** Load the hinge library into the Duo's SpringBoard and start closed. Returns its log path. */
 function prepareDuoHinge(udid: string): string {
-  const logPath = join(tmpdir(), `boardsesh-duo-hinge-${udid}.log`);
+  const logPath = duoHingeLogPath(udid);
   console.log(`${LOG} Loading the Duo hinge helper into SpringBoard...`);
   installDuoHinge(udid, buildDuoHingeLibrary(join(tmpdir(), 'boardsesh-duo-hinge')), logPath);
   setDuoPose(udid, 'closed', logPath);
