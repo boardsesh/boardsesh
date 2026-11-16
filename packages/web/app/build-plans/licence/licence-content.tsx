@@ -24,15 +24,14 @@ const VOLUME_EMAIL = 'mailto:support@boardsesh.com';
  * separated by a rule instead of by twelve cards — and the only colour is the
  * violet on the links.
  *
- * The DRAFT banner is the first thing in the document flow because the text has
- * not been through an Australian IP lawyer yet, and someone landing here from a
- * purchase flow has to see that before they read a price.
+ * The beta keeps its DRAFT notice until the server selects the public release.
+ * Public copy removes editorial draft wording without changing the terms.
  *
  * Clause numbers come from the catalog strings ("3. Personal licence (A$149)"),
  * not from a CSS counter: those numbers are part of the licence a buyer may
  * quote back at us, so they belong in the translated text.
  */
-export default function LicenceContent() {
+export default function LicenceContent({ publicRelease = false }: { publicRelease?: boolean }) {
   const { t } = useTranslation('cnc-legal');
 
   const definitions = [
@@ -197,7 +196,7 @@ export default function LicenceContent() {
     {
       id: 'governing-law',
       title: t('licence.governingLaw.title'),
-      body: renderParagraphs([t('licence.governingLaw.body')]),
+      body: renderParagraphs([publicRelease ? t('licence.governingLaw.publicBody') : t('licence.governingLaw.body')]),
     },
     {
       id: 'contact',
@@ -218,10 +217,12 @@ export default function LicenceContent() {
       intro={t('licence.intro.p1')}
       eyebrow={<BackButton fallbackUrl="/build-plans" />}
     >
-      <Alert severity="warning" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
-        <AlertTitle>{t('licence.draft.title')}</AlertTitle>
-        {t('licence.draft.body')}
-      </Alert>
+      {!publicRelease && (
+        <Alert severity="warning" sx={{ borderRadius: 'var(--border-radius-lg)' }}>
+          <AlertTitle>{t('licence.draft.title')}</AlertTitle>
+          {t('licence.draft.body')}
+        </Alert>
+      )}
 
       <Box className={styles.licenceLayout}>
         <Box component="nav" aria-label={t('licence.contents')} className={styles.licenceToc}>
@@ -258,7 +259,7 @@ export default function LicenceContent() {
             ))}
           </Box>
           <Typography variant="body2" component="p" className={styles.licenceFooter}>
-            {t('licence.footer')}
+            {publicRelease ? t('licence.publicFooter') : t('licence.footer')}
           </Typography>
         </SectionCard>
       </Box>

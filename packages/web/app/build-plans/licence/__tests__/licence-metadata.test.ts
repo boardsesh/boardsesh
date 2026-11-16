@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
+import type { ReactElement } from 'react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test';
 import enCncLegal from '@boardsesh/i18n/locales/en-US/cnc-legal.json';
 
 vi.mock('server-only', () => ({}));
@@ -46,8 +47,10 @@ function mockLocale(locale: string) {
 }
 
 beforeEach(() => {
+  vi.stubEnv('CNC_RELEASE_MODE', undefined);
   getServerTranslation.mockReset();
   getServerFeatureFlag.mockReset();
+  getPosthogDistinctId.mockReset();
   notFound.mockReset();
   notFound.mockImplementation(() => {
     throw new NotFoundError('NEXT_NOT_FOUND');
@@ -60,12 +63,20 @@ beforeEach(() => {
   mockLocale('en-US');
 });
 
+afterEach(() => vi.unstubAllEnvs());
+
 describe('metadata', () => {
   it('ships noindex, follow while the licence is a flag-gated draft', async () => {
     const metadata = await route.generateMetadata();
     // Both halves of the gate matter: the page also 404s when the flag is off.
     // The noindex is what keeps a DRAFT licence out of the index in the window
     // between flipping the flag on and the lawyer sign-off.
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it('keeps noindex when public publication copy is selected', async () => {
+    vi.stubEnv('CNC_RELEASE_MODE', 'public');
+    const metadata = await route.generateMetadata();
     expect(metadata.robots).toEqual({ index: false, follow: true });
   });
 
@@ -121,6 +132,50 @@ describe('feature gate', () => {
     await expect(route.default()).resolves.toBeTruthy();
     expect(notFound).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, '', 'beta', 'disabled', 'unknown', 'PUBLIC', ' public', 'public '])(
+    'retains draft copy for web release mode %j',
+    async (mode) => {
+      vi.stubEnv('CNC_RELEASE_MODE', mode);
+      const page = await route.default();
+      const content: ReactElement<{ publicRelease: boolean }> = page.props.children;
+      expect(content.props.publicRelease).toBe(false);
+    },
+  );
+
+  it('selects publication copy only for explicit web public mode', async () => {
+    vi.stubEnv('CNC_RELEASE_MODE', 'public');
+    const page = await route.default();
+    const content: ReactElement<{ publicRelease: boolean }> = page.props.children;
+    expect(content.props.publicRelease).toBe(true);
+  });
+
+  it('serves public Terms and metadata without identity or storefront flag lookups', async () => {
+    vi.stubEnv('CNC_RELEASE_MODE', 'public');
+    getServerFeatureFlag.mockResolvedValue(false);
+    getPosthogDistinctId.mockRejectedValue(new Error('Identity lookup unavailable'));
+    await expect(route.default()).resolves.toBeTruthy();
+    const metadata = await route.generateMetadata();
+    expect(metadata.title).toBeDefined();
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(getPosthogDistinctId).not.toHaveBeenCalled();
+    expect(getServerFeatureFlag).not.toHaveBeenCalled();
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '', 'beta', 'disabled', 'unknown', 'PUBLIC', ' public', 'public '])(
+    'keeps the body and metadata flag gate for non-public mode %j',
+    async (mode) => {
+      vi.stubEnv('CNC_RELEASE_MODE', mode);
+      getServerFeatureFlag.mockResolvedValue(false);
+      const metadata = await route.generateMetadata();
+      expect(metadata.title).toBeUndefined();
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+      await expect(route.default()).rejects.toBeInstanceOf(NotFoundError);
+      expect(getPosthogDistinctId).toHaveBeenCalledTimes(2);
+      expect(getServerFeatureFlag).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('evaluates the flag for the signed-in person, with allowAnonymous for everyone else', async () => {
     // Both halves are load-bearing. The distinct id has to be the session's, or

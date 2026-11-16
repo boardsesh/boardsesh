@@ -94,13 +94,15 @@
     },
     "governingLaw": {
       "title": "11. Droit applicable",
-      "body": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents. Formulation provisoire, en attente de relecture juridique."
+      "body": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents. Formulation provisoire, en attente de relecture juridique.",
+      "publicBody": "Cette licence est régie par le droit de l'État de Victoria (Australie), et les tribunaux de Victoria sont compétents."
     },
     "contact": {
       "title": "12. Contact",
       "body": "Une question sur la licence, ou une licence à faire rééditer : <mail>legal@boardsesh.com</mail>."
     },
     "footer": "Cette page est un brouillon, fournie à titre d'information, et ne constitue pas un conseil juridique.",
+    "publicFooter": "Cette page est fournie à titre d'information et ne constitue pas un conseil juridique.",
     "contents": "Sommaire"
   }
 }

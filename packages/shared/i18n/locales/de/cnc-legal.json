@@ -94,13 +94,15 @@
     },
     "governingLaw": {
       "title": "11. Anwendbares Recht",
-      "body": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria. Platzhalterformulierung, wartet auf die juristische Prüfung."
+      "body": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria. Platzhalterformulierung, wartet auf die juristische Prüfung.",
+      "publicBody": "Für diese Lizenz gilt das Recht des Bundesstaats Victoria (Australien), zuständig sind die Gerichte in Victoria."
     },
     "contact": {
       "title": "12. Kontakt",
       "body": "Fragen zur Lizenz oder eine Lizenz, die neu ausgestellt werden muss: <mail>legal@boardsesh.com</mail>."
     },
     "footer": "Diese Seite ist ein Entwurf, dient der Information und ist keine Rechtsberatung.",
+    "publicFooter": "Diese Seite dient der Information und ist keine Rechtsberatung.",
     "contents": "Inhalt"
   }
 }

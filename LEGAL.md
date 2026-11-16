@@ -84,7 +84,7 @@ Each pack is generated individually for one order, carries its own licence id, a
 
 The plans are compatible with the Kilter Homewall hole pattern. That is a statement about hole positions, not a relationship: Boardsesh is not affiliated with, endorsed by, or sponsored by Aurora Climbing or any board manufacturer. Holds, LED kits and app access are not part of a pack and are bought from the manufacturer.
 
-The licence text is a draft pending review by an Australian IP lawyer, and build plans are not on sale until that review is done.
+Owner approval of the manufacturing licence and printed plans was recorded on 2026-11-14. This records owner approval, not independent lawyer review. Build plans remain in a restricted test-user beta until actual GST registration is confirmed; public sales start only after that confirmation and the live checkout cutover. The beta licence page retains its DRAFT notice until public release mode is selected.
 
 ---
 

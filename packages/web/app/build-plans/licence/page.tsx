@@ -11,26 +11,17 @@ import I18nProvider from '@/app/components/providers/i18n-provider';
 import LicenceContent from './licence-content';
 
 export async function generateMetadata(): Promise<Metadata> {
-  // The same gate the page body runs, for the same reason: while `cnc-packs` is
-  // off this route calls `notFound()`, and describing a page that does not exist
-  // is metadata for nothing. A title and description on a 404 is worse than
-  // none — a crawler that follows a stale link gets a plausible-looking licence
-  // title attached to an error page, and share unfurls do the same to a human.
-  // So the flag-off branch keeps the robots directive and drops everything that
-  // makes a claim about content.
-  const distinctId = await getPosthogDistinctId();
-  const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
-  if (!enabled) {
-    // The same constant `createNoIndexMetadata` puts on the flag-on branch, so
-    // the two cannot drift on indexability and differ only in what they
-    // describe.
-    return { robots: NOINDEX_FOLLOW_ROBOTS };
+  // Public contract terms remain available independently of storefront rollout,
+  // account identity and PostHog. Every other mode retains the beta access gate.
+  if (process.env.CNC_RELEASE_MODE !== 'public') {
+    const distinctId = await getPosthogDistinctId();
+    const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
+    if (!enabled) return { robots: NOINDEX_FOLLOW_ROBOTS };
   }
 
   const { t, locale } = await getServerTranslation('cnc-legal');
-  // `noindex, follow` for as long as the flag gates the page: a licence that is
-  // still a draft must not be the thing Google shows for "boardsesh licence".
-  // Launch removes this line and nothing else.
+  // Beta and the initial public rollout stay noindex. Publication copy is
+  // selected independently; retiring the access flag and indexing are later work.
   return createNoIndexMetadata({
     title: t('metadata.licence.title'),
     description: t('metadata.licence.description'),
@@ -40,19 +31,19 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function BuildPlansLicencePage() {
-  // Same gate as every other `/build-plans` route. `allowAnonymous` because the
-  // licence has to be readable before you buy — and therefore before you sign
-  // in — the moment the flag goes to 100%.
-  const distinctId = await getPosthogDistinctId();
-  const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
-  if (!enabled) {
-    notFound();
+  const publicRelease = process.env.CNC_RELEASE_MODE === 'public';
+  // Select public availability before any identity lookup: Terms must also be
+  // readable while checkout is disabled or the storefront flag is rolled back.
+  if (!publicRelease) {
+    const distinctId = await getPosthogDistinctId();
+    const enabled = await getServerFeatureFlag(CNC_PACKS_FLAG, { distinctId, allowAnonymous: true });
+    if (!enabled) notFound();
   }
 
   const locale = await getLocale();
   return (
     <I18nProvider locale={locale} namespaces={['cnc-legal', 'common']}>
-      <LicenceContent />
+      <LicenceContent publicRelease={publicRelease} />
     </I18nProvider>
   );
 }

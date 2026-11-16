@@ -94,13 +94,15 @@
     },
     "governingLaw": {
       "title": "11. Legge applicabile",
-      "body": "Questa licenza è regolata dalla legge dello Stato di Victoria, Australia, e la competenza spetta ai tribunali di Victoria. Formulazione provvisoria, in attesa di revisione legale."
+      "body": "Questa licenza è regolata dalla legge dello Stato di Victoria, Australia, e la competenza spetta ai tribunali di Victoria. Formulazione provvisoria, in attesa di revisione legale.",
+      "publicBody": "Questa licenza è regolata dalla legge dello Stato di Victoria, Australia, e la competenza spetta ai tribunali di Victoria."
     },
     "contact": {
       "title": "12. Contatti",
       "body": "Per domande sulla licenza o per richiederne una nuova emissione: <mail>legal@boardsesh.com</mail>."
     },
     "footer": "Questa pagina è una bozza, è fornita a scopo informativo e non costituisce consulenza legale.",
+    "publicFooter": "Questa pagina è fornita a scopo informativo e non costituisce consulenza legale.",
     "contents": "Indice"
   }
 }
