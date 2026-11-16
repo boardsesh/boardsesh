@@ -27,6 +27,40 @@ export function classifyGpuFallback(reason: unknown): GpuFallbackReason {
   return 'render-failed';
 }
 
+// Binaries before native API 5 label no failure scope. Only these raw reasons
+// repeat for the same static config on the same binary and phone: a config or
+// atlas this build rejects, or a GPU feature the phone lacks. Everything else
+// (command errors, GPU timeouts, allocation and surface failures) can pass on
+// the next attempt, so it falls back for the current frames only.
+const DETERMINISTIC_UNSCOPED_REASONS = [
+  'invalid render config',
+  'atlas preparation rejected config',
+  'invalid atlas header',
+  'invalid atlas manifest size',
+  'invalid atlas layout',
+  'invalid atlas hold',
+  'invalid atlas vector',
+  'invalid atlas offset',
+  'gpu config too large',
+  'gpu storage or viewport limit exceeded',
+  'metal unavailable',
+  'gles3.1 required',
+  'fragment storage buffers unavailable',
+  'frame timestamp extension unavailable',
+];
+
+/** Only a 'static' scope is remembered across launches; a native label wins. */
+export function resolveGpuFailureScope(
+  nativeScope: unknown,
+  rawReason: unknown,
+  reason: GpuFallbackReason,
+): ClimbOverlayGPUFailureScope {
+  if (nativeScope === 'frame' || nativeScope === 'context' || nativeScope === 'static') return nativeScope;
+  if (reason === 'unsupported-frame') return 'frame';
+  const normalized = typeof rawReason === 'string' ? rawReason.toLowerCase() : '';
+  return DETERMINISTIC_UNSCOPED_REASONS.some((known) => normalized.includes(known)) ? 'static' : 'context';
+}
+
 const SAMPLE_RATE = 0.1;
 const MAX_DECISIONS = 128;
 const decisions = new Set<string>();

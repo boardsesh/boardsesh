@@ -17,6 +17,7 @@ import {
   classifyGpuFallback,
   reportGpuFallback,
   reportGpuPreparation,
+  resolveGpuFailureScope,
   type GpuFallbackReason,
 } from '../lib/board-render/gpu-telemetry';
 
@@ -94,6 +95,9 @@ export function GpuClimbOverlay({
   }, [requestId, onReset, appActive]);
   useEffect(() => {
     if (!appActive) return;
+    // A missed deadline says this phone was slow or the view left the screen,
+    // not that the config is broken. Fall back for these frames on this mount
+    // only; the next frames try the GPU again.
     const timeout = setTimeout(() => {
       if (!isAppActiveNow() || currentRequest.current !== requestId || answered.current) return;
       answered.current = true;
@@ -103,9 +107,9 @@ export function GpuClimbOverlay({
         { boardName, apiVersion: climbOverlayGpuApiVersion, surface: animateEdits ? 'editor' : 'player' },
         requestId,
         'presentation-timeout',
-        'static',
+        'context',
       );
-      onFailure(requestId, configJson, 'presentation-timeout', 'static');
+      onFailure(requestId, configJson, 'presentation-timeout', 'context');
     }, 10000);
     return () => clearTimeout(timeout);
   }, [requestId, configJson, onFailure, boardName, animateEdits, appActive]);
@@ -158,16 +162,7 @@ export function GpuClimbOverlay({
       if (reason === 'cancelled') return;
       answered.current = true;
       failureReported.current = true;
-      const failureScope =
-        nativeEvent.failureScope === 'frame' ||
-        nativeEvent.failureScope === 'context' ||
-        nativeEvent.failureScope === 'static'
-          ? nativeEvent.failureScope
-          : reason === 'unsupported-frame'
-            ? 'frame'
-            : reason === 'context-failed'
-              ? 'context'
-              : 'static';
+      const failureScope = resolveGpuFailureScope(nativeEvent.failureScope, nativeEvent.reason, reason);
       if (__DEV__) {
         console.info(
           '[gpu-climb-live]',

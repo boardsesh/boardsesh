@@ -521,10 +521,53 @@ describe.each(['ios', 'android'] as const)('%s live GPU board integration', (pla
     act(() => {
       vi.advanceTimersByTime(9_999);
     });
-    expect(controls.recordFailure).not.toHaveBeenCalled();
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
   });
+
+  it('keeps a presentation timeout on this mount and tries the GPU again for the next climb', () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(controls.hookInputs.at(-1)?.gpuFallbackConfigJson).toBe('static-config');
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'GPU command encoding unavailable',
+    'GPU Timeout Error',
+    'Discarded (victim of GPU error/recovery)',
+    'GPU completion timed out',
+    'GPU atlas allocation failed',
+    'Unsupported GPU hold role',
+    undefined,
+  ])('keeps an unscoped older-binary error local to the current frames: %s', (reason) => {
+    const { rerender } = render(<BoardImageNative {...BOARD} />);
+    const current = controls.props!;
+    act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
+    expect(screen.queryByTestId('native-gpu')).toBeNull();
+    expect(controls.recordFailure).not.toHaveBeenCalled();
+    rerender(<BoardImageNative {...BOARD} frames="p4306r43" />);
+    expect(screen.getByTestId('native-gpu')).toBeTruthy();
+  });
+
+  it.each(['reason("Invalid render config")', 'Invalid atlas offset', 'GLES3.1 required'])(
+    'persists an unscoped older-binary error this binary always repeats: %s',
+    (reason) => {
+      render(<BoardImageNative {...BOARD} />);
+      const current = controls.props!;
+      act(() => current.onRenderError({ nativeEvent: { requestId: current.requestId, reason } }));
+      expect(controls.recordFailure).toHaveBeenCalledExactlyOnceWith('static-config', 5);
+    },
+  );
 });

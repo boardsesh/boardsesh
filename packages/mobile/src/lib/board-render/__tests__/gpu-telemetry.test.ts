@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const controls = vi.hoisted(() => ({ granted: true, track: vi.fn() }));
 vi.mock('../../analytics', () => ({ track: controls.track }));
 vi.mock('../../consent-state', () => ({ isProductAnalyticsGranted: () => controls.granted }));
-import { classifyGpuFallback, reportGpuFallback, reportGpuPreparation } from '../gpu-telemetry';
+import { classifyGpuFallback, reportGpuFallback, reportGpuPreparation, resolveGpuFailureScope } from '../gpu-telemetry';
 
 let requestSequence = 0;
 const context = { boardName: 'kilter', apiVersion: 5, surface: 'player' as const };
@@ -34,6 +34,34 @@ describe('GPU diagnostics', () => {
     [undefined, 'render-failed'],
   ])('normalizes %s to the closed reason %s', (raw, expected) => {
     expect(classifyGpuFallback(raw)).toBe(expected);
+  });
+
+  it.each(['static', 'frame', 'context'] as const)('keeps the native %s scope', (scope) => {
+    expect(resolveGpuFailureScope(scope, 'GPU command encoding unavailable', 'render-failed')).toBe(scope);
+  });
+
+  it.each([
+    ['GPU command encoding unavailable', 'context'],
+    ['GPU Timeout Error', 'context'],
+    ['Discarded (victim of GPU error/recovery)', 'context'],
+    ['GPU command failed', 'context'],
+    ['Motion hold allocation failed', 'context'],
+    ['GPU atlas-sized surface unavailable', 'context'],
+    ['GPU shader compilation failed: out of memory', 'context'],
+    [undefined, 'context'],
+    ['Prototype supports at most 128 active holds', 'frame'],
+    ['reason("Invalid render config")', 'static'],
+    ['reason("Atlas preparation rejected config (-2)")', 'static'],
+    ['reason("Invalid atlas layout")', 'static'],
+    ['Invalid atlas vector', 'static'],
+    ['GPU config too large', 'static'],
+    ['GPU storage or viewport limit exceeded', 'static'],
+    ['reason("Metal unavailable")', 'static'],
+    ['GLES3.1 required', 'static'],
+    ['Fragment storage buffers unavailable', 'static'],
+    ['Frame timestamp extension unavailable', 'static'],
+  ] as const)('remembers an unscoped older-binary error %s only when it always repeats', (raw, expected) => {
+    expect(resolveGpuFailureScope(undefined, raw, classifyGpuFallback(raw))).toBe(expected);
   });
 
   it('samples once per fallback and never sends raw request/config/error identifiers', () => {
