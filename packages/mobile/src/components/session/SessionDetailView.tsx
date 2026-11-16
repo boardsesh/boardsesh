@@ -1,3 +1,4 @@
+import { HorizontalSafeAreaApplied, useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { FlashList, type FlashListProps, type FlashListRef } from '@shopify/flash-list';
 import type { ReactNode, Ref } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +34,7 @@ export function SessionDetailView({
 }) {
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
+  const sideInsets = useHorizontalSafeArea();
   if (loading)
     return (
       <View style={styles.centered}>
@@ -50,18 +52,22 @@ export function SessionDetailView({
     );
   return (
     <View testID="session-detail-screen" style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
-      <FlashList
-        ref={listRef}
-        onLoad={onLoad}
-        data={rows}
-        renderItem={renderItem}
-        onViewableItemsChanged={onViewableItemsChanged}
-        keyExtractor={workoutClimbsRowKey}
-        getItemType={workoutClimbsRowType}
-        ListHeaderComponent={<>{header}</>}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom }}
-      />
+      <View style={[styles.flex, { paddingLeft: sideInsets.left, paddingRight: sideInsets.right }]}>
+        <HorizontalSafeAreaApplied>
+          <FlashList
+            ref={listRef}
+            onLoad={onLoad}
+            data={rows}
+            renderItem={renderItem}
+            onViewableItemsChanged={onViewableItemsChanged}
+            keyExtractor={workoutClimbsRowKey}
+            getItemType={workoutClimbsRowType}
+            ListHeaderComponent={<>{header}</>}
+            contentInsetAdjustmentBehavior="automatic"
+            contentContainerStyle={{ paddingBottom }}
+          />
+        </HorizontalSafeAreaApplied>
+      </View>
       {overlays}
     </View>
   );
