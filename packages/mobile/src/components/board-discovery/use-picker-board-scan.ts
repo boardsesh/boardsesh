@@ -52,7 +52,7 @@ import {
   type PickerScanPermission,
   type PickerScanPhase,
 } from './picker-scan-phase';
-import type { QuickstartRow } from './quickstart-scan-rows';
+import type { QuickstartLookupState, QuickstartRow } from './quickstart-scan-rows';
 import { useQuickstartScan } from './use-quickstart-scan';
 
 export type { PickerScanPhase } from './picker-scan-phase';
@@ -62,11 +62,13 @@ export type PickerScan = {
   /** As `buildQuickstartRows`, strongest first, with recognised serial-less boxes named. */
   rows: QuickstartRow[];
   /**
-   * Serials were heard and their lookup has not answered yet. `rows` hold back
-   * every serial row meanwhile, so the slot holds its place rather than show an
-   * order the answer would rearrange.
+   * Where the serial lookup stands. `pending`: serials were heard and the
+   * scan's first answer is out, so `rows` hold back every serial row and the
+   * slot holds its place rather than show an order the answer would rearrange.
+   * `updating`: `rows` keep the answer already drawn while the serials heard
+   * since are looked up.
    */
-  lookupPending: boolean;
+  lookup: QuickstartLookupState;
   /**
    * Whether the scan behind `rows` listened long enough (or ran to its end) for
    * a serial-less row standing for one box to mean one box. Read at the tap,
@@ -337,18 +339,17 @@ export function usePickerBoardScan({
     void openAppSettings();
   }, []);
 
-  const lookupPending = lookup === 'pending';
   return useMemo(
     () => ({
       phase: resolution.phase,
       rows,
-      lookupPending,
+      lookup,
       listenedLongEnough,
       start,
       stop,
       openSettings,
       retryLookup,
     }),
-    [resolution.phase, rows, lookupPending, listenedLongEnough, start, stop, openSettings, retryLookup],
+    [resolution.phase, rows, lookup, listenedLongEnough, start, stop, openSettings, retryLookup],
   );
 }

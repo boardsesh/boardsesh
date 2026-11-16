@@ -16,16 +16,19 @@
 //   follow as rows. A MoonBoard beside a saved Kilter is not the Kilter.
 // - Serials heard but not looked up (no signal) lead: the "need signal" retry,
 //   named boards following.
-// - While the serial lookup is out, the serial rows are held back, so a lead
-//   drawn now could be overtaken when the answer lands: the slot holds its
-//   place with the fixed-height "Looking for boards" card instead.
+// - While the scan's first serial lookup is out, the serial rows are held
+//   back, so a lead drawn now could be overtaken when the answer lands: the
+//   slot holds its place with the fixed-height "Looking for boards" card
+//   instead. Once a lead is drawn it stays while a serial heard later is
+//   looked up (`updating`), and the new row joins when its answer lands. A
+//   Kilter heard across the gym never takes Climb here from under the thumb.
 // - A scan that found nothing: one quiet line and Scan again. A scan another
 //   scan pre-empted (the rest timer, a connect) also ends here, so it is never
 //   a final verdict: Scan again is always beside it.
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { PickerScanPhase } from './picker-scan-phase';
-import type { QuickstartRow } from './quickstart-scan-rows';
+import type { QuickstartLookupState, QuickstartRow } from './quickstart-scan-rows';
 
 /** A row the picker can name: a saved board, by serial or by this phone's recognition. */
 export type InRangeBoardRow = Extract<QuickstartRow, { kind: 'board' }>;
@@ -54,7 +57,7 @@ export type InRangeContent<Board> =
   | { kind: 'unreachable' }
   /** Ready, waiting for a tap: the Scan card. */
   | { kind: 'tap_to_scan' }
-  /** Nothing to lead with yet (or the lookup is out): the fixed-height placeholder. */
+  /** Nothing to lead with yet (or the first lookup is out): the fixed-height placeholder. */
   | { kind: 'looking' }
   /** One named board leads, and is the only one. */
   | { kind: 'hero'; board: Board; also: InRangeAlso | null }
@@ -112,7 +115,7 @@ function contentFromRows(rows: readonly QuickstartRow[]): InRangeContent<InRange
 export function inRangeView(
   phase: PickerScanPhase,
   rows: readonly QuickstartRow[],
-  { lookupPending }: { lookupPending: boolean },
+  { lookup }: { lookup: QuickstartLookupState },
 ): InRangeView<InRangeBoardRow> {
   switch (phase) {
     case 'hidden':
@@ -128,9 +131,10 @@ export function inRangeView(
     case 'tap_to_scan':
       return { content: { kind: 'tap_to_scan' }, scanning: false };
     case 'scanning':
-      // The lookup's answer could put a stronger named board ahead of what
-      // shows now, so the slot holds its height until it lands.
-      if (lookupPending) return { content: { kind: 'looking' }, scanning: true };
+      // The first answer could put a stronger named board ahead of what shows
+      // now, so the slot holds its height until it lands. What is drawn after
+      // that stays up while a later serial is looked up (`updating`).
+      if (lookup === 'pending') return { content: { kind: 'looking' }, scanning: true };
       return { content: contentFromRows(rows) ?? { kind: 'looking' }, scanning: true };
     case 'done':
       return { content: contentFromRows(rows) ?? { kind: 'none_in_range' }, scanning: false };

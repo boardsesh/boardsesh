@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { QuickstartScanDevice } from '../../../lib/ble/quickstart-scan-device';
 import type { RecognizedBoardDevice } from '../../../lib/ble/recognized-board-devices-store';
-import { buildQuickstartRows, quickstartLookupState, type QuickstartLookupState } from '../quickstart-scan-rows';
+import {
+  buildQuickstartRows,
+  carryDrawnAnswer,
+  quickstartLookupState,
+  type QuickstartLookupState,
+} from '../quickstart-scan-rows';
 
 function serialDevice(
   serial: string,
@@ -140,6 +145,30 @@ describe('buildQuickstartRows', () => {
     });
     expect(kinds(rows)).toEqual(['lookup_failed', 'moonboard:moonboard']);
     expect(rows[0].rssi).toBe(-55);
+  });
+
+  // A serial heard after the answer was drawn: the answer's rows stay, and the
+  // new serial waits for its own answer instead of reading as unknown.
+  it('keeps the drawn answer while a serial heard since is looked up', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -40), serialDevice('3', 'kilter', -60)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: new Set(['1', '3']),
+      lookup: 'updating',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'unknown_setup:kilter']);
+    expect(rows.map((row) => row.rssi)).toEqual([-50, -60]);
+  });
+
+  it('keeps the drawn answer and asks for signal only for the serials heard since', () => {
+    const rows = buildQuickstartRows({
+      devices: [serialDevice('1', 'kilter', -50), serialDevice('2', 'tension', -70), serialDevice('3', 'kilter', -65)],
+      boards: [savedBoard('crux', '1')],
+      answeredSerials: new Set(['1']),
+      lookup: 'failed',
+    });
+    expect(kinds(rows)).toEqual(['board:crux', 'lookup_failed']);
+    expect(rows[1].rssi).toBe(-65);
   });
 
   it('sorts every row by signal, strongest first, unknown last', () => {
@@ -354,5 +383,74 @@ describe('quickstartLookupState', () => {
 
   it('waits for the saved serial choices before calling an answer resolved', () => {
     expect(quickstartLookupState({ ...base, hasResult: true, resolving: true })).toBe('pending');
+  });
+});
+
+describe('carryDrawnAnswer', () => {
+  const drawn = { serials: new Set(['1']), boards: [savedBoard('crux', '1')] };
+
+  it.each<{
+    name: string;
+    lookup: QuickstartLookupState;
+    serials: string[];
+    /** Whether an answer for serial 1 was drawn earlier. */
+    drewBefore: boolean;
+    expected: QuickstartLookupState;
+    keepsAnswer: boolean;
+  }>([
+    {
+      name: 'first answer out',
+      lookup: 'pending',
+      serials: ['1'],
+      drewBefore: false,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new serial looked up',
+      lookup: 'pending',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'updating',
+      keepsAnswer: true,
+    },
+    {
+      name: 'new serial failed',
+      lookup: 'failed',
+      serials: ['1', '2'],
+      drewBefore: true,
+      expected: 'failed',
+      keepsAnswer: true,
+    },
+    {
+      name: 'every serial answered',
+      lookup: 'resolved',
+      serials: ['1'],
+      drewBefore: true,
+      expected: 'resolved',
+      keepsAnswer: true,
+    },
+    // A new scan starts empty, and one that hears other serials never draws
+    // the last scan's boards.
+    {
+      name: 'new scan, nothing heard',
+      lookup: 'none',
+      serials: [],
+      drewBefore: true,
+      expected: 'none',
+      keepsAnswer: false,
+    },
+    {
+      name: 'new scan, other serials',
+      lookup: 'pending',
+      serials: ['2'],
+      drewBefore: true,
+      expected: 'pending',
+      keepsAnswer: false,
+    },
+  ])('$name: $expected', ({ lookup, serials, drewBefore, expected, keepsAnswer }) => {
+    const carried = carryDrawnAnswer({ lookup, serials, drawn: drewBefore ? drawn : null });
+    expect(carried.lookup).toBe(expected);
+    expect(carried.answer).toBe(keepsAnswer ? drawn : null);
   });
 });

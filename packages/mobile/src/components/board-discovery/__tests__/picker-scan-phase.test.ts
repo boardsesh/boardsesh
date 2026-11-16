@@ -138,6 +138,12 @@ describe('resolvePickerScan', () => {
       autoStart: false,
     },
     {
+      name: 'keeps scanning while a serial heard last is looked up behind the drawn rows',
+      inputs: { scanStatus: 'done', lookup: 'updating' },
+      phase: 'scanning',
+      autoStart: false,
+    },
+    {
       name: 'ends with final rows once the lookup answered',
       inputs: { scanStatus: 'done', lookup: 'resolved' },
       phase: 'done',

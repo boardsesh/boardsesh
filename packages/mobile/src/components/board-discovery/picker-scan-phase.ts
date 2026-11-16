@@ -195,7 +195,7 @@ function resolvePhase(inputs: PickerScanInputs, scansByItself: boolean): PickerS
       return 'scanning';
     // The radio stops before the serial lookup has named what it heard.
     case 'done':
-      return inputs.lookup === 'pending' ? 'scanning' : 'done';
+      return inputs.lookup === 'pending' || inputs.lookup === 'updating' ? 'scanning' : 'done';
     case 'idle':
       break;
   }

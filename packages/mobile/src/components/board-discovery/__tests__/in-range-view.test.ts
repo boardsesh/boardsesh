@@ -9,7 +9,7 @@ import {
   type InRangeContent,
 } from '../in-range-view';
 import type { PickerScanPhase } from '../picker-scan-phase';
-import type { QuickstartRow } from '../quickstart-scan-rows';
+import type { QuickstartLookupState, QuickstartRow } from '../quickstart-scan-rows';
 
 function board(uuid: string, gym: { uuid: string; name: string } | null = null): UserBoard {
   return {
@@ -73,7 +73,7 @@ describe('inRangeView', () => {
   it.each<{
     phase: PickerScanPhase;
     rows: QuickstartRow[];
-    lookupPending?: boolean;
+    lookup?: QuickstartLookupState;
     expected: string;
     scanning: boolean;
   }>([
@@ -89,10 +89,20 @@ describe('inRangeView', () => {
     { phase: 'scanning', rows: [], expected: 'looking', scanning: true },
     { phase: 'scanning', rows: [boardRow('crux-kilter')], expected: 'hero:board:crux-kilter', scanning: true },
     { phase: 'scanning', rows: [MOONBOARD_ROW], expected: 'unnamed:moonboard:moonboard[]', scanning: true },
-    // While the serial lookup is out the serial rows are held back, so what
-    // shows now could be overtaken: the slot holds its place instead.
-    { phase: 'scanning', rows: [MOONBOARD_ROW], lookupPending: true, expected: 'looking', scanning: true },
-    { phase: 'scanning', rows: [boardRow('home')], lookupPending: true, expected: 'looking', scanning: true },
+    // While the scan's first lookup is out the serial rows are held back, so
+    // what shows now could be overtaken: the slot holds its place instead.
+    { phase: 'scanning', rows: [MOONBOARD_ROW], lookup: 'pending', expected: 'looking', scanning: true },
+    { phase: 'scanning', rows: [boardRow('home')], lookup: 'pending', expected: 'looking', scanning: true },
+    // Once a lead is drawn, a serial heard later and still being looked up
+    // leaves it where it is: the hero keeps Climb here under the thumb.
+    { phase: 'scanning', rows: [boardRow('home')], lookup: 'updating', expected: 'hero:board:home', scanning: true },
+    {
+      phase: 'scanning',
+      rows: [MOONBOARD_ROW, boardRow('home')],
+      lookup: 'updating',
+      expected: 'unnamed:moonboard:moonboard[board:home]',
+      scanning: true,
+    },
     // Done: a pre-empted or finished scan with nothing heard reads the same, with Scan again.
     { phase: 'done', rows: [], expected: 'none_in_range', scanning: false },
     { phase: 'done', rows: [boardRow('crux-kilter', CRUX)], expected: 'hero:board:crux-kilter', scanning: false },
@@ -169,8 +179,8 @@ describe('inRangeView', () => {
       expected: 'unnamed:moonboard:moonboard[]',
       scanning: false,
     },
-  ])('$phase with $rows.length rows → $expected', ({ phase, rows, lookupPending = false, expected, scanning }) => {
-    const view = inRangeView(phase, rows, { lookupPending });
+  ])('$phase with $rows.length rows → $expected', ({ phase, rows, lookup = 'resolved', expected, scanning }) => {
+    const view = inRangeView(phase, rows, { lookup });
     expect(summarize(view.content)).toBe(expected);
     expect(view.scanning).toBe(scanning);
   });
@@ -190,7 +200,7 @@ describe('sharedGymName', () => {
 
 describe('alsoAtGymAnchor', () => {
   const activeAtBloc = board('bloc-kilter', BLOC);
-  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookupPending: false }).content;
+  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookup: 'resolved' }).content;
 
   it.each<{
     name: string;
@@ -249,7 +259,7 @@ describe('alsoAtGymAnchor', () => {
 
 describe('mapInRangeBoards', () => {
   const toTitles = (rows: readonly InRangeBoardRow[]) => rows.map((row) => row.board.name.toUpperCase());
-  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookupPending: false }).content;
+  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookup: 'resolved' }).content;
 
   it('maps every board the content carries, and keeps what else is in range', () => {
     expect(mapInRangeBoards(done([boardRow('crux'), MOONBOARD_ROW]), toTitles)).toEqual({

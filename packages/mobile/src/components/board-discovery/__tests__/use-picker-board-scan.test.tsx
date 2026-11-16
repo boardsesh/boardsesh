@@ -389,6 +389,10 @@ describe('usePickerBoardScan ends a scan', () => {
     scan.lookup = 'pending';
     rerender({ focused: true, autoStart: true });
     expect(result.current.phase).toBe('scanning');
+    // A serial heard last is still being looked up behind the drawn rows.
+    scan.lookup = 'updating';
+    rerender({ focused: true, autoStart: true });
+    expect(result.current.phase).toBe('scanning');
     scan.lookup = 'resolved';
     rerender({ focused: true, autoStart: true });
     expect(result.current.phase).toBe('done');
@@ -651,14 +655,14 @@ describe('usePickerBoardScan never starts the radio in the background', () => {
 // still out, and whether the scan behind the rows listened long enough for a
 // one-box row to mean one box (Fable F2).
 describe('usePickerBoardScan for the rows', () => {
-  it('says when the serial lookup is still out', () => {
+  it('says where the serial lookup stands', () => {
     scan.lookup = 'pending';
     const { result, rerender } = renderPickerScan({ focused: true, autoStart: false });
-    expect(result.current.lookupPending).toBe(true);
+    expect(result.current.lookup).toBe('pending');
 
     scan.lookup = 'resolved';
     rerender({ focused: true, autoStart: false });
-    expect(result.current.lookupPending).toBe(false);
+    expect(result.current.lookup).toBe('resolved');
   });
 
   it('trusts a one-box row only after 5 s of listening, or a scan that ran to its end', async () => {

@@ -134,12 +134,26 @@ export function InRangeSection({
         ) : content.kind === 'hero' ? (
           <>
             <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
-            {content.also ? <AlsoRow also={content.also} onRetryLookup={onRetryLookup} {...unnamedActions} /> : null}
+            {content.also ? (
+              <AlsoRow
+                key={alsoRowKey(content.also)}
+                also={content.also}
+                onRetryLookup={onRetryLookup}
+                {...unnamedActions}
+              />
+            ) : null}
           </>
         ) : content.kind === 'board_rows' ? (
           <>
             <BoardRows items={content.boards} markClosest BoardArt={BoardArt} onPick={onPickBoard} />
-            {content.also ? <AlsoRow also={content.also} onRetryLookup={onRetryLookup} {...unnamedActions} /> : null}
+            {content.also ? (
+              <AlsoRow
+                key={alsoRowKey(content.also)}
+                also={content.also}
+                onRetryLookup={onRetryLookup}
+                {...unnamedActions}
+              />
+            ) : null}
           </>
         ) : content.kind === 'unnamed' ? (
           <>
@@ -474,6 +488,14 @@ function UnnamedCard({ row, ...actions }: UnnamedActionsProps & { row: UnnamedIn
       </View>
     </Card>
   );
+}
+
+/**
+ * Keyed by the box it stands for: a row left open for a MoonBoard closes when a
+ * different box takes its place, rather than open on that box's actions.
+ */
+function alsoRowKey(also: InRangeAlso): string {
+  return also.kind === 'unnamed' ? also.row.key : 'lookup_failed';
 }
 
 /**

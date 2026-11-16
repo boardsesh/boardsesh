@@ -305,7 +305,7 @@ vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => (
     return {
       phase: scanCtrl.phase,
       rows: scanCtrl.rows,
-      lookupPending: false,
+      lookup: 'none',
       listenedLongEnough: () => scanCtrl.listenedLongEnough,
       start: scanCtrl.start,
       stop: scanCtrl.stop,

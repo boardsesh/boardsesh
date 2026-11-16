@@ -111,7 +111,7 @@ vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => (
     return {
       phase: 'hidden',
       rows: [],
-      lookupPending: false,
+      lookup: 'none',
       listenedLongEnough: () => true,
       start: vi.fn(),
       stop: vi.fn(),

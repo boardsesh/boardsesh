@@ -29,12 +29,22 @@ import { boardRowKeys, boardUuidOrNull } from '../../lib/boards/board-identity';
 /**
  * Where the serial lookup stands.
  * - `none`: no serial heard, so nothing to look up.
- * - `pending`: looking up, or waiting on the climber's saved serial choices.
- * - `resolved`: the lookup answered, even if it matched nothing.
+ * - `pending`: looking up, or waiting on the climber's saved serial choices,
+ *   with no answer drawn yet this scan.
+ * - `updating`: an answer this scan already drew stays up while the serials
+ *   heard since are looked up (`carryDrawnAnswer`).
+ * - `resolved`: the lookup answered every serial heard, even if it matched nothing.
  * - `failed`: serials heard but the lookup could not run (no signal, the
  *   request paused) or failed after its retries.
  */
-export type QuickstartLookupState = 'none' | 'pending' | 'resolved' | 'failed';
+export type QuickstartLookupState = 'none' | 'pending' | 'updating' | 'resolved' | 'failed';
+
+/** A lookup's answer: the serials it was asked about, and the boards it named for them. */
+export type QuickstartSerialAnswer = {
+  serials: ReadonlySet<string>;
+  /** After `selectBleBoardCandidates`. */
+  boards: readonly UserBoard[];
+};
 
 /**
  * The lookup's state from the query's own flags. Any result wins: rows the
@@ -59,6 +69,38 @@ export function quickstartLookupState({
   if (serialCount === 0) return 'none';
   if (hasResult) return resolving ? 'pending' : 'resolved';
   return failed ? 'failed' : 'pending';
+}
+
+/**
+ * The lookup as the rows draw it. The lookup is keyed on every serial heard,
+ * so each new serial starts it over with no answer, and a board already drawn
+ * fell back to "Looking" whenever another box was heard across the gym. An
+ * answer this scan already drew (`drawn`) stays drawn instead, for the serials
+ * it answered, until the new answer lands:
+ * - still out: `updating`, with the serials heard since held back;
+ * - failed: `failed`, with one need-signal row for the serials heard since.
+ *
+ * `drawn` counts only while every serial it answered is still heard. A scan
+ * only adds serials and a new one starts empty, so the last scan's boards are
+ * never drawn for this one.
+ */
+export function carryDrawnAnswer({
+  lookup,
+  serials,
+  drawn,
+}: {
+  /** `quickstartLookupState` for the serials heard now. */
+  lookup: QuickstartLookupState;
+  serials: readonly string[];
+  /** The answer for the serials heard now when `resolved`, else the last one drawn. */
+  drawn: QuickstartSerialAnswer | null;
+}): { lookup: QuickstartLookupState; answer: QuickstartSerialAnswer | null } {
+  if (lookup === 'none') return { lookup, answer: null };
+  const heard = new Set(serials);
+  const stillHeard = drawn !== null && [...drawn.serials].every((serial) => heard.has(serial));
+  if (!stillHeard) return { lookup, answer: null };
+  if (lookup === 'pending') return { lookup: 'updating', answer: drawn };
+  return { lookup, answer: drawn };
 }
 
 /**
@@ -136,22 +178,30 @@ function recognizedBoardFor(
  * - one MoonBoard row however many MoonBoards are in range, and one bare-name
  *   row per board type. Rows with the same type would carry the same words and
  *   the same two buttons, so one says it all;
- * - one "need signal" row in place of all serial rows while the lookup is down.
+ * - one "need signal" row in place of the serial rows the lookup is down for.
  *
  * Each grouped row takes the strongest signal in its group. A MoonBoard or
  * bare-name row also carries its box's Bluetooth id when it stands for exactly
  * one box (`soleDeviceId`). Serial rows wait for the lookup: while it is
- * `pending` only the serial-less rows show.
+ * `pending` only the serial-less rows show, and while it is `updating` the
+ * serials heard since the drawn answer are held back.
  */
 export function buildQuickstartRows({
   devices,
   boards,
+  answeredSerials,
   lookup,
   recognition,
 }: {
   devices: readonly QuickstartScanDevice[];
-  /** The saved boards the lookup resolved, after `selectBleBoardCandidates`. */
+  /** The saved boards the lookup named, after `selectBleBoardCandidates`. */
   boards: readonly UserBoard[];
+  /**
+   * The serials `boards` answers for while the lookup is `updating` or `failed`
+   * (`carryDrawnAnswer`). Absent: every serial heard once `resolved`, and none
+   * before.
+   */
+  answeredSerials?: ReadonlySet<string>;
   lookup: QuickstartLookupState;
   /** Absent: no serial-less box is named. */
   recognition?: QuickstartRecognition;
@@ -160,7 +210,6 @@ export function buildQuickstartRows({
   const signalBySerial = new Map<string, number | null>();
   const groupSignal = new Map<string, { kind: GroupedRowKind; boardType: BoardName; rssi: number | null }>();
   const groupDeviceIds = new Map<string, Set<string>>();
-  let strongestSerialSignal: number | null | undefined;
   const recognizedById = indexRecognizedBoardDevices(recognition?.devices ?? []);
   const knownBoardsByUuid = new Map<string, UserBoard>();
   for (const board of recognition?.knownBoards ?? []) {
@@ -183,7 +232,6 @@ export function buildQuickstartRows({
   for (const device of devices) {
     if (device.kind === 'serial') {
       signalBySerial.set(device.serial, device.rssi);
-      strongestSerialSignal = strongest(strongestSerialSignal, device.rssi);
     } else {
       const recognizedBoard = recognizedBoardFor(device, recognizedById, knownBoardsByUuid);
       if (recognizedBoard) {
@@ -198,7 +246,13 @@ export function buildQuickstartRows({
     }
   }
 
-  if (lookup === 'resolved') {
+  // Which heard serials the lookup has answered: every one once `resolved`,
+  // those of the answer still drawn while it is `updating` or `failed`.
+  const carriesAnswer = (lookup === 'updating' || lookup === 'failed') && answeredSerials !== undefined;
+  const isAnswered = (serial: string): boolean =>
+    lookup === 'resolved' || (carriesAnswer && (answeredSerials?.has(serial) ?? false));
+
+  if (lookup === 'resolved' || carriesAnswer) {
     const matchedSerials = new Set<string>();
     // A hidden board found by serial has an empty uuid, so rows key on its
     // serial and config instead (#6552).
@@ -219,11 +273,19 @@ export function buildQuickstartRows({
       });
     }
     for (const device of devices) {
-      if (device.kind !== 'serial' || matchedSerials.has(device.serial) || !device.boardType) continue;
+      if (device.kind !== 'serial' || !isAnswered(device.serial)) continue;
+      if (matchedSerials.has(device.serial) || !device.boardType) continue;
       addToGroup('unknown_setup', device.boardType, device.rssi);
     }
-  } else if (lookup === 'failed') {
-    rows.push({ kind: 'lookup_failed', key: 'lookup_failed', rssi: strongestSerialSignal ?? null });
+  }
+  if (lookup === 'failed') {
+    const unansweredSignals = devices.flatMap((device) =>
+      device.kind === 'serial' && !isAnswered(device.serial) ? [device.rssi] : [],
+    );
+    if (!carriesAnswer || unansweredSignals.length > 0) {
+      const rssi = unansweredSignals.reduce<number | null | undefined>(strongest, undefined) ?? null;
+      rows.push({ kind: 'lookup_failed', key: 'lookup_failed', rssi });
+    }
   }
 
   // Keyed like a serial row for the same board, so a row that turns from

@@ -303,7 +303,7 @@ export default function BoardSelection() {
   const {
     phase: scanPhase,
     rows: scanRows,
-    lookupPending,
+    lookup: scanLookup,
     listenedLongEnough,
     start: startScan,
     stop: stopScan,
@@ -880,8 +880,8 @@ export default function BoardSelection() {
     startScan();
   }, [chooseFirstBoardPath, startScan]);
   const inRange = useMemo(
-    () => inRangeView(scanPhase, scanRows, { lookupPending }),
-    [scanPhase, scanRows, lookupPending],
+    () => inRangeView(scanPhase, scanRows, { lookup: scanLookup }),
+    [scanPhase, scanRows, scanLookup],
   );
   const inRangeRowsByKey = useMemo(() => {
     const rowsByKey = new Map<string, InRangeBoardRow>();
