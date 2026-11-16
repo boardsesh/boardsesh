@@ -127,6 +127,10 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   InRangeSection: () => createElement('div', { 'data-testid': 'in-range' }),
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
+  NearbyLocationBanner: ({ permission }: { permission: string }) =>
+    createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),
+}));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
   setPendingBoardRecognition: vi.fn(),
@@ -152,7 +156,6 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.yourBoardsTitle': 'Your boards',
         'mobile.discovery.nearbyTitle': 'Near you',
         'mobile.discovery.nearbyMap': 'Map',
-        'mobile.discovery.showNearby': 'Show boards near you',
         'mobile.addBoard.setUp': 'Set up a board',
         'mobile.addBoard.sprayWall': 'Add a Spraywall',
         'mobile.boardSwitchError': 'Could not switch board',
@@ -206,6 +209,7 @@ vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({
     status: 'idle',
+    permission: 'granted',
     coords: undefined,
     request: vi.fn(),
     requestIfAllowed: vi.fn(async () => {}),
@@ -338,6 +342,7 @@ vi.mock('../../../src/components/TextAction', async () => {
   return {
     TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
       h('button', { type: 'button', onClick: onPress }, label),
+    textActionOverhang: () => ({ top: 4, bottom: 20 }),
   };
 });
 // Your boards and the offline list are rows now; the suite drives them as it

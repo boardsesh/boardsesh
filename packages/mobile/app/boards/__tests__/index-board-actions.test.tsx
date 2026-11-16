@@ -211,6 +211,10 @@ vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
     ),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+vi.mock('../../../src/components/board-discovery/NearbyLocationBanner', () => ({
+  NearbyLocationBanner: ({ permission }: { permission: string }) =>
+    createElement('div', { 'data-testid': 'location-banner', 'data-permission': permission }),
+}));
 const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
   setPendingBoardRecognition: vi.fn(),
@@ -313,6 +317,8 @@ vi.mock('../../../src/lib/board-discovery/use-adopt-found-board', () => ({
 vi.mock('../../../src/lib/use-device-location', () => ({
   useDeviceLocation: () => ({
     status: state.locationStatus,
+    // Near you's cards are this suite's subject: location is allowed.
+    permission: 'granted',
     coords: undefined,
     request: vi.fn(),
     requestIfAllowed: vi.fn(async () => {}),
@@ -438,6 +444,7 @@ vi.mock('../../../src/components/TextAction', async () => {
   return {
     TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
       h('button', { type: 'button', onClick: onPress }, label),
+    textActionOverhang: () => ({ top: 4, bottom: 20 }),
   };
 });
 // Your boards and the offline list are rows now; the suite drives them as it

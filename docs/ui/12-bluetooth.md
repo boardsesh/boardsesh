@@ -100,7 +100,7 @@ they are the list's footer, and with none the state above them ("No boards
 found", "not found", the spinner) scrolls with them. The `/boards` Bluetooth
 quickstart sheet showed the same tips until the picker's In range slot replaced
 it in 2026-11. The picker shows no tips: a scan that heard nothing draws nothing
-at the top (no "No boards in range" line and no Scan again; Your boards leads),
+at the top (no "No boards in range" line and no Scan again; the next shelf leads),
 except where Android is plausibly withholding the results
 (`useAndroidScanLocationHint`): a binary built before the manifest
 change gets the location grant, and Android 6 to 11 with Location off gets the

@@ -114,6 +114,17 @@ const ACTION_LOOK: Record<UiVariant, ActionLook> = {
 };
 
 /**
+ * How far a target reaches past its label, above and below. A block whose
+ * action leans toward a neighbour with a target of its own (a shelf's last
+ * line, over the next shelf header's action) keeps that much room below it,
+ * so the two never overlap.
+ */
+export function textActionOverhang(variant: UiVariant, reach: TextActionReach): { top: number; bottom: number } {
+  const hitArea = ACTION_LOOK[variant].hitAreas[reach];
+  return { top: hitArea.paddingTop, bottom: hitArea.paddingBottom };
+}
+
+/**
  * A borderless text button in the accent colour: a shelf's "See all", the Retry
  * after a quiet empty state. Violet here is right, because it can be tapped.
  * It takes no layout space beyond its label; the 44pt (48dp on Material) target

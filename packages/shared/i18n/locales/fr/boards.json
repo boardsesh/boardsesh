@@ -231,7 +231,8 @@
         "editWall": "Modifier le Spraywall"
       },
       "nearbyMap": "Carte",
-      "showNearby": "Voir les boards près de toi",
+      "allowLocation": "Autoriser la localisation",
+      "locationBanner": "La localisation est désactivée. Active-la pour voir les boards près de toi.",
       "manage": "Gérer",
       "nearbyAllAbove": "Aucune autre board à moins de 20 km",
       "yourBoardsAllAbove": "Toutes tes boards sont plus haut"

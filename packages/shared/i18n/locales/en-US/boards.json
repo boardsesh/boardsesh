@@ -231,7 +231,8 @@
         "editWall": "Edit Spraywall"
       },
       "nearbyMap": "Map",
-      "showNearby": "Show boards near you",
+      "allowLocation": "Allow location",
+      "locationBanner": "Location is off. Turn it on to see boards near you.",
       "manage": "Manage",
       "nearbyAllAbove": "No other boards within 20 km",
       "yourBoardsAllAbove": "All your boards are listed above"

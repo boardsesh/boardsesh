@@ -9,14 +9,36 @@
 // `unavailable`, so the screen degrades gracefully on an older OTA build
 // instead of crashing.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 export type Coords = { latitude: number; longitude: number };
 
 export type LocationStatus = 'idle' | 'loading' | 'granted' | 'denied' | 'unavailable';
 
+/**
+ * Location permission as last read, without asking:
+ * - `unknown`: not read yet, or no location module to read it from.
+ * - `ask`: a prompt can still ask (never asked, or Android after one refusal).
+ * - `blocked`: refused for good (iOS after a refusal, Android "Don't ask
+ *   again"); only Settings can turn it on.
+ * - `granted`.
+ */
+export type LocationPermission = 'unknown' | 'ask' | 'blocked' | 'granted';
+
+/** expo-location's answer, as a `LocationPermission`. */
+export function locationPermissionFrom(answer: { status: string; canAskAgain?: boolean }): LocationPermission {
+  if (answer.status === 'granted') return 'granted';
+  return answer.status === 'denied' && answer.canAskAgain === false ? 'blocked' : 'ask';
+}
+
 export type DeviceLocation = {
   status: LocationStatus;
+  /**
+   * The permission itself, read by `requestIfAllowed` and every `request`, so
+   * a screen can offer the right way to turn it on before anything is asked.
+   */
+  permission: LocationPermission;
   coords: Coords | null;
   /** Kick off the permission prompt + one-shot fix. Safe to call repeatedly. */
   request: () => Promise<void>;
@@ -47,10 +69,20 @@ export type DeviceLocationOptions = {
    * their gyms from one more tap, not from reopening the screen.
    */
   retryAfterDenial?: boolean;
+  /**
+   * Run `requestIfAllowed` again whenever the app comes back to the
+   * foreground: a climber back from Settings with location turned on gets the
+   * search, and `permission` follows whatever they chose there. Off by default.
+   */
+  rereadWhenActive?: boolean;
 };
 
-export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOptions = {}): DeviceLocation {
+export function useDeviceLocation({
+  retryAfterDenial = false,
+  rereadWhenActive = false,
+}: DeviceLocationOptions = {}): DeviceLocation {
   const [status, setStatus] = useState<LocationStatus>('idle');
+  const [permission, setPermission] = useState<LocationPermission>('unknown');
   const [coords, setCoords] = useState<Coords | null>(null);
   // Once a request reaches a terminal state (granted / denied / unavailable),
   // or while one is in flight, further taps are no-ops — no redundant native
@@ -69,8 +101,9 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
 
     try {
       const Location = await import('expo-location');
-      const { status: permission } = await Location.requestForegroundPermissionsAsync();
-      if (permission !== 'granted') {
+      const answer = await Location.requestForegroundPermissionsAsync();
+      setPermission(locationPermissionFrom(answer));
+      if (answer.status !== 'granted') {
         if (retryAfterDenial) settledRef.current = false;
         setStatus('denied');
         return;
@@ -95,13 +128,22 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
     if (settledRef.current) return;
     try {
       const Location = await import('expo-location');
-      const { status: permission } = await Location.getForegroundPermissionsAsync();
-      if (permission !== 'granted') return;
+      const read = locationPermissionFrom(await Location.getForegroundPermissionsAsync());
+      setPermission(read);
+      if (read !== 'granted') return;
     } catch {
       return;
     }
     await request();
   }, [request]);
+
+  useEffect(() => {
+    if (!rereadWhenActive) return undefined;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void requestIfAllowed();
+    });
+    return () => subscription.remove();
+  }, [rereadWhenActive, requestIfAllowed]);
 
   const refresh = useCallback(async () => {
     // `loading` covers both a first request and another refresh in flight.
@@ -128,5 +170,5 @@ export function useDeviceLocation({ retryAfterDenial = false }: DeviceLocationOp
     }
   }, []);
 
-  return { status, coords, request, requestIfAllowed, refresh };
+  return { status, permission, coords, request, requestIfAllowed, refresh };
 }

@@ -13,9 +13,11 @@ import { Text } from '../Text';
 /**
  * The board picker's body (#5654 and the 2026-11 redesign), top to bottom:
  * the top (At {gym}, the board heard somewhere else, or what the scan needs;
- * see picker-top-view.ts), Your boards (or the empty state), Near you. First
- * run swaps Your boards and Near you for "Where do you climb?" under the top.
- * The ways to add a board live in the screen's top bar.
+ * see picker-top-view.ts), Near you, Your boards (or the empty state), and the
+ * location banner. The screen hands in Near you only once location is
+ * allowed, and the banner only while it is not, so one of the two shows. First
+ * run swaps all three for "Where do you climb?" under the top. The ways to add
+ * a board live in the screen's top bar.
  *
  * Presentational: the screen hands in each section ready-made. Sections are
  * `ShelfSection`s and own their spacing (8pt under a title, 28pt to the next);
@@ -31,6 +33,7 @@ export function BoardSelectorView({
   inRangeSection,
   myBoardsSection,
   nearbySection,
+  locationBanner,
   hasBoards,
   onEmptySetUpBoard,
   onEmptyAddSprayWall,
@@ -45,7 +48,10 @@ export function BoardSelectorView({
   /** The top of the picker: At {gym}, the hero, or the scan's card; see InRangeSection. */
   inRangeSection?: ReactNode;
   myBoardsSection?: ReactNode;
+  /** Near you, above Your boards. Only with location allowed. */
   nearbySection?: ReactNode;
+  /** The way to turn location on, at the foot of the picker, in place of Near you. */
+  locationBanner?: ReactNode;
   hasBoards: boolean;
   /** The empty state's two ways to a first board of their own. */
   onEmptySetUpBoard: () => void;
@@ -92,6 +98,8 @@ export function BoardSelectorView({
 
             {inRangeSection}
 
+            {nearbySection}
+
             {hasBoards ? (
               myBoardsSection
             ) : (
@@ -113,7 +121,7 @@ export function BoardSelectorView({
               />
             )}
 
-            {nearbySection}
+            {locationBanner}
           </>
         )}
       </ScrollView>
