@@ -9,22 +9,7 @@ import { boardLiveSessionsQueryKey, followedLiveSessionsQueryKey } from '../../q
 
 const requestMock = vi.hoisted(() => vi.fn());
 const nav = vi.hoisted(() => ({ focused: true, offline: false }));
-vi.mock('../../client', () => ({
-  getHttpClient: () => ({
-    request: (documentOrOptions: unknown, variables?: unknown) => {
-      // The real operation uses the SDK's object overload to forward its signal;
-      // keep the original document/variables assertions at this fixture boundary.
-      if (documentOrOptions !== null && typeof documentOrOptions === 'object' && 'document' in documentOrOptions) {
-        expect('signal' in documentOrOptions && documentOrOptions.signal).toBeInstanceOf(AbortSignal);
-        return requestMock(
-          documentOrOptions.document,
-          'variables' in documentOrOptions ? documentOrOptions.variables : undefined,
-        );
-      }
-      return requestMock(documentOrOptions, variables);
-    },
-  }),
-}));
+vi.mock('../../client', () => ({ getHttpClient: () => ({ request: requestMock }) }));
 vi.mock('expo-router', () => ({ useIsFocused: () => nav.focused }));
 vi.mock('../../../../hooks/use-is-offline', () => ({ useIsOffline: () => nav.offline }));
 

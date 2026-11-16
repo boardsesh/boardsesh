@@ -8,13 +8,6 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../../error-reporting', () => ({ reportHandledError: vi.fn() }));
 vi.mock('../../aurora-credentials', () => ({ getAuroraCredentials: vi.fn() }));
-// Exercise the actual native no-I/O descriptor, while failing any unexpected transport.
-vi.mock('../../auth-interceptor', () => ({
-  authenticatedFetch: () => {
-    throw new Error('Unexpected REST transport in pure import-completion fixture');
-  },
-}));
-vi.mock('../../env', () => ({ BACKEND_URL: 'https://backend.owned.test' }));
 
 import { createQueryClient } from '../../../providers/query-provider';
 import {

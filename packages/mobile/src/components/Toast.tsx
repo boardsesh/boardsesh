@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { Snackbar } from 'react-native-paper';
@@ -15,42 +15,11 @@ import { TabBarHideFollower } from './navigation/TabBarHideFollower';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
-/** A veto-only final UI owner; it has no transport or cache capabilities. */
-export type ToastGuard = Readonly<{
-  assertCurrent(): void;
-  subscribe(listener: () => void): () => void;
-  release(): void;
-}>;
-
-export function isToastGuardCurrent(guard: ToastGuard | undefined): boolean {
-  try {
-    guard?.assertCurrent();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const subscribePlainToast = () => () => {};
-const plainToastCurrent = () => true;
-function useToastGuard(toast: ToastData, onDismiss: (id: string) => void): boolean {
-  const current = useSyncExternalStore(
-    toast.guard?.subscribe ?? subscribePlainToast,
-    toast.guard ? () => isToastGuardCurrent(toast.guard) : plainToastCurrent,
-    plainToastCurrent,
-  );
-  useLayoutEffect(() => {
-    if (toast.guard && !isToastGuardCurrent(toast.guard)) onDismiss(toast.id);
-  });
-  return current;
-}
-
 export type ToastData = {
   id: string;
   message: string;
   variant: ToastVariant;
   duration: number;
-  guard?: ToastGuard;
 };
 
 type ToastProps = {
@@ -89,7 +58,6 @@ function useToastBottomOffset(): number {
 }
 
 function ToastMaterial({ toast, onDismiss }: ToastProps) {
-  const current = useToastGuard(toast, onDismiss);
   const { systemColors, colorScheme, brandColors } = useTheme();
   const bottomOffset = useToastBottomOffset();
   const config = VARIANT_CONFIG[toast.variant];
@@ -117,8 +85,7 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
     colorScheme === 'dark' ? 0.24 : 0.15,
   );
 
-  if (!current || !isToastGuardCurrent(toast.guard)) return null;
-  const content = (
+  return (
     <TabBarHideFollower>
       <Snackbar
         visible
@@ -140,12 +107,10 @@ function ToastMaterial({ toast, onDismiss }: ToastProps) {
       </Snackbar>
     </TabBarHideFollower>
   );
-  return isToastGuardCurrent(toast.guard) ? content : null;
 }
 
 // Liquid Glass / HIG toast.
 function ToastGlass({ toast, onDismiss }: ToastProps) {
-  const current = useToastGuard(toast, onDismiss);
   const { systemColors, colorScheme, brandColors } = useTheme();
   const bottomOffset = useToastBottomOffset();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -153,20 +118,18 @@ function ToastGlass({ toast, onDismiss }: ToastProps) {
   const variantColor = brandColors[config.colorKey];
 
   useEffect(() => {
-    if (!current || !isToastGuardCurrent(toast.guard)) return;
     timerRef.current = setTimeout(() => onDismiss(toast.id), toast.duration);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [toast.id, toast.duration, toast.guard, current, onDismiss]);
+  }, [toast.id, toast.duration, onDismiss]);
 
   // Opaque themed pill keeps the toast legible over any content; the brand-hued
   // wash on top carries the variant cue. Bump the wash alpha in dark mode where
   // a 15% tint barely registers.
   const tintColor = withAlpha(variantColor, colorScheme === 'dark' ? 0.24 : 0.15);
 
-  if (!current || !isToastGuardCurrent(toast.guard)) return null;
-  const content = (
+  return (
     <TabBarHideFollower>
       <Animated.View
         entering={FadeIn.duration(200)}
@@ -189,7 +152,6 @@ function ToastGlass({ toast, onDismiss }: ToastProps) {
       </Animated.View>
     </TabBarHideFollower>
   );
-  return isToastGuardCurrent(toast.guard) ? content : null;
 }
 
 const styles = StyleSheet.create({

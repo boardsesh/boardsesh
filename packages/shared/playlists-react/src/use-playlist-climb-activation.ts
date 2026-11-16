@@ -83,156 +83,122 @@ export type UsePlaylistClimbActivationOptions = {
   refreshErrorMessage: string;
 };
 
-/** A per-call capture is synchronous and belongs to one admitted local intent. */
-type CapturedPlaylistActivation = Readonly<{
-  options: UsePlaylistClimbActivationOptions;
-  signal: AbortSignal;
-  assertCurrent: () => void;
-  decorateSource: (source: PlaylistSuggestionSource | null) => PlaylistSuggestionSource | null;
-  publishRefresh: (source: PlaylistSuggestionSource, expected: PlaylistSuggestionSource) => Promise<boolean>;
-  isHeld: (error: unknown) => boolean;
-}>;
-
-/** The ordinary path retains its unmount cancellation. A captured handoff has
- * its own lifetime and never recaptures options after the local dispatch. */
-export function usePlaylistClimbActivation(
-  options: UsePlaylistClimbActivationOptions,
-): (climb: Climb, captureInvocation?: () => CapturedPlaylistActivation) => Promise<void> {
+/**
+ * Two-phase playlist climb activation:
+ *  1. Synchronously activate the tapped climb with a suggestion source built
+ *     from the currently-loaded climbs, then run `onActivated`.
+ *  2. Asynchronously fetch the full ordered board climb list and replace the
+ *     suggestion source with the richer one, aborting on unmount or re-tap.
+ *
+ * When `resolveTarget` returns null, degrade to a plain activation with no
+ * suggestion source (still runs `onActivated`).
+ */
+export function usePlaylistClimbActivation({
+  queueApi,
+  sourceId,
+  allClimbs,
+  preparedClimbs,
+  resolveTarget,
+  fetchClimbsForBoard,
+  label,
+  pendingContinuation,
+  onActivated,
+  refreshErrorMessage,
+}: UsePlaylistClimbActivationOptions): (climb: Climb) => Promise<void> {
   const refreshAbortRef = useRef<AbortController | null>(null);
-  useEffect(() => () => refreshAbortRef.current?.abort(), []);
-  const {
-    queueApi,
-    sourceId,
-    allClimbs,
-    preparedClimbs,
-    resolveTarget,
-    fetchClimbsForBoard,
-    label,
-    pendingContinuation,
-    onActivated,
-    refreshErrorMessage,
-  } = options;
+
+  useEffect(() => {
+    return () => {
+      refreshAbortRef.current?.abort();
+    };
+  }, []);
 
   return useCallback(
-    async (climb: Climb, captureInvocation?: () => CapturedPlaylistActivation): Promise<void> => {
-      // This factory runs before target resolution or any external callback.
-      const captured = captureInvocation?.();
-      const invocation = captured?.options ?? {
-        queueApi,
-        sourceId,
-        allClimbs,
-        preparedClimbs,
-        resolveTarget,
-        fetchClimbsForBoard,
-        label,
-        pendingContinuation,
-        onActivated,
-        refreshErrorMessage,
-      };
-      const assertCurrent = () => {
-        if (captured?.signal.aborted)
-          throw captured.signal.reason ?? Object.assign(new Error('Cancelled'), { name: 'AbortError' });
-        captured?.assertCurrent();
-      };
-      assertCurrent();
-      if (!invocation.queueApi) return;
-      const target = invocation.resolveTarget(climb);
-      assertCurrent();
+    async (climb: Climb): Promise<void> => {
+      if (!queueApi) return;
+
+      const target = resolveTarget(climb);
+
+      // Defence-in-depth: incompatible climbs should already be filtered at the
+      // tap target, but if a row tap reaches the hook without a resolvable
+      // board (e.g. user owns no boards), degrade to a plain activation rather
+      // than failing silently. setCurrentClimb still surfaces an error via its
+      // validator when the active board can't accept the climb.
       if (!target) {
-        assertCurrent();
-        const activated = await invocation.queueApi.setCurrentClimb(climb, { playlistSuggestionSource: null });
-        assertCurrent();
-        if (activated) invocation.onActivated?.(climb);
-        assertCurrent();
+        const activated = await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: null });
+        if (activated) onActivated?.(climb);
         return;
       }
 
+      // Settled exactly once, by whichever way this activation ends.
       let settleRefresh: (refreshed: boolean) => void = () => {};
       const refreshSettled = new Promise<boolean>((resolve) => {
         settleRefresh = resolve;
       });
-      let initialSource: PlaylistSuggestionSource | null;
+      const continuation = pendingContinuation?.(refreshSettled);
+      const initialSource = createPlaylistSuggestionSource({
+        playlistUuid: sourceId,
+        activatedClimb: climb,
+        climbs: allClimbs,
+        boardKey: target.boardKey,
+        isClimbable: target.isClimbable,
+        preparedClimbs,
+        label,
+        continuation,
+      });
+
+      let activeItem: ClimbQueueItem | null;
       try {
-        const continuation = invocation.pendingContinuation?.(refreshSettled);
-        assertCurrent();
-        initialSource = createPlaylistSuggestionSource({
-          playlistUuid: invocation.sourceId,
-          activatedClimb: climb,
-          climbs: invocation.allClimbs,
-          boardKey: target.boardKey,
-          isClimbable: target.isClimbable,
-          preparedClimbs: invocation.preparedClimbs,
-          label: invocation.label,
-          continuation,
-        });
-        assertCurrent();
-        if (captured) initialSource = captured.decorateSource(initialSource);
-        assertCurrent();
-        const activeItem = await invocation.queueApi.setCurrentClimb(climb, {
-          playlistSuggestionSource: initialSource,
-        });
-        assertCurrent();
-        if (!activeItem) {
-          settleRefresh(false);
-          return;
-        }
-        invocation.onActivated?.(climb);
-        assertCurrent();
+        activeItem = await queueApi.setCurrentClimb(climb, { playlistSuggestionSource: initialSource });
       } catch (error: unknown) {
         settleRefresh(false);
         throw error;
       }
-
-      const abortController = captured ? null : new AbortController();
-      if (abortController) {
-        refreshAbortRef.current?.abort();
-        refreshAbortRef.current = abortController;
+      if (!activeItem) {
+        settleRefresh(false);
+        return;
       }
-      const signal = captured?.signal ?? abortController!.signal;
-      // Keep this exact initial object across the asynchronous phase.
-      const expectedSource = initialSource;
+      // Match the non-playlist browse-tap path so a playlist row tap surfaces
+      // the play drawer rather than silently mutating state.
+      onActivated?.(climb);
+
+      refreshAbortRef.current?.abort();
+      const abortController = new AbortController();
+      refreshAbortRef.current = abortController;
+
       void (async () => {
         let refreshed = false;
         try {
-          assertCurrent();
-          const trackLoad = await invocation.fetchClimbsForBoard({
+          const trackLoad = await fetchClimbsForBoard({
             target,
             activatedClimbUuid: climb.uuid,
-            signal,
+            signal: abortController.signal,
           });
-          if (signal.aborted) return;
-          assertCurrent();
-          let refreshedSource: PlaylistSuggestionSource | null = createPlaylistSuggestionSource({
-            playlistUuid: invocation.sourceId,
+          if (abortController.signal.aborted) return;
+          const refreshedSource = createPlaylistSuggestionSource({
+            playlistUuid: sourceId,
             activatedClimb: climb,
             climbs: trackLoad.climbs,
             boardKey: target.boardKey,
             isClimbable: target.isClimbable,
-            label: invocation.label,
+            label,
             total: trackLoad.total,
             continuation: trackLoad.continuation,
           });
-          assertCurrent();
-          if (captured) refreshedSource = captured.decorateSource(refreshedSource);
-          assertCurrent();
-          if (refreshedSource) {
-            refreshed = captured
-              ? !!expectedSource && (await captured.publishRefresh(refreshedSource, expectedSource))
-              : invocation.queueApi!.refreshPlaylistSuggestionSource(refreshedSource);
-          }
-          assertCurrent();
-        } catch (error: unknown) {
-          if (isAbortError(error) || captured?.isHeld(error)) return;
-          // Recheck at the actual diagnostic sink after arbitrary callbacks.
-          try {
-            assertCurrent();
-          } catch {
-            return;
-          }
-          console.error(invocation.refreshErrorMessage, error);
+          // Settled as refreshed only when the provider took it. A queue-sheet tap
+          // can re-anchor the track on another climb meanwhile, keeping this
+          // activation's pending continuation; the provider then ignores this
+          // refresh, and that surviving track must end where it is rather than
+          // wait on a load that will never land on it.
+          refreshed = queueApi.refreshPlaylistSuggestionSource(refreshedSource);
+        } catch (err: unknown) {
+          if (isAbortError(err)) return;
+          console.error(refreshErrorMessage, err);
         } finally {
           settleRefresh(refreshed);
-          if (abortController && refreshAbortRef.current === abortController) refreshAbortRef.current = null;
+          if (refreshAbortRef.current === abortController) {
+            refreshAbortRef.current = null;
+          }
         }
       })();
     },

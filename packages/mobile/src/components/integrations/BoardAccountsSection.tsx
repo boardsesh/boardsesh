@@ -2,7 +2,7 @@ import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { File } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { boardTypeLabel } from '@boardsesh/board-constants';
@@ -12,7 +12,7 @@ import {
   AURORA_UNSYNCED_QUERY_KEY,
 } from '../../lib/integrations/board-account-query-keys';
 import { invalidateOwnDataAfterImport } from '../../lib/integrations/board-import-completion';
-import { useAuroraCredentialsRead, useAuroraUnsyncedRead } from '../../lib/integrations/use-board-account-reads';
+import { pendingSyncRefetchInterval } from '../../lib/integrations/use-board-account-credentials';
 import { getImportPickerTypes } from '../../lib/integrations/import-picker-types';
 import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
@@ -32,7 +32,6 @@ import { Text } from '../Text';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
-import { useUnlinkBoardAccount } from '../../lib/integrations/use-unlink-board-account';
 import { useConfirm } from '../../providers/dialog-provider';
 import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { getHttpClient } from '../../lib/graphql/client';
@@ -44,6 +43,9 @@ import {
 import { extractGraphqlCode, isGraphqlRateLimitedError } from '../../lib/graphql/extract-error-message';
 import { borderRadius, spacing } from '../../theme/tokens';
 import {
+  deleteAuroraCredential,
+  getAuroraCredentials,
+  getAuroraUnsyncedCounts,
   streamAuroraImport,
   streamMoonBoardImport,
   type AuroraCredentialStatus,
@@ -294,8 +296,16 @@ export function BoardAccountsSection() {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
 
-  const credentialsQuery = useAuroraCredentialsRead();
-  const unsyncedQuery = useAuroraUnsyncedRead(credentialsQuery.isSuccess);
+  const credentialsQuery = useQuery({
+    queryKey: AURORA_CREDENTIALS_QUERY_KEY,
+    queryFn: getAuroraCredentials,
+    refetchInterval: pendingSyncRefetchInterval,
+  });
+  const unsyncedQuery = useQuery({
+    queryKey: AURORA_UNSYNCED_QUERY_KEY,
+    queryFn: getAuroraUnsyncedCounts,
+    enabled: credentialsQuery.isSuccess,
+  });
 
   const kilterOauthLinkingEnabled = useFeatureFlag('kilter-oauth-linking') === true;
 
@@ -307,20 +317,23 @@ export function BoardAccountsSection() {
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
-  const unlinkAccount = useUnlinkBoardAccount({
-    confirm: (boardType) =>
-      confirm({
-        title: t('aurora.card.unlinkConfirm.title'),
-        message: t('aurora.card.unlinkConfirm.description', { boardName: boardTypeLabel(boardType) }),
-        confirmLabel: t('aurora.card.unlink'),
-        cancelLabel: tCommon('actions.cancel'),
-        destructive: true,
-      }),
-    successMessage: (boardType, partial) =>
-      t(partial ? 'aurora.mobile.unlinkPartial' : 'aurora.mobile.unlinkSuccess', {
-        boardName: boardTypeLabel(boardType),
-      }),
-    errorMessage: (error) => errorMessageFor(error, t),
+  const deleteCredentialMutation = useMutation({
+    mutationFn: deleteAuroraCredential,
+    onSuccess: async (result, boardType) => {
+      const boardName = boardTypeLabel(boardType);
+      if (result.success) {
+        showToast(t('aurora.mobile.unlinkSuccess', { boardName }), 'success');
+      } else {
+        showToast(t('aurora.mobile.unlinkPartial', { boardName }), 'warning');
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: AURORA_CREDENTIALS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: AURORA_UNSYNCED_QUERY_KEY }),
+      ]);
+    },
+    onError: (error) => {
+      showToast(errorMessageFor(error, t), 'error');
+    },
   });
 
   // Boards with a Sync now request in flight. Per board, not the mutation's
@@ -388,6 +401,22 @@ export function BoardAccountsSection() {
       showToast(t('aurora.mobile.requestDataFailed'), 'error');
     });
   }, [showToast, t]);
+
+  const handleUnlink = useCallback(
+    async (boardType: AuroraBoardName) => {
+      const boardName = boardTypeLabel(boardType);
+      const confirmed = await confirm({
+        title: t('aurora.card.unlinkConfirm.title'),
+        message: t('aurora.card.unlinkConfirm.description', { boardName }),
+        confirmLabel: t('aurora.card.unlink'),
+        cancelLabel: tCommon('actions.cancel'),
+        destructive: true,
+      });
+      if (!confirmed) return;
+      deleteCredentialMutation.mutate(boardType);
+    },
+    [confirm, deleteCredentialMutation, t, tCommon],
+  );
 
   const handleImportPress = useCallback(
     (boardType: AuroraBoardName) => {
@@ -563,7 +592,9 @@ export function BoardAccountsSection() {
               credential={credential}
               unsyncedCounts={unsynced}
               isLast={cardIndex === cardConfigs.length - 1}
-              isRemoving={unlinkAccount.isRemoving(cardConfig.boardType)}
+              isRemoving={
+                deleteCredentialMutation.isPending && deleteCredentialMutation.variables === cardConfig.boardType
+              }
               isSyncing={Boolean(credential?.pendingRunId) || syncRequests.has(cardConfig.boardType)}
               onSyncNow={() => handleSyncNow(cardConfig.boardType)}
               systemColors={systemColors}
@@ -571,9 +602,7 @@ export function BoardAccountsSection() {
               onImport={() => handleImportPress(cardConfig.boardType)}
               onLink={() => handleOpenLink(cardConfig.boardType)}
               onRequestData={handleRequestData}
-              onUnlink={() => {
-                void unlinkAccount.unlink(cardConfig.boardType);
-              }}
+              onUnlink={() => handleUnlink(cardConfig.boardType)}
             />
           );
         })

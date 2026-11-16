@@ -18,14 +18,18 @@
  * builds the app's client is swapped, so its URL points at the local server.
  * The server holds every answer until the test releases it, after the unmount.
  */
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
-import { GraphQLClient } from 'graphql-request';
+import type { GraphQLClient } from 'graphql-request';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GetMyConnectedAppsResponse } from '@boardsesh/graphql/operations/connected-apps';
+import type { GetUserClimbsQueryResponse } from '@boardsesh/graphql/operations/social';
+import {
+  createHeldGraphQLServer,
+  createScreenHost,
+  expectReadOutlivesScreen,
+  settleAfterUnmount,
+  type ReadCase,
+} from './helpers/held-graphql-server';
 
 const transport = vi.hoisted(() => ({ client: null as GraphQLClient | null }));
 vi.mock('../client', () => ({
@@ -35,98 +39,33 @@ vi.mock('../client', () => ({
   },
 }));
 vi.mock('../../../providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
+// The live-session rails poll only while their tab is focused.
+vi.mock('expo-router', () => ({ useIsFocused: () => true }));
 
 import { CONNECTED_APPS_QUERY_KEY, useDisconnectApp, useMyConnectedApps } from '../hooks/use-connected-apps';
 import { useBetaLinks } from '../hooks/use-beta-links';
 import { useClimbProposals } from '../hooks/use-climb-proposals';
 import { climbProposalsKey } from '../hooks/use-browse-proposals';
 import { CLIMB_LOST_HOLDS_QUERY_KEY, useClimbLostHolds } from '../hooks/use-climb-lost-holds';
+import { useBoardLiveSessions, useFollowedLiveSessions } from '../hooks/use-live-sessions';
+import { useSessionDetail, useSessionOwnerUserId, useSessionPreview } from '../hooks/use-session-detail';
+import { useUserClimbs } from '../hooks/use-social';
+import { boardLiveSessionsQueryKey, followedLiveSessionsQueryKey } from '../query-keys';
 
-/** One request the server has received and not yet answered. */
-type HeldRequest = {
-  operationName: string;
-  variables: unknown;
-  /** True once the client hung up before the answer was written. */
-  aborted: boolean;
-  answered: boolean;
-  answer: (data: unknown) => void;
-};
-
-const received: HeldRequest[] = [];
-let server: Server;
-
-function readBody(request: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    request.setEncoding('utf8');
-    request.on('data', (chunk: string) => {
-      body += chunk;
-    });
-    request.on('end', () => resolve(body));
-    request.on('error', reject);
-  });
-}
-
-async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  if (request.url !== '/graphql' || request.method !== 'POST') {
-    response.writeHead(404).end();
-    return;
-  }
-  const payload = JSON.parse(await readBody(request)) as { query: string; variables?: unknown };
-  const operationName = /\b(?:query|mutation)\s+(\w+)/.exec(payload.query)?.[1] ?? 'anonymous';
-  const held: HeldRequest = {
-    operationName,
-    variables: payload.variables,
-    aborted: false,
-    answered: false,
-    answer: (data) => {
-      held.answered = true;
-      response.writeHead(200, { 'Content-Type': 'application/json' });
-      response.end(JSON.stringify({ data }));
-    },
-  };
-  response.on('close', () => {
-    if (!response.writableFinished) held.aborted = true;
-  });
-  received.push(held);
-}
+const server = createHeldGraphQLServer();
 
 beforeAll(async () => {
-  server = createServer((request, response) => {
-    void handle(request, response);
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address() as AddressInfo;
-  transport.client = new GraphQLClient(`http://127.0.0.1:${port}/graphql`, {
-    fetch: (input: string | URL | Request, init?: RequestInit) => fetch(input, init),
-  });
+  transport.client = await server.start();
 });
 
 afterEach(() => {
-  for (const held of received.splice(0)) if (!held.aborted && !held.answered) held.answer(null);
+  server.releaseAll();
 });
 
 afterAll(async () => {
   transport.client = null;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await server.stop();
 });
-
-function createScreenHost() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-  return { queryClient, wrapper };
-}
-
-async function nextHeldRequest(operationName: string): Promise<HeldRequest> {
-  let found: HeldRequest | undefined;
-  await waitFor(() => {
-    found = received.find((held) => held.operationName === operationName);
-    expect(found).toBeDefined();
-  });
-  return found!;
-}
 
 const LOST_HOLDS_VARIABLES = {
   boardName: 'spray',
@@ -137,12 +76,8 @@ const LOST_HOLDS_VARIABLES = {
   climbUuid: 'climb-1',
 };
 
-type ReadCase = {
-  name: string;
-  operationName: string;
-  queryKey: QueryKey;
-  data: unknown;
-  mount: () => unknown;
+const USER_CLIMBS_ANSWER: GetUserClimbsQueryResponse = {
+  userClimbs: { climbs: [], totalCount: 0, hasMore: false },
 };
 
 const READS: ReadCase[] = [
@@ -174,6 +109,57 @@ const READS: ReadCase[] = [
     data: { climb: { uuid: 'climb-1', lostHolds: [] } },
     mount: () => useClimbLostHolds(LOST_HOLDS_VARIABLES),
   },
+  // Group 2 (#7560): session reads. The board and gym reads (#7559) live in
+  // hooks/__tests__/board-gym-read-lifetime.test.tsx, behind the hooks barrel.
+  {
+    name: 'followed live sessions',
+    operationName: 'FollowedLiveSessions',
+    queryKey: followedLiveSessionsQueryKey(null),
+    data: { followedLiveSessions: [] },
+    mount: () => useFollowedLiveSessions(null, true),
+  },
+  {
+    name: 'board live sessions',
+    operationName: 'BoardLiveSessions',
+    queryKey: boardLiveSessionsQueryKey(7),
+    data: { boardLiveSessions: [] },
+    mount: () => useBoardLiveSessions(7, true),
+  },
+  {
+    name: 'session detail',
+    operationName: 'GetSessionDetail',
+    queryKey: ['sessionDetail', 'session-1'],
+    data: { sessionDetail: null },
+    cached: null,
+    mount: () => useSessionDetail('session-1'),
+  },
+  {
+    name: 'session preview',
+    operationName: 'GetSession',
+    queryKey: ['sessionPreview', 'session-1'],
+    data: { session: null },
+    cached: null,
+    mount: () => useSessionPreview('session-1'),
+  },
+  {
+    name: 'session owner',
+    operationName: 'GetSessionOwner',
+    queryKey: ['sessionOwner', 'session-1'],
+    data: { session: { id: 'session-1', createdByUserId: 'owner-1' } },
+    cached: 'owner-1',
+    mount: () => useSessionOwnerUserId('session-1'),
+  },
+  // Group 2 (#7561): the profile Created climbs list. Before #7599 its paged
+  // wrapper read TanStack's signal on phones too, so leaving the profile
+  // mid-fetch cancelled the read. It is a plain useInfiniteQuery again.
+  {
+    name: 'profile created climbs',
+    operationName: 'GetUserClimbs',
+    queryKey: ['userClimbs', 'user-1'],
+    data: USER_CLIMBS_ANSWER,
+    cached: { pages: [USER_CLIMBS_ANSWER.userClimbs], pageParams: [0] },
+    mount: () => useUserClimbs('user-1'),
+  },
 ];
 
 describe('the local server', () => {
@@ -187,7 +173,7 @@ describe('the local server', () => {
       () => 'answered',
       () => 'rejected',
     );
-    const held = await nextHeldRequest('AbortProbe');
+    const held = await server.nextHeldRequest('AbortProbe');
     controller.abort();
     expect(await settled).toBe('rejected');
     await waitFor(() => expect(held.aborted).toBe(true));
@@ -196,21 +182,7 @@ describe('the local server', () => {
 
 describe('native reads outlive the screen that started them', () => {
   it.each(READS)('$name: the answer lands in the cache after the screen unmounts', async (read) => {
-    const { queryClient, wrapper } = createScreenHost();
-    const screen = renderHook(read.mount, { wrapper });
-    const held = await nextHeldRequest(read.operationName);
-
-    screen.unmount();
-    // Give an abort, if any, the chance to reach the server before it answers.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(held.aborted).toBe(false);
-
-    held.answer(read.data);
-    await waitFor(() => expect(queryClient.getQueryState(read.queryKey)?.status).toBe('success'));
-    expect(queryClient.getQueryData(read.queryKey)).toEqual(read.data);
-    expect(received.filter((request) => request.operationName === read.operationName)).toHaveLength(1);
+    await expectReadOutlivesScreen(server, read);
   });
 });
 
@@ -228,13 +200,11 @@ describe('native writes outlive the screen that started them', () => {
     act(() => {
       screen.result.current.mutate({ connectionId: app.connectionId }, { onSuccess: perCallSuccess });
     });
-    const held = await nextHeldRequest('DisconnectApp');
+    const held = await server.nextHeldRequest('DisconnectApp');
     expect(held.variables).toEqual({ connectionId: app.connectionId });
 
     screen.unmount();
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
+    await settleAfterUnmount();
     expect(held.aborted).toBe(false);
 
     held.answer({ disconnectApp: true });
@@ -244,6 +214,6 @@ describe('native writes outlive the screen that started them', () => {
     // A plain useMutation calls per-call callbacks only while its screen is
     // mounted; the BA-05 wrapper called them after the screen had gone.
     expect(perCallSuccess).not.toHaveBeenCalled();
-    expect(received.filter((request) => request.operationName === 'DisconnectApp')).toHaveLength(1);
+    expect(server.countOf('DisconnectApp')).toBe(1);
   });
 });
