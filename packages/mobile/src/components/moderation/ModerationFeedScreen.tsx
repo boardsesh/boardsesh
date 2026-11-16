@@ -347,7 +347,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
       <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
         <View style={styles.stateBlock}>
           <Icon name="info" size={44} color={systemColors.tertiaryLabel} />
-          <Text tone="secondary" variant="headline" style={styles.stateTitle}>
+          <Text variant="headline" style={styles.stateTitle}>
             {t('mobile.moderation.unavailable.title')}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateBody}>
@@ -390,7 +390,7 @@ export function ModerationFeedScreen({ highlightProposalUuid, climbUuid, boardTy
           ) : (
             <View style={styles.stateBlock}>
               <Icon name="check.small" size={44} color={systemColors.tertiaryLabel} />
-              <Text tone="secondary" variant="headline" style={styles.stateTitle}>
+              <Text variant="headline" style={styles.stateTitle}>
                 {t('mobile.moderation.empty.title')}
               </Text>
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.stateBody}>

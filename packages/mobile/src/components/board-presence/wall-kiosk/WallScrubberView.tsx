@@ -291,7 +291,7 @@ function WallScrubberViewComponent({ preview, ledless, onConnect, takeVirtualWal
 export const WallScrubberView = memo(WallScrubberViewComponent);
 
 // A step button with nowhere to go: the whole label fades, a state and not a tone.
-const disabledLabelStyle = { opacity: 0.35 } as const;
+const disabledLabelStyle = { opacity: 0.35 } as const; // text-dim-ok: a disabled step button, a state and not a tone
 
 const styles = StyleSheet.create({
   root: { gap: spacing[3] },

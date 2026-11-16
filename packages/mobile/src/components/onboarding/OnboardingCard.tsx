@@ -79,7 +79,7 @@ function OnboardingCardComponent({
         {body}
       </Text>
       {footnote ? (
-        <Text variant="footnote" tone="tertiary" style={styles.footnote}>
+        <Text variant="footnote" tone="secondary" color={bodyColor} style={styles.footnote}>
           {footnote}
         </Text>
       ) : null}

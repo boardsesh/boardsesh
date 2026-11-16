@@ -22,7 +22,7 @@ import {
 // Only the fallback (no explicit palette) dims; an explicit secondaryLabel is
 // already the muted tone and dimming it again drops it under 4.5:1. The fallback
 // renders before the theme provider, so it has no tone to reach for.
-const fallbackDimmedStyle = { opacity: 0.7 } as const;
+const fallbackDimmedStyle = { opacity: 0.7 } as const; // text-dim-ok: renders before the theme provider, so no tone exists
 
 const errorStyles = StyleSheet.create({
   container: {

@@ -15,13 +15,21 @@
 //      (0 hides a sizing ghost and 1 is a no-op; neither is a dim).
 //   2. Every `<Text` opening tag (our Text or React Native's) that references
 //      `<name>.<key>` for one of those keys. Each such tag counts once.
-// Inline `style={{ opacity }}`, styles built in a function or `useMemo`, and
-// `Animated.Text` are missed: a false negative is fine, a false positive is not.
-// Comments (a `//` after whitespace, and block comments) are stripped first.
+//   3. Module-level `const <name> = { … opacity: … }` objects (outside a StyleSheet),
+//      counted for each `<Text` tag that references `<name>` bare.
+//   4. Inline `style={{ … opacity … }}` (or an object literal in a style array) on a
+//      `<Text` tag.
+// Styles built in a function or `useMemo`, and `Animated.Text`, are missed: a false
+// negative is fine, a false positive is not. Comments (a `//` after whitespace, and
+// block comments) are stripped first.
+//
+// A fade that is a state rather than a tone (a disabled control, a fallback that
+// renders before the theme exists) opts out with `// text-dim-ok: <reason>` on the
+// const's line (3) or anywhere inside the Text tag (4). Say why in the reason.
 //
 // ALLOWLIST is shrink-only: each entry is a file that still holds that many dimmed
 // Text tags today. Never add an entry; when you migrate one (wave W5), lower or
-// delete it (the test fails on a stale count so the list can't rot).
+// delete it (the test fails on a stale count so the list can't rot). It is empty now.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -34,6 +42,11 @@ const STYLESHEET_BINDING = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*Style
 const STYLE_KEY = /(['"]?)([A-Za-z_$][\w$]*)\1\s*:\s*\{/g;
 const OPACITY_VALUE = /\bopacity\s*:\s*([^,}\n]+)/g;
 const TEXT_TAG = /<Text\b/g;
+const MODULE_CONST = /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*\{/gm;
+const INLINE_OBJECT = /\{(?:[^{}]*,)?\s*opacity\s*(?::\s*([^,}\n]+)|(?=[,}]))[^{}]*\}/g;
+const BARE_IDENTIFIER = /(?<![.\w$])([A-Za-z_$][\w$]*)\b/g;
+const OPT_OUT = /\/\/\s*text-dim-ok:\s*\S/g;
+const OPT_OUT_TOKEN = '@@TEXT_DIM_OK@@';
 const MEMBER_REFERENCE = /\b([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\b/g;
 
 /** Drop block comments and `//` comments that follow whitespace (not the `//` in a URL). */
@@ -79,16 +92,42 @@ function dimmingStyleKeys(source: string): Set<string> {
   return keys;
 }
 
+/** Names of module-level `const x = { … opacity … }` objects with no opt-out on their line. */
+function dimmingConstNames(source: string): Set<string> {
+  const names = new Set<string>();
+  for (const declaration of source.matchAll(MODULE_CONST)) {
+    const objectStart = (declaration.index ?? 0) + declaration[0].length - 1;
+    const objectEnd = closingBraceEnd(source, objectStart);
+    const lineEnd = source.indexOf('\n', objectEnd);
+    const statement = source.slice(declaration.index ?? 0, lineEnd === -1 ? source.length : lineEnd);
+    if (statement.includes(OPT_OUT_TOKEN)) continue;
+    const body = source.slice(objectStart, objectEnd);
+    if ([...body.matchAll(OPACITY_VALUE)].some(([, value]) => !['0', '1'].includes(value.trim()))) {
+      names.add(declaration[1]);
+    }
+  }
+  return names;
+}
+
+function hasInlineOpacity(openingTag: string): boolean {
+  return [...openingTag.matchAll(INLINE_OBJECT)].some(
+    ([, value]) => value === undefined || !['0', '1'].includes(value.trim()),
+  );
+}
+
 function countDimmedText(rawSource: string): number {
-  const source = stripComments(rawSource);
+  const source = stripComments(rawSource.replace(OPT_OUT, OPT_OUT_TOKEN));
   const dimKeys = dimmingStyleKeys(source);
-  if (dimKeys.size === 0) return 0;
+  const dimConsts = dimmingConstNames(source);
   let count = 0;
   for (const tag of source.matchAll(TEXT_TAG)) {
     const tagIndex = tag.index ?? 0;
     const openingTag = source.slice(tagIndex, openingTagEnd(source, tagIndex));
+    if (openingTag.includes(OPT_OUT_TOKEN)) continue;
     const references = [...openingTag.matchAll(MEMBER_REFERENCE)];
-    if (references.some(([, name, key]) => dimKeys.has(`${name}.${key}`))) count++;
+    const dimmedByKey = references.some(([, name, key]) => dimKeys.has(`${name}.${key}`));
+    const dimmedByConst = [...openingTag.matchAll(BARE_IDENTIFIER)].some(([, name]) => dimConsts.has(name));
+    if (dimmedByKey || dimmedByConst || hasInlineOpacity(openingTag)) count++;
   }
   return count;
 }
@@ -151,8 +190,28 @@ describe('the text-opacity scanner', () => {
     ['shadowOpacity, not opacity', '<Text style={styles.row}>Hi</Text>', 0],
     ['a TextInput', '<TextInput style={styles.muted} />', 0],
     ['a commented-out tag', '{/* <Text style={styles.muted}>Hi</Text> */}', 0],
+    ['an inline opacity', '<Text style={{ opacity: 0.5 }}>Hi</Text>', 1],
+    ['an inline opacity in a style array', '<Text style={[styles.title, { opacity }]}>Hi</Text>', 1],
+    ['an inline opacity of 1', '<Text style={{ opacity: 1 }}>Hi</Text>', 0],
+    ['an inline opacity on a View', '<View style={{ opacity: 0.5 }} />', 0],
+    ['an inline opacity with an opt-out', '<Text style={{ opacity: 0.5 }} // text-dim-ok: disabled row\n>Hi</Text>', 0],
   ])('counts %s', (_label, jsx, expected) => {
     expect(countDimmedText(`${dimmedSheet}\n${jsx}`)).toBe(expected);
+  });
+
+  it('counts a Text that references a module-level const holding opacity', () => {
+    const source = `const faded = { opacity: 0.7 } as const;\n<Text style={faded}>Hi</Text>\n<Text style={styles.title}>Hi</Text>`;
+    expect(countDimmedText(source)).toBe(1);
+  });
+
+  it('ignores such a const when its line says text-dim-ok', () => {
+    const source = `const faded = { opacity: 0.7 } as const; // text-dim-ok: renders before the theme\n<Text style={faded}>Hi</Text>`;
+    expect(countDimmedText(source)).toBe(0);
+  });
+
+  it('ignores a const with no opacity, or with opacity 1', () => {
+    const source = `const plain = { marginTop: 4 };\nconst full = { opacity: 1 };\n<Text style={[plain, full]}>Hi</Text>`;
+    expect(countDimmedText(source)).toBe(0);
   });
 
   it('reads a renamed StyleSheet binding', () => {

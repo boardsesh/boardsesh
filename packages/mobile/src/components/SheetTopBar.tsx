@@ -187,6 +187,7 @@ export const SheetTopBarLeadingButton = React.memo(function SheetTopBarLeadingBu
             color={look.labelColor}
             numberOfLines={1}
             maxFontSizeMultiplier={spec.labelMaxFontScale}
+            // text-dim-ok: a disabled button's label fades as a state, not a tone
             style={look.opacity < 1 ? { opacity: look.opacity } : null}
           >
             {label}

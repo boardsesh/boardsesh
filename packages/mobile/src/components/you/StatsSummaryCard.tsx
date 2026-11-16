@@ -8,6 +8,7 @@ import { type IconName } from '../icon-map';
 import { Card } from '../Card';
 import { gradeBadgeColor } from './profile-chart-colors';
 import { spacing, borderRadius, opacity } from '../../theme/tokens';
+import { withAlpha } from '../../theme/colors';
 import { useTheme } from '../../providers/theme-provider';
 import { useVariantValue } from '../../theme/variants';
 
@@ -95,16 +96,12 @@ function GradeTile({
       </View>
       {/* Match the grade/icon's contrast-aware colour; secondaryLabel is a grey
           that washes out on saturated grade tiles. Dim slightly for hierarchy. */}
-      <Text variant="caption1" color={onTile} style={gradeTileLabelStyle}>
+      <Text variant="caption1" color={withAlpha(onTile, opacity.subtle)}>
         {label}
       </Text>
     </View>
   );
 }
-
-// The label sits on a grade-coloured tile in whatever on-tile colour the variant resolves,
-// so it steps down by fading toward the tile instead of by a label tone.
-const gradeTileLabelStyle = { opacity: opacity.subtle } as const;
 
 const styles = StyleSheet.create({
   card: { marginHorizontal: spacing[4] },
