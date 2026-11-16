@@ -136,16 +136,6 @@
       "types": "./src/browser-coordinator-dom.ts",
       "import": "./src/browser-coordinator-dom.ts",
       "default": "./src/browser-coordinator-dom.ts"
-    },
-    "./browser-password-v1": {
-      "types": "./src/browser-password-v1.ts",
-      "import": "./src/browser-password-v1.ts",
-      "default": "./src/browser-password-v1.ts"
-    },
-    "./browser-password-browser-v1": {
-      "types": "./src/browser-password-browser-v1.ts",
-      "import": "./src/browser-password-browser-v1.ts",
-      "default": "./src/browser-password-browser-v1.ts"
     }
   },
   "scripts": {
