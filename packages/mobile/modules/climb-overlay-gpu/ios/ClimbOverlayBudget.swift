@@ -9,6 +9,28 @@ final class ClimbOverlayBudget {
 
   var bytes: Int { lock.lock(); defer { lock.unlock() }; return resident }
 
+  /// Shared buffers can occupy whole VM pages even when Metal's heap estimate
+  /// reports only their requested length. Admission must cover that allocation.
+  static func allocationSize(requested: Int, heapSize: Int, heapAlignment: Int,
+                             pageSize: Int = Int(getpagesize())) -> Int? {
+    let required = max(requested,heapSize)
+    guard requested > 0,heapSize >= 0,required <= limit,
+      heapAlignment > 0,heapAlignment <= limit,pageSize > 0,pageSize <= limit else { return nil }
+    var divisor = pageSize
+    var remainder = heapAlignment
+    while remainder != 0 {
+      let next = divisor % remainder
+      divisor = remainder
+      remainder = next
+    }
+    let pagesPerAlignment = pageSize / divisor
+    guard pagesPerAlignment <= limit / heapAlignment else { return nil }
+    let alignment = pagesPerAlignment * heapAlignment
+    let padding = (alignment - required % alignment) % alignment
+    guard required <= limit - padding else { return nil }
+    return required + padding
+  }
+
   func reserve(_ amount: Int) -> Reservation? {
     lock.lock()
     defer { lock.unlock() }
