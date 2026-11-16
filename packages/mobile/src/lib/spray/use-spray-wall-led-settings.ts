@@ -8,6 +8,7 @@ import {
   sprayWallLedSettingsKey,
   subscribeSprayWallLedServerChange,
   subscribeSprayWallLedUploadOutcome,
+  type SprayWallLedField,
   type SprayWallLedSettings,
 } from './spray-wall-led-cache';
 import { markSprayWallLedSaveStarted, prepareSprayWallLedRead, queueSprayWallLedUpload } from './spray-wall-led-sync';
@@ -58,6 +59,25 @@ export async function loadSprayWallLedSettings(wallUuid: string): Promise<SprayW
   return withLocalAddress(
     readSprayWallLedSettings(await getPreference<unknown>(sprayWallLedSettingsKey(wallUuid), { strictParsing: true })),
   );
+}
+
+/**
+ * What a save uploads. Brightness and auto-off go only when they changed, so this
+ * phone's copy of the other cannot undo what another phone set meanwhile. A save
+ * that changes nothing still sends the controller settings, as it always did.
+ */
+function changedFields(previous: SprayWallLedSettings, next: SprayWallLedSettings): SprayWallLedField[] {
+  const fields: SprayWallLedField[] = [];
+  if (
+    previous.enabled !== next.enabled ||
+    previous.controller.type !== next.controller.type ||
+    previous.controller.url !== next.controller.url ||
+    previous.wifiUrl !== next.wifiUrl
+  )
+    fields.push('settings');
+  if (previous.brightness !== next.brightness) fields.push('brightness');
+  if (previous.autoOffMinutes !== next.autoOffMinutes) fields.push('autoOff');
+  return fields.length ? fields : ['settings'];
 }
 
 /**
@@ -148,7 +168,8 @@ export function useSprayWallLedSettings(wallUuid: string) {
         const settings = readSprayWallLedSettings(next);
         if (settings.controller.type === 'wled' && settings.controller.url)
           normalizeLocalControllerUrl(settings.controller.url);
-        const write = markSprayWallLedSaveStarted(wallUuid, 'settings', () =>
+        const fields = changedFields(session.settings, settings);
+        const write = markSprayWallLedSaveStarted(wallUuid, fields, () =>
           setPreference(sprayWallLedSettingsKey(wallUuid), settings),
         );
         pendingWrites.set(wallUuid, write);
@@ -159,7 +180,7 @@ export function useSprayWallLedSettings(wallUuid: string) {
         }
         if (sprayWallLedCacheGeneration(wallUuid) !== cacheGeneration) throw new Error('LED save withdrawn');
         notifySprayLedConfiguration(wallUuid);
-        queueSprayWallLedUpload(wallUuid, 'settings');
+        queueSprayWallLedUpload(wallUuid, fields);
         if (!session.active) return false;
         session.settings = settings;
         setState({ wallUuid, settings, loading: false, saving: false, error: null });

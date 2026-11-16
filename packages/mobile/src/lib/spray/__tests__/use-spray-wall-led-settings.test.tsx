@@ -235,7 +235,28 @@ describe('the phone copy of a wall\u2019s LED settings', () => {
       expect(await result.current.save(configured)).toBe(true);
     });
     expect(order).toEqual(['mark', 'write', 'upload']);
-    expect(queueSprayWallLedUpload).toHaveBeenCalledWith('wall-one', 'settings');
+    expect(queueSprayWallLedUpload).toHaveBeenCalledWith('wall-one', ['settings']);
+  });
+
+  it('marks and uploads only the lighting value a save changed', async () => {
+    preferences.get.mockResolvedValue(configured);
+    const { result } = renderHook(() => useSprayWallLedSettings('wall-one'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      expect(await result.current.save({ ...configured, brightness: 128 })).toBe(true);
+    });
+    expect(markSprayWallLedSaveStarted).toHaveBeenLastCalledWith('wall-one', ['brightness'], expect.any(Function));
+    expect(queueSprayWallLedUpload).toHaveBeenLastCalledWith('wall-one', ['brightness']);
+    await act(async () => {
+      expect(await result.current.save({ ...configured, brightness: 128, autoOffMinutes: 30 })).toBe(true);
+    });
+    expect(queueSprayWallLedUpload).toHaveBeenLastCalledWith('wall-one', ['autoOff']);
+    await act(async () => {
+      expect(await result.current.save({ ...configured, enabled: false, brightness: 128, autoOffMinutes: 30 })).toBe(
+        true,
+      );
+    });
+    expect(queueSprayWallLedUpload).toHaveBeenLastCalledWith('wall-one', ['settings']);
   });
 
   it('shows a failed upload as the existing save error, and clears it when an upload lands', async () => {

@@ -25,8 +25,8 @@ export function createLedPreviewSession(
   lighting: LedLightingOptions = {},
 ) {
   const url = normalizeLedControllerTarget(controllerUrl);
-  const resolvedLighting = resolveLedLightingOptions(lighting);
-  const lightingKey = JSON.stringify(resolvedLighting);
+  let resolvedLighting = resolveLedLightingOptions(lighting);
+  let lightingKey = JSON.stringify(resolvedLighting);
   const lane = lanes.get(url) ?? {
     tail: Promise.resolve(),
     owner: null,
@@ -100,6 +100,14 @@ export function createLedPreviewSession(
 
   return {
     isOwner: () => lane.owner === token,
+    /**
+     * New brightness or auto-off for this session's next write. Nothing is sent and
+     * nothing switches off: what is lit stays until the next show or Light all.
+     */
+    setLighting(next: LedLightingOptions) {
+      resolvedLighting = resolveLedLightingOptions(next);
+      lightingKey = JSON.stringify(resolvedLighting);
+    },
     show: async (indices: readonly number[], colors?: readonly LedPixel[]) => {
       const snapshot = [...indices];
       const colorSnapshot = snapshotLedPixels(snapshot, colors);

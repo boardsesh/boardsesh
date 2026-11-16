@@ -15,9 +15,11 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    Or tap **Find on my Wi-Fi**: the phone asks each address of its own Wi-Fi
    network (a private /24 only, 32 at a time, 1.5 s each, never its own address)
    for WLED's `/json/info`, and lists the controllers that answer by name and
-   address. Tapping one checks and saves it as below. On mobile data it asks for
-   Wi-Fi instead of scanning. It needs no new native module: the subnet comes
-   from NetInfo.
+   address in a list of their own. Tapping one checks and saves it as below. On
+   mobile data it asks for Wi-Fi instead of scanning. On a Wi-Fi it cannot sweep
+   (an IPv6-only, public or CGNAT address, or a VPN) it says no controller was
+   found on this network. On a network wider than /24 it searches only the
+   phone's own /24. It needs no new native module: the subnet comes from NetInfo.
 2. Tap **OK** to check the connection. A successful check saves the address to
    the wall and shows the device name and LED count. It does not change the
    lighting.
@@ -29,15 +31,28 @@ every signed-in climber who can open the wall lights it from their own phone. Se
    **Brightness** (5–100 %, stored as WLED's 1–255, 25 % by default) and **Turn
    off automatically** (never, 15, 30, 60 or 120 minutes) save to the wall with
    the rest of the setup (`brightness`, `autoOffMinutes` on
-   `spray_wall_led_setups`), so every phone lights it the same way. A change
-   applies from the next lighting. Auto-off uses WLED's nightlight in instant
-   mode, so the controller switches the wall off by itself even when the phone
-   is asleep or gone, and each new route or test restarts the countdown. WLED
-   only restarts a running countdown after its 100 ms nightlight handler has seen
-   it off, so the driver switches it off, waits a tick, arms it again and checks
-   `nl.rem` (a countdown restarted in the last minute is left alone). Both apply
-   over Wi-Fi; over Bluetooth only the brightness does for now, because the BLE
-   usermod accepts `nl.on` but not the duration.
+   `spray_wall_led_setups`), so every phone lights it the same way. The server
+   accepts only those auto-off values. A phone uploads only the one it changed,
+   so a stale copy of the other cannot undo another phone's choice. A change
+   applies from the next lighting without switching the wall off; a wall lit
+   with **Light all LEDs** shows a new brightness at once. Auto-off uses WLED's
+   nightlight in instant mode, so the controller switches the wall off by itself
+   even when the phone is asleep or gone, and each new route or test restarts
+   the countdown. WLED only restarts a running countdown after its 100 ms
+   nightlight handler has seen it off, so the driver switches it off, waits a
+   tick, arms it again and checks `nl.rem`. A countdown restarted in the last
+   minute is left alone, so a tap within a minute of the last restart does not
+   extend it: the wall can go dark up to a minute before N minutes after the
+   last tap. If the countdown cannot be armed after three tries, the climb stays
+   lit and the app logs that auto-off was not set, rather than switching the
+   wall off. Both apply over Wi-Fi; over Bluetooth only the brightness does for
+   now, because the BLE usermod accepts `nl.on` but not the duration.
+
+   During the rollout, a phone without this update lights the wall at WLED
+   brightness 64 and cancels any auto-off (`nl: { on: false }`) every time it
+   lights a climb. At a wall with mixed app versions, the brightness resets and
+   auto-off stops whenever an older phone lights it, until every phone has
+   updated.
 5. **LED setup** opens the T-nut setup: choose grid, offset grid or custom spacing.
    For offset grids choose whether the top row starts inset. Match four rings to
    the grid's outer corners, then set rows and columns (8 × 8 initially, 1–50 rows and up to 99 offset columns). The preview updates as the rings move. Count every distinct vertical position for offset columns: 8 + 7 holes means

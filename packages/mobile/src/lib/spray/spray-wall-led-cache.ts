@@ -13,7 +13,13 @@ export type SprayWallLedSettings = {
   autoOffMinutes: number;
 };
 
-export type SprayWallLedField = 'settings' | 'layout';
+/**
+ * What a save marks unsent and uploads. Brightness and auto-off are fields of their
+ * own, though they live in the settings copy: a phone sends only the one it changed,
+ * so a stale copy cannot undo another phone's other value.
+ */
+export type SprayWallLedField = 'settings' | 'brightness' | 'autoOff' | 'layout';
+export const SPRAY_WALL_LED_FIELDS: readonly SprayWallLedField[] = ['settings', 'brightness', 'autoOff', 'layout'];
 
 /**
  * The phone's copy of a wall's LED setup. The server is the source of truth
@@ -153,8 +159,7 @@ export async function eraseSprayWallLedCache(wallUuid: string): Promise<void> {
     Promise.allSettled([
       removePreference(sprayWallLedSettingsKey(wallUuid)),
       removePreference(sprayWallLedLayoutKey(wallUuid)),
-      removePreference(sprayWallLedUnsentKey('settings', wallUuid)),
-      removePreference(sprayWallLedUnsentKey('layout', wallUuid)),
+      ...SPRAY_WALL_LED_FIELDS.map((field) => removePreference(sprayWallLedUnsentKey(field, wallUuid))),
     ]),
   );
 }

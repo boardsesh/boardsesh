@@ -28,6 +28,7 @@
     "finding": "Suche in deinem WLAN… {{checked}} von {{total}} Adressen",
     "findNone": "Kein WLED-Controller hat in diesem WLAN geantwortet. Prüfe, ob er eingeschaltet und im selben Netz ist, oder gib seine Adresse ein.",
     "findNoWifi": "Verbinde dein Handy mit demselben WLAN wie den Controller, um ihn zu suchen.",
+    "findNotSearchable": "Kein Controller in diesem Netzwerk gefunden. Dein Handy kann es nicht durchsuchen, also gib die Adresse des Controllers der Spraywall ein.",
     "findResult": "{{name}} verwenden ({{address}})",
     "brightness": "Helligkeit",
     "brightnessValue": "{{percent}} %",

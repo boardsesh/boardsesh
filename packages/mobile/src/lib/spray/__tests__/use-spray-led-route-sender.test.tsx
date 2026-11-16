@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   clear: vi.fn(),
   close: vi.fn(),
   detach: vi.fn(),
+  setLighting: vi.fn(),
   create: vi.fn(),
   loadDriver: vi.fn(),
   invalidate: vi.fn(),
@@ -119,7 +120,13 @@ beforeEach(() => {
   mocks.clear.mockResolvedValue(true);
   mocks.close.mockResolvedValue(undefined);
   mocks.detach.mockResolvedValue(undefined);
-  mocks.create.mockReturnValue({ show: mocks.show, clear: mocks.clear, close: mocks.close, detach: mocks.detach });
+  mocks.create.mockReturnValue({
+    show: mocks.show,
+    clear: mocks.clear,
+    close: mocks.close,
+    detach: mocks.detach,
+    setLighting: mocks.setLighting,
+  });
 });
 afterEach(cleanup);
 
@@ -148,7 +155,7 @@ describe('spray route transport', () => {
     ['wled', 'http://wall.local'],
     ['wled-ble', 'wled-ble:wled-aabbccddeeff'],
   ] as const)(
-    'lights a %s wall at its brightness and auto-off, and starts afresh when they change',
+    'lights a %s wall at its brightness and auto-off, and hands a change to the open session',
     async (type, url) => {
       mocks.settings.mockResolvedValue({
         enabled: true,
@@ -162,8 +169,11 @@ describe('spray route transport', () => {
       expect(mocks.create).toHaveBeenLastCalledWith('wled-driver', url, { brightness: 200, autoOffMinutes: 30 });
       mocks.settings.mockResolvedValue({ enabled: true, controller: { type, url }, brightness: 90, autoOffMinutes: 0 });
       expect(await result.current.send('p7r2')).toBe(true);
-      expect(mocks.close).toHaveBeenCalledOnce();
-      expect(mocks.create).toHaveBeenLastCalledWith('wled-driver', url, { brightness: 90, autoOffMinutes: 0 });
+      // Closing the session would switch the wall off before the next climb lights.
+      expect(mocks.close).not.toHaveBeenCalled();
+      expect(mocks.create).toHaveBeenCalledOnce();
+      expect(mocks.setLighting).toHaveBeenCalledExactlyOnceWith({ brightness: 90, autoOffMinutes: 0 });
+      expect(mocks.show).toHaveBeenCalledTimes(2);
     },
   );
 

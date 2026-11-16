@@ -205,6 +205,20 @@ describe('serialized LED preview ownership', () => {
     await keep.close();
   });
 
+  it('takes new lighting in an open session without switching the wall off', async () => {
+    const { driver, commands, fetchController } = fixture();
+    const session = createLedPreviewSession(driver, 'slider.local', { brightness: 32 });
+    await session.lightAll();
+    fetchController.mockClear();
+    session.setLighting({ brightness: 200 });
+    // Nothing is sent until the next lighting, and nothing turns the wall off.
+    expect(commands()).toEqual([]);
+    await session.lightAll();
+    expect(commands().some((command) => command.on === false)).toBe(false);
+    expect(commands()).toContainEqual(expect.objectContaining({ on: true, bri: 200 }));
+    await session.close();
+  });
+
   it('waits for an in-flight selection before an explicit clear takes ownership', async () => {
     const { driver, commands, fetchController } = fixture();
     let release!: () => void;

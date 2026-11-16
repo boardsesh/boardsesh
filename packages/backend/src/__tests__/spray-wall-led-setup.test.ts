@@ -186,8 +186,14 @@ describe('saving a wall’s LED setup', () => {
     expect(setup).toMatchObject({ brightness: 51, autoOffMinutes: 30, enabled: true });
     await expect(save(uuid, OWNER, { brightness: 0 })).rejects.toThrow();
     await expect(save(uuid, OWNER, { brightness: 256 })).rejects.toThrow();
-    await expect(save(uuid, OWNER, { autoOffMinutes: 256 })).rejects.toThrow();
-    await expect(save(uuid, OWNER, { autoOffMinutes: 1.5 })).rejects.toThrow();
+    // Only the app's choices: never, 15, 30, 60 or 120 minutes.
+    for (const minutes of [0, 15, 30, 60, 120]) {
+      expect((await save(uuid, OWNER, { autoOffMinutes: minutes })).autoOffMinutes).toBe(minutes);
+    }
+    for (const minutes of [1, 45, 90, 255, 256, 1.5, -15]) {
+      await expect(save(uuid, OWNER, { autoOffMinutes: minutes })).rejects.toThrow();
+    }
+    expect((await read(uuid, OWNER))?.setup?.autoOffMinutes).toBe(120);
   });
 
   it('saves hand-made hold links as the app sends them, and a layout without them clears them', async () => {

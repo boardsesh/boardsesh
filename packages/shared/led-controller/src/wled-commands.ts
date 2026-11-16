@@ -122,6 +122,11 @@ export interface WledCommandOptions {
   autoOff?: boolean;
   /** Waits for WLED's nightlight tick; tests replace it. */
   sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * Told when the colours are on the wall but the countdown could not be armed.
+   * The climb stays lit: a missed auto-off is better than a dark wall. Logs by default.
+   */
+  onAutoOffNotSet?: (error: unknown) => void;
 }
 
 /** All WLED lighting semantics live here, independently of HTTP or BLE. */
@@ -129,6 +134,9 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
   const supportsAutoOff = options.autoOff ?? true;
   const sleep =
     options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const onAutoOffNotSet =
+    options.onAutoOffNotSet ??
+    ((error: unknown) => console.warn('[WLED] Auto-off not set; the wall stays lit.', error));
   async function send(url: string, command: Record<string, unknown>, signal?: AbortSignal) {
     const response = await request(url, 'state', signal, command);
     if (!isRecord(response) || response.success !== true) {
@@ -136,12 +144,15 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
     }
   }
 
-  /** An unreadable state is no reason to blank a lit wall; the write that follows says if the controller is gone. */
-  async function switchedOffSinceLastWrite(url: string) {
+  /**
+   * An unreadable state is no reason to blank a lit wall (it reads as on); the write
+   * that follows says if the controller is gone.
+   */
+  async function readState(url: string): Promise<unknown> {
     try {
-      return isSwitchedOff(await request(url, 'state'));
+      return await request(url, 'state');
     } catch {
-      return false;
+      return undefined;
     }
   }
 
@@ -173,6 +184,20 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
       await waitForNightlightTick(signal);
     }
     return true;
+  }
+
+  /**
+   * Arm the countdown after the colours are on the wall. A failure here is soft: the
+   * operation succeeds with the climb lit, so the preview does not switch the wall
+   * off over a convenience. Only a cancellation still fails it.
+   */
+  async function armCountdownAfterLighting(url: string, minutes: number, signal?: AbortSignal) {
+    try {
+      await armCountdown(url, minutes, signal);
+    } catch (error) {
+      if (error instanceof LedControllerError && error.code === 'cancelled') throw error;
+      onAutoOffNotSet(error);
+    }
   }
 
   /** Arm the countdown and confirm from the state that WLED started a new one. */
@@ -235,7 +260,7 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
         },
         signal,
       );
-      if (arm) await armCountdown(url, minutes, signal);
+      if (arm) await armCountdownAfterLighting(url, minutes, signal);
     },
     async turnOff(url, signal) {
       await send(url, { on: false, tt: 0, live: false, udpn: { nn: true } }, signal);
@@ -265,18 +290,21 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
             if (next.some((index) => index >= ledCount)) throw new LedControllerError('invalid-indices');
             return ledCount;
           };
-          let ledCount = checkIndices(count ?? (await driver.probe(url)).ledCount);
-          const arm = minutes > 0 && (await stopStaleCountdown(url, minutes));
+          // One state read per tap serves the off check, the countdown and the segments.
+          // It is skipped only when nothing needs it: no auto-off and a fresh wake.
+          const state = count !== null || minutes > 0 ? await readState(url) : undefined;
           // The WLED app, a button, Turn LEDs off or the auto-off may have switched it
           // off since the last write. Individual colours alone would be acknowledged
-          // and stay dark, so start again from the full wake.
-          if (count !== null && (await switchedOffSinceLastWrite(url))) {
+          // and stay dark, so start again from the full wake, with the LED count read
+          // again before the indices are checked: it may have grown meanwhile.
+          if (count !== null && isSwitchedOff(state)) {
             count = null;
             previous = [];
-            ledCount = checkIndices((await driver.probe(url)).ledCount);
           }
+          const ledCount = checkIndices(count ?? (await driver.probe(url)).ledCount);
+          const arm = minutes > 0 && (await stopStaleCountdown(url, minutes, undefined, state ?? null));
           if (count === null) {
-            const ids = segmentIds(await request(url, 'state'));
+            const ids = segmentIds(state ?? (await request(url, 'state')));
             // Individual indices are segment-relative. Reset segment 0 to the
             // whole cable and suspend overlapping segments without deleting them.
             // WLED requires waking/brightness BEFORE an individual-colour request.
@@ -319,7 +347,7 @@ export function createWledCommandDriver(request: WledRequest, options: WledComma
             const size = offset === 0 && count === null ? 259 : 256;
             await send(url, { tt: 0, udpn: { nn: true }, seg: [{ id: 0, i: colors.slice(offset, offset + size) }] });
           }
-          if (arm) await armCountdown(url, minutes);
+          if (arm) await armCountdownAfterLighting(url, minutes);
           count = ledCount;
           previous = next;
         },

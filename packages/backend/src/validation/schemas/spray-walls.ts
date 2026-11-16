@@ -3,7 +3,11 @@ import { OptionalReleaseContextInputSchema } from './release-context';
 import { MAX_RING_NUMBERS, MIN_RING_NUMBERS, isValidOutlineRing } from '@boardsesh/board-art-geometry/ring';
 import { MAX_HOLDS_PER_WALL, SPRAY_ANGLES } from '@boardsesh/board-config';
 import { BOARD_RENDER_SETTING_BOUNDS, type BoardseshRenderSettings } from '@boardsesh/board-look';
-import { LedControllerError, normalizeLocalControllerUrl } from '@boardsesh/led-controller';
+import {
+  LedControllerError,
+  normalizeLocalControllerUrl,
+  SPRAY_WALL_LED_AUTO_OFF_CHOICES,
+} from '@boardsesh/led-controller';
 import {
   MAX_TNUT_LAYOUT_BYTES,
   SPRAY_WALL_BACKGROUNDS,
@@ -447,7 +451,13 @@ export const SaveSprayWallLedSetupInputSchema = z
     controllerUrl: SprayWallLedControllerUrlSchema.nullish(),
     enabled: z.boolean().nullish(),
     brightness: z.number().int().min(1).max(255).nullish(),
-    autoOffMinutes: z.number().int().min(0).max(255).nullish(),
+    // Exactly the app's choices, so every saved value shows as one of them.
+    autoOffMinutes: z
+      .number()
+      .refine((minutes) => (SPRAY_WALL_LED_AUTO_OFF_CHOICES as readonly number[]).includes(minutes), {
+        message: `Auto-off is one of ${SPRAY_WALL_LED_AUTO_OFF_CHOICES.join(', ')} minutes`,
+      })
+      .nullish(),
     layout: SprayWallLedLayoutSchema.nullish(),
   })
   .strict()

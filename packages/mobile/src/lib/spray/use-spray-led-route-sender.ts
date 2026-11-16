@@ -181,15 +181,16 @@ export function useSprayLedRouteSender({
         }
         if (!settings.controller.url || mirrored) return fail();
         let current = runtime.current;
-        // A changed brightness or auto-off needs a fresh session: its first write applies them.
         const lighting = { brightness: settings.brightness, autoOffMinutes: settings.autoOffMinutes };
         const lightingKey = `${lighting.brightness}:${lighting.autoOffMinutes}`;
-        if (
-          !current ||
-          current.url !== settings.controller.url ||
-          current.wallUuid !== wallUuid ||
-          current.lightingKey !== lightingKey
-        ) {
+        // A changed brightness or auto-off goes to the open session, whose next write
+        // wakes the wall with them. Closing it would switch the wall off first.
+        if (current && current.lightingKey !== lightingKey) {
+          current.session.setLighting(lighting);
+          current = { ...current, lightingKey };
+          runtime.current = current;
+        }
+        if (!current || current.url !== settings.controller.url || current.wallUuid !== wallUuid) {
           const driver = await loadSprayLedDriver(settings.controller.type);
           if (!isCurrent()) return false;
           if (current) void current.session.close().catch(() => undefined);

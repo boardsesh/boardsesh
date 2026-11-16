@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { createElement, type ReactNode } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createElement, Fragment, type ReactNode } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createLedPreviewSession,
@@ -18,7 +18,25 @@ const network = vi.hoisted(() => ({ fetch: vi.fn() }));
 vi.mock('../WledBluetoothInstaller', () => ({
   WledBluetoothInstaller: () => createElement('span', null, 'owner-installer'),
 }));
-vi.mock('@shopify/flash-list', () => ({ FlashList: () => null }));
+// A list that renders every row, so the search results can be tapped.
+vi.mock('@shopify/flash-list', () => ({
+  FlashList: ({
+    data,
+    renderItem,
+    keyExtractor,
+  }: {
+    data: unknown[];
+    renderItem: (info: { item: unknown; index: number }) => unknown;
+    keyExtractor: (item: unknown) => string;
+  }) =>
+    createElement(
+      'div',
+      { 'data-testid': 'flash-list' },
+      data.map((item, index) =>
+        createElement(Fragment, { key: keyExtractor(item) }, renderItem({ item, index }) as never),
+      ),
+    ),
+}));
 
 vi.mock('expo-router', () => ({ useRouter: () => navigation }));
 
@@ -301,6 +319,35 @@ describe('SprayWallLedSection', () => {
       await act(async () => lookups[0].resolve(wifi));
       expect(controller.probe).not.toHaveBeenCalled();
     });
+  });
+
+  it('says no controller is found on a Wi-Fi it cannot search, instead of asking to join one', async () => {
+    for (const ipAddress of ['2001:db8::5', '100.64.1.20', '8.8.4.4']) {
+      network.fetch.mockResolvedValue({ type: 'wifi', details: { ipAddress, subnet: null } });
+      storage.records.set(settingsKey, savedSettings());
+      const view = render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+      await openSection();
+      fireEvent.click(button('find'));
+      expect(await screen.findByText('sprayLed.findNotSearchable')).toBeTruthy();
+      expect(screen.queryByText('sprayLed.findNoWifi')).toBeNull();
+      view.unmount();
+    }
+    expect(controller.probe).not.toHaveBeenCalled();
+  });
+
+  it('lists what the search found in its own virtualized list', async () => {
+    network.fetch.mockResolvedValue({ type: 'wifi', details: { ipAddress: '192.168.1.50', subnet: '255.255.255.0' } });
+    controller.probe.mockImplementation(async (url: string) => {
+      if (url === 'http://192.168.1.40' || url === 'http://192.168.1.41') return controllerInfo;
+      throw new LedControllerError('unavailable');
+    });
+    storage.records.set(settingsKey, savedSettings());
+    render(createElement(SprayWallLedSection, { wallUuid: 'wall-1' }));
+    await openSection();
+    fireEvent.click(button('find'));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'sprayLed.findResult' })).toHaveLength(2));
+    const list = screen.getByTestId('flash-list');
+    expect(within(list).getAllByRole('button', { name: 'sprayLed.findResult' })).toHaveLength(2);
   });
 
   it('asks for Wi-Fi instead of scanning on mobile data', async () => {

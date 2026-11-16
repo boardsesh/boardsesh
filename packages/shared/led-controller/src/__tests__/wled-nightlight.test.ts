@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createLedPreviewSession } from '../preview';
 import { createWledDriver } from '../wled';
 
@@ -9,7 +9,8 @@ import { createWledDriver } from '../wled';
  * starts a countdown when it first sees the flag on and forgets one when it sees
  * it off. In mode 0 the countdown ends by setting the brightness to `tbri`.
  */
-function firmware() {
+function firmware({ ledCount = 300 }: { ledCount?: number } = {}) {
+  const info = { ledCount };
   let now = 0;
   let lastTick = -1000;
   let stalledTicks = 0;
@@ -62,8 +63,10 @@ function firmware() {
       if (typeof night.mode === 'number') nl.mode = night.mode;
       if (typeof night.tbri === 'number') nl.tbri = night.tbri;
     }
-    // stateUpdated(): reaching the target brightness ends the nightlight.
-    if (wall.bri === nl.tbri && nl.mode !== 3) nl.active = false;
+    // stateUpdated(): reaching the target brightness ends the nightlight, except
+    // for a request with `udpn.nn` (CALL_MODE_NO_NOTIFY), which skips that check.
+    const noNotify = (command.udpn as Record<string, unknown> | undefined)?.nn === true;
+    if (!noNotify && wall.bri === nl.tbri && nl.mode !== 3) nl.active = false;
     if (wall.bri > 0) wall.briLast = wall.bri;
   }
 
@@ -87,25 +90,36 @@ function firmware() {
     // A request takes a few milliseconds, but the nightlight handler never runs inside it.
     now += 3;
     if (url.endsWith('/json/info'))
-      return new Response(JSON.stringify({ name: 'Wall', ver: '16.0.1', leds: { count: 300 } }));
+      return new Response(JSON.stringify({ name: 'Wall', ver: '16.0.1', leds: { count: info.ledCount } }));
     if (typeof init?.body === 'string') {
       apply(JSON.parse(init.body) as Record<string, unknown>);
       return new Response(JSON.stringify({ success: true }));
     }
+    stateReads++;
     return new Response(JSON.stringify(state()));
   };
+  let stateReads = 0;
   const sleeps: number[] = [];
+  const autoOffNotSet = vi.fn();
   const driver = createWledDriver({
     fetch: fetchController as typeof fetch,
     sleep: async (milliseconds) => {
       sleeps.push(milliseconds);
       advance(milliseconds);
     },
+    onAutoOffNotSet: autoOffNotSet,
   });
   return {
     driver,
     advance,
     sleeps,
+    autoOffNotSet,
+    stateReads: () => stateReads,
+    countdownRunning: () => nl.active,
+    /** Configure a longer strip in WLED, as its settings page would. */
+    setLedCount: (count: number) => {
+      info.ledCount = count;
+    },
     lit: () => wall.bri > 0,
     /** Skip the handler's next ticks, as a busy main loop would. */
     stall: (ticks: number) => {
@@ -150,8 +164,11 @@ describe('WLED auto-off countdown', () => {
     await preview.show([4]);
     const restarts = wall.sleeps.length;
     wall.advance(20_000);
+    const reads = wall.stateReads();
     await preview.show([5]);
     expect(wall.sleeps).toHaveLength(restarts);
+    // One GET of the state serves the off check and the countdown.
+    expect(wall.stateReads() - reads).toBe(1);
     // Once the countdown is older than a minute, the next lighting restarts it.
     wall.advance(MINUTE);
     await preview.show([6]);
@@ -184,6 +201,46 @@ describe('WLED auto-off countdown', () => {
     expect(wall.lit()).toBe(true);
     wall.advance(MINUTE - 1_000);
     expect(wall.lit()).toBe(true);
+  });
+
+  it('keeps the climb lit when the countdown cannot be armed, and says auto-off was not set', async () => {
+    const wall = firmware();
+    // A controller too busy to run its nightlight handler at all: `nl.rem` never confirms.
+    wall.stall(Number.POSITIVE_INFINITY);
+    const session = createLedPreviewSession(wall.driver, 'unarmed.local', { autoOffMinutes: 1 });
+    await expect(session.show([4])).resolves.toBe(true);
+    expect(wall.lit()).toBe(true);
+    expect(wall.autoOffNotSet).toHaveBeenCalledOnce();
+    await expect(wall.driver.lightAll('unarmed.local', undefined, { autoOffMinutes: 1 })).resolves.toBeUndefined();
+    expect(wall.lit()).toBe(true);
+    expect(wall.autoOffNotSet).toHaveBeenCalledTimes(2);
+    await session.detach();
+  });
+
+  it('lights an LED the strip gained while the wall was off, instead of refusing it', async () => {
+    const wall = firmware({ ledCount: 100 });
+    const preview = wall.driver.createPreview('grown.local');
+    await preview.show([4]);
+    wall.switchOff();
+    wall.setLedCount(300);
+    await expect(preview.show([250])).resolves.toBeUndefined();
+    expect(wall.lit()).toBe(true);
+  });
+
+  it('still restarts the countdown after Turn LEDs off left it running, as WLED 0.15 does', async () => {
+    const wall = firmware();
+    const preview = wall.driver.createPreview('switched.local', { autoOffMinutes: 1 });
+    await preview.show([4]);
+    wall.advance(30_000);
+    await preview.turnOff();
+    // `udpn.nn` skips the firmware's end-of-nightlight check: the countdown runs on.
+    expect(wall.countdownRunning()).toBe(true);
+    wall.advance(20_000);
+    await preview.show([5]);
+    wall.advance(MINUTE - 2_000);
+    expect(wall.lit()).toBe(true);
+    wall.advance(3_000);
+    expect(wall.lit()).toBe(false);
   });
 
   it('cancels a running countdown when auto-off is turned off', async () => {

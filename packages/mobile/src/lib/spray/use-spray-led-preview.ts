@@ -30,6 +30,10 @@ export function useSprayLedPreviewForSettings(
   const brightness = settings?.brightness;
   const autoOffMinutes = settings?.autoOffMinutes;
   const runtime = useRef<PreviewRuntime | null>(null);
+  // Brightness and auto-off reach the open session without recreating it: closing
+  // it would switch the wall off on every slider step.
+  const lighting = useRef({ brightness, autoOffMinutes });
+  lighting.current = { brightness, autoOffMinutes };
   const [state, setState] = useState<SprayLedPreviewState>('idle');
   const [error, setError] = useState<LedControllerErrorCode | null>(null);
   const [available, setAvailable] = useState(false);
@@ -98,12 +102,12 @@ export function useSprayLedPreviewForSettings(
       void loadSprayLedDriver(controllerType)
         .then((driver) => {
           if (!cancelled && credentialGeneration === getCredentialGeneration())
-            attach(createLedPreviewSession(driver, url, { brightness, autoOffMinutes }));
+            attach(createLedPreviewSession(driver, url, lighting.current));
         })
         .catch(() => undefined);
     } else {
       try {
-        attach(createLedPreviewSession(getLedControllerDriver(controllerType), url, { brightness, autoOffMinutes }));
+        attach(createLedPreviewSession(getLedControllerDriver(controllerType), url, lighting.current));
       } catch {
         /* Invalid address stays unavailable. */
       }
@@ -112,7 +116,7 @@ export function useSprayLedPreviewForSettings(
       cancelled = true;
       dispose?.();
     };
-  }, [wallUuid, enabled, url, controllerType, brightness, autoOffMinutes]);
+  }, [wallUuid, enabled, url, controllerType]);
 
   const run = useCallback(
     async (
@@ -164,6 +168,16 @@ export function useSprayLedPreviewForSettings(
       ),
     [run],
   );
+  // A new brightness or auto-off goes to the open session; a wall lit with Light all
+  // shows it straight away, anything else from its next lighting.
+  const allLitNow = useRef(false);
+  allLitNow.current = allLit;
+  useEffect(() => {
+    const current = runtime.current;
+    if (!current?.active) return;
+    current.session.setLighting({ brightness, autoOffMinutes });
+    if (allLitNow.current) void lightAll();
+  }, [brightness, autoOffMinutes, lightAll]);
   const clear = useCallback(() => run('stopping', (current) => current.session.clear(), 'idle'), [run]);
   const stop = useCallback(() => run('stopping', (current) => current.session.stop(), 'idle'), [run]);
   const chase = useCallback(

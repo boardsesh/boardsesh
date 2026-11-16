@@ -31,6 +31,8 @@ export interface LedLightingOptions {
 
 export const DEFAULT_LED_BRIGHTNESS = 64;
 export const MAX_LED_AUTO_OFF_MINUTES = 255;
+/** The auto-off choices a wall's shared setup offers and the server accepts (0 is never). */
+export const SPRAY_WALL_LED_AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
 
 /** Clamp untrusted options to the controller's ranges. */
 export function resolveLedLightingOptions(options: LedLightingOptions = {}): {

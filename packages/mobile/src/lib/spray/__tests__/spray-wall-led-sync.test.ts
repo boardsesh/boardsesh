@@ -445,12 +445,41 @@ describe('saving', () => {
         controllerType: 'wled',
         controllerUrl: 'http://wled.local',
         enabled: true,
-        brightness: 64,
-        autoOffMinutes: 0,
       },
     ]);
     expect(storage.records.has(UNSENT_SETTINGS)).toBe(false);
     expect(uploadOutcomes).toEqual(['uploaded']);
+  });
+
+  it('sends only the lighting value that changed, so a stale copy cannot undo another phone’s', async () => {
+    backend.request.mockResolvedValue({ saveSprayWallLedSetup: { boardUuid: WALL, updatedAt: 'now' } });
+    // This phone still has auto-off 0 while another phone set 30 on the server.
+    await markSprayWallLedSaveStarted(WALL, ['brightness'], async () => {
+      storage.records.set(SETTINGS_KEY, { ...local, brightness: 128 });
+    });
+    queueSprayWallLedUpload(WALL, ['brightness']);
+    await settle();
+    expect(saves()).toEqual([{ boardUuid: WALL, brightness: 128 }]);
+    expect(storage.records.has('sprayWallLedUnsent:brightness:wall-one')).toBe(false);
+    await markSprayWallLedSaveStarted(WALL, 'autoOff', async () => {
+      storage.records.set(SETTINGS_KEY, { ...local, brightness: 128, autoOffMinutes: 60 });
+    });
+    queueSprayWallLedUpload(WALL, 'autoOff');
+    await settle();
+    expect(saves().at(-1)).toEqual({ boardUuid: WALL, autoOffMinutes: 60 });
+  });
+
+  it('keeps an unsent brightness over the server copy while taking the server’s auto-off', async () => {
+    storage.records.set(SETTINGS_KEY, { ...local, brightness: 128 });
+    await markSprayWallLedSaveStarted(WALL, 'brightness');
+    backend.request.mockImplementation(async (document: unknown) => {
+      if (String(document).includes('mutation')) throw new Error('offline');
+      return answering(true, rowFor({ brightness: 64, autoOffMinutes: 30 }));
+    });
+    await prepareSprayWallLedRead(WALL, 'settings');
+    await settle();
+    expect(storage.records.get(SETTINGS_KEY)).toMatchObject({ brightness: 128, autoOffMinutes: 30 });
+    expect(storage.records.get('sprayWallLedUnsent:brightness:wall-one')).toBe(true);
   });
 
   it('keeps layout and settings separate: a layout save sends no settings', async () => {

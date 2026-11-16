@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { FlashList, type ListRenderItemInfo } from '@shopify/flash-list';
 import NetInfo from '@react-native-community/netinfo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
@@ -11,6 +12,7 @@ import {
   getLedControllerDriver,
   LedControllerError,
   normalizeLocalControllerUrl,
+  SPRAY_WALL_LED_AUTO_OFF_CHOICES,
   wledScanHosts,
   type DiscoveredLedController,
 } from '@boardsesh/led-controller';
@@ -35,10 +37,11 @@ const scanDriver = createWledDriver({ timeoutMs: 1500 });
 type ScanState =
   | { kind: 'idle' }
   | { kind: 'noWifi' }
+  // On Wi-Fi, but not a private IPv4 address the phone can sweep (IPv6 only, public, CGNAT or a VPN).
+  | { kind: 'notSearchable' }
   | { kind: 'scanning'; checked: number; total: number; found: DiscoveredLedController[] }
   | { kind: 'done'; found: DiscoveredLedController[] };
 
-const AUTO_OFF_CHOICES = [0, 15, 30, 60, 120] as const;
 const MIN_BRIGHTNESS_PERCENT = 5;
 // The slider shows a percentage; WLED stores brightness as 1–255.
 function brightnessPercent(brightness: number): number {
@@ -60,6 +63,28 @@ function adjustBrightnessPercent(percent: number, direction: 1 | -1): number {
   'worklet';
   return Math.max(MIN_BRIGHTNESS_PERCENT, Math.min(100, percent + direction * 5));
 }
+const foundKey = (found: DiscoveredLedController) => found.url;
+/** One controller the search found; tapping it checks and saves its address. */
+const FoundControllerRow = memo(function FoundControllerRow({
+  found,
+  disabled,
+  onSelect,
+}: {
+  found: DiscoveredLedController;
+  disabled: boolean;
+  onSelect: (found: DiscoveredLedController) => void;
+}) {
+  const { t } = useTranslation('boards');
+  return (
+    <Button
+      title={t('sprayLed.findResult', { name: found.name, address: found.url.replace('http://', '') })}
+      variant="outlined"
+      disabled={disabled}
+      onPress={() => onSelect(found)}
+    />
+  );
+});
+
 type ProbeResult =
   | { kind: 'connected'; url: string; name: string; ledCount: number }
   | { kind: 'unavailable' | 'timeout' | 'notWled'; url: string }
@@ -179,7 +204,7 @@ function SprayWallLedEditor({
       const details = network?.type === 'wifi' ? network.details : null;
       const hosts = details?.ipAddress ? wledScanHosts(details.ipAddress, details.subnet) : [];
       if (!hosts.length) {
-        setScan({ kind: 'noWifi' });
+        setScan({ kind: network?.type === 'wifi' ? 'notSearchable' : 'noWifi' });
         return;
       }
       setScan({ kind: 'scanning', checked: 0, total: hosts.length, found: [] });
@@ -260,6 +285,23 @@ function SprayWallLedEditor({
       }
     }
   }
+
+  // Through a ref, so the rows keep one callback while the scan reports progress.
+  const chooseFoundRef = useRef<(found: DiscoveredLedController) => void>(() => undefined);
+  chooseFoundRef.current = (found) => {
+    cancelScan();
+    setScan({ kind: 'idle' });
+    setDraftUrl(found.url);
+    void confirmUrl(found.url);
+  };
+  const chooseFound = useCallback((found: DiscoveredLedController) => chooseFoundRef.current(found), []);
+  const foundDisabled = locked || pending !== null;
+  const renderFound = useCallback(
+    ({ item }: ListRenderItemInfo<DiscoveredLedController>) => (
+      <FoundControllerRow found={item} disabled={foundDisabled} onSelect={chooseFound} />
+    ),
+    [foundDisabled, chooseFound],
+  );
 
   const message =
     pending === 'probe'
@@ -393,9 +435,9 @@ function SprayWallLedEditor({
                     disabled={locked || pending !== null}
                     onPress={() => (scan.kind === 'scanning' ? cancelScan() : void findOnWifi())}
                   />
-                  {scan.kind === 'noWifi' ? (
+                  {scan.kind === 'noWifi' || scan.kind === 'notSearchable' ? (
                     <Text variant="footnote" accessibilityLiveRegion="polite">
-                      {t('sprayLed.findNoWifi')}
+                      {scan.kind === 'noWifi' ? t('sprayLed.findNoWifi') : t('sprayLed.findNotSearchable')}
                     </Text>
                   ) : null}
                   {scan.kind === 'scanning' && scan.total > 0 ? (
@@ -408,25 +450,12 @@ function SprayWallLedEditor({
                       {t('sprayLed.findNone')}
                     </Text>
                   ) : null}
-                  {scan.kind === 'scanning' || scan.kind === 'done'
-                    ? scan.found.map((found) => (
-                        <Button
-                          key={found.url}
-                          title={t('sprayLed.findResult', {
-                            name: found.name,
-                            address: found.url.replace('http://', ''),
-                          })}
-                          variant="outlined"
-                          disabled={locked || pending !== null}
-                          onPress={() => {
-                            cancelScan();
-                            setScan({ kind: 'idle' });
-                            setDraftUrl(found.url);
-                            void confirmUrl(found.url);
-                          }}
-                        />
-                      ))
-                    : null}
+                  {(scan.kind === 'scanning' || scan.kind === 'done') && scan.found.length ? (
+                    // A list of its own, as the Bluetooth picker has: never mapped inside the form's ScrollView.
+                    <View style={{ height: 180 }}>
+                      <FlashList data={scan.found} renderItem={renderFound} keyExtractor={foundKey} />
+                    </View>
+                  ) : null}
                   {message ? (
                     <Text variant="footnote" accessibilityLiveRegion="polite">
                       {message}
@@ -501,7 +530,7 @@ function SprayWallLedEditor({
               </Text>
               <SectionLabel>{t('sprayLed.autoOff')}</SectionLabel>
               <SegmentedControl
-                options={AUTO_OFF_CHOICES.map((minutes) => ({
+                options={SPRAY_WALL_LED_AUTO_OFF_CHOICES.map((minutes) => ({
                   key: String(minutes),
                   label: minutes ? t('sprayLed.autoOffMinutes', { minutes }) : t('sprayLed.autoOffNever'),
                 }))}
