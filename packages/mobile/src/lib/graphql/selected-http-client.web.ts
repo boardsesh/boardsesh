@@ -3,7 +3,6 @@ import type { createBrowserBackendClient } from '@boardsesh/auth-protocol/browse
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import {
   createBrowserBackendHttpTransportForView,
-  captureBrowserBackendHttpResult,
   isCurrentBrowserBackendHttpResult,
 } from '@boardsesh/auth-protocol/browser-backend-http';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
@@ -73,15 +72,6 @@ export function createSelectedBrowserHttpClient(options: {
      * before state/cache/effect publication. Copies supply no authority. */
     isCurrentResult: (result: unknown) =>
       transport.isCurrent() && isCurrentBrowserBackendHttpResult(result, backendClient),
-    captureResult(result: unknown): (() => void) | null {
-      if (!transport.isCurrent()) return null;
-      const assertResult = captureBrowserBackendHttpResult(result, backendClient);
-      if (!assertResult) return null;
-      return () => {
-        if (!transport.isCurrent()) throw new BrowserBackendConsumerError('superseded');
-        assertResult();
-      };
-    },
     dispose(): void {
       if (controller.signal.aborted) return;
       transport.dispose();
