@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "catalogue": { "boardName": "kilter", "layoutId": 8, "sizeId": 25, "setIds": [26, 27, 28, 29] },
+  "dimensions": [1080, 1504],
+  "glyphs": "role",
+  "current": "p4267r42p4145r13p4387r45p4117r15p4285r43p4397r44",
+  "previous": "p4397r14p4267r44p4145r43p4118r42p4286r15p4388r43p4285r21",
+  "next": "p4397r14p4267r44p4145r43p4118r42p4286r15p4388r43p4285r21",
+  "editBaseline": [
+    [4267, 13],
+    [4145, 13],
+    [4387, 15],
+    [4117, 15],
+    [4285, 13],
+    [4397, 14]
+  ],
+  "sourceCounts": [6, 7, 7],
+  "limits": { "maxChannelError": 1, "pixelsOverOne": 0, "maxOwnedGpuBytes": 134217728, "samples": 30 },
+  "scope": "One actual catalogue fixture. Transition retains a mixed changed mask. Editor still samples use an all-current-changed second Plan so the production Rust global reach oracle is valid. Display mirror changes reveal direction; physical hold-mirror lookup is separately unit tested."
+}

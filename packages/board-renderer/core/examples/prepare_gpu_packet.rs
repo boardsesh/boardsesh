@@ -1,22 +1,130 @@
 //! Host export of the exact production packet encoder for native pixel goldens.
 use board_renderer_core::aura::gpu_packet::{
-    Cancellation, Placement, Placements, Plan, Session, UNIFORM_BYTES,
+    Cancellation, Packet, Placement, Placements, Plan, Session, SourceRequest, UNIFORM_BYTES,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
 use std::path::PathBuf;
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct Controls {
+    version: u32,
+    samples: Vec<Control>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Control {
+    name: String,
+    lower: usize,
+    upper: usize,
+    progress: f32,
+    pulse: f32,
+    mirrored: bool,
+    #[serde(default)]
+    editor_all_changed: bool,
+}
+
+fn validate_controls(controls: &Controls) -> Result<(), String> {
+    if controls.version != 1 || controls.samples.is_empty() || controls.samples.len() > 64 {
+        return Err("expected version 1 and 1..64 samples".into());
+    }
+    let mut names = HashSet::new();
+    for sample in &controls.samples {
+        if sample.name.is_empty()
+            || sample.name.len() > 64
+            || !sample
+                .name
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            || !names.insert(sample.name.as_str())
+            || sample.lower >= 3
+            || sample.upper >= 3
+            || !sample.progress.is_finite()
+            || !(0.0..=1.0).contains(&sample.progress)
+            || !sample.pulse.is_finite()
+            || !(1.0..=1.35).contains(&sample.pulse)
+            || (sample.editor_all_changed
+                && (sample.lower != 0 || sample.upper != 0 || sample.progress != 0.0))
+        {
+            return Err("invalid, duplicate or unsafe control".into());
+        }
+    }
+    Ok(())
+}
+
+fn placements(plan: &Plan) -> Result<Placements, String> {
+    let mut cursor = 0_u32;
+    let mut chunks = Vec::with_capacity(plan.chunks.len());
+    for (key, layout) in &plan.chunks {
+        let bytes = u32::try_from(layout.bytes).map_err(|_| "chunk length overflow")?;
+        chunks.push(Placement {
+            key: key.clone(),
+            offset: cursor,
+            bytes,
+        });
+        cursor = cursor.checked_add(bytes).ok_or("placement overflow")?;
+    }
+    Ok(Placements {
+        arena_bytes: cursor,
+        chunks,
+    })
+}
+
+fn write_uniform(
+    packet: &Packet,
+    sample: &Control,
+    viewport: [f32; 2],
+    directory: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut bytes = [0; UNIFORM_BYTES];
+    packet.encode_uniforms(
+        sample.lower,
+        sample.upper,
+        sample.progress,
+        sample.pulse,
+        viewport,
+        true,
+        sample.mirrored,
+        &mut bytes,
+    )?;
+    std::fs::write(
+        directory.join(format!("uniforms-{}.bin", sample.name)),
+        bytes,
+    )?;
+    Ok(())
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let config = args.next().ok_or("Expected config path")?;
     let source = args.next().ok_or("Expected SourceRequest path")?;
     let directory = PathBuf::from(args.next().ok_or("Expected output directory")?);
+    let controls = args
+        .next()
+        .map(|path| -> Result<Controls, Box<dyn std::error::Error>> {
+            let bytes = std::fs::read(path)?;
+            if bytes.len() > 64 * 1024 {
+                return Err("controls exceed 64 KiB".into());
+            }
+            let controls = serde_json::from_slice(&bytes)?;
+            validate_controls(&controls)?;
+            Ok(controls)
+        })
+        .transpose()?;
+    if args.next().is_some() {
+        return Err("Unexpected argument".into());
+    }
     std::fs::create_dir_all(&directory)?;
     let started = std::time::Instant::now();
     let cancel = Cancellation::default();
     let session = Session::from_json(&std::fs::read(config)?, &cancel)?;
+    let source_bytes = std::fs::read(source)?;
     let mut plan = Plan::new(
-        session,
-        serde_json::from_slice(&std::fs::read(source)?)?,
+        session.clone(),
+        serde_json::from_slice(&source_bytes)?,
         &cancel,
     )?;
     let description = plan.describe();
@@ -25,20 +133,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_vec_pretty(&description)?,
     )?;
     let prepared = plan.prepare(&[], &cancel)?;
-    let mut cursor = 0_u32;
-    let placements = plan
-        .chunks
-        .iter()
-        .map(|(key, layout)| {
-            let placement = Placement {
-                key: key.clone(),
-                offset: cursor,
-                bytes: layout.bytes as u32,
-            };
-            cursor += layout.bytes as u32;
-            placement
-        })
-        .collect();
     let chunks = prepared
         .chunks
         .iter()
@@ -49,13 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_vec_pretty(&chunks)?,
     )?;
     std::fs::write(directory.join("pixels.bin"), &prepared.bytes)?;
-    let packet = plan.encode(
-        Placements {
-            arena_bytes: cursor,
-            chunks: placements,
-        },
-        &cancel,
-    )?;
+    let packet = plan.encode(placements(&plan)?, &cancel)?;
     let header = packet.describe();
     std::fs::write(
         directory.join("packet.json"),
@@ -72,27 +160,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         (0, 0)
     };
-    for (sample, progress) in [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().enumerate() {
-        for (pulse_index, pulse) in [1.0, 1.175, 1.35].into_iter().enumerate() {
-            for mirror in [false, true] {
-                let mut bytes = [0; UNIFORM_BYTES];
-                packet.encode_uniforms(
-                    lower,
-                    upper,
-                    progress,
-                    pulse,
-                    [width, height],
-                    true,
-                    mirror,
-                    &mut bytes,
-                )?;
-                std::fs::write(
-                    directory.join(format!(
-                        "uniforms-{sample}-{pulse_index}-{}.bin",
-                        u32::from(mirror)
-                    )),
-                    bytes,
-                )?;
+    if let Some(controls) = controls {
+        let editor = if controls
+            .samples
+            .iter()
+            .any(|sample| sample.editor_all_changed)
+        {
+            let mut source: SourceRequest = serde_json::from_slice(&source_bytes)?;
+            source.edit_baseline = Some(Vec::new());
+            let mut editor = Plan::new(session, source, &cancel)?;
+            let resident = prepared
+                .chunks
+                .iter()
+                .map(|chunk| chunk.layout.clone())
+                .collect::<Vec<_>>();
+            let missing = editor.prepare(&resident, &cancel)?;
+            if !missing.chunks.is_empty() || !missing.bytes.is_empty() {
+                return Err("editor variant must reuse exactly the same chunks".into());
+            }
+            let editor = editor.encode(placements(&editor)?, &cancel)?;
+            if editor.resources != packet.resources {
+                return Err("editor flags must not change tile/LUT resources".into());
+            }
+            std::fs::write(
+                directory.join("packet-editor.json"),
+                serde_json::to_vec_pretty(&editor.describe())?,
+            )?;
+            std::fs::write(
+                directory.join("descriptors-editor.bin"),
+                &editor.descriptors,
+            )?;
+            Some(editor)
+        } else {
+            None
+        };
+        for sample in &controls.samples {
+            let selected = if sample.editor_all_changed {
+                editor.as_ref().ok_or("missing editor variant")?
+            } else {
+                &packet
+            };
+            write_uniform(selected, sample, [width, height], &directory)?;
+        }
+        std::fs::write(
+            directory.join("controls.json"),
+            serde_json::to_vec_pretty(&controls)?,
+        )?;
+    } else {
+        for (sample, progress) in [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().enumerate() {
+            for (pulse_index, pulse) in [1.0, 1.175, 1.35].into_iter().enumerate() {
+                for mirror in [false, true] {
+                    let mut bytes = [0; UNIFORM_BYTES];
+                    packet.encode_uniforms(
+                        lower,
+                        upper,
+                        progress,
+                        pulse,
+                        [width, height],
+                        true,
+                        mirror,
+                        &mut bytes,
+                    )?;
+                    std::fs::write(
+                        directory.join(format!(
+                            "uniforms-{sample}-{pulse_index}-{}.bin",
+                            u32::from(mirror)
+                        )),
+                        bytes,
+                    )?;
+                }
             }
         }
     }
@@ -101,4 +237,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         json!({"packet":header,"pixelBytes":prepared.bytes.len(),"hostPrepareMs":started.elapsed().as_secs_f64()*1000.0})
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn controls() -> Controls {
+        serde_json::from_value(json!({"version":1,"samples":[{"name":"forward-0","lower":0,
+            "upper":2,"progress":0,"pulse":1,"mirrored":false}]}))
+        .unwrap()
+    }
+
+    #[test]
+    fn names_are_bounded_unique_safe_paths() {
+        for name in ["", "../pixels", "a/b", "Forward", &"a".repeat(65)] {
+            let mut controls = controls();
+            controls.samples[0].name = name.into();
+            assert!(validate_controls(&controls).is_err());
+        }
+        let mut controls = controls();
+        controls.samples.push(Control {
+            name: "forward-0".into(),
+            lower: 0,
+            upper: 2,
+            progress: 1.0,
+            pulse: 1.0,
+            mirrored: false,
+            editor_all_changed: false,
+        });
+        assert!(validate_controls(&controls).is_err());
+    }
+
+    #[test]
+    fn malformed_controls_and_editor_interiors_are_rejected() {
+        assert!(
+            serde_json::from_value::<Controls>(json!({"version":1,"samples":[],"extra":0}))
+                .is_err()
+        );
+        let mut controls = controls();
+        assert!(validate_controls(&controls).is_ok());
+        controls.samples[0].editor_all_changed = true;
+        assert!(validate_controls(&controls).is_err());
+        controls.samples[0].upper = 0;
+        assert!(validate_controls(&controls).is_ok());
+        controls.samples[0].progress = 0.5;
+        assert!(validate_controls(&controls).is_err());
+        controls.samples[0].progress = 0.0;
+        controls.samples[0].pulse = f32::NAN;
+        assert!(validate_controls(&controls).is_err());
+        controls.samples[0].pulse = 1.36;
+        assert!(validate_controls(&controls).is_err());
+    }
 }
