@@ -1,10 +1,11 @@
 /**
- * The standing inventory oracle for issue #1889 (REST surface audit: 57
- * routes classified after the board renderer moved to Railway in #4715, the
- * Railway healthcheck route landed in #3798, and the hold-heatmap route and
- * its prewarm cron were retired, plus six staged provider Settings facades,
- * two canonical coordinator facades, ordinary sign-in ACK, and explicit
- * expired-binding recovery). The five staged first-password browser facades
+ * The standing inventory oracle for issue #1889 (REST surface audit: 55
+ * routes in total, classified after the board renderer moved to Railway in
+ * #4715, the Railway healthcheck route landed in #3798, and the hold-heatmap
+ * route and its prewarm cron were retired). The 55 include six staged provider
+ * Settings facades, four browser-password facades (#7557), two canonical
+ * coordinator facades, ordinary sign-in ACK, and explicit expired-binding
+ * recovery. The renewal and the five staged first-password browser facades
  * went with #7596.
  *
  * A classification table living only in an issue body or a doc goes stale the
