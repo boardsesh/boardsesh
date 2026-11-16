@@ -115,6 +115,13 @@ export type PickerTopView<Board> = {
   /** The scan is still listening: a small spinner by the title. */
   scanning: boolean;
   /**
+   * The key (as the top keys its boards) of the loudest thing heard, when
+   * that is a board it can name; null when it heard nothing counted yet, or
+   * the loudest was a box it can't name. A hero held from earlier in the scan
+   * says "In front of you" only while it is still this.
+   */
+  loudestBoardKey: string | null;
+  /**
    * The scan ran to its end and heard nothing. Draws nothing by itself; it is
    * when Android may be hiding the results, so the location hint can show.
    */
@@ -139,6 +146,11 @@ export type PickerTopLead =
 export type PickerTopDecision = Omit<PickerTopView<never>, 'content'> & {
   lead: PickerTopLead;
   activeBoard: UserBoard | null;
+  /**
+   * Every board the scan named so far, strongest first; empty while nothing
+   * heard counts yet. For a top already drawn to keep (`decisionAtDrawnTop`).
+   */
+  heardNamed: readonly UserBoard[];
 };
 
 export type PickerTopInputs = {
@@ -285,8 +297,10 @@ export function decidePickerTop({
       lead: fromActiveBoard ?? NONE,
       unnamed: null,
       scanning: false,
+      loudestBoardKey: null,
       heardNothing: false,
       activeBoard: active,
+      heardNamed: [],
     };
   }
 
@@ -299,6 +313,8 @@ export function decidePickerTop({
   const lookupFailed = heard.some((row) => row.kind === 'lookup_failed');
   // A box it can't name is worth a card only when nothing named was heard.
   const unnamed = named.length === 0 ? (heard.find(isUnnamedRow) ?? null) : null;
+  const [loudest] = heard;
+  const loudestBoardKey = loudest?.kind === 'board' ? (boardRowKeys([loudest.board])[0] ?? null) : null;
 
   let lead: PickerTopLead =
     leadFromNamed(named, heard, active, activeGym) ??
@@ -318,8 +334,10 @@ export function decidePickerTop({
     lead,
     unnamed,
     scanning,
+    loudestBoardKey,
     heardNothing: phase === 'done' && rows.length === 0,
     activeBoard: active,
+    heardNamed: named.map((row) => row.board),
   };
 }
 
@@ -381,7 +399,7 @@ export function buildPickerTopView(
   decision: PickerTopDecision,
   gymRoster: readonly UserBoard[] | undefined,
 ): PickerTopView<PickerTopBoard> {
-  const { notice, unnamed, scanning, heardNothing, lead, activeBoard } = decision;
+  const { notice, unnamed, scanning, loudestBoardKey, heardNothing, lead, activeBoard } = decision;
   let content: PickerTopContent<PickerTopBoard>;
   switch (lead.kind) {
     case 'at_gym':
@@ -399,7 +417,7 @@ export function buildPickerTopView(
     default:
       content = lead;
   }
-  return { notice, content, unnamed, scanning, heardNothing };
+  return { notice, content, unnamed, scanning, loudestBoardKey, heardNothing };
 }
 
 /** Both steps at once, for callers that already hold the roster (tests, stories). */
@@ -421,10 +439,12 @@ export function isScanLed(content: PickerTopContent<unknown>): boolean {
 /**
  * The top as the climber keeps seeing it while one scan runs on. `drawn` is
  * what the scan put at the top earlier in this scan, or null before it has
- * (`useSteadyPickerTop` keeps it). Once the scan has led:
- * - its hero stays the hero and its gym stays the gym: a box heard later never
- *   swaps a hero for At {gym}, or one gym for another, under the climber's
- *   finger;
+ * (`usePickerTopSteadiness` keeps it). Once the scan has led:
+ * - its gym stays the gym: a box heard later never swaps one gym for another,
+ *   or At {gym} for a hero, under the climber's finger;
+ * - its hero stays the hero, with one way out: its own gym, once more of that
+ *   gym's walls are heard (two walls at a gym are At {gym}, `decisionAtDrawnTop`),
+ *   never back to a hero, never another gym;
  * - At {gym} keeps the order it was drawn in, and walls that arrive later
  *   (the roster landing, another wall heard) join at the end.
  * The rest of the view (notices, the spinner, the box it can't name, a hero's
@@ -438,7 +458,11 @@ export function stabilizePickerTop(
   const nextContent = next.content;
   if (drawn.kind === 'hero') {
     if (nextContent.kind === 'hero' && nextContent.board.key === drawn.board.key) return next;
-    return { ...next, content: drawn, unnamed: null };
+    const heroGym = drawn.board.board.gymUuid;
+    if (nextContent.kind === 'at_gym' && heroGym && nextContent.gymUuid === heroGym) return next;
+    // "In front of you" from what the scan hears now, not from when it was drawn.
+    const strongestSignal = next.loudestBoardKey === drawn.board.key;
+    return { ...next, content: { ...drawn, strongestSignal }, unnamed: null };
   }
   if (nextContent.kind !== 'at_gym' || nextContent.gymUuid !== drawn.gymUuid) {
     return { ...next, content: drawn, unnamed: null };
@@ -451,6 +475,63 @@ export function stabilizePickerTop(
   });
   const joined = nextContent.rows.filter((row) => !drawnKeys.has(row.key));
   return { ...next, content: { ...nextContent, rows: [...kept, ...joined] } };
+}
+
+/** How many named walls heard at one gym make the top At {gym} rather than a hero. */
+const AT_GYM_MIN_HEARD = 2;
+
+/**
+ * The decision as the top already drawn this scan (`drawn`, null before the
+ * scan has led) lets it go on, so the roster fetched is the one drawn:
+ * - At {gym} stays on its gym, every wall heard there (then or since) marked
+ *   heard, while the scan's own answer points at a gym with more;
+ * - a hero at a gym becomes At {its gym} once two of that gym's walls are
+ *   heard, however many another gym has (`stabilizePickerTop` allows that one
+ *   move, and no other); until then it stays the hero, "In front of you" only
+ *   while it is the loudest heard, and no other gym's roster is fetched;
+ * - anything else is the decision as it is.
+ */
+export function decisionAtDrawnTop(
+  decision: PickerTopDecision,
+  drawn: PickerTopContent<PickerTopBoard> | null,
+): PickerTopDecision {
+  const { lead, heardNamed } = decision;
+  if (drawn?.kind === 'at_gym') {
+    const sameGym = lead.kind === 'at_gym' && lead.gymUuid === drawn.gymUuid;
+    const heardBoards: UserBoard[] = drawn.rows.filter((row) => drawn.heardKeys.has(row.key)).map((row) => row.board);
+    for (const board of heardNamed) {
+      if (board.gymUuid !== drawn.gymUuid || heardBoards.some((listed) => isSameBoard(listed, board))) continue;
+      heardBoards.push(board);
+    }
+    return {
+      ...decision,
+      lead: {
+        kind: 'at_gym',
+        gymUuid: drawn.gymUuid,
+        gymName: drawn.gymName,
+        source: sameGym ? lead.source : drawn.source,
+        heardBoards,
+      },
+    };
+  }
+  if (drawn?.kind === 'hero') {
+    const heroBoard = drawn.board.board;
+    const heroGym = gymOf(heroBoard);
+    if (heroGym) {
+      if (lead.kind === 'at_gym' && lead.gymUuid === heroGym.gymUuid) return decision;
+      const heardAtHeroGym = heardNamed.filter((board) => board.gymUuid === heroGym.gymUuid);
+      if (heardAtHeroGym.length >= AT_GYM_MIN_HEARD) {
+        return { ...decision, lead: { kind: 'at_gym', ...heroGym, source: 'scan', heardBoards: heardAtHeroGym } };
+      }
+    }
+    if (lead.kind === 'hero' && isSameBoard(lead.board, heroBoard)) return decision;
+    // The hero stays, and no other gym's roster is fetched behind it.
+    return {
+      ...decision,
+      lead: { kind: 'hero', board: heroBoard, strongestSignal: decision.loudestBoardKey === drawn.board.key },
+    };
+  }
+  return decision;
 }
 
 /** What a drawn top looks like, to tell whether a new render moved anything. */

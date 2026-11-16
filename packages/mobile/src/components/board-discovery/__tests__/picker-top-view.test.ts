@@ -4,6 +4,7 @@ import {
   buildPickerTopView,
   collapsedRows,
   decidePickerTop,
+  decisionAtDrawnTop,
   gymMostHeard,
   isSameBoard,
   mapPickerTopBoards,
@@ -216,6 +217,17 @@ describe('"In front of you" or "Nearby"', () => {
     expect(top({ rows: [LOOKUP_FAILED_ROW, heard(cruxKilter)], lookup: 'failed', activeBoard: homeWall })).toBe(
       'lookup_failed(beside) + hero:crux-kilter~nearby',
     );
+  });
+
+  // So a hero held from earlier in the scan can say it from what is heard now.
+  it('names the loudest thing heard when it is a board it can name', () => {
+    const loudest = (inputs: Partial<PickerTopInputs>) =>
+      decidePickerTop({ phase: 'scanning', rows: [], lookup: 'resolved', activeBoard: homeWall, ...inputs })
+        .loudestBoardKey;
+    expect(loudest({ rows: [heard(cruxKilter), MOONBOARD_ROW] })).toBe('crux-kilter');
+    expect(loudest({ rows: [MOONBOARD_ROW, heard(cruxKilter)] })).toBeNull();
+    expect(loudest({ rows: [heard(cruxKilter)], holdScanLead: true })).toBeNull();
+    expect(loudest({ rows: [heard(cruxKilter)], phase: 'tap_to_scan' })).toBeNull();
   });
 });
 
@@ -470,10 +482,31 @@ describe('stabilizePickerTop', () => {
     expect(stabilizePickerTop(null, next)).toBe(next);
   });
 
-  it('keeps the hero when a later box would make the top At {gym}', () => {
+  // Two named walls at a gym are At {gym}: the one move a held hero makes.
+  it('lets the hero become At {its own gym}, and no other gym', () => {
     const drawn = scanView([heard(cruxKilter)], homeWall).content;
-    const next = scanView([heard(cruxKilter), heard(cruxTension)], homeWall);
-    expect(summarize(stabilizePickerTop(drawn, next))).toBe('hero:crux-kilter (scanning)');
+    const atItsGym = scanView([heard(cruxKilter), heard(cruxTension)], homeWall);
+    expect(summarize(stabilizePickerTop(drawn, atItsGym))).toBe(
+      'at_gym:Crux/scan[crux-kilter,crux-tension] (scanning)',
+    );
+    const atBloc = scanView([heard(blocKilter), heard(blocTension), heard(cruxKilter)], homeWall);
+    expect(summarize(stabilizePickerTop(drawn, atBloc))).toBe('hero:crux-kilter~nearby (scanning)');
+  });
+
+  it('keeps a hero with no gym a hero', () => {
+    const drawn = scanView([heard(homeWall), heard(friendsWall)], null).content;
+    expect(summarize({ ...scanView([], null), content: drawn })).toBe('hero:home-wall (scanning)');
+    const next = scanView([heard(homeWall), heard(friendsWall), heard(cruxKilter), heard(cruxTension)], null);
+    expect(summarize(stabilizePickerTop(drawn, next))).toBe('hero:home-wall (scanning)');
+  });
+
+  it('says "In front of you" for the hero it holds from what is heard now', () => {
+    const drawnNearby = scanView([MOONBOARD_ROW, heard(cruxKilter)], homeWall).content;
+    const nowLoudest = scanView([heard(cruxKilter), heard(blocKilter), heard(blocTension)], homeWall);
+    expect(summarize(stabilizePickerTop(drawnNearby, nowLoudest))).toBe('hero:crux-kilter (scanning)');
+    const drawnLoudest = scanView([heard(cruxKilter)], homeWall).content;
+    const nowQuieter = scanView([heard(blocKilter), heard(blocTension), heard(cruxKilter)], homeWall);
+    expect(summarize(stabilizePickerTop(drawnLoudest, nowQuieter))).toBe('hero:crux-kilter~nearby (scanning)');
   });
 
   it('follows the hero it drew, so its "Nearby" can change', () => {
@@ -489,6 +522,9 @@ describe('stabilizePickerTop', () => {
       homeWall,
     );
     expect(summarize(stabilizePickerTop(drawn, toBloc))).toBe('at_gym:Crux/scan[crux-kilter,crux-tension] (scanning)');
+    const toHero = scanView([heard(blocKilter)], homeWall);
+    expect(summarize(toHero)).toBe('hero:bloc-kilter (scanning)');
+    expect(summarize(stabilizePickerTop(drawn, toHero))).toBe('at_gym:Crux/scan[crux-kilter,crux-tension] (scanning)');
   });
 
   // The roster landing, or another wall heard: they join the end, nothing moves.
@@ -511,6 +547,69 @@ describe('stabilizePickerTop', () => {
       'at_gym:gym-crux:crux-moon,crux-tension,crux-kilter',
     );
     expect(pickerTopSignature(scanView([heard(cruxKilter)], homeWall).content)).toBe('hero:crux-kilter');
+  });
+});
+
+// The decision behind a top already drawn: its roster query, its walls heard.
+describe('decisionAtDrawnTop', () => {
+  const decide = (rows: readonly QuickstartRow[], activeBoard: UserBoard | null = homeWall) =>
+    decidePickerTop({ phase: 'scanning', rows, lookup: 'resolved', activeBoard });
+  const drawnFrom = (rows: readonly QuickstartRow[], activeBoard: UserBoard | null = homeWall) =>
+    buildPickerTopView(decide(rows, activeBoard), []).content;
+
+  it('leaves the decision alone before the scan has led', () => {
+    const decision = decide([heard(cruxKilter)]);
+    expect(decisionAtDrawnTop(decision, null)).toBe(decision);
+  });
+
+  it('keeps At {gym} on the gym drawn, its roster and every wall heard there', () => {
+    const drawn = drawnFrom([heard(cruxKilter), heard(cruxTension)]);
+    const decision = decide([heard(blocKilter), heard(blocTension), heard(board('bloc-moon', BLOC)), heard(cruxMoon)]);
+    expect(pickerTopGymUuid(decision)).toBe('gym-bloc');
+    const kept = decisionAtDrawnTop(decision, drawn);
+    expect(pickerTopGymUuid(kept)).toBe('gym-crux');
+    expect(summarize(buildPickerTopView(kept, [board('crux-arch', CRUX)]))).toBe(
+      'at_gym:Crux/scan[crux-arch,crux-kilter,crux-moon,crux-tension] (scanning)',
+    );
+    const view = buildPickerTopView(kept, [board('crux-arch', CRUX)]);
+    expect(view.content.kind === 'at_gym' ? [...view.content.heardKeys].sort() : []).toEqual([
+      'crux-kilter',
+      'crux-moon',
+      'crux-tension',
+    ]);
+  });
+
+  it("makes a hero its own gym's at two walls heard there, however many another gym has", () => {
+    const drawn = drawnFrom([heard(cruxKilter)]);
+    const oneAtCrux = decide([
+      heard(cruxKilter),
+      heard(blocKilter),
+      heard(blocTension),
+      heard(board('bloc-moon', BLOC)),
+    ]);
+    expect(pickerTopGymUuid(decisionAtDrawnTop(oneAtCrux, drawn))).toBeNull();
+    expect(summarize(buildPickerTopView(decisionAtDrawnTop(oneAtCrux, drawn), []))).toBe('hero:crux-kilter (scanning)');
+
+    const twoAtCrux = decide([
+      heard(blocKilter),
+      heard(blocTension),
+      heard(board('bloc-moon', BLOC)),
+      heard(cruxKilter),
+      heard(cruxTension),
+    ]);
+    expect(pickerTopGymUuid(twoAtCrux)).toBe('gym-bloc');
+    const upgraded = decisionAtDrawnTop(twoAtCrux, drawn);
+    expect(pickerTopGymUuid(upgraded)).toBe('gym-crux');
+    expect(summarize(buildPickerTopView(upgraded, [cruxMoon]))).toBe(
+      'at_gym:Crux/scan[crux-kilter,crux-moon,crux-tension] (scanning)',
+    );
+  });
+
+  it('keeps a hero with no gym a hero, fetching no roster', () => {
+    const drawn = drawnFrom([heard(homeWall), heard(friendsWall)], null);
+    const decision = decide([heard(homeWall), heard(friendsWall), heard(cruxKilter), heard(cruxTension)], null);
+    expect(pickerTopGymUuid(decision)).toBe('gym-crux');
+    expect(pickerTopGymUuid(decisionAtDrawnTop(decision, drawn))).toBeNull();
   });
 });
 

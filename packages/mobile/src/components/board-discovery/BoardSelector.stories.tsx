@@ -128,7 +128,7 @@ type SelectorState = {
   firstRun?: boolean;
 };
 
-const QUIET_TOP = { notice: null, unnamed: null, scanning: false, heardNothing: false } as const;
+const QUIET_TOP = { notice: null, unnamed: null, scanning: false, heardNothing: false, loudestBoardKey: null } as const;
 // Crux Homewall heard: a long At Crux keeps it in view.
 const HEARD_AT_CRUX: ReadonlySet<string> = new Set([CRUX_HOMEWALL.key]);
 const NOTHING_HEARD: ReadonlySet<string> = new Set();

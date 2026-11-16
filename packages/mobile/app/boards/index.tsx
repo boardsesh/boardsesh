@@ -29,17 +29,23 @@ import { offlineBoardRows } from '../../src/components/board-discovery/offline-b
 import {
   buildPickerTopView,
   decidePickerTop,
+  decisionAtDrawnTop,
   mapPickerTopBoards,
   pickerTopBoardUuids,
   pickerTopGymUuid,
   pickerTopPicks,
+  stabilizePickerTop,
   YOUR_BOARDS_COLLAPSED_ROW_COUNT,
   type PickerTopView,
   type UnnamedInRangeRow,
 } from '../../src/components/board-discovery/picker-top-view';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
-import { usePickerScanHold, useSteadyPickerTop } from '../../src/components/board-discovery/use-steady-picker-top';
+import {
+  scanHeardAnything,
+  usePickerScanHold,
+  usePickerTopSteadiness,
+} from '../../src/components/board-discovery/use-steady-picker-top';
 import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
 import { Button } from '../../src/components/Button';
 import { EmptyState } from '../../src/components/EmptyState';
@@ -328,18 +334,29 @@ export default function BoardSelection() {
   // board you're on is at), the one board heard somewhere else, or a box it
   // can't name. Two steps, because the gym's roster is a query keyed on the
   // gym the first step picks; see picker-top-view.ts.
-  // For a scan's first seconds nothing it heard leads, and once it has led it
-  // stays put for the rest of that scan (use-steady-picker-top.ts).
-  const holdScanLead = usePickerScanHold(scanPhase);
-  const topDecision = useMemo(
+  // Nothing a scan heard leads for its first seconds after hearing anything,
+  // or while the lookup is still naming it; once it has led it stays put
+  // until the results leave the screen (use-steady-picker-top.ts).
+  const steadiness = usePickerTopSteadiness(scanPhase, scanLookup);
+  const drawnTop = steadiness.drawn;
+  const scanHold = usePickerScanHold(scanPhase, scanHeardAnything(scanRows, scanLookup));
+  const holdScanLead = scanHold || steadiness.waitsOnLookup;
+  const scanDecision = useMemo(
     () => decidePickerTop({ phase: scanPhase, rows: scanRows, lookup: scanLookup, activeBoard, holdScanLead }),
     [scanPhase, scanRows, scanLookup, activeBoard, holdScanLead],
   );
+  // The top already drawn keeps its gym (a hero may become its own gym's), so
+  // the roster fetched is the gym on screen.
+  const topDecision = useMemo(() => decisionAtDrawnTop(scanDecision, drawnTop), [scanDecision, drawnTop]);
   // Only for the online layout, the one that draws the top.
   const showsTop = isAuthenticated && !isLocalOnly && !isError;
   const { data: topGymRoster } = useGymBoards(showsTop ? pickerTopGymUuid(topDecision) : null);
-  const builtTopView = useMemo(() => buildPickerTopView(topDecision, topGymRoster), [topDecision, topGymRoster]);
-  const topView = useSteadyPickerTop(builtTopView, scanPhase);
+  const topView = useMemo(
+    () => stabilizePickerTop(drawnTop, buildPickerTopView(topDecision, topGymRoster)),
+    [drawnTop, topDecision, topGymRoster],
+  );
+  // Remembers what the scan led with, so the next render holds it.
+  steadiness.record(topView);
   // Your boards and Near you leave these out, so a board shows once.
   const topBoardUuids = useMemo(() => pickerTopBoardUuids(topView), [topView]);
   // A box held for the next bind (pending-board-recognition.ts) belongs to this

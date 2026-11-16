@@ -215,7 +215,7 @@ function renderSlot(
 ) {
   return render(
     <InRangeSection
-      view={{ notice, content, unnamed, scanning, heardNothing }}
+      view={{ notice, content, unnamed, scanning, heardNothing, loudestBoardKey: null }}
       BoardArt={BoardArt}
       locationHint={locationHint}
       {...handlers}
@@ -412,7 +412,14 @@ describe('InRangeSection', () => {
   it("offers the card menu only on the climber's own walls", () => {
     render(
       <InRangeSection
-        view={{ notice: null, content: AT_CRUX, unnamed: null, scanning: false, heardNothing: false }}
+        view={{
+          notice: null,
+          content: AT_CRUX,
+          unnamed: null,
+          scanning: false,
+          heardNothing: false,
+          loudestBoardKey: null,
+        }}
         BoardArt={BoardArt}
         {...handlers}
         atGymMenuCapabilities={{ canPin: true, canDownload: true, canOpenDetails: true, canManage: true }}
