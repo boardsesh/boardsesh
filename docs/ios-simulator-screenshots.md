@@ -19,6 +19,8 @@ Before app launch, iOS capture bounds `simctl boot` to 120 seconds and `simctl b
 
 The iOS story runner separately waits 120 seconds for a fresh `[stories] root ready` marker and allows up to three app relaunches before failing. A successful launch command alone is not readiness. With `SCREENSHOT_DEBUG_DIR` set, each failed launch preserves its launch result, native log, process state, failure screenshot and available crash reports in a separate `ios-native-*` directory before retry or simulator shutdown.
 
+Story links open in portrait so iPad system-confirmation taps do not use rotated landscape accessibility coordinates. The runner tolerates an absent confirmation, retries a visible “Open in Boardsesh?” prompt at most three times, and asserts it disappeared. After confirmation it switches to the requested capture orientation. The dev story harness withholds the story canvas until window dimensions match that orientation, so the fresh story-ready marker still requires final-orientation content, assets and layout. A Stories index with the system prompt still visible indicates navigation failure, not missing board artwork. These checks require native validation; a successful Maestro tap alone does not prove navigation.
+
 Production screenshot-driving hooks have been removed. Showcase and tutorial video recorders retain live integration behavior through dev-only transport injection and real application controls. Native Live Activity captures still use the actual system API through the isolated dev setup.
 
 See [Mobile view stories](mobile-stories.md), [recorded fixtures](mobile-screenshot-fixtures.md) and [the integration gate](mobile-e2e-gate.md).

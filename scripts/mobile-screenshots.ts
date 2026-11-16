@@ -133,7 +133,6 @@ import {
   waitForHomeReady,
   waitForMetro,
   metroLogOffset,
-  waitForMetroLogLine,
   waitForPortToClose,
 } from './lib/metro-dev-server';
 import {
@@ -194,6 +193,8 @@ import { DEFAULT_CLIMB_FILTER_STATE, toClimbSearchInput } from '../packages/shar
 import { buildDuoHingeLibrary, captureDuoDisplay, installDuoHinge, pngIsLit, setDuoPose } from './lib/ios-duo-hinge';
 import { launchIosCaptureReady, waitForIosCaptureReady } from './lib/ios-capture-ready';
 import { bootIosCaptureDevice } from './lib/ios-capture-boot';
+import { snapshotCaptureLogs, waitForCaptureLogLine, type CaptureLogBoundary } from './lib/capture-readiness-logs';
+import { iosStoryNavigationFlow } from './lib/ios-story-navigation';
 import {
   matchScreenshotBoardCandidates,
   parseScreenshotBoardSelectors,
@@ -4560,24 +4561,26 @@ function endNativeActivityCapture(deviceId: string, captureDir: string): void {
     flow,
     `appId: ${APP_ID}\n---\n- openLink: com.boardsesh.app://dev/stories/native-live-activity?end=1&shot=${Date.now()}\n- tapOn:\n    text: Open\n    optional: true\n`,
   );
-  const offset = metroLogOffset(METRO_LOG_PATH);
+  const boundary = snapshotCaptureLogs([METRO_LOG_PATH, IOS_DEVICE_LOG_PATH], IOS_DEVICE_LOG_PATH);
   const status = runIosScreenshotMaestro(['--device', deviceId, 'test', flow], { deviceId, cpp: false, captureDir });
-  if (
-    status !== 0 ||
-    !waitForMetroLogLine((line) => line.includes('[stories] native ended'), offset, 15, METRO_LOG_PATH)
-  )
+  if (status !== 0 || !waitForCaptureLogLine((line) => line.includes('[stories] native ended'), boundary, 15))
     throw new Error('Native activity cleanup was not confirmed');
 }
 
 /** Wait for the real native thumbnail cache, then expand ActivityKit before capturing pixels. */
-function prepareNativeActivityCapture(deviceId: string, board: string, offset: number, captureDir: string): void {
-  const line = waitForMetroLogLine(
+function prepareNativeActivityCapture(
+  deviceId: string,
+  board: string,
+  offset: number,
+  captureDir: string,
+  nativeBoundary: readonly CaptureLogBoundary[],
+): void {
+  const line = waitForCaptureLogLine(
     (candidate) =>
       candidate.includes(`[stories] native started ${board} `) ||
       candidate.includes('[stories] error native-live-activity'),
-    offset,
+    [{ path: METRO_LOG_PATH, offset }, ...nativeBoundary],
     30,
-    METRO_LOG_PATH,
   );
   const filename = line?.match(/\[stories\] native started [a-z0-9-]+ ([A-Za-z0-9-]+-classic\.webp)/)?.[1];
   if (!filename) throw new Error(line ?? 'Native activity did not initialize');
@@ -4694,7 +4697,8 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
           connectDevClient('adb', device.udid, []);
           applyCleanAndroidStatusBar(device.udid);
         }
-        let rootOffset = metroLogOffset(METRO_LOG_PATH);
+        const readinessPaths = descriptor ? [METRO_LOG_PATH, IOS_DEVICE_LOG_PATH] : [METRO_LOG_PATH];
+        let rootBoundary = snapshotCaptureLogs(readinessPaths, descriptor ? IOS_DEVICE_LOG_PATH : undefined);
         const launchStoryApp = () => {
           const launchArgs = iosSimulatorLaunchArgs(device.udid);
           const launchResult = runCapture('xcrun', launchArgs, simulatorLaunchEnv());
@@ -4706,7 +4710,7 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
         };
         if (descriptor) launchStoryApp();
         else launchDevClient('adb', device.udid);
-        const waitForRoot = () => waitForMetroLogLine(isStoryRootReadyLine, rootOffset, 120, METRO_LOG_PATH) !== null;
+        const waitForRoot = () => waitForCaptureLogLine(isStoryRootReadyLine, rootBoundary, 120) !== null;
         const rootReady = descriptor
           ? waitForIosCaptureReady({
               waitReady: waitForRoot,
@@ -4715,8 +4719,9 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
                 console.log(`${LOG} Story root not ready; terminating and re-launching (attempt ${attempt}/3)...`);
               },
               relaunch: () => {
-                runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
-                rootOffset = metroLogOffset(METRO_LOG_PATH);
+                if (runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]).status !== 0)
+                  throw new Error('Could not stop the previous story process');
+                rootBoundary = snapshotCaptureLogs(readinessPaths, descriptor ? IOS_DEVICE_LOG_PATH : undefined);
                 launchStoryApp();
               },
             })
@@ -4770,10 +4775,13 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
                 if (container.status !== 0 || !container.stdout.trim())
                   throw new Error('Native activity app-group container unavailable');
                 clearNativeCaptureThumbnails(container.stdout.trim());
-                const restartOffset = metroLogOffset(METRO_LOG_PATH);
+                const restartBoundary = snapshotCaptureLogs(
+                  readinessPaths,
+                  descriptor ? IOS_DEVICE_LOG_PATH : undefined,
+                );
                 if (
                   runCapture('xcrun', iosSimulatorLaunchArgs(device.udid), simulatorLaunchEnv()).status !== 0 ||
-                  !waitForMetroLogLine(isStoryRootReadyLine, restartOffset, 120, METRO_LOG_PATH)
+                  !waitForCaptureLogLine(isStoryRootReadyLine, restartBoundary, 120)
                 )
                   throw new Error('Story root did not restart for a fresh native capture');
               }
@@ -4783,19 +4791,23 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
               const flowFile = join(captureDir, 'navigate-story.yaml');
               writeFileSync(
                 flowFile,
-                [
-                  `appId: ${descriptor ? APP_ID : ANDROID_DEV_PACKAGE}`,
-                  '---',
-                  ...(descriptor
-                    ? [`- setOrientation: ${pass.inner ? 'LANDSCAPE_LEFT' : descriptor.orientation}`]
-                    : []),
-                  `- openLink: com.boardsesh.app://${route}`,
-                  '- tapOn:',
-                  '    text: Open',
-                  '    optional: true',
-                ].join('\n') + '\n',
+                descriptor
+                  ? iosStoryNavigationFlow(
+                      APP_ID,
+                      `com.boardsesh.app://${route}`,
+                      pass.inner ? 'LANDSCAPE_LEFT' : descriptor.orientation,
+                    )
+                  : [
+                      `appId: ${ANDROID_DEV_PACKAGE}`,
+                      '---',
+                      `- openLink: com.boardsesh.app://${route}`,
+                      '- tapOn:',
+                      '    text: Open',
+                      '    optional: true',
+                    ].join('\n') + '\n',
               );
               const offset = metroLogOffset(METRO_LOG_PATH);
+              const nativeBoundary = descriptor ? snapshotCaptureLogs([IOS_DEVICE_LOG_PATH], IOS_DEVICE_LOG_PATH) : [];
               const args = ['--device', device.udid, 'test', flowFile];
               const status = descriptor
                 ? runIosScreenshotMaestro(args, { deviceId: device.udid, cpp: false, captureDir })
@@ -4803,8 +4815,14 @@ function runVisualStories(options: ScreenshotOptions, platform: 'ios' | 'android
               if (status !== 0) throw new Error(`Story navigation failed for ${capture.storyId}`);
               if (capture.nativeActivityBoard) {
                 nativeActivityStarted = true;
-                prepareNativeActivityCapture(device.udid, capture.nativeActivityBoard, offset, captureDir);
-              } else settleAfterStory(capture.storyId, METRO_LOG_PATH, offset, 0, LOG);
+                prepareNativeActivityCapture(
+                  device.udid,
+                  capture.nativeActivityBoard,
+                  offset,
+                  captureDir,
+                  nativeBoundary,
+                );
+              } else settleAfterStory(capture.storyId, METRO_LOG_PATH, offset, 0, LOG, nativeBoundary);
               const path = join(captureDir, `${capture.name}.png`);
               if (descriptor) {
                 const captureStatus = hingeLog

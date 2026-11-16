@@ -18,10 +18,10 @@ import {
   METRO_LOG_PATH,
   METRO_PORT,
   metroLogPathForPort,
-  readMetroLogSince,
   waitForMetroLogLine,
 } from './metro-dev-server';
 import { sleepSeconds } from './exec';
+import { readCaptureLogs, waitForCaptureLogLine, type CaptureLogBoundary } from './capture-readiness-logs';
 
 export const STORY_THEMES = ['dark', 'light'] as const;
 export const STORY_VARIANTS = ['liquidGlass', 'material'] as const;
@@ -147,16 +147,16 @@ export function settleAfterStory(
   offset: number,
   _fallbackSettleSeconds: number,
   logPrefix: string,
+  additionalLogs: readonly CaptureLogBoundary[] = [],
 ): void {
   if (!existsSync(logPath)) {
     throw new Error(`${logPrefix} No Metro log at ${logPath}; cannot verify story ${id}. Pass --metro-log.`);
   }
-  const line = waitForMetroLogLine(
-    (candidate) => findStoryLogEvent(candidate, id) !== null,
-    offset,
-    STORY_READY_TIMEOUT_SECONDS,
-    logPath,
-  );
+  const boundaries = [{ path: logPath, offset }, ...additionalLogs];
+  const matches = (candidate: string) => findStoryLogEvent(candidate, id) !== null;
+  const line = additionalLogs.length
+    ? waitForCaptureLogLine(matches, boundaries, STORY_READY_TIMEOUT_SECONDS)
+    : waitForMetroLogLine(matches, offset, STORY_READY_TIMEOUT_SECONDS, logPath);
   const event = line === null ? null : findStoryLogEvent(line, id);
   if (event === null) {
     throw new Error(
@@ -172,8 +172,15 @@ export function settleAfterStory(
   // The line poll returns the first match. Scan the whole capture interval so
   // a later asset failure cannot be hidden by an earlier readiness marker.
   const assertNoFailure = () => {
-    const latest = findStoryLogEvent(readMetroLogSince(offset, logPath), id);
-    if (latest?.kind === 'error') throw new Error(latest.line);
+    for (const candidate of readCaptureLogs(boundaries).split('\n')) {
+      const latest = findStoryLogEvent(candidate, id);
+      if (latest?.kind === 'error') throw new Error(latest.line);
+      if (latest?.kind === 'missing') throw new Error(latest.line.replace('[stories] missing', 'No story'));
+      if (latest?.kind === 'scenario')
+        throw new Error(
+          `Story ${id} redirects to ${latest.route}; capture a view story with explicit readiness instead.`,
+        );
+    }
   };
   assertNoFailure();
   sleepSeconds(STORY_READY_SETTLE_SECONDS);

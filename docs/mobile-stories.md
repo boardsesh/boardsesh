@@ -64,7 +64,7 @@ render: ({ onReady, onError }) => (
 readiness: 'explicit',
 ```
 
-Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay.
+Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay. iOS visual captures observe both Metro and the continuous native JavaScript log because Metro console forwarding can omit a ready message. Each launch/navigation takes fresh byte offsets; native events must also have an original event timestamp at or after that boundary, excluding buffered old-process messages. Relaunch boundaries are taken after successful termination. Errors from either stream still fail the capture.
 
 For iPhone Duo hinge failures, the capture debug artifact retains the latest image from each display and a `probes.jsonl` log with capture and conversion errors. Failed display reads are unknown, not proof of a dark screen; the runner waits for a known pose before toggling the hinge.
 
