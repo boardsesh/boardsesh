@@ -1,6 +1,7 @@
 import { memo, useCallback } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { Gym } from '@boardsesh/shared-schema';
+import { StatusPill } from '../StatusPill';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { PressableSurface } from '../PressableSurface';
@@ -57,7 +58,7 @@ function MyGymRowComponent({
   onOpenGym,
   onManageKiosks,
 }: MyGymRowProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   const isOwner = !!currentUserId && gym.ownerId === currentUserId;
   const roleLabel = resolveRoleLabel(gym, currentUserId, roleLabels);
@@ -78,13 +79,7 @@ function MyGymRowComponent({
           {addressLine}
         </Text>
       </View>
-      {roleLabel ? (
-        <View style={[styles.badge, { backgroundColor: isOwner ? brandColors.primary : systemColors.fill }]}>
-          <Text variant="caption1" color={isOwner ? brandColors.onPrimary : systemColors.secondaryLabel}>
-            {roleLabel}
-          </Text>
-        </View>
-      ) : null}
+      {roleLabel ? <StatusPill label={roleLabel} icon={isOwner ? 'crown.fill' : undefined} /> : null}
     </View>
   );
 
@@ -148,11 +143,6 @@ const styles = StyleSheet.create({
   },
   address: {
     marginTop: spacing[1],
-  },
-  badge: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
-    borderRadius: borderRadius.full,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

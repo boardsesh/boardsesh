@@ -18,6 +18,7 @@ import { rolesGrantAdmin, rolesGrantAdminOrLeader, type CommunityRoleScope } fro
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Card } from '../Card';
+import { StatusPill } from '../StatusPill';
 import { Avatar } from '../Avatar';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
@@ -211,20 +212,9 @@ export const ModerationProposalCard = memo(function ModerationProposalCard({
               {chip || proposal.climbIsHidden ? (
                 <View style={styles.chipRow}>
                   {proposal.climbIsHidden ? (
-                    <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
-                      <Icon name="visibility.off" size={12} color={systemColors.secondaryLabel} />
-                      <Text variant="caption2" color={systemColors.secondaryLabel}>
-                        {t('mobile.moderation.hiddenChip')}
-                      </Text>
-                    </View>
+                    <StatusPill icon="visibility.off" label={t('mobile.moderation.hiddenChip')} />
                   ) : null}
-                  {chip ? (
-                    <View style={[styles.chip, { backgroundColor: systemColors.fill }]}>
-                      <Text variant="caption2" color={systemColors.secondaryLabel}>
-                        {t(chip.labelI18nKey)}
-                      </Text>
-                    </View>
-                  ) : null}
+                  {chip ? <StatusPill label={t(chip.labelI18nKey)} /> : null}
                 </View>
               ) : null}
             </View>
@@ -391,14 +381,6 @@ const styles = StyleSheet.create({
   climbName: { flex: 1, fontWeight: '600' },
   gradeText: { fontWeight: '700' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[1], marginTop: 2 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
   typeLine: { marginTop: spacing[3], fontWeight: '600' },
   proposerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginTop: spacing[2] },
   reason: { marginTop: spacing[2], fontStyle: 'italic' },

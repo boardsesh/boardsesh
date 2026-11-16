@@ -50,9 +50,10 @@ opacity, never scale.
 
 ## `StatusPill`
 
-**`StatusPill`** `{ label, tone?: 'neutral', testID? }`: something you can't tap ("Following", "Ready to
-review"). `theme.status` fill and label, caption 1 emphasized; it never shrinks or truncates, so put
-it beside text that can (`ArtRow`'s `status`).
+**`StatusPill`** `{ label, tone?: 'neutral' | 'positive' | 'warning', icon?, testID? }`: something you can't
+tap ("Following", "Ready to review"). `theme.status` fill and label, caption 1 emphasized; `positive` and
+`warning` tint with the semantic green or orange at 15%, never the brand violet. An optional 12pt `icon`
+leads the label. It never shrinks or truncates, so put it beside text that can (`ArtRow`'s `status`).
 
 ## `EmptyState`
 
