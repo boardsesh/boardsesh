@@ -900,6 +900,11 @@ export default defineConfig({
         command: 'pnpm --filter @boardsesh/web run typecheck',
         dependsOn: ['build:web'],
       },
+      'typecheck:auth-proofs': {
+        command: 'tsc -p packages/web/auth-proofs/tsconfig.json --noEmit',
+        // The proofs import both packages; always verify their explicit TS project.
+        cache: false,
+      },
       'typecheck:ble-protocol': {
         command: 'pnpm --filter @boardsesh/ble-protocol run typecheck',
         dependsOn: ['codegen'],
@@ -1122,6 +1127,7 @@ export default defineConfig({
           'build:db',
           'build:backend',
           'typecheck:web',
+          'typecheck:auth-proofs',
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
@@ -1237,6 +1243,18 @@ export default defineConfig({
       },
       'test:auth-authority': {
         command: 'vp test run --config packages/backend/vite.auth-authority.config.ts --maxWorkers=2 --reporter=agent',
+        cache: false,
+      },
+      'test:auth-web-credential-proof': {
+        command:
+          'vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
+        cache: false,
+      },
+      'test:auth-browser-proof-cookies': {
+        command:
+          'vp test run --config packages/web/auth-proofs/browser-proof-cookies.vite.config.ts --maxWorkers=1 --reporter=agent',
+        dependsOn: ['typecheck:auth-proofs'],
         cache: false,
       },
       // The offline-sync engine suites live in their own Vitest project

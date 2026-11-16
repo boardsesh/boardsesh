@@ -40,7 +40,7 @@ Run the joined proof against an owned local PostgreSQL instance only:
 
 ```sh
 AUTH_PROTOTYPE_DATABASE_URL='<localhost disposable database admin URL ending in /postgres>' \
-  vp test run --config packages/web/auth-prototype/credential-proof.vite.config.ts \
+  vp test run --config packages/web/auth-proofs/credential-proof.vite.config.ts \
   --maxWorkers=1 --reporter=agent
 ```
 

@@ -144,7 +144,6 @@ describe('import scanner', () => {
 
 describe('first-party authority boundary', () => {
   it.each([
-    ['packages/backend/src/auth/prototype/authority.ts', false],
     ['packages/backend/src/auth/partner/authority.ts', true],
     ['packages/backend/src/auth/authority/authority.ts', true],
     ['packages/backend/src/auth/authority/adapter.ts', true],

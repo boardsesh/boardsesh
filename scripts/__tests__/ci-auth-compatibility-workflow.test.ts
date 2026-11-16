@@ -22,7 +22,13 @@ interface Job {
 const workflow = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as { jobs: Record<string, Job> };
 const compatibility = workflow.jobs['test-auth-compatibility'];
 const backend = workflow.jobs['test-backend'];
-const proofs = ['test:native-contract', 'test:auth-authority', 'test:auth-identities'];
+const proofs = [
+  'test:native-contract',
+  'test:auth-authority',
+  'test:auth-identities',
+  'test:auth-web-credential-proof',
+  'test:auth-browser-proof-cookies',
+];
 
 describe('auth compatibility CI has an independent complete budget', () => {
   it('owns its services and runs once for the same inputs as backend tests', () => {
@@ -53,11 +59,23 @@ describe('auth compatibility CI has an independent complete budget', () => {
     ).toHaveLength(1);
     expect(backend.steps.some((step) => step.run === command)).toBe(false);
   });
-  it('retains serial backend execution and the full-install fallback', () => {
+  it('retains serial backend execution, full-install fallback and browser installation', () => {
     const commands = backend.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('vp test run --project backend $selection');
     expect(commands).toContain('vp test run --project backend-serial');
     expect(commands).toContain('install inputs changed; running the whole backend project');
+    expect(
+      compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
+    ).toHaveLength(1);
+  });
+  it('runs cookie recovery after Chromium', () => {
+    const install = compatibility.steps.findIndex(
+      (step) => step.run === 'vp exec playwright install --with-deps chromium',
+    );
+    const proof = compatibility.steps.findIndex((step) => step.run === 'vp run test:auth-browser-proof-cookies');
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(proof).toBeGreaterThan(install);
+    expect(compatibility.steps[proof].env?.AUTH_PROTOTYPE_REDIS_URL).toBe('redis://localhost:6380');
   });
   it('targets web auth/proof inputs without widening the baseline backend trigger', () => {
     const source = readFileSync('.github/workflows/ci.yml', 'utf8');
@@ -69,6 +87,7 @@ describe('auth compatibility CI has an independent complete budget', () => {
     const filters = parse(filter!) as Record<string, string[]>;
     expect(filters.authCompatibility).toEqual(
       expect.arrayContaining([
+        'packages/web/auth-proofs/**',
         'packages/web/app/lib/auth/**',
         'packages/web/app/lib/partner-oauth/**',
         'packages/web/app/api/auth/**',
