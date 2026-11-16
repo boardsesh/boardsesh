@@ -329,8 +329,8 @@ These are the three items #7596 lists:
 or empty, and `better-auth`. The parser lives in `@boardsesh/auth-protocol`,
 shaped like `partner-oauth-mode.ts`. The backend refuses an unknown value at
 startup. www reads it on the server at request time and passes resolved values
-to client components as props, as `app/layout.tsx:128` already does with
-`canonicalBrowserOrigin`. It is never `NEXT_PUBLIC_*`, which is baked in at
+to client components as props, as `app/layout.tsx` already does with
+`enableExpoAuthBridge`. It is never `NEXT_PUBLIC_*`, which is baked in at
 build time, so a rollback would need a rebuild. Expo web has no flag.
 
 It replaces the eight code-owned gates, each a literal `return false`: the

@@ -3,12 +3,12 @@ import { browserBindingCursorSchema } from './browser-coordinator-v1';
 
 /** Browser-visible control only. Credentials and private operation capabilities
  * stay in the canonical host's HttpOnly cookies and service transport.
- * #7596 deleted the www routes below with renewal custody; they now answer 404.
- * Two dark callers still name them, both behind hard-false gates: the frame's
- * `renew` transport (browser-coordinator-dom/runner/channel, mounted only by the
- * www /auth/browser-coordinator page) and the Expo web
- * `coordinateExpoBrowserSession`. A4 removes the Expo web caller; the
- * coordinator deletion removes the frame and this module. */
+ * #7596 deleted the www routes below with renewal custody, and later the www
+ * /auth/browser-coordinator page that mounted the frame; all answer 404 now.
+ * The frame's `renew` transport (browser-coordinator-dom/runner/channel) still
+ * names these paths. Its last caller is the Expo web
+ * `coordinateExpoBrowserSession`, behind a hard-false gate. This module goes
+ * with the shared coordinator subpaths. */
 export const BROWSER_RENEWAL_BROWSER_PATHS = Object.freeze({
   prepare: '/api/internal/auth/browser-coordinator/renew/prepare',
   commit: '/api/internal/auth/browser-coordinator/renew/commit',

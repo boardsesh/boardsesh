@@ -3,6 +3,8 @@ import { z } from 'zod';
 /** Control metadata only. No message is an authentication or identity assertion. */
 export const BROWSER_COORDINATOR_PROTOCOL_VERSION = 1;
 export const BROWSER_COORDINATOR_LOCK = 'boardsesh-browser-coordinator-v1';
+/** #7596 deleted this www frame page and the two routes below; all answer 404.
+ * The gated Expo web frame client is their last caller. */
 export const BROWSER_COORDINATOR_FRAME_PATH = '/auth/browser-coordinator';
 export const BROWSER_COORDINATOR_PUBLIC_PATHS = Object.freeze({
   observe: '/api/internal/auth/browser-coordinator/observe',
