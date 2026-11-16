@@ -1010,7 +1010,7 @@
       "board": {
         "title": "¿En qué plafón escalas?",
         "body": "Cada plafón guarda su propio historial. Elige el que escalas y verás lo que ha encadenado el resto de gente que está en él.",
-        "offlineHint": "Descarga un plafón desde su menú para guardarlo en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
+        "offlineHint": "Elige un plafón y te ofreceremos guardarlo en este móvil. Se abre al instante y sigue funcionando aunque falle el wifi del rocódromo.",
         "findAnother": "Buscar otro plafón",
         "findFirst": "Buscar mi plafón",
         "offlineSkip": "Ahora no"

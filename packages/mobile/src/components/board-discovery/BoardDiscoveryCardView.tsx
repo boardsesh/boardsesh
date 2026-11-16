@@ -105,6 +105,9 @@ const MENU_BUTTON_FOOTPRINT = Platform.OS === 'android' ? 48 : MENU_BUTTON_SIZE;
 
 const SUBTITLE_GLYPH_SIZE = 12;
 
+/** Matches `delayLongPress` in AppMenu.android and the browser AppMenu's timer. */
+const LONG_PRESS_DELAY_MS = 400;
+
 const NO_ROWS: readonly BoardCardMenuRow[] = [];
 
 type BoardCardMenuRow = BoardCardMenuEntry & { label: string };
@@ -287,6 +290,9 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
     <AnimatedPressable
       onPress={handlePress}
       onLongPress={onLongPress}
+      // The hold AppMenu.android and the browser menu use, so the card opens
+      // its menu as fast as every other hold menu.
+      delayLongPress={LONG_PRESS_DELAY_MS}
       onPressIn={() => (scale.value = withSpring(0.97, springs.snappy))}
       onPressOut={() => (scale.value = withSpring(1, springs.snappy))}
       accessibilityRole="button"
@@ -365,7 +371,8 @@ export const BoardDiscoveryCardView = memo(function BoardDiscoveryCardView({
         trigger="longPress"
         menuKey={item.key}
         menuRef={menuRef}
-        liftPreview
+        // No `liftPreview`: on iOS it paints the screen background behind the
+        // card at rest, which in the picker modal is a grey slab behind the title.
       >
         {card}
       </AppMenu>

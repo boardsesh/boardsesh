@@ -561,38 +561,63 @@ describe('the card menu on Your boards', () => {
 });
 
 describe('the card menu during onboarding', () => {
-  // The first screen a brand-new account ever sees. A way to remove a board has
-  // no business being one hold into it, and neither does a pin.
-  it('offers no pin and no board management', () => {
+  const nearbyWall = board({ uuid: 'nearby', name: 'Crux Kilter', ownerId: 'setter-1', isFollowedByMe: false });
+
+  // The first screen a brand-new account ever sees carries the choice of board
+  // and nothing else: no ⋯ and no hold menu on any card, in either carousel.
+  it('draws plain cards in both carousels', () => {
     state.source = 'onboarding';
+    state.nearbyBoards = [nearbyWall];
     render(createElement(BoardSelection));
 
-    expect(carouselProps.last?.menuCapabilities).toMatchObject({ canPin: false, canManage: false });
-    for (const action of ['pin', 'edit', 'delete']) {
+    const yourBoards = carouselProps.byFirstKey.get('mine');
+    const nearby = carouselProps.byFirstKey.get('nearby');
+    expect(yourBoards).toBeDefined();
+    expect(nearby).toBeDefined();
+    for (const carousel of [yourBoards, nearby]) {
+      expect(carousel?.menuCapabilities).toBeUndefined();
+      expect(carousel?.onMenuAction).toBeUndefined();
+    }
+    for (const action of ['climb_here', 'pin', 'download', 'details', 'edit', 'delete']) {
       expect(screen.queryByRole('button', { name: `${action} Marco garage` })).toBeNull();
     }
-    expect(screen.queryByRole('button', { name: 'unfollow High Point Orlando' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'details Crux Kilter' })).toBeNull();
     // Switching boards is the whole point of the onboarding hand-off and must
     // still work.
     expect(screen.getByRole('button', { name: 'Marco garage' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Crux Kilter' })).toBeTruthy();
   });
 
-  // Defence in depth: a row drawn before the gate closed still runs nothing.
-  it('refuses a management row that reaches it anyway', async () => {
-    state.source = 'onboarding';
+  it('draws the menus again outside onboarding', () => {
+    state.nearbyBoards = [nearbyWall];
+    render(createElement(BoardSelection));
+
+    expect(carouselProps.byFirstKey.get('mine')?.onMenuAction).toBeTypeOf('function');
+    expect(carouselProps.byFirstKey.get('nearby')?.onMenuAction).toBeTypeOf('function');
+  });
+});
+
+describe('a menu row the gates refuse', () => {
+  // Defence in depth: a row drawn before the gate closed (here, management with
+  // no resolvable identity) runs nothing, and is not counted as a card action.
+  it('runs nothing and reports nothing', async () => {
+    state.profile = undefined;
+    state.storedUserId = undefined;
     render(createElement(BoardSelection));
     const owned = carouselProps.last?.items.find((item) => item.key === 'mine');
     const followed = carouselProps.last?.items.find((item) => item.key === 'gym');
+    expect(carouselProps.last?.onMenuAction).toBeTypeOf('function');
 
-    carouselProps.last?.onMenuAction?.(owned!, 'delete', 'accessibility');
-    carouselProps.last?.onMenuAction?.(followed!, 'unfollow', 'accessibility');
-    carouselProps.last?.onMenuAction?.(owned!, 'pin', 'accessibility');
+    carouselProps.last?.onMenuAction?.({ ...owned!, isViewerOwner: true }, 'delete', 'accessibility');
+    carouselProps.last?.onMenuAction?.({ ...followed!, isViewerOwner: false }, 'unfollow', 'accessibility');
+    carouselProps.last?.onMenuAction?.({ ...owned!, isViewerOwner: true }, 'edit', 'long_press');
 
     await Promise.resolve();
     expect(confirmMock).not.toHaveBeenCalled();
     expect(deleteBoardMock).not.toHaveBeenCalled();
     expect(unfollowBoardMock).not.toHaveBeenCalled();
-    expect(pinBoardMock).not.toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/edit' }));
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
   });
 });
 
@@ -688,6 +713,72 @@ describe('deleting a board', () => {
     await Promise.resolve();
     expect(confirmMock).not.toHaveBeenCalled();
     expect(deleteBoardMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
+  });
+
+  // The ⋯ and the hold are two ways into the same delete. A second pick while
+  // the first is still running must not start a second one.
+  it('ignores a second Delete while the first is still running', async () => {
+    let finishDelete: (() => void) | undefined;
+    deleteBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await Promise.resolve();
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(deleteBoardMock).toHaveBeenCalledTimes(1);
+    // The refused pick is not counted either.
+    expect(trackMock.mock.calls.filter(([event]) => event === 'Board Card Action')).toHaveLength(1);
+
+    await act(async () => {
+      finishDelete?.();
+    });
+    await waitFor(() => expect(toastMock.showToast).toHaveBeenCalledWith('"Marco garage" deleted', 'success'));
+  });
+
+  // The guard covers the confirm dialog too: two dialogs for one board would
+  // run the delete twice.
+  it('ignores a second Delete while the first confirm is still open', async () => {
+    let answerConfirm: ((confirmed: boolean) => void) | undefined;
+    confirmMock.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answerConfirm = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await Promise.resolve();
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      answerConfirm?.(true);
+    });
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledTimes(1));
+  });
+
+  // Cleared in `finally`, so a delete that failed can be tried again.
+  it('lets the same board be deleted again once the first attempt has finished', async () => {
+    deleteBoardMock.mockRejectedValueOnce(new Error('nope'));
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() =>
+      expect(toastMock.showToast).toHaveBeenCalledWith("Couldn't delete that board. Try again.", 'error'),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'delete Marco garage' }));
+    await waitFor(() => expect(deleteBoardMock).toHaveBeenCalledTimes(2));
+    expect(confirmMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -744,6 +835,28 @@ describe('unfollowing a board', () => {
     carouselProps.last?.onMenuAction?.(owned!, 'unfollow', 'menu_button');
     await Promise.resolve();
     expect(unfollowBoardMock).not.toHaveBeenCalled();
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
+  });
+
+  it('ignores a second Unfollow while the first is still running', async () => {
+    let finishUnfollow: (() => void) | undefined;
+    unfollowBoardMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishUnfollow = resolve;
+        }),
+    );
+    render(createElement(BoardSelection));
+    fireEvent.click(screen.getByRole('button', { name: 'unfollow High Point Orlando' }));
+    await waitFor(() => expect(unfollowBoardMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'unfollow High Point Orlando' }));
+    await Promise.resolve();
+    expect(unfollowBoardMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishUnfollow?.();
+    });
   });
 });
 
@@ -812,6 +925,7 @@ describe('identity resolution never blocks the switcher', () => {
     expect(unfollowBoardMock).not.toHaveBeenCalled();
     expect(deleteBoardMock).not.toHaveBeenCalled();
     expect(routerMock.push).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/boards/edit' }));
+    expect(trackMock).not.toHaveBeenCalledWith('Board Card Action', expect.anything());
   });
 
   it('falls back to the id this device already has when the profile is missing', () => {

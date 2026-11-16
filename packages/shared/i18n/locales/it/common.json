@@ -742,7 +742,7 @@
       "board": {
         "title": "Su quale pannello arrampichi?",
         "body": "Ogni pannello ha la sua storia. Scegli quello su cui arrampichi e vedrai cosa hanno chiuso tutti gli altri.",
-        "offlineHint": "Scarica un pannello dal suo menu per tenerlo su questo telefono. Si apre subito e funziona anche quando il wifi della palestra no.",
+        "offlineHint": "Scegli un pannello e ti proporremo di tenerlo su questo telefono. Si apre subito e funziona anche quando il wifi della palestra no.",
         "findAnother": "Cerca un altro pannello",
         "findFirst": "Trova il mio pannello",
         "offlineSkip": "Salta per ora"

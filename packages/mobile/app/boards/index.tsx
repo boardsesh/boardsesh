@@ -95,6 +95,16 @@ const NEARBY_MENU_CAPABILITIES: BoardCardMenuCapabilities = {
   canManage: false,
 };
 
+/**
+ * Edit and delete are for boards the viewer owns, unfollow for boards they only
+ * follow. Unknown ownership allows none of them: guessing "followed" would offer
+ * to unfollow the climber's own wall.
+ */
+function ownershipAllows(item: DiscoveryBoardItem, action: 'edit' | 'unfollow' | 'delete'): boolean {
+  if (item.isViewerOwner === undefined) return false;
+  return item.isViewerOwner === (action !== 'unfollow');
+}
+
 /** The board type the Near you list is narrowed to, and the layout it was set in. */
 type NearbyTypeFilter = { boardType: BoardName; inFirstBoardChoice: boolean };
 
@@ -412,15 +422,21 @@ export default function BoardSelection() {
     (item: DiscoveryBoardItem) => openBoardDetails(item, 'nearby'),
     [openBoardDetails],
   );
+  // Onboarding draws plain cards in both carousels: no ⋯ and no hold. The first
+  // screen a new account sees carries the choice of board and nothing else, the
+  // same rule the onboarding board step follows. "Where do you climb?" is the
+  // same moment for a climber with no boards yet (Climbs' empty state), and its
+  // "At a gym" answer shows the Near you carousel, so it draws plain cards too.
+  const showCardMenus = !fromOnboarding && !showFirstBoardChoice;
   // Near you's card menu: the two rows NEARBY_MENU_CAPABILITIES offers.
   const onNearbyMenuAction = useCallback(
     (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
-      if (action !== 'climb_here' && action !== 'details') return;
+      if (!showCardMenus || (action !== 'climb_here' && action !== 'details')) return;
       trackBoardCardAction({ action, via, section: 'nearby' });
       if (action === 'climb_here') onSelectNearbyBoard(item);
       else onNearbyBoardDetails(item);
     },
-    [onSelectNearbyBoard, onNearbyBoardDetails],
+    [showCardMenus, onSelectNearbyBoard, onNearbyBoardDetails],
   );
   const onActiveBoardDetails = useCallback(() => {
     if (activeBoard) setDetailBoard(activeBoard);
@@ -459,8 +475,8 @@ export default function BoardSelection() {
         <BoardCarousel
           items={nearbyItems}
           onSelect={onSelectNearbyBoard}
-          menuCapabilities={NEARBY_MENU_CAPABILITIES}
-          onMenuAction={onNearbyMenuAction}
+          menuCapabilities={showCardMenus ? NEARBY_MENU_CAPABILITIES : undefined}
+          onMenuAction={showCardMenus ? onNearbyMenuAction : undefined}
         />
       </Section>
     ) : null;
@@ -495,77 +511,89 @@ export default function BoardSelection() {
     [myBoards, confirmAndDownload, downloadedScopeKeys, unfinishedWallUuids],
   );
 
+  // Uuids of boards whose edit, unfollow or delete is running, confirm dialog
+  // included. A second pick on the same board while the first is still going
+  // (the ⋯ and the hold are two ways in) runs nothing: two deletes would show
+  // two confirms and report a failure for the one that lost the race. A ref,
+  // not state, so starting one re-renders nothing.
+  const boardActionsInFlight = useRef<Set<string>>(new Set());
+
   // One `find` per pick — the shape `onSelectMyBoard` already uses — never per row.
   const runMyBoardAction = useCallback(
     async (item: DiscoveryBoardItem, action: 'edit' | 'unfollow' | 'delete') => {
-      const board = myBoards.find((candidate) => candidate.uuid === item.key);
-      if (!board) {
-        showToast(t('mobile.boardSwitchError'), 'error');
-        return;
-      }
-      // Unreachable from the UI — the menu offers none of these on a board whose
-      // ownership did not resolve — but bail explicitly rather than let a
-      // coercion collapse "unknown" into "followed" and unfollow the user's own
-      // wall. Edit and delete are owner-only, and unfollow is for boards you do
-      // not own: a mismatch is a stale row, so it runs nothing.
-      if (item.isViewerOwner === undefined) return;
-      if (item.isViewerOwner !== (action !== 'unfollow')) return;
-      if (action === 'edit') {
-        router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
-        return;
-      }
-      const wasActive = activeBoard?.uuid === board.uuid;
-      // Capture at action time: a render-time value can miss a queued board write.
-      const activeBoardGeneration = getActiveBoardWriteGeneration();
-      if (action === 'delete') {
-        const confirmed = await confirm({
-          title: board.boardType === 'spray' ? t('mobile.manage.deleteWallTitle') : t('mobile.manage.deleteTitle'),
-          message:
-            board.boardType === 'spray'
-              ? t('mobile.manage.deleteWallMessage', { name: board.name })
-              : t('mobile.manage.deleteMessage', { name: board.name }),
-          confirmLabel: t('mobile.manage.deleteConfirm'),
-          cancelLabel: t('mobile.manage.cancel'),
-          destructive: true,
-        });
-        if (!confirmed) return;
+      if (boardActionsInFlight.current.has(item.key)) return;
+      boardActionsInFlight.current.add(item.key);
+      try {
+        const board = myBoards.find((candidate) => candidate.uuid === item.key);
+        if (!board) {
+          showToast(t('mobile.boardSwitchError'), 'error');
+          return;
+        }
+        // Unreachable from the UI — the menu offers none of these on a board whose
+        // ownership did not resolve — but bail explicitly rather than let a
+        // coercion collapse "unknown" into "followed" and unfollow the user's own
+        // wall. Edit and delete are owner-only, and unfollow is for boards you do
+        // not own: a mismatch is a stale row, so it runs nothing.
+        if (!ownershipAllows(item, action)) return;
+        if (action === 'edit') {
+          router.push({ pathname: '/boards/edit', params: { boardUuid: board.uuid } });
+          return;
+        }
+        const wasActive = activeBoard?.uuid === board.uuid;
+        // Capture at action time: a render-time value can miss a queued board write.
+        const activeBoardGeneration = getActiveBoardWriteGeneration();
+        if (action === 'delete') {
+          const confirmed = await confirm({
+            title: board.boardType === 'spray' ? t('mobile.manage.deleteWallTitle') : t('mobile.manage.deleteTitle'),
+            message:
+              board.boardType === 'spray'
+                ? t('mobile.manage.deleteWallMessage', { name: board.name })
+                : t('mobile.manage.deleteMessage', { name: board.name }),
+            confirmLabel: t('mobile.manage.deleteConfirm'),
+            cancelLabel: t('mobile.manage.cancel'),
+            destructive: true,
+          });
+          if (!confirmed) return;
+          try {
+            await deleteBoardAsync(board.uuid);
+            // The offline picker's snapshot goes with it. The download itself stays
+            // (a sibling board can share the scope), but a card for a board the
+            // backend has dropped must never reach setActiveBoard.
+            forgetOfflineBoard(board.uuid);
+            if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
+              await clearSession({ notifyServer: true });
+              await clearActiveBoard(activeBoardGeneration);
+            }
+            showToast(t('mobile.manage.deleteSuccess', { name: board.name }), 'success');
+          } catch {
+            showToast(t('mobile.manage.deleteError'), 'error');
+          }
+          return;
+        }
+        // Unfollow is reversible and stays one tap — except on the active board,
+        // where it also clears the selection out from under a live session.
+        if (wasActive) {
+          const confirmed = await confirm({
+            title: t('mobile.manage.unfollowTitle'),
+            message: t('mobile.manage.unfollowMessage', { name: board.name }),
+            confirmLabel: t('mobile.manage.unfollowConfirm'),
+            cancelLabel: t('mobile.manage.cancel'),
+            destructive: true,
+          });
+          if (!confirmed) return;
+        }
         try {
-          await deleteBoardAsync(board.uuid);
-          // The offline picker's snapshot goes with it. The download itself stays
-          // (a sibling board can share the scope), but a card for a board the
-          // backend has dropped must never reach setActiveBoard.
+          await unfollowBoardAsync(board.uuid);
           forgetOfflineBoard(board.uuid);
           if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
             await clearSession({ notifyServer: true });
             await clearActiveBoard(activeBoardGeneration);
           }
-          showToast(t('mobile.manage.deleteSuccess', { name: board.name }), 'success');
         } catch {
-          showToast(t('mobile.manage.deleteError'), 'error');
+          showToast(t('mobile.manage.unfollowError'), 'error');
         }
-        return;
-      }
-      // Unfollow is reversible and stays one tap — except on the active board,
-      // where it also clears the selection out from under a live session.
-      if (wasActive) {
-        const confirmed = await confirm({
-          title: t('mobile.manage.unfollowTitle'),
-          message: t('mobile.manage.unfollowMessage', { name: board.name }),
-          confirmLabel: t('mobile.manage.unfollowConfirm'),
-          cancelLabel: t('mobile.manage.cancel'),
-          destructive: true,
-        });
-        if (!confirmed) return;
-      }
-      try {
-        await unfollowBoardAsync(board.uuid);
-        forgetOfflineBoard(board.uuid);
-        if (wasActive && activeBoardGeneration === getActiveBoardWriteGeneration()) {
-          await clearSession({ notifyServer: true });
-          await clearActiveBoard(activeBoardGeneration);
-        }
-      } catch {
-        showToast(t('mobile.manage.unfollowError'), 'error');
+      } finally {
+        boardActionsInFlight.current.delete(item.key);
       }
     },
     [
@@ -594,15 +622,13 @@ export default function BoardSelection() {
     [pinBoardMutate],
   );
 
-  // Gates Edit, Unfollow and Delete in every card's menu. Off during onboarding:
-  // the first screen a new account ever sees must not carry a way to remove a
-  // board. Also off with no boards, with no resolvable identity, and offline —
-  // where every action behind it is a network mutation.
+  // Gates Edit, Unfollow and Delete in every card's menu. Also off with no
+  // boards, with no resolvable identity, and offline — where every action behind
+  // it is a network mutation. Onboarding has no card menu at all (below).
   const canEditBoards = myBoardItems.length > 0 && currentUserId !== undefined && !isLocalOnly && !fromOnboarding;
   // Same family of gates as canEditBoards, minus the identity requirement: a pin
   // is the viewer's own state and does not depend on knowing who owns the board.
-  // Offline is still out — the mutation could not reach the server — and so is
-  // onboarding, whose first screen carries no board controls at all.
+  // Offline is still out — the mutation could not reach the server.
   const canPinBoards = !isLocalOnly && !fromOnboarding && isAuthenticated;
   const myBoardMenuCapabilities = useMemo<BoardCardMenuCapabilities>(
     () => ({
@@ -617,32 +643,42 @@ export default function BoardSelection() {
   // Every row of a "Your boards" card menu lands here, from the ⋯, the hold or
   // a screen-reader action. The menu only offers what the capabilities above
   // allow; the gates are checked again here, so a row drawn before the climber
-  // went offline cannot run a mutation that would fail.
+  // went offline cannot run a mutation that would fail. A refused row runs
+  // nothing and is not counted.
   const onMyBoardMenuAction = useCallback(
     (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => {
-      trackBoardCardAction({ action, via, section: 'your_boards' });
+      if (!showCardMenus) return;
       switch (action) {
         case 'climb_here':
+          trackBoardCardAction({ action, via, section: 'your_boards' });
           onSelectMyBoard(item);
           return;
         case 'pin':
         case 'unpin':
-          if (canPinBoards) setBoardPinned(item, action === 'pin');
+          if (!canPinBoards) return;
+          trackBoardCardAction({ action, via, section: 'your_boards' });
+          setBoardPinned(item, action === 'pin');
           return;
         case 'download':
-          if (offlineDownloadsEnabled) onDownloadMyBoard(item);
+          if (!offlineDownloadsEnabled) return;
+          trackBoardCardAction({ action, via, section: 'your_boards' });
+          onDownloadMyBoard(item);
           return;
         case 'details':
+          trackBoardCardAction({ action, via, section: 'your_boards' });
           onMyBoardDetails(item);
           return;
         case 'edit':
         case 'unfollow':
         case 'delete':
-          if (canEditBoards) void runMyBoardAction(item, action);
+          if (!canEditBoards || !ownershipAllows(item, action) || boardActionsInFlight.current.has(item.key)) return;
+          trackBoardCardAction({ action, via, section: 'your_boards' });
+          void runMyBoardAction(item, action);
           return;
       }
     },
     [
+      showCardMenus,
       onSelectMyBoard,
       canPinBoards,
       setBoardPinned,
@@ -676,8 +712,8 @@ export default function BoardSelection() {
         <BoardCarousel
           items={myBoardItems}
           onSelect={onSelectMyBoard}
-          menuCapabilities={myBoardMenuCapabilities}
-          onMenuAction={onMyBoardMenuAction}
+          menuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
+          onMenuAction={showCardMenus ? onMyBoardMenuAction : undefined}
         />
         {/* Inside the section because that is what it drills into; gone with the
             section when there are no boards to manage or download. */}

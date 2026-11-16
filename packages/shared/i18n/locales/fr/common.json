@@ -742,7 +742,7 @@
       "board": {
         "title": "Sur quelle board tu grimpes ?",
         "body": "Chaque board garde son propre historique. Choisis celle que tu grimpes et tu verras les croix de tous les autres qui y passent.",
-        "offlineHint": "Télécharge une board depuis son menu pour la garder sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
+        "offlineHint": "Choisis une board et on te proposera de la garder sur ce téléphone. Elle s'ouvre instantanément et marche même quand le wifi de la salle lâche.",
         "findAnother": "Trouver une autre board",
         "findFirst": "Trouver ma board",
         "offlineSkip": "Plus tard"

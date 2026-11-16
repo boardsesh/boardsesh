@@ -10,7 +10,6 @@ import type { DiscoveryBoardItem } from '../board-discovery/BoardDiscoveryCard';
 import { userBoardsToItems } from '../board-discovery/board-items';
 import { useSprayLabelOptions } from '../../lib/spray/use-spray-label-options';
 import { sortViewerOwnedFirst } from '../board-discovery/board-card-actions';
-import type { BoardCardMenuAction, BoardCardMenuCapabilities } from '../board-discovery/board-card-menu';
 import { useBoardOfflineState } from '../board-discovery/use-board-offline-state';
 import { useOnboardingBoardCopy } from '../../lib/onboarding/use-onboarding-copy';
 import { useBlockBack } from './use-block-back';
@@ -38,8 +37,6 @@ export type OnboardingBoardStepProps = {
   onSkipUnusable: (() => void) | null;
   /** Bind this board and move on. */
   onSelect: (board: UserBoard) => void;
-  /** Download this board without binding it. */
-  onDownload: (board: UserBoard) => void;
   /** Hand off to the full /boards picker. */
   onFindBoard: () => void;
 };
@@ -50,12 +47,13 @@ export type OnboardingBoardStepProps = {
  *
  * Two things happen here beyond picking a board. It **names the mechanism**:
  * board history is shared per named board, so which board you pick is what
- * decides whose sends you see. And it **offers the download**, because a board
- * on the phone opens instantly and works on gym wifi that has given up.
+ * decides whose sends you see. And it **offers the download**, once the board
+ * is picked, because a board on the phone opens instantly and works on gym wifi
+ * that has given up.
  *
  * Reuses `BoardCarousel` / `BoardDiscoveryCard` rather than growing a second
- * board slider — same cards, same menu (Download for offline), same active tick
- * as `/boards`.
+ * board slider — same cards and same active tick as `/boards`, with no card
+ * menu: the only thing a card does here is answer the question.
  *
  * **There is no exit** (issue #4961), with exactly one exception: a climber who
  * is offline with nothing cached cannot be shown a usable choice, and stranding
@@ -73,7 +71,6 @@ export function OnboardingBoardStep({
   currentUserId,
   onSkipUnusable,
   onSelect,
-  onDownload,
   onFindBoard,
 }: OnboardingBoardStepProps) {
   const copy = useOnboardingBoardCopy();
@@ -95,7 +92,7 @@ export function OnboardingBoardStep({
     [boards, boardOfflineState, currentUserId, labelOptions],
   );
 
-  // Both handlers resolve the item back to its UserBoard. A refetch that drops a
+  // Resolves the item back to its UserBoard. A refetch that drops a
   // board between render and tap is the only way to miss, and the right answer
   // there is to do nothing rather than bind something else.
   const findBoard = useCallback((key: string) => boards.find((board) => board.uuid === key), [boards]);
@@ -106,23 +103,6 @@ export function OnboardingBoardStep({
       if (board) onSelect(board);
     },
     [findBoard, onSelect],
-  );
-
-  // The card menu offers Climb here and, for a board not on the phone yet,
-  // Download for offline. Nothing else: this step has no pins, details or
-  // board management, only the choice of board.
-  const menuCapabilities = useMemo<BoardCardMenuCapabilities>(
-    () => ({ canPin: false, canDownload: offlineDownloadsEnabled, canOpenDetails: false, canManage: false }),
-    [offlineDownloadsEnabled],
-  );
-  const handleMenuAction = useCallback(
-    (item: DiscoveryBoardItem, action: BoardCardMenuAction) => {
-      const board = findBoard(item.key);
-      if (!board) return;
-      if (action === 'climb_here') onSelect(board);
-      if (action === 'download') onDownload(board);
-    },
-    [findBoard, onSelect, onDownload],
   );
 
   const hasBoards = items.length > 0;
@@ -164,12 +144,10 @@ export function OnboardingBoardStep({
 
         {hasBoards ? (
           <>
-            <BoardCarousel
-              items={items}
-              onSelect={handleSelect}
-              menuCapabilities={menuCapabilities}
-              onMenuAction={handleMenuAction}
-            />
+            {/* No card menu: no pins, details, downloads or board management
+                here, only the choice of board. The download is offered once
+                the board is picked. */}
+            <BoardCarousel items={items} onSelect={handleSelect} />
             {offlineDownloadsEnabled ? (
               <View style={styles.copy}>
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>

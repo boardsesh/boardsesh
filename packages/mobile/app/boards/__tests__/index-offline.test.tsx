@@ -124,7 +124,6 @@ vi.mock('react-i18next', () => ({
         'mobile.discovery.bluetooth': 'Bluetooth',
         'mobile.discovery.findGym': 'Find a gym',
         'mobile.boardSwitchError': 'Could not switch board',
-        'mobile.manage.done': 'Done',
         'myBoards.title': 'Manage boards',
       };
       const template = map[key] ?? key;

@@ -403,7 +403,9 @@ describe('BoardDiscoveryCard menu', () => {
     const labels = ['Climb here', 'Pin', 'Download for offline', 'Details', 'Edit board', 'Delete'];
     expect(menus.button?.actions.map((action) => action.label)).toEqual(labels);
     expect(menus.hold?.actions).toBe(menus.button?.actions);
-    expect(menus.hold?.liftPreview).toBe(true);
+    // No lifted preview: on iOS it paints a background behind the card at rest,
+    // a grey slab under the title inside the picker modal.
+    expect(menus.hold?.liftPreview).toBeUndefined();
     expect(menus.hold?.menuKey).toBe('board-uuid');
     const deleteRow = menus.button?.actions[5];
     expect(deleteRow).toMatchObject({ destructive: true, dividerBefore: true, systemIcon: 'trash' });
@@ -485,6 +487,8 @@ describe('BoardDiscoveryCard menu', () => {
     render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn(), menu: menuWith(NEARBY) }));
     const onLongPress = cardRootProps.last?.onLongPress as (() => void) | undefined;
     expect(onLongPress).toBeTypeOf('function');
+    // The same hold as AppMenu.android's own wrapper and the browser menu.
+    expect(cardRootProps.last?.delayLongPress).toBe(400);
     onLongPress?.();
     expect(menus.open).toHaveBeenCalledTimes(1);
   });

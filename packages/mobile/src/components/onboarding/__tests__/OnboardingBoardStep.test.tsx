@@ -118,7 +118,6 @@ function renderStep(overrides: Partial<OnboardingBoardStepProps> = {}) {
     currentUserId: 'user-a',
     onSkipUnusable: null,
     onSelect: vi.fn(),
-    onDownload: vi.fn(),
     onFindBoard: vi.fn(),
     ...overrides,
   };
@@ -174,33 +173,23 @@ describe('OnboardingBoardStep', () => {
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  // The download moved off the board art into the card menu; this step offers
-  // it there and nothing else a board could be managed with.
-  it('offers Download for offline in the card menu, and no board management', () => {
-    const { props } = renderStep();
+  // Onboarding cards carry no menu: no ⋯, no hold, no download before the pick.
+  // The download is offered once the board is bound (OnboardingBoardRoute).
+  it('draws plain cards with no menu', () => {
+    renderStep();
 
-    expect(carouselCtrl.menuCapabilities).toEqual({
-      canPin: false,
-      canDownload: true,
-      canOpenDetails: false,
-      canManage: false,
-    });
-    carouselCtrl.onMenuAction?.({ key: 'board-1' }, 'download', 'menu_button');
-    expect(props.onDownload).toHaveBeenCalledWith(BOARDS[0]);
-    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(carouselCtrl.menuCapabilities).toBeNull();
+    expect(carouselCtrl.onMenuAction).toBeNull();
   });
 
-  it('binds the board from the menu’s Climb here, as a tap does', () => {
-    const { props } = renderStep();
-
-    carouselCtrl.onMenuAction?.({ key: 'board-2' }, 'climb_here', 'long_press');
-    expect(props.onSelect).toHaveBeenCalledWith(BOARDS[1]);
-    expect(props.onDownload).not.toHaveBeenCalled();
+  it('says the download comes after the pick, where the engine can run', () => {
+    const { getByText } = renderStep();
+    expect(getByText('Keep it on your phone.')).toBeTruthy();
   });
 
-  it('offers no download where the engine cannot run', () => {
-    renderStep({ offlineDownloadsEnabled: false });
-    expect(carouselCtrl.menuCapabilities?.canDownload).toBe(false);
+  it('drops that line where the engine cannot run', () => {
+    const { queryByText } = renderStep({ offlineDownloadsEnabled: false });
+    expect(queryByText('Keep it on your phone.')).toBeNull();
   });
 
   describe('with boards to choose from', () => {

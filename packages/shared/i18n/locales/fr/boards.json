@@ -234,7 +234,7 @@
         "climbHere": "Grimper ici",
         "pin": "Épingler",
         "unpin": "Désépingler",
-        "download": "Télécharger pour le hors ligne",
+        "download": "Rendre disponible hors ligne",
         "edit": "Modifier la board",
         "editWall": "Modifier le Spraywall"
       }

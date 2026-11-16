@@ -196,20 +196,14 @@ describe('OnboardingBoardRoute', () => {
     });
   });
 
-  // The glyph is the same affordance as the one on /boards, which is accept-only
-  // there. Filing it under `onboarding` would mix an impression-tracked offer
-  // with an untracked one and wreck that surface's shown-to-accepted rate.
-  it('reports the card glyph as the board_card surface, accept-only', async () => {
+  // The cards carry no menu here, so the only download offer is the one after
+  // the pick. The step is handed no way to download a board it has not bound.
+  it('gives the step no download of its own, only the offer after the pick', () => {
     renderRoute();
-    stepCtrl.props?.onDownload(BOARD);
 
-    await waitFor(() =>
-      expect(nudgeMocks.trackNudgeAccepted).toHaveBeenCalledWith(
-        { surface: 'board_card', ...NUDGE_CONTEXT },
-        'download',
-      ),
-    );
-    expect(nudgeMocks.trackNudgeShown).not.toHaveBeenCalled();
+    expect(stepCtrl.props).not.toBeNull();
+    expect(Object.keys(stepCtrl.props ?? {})).not.toContain('onDownload');
+    expect(confirmAndDownloadMock).not.toHaveBeenCalled();
   });
 
   it('hands off to the full picker tagged as the onboarding flow', () => {
