@@ -8,6 +8,7 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- Cleaner screens on iOS 26: the grey band behind the top bar is gone ([#7603](https://github.com/boardsesh/boardsesh/pull/7603))
 - The Boards list finds the board in front of you on its own ([#7580](https://github.com/boardsesh/boardsesh/pull/7580))
   Add a board or a Spraywall from the + at the top of Boards
   Walls at your gym sit right under the one you're on
