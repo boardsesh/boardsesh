@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import type { PartnerAppChangeNotice } from '../../auth/partner/registration';
+import type { PartnerAppChangeNotice } from '../partner-app-emails';
 
 const sendMail = vi.hoisted(() => vi.fn());
 vi.mock('nodemailer', () => ({ default: { createTransport: vi.fn(() => ({ sendMail })) } }));

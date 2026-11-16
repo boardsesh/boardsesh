@@ -1427,8 +1427,7 @@ same redirect URIs, reordered or not, is not a redirect change.
 The sign-in is the one partner consent already trusts: the www session cookie's
 `auth_time` and `link_guarded` claims, read by `legacyWebSignIn` in
 `auth/legacy-web-credentials.ts` (the same function `verifyLegacyNextAuthJwe`
-uses), or a browser lease's recorded sign-in (`auth_session.original_authenticated_at`).
-GraphQL HTTP authentication puts it on `ConnectionContext.webSignIn`; nothing a
+uses). GraphQL HTTP authentication puts it on `ConnectionContext.webSignIn`; nothing a
 request sends can set it. `requireRecentSignIn` in `auth/partner/registration.ts`
 applies `isSignInGoodForPartnerAppChange`: the consent rule (a known time, a
 guarded sign-in, clearly after the last password write) with the 5-minute

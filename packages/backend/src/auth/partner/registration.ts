@@ -18,6 +18,8 @@ import {
   users,
 } from '@boardsesh/db/schema/auth';
 import type { WebSignInProof } from '@boardsesh/shared-schema';
+// Type only: the email owns the notice's shape, and never reaches into this folder.
+import type { PartnerAppChangeNotice } from '../../email/partner-app-emails';
 import { logger } from '../../utils/logger';
 import type { PartnerAuthority } from './authority';
 import { lockAppForDeletion } from './locks';
@@ -260,24 +262,7 @@ function providerRefusal(error: unknown): PartnerRegistrationError | null {
   return new PartnerRegistrationError('invalid_input', description ?? 'These app details were refused.');
 }
 
-/**
- * What changed, for the email the developer gets once it is committed (#7598).
- * Nothing in it is a secret: the client ID is public, and a redirect change is
- * told as counts, so the email carries no link someone else chose. A new app is
- * told too: registering is not gated, so the email is how a developer learns
- * that someone holding their session registered one in their name.
- */
-export type PartnerAppChangeNotice = {
-  readonly developerEmail: string;
-  readonly appName: string;
-  readonly clientId: string;
-  readonly changedAt: Date;
-} & (
-  | { readonly change: 'app_registered' }
-  | { readonly change: 'redirect_uris_changed'; readonly added: number; readonly removed: number }
-  | { readonly change: 'secret_rotated' }
-  | { readonly change: 'app_deleted' }
-);
+export type { PartnerAppChangeNotice };
 
 /**
  * Sends the notice, to a verified address only. Called after commit and never
@@ -319,10 +304,10 @@ function recentSignInRefusal(): PartnerRegistrationError {
  *
  * The sign-in comes from the credential the request authenticated with: the
  * www session's `auth_time` and `link_guarded`, read the way partner consent
- * reads them (`legacyWebSignIn`), or a browser lease's recorded sign-in. It
- * must be under `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` old and clearly
- * after the developer's last password write. An unknown age, an app token or a
- * WebSocket call is refused.
+ * reads them (`legacyWebSignIn`). It must be under
+ * `PARTNER_APP_CHANGE_SIGN_IN_MAX_AGE_SECONDS` old and clearly after the
+ * developer's last password write. An unknown age, an app token or a WebSocket
+ * call is refused.
  *
  * Runs after the developer's advisory lock and before any write. The
  * developer's `users` row is taken FOR SHARE first, the partner lock order, and

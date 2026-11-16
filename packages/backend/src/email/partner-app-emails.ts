@@ -1,4 +1,3 @@
-import type { PartnerAppChangeNotice } from '../auth/partner/registration';
 import { logger } from '../utils/logger';
 import {
   button,
@@ -25,6 +24,25 @@ import {
  * redirect change is told as counts so the email carries no link someone else
  * chose. A deleted account's retired `.invalid` address gets nothing.
  */
+
+/**
+ * What happened, as the partner registration hands it over once committed. It
+ * lives here, with the email that renders it, so this module never reaches into
+ * `auth/partner/` (the boundary guard in `scripts/__tests__/better-auth-boundary.test.ts`).
+ * Registering is not gated, so a new app is told too: it is how a developer
+ * learns that someone holding their session registered one in their name.
+ */
+export type PartnerAppChangeNotice = {
+  readonly developerEmail: string;
+  readonly appName: string;
+  readonly clientId: string;
+  readonly changedAt: Date;
+} & (
+  | { readonly change: 'app_registered' }
+  | { readonly change: 'redirect_uris_changed'; readonly added: number; readonly removed: number }
+  | { readonly change: 'secret_rotated' }
+  | { readonly change: 'app_deleted' }
+);
 
 function addedAndRemoved(added: number, removed: number): string {
   const addedText = `${added} redirect URI${added === 1 ? '' : 's'} added`;
