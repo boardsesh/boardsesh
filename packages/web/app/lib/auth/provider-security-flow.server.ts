@@ -61,7 +61,7 @@ function bytes(encoded: string): Buffer {
   if (decoded.toString('base64url') !== encoded) return refuse();
   return decoded;
 }
-export function captureProviderSecurityFlow(input: unknown, now: Date): ProviderSecurityFlow {
+function captureProviderSecurityFlow(input: unknown, now: Date): ProviderSecurityFlow {
   const flow = providerSecurityFlowSchema.parse(input);
   const clock = now.getTime();
   const issuedAt = milliseconds(flow.issuedAt);
