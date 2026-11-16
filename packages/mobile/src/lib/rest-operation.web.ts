@@ -1,3 +1,4 @@
+import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
 import { useMemo, useSyncExternalStore } from 'react';
 import { CLIENT_IDENTITY_HEADER } from '@boardsesh/shared-schema/client-identity';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
@@ -25,6 +26,7 @@ import type {
   RestOperation,
   RestOperationOptions,
   RestReadView,
+  RestUnlinkOperation,
 } from './rest-operation';
 export type {
   RestBody,
@@ -35,6 +37,7 @@ export type {
   RestReadOutcome,
   RestReadMode,
   RestReadView,
+  RestUnlinkOperation,
 } from './rest-operation';
 
 function abortError(): Error {
@@ -278,4 +281,180 @@ export function captureRestReadView(): RestReadView {
 export function useRestView(): RestReadView {
   const revision = useSyncExternalStore(subscribe, snapshot, () => 'server-unavailable');
   return useMemo(() => captureRestReadView(), [revision]);
+}
+
+/** A separate closed DELETE port; the GET allowlist and lifecycle stay unchanged. */
+export function createUnlinkRestOperation(
+  originalView: string | undefined,
+  options: RestOperationOptions = {},
+): RestUnlinkOperation {
+  const controller = new AbortController();
+  const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
+  let used = false;
+  let disposed = false;
+  let safeRefusal = false;
+  let view: ReturnType<typeof captureView> | undefined;
+  let authority: ReturnType<typeof createBrowserBackendRequestAuthority> | undefined;
+  let lease: BrowserBackendLease | undefined;
+  try {
+    // Undefined compatibility labels are not proof of an accepted web identity.
+    if (typeof originalView !== 'string' || !browserHttpClients.isCurrentView(originalView))
+      throw new BrowserBackendConsumerError('unavailable');
+    view = captureView();
+    if (view.kind === 'selected')
+      authority = createBrowserBackendRequestAuthority({
+        client: expoBrowserBackendClient,
+        captureGeneration: captureAuthCredentialGeneration,
+        isGenerationCurrent: isAuthCredentialGenerationCurrent,
+      });
+  } catch {
+    authority?.dispose();
+    authority = undefined;
+    view = undefined;
+    // Keep an unavailable operation object so invalid invocation still consumes it.
+  }
+  const assertView = () => {
+    if (signal.aborted || disposed) throw abortError();
+    if (
+      !view ||
+      (view.kind === 'legacy' && isRequiredBrowserDispatch()) ||
+      !browserHttpClients.isCurrentView(originalView) ||
+      !view.isCurrent()
+    )
+      throw new BrowserBackendConsumerError('superseded');
+  };
+  const assertOriginal = () => {
+    assertView();
+    if (authority && lease) authority.assertCurrent(lease);
+  };
+  return Object.freeze({
+    assertView,
+    assertAttemptCurrent() {
+      // Only our fixed-code refusal may survive its own deliberate retirement.
+      // An arbitrary transport/decoder error never supplies accepting evidence.
+      if (!safeRefusal) assertOriginal();
+    },
+    async unlinkJson<T>(boardType: AuroraBoardName): Promise<RestJsonDelivery<T>> {
+      if (used) throw new BrowserBackendConsumerError('unavailable');
+      used = true;
+      let raw: Response | undefined;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let cancel: Promise<void> | undefined;
+      let bodySettled = false;
+      let interrupted = false;
+      const cancelOwned = () => {
+        if (!cancel) {
+          // Observe rejection immediately and await this same settlement below.
+          cancel = Promise.resolve()
+            .then(() => (reader ? reader.cancel() : raw?.body?.cancel()))
+            .then(
+              () => {},
+              () => {},
+            );
+        }
+        return cancel;
+      };
+      const onAbort = () => {
+        interrupted = true;
+        void cancelOwned();
+      };
+      try {
+        if (!AURORA_BOARDS.includes(boardType)) throw new BrowserBackendConsumerError('unavailable');
+        assertOriginal();
+        const url = `${BACKEND_URL.replace(/\/+$/, '')}/api/aurora-credentials`;
+        const requestBody = JSON.stringify({ boardType });
+        if (view?.kind === 'legacy') {
+          raw = await authenticatedFetchForOriginalLegacyRequest(
+            url,
+            {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: requestBody,
+              signal,
+            },
+            assertView,
+          );
+        } else {
+          const headers = new Headers({ 'Content-Type': 'application/json' });
+          headers.set(CLIENT_IDENTITY_HEADER, getClientIdentityHeaderValue());
+          if (authority) {
+            lease = await authority.acquire();
+            assertOriginal();
+            headers.set('Authorization', `Bearer ${lease.token}`);
+          }
+          assertOriginal();
+          raw = await fetch(url, { method: 'DELETE', headers, body: requestBody, signal });
+        }
+        // Own raw before every post-fetch refusal, including already-aborted headers.
+        assertOriginal();
+        if (authority && raw.status === 401) {
+          authority.invalidate();
+          throw new BrowserBackendConsumerError('denied');
+        }
+        const response = admitBrowserResponse(raw, assertOriginal);
+        const original = captureBrowserResponseCurrent(response);
+        if (!original) throw new BrowserBackendConsumerError('unavailable');
+        const chunks: Uint8Array[] = [];
+        let length = 0;
+        reader = raw.body?.getReader();
+        signal.addEventListener('abort', onAbort, { once: true });
+        original();
+        if (reader) {
+          for (;;) {
+            original();
+            const next = await reader.read();
+            original();
+            if (next.done) break;
+            chunks.push(next.value);
+            length += next.value.byteLength;
+          }
+        }
+        bodySettled = true;
+        original();
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) {
+          bytes.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        let body: RestBody<T>;
+        try {
+          // Decoder-only carrier, never admitted or used as response authority.
+          const parsed = (await new Response(bytes.buffer).json()) as T;
+          original();
+          body = { kind: 'json', value: parsed };
+        } catch (error) {
+          original();
+          body = { kind: 'decode-error', error };
+        }
+        original();
+        return Object.freeze({ response, body, assertCurrent: original });
+      } catch (error) {
+        if (signal.aborted || interrupted || disposed) {
+          safeRefusal = true;
+          throw abortError();
+        }
+        if (error instanceof BrowserBackendConsumerError) {
+          safeRefusal = true;
+          const status = error.status;
+          throw new BrowserBackendConsumerError(
+            status === 'superseded' || status === 'denied' || status === 'conflict' ? status : 'unavailable',
+          );
+        }
+        assertOriginal();
+        throw error;
+      } finally {
+        signal.removeEventListener('abort', onAbort);
+        if (raw && !bodySettled) await cancelOwned();
+        if (cancel) await cancel;
+        reader?.releaseLock();
+      }
+    },
+    subscribe,
+    dispose() {
+      disposed = true;
+      controller.abort();
+      authority?.dispose();
+    },
+  });
 }
