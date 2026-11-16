@@ -296,7 +296,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.errors.tryAgain')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+          <Text variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.errors.tryAgain')}
           </Text>
         </PressableSurface>
@@ -330,7 +330,7 @@ export default function CommunityPlaylistsScreen() {
           accessibilityLabel={t('library.community.noMatches.clearFilters')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={brandColors.primary} style={styles.stateCta}>
+          <Text variant="subheadline" color={systemColors.accent} style={styles.stateCta}>
             {t('library.community.noMatches.clearFilters')}
           </Text>
         </PressableSurface>
@@ -457,7 +457,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.errors.loadTitle')}
                 </Text>
-                <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                <Text variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>
@@ -471,7 +471,7 @@ export default function CommunityPlaylistsScreen() {
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.footerError}>
                   {t('library.community.loadMoreError')}
                 </Text>
-                <Text variant="subheadline" color={brandColors.primary} style={styles.footerRetry}>
+                <Text variant="subheadline" color={systemColors.accent} style={styles.footerRetry}>
                   {t('library.errors.tryAgain')}
                 </Text>
               </PressableSurface>

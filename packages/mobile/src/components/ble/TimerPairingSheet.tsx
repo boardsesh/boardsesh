@@ -131,7 +131,7 @@ const TimerRow = memo(function TimerRow({
 export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProps) {
   const { t } = useTranslation('boards');
   const { t: tSettings } = useTranslation('settings');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   const controllerRef = useRef<RogueTimerController | null>(null);
   if (controllerRef.current === null) controllerRef.current = new RogueTimerController();
@@ -227,7 +227,7 @@ export function TimerPairingSheet({ onSelect, onDismiss }: TimerPairingSheetProp
 
       {showScanning && (
         <View style={styles.centerState}>
-          <ActivityIndicator size="small" color={brandColors.primary} />
+          <ActivityIndicator size="small" color={systemColors.accent} />
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
             {t('mobile.timerPair.scanning')}
           </Text>

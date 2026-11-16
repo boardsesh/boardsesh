@@ -139,7 +139,7 @@ function UndoSnackbarGlass({
   bottom,
   undoRef,
 }: UndoSnackbarBodyProps) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -167,7 +167,7 @@ function UndoSnackbarGlass({
             accessibilityRole="button"
             accessibilityLabel={undoAccessibilityLabel ?? undoLabel}
           >
-            <Text variant="subheadline" color={brandColors.primary} style={styles.undo}>
+            <Text variant="subheadline" color={systemColors.accent} style={styles.undo}>
               {undoLabel}
             </Text>
           </PressableSurface>

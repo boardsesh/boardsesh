@@ -568,7 +568,7 @@ export default function GymDiscovery() {
               {t('mobile.gyms.mapUnavailable')}
             </Text>
             <PressableSurface onPress={retryMap} accessibilityRole="button" hitSlop={8}>
-              <Text variant="caption1" color={brandColors.primary}>
+              <Text variant="caption1" color={systemColors.accent}>
                 {t('mobile.gyms.retryMap')}
               </Text>
             </PressableSurface>
@@ -580,7 +580,7 @@ export default function GymDiscovery() {
               {t('mobile.gyms.refreshFailed')}
             </Text>
             <PressableSurface onPress={retrySearch} accessibilityRole="button" hitSlop={8}>
-              <Text variant="caption1" color={brandColors.primary}>
+              <Text variant="caption1" color={systemColors.accent}>
                 {t('mobile.gyms.retry')}
               </Text>
             </PressableSurface>

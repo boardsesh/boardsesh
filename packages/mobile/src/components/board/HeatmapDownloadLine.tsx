@@ -38,7 +38,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
   testID,
 }: HeatmapDownloadLineProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { confirmAndDownload } = useConfirmBoardDownload();
   const nudge = useOfflineNudge({ surface: 'hold_heatmap', board });
 
@@ -70,7 +70,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
         hitSlop={12}
         style={({ pressed }) => pressed && styles.pressed}
       >
-        <Text variant="caption1" color={brandColors.primary} style={styles.action}>
+        <Text variant="caption1" color={systemColors.accent} style={styles.action}>
           {t('mobile.heatmap.download')}
         </Text>
       </PressableSurface>

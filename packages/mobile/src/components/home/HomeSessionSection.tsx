@@ -29,7 +29,7 @@ export const HomeSessionSection = memo(function HomeSessionSection() {
   const { t } = useTranslation('feed');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const { sessionId } = useQueueSessionId();
   // The Session tab's own query key, so the two share one cached answer.
   const summaryQuery = useSessionSummary(sessionId);
@@ -49,7 +49,7 @@ export const HomeSessionSection = memo(function HomeSessionSection() {
     openSessionTab();
   }, [openSessionTab]);
 
-  const recordIcon = useMemo(() => <Icon name="record" size={24} color={brandColors.primary} />, [brandColors.primary]);
+  const recordIcon = useMemo(() => <Icon name="record" size={24} color={systemColors.accent} />, [systemColors.accent]);
   const startTitle = t('mobile.home.sections.session.startTitle');
   const startBody = t('mobile.home.sections.session.startBody');
 

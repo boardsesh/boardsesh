@@ -343,7 +343,7 @@ const GymRow = memo(function GymRow({
  * label is resolved by the caller (a literal `t(...)`) so the i18n key stays static.
  */
 const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => void; label: string }) {
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   return (
     <PressableSurface
       onPress={onPress}
@@ -351,8 +351,8 @@ const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => voi
       accessibilityLabel={label}
       style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
     >
-      <Icon name="person.badge.plus" size={18} color={brandColors.primary} />
-      <Text variant="subheadline" color={brandColors.primary}>
+      <Icon name="person.badge.plus" size={18} color={systemColors.accent} />
+      <Text variant="subheadline" color={systemColors.accent}>
         {label}
       </Text>
     </PressableSurface>

@@ -100,7 +100,7 @@ const SetterRow = memo(function SetterRow({
   followPending,
 }: SetterRowProps) {
   const { t } = useTranslation('climbs');
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors } = useTheme();
   const { setterUsername } = setter;
   return (
     <View style={styles.row}>
@@ -140,7 +140,7 @@ const SetterRow = memo(function SetterRow({
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Text variant="footnote" color={brandColors.primary}>
+          <Text variant="footnote" color={systemColors.accent}>
             {following ? t('authors.unfollow') : t('authors.follow')}
           </Text>
         </PressableSurface>
@@ -176,7 +176,7 @@ export function SetterPickerList({
   emptyLabel,
 }: SetterPickerListProps) {
   const { t } = useTranslation('climbs');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const bottomChrome = useBottomChromeMetrics();
 
   const [searchInput, setSearchInput] = useState('');
@@ -275,7 +275,7 @@ export function SetterPickerList({
             {t('authors.selectedCount', { count: selectedSet.size })}
           </Text>
           <PressableSurface onPress={clearAll} hitSlop={8} accessibilityRole="button">
-            <Text variant="subheadline" color={brandColors.primary}>
+            <Text variant="subheadline" color={systemColors.accent}>
               {t('mobile.filter.clearAll')}
             </Text>
           </PressableSurface>

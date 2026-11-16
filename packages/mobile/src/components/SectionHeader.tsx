@@ -30,7 +30,7 @@ type SectionHeaderProps = {
 };
 
 export function SectionHeader({ title, actionLabel, onActionPress, disclosure }: SectionHeaderProps) {
-  const { brandColors, systemColors, variant, m3, sectionCaption } = useTheme();
+  const { systemColors, variant, m3, sectionCaption } = useTheme();
   // Both variants are sentence case. Liquid Glass is footnote semibold in
   // secondaryLabel, matching the native SwiftUI Form headers in Settings (HIG
   // Lists and tables); Material is titleSmall in onSurfaceVariant (M3 lists).
@@ -92,10 +92,10 @@ export function SectionHeader({ title, actionLabel, onActionPress, disclosure }:
           accessibilityLabel={actionLabel}
           style={styles.action}
         >
-          <Text variant="footnote" color={brandColors.primary} style={styles.actionText}>
+          <Text variant="footnote" color={systemColors.accent} style={styles.actionText}>
             {actionLabel}
           </Text>
-          <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={brandColors.primary} />
+          <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={systemColors.accent} />
         </PressableSurface>
       ) : null}
     </View>
