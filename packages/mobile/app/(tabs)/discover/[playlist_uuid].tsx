@@ -1047,7 +1047,7 @@ export default function PlaylistDetail() {
           accessibilityLabel={t('detail.errors.tryAgain')}
           hitSlop={8}
         >
-          <Text variant="subheadline" color={systemColors.accent} style={styles.stateRetry}>
+          <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.stateRetry}>
             {t('detail.errors.tryAgain')}
           </Text>
         </PressableSurface>
@@ -1173,6 +1173,5 @@ const styles = StyleSheet.create({
   },
   stateRetry: {
     marginTop: 12,
-    fontWeight: '600',
   },
 });

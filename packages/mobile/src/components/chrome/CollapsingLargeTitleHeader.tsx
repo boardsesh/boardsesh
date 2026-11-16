@@ -129,6 +129,7 @@ export function CollapsingLargeTitleHeader({
             {centerContent ??
               (centerTitle != null ? (
                 <Text
+                  emphasized
                   variant="headline"
                   numberOfLines={1}
                   ellipsizeMode="tail"
@@ -184,7 +185,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
   },
   centerTitle: {
-    fontWeight: '600',
     flexShrink: 1,
     textAlign: 'center',
   },

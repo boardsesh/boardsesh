@@ -114,11 +114,11 @@ const BoardLiveSessionRow = memo(function BoardLiveSessionRow({
       />
       <View style={styles.rowText}>
         <View style={styles.namesRow}>
-          <Text variant="subheadline" color={colors.label} numberOfLines={1} style={[styles.bold, styles.shrink]}>
+          <Text emphasized variant="subheadline" color={colors.label} numberOfLines={1} style={[styles.shrink]}>
             {names.names}
           </Text>
           {names.extra ? (
-            <Text variant="subheadline" color={colors.label} style={[styles.bold, styles.noShrink]}>
+            <Text emphasized variant="subheadline" color={colors.label} style={[styles.noShrink]}>
               {` ${names.extra}`}
             </Text>
           ) : null}
@@ -260,7 +260,7 @@ function BoardLiveSessionsBlockComponent({
               </View>
             </View>
             <View style={styles.rowText}>
-              <Text variant="subheadline" color={colors.label} style={styles.bold}>
+              <Text emphasized variant="subheadline" color={colors.label}>
                 {t('mobile.liveSessions.board.emptyTitle')}
               </Text>
               <Text variant="footnote" color={colors.meta}>
@@ -277,7 +277,7 @@ function BoardLiveSessionsBlockComponent({
             style={[styles.startButton, { backgroundColor: colors.tintFill, borderColor: colors.tintBorder }]}
           >
             <Icon name="record" size={18} color={colors.primary} />
-            <Text variant="subheadline" color={colors.primary} style={styles.bold}>
+            <Text emphasized variant="subheadline" color={colors.primary}>
               {t('mobile.liveSessions.board.emptyCta')}
             </Text>
           </PressableSurface>
@@ -351,7 +351,6 @@ const styles = StyleSheet.create({
   },
   shrink: { flexShrink: 1 },
   noShrink: { flexShrink: 0 },
-  bold: { fontWeight: '600' },
   more: {
     paddingHorizontal: spacing[1],
   },

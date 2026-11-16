@@ -154,6 +154,7 @@ function ShareBetaScreen() {
         const suggested = item.source === 'suggested';
         return (
           <Text
+            emphasized
             variant="footnote"
             color={suggested ? brandColors.primary : systemColors.secondaryLabel}
             style={styles.sectionLabel}
@@ -223,7 +224,6 @@ const createStyles = (textStyles: TypographyScale) =>
       paddingHorizontal: spacing[4],
       paddingTop: spacing[3],
       paddingBottom: spacing[1],
-      fontWeight: '600',
     },
     prompt: { paddingHorizontal: spacing[4], marginTop: spacing[4], marginBottom: spacing[2] },
     input: {

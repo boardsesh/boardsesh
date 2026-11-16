@@ -69,12 +69,7 @@ function MaterialTab({
       accessibilityLabel={label}
       style={styles.tab}
     >
-      <Text
-        variant="subheadline"
-        color={selected ? activeColor : inactiveColor}
-        style={styles.label}
-        onLayout={onLabelLayout}
-      >
+      <Text emphasized variant="subheadline" color={selected ? activeColor : inactiveColor} onLayout={onLabelLayout}>
         {label}
       </Text>
     </PressableSurface>
@@ -193,9 +188,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing[3],
-  },
-  label: {
-    fontWeight: '600',
   },
   indicator: {
     position: 'absolute',

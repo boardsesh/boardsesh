@@ -70,7 +70,7 @@ export const HeatmapDownloadLine = memo(function HeatmapDownloadLine({
         hitSlop={12}
         style={({ pressed }) => pressed && styles.pressed}
       >
-        <Text variant="caption1" color={systemColors.accent} style={styles.action}>
+        <Text emphasized variant="caption1" color={systemColors.accent}>
           {t('mobile.heatmap.download')}
         </Text>
       </PressableSurface>
@@ -86,9 +86,6 @@ const styles = StyleSheet.create({
   },
   text: {
     flexShrink: 1,
-  },
-  action: {
-    fontWeight: '600',
   },
   pressed: {
     opacity: 0.6,

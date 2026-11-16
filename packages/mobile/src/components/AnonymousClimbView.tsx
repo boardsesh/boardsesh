@@ -152,7 +152,7 @@ export const AnonymousClimbView = memo(function AnonymousClimbView({
         ]}
       >
         <View style={styles.signInCopy}>
-          <Text variant="subheadline" style={styles.signInHeadline}>
+          <Text emphasized variant="subheadline">
             {t('mobile.anonymous.signInHeadline')}
           </Text>
           <Text variant="caption1" color={systemColors.secondaryLabel}>
@@ -180,8 +180,5 @@ const styles = StyleSheet.create({
   signInCopy: {
     flex: 1,
     gap: spacing[1],
-  },
-  signInHeadline: {
-    fontWeight: '600',
   },
 });

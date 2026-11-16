@@ -172,6 +172,7 @@ export function GradeChip({
         >
           <View style={[styles.content, styles.glassContent]}>
             <Text
+              emphasized
               variant="footnote"
               // Glass tint remains translucent: its label follows the theme,
               // rather than assuming the grade RGB is an opaque background.
@@ -205,7 +206,7 @@ export function GradeChip({
       style={[styles.pressable, { backgroundColor, borderColor, borderWidth }, style]}
     >
       <View style={styles.content}>
-        <Text variant="footnote" color={textColor} numberOfLines={1} style={styles.label}>
+        <Text emphasized variant="footnote" color={textColor} numberOfLines={1} style={styles.label}>
           {label}
         </Text>
       </View>
@@ -250,7 +251,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   label: {
-    fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
 });

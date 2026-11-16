@@ -422,7 +422,7 @@ export default function RegisterScreen() {
                   style={styles.footerLinkHit}
                   accessibilityRole="link"
                 >
-                  <Text variant="subheadline" color={theme.systemColors.accent} style={styles.footerLink}>
+                  <Text emphasized variant="subheadline" color={theme.systemColors.accent}>
                     {t('login.submit.signIn')}
                   </Text>
                 </PressableSurface>
@@ -472,7 +472,6 @@ const createStyles = (textStyles: TypographyScale) =>
       alignItems: 'center',
       marginTop: 24,
     },
-    footerLink: { fontWeight: '600' },
     // Keeps the tappable area at the 44pt/48dp minimum.
     footerLinkHit: { minHeight: 44, justifyContent: 'center' },
   });

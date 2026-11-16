@@ -318,7 +318,7 @@ export const LiveSessionsRail = memo(function LiveSessionsRail({
         <SectionDisclosureChevron expanded={expanded} size={18} />
         <View style={styles.headerSpacer} />
         {liveCount > 0 ? (
-          <Text variant="footnote" color={colors.live} style={styles.liveCount}>
+          <Text emphasized variant="footnote" color={colors.live}>
             {t('mobile.liveSessions.liveCount', { count: liveCount })}
           </Text>
         ) : null}
@@ -352,7 +352,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[2],
   },
   headerSpacer: { flex: 1 },
-  liveCount: { fontWeight: '600' },
   body: {
     gap: spacing[3],
   },

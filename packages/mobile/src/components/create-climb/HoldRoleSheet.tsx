@@ -134,7 +134,7 @@ export function HoldRoleSheet({
                   fillOpacity={isCurrent ? 0.32 : 0}
                 />
               </View>
-              <Text variant="subheadline" style={styles.cellLabel}>
+              <Text emphasized variant="subheadline">
                 {roleLabels[role]}
               </Text>
             </PressableSurface>
@@ -147,7 +147,7 @@ export function HoldRoleSheet({
           style={[styles.cell, { backgroundColor: systemColors.fill }]}
         >
           <Icon name="eraser" size={20} color={systemColors.label} />
-          <Text variant="subheadline" style={styles.cellLabel}>
+          <Text emphasized variant="subheadline">
             {t('mobile.create.holdRole.clear')}
           </Text>
         </PressableSurface>
@@ -212,8 +212,5 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  cellLabel: {
-    fontWeight: '600',
   },
 });

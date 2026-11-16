@@ -324,11 +324,11 @@ const SprayHoldChip = React.memo(function SprayHoldChip({
           <Icon name={iconName} size={STEP_ICON_SIZE} color={color} />
         ) : (
           <Text
+            emphasized
             variant="subheadline"
             color={color}
             numberOfLines={1}
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.chipLabel}
           >
             {label}
           </Text>
@@ -362,9 +362,6 @@ const styles = StyleSheet.create({
   },
   chipDisabled: {
     opacity: DISABLED_OPACITY,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
   // The slider takes what the dot and Done leave.
   refineRow: {

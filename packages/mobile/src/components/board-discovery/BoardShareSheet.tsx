@@ -126,7 +126,7 @@ export function BoardShareSheet({
       contentContainerStyle={styles.content}
       header={<SheetTopBar title={title} leading={{ kind: 'close', onPress: onDismiss }} />}
     >
-      <Text variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
+      <Text emphasized variant="body" color={systemColors.label} style={styles.wallName} numberOfLines={2}>
         {wallName}
       </Text>
       {/* Full label colour, not secondary: on the glass sheet the grey body
@@ -235,7 +235,6 @@ const styles = StyleSheet.create({
   },
   wallName: {
     textAlign: 'center',
-    fontWeight: '600',
   },
   subtitle: {
     textAlign: 'center',
