@@ -82,6 +82,14 @@ export interface TestClient {
   clientSecret?: string;
   redirectUri: string;
   owner: TestClimber;
+  /**
+   * Set for a public client created with `skipConsent` (the default): its tests
+   * are not about consent, but a public app sees the screen on every
+   * authorization whatever `skip_consent` says (fence.ts,
+   * `requiresConsentEveryTime`), so `authorize` presses Allow for the climber.
+   * A confidential client never gets this: a reconnect's screen stays visible.
+   */
+  answersConsentScreen?: boolean;
 }
 
 export interface OAuthResponseBody {
@@ -302,6 +310,7 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
         clientSecret: registered.client_secret ?? undefined,
         redirectUri,
         owner,
+        answersConsentScreen: options.publicClient === true && (options.skipConsent ?? true),
       };
     },
 
@@ -324,15 +333,20 @@ export async function createPartnerTestEnvironment(): Promise<PartnerTestEnviron
             }),
       }).toString();
       const climber = options.climber ?? client.owner;
+      const state = authorization.searchParams.get('state');
       const response = await target.handler(
         new Request(authorization, { headers: { [TEST_SESSION_HEADER]: climber.sessionToken } }),
       );
-      return {
-        response,
-        location: response.headers.get('location'),
-        verifier,
-        state: authorization.searchParams.get('state'),
-      };
+      const location = response.headers.get('location');
+      if (client.answersConsentScreen && location?.startsWith(`${TEST_OAUTH_OPTIONS.consentPage}?`)) {
+        const answered = await environment.consent(
+          climber,
+          { accept: true, oauth_query: new URL(location).searchParams.toString() },
+          target,
+        );
+        return { response: answered.response, location: answered.body.url ?? null, verifier, state };
+      }
+      return { response, location, verifier, state };
     },
 
     async exchange(client, authorization, target = instance, overrides = {}) {

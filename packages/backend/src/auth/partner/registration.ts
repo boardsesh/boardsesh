@@ -7,6 +7,7 @@ import {
   oauthClient,
   oauthClientResource,
   oauthConnections,
+  oauthConsent,
   oauthGrants,
   oauthVerification,
   users,
@@ -387,6 +388,15 @@ export function createPartnerRegistration({
             updatedAt: now,
           })
           .where(and(eq(oauthClient.clientId, clientId), eq(oauthClient.userId, developerId)));
+        // A redirect URI the app did not have is a new place codes can go. A
+        // climber approved the app as it was, so every remembered consent goes
+        // and each climber sees the consent screen again before the next code.
+        // Tokens already issued keep working (neither the token endpoint nor
+        // the API reads consent), and Connected apps lists their scopes instead.
+        // Only a removal keeps consent: it opens nowhere new.
+        if (patch.redirectUris?.some((uri) => !row.redirectUris.includes(uri))) {
+          await transaction.delete(oauthConsent).where(eq(oauthConsent.clientId, clientId));
+        }
         if (patch.publisherName !== undefined) {
           // An update, never an insert: an app without a policy row can gain no
           // connections, and an edit must not change that.

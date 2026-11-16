@@ -1,5 +1,12 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
-import { oauthAppPolicy, oauthClient, oauthConnections, oauthConsent } from '@boardsesh/db/schema/auth';
+import { and, desc, eq, gt, inArray, isNotNull, isNull } from 'drizzle-orm';
+import {
+  oauthAccessToken,
+  oauthAppPolicy,
+  oauthClient,
+  oauthConnections,
+  oauthConsent,
+  oauthRefreshToken,
+} from '@boardsesh/db/schema/auth';
 import { endPartnerConnection } from './connection';
 import { lockPartnerConnection } from './locks';
 import type { PartnerDatabase } from './tables';
@@ -18,7 +25,10 @@ export interface ConnectedAppRecord {
   name: string | null;
   /** Who makes the app, from its registration; null for an app registered before it was required. */
   publisherName: string | null;
-  /** What the climber approved, from the remembered consent. */
+  /**
+   * What the app can read: the scopes of the remembered consent and of every
+   * live token it holds, together. Consent scopes come first, in their order.
+   */
   scopes: string[];
   connectedAt: Date;
   lastUsedAt: Date | null;
@@ -61,31 +71,55 @@ export async function listConnectedApps(database: PartnerDatabase, userId: strin
     .orderBy(desc(oauthConnections.connectedAt), oauthConnections.id);
   if (connections.length === 0) return [];
 
-  // The provider writes one consent row per climber and app and widens it in
+  const clientIds = connections.map((connection) => connection.clientId);
+  const scopesByClient = new Map<string, Set<string>>();
+  const addScopes = (clientId: string, scopes: readonly string[]) => {
+    const known = scopesByClient.get(clientId) ?? new Set<string>();
+    for (const scope of scopes) known.add(scope);
+    scopesByClient.set(clientId, known);
+  };
+
+  // The provider writes one consent row per climber and app and rewrites it in
   // place; the newest wins should there ever be two.
   const consents = await database
     .select({ clientId: oauthConsent.clientId, scopes: oauthConsent.scopes })
     .from(oauthConsent)
-    .where(
-      and(
-        eq(oauthConsent.userId, userId),
-        inArray(
-          oauthConsent.clientId,
-          connections.map((connection) => connection.clientId),
-        ),
-      ),
-    )
+    .where(and(eq(oauthConsent.userId, userId), inArray(oauthConsent.clientId, clientIds)))
     .orderBy(desc(oauthConsent.updatedAt));
-  const scopesByClient = new Map<string, string[]>();
+  const consentRead = new Set<string>();
   for (const consent of consents) {
-    if (!scopesByClient.has(consent.clientId)) scopesByClient.set(consent.clientId, consent.scopes);
+    if (consentRead.has(consent.clientId)) continue;
+    consentRead.add(consent.clientId);
+    addScopes(consent.clientId, consent.scopes);
+  }
+
+  // What the app can read is also whatever its live tokens carry. That can be
+  // wider than the consent, after the climber approved fewer scopes on a second
+  // device, and it is all there is while no consent is remembered (the app
+  // gained a redirect URI since, registration.ts). An app with neither holds no
+  // credential that reads anything, and the list says so.
+  const now = new Date();
+  const liveTokenScopes = (table: typeof oauthRefreshToken | typeof oauthAccessToken) =>
+    database
+      .select({ clientId: table.clientId, scopes: table.scopes })
+      .from(table)
+      .where(
+        and(
+          eq(table.userId, userId),
+          inArray(table.clientId, clientIds),
+          isNull(table.revoked),
+          gt(table.expiresAt, now),
+        ),
+      );
+  for (const token of [...(await liveTokenScopes(oauthRefreshToken)), ...(await liveTokenScopes(oauthAccessToken))]) {
+    addScopes(token.clientId, token.scopes);
   }
 
   return connections.map((connection) => ({
     connectionId: connection.connectionId,
     name: connection.name?.trim() || null,
     publisherName: connection.publisherName?.trim() || null,
-    scopes: [...new Set(scopesByClient.get(connection.clientId) ?? connection.connectionScopes)],
+    scopes: [...new Set([...(scopesByClient.get(connection.clientId) ?? []), ...connection.connectionScopes])],
     // Filtered on above; the column is nullable only for approvals not yet redeemed.
     connectedAt: connection.connectedAt as Date,
     lastUsedAt: connection.lastUsedAt,
