@@ -3,9 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 vi.mock('server-only', () => ({}));
 
-const { nextAuthHandlerMock } = vi.hoisted(() => ({ nextAuthHandlerMock: vi.fn() }));
-vi.mock('next-auth', () => ({ default: () => nextAuthHandlerMock }));
-vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: { providers: [] } }));
+type MockAuthOptions = {
+  providers: { id: string; type: 'oauth' }[];
+  adapter?: { linkAccount: (account: unknown) => unknown };
+};
+const { nextAuthHandlerMock, nextAuthFactoryMock, mockAuthOptions } = vi.hoisted(() => {
+  const handler = vi.fn();
+  const authOptions: MockAuthOptions = { providers: [] };
+  return {
+    nextAuthHandlerMock: handler,
+    // Called at import with the module's own options, then only for request-local ones.
+    nextAuthFactoryMock: vi.fn((_options: MockAuthOptions) => handler),
+    mockAuthOptions: authOptions,
+  };
+});
+vi.mock('next-auth', () => ({ default: nextAuthFactoryMock }));
+vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: mockAuthOptions }));
 // The real response admission runs: none of these requests carries a session
 // cookie, so it reads no credential and only marks the response private.
 
@@ -131,5 +144,60 @@ describe('leftover __Host-boardsesh provider cookies', () => {
     const response = await call(providerCall, leftovers.join('; '));
     expect(response.status).toBe(302);
     expect(nextAuthHandlerMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// With Google and Apple configured, withWebOAuthIdentity takes its legacy
+// branch (CURRENT_STORE_WEB_OAUTH_MODE=legacy) instead of passing straight through.
+describe('with Google and Apple configured as OAuth providers', () => {
+  const linkAccount = vi.fn();
+
+  beforeEach(() => {
+    mockAuthOptions.providers = [
+      { id: 'google', type: 'oauth' },
+      { id: 'apple', type: 'oauth' },
+    ];
+  });
+
+  afterEach(() => {
+    mockAuthOptions.providers = [];
+    delete mockAuthOptions.adapter;
+  });
+
+  it.each(providerCalls)('the $label still answers 503 to an odd Cookie header', async (providerCall) => {
+    const response = await call(providerCall, 'a=1; flag');
+    expect(response.status).toBe(503);
+    expect(nextAuthHandlerMock).not.toHaveBeenCalled();
+  });
+
+  it.each(providerCalls)(
+    'the $label reaches the legacy handler past leftover provider cookies',
+    async (providerCall) => {
+      const response = await call(
+        providerCall,
+        `__Host-boardsesh.provider-signin.${'b'.repeat(64)}=sealed-carrier; theme=dark`,
+      );
+      expect(response.status).toBe(302);
+      expect(nextAuthHandlerMock).toHaveBeenCalledTimes(1);
+      // Partner link guard off: every request uses the module's own NextAuth handler.
+      expect(nextAuthFactoryMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(providerCalls)('the $label wraps account linking only on a callback', async (providerCall) => {
+    vi.stubEnv('PARTNER_OAUTH_MODE', 'allowlist');
+    mockAuthOptions.adapter = { linkAccount };
+    const response = await call(providerCall, null);
+    expect(response.status).toBe(302);
+    expect(nextAuthHandlerMock).toHaveBeenCalledTimes(1);
+    if (providerCall.route[0] === 'signin') {
+      expect(nextAuthFactoryMock).not.toHaveBeenCalled();
+      return;
+    }
+    expect(nextAuthFactoryMock).toHaveBeenCalledTimes(1);
+    const [guarded] = nextAuthFactoryMock.mock.calls[0];
+    expect(guarded.providers).toBe(mockAuthOptions.providers);
+    expect(guarded.adapter?.linkAccount).toBeTypeOf('function');
+    expect(guarded.adapter?.linkAccount).not.toBe(linkAccount);
   });
 });
