@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Native view notifications are a no-op; credential storage is outside this host.
+vi.mock('../../use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';

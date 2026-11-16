@@ -1,3 +1,4 @@
+import { captureHttpOperationDispatchVeto, inheritHttpOperationDispatchVeto } from './http-operation-sdk';
 import { ClientError, GraphQLClient } from 'graphql-request';
 import type { createBrowserBackendClient } from '@boardsesh/auth-protocol/browser-backend-client';
 import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
@@ -33,7 +34,9 @@ export function createSelectedBrowserHttpClient(options: {
     async fetch(input, init) {
       const headers = new Headers(init?.headers);
       headers.set(CLIENT_IDENTITY_HEADER, clientIdentity());
-      return performFetch(input, { ...init, headers });
+      const requestInit = { ...init, headers };
+      captureHttpOperationDispatchVeto(requestInit.signal)?.();
+      return performFetch(input, requestInit);
     },
   });
   const gatedFetch = createGraphQLRequestGate({
@@ -41,7 +44,8 @@ export function createSelectedBrowserHttpClient(options: {
     // The deadline gate removes its temporary caller listener after inspection.
     // A browser-composed signal still retains the original caller's cancellation
     // through actual SDK decoding and the consumer's own later awaits.
-    composeSignal: (caller, deadline) => (caller ? AbortSignal.any([caller, deadline]) : deadline),
+    composeSignal: (caller, deadline) =>
+      inheritHttpOperationDispatchVeto(caller, caller ? AbortSignal.any([caller, deadline]) : deadline),
     // A source/owner refusal can happen before a GraphQL packet exists. Only
     // the shared core's actual-live-401 observer confirms reachability.
     ignoreFailure: (error) => error instanceof BrowserBackendConsumerError,
@@ -54,7 +58,12 @@ export function createSelectedBrowserHttpClient(options: {
       const destination = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
       if (destination !== url) throw new BrowserBackendConsumerError('unavailable');
       const caller = init.signal ?? (input instanceof Request ? input.signal : undefined);
-      const signal = AbortSignal.any(caller ? [caller, controller.signal] : [controller.signal]);
+      const originalVeto = captureHttpOperationDispatchVeto(caller);
+      originalVeto?.();
+      const signal = inheritHttpOperationDispatchVeto(
+        caller,
+        AbortSignal.any(caller ? [caller, controller.signal] : [controller.signal]),
+      );
       const response = await gatedFetch(input, { ...init, signal }, timeoutMs());
       // The SDK response middleware omits signal despite its context type.
       // Keep the invocation received by actual fetch before our own composition.

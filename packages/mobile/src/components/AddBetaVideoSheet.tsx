@@ -1,3 +1,6 @@
+import { useHttpQueryScope } from '../lib/graphql/use-http-query-scope';
+import { useHttpActionScope } from '../lib/graphql/use-http-action-scope';
+import { useBetaComposer, betaLocalToastGuard, type BetaOpening } from '../lib/graphql/hooks/use-beta-links';
 import { useScopedSheetError } from '../hooks/use-scoped-sheet-error';
 import { InlineSheetError } from './InlineSheetError';
 import { useUnsavedSheetGuard } from '../hooks/use-unsaved-sheet-guard';
@@ -39,6 +42,7 @@ import { textStyles } from '../theme/typography';
 import { LARGE_SNAP_POINTS } from './sheet-snap-points';
 
 type AddBetaVideoSheetProps = {
+  opening?: BetaOpening;
   visible: boolean;
   climb: Climb | null;
   boardName: BoardName;
@@ -51,7 +55,7 @@ type AddBetaVideoSheetProps = {
   onFullyDismissed?: () => void;
 };
 
-export function AddBetaVideoSheet({
+function NativeAddBetaVideoSheet({
   visible,
   climb,
   boardName,
@@ -232,6 +236,313 @@ export function AddBetaVideoSheet({
             onChangeText={(next) => {
               setUrl(next);
               setSubmitError(null);
+            }}
+            onSubmit={handleSubmit}
+          />
+        </View>
+      </View>
+    </ModalSheet>
+  );
+}
+
+export function AddBetaVideoSheet(props: AddBetaVideoSheetProps) {
+  const scope = useHttpQueryScope();
+  if (!scope.scoped) return <NativeAddBetaVideoSheet {...props} />;
+  const { opening, climb, boardName } = props;
+  if (!opening) return null;
+  let originalTarget = !!climb && opening.entity === `${boardName}:${climb.uuid}`;
+  try {
+    scope.assertView();
+    opening.assertPresentation();
+  } catch {
+    originalTarget = false;
+  }
+  // The original ModalSheet surface stays mounted across open/close/reopen.
+  // Only opening-owned records/content are reset or masked below that surface.
+  return (
+    <SelectedAddBetaVideoSheet
+      {...props}
+      opening={opening}
+      climb={originalTarget ? climb : null}
+      visible={props.visible && originalTarget}
+    />
+  );
+}
+
+function SelectedAddBetaVideoSheet({
+  opening,
+  visible,
+  climb,
+  boardName,
+  layoutId,
+  angle,
+  onClose,
+  onFullyDismissed,
+}: AddBetaVideoSheetProps & { opening: BetaOpening }) {
+  const { t } = useTranslation('session');
+  const { showGuardedToast } = useToast();
+  const actions = useHttpActionScope();
+  const composer = useBetaComposer(opening);
+  const { systemColors } = useTheme();
+  const url = composer.draft;
+  const setUrl = composer.changeDraft;
+
+  const attach = useAttachBetaLink();
+
+  const submitError = composer.error;
+  const guard = useUnsavedSheetGuard({
+    visible: visible && !!climb,
+    dirty: url.length > 0,
+    busy: composer.busy,
+    onClose,
+    scope: opening.id,
+  });
+
+  const handleRequestClose = useCallback(async () => {
+    try {
+      opening.assertAction();
+      await guard.requestClose();
+    } catch {
+      /* Old dialog/gesture invocation is inert. */
+    }
+  }, [opening, guard.requestClose]);
+  const handleDisplaced = useCallback(() => {
+    try {
+      opening.assertAction();
+      onClose();
+    } catch {
+      /* Old displacement cannot close a later opening. */
+    }
+  }, [opening, onClose]);
+
+  const caption = useMemo(() => {
+    if (!climb || !composer.current) return '';
+    return buildInstagramCaption({
+      climbName: climb.name,
+      angle,
+      boardType: boardName,
+      grade: climb.difficulty,
+      setter: climb.setter_username,
+      layoutId,
+    });
+  }, [climb, angle, boardName, layoutId, composer.current]);
+
+  const handleFullyDismissed = useCallback(() => {
+    try {
+      opening.assertCleanup();
+      onFullyDismissed?.();
+    } catch {
+      /* Retired animation. */
+    }
+  }, [opening, onFullyDismissed]);
+  const handleCopyCaption = useCallback(async () => {
+    if (!caption || !climb) return;
+    let local: ReturnType<typeof betaLocalToastGuard> | undefined;
+    try {
+      const action = actions.capture();
+      local = betaLocalToastGuard(opening, action);
+      local.assertCurrent();
+      await Clipboard.setStringAsync(caption);
+      local.assertCurrent();
+      track(SHARED_EVENTS.BetaCaptionCopied, { boardType: boardName, climbUuid: climb.uuid });
+      local.assertCurrent();
+      showGuardedToast(t('mobile.betaVideos.captionCopied'), 'success', local);
+      local = undefined;
+    } catch {
+      /* Clipboard completion belongs to the original opening. */
+    } finally {
+      local?.release();
+    }
+  }, [caption, climb, boardName, actions, opening, showGuardedToast, t]);
+  const handleOpenInstagram = useCallback(async () => {
+    if (!climb) return;
+    let local: ReturnType<typeof betaLocalToastGuard> | undefined;
+    try {
+      const action = actions.capture();
+      local = betaLocalToastGuard(opening, action);
+      local.assertCurrent();
+      void Haptics.selectionAsync();
+      local.assertCurrent();
+      if (caption) await Clipboard.setStringAsync(caption);
+      local.assertCurrent();
+      const { opened, usedFallback } = await openInstagram(local.assertCurrent);
+      local.assertCurrent();
+      track(SHARED_EVENTS.BetaInstagramOpened, { boardType: boardName, climbUuid: climb.uuid, opened, usedFallback });
+      local.assertCurrent();
+      if (!opened) {
+        composer.settle(t('mobile.betaVideos.instagramOpenFailed'), local);
+        local = undefined;
+      } else if (usedFallback) {
+        showGuardedToast(t('mobile.betaVideos.instagramNotInstalled'), 'info', local);
+        local = undefined;
+      }
+    } catch {
+      /* No late fallback or guidance under a replacement opening. */
+    } finally {
+      local?.release();
+    }
+  }, [caption, climb, boardName, actions, opening, composer, showGuardedToast, t]);
+
+  const privacy = usePublicationAudience(climb?.uuid ?? '', visible);
+  const trimmed = url.trim();
+  const hasInput = trimmed.length > 0;
+  const isValid = hasInput && isBetaVideoUrl(trimmed);
+  // Only nag once they've typed something that fails the pattern.
+  const showError = hasInput && !isValid;
+
+  const handleSubmit = useCallback(() => {
+    if (!climb || !isValid) return;
+    let action: ReturnType<typeof composer.begin>;
+    try {
+      action = composer.begin();
+    } catch {
+      return;
+    }
+    if (!action) return;
+    const assertIntent = () => {
+      action.assertView();
+      opening.assertAction();
+    };
+    const pending = attach.attachWithOutcome(
+      {
+        boardType: boardName,
+        climbUuid: climb.uuid,
+        link: trimmed,
+        angle,
+        ...(privacy.publication ? { privacy: privacy.publication } : {}),
+      },
+      { opening, assertIntent, signal: action.signal },
+    );
+    void pending.then(
+      (outcome) => {
+        if (outcome.kind === 'held') {
+          composer.settle(null, undefined, action);
+          return;
+        }
+        let completion: ReturnType<Extract<typeof outcome, { kind: 'delivered' }>['acceptCompletion']> | undefined;
+        try {
+          outcome.assertCurrent();
+          if (outcome.kind === 'request-error') {
+            composer.settle(outcome.readMessage() ?? t('mobile.betaVideos.attachError'), outcome.retain(), action);
+            return;
+          }
+          completion = outcome.acceptCompletion();
+          composer.settle(null, outcome.retain(), action);
+          let platform: 'TikTok' | 'Instagram' | 'Unknown' = 'Unknown';
+          if (isTikTokUrl(trimmed)) platform = 'TikTok';
+          else if (isInstagramUrl(trimmed)) platform = 'Instagram';
+          completion.assertCurrent();
+          track(SHARED_EVENTS.BetaVideoAdded, { boardType: boardName, climbUuid: climb.uuid, platform });
+          completion.assertCurrent();
+          completion.close(onClose);
+          completion.assertCurrent();
+          showGuardedToast(t('mobile.betaVideos.attachSuccess'), 'success', completion);
+          completion = undefined;
+        } catch {
+          composer.settle(null, undefined, action);
+        } finally {
+          completion?.release();
+          outcome.release();
+        }
+      },
+      () => composer.settle(null, undefined, action),
+    );
+  }, [
+    climb,
+    isValid,
+    composer,
+    opening,
+    attach,
+    boardName,
+    trimmed,
+    angle,
+    t,
+    onClose,
+    showGuardedToast,
+    privacy.publication,
+  ]);
+
+  // A form: large, so the field and its keyboard both fit (HIG Sheets).
+  const snapPoints = LARGE_SNAP_POINTS;
+  const submitDisabled = !isValid || composer.busy;
+
+  const header = (
+    <SheetTopBar
+      title={t('mobile.betaVideos.shareTitle')}
+      leading={{ kind: 'cancel', onPress: handleRequestClose }}
+      trailing={{
+        kind: 'confirm',
+        label: t('mobile.betaVideos.submitButton'),
+        onPress: handleSubmit,
+        disabled: submitDisabled,
+        loading: composer.busy,
+        prominent: true,
+      }}
+    />
+  );
+
+  return (
+    <ModalSheet
+      visible={visible && !!climb && composer.current}
+      snapPoints={snapPoints}
+      onDisplaced={handleDisplaced}
+      onClose={handleRequestClose}
+      enablePanDownToClose={guard.enablePanDownToClose}
+      onFullyDismissed={handleFullyDismissed}
+      scrollable
+      header={header}
+    >
+      <View style={styles.container}>
+        <InlineSheetError message={submitError} visible={visible} scope={climb?.uuid ?? 'beta'} />
+        {composer.current && <PublicationAudiencePicker privacy={privacy} disabled={composer.busy} />}
+        <StepRow index={1} title={t('mobile.betaVideos.step1Title')}>
+          <View style={[styles.captionBox, { borderColor: systemColors.separator }]}>
+            <Text variant="subheadline" color={systemColors.secondaryLabel}>
+              {caption}
+            </Text>
+          </View>
+          <Button
+            title={t('mobile.betaVideos.copyCaption')}
+            variant="filled"
+            size="medium"
+            icon="copy"
+            disabled={!caption}
+            onPress={handleCopyCaption}
+            style={styles.actionButton}
+          />
+        </StepRow>
+
+        <StepRow index={2} title={t('mobile.betaVideos.step2Title')}>
+          <Button
+            title={t('mobile.betaVideos.openInstagram')}
+            variant="outlined"
+            size="medium"
+            icon="instagram"
+            onPress={handleOpenInstagram}
+            style={styles.actionButton}
+          />
+        </StepRow>
+
+        <StepRow index={3} title={t('mobile.betaVideos.step3Title')}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel}>
+            {t('mobile.betaVideos.shareBackInstructions')}
+          </Text>
+        </StepRow>
+
+        <View style={styles.pasteSection}>
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('mobile.betaVideos.pasteSectionLabel')}
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: systemColors.separator }]} />
+          </View>
+
+          <BetaUrlField
+            value={url}
+            invalid={showError}
+            onChangeText={(next) => {
+              setUrl(next);
             }}
             onSubmit={handleSubmit}
           />

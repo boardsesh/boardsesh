@@ -1,3 +1,7 @@
+import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
+import type { BetaReaderOwner } from '../../lib/graphql/hooks/use-beta-links';
+import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
+import { betaReaderOwnerKey, useBetaReaderOwner, isBetaReaderCurrent } from '../../lib/graphql/hooks/use-beta-links';
 import { PressableSurface } from '../PressableSurface';
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
@@ -167,7 +171,7 @@ type SimilarClimbsPeek = { climbUuid: string; angle: number; line: string };
  * Below-fold deferred content for the play drawer.
  * Defers rendering until a frame paints and the JS thread has idle time.
  */
-export const DeferredSections = memo(function DeferredSections({
+const DeferredSectionsBody = memo(function DeferredSectionsBody({
   climb,
   boardName,
   layoutId,
@@ -188,6 +192,8 @@ export const DeferredSections = memo(function DeferredSections({
   onOpenClimberProfile,
   onFindClimbers,
 }: DeferredSectionsProps) {
+  const betaOwner = useBetaReaderOwner(boardName, climb.uuid);
+  const betaActions = useHttpActionScope();
   const { t } = useTranslation('session');
   const { t: tClimbs } = useTranslation('climbs');
   const { isAuthenticated } = useAuth();
@@ -210,9 +216,26 @@ export const DeferredSections = memo(function DeferredSections({
   const firstSectionId = visibleSections[0];
 
   const handleAddBetaVideoPress = useCallback(() => {
-    void Haptics.selectionAsync();
-    onAddBetaVideo?.();
-  }, [onAddBetaVideo]);
+    if (!betaOwner) {
+      void Haptics.selectionAsync();
+      onAddBetaVideo?.();
+      return;
+    }
+    let action: ReturnType<typeof betaActions.capture> | undefined;
+    try {
+      betaOwner.assertCurrent();
+      action = betaActions.capture();
+      action.assertView();
+      void Haptics.selectionAsync();
+      action.assertView();
+      betaOwner.assertCurrent();
+      onAddBetaVideo?.();
+    } catch {
+      /* Retired original header. */
+    } finally {
+      action?.finish();
+    }
+  }, [onAddBetaVideo, betaOwner, betaActions]);
 
   const handleFirstSectionLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -434,12 +457,26 @@ export const DeferredSections = memo(function DeferredSections({
 
   // Beta Videos' collapsed line: how many there are, so an empty shelf is never
   // opened for nothing. Same hook and key as the shelf, which reads it on open.
-  const { data: betaLinks } = useBetaLinks(boardName, climb.uuid, peekMayFetch('betaVideos') && !isOffline);
-  const betaVideosSummary = betaLinks
-    ? betaLinks.length > 0
-      ? t('mobile.betaVideos.videoCount', { count: betaLinks.length })
-      : t('mobile.betaVideos.collapsedEmpty')
-    : null;
+  const { data: betaLinks, assertOwner: assertBetaOwner } = useBetaLinks(
+    boardName,
+    climb.uuid,
+    peekMayFetch('betaVideos') && !isOffline,
+    betaOwner,
+  );
+  let betaCurrent = isBetaReaderCurrent(betaOwner);
+  if (betaOwner) {
+    try {
+      assertBetaOwner();
+    } catch {
+      betaCurrent = false;
+    }
+  }
+  const betaVideosSummary =
+    betaCurrent && betaLinks
+      ? betaLinks.length > 0
+        ? t('mobile.betaVideos.videoCount', { count: betaLinks.length })
+        : t('mobile.betaVideos.collapsedEmpty')
+      : null;
 
   // Similar climbs' collapsed line: the closest match by name.
   const [similarPeek, setSimilarPeek] = useState<SimilarClimbsPeek | null>(null);
@@ -528,6 +565,14 @@ export const DeferredSections = memo(function DeferredSections({
           );
           break;
         case 'betaVideos':
+          if (betaOwner) {
+            try {
+              assertBetaOwner();
+            } catch {
+              return null;
+            }
+          }
+          if (!betaCurrent) return null;
           section = (
             <CollapsibleSection
               title={t('mobile.betaVideos.title')}
@@ -553,9 +598,16 @@ export const DeferredSections = memo(function DeferredSections({
                 ) : undefined
               }
             >
-              {readyToRender && <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />}
+              {readyToRender && (
+                <BetaVideosSection
+                  climbUuid={climb.uuid}
+                  boardName={boardName}
+                  {...(betaOwner ? { originalParent: betaOwner } : {})}
+                />
+              )}
             </CollapsibleSection>
           );
+          if (betaOwner) section = <OriginalBetaOutput owner={betaOwner}>{section}</OriginalBetaOutput>;
           break;
         case 'boardseshGrade':
           section = (
@@ -648,6 +700,9 @@ export const DeferredSections = memo(function DeferredSections({
       logbookSummary,
       climberLogsSummary,
       betaVideosSummary,
+      betaCurrent,
+      betaOwner,
+      assertBetaOwner,
       boardseshSummary,
       communitySummary,
       similarSummary,
@@ -705,3 +760,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
   },
 });
+
+export const DeferredSections = memo(function DeferredSections(props: DeferredSectionsProps) {
+  const scope = useHttpQueryScope();
+  const key = betaReaderOwnerKey(scope, props.boardName, props.climb.uuid);
+  return <DeferredSectionsBody key={key} {...props} />;
+});
+
+function OriginalBetaOutput({ owner, children }: { owner: BetaReaderOwner; children: ReactNode }) {
+  const scope = useHttpQueryScope();
+  if (scope.scope !== owner.view) return null;
+  try {
+    owner.assertCurrent();
+  } catch {
+    return null;
+  }
+  return <>{children}</>;
+}

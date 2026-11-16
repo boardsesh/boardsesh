@@ -1,4 +1,15 @@
 // @vitest-environment jsdom
+// Native view notifications are a no-op; credential storage is outside this host.
+vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
+// This presentation host must fail if an unrelated native transport runs.
+vi.mock('../../../lib/graphql/client', () => ({
+  getHttpClient: () => {
+    throw new Error('Unexpected native GraphQL I/O');
+  },
+  getOfflineSyncHttpClient: () => {
+    throw new Error('Unexpected native offline I/O');
+  },
+}));
 // The MiniPlayer's ⋯ runs the REAL `useClimbActions` and the real row builder;
 // the menu's native shell, the bar's own button hooks and the I/O behind them
 // are doubles. The bar sits over the tabs, so its sheets open through the root

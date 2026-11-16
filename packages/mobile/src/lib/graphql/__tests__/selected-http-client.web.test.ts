@@ -1,3 +1,5 @@
+import { createBrowserHttpOperations } from '../http-operation-client.web';
+import { captureHttpOperationDispatchVeto, inheritHttpOperationDispatchVeto } from '../http-operation-sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBrowserBackendClient } from '@boardsesh/auth-protocol/browser-backend-client';
 import { createSelectedBrowserHttpClient } from '../selected-http-client.web';
@@ -26,7 +28,7 @@ function deferred<Contents>() {
   const promise = new Promise<Contents>((complete) => (resolve = complete));
   return { promise, resolve };
 }
-function fixture(timeout = 20_000) {
+function fixture(timeout: number | null = 20_000) {
   let clock = 0;
   let generation = 0;
   let sequence = 0;
@@ -287,4 +289,211 @@ describe('actual selected error capture bridge', () => {
     current.dispose();
     expect(original).toThrow();
   });
+});
+
+// The existing fixture owns the real backend authority, selected transport,
+// graphql-request decoder and original success/error delivery captures.
+// This adapter is the production operation factory with those actual ports.
+function operationFixture(current: ReturnType<typeof fixture>) {
+  return createBrowserHttpOperations({
+    captureScope: () => undefined,
+    isCurrentView: () => current.isCurrent(),
+    captureResult: (_scope, result) => current.captureResult(result),
+    captureErrorDelivery: (_scope, error, identity) => current.captureErrorDelivery(error, identity),
+    resolveClient: () => current.client,
+  });
+}
+function packetQueries(current: ReturnType<typeof fixture>) {
+  return current.rawFetch.mock.calls.map(
+    ([, init]) => JSON.parse((init as RequestInit).body as string).query as string,
+  );
+}
+describe('actual operation dispatch veto across selected signal compositions', () => {
+  it.each([null, 20_000])(
+    'refuses an expired actual E1 after held acquire while independent E2 completes (%s deadline)',
+    async (timeout) => {
+      const current = fixture(timeout);
+      const operations = operationFixture(current);
+      const first = operations.capture();
+      await first.request<Result>('query OwnedFirst { viewer { id } }');
+      first.assertDeliveries();
+      current.clock(100_000);
+      const held = deferred<Response>();
+      current.leaseFetch.mockReturnValueOnce(held.promise);
+      const refresh = operations.capture({ assertDispatch: first.assertDeliveries });
+      const pending = refresh.request<Result>('query OwnedRefresh { viewer { id } }');
+      const refusal = expect(pending).rejects.toMatchObject({ status: 'superseded' });
+      await vi.waitFor(() => expect(current.leaseFetch).toHaveBeenCalledTimes(2));
+      const independent = operations.capture();
+      const fresh = independent.request<Result>('query OwnedIndependent { viewer { id } }');
+      // E2 is decoded/admitted at the new monotonic instant. E1's original
+      // delivery expires; no timer/sampler manufactures a cancellation here.
+      current.clock(130_000);
+      held.resolve(current.reply());
+      await fresh;
+      independent.assertDeliveries();
+      await refusal;
+      expect(() => first.assertDeliveries()).toThrow();
+      expect(packetQueries(current).filter((document) => document.includes('OwnedRefresh'))).toEqual([]);
+      expect(packetQueries(current).filter((document) => document.includes('OwnedIndependent'))).toHaveLength(1);
+      expect(connectivity.report.mock.calls.some(([outcome]) => (outcome as { kind: string }).kind === 'failure')).toBe(
+        false,
+      );
+      first.dispose();
+      refresh.dispose();
+      independent.dispose();
+    },
+  );
+  it('sends the same held acquisition while the actual original E1 remains live', async () => {
+    const current = fixture();
+    const operations = operationFixture(current);
+    const first = operations.capture();
+    await first.request<Result>('query OwnedFirst { viewer { id } }');
+    current.clock(100_000);
+    const held = deferred<Response>();
+    current.leaseFetch.mockReturnValueOnce(held.promise);
+    const refresh = operations.capture({ assertDispatch: first.assertDeliveries });
+    const pending = refresh.request<Result>('query OwnedRefresh { viewer { id } }');
+    await vi.waitFor(() => expect(current.leaseFetch).toHaveBeenCalledTimes(2));
+    current.clock(110_000);
+    held.resolve(current.reply());
+    await pending;
+    first.assertDeliveries();
+    refresh.assertDeliveries();
+    expect(packetQueries(current).filter((document) => document.includes('OwnedRefresh'))).toHaveLength(1);
+    first.dispose();
+    refresh.dispose();
+  });
+  it.each(['positional', 'options'] as const)(
+    'binds a unique real SDK identity and keeps closed primary/final aliases for %s overload',
+    async (overload) => {
+      const current = fixture();
+      const operations = operationFixture(current);
+      const first = operations.capture();
+      await first.request<Result>(query);
+      let primary: AbortSignal | null | undefined;
+      current.client.requestConfig.requestMiddleware = (request) => {
+        primary = request.signal;
+        return request;
+      };
+      const original = vi.fn(() => first.assertDeliveries());
+      const operation = operations.capture({ assertDispatch: original });
+      if (overload === 'options')
+        await operation.request<Result>({ document: query, signal: new AbortController().signal });
+      else await operation.request<Result>(query);
+      operation.assertDeliveries();
+      const finalCall = current.rawFetch.mock.calls.at(-1);
+      expect(finalCall).toBeDefined();
+      const final = (finalCall![1] as RequestInit).signal;
+      expect(primary).toBeTruthy();
+      expect(final).toBeTruthy();
+      expect(final).not.toBe(primary);
+      const primaryVeto = captureHttpOperationDispatchVeto(primary);
+      const finalVeto = captureHttpOperationDispatchVeto(final);
+      expect(primaryVeto).toBeTypeOf('function');
+      expect(finalVeto).toBe(primaryVeto);
+      const calls = original.mock.calls.length;
+      expect(() => primaryVeto!()).toThrow();
+      expect(() => finalVeto!()).toThrow();
+      expect(original).toHaveBeenCalledTimes(calls);
+      first.dispose();
+      operation.dispose();
+    },
+  );
+});
+
+it('keeps actual parallel invocation vetoes isolated even with one caller signal and rejects alias collisions', async () => {
+  const current = fixture();
+  const operations = operationFixture(current);
+  const original = operations.capture();
+  await original.request<Result>('query OwnedOriginal { viewer { id } }');
+  const caller = new AbortController();
+  const firstBody = deferred<Response>();
+  const secondBody = deferred<Response>();
+  const signals: AbortSignal[] = [];
+  current.client.requestConfig.requestMiddleware = (request) => {
+    signals.push(request.signal!);
+    return request;
+  };
+  current.rawFetch.mockReturnValueOnce(firstBody.promise).mockReturnValueOnce(secondBody.promise);
+  const first = operations.capture({ assertDispatch: original.assertDeliveries });
+  const second = operations.capture({ assertDispatch: original.assertDeliveries });
+  const one = first.request<Result>({ document: 'query OwnedParallelOne { viewer { id } }', signal: caller.signal });
+  const two = second.request<Result>({ document: 'query OwnedParallelTwo { viewer { id } }', signal: caller.signal });
+  await vi.waitFor(() => expect(current.rawFetch).toHaveBeenCalledTimes(3));
+  expect(signals).toHaveLength(2);
+  expect(signals[0]).not.toBe(signals[1]);
+  const alias = new AbortController().signal;
+  inheritHttpOperationDispatchVeto(signals[0], alias);
+  expect(() => inheritHttpOperationDispatchVeto(signals[1], alias)).toThrow();
+  firstBody.resolve(Response.json({ data: { viewer: { id: 'owned-A' } } }));
+  await one;
+  const firstVeto = captureHttpOperationDispatchVeto(signals[0])!;
+  const secondVeto = captureHttpOperationDispatchVeto(signals[1])!;
+  expect(firstVeto).toThrow();
+  expect(secondVeto).not.toThrow();
+  secondBody.resolve(Response.json({ data: { viewer: { id: 'owned-A' } } }));
+  await two;
+  expect(secondVeto).toThrow();
+  first.assertDeliveries();
+  second.assertDeliveries();
+  expect(packetQueries(current).filter((document) => document.includes('OwnedParallel'))).toHaveLength(2);
+  original.dispose();
+  first.dispose();
+  second.dispose();
+});
+it('closes an opted-in actual timed-out acquisition before its late lease can reach physical fetch', async () => {
+  vi.useFakeTimers();
+  const current = fixture(20_000);
+  const operations = operationFixture(current);
+  const original = operations.capture();
+  await original.request<Result>('query OwnedOriginal { viewer { id } }');
+  current.clock(100_000);
+  const held = deferred<Response>();
+  current.leaseFetch.mockReturnValueOnce(held.promise);
+  let primary: AbortSignal | null | undefined;
+  current.client.requestConfig.requestMiddleware = (request) => {
+    primary = request.signal;
+    return request;
+  };
+  const originalAssertion = vi.fn(original.assertDeliveries);
+  const refresh = operations.capture({ assertDispatch: originalAssertion });
+  const pending = refresh.request<Result>('query OwnedTimeoutRefresh { viewer { id } }');
+  const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError', timeoutMs: 20_000 });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(current.leaseFetch).toHaveBeenCalledTimes(2);
+  const veto = captureHttpOperationDispatchVeto(primary)!;
+  expect(veto).not.toThrow();
+  await vi.advanceTimersByTimeAsync(20_000);
+  await rejected;
+  const calls = originalAssertion.mock.calls.length;
+  expect(veto).toThrow();
+  expect(originalAssertion).toHaveBeenCalledTimes(calls);
+  held.resolve(current.reply());
+  await vi.advanceTimersByTimeAsync(0);
+  expect(packetQueries(current).filter((document) => document.includes('OwnedTimeoutRefresh'))).toEqual([]);
+  expect(vi.getTimerCount()).toBe(0);
+  expect(originalAssertion).toHaveBeenCalledTimes(calls);
+  original.dispose();
+  refresh.dispose();
+});
+it('copies the optional veto at actual operation creation without reading a later caller replacement', async () => {
+  const current = fixture();
+  const operations = operationFixture(current);
+  const original = operations.capture();
+  await original.request<Result>('query OwnedOriginal { viewer { id } }');
+  const captured = vi.fn(original.assertDeliveries);
+  const later = vi.fn(() => {
+    throw new Error('Unexpected caller replacement');
+  });
+  const options = { assertDispatch: captured };
+  const refresh = operations.capture(options);
+  options.assertDispatch = later;
+  await refresh.request<Result>('query OwnedCopiedVeto { viewer { id } }');
+  refresh.assertDeliveries();
+  expect(captured).toHaveBeenCalled();
+  expect(later).not.toHaveBeenCalled();
+  expect(packetQueries(current).filter((document) => document.includes('OwnedCopiedVeto'))).toHaveLength(1);
+  original.dispose();
+  refresh.dispose();
 });

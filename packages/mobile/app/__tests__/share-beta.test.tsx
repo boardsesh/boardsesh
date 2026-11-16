@@ -1,4 +1,15 @@
 // @vitest-environment jsdom
+// These existing native presentation fixtures never dispatch transport I/O.
+vi.mock('../../src/lib/graphql/client', () => ({
+  getHttpClient: () => {
+    throw new Error('Unexpected native GraphQL I/O');
+  },
+  getOfflineSyncHttpClient: () => {
+    throw new Error('Unexpected native offline GraphQL I/O');
+  },
+}));
+// Native has no browser view notifications; preserve its real scope semantics.
+vi.mock('../../src/lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
 vi.mock('../../src/components/AccessibleTextInput', async () => {
   const { TextInput } = await import('react-native');
   return { AccessibleTextInput: TextInput };

@@ -1,3 +1,5 @@
+import { useHttpQueryScope } from '../lib/graphql/use-http-query-scope';
+import { openShareBeta } from '../lib/graphql/hooks/use-beta-links';
 import { deferConsentDestination } from '../lib/consent-navigation';
 import { useConsentSettled } from '../lib/consent-hooks';
 import { getConsentSnapshot } from '../lib/consent-state';
@@ -51,6 +53,7 @@ export function extractSharedLink(shareIntent: Pick<ShareIntent, 'webUrl' | 'tex
  * true. Non-beta URLs are rejected with a toast and never routed.
  */
 export function ShareTargetProvider({ children }: { children: ReactNode }) {
+  const betaScope = useHttpQueryScope();
   const consentSettled = useConsentSettled();
   const router = useRouter();
   const segments = useSegments();
@@ -81,13 +84,21 @@ export function ShareTargetProvider({ children }: { children: ReactNode }) {
       // router.navigate would stack a fresh /share-beta rather than reuse the
       // open one — that stacking is what made the app sluggish. share-beta.tsx
       // reacts to the updated `link` param.
+      let opening: string | undefined;
+      if (betaScope.scoped) {
+        try {
+          opening = openShareBeta(betaScope, link).id;
+        } catch {
+          return;
+        }
+      }
       if (onShareBetaRef.current) {
-        router.setParams({ link });
+        router.setParams(opening ? { link, betaOpening: opening } : { link });
         return;
       }
-      router.navigate({ pathname: '/share-beta', params: { link } });
+      router.navigate({ pathname: '/share-beta', params: opening ? { link, betaOpening: opening } : { link } });
     },
-    [router],
+    [router, betaScope],
   );
 
   const handleLink = useCallback(
