@@ -10,13 +10,26 @@ clients, and `browser-coordinator-dom` for browser platform I/O.
 #7596 deleted the www half: the `/auth/browser-coordinator` utility frame, its
 frameable header rule and middleware carve-out, the `observe` and `initialize`
 routes under `/api/internal/auth/browser-coordinator`, and the session
-provider's preflight. Those URLs now answer 404, and the frame path gets the
-site-wide frame-denying headers like any other page. None of it ever ran in
-production: its readiness function returned `false`. The four shared subpaths
-stay because Expo web's `coordinateExpoBrowserSession`
-(`packages/mobile/src/lib/browser-coordinator-client.web.ts`) still imports
-them. That caller sits behind its own hard-false gate and would now get a 404
-from the frame. This file goes with the shared subpaths.
+provider's preflight. It was dark in production because its readiness gate
+returned `false`, but the URLs were live: the frame page answered 200, its page
+component rendered nothing inside the site layout, `app.boardsesh.com` was
+allowed to frame it, and the two routes answered 503. All three now answer
+404, and the frame path gets the site-wide
+`X-Frame-Options: SAMEORIGIN` headers like any other page.
+
+One caller is left in the shared package. Expo web's
+`coordinateExpoBrowserSession`
+(`packages/mobile/src/lib/browser-coordinator-client.web.ts`), behind its own
+hard-false gate, imports `requireCoordinatorOrigin` from `browser-coordinator`
+and the frame client `createCanonicalBrowserCoordinatorFrame` from
+`browser-coordinator-dom`, which connects through the channel client. That
+frame client loads the frame path, which is now a 404. The rest has no caller:
+the host half `mountCanonicalBrowserCoordinator`, the runner, the channel
+endpoint, `connectCanonicalBrowserCoordinator`, and the code that fetches
+`observe`, `initialize` and `renew`. The deleted www page was the only thing
+that mounted the host. Nothing imports the `browser-coordinator-runner` or
+`browser-coordinator-channel` subpaths directly. This file goes with the
+shared subpaths.
 
 Messages contain only connection/request UUIDs, typed control operations and a
 binding digest/version cursor. They carry no password, UID/SID, authentication
@@ -59,8 +72,9 @@ same-transaction mutation/publication checks. Future same-selection renewal
 must preserve original age, UID/SID, generation, credential kind and provenance.
 
 #7596 deleted renewal custody: the www `renew/{prepare,commit}` routes and the
-backend renewal authority are gone. The shared frame's `renew` operation stays,
-dark, until the shared subpaths are deleted; it would now get a 404.
+backend renewal authority are gone. Expo web's frame client still sends a
+`renew` message, but no host page answers it now, so it reports unavailable.
+The host code that would fetch the two renew routes has no caller.
 
 ## Evidence
 

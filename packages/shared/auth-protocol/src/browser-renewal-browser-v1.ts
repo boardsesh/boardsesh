@@ -5,10 +5,11 @@ import { browserBindingCursorSchema } from './browser-coordinator-v1';
  * stay in the canonical host's HttpOnly cookies and service transport.
  * #7596 deleted the www routes below with renewal custody, and later the www
  * /auth/browser-coordinator page that mounted the frame; all answer 404 now.
- * The frame's `renew` transport (browser-coordinator-dom/runner/channel) still
- * names these paths. Its last caller is the Expo web
- * `coordinateExpoBrowserSession`, behind a hard-false gate. This module goes
- * with the shared coordinator subpaths. */
+ * Only the host half (mountCanonicalBrowserCoordinator in
+ * browser-coordinator-dom) fetches these paths, and nothing mounts it now. The
+ * gated Expo web `coordinateExpoBrowserSession` still sends a `renew` message
+ * through the frame client, but no host answers it. This module goes with the
+ * shared coordinator subpaths. */
 export const BROWSER_RENEWAL_BROWSER_PATHS = Object.freeze({
   prepare: '/api/internal/auth/browser-coordinator/renew/prepare',
   commit: '/api/internal/auth/browser-coordinator/renew/commit',
