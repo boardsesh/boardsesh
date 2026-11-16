@@ -26,6 +26,11 @@ type NearbyQuietStatusProps = {
  * footnote line under the header, which already carries Map (or Show all when
  * narrowed to one type), with the one action that can change the answer. First
  * run keeps `NearbySearchStatus`'s fuller panel.
+ *
+ * Its action sits 8pt under the header's, and right under it once Map wraps
+ * below the title at a large text size: it leans down, the header's leans up,
+ * so their targets never overlap. Near you is the picker's last shelf, so
+ * nothing below it is in reach.
  */
 export function NearbyQuietStatus({
   state,
@@ -44,7 +49,7 @@ export function NearbyQuietStatus({
     case 'idle':
       return (
         <View style={styles.quietAction}>
-          <TextAction label={t('mobile.discovery.showNearby')} onPress={onSearchNearby} />
+          <TextAction reach="down" label={t('mobile.discovery.showNearby')} onPress={onSearchNearby} />
         </View>
       );
     case 'searching':
@@ -61,7 +66,9 @@ export function NearbyQuietStatus({
             size="quiet"
             title={nearbyEmptyLine(t, boardType)}
             actions={
-              boardType ? <TextAction label={t('mobile.discovery.nearbyMap')} onPress={onFindGymOnMap} /> : undefined
+              boardType ? (
+                <TextAction reach="down" label={t('mobile.discovery.nearbyMap')} onPress={onFindGymOnMap} />
+              ) : undefined
             }
           />
         </View>
@@ -72,7 +79,7 @@ export function NearbyQuietStatus({
           <EmptyState
             size="quiet"
             title={t('mobile.firstBoard.nearbyError')}
-            actions={<TextAction label={t('mobile.errorRetry')} onPress={onRetryNearby} />}
+            actions={<TextAction reach="down" label={t('mobile.errorRetry')} onPress={onRetryNearby} />}
           />
         </View>
       );
@@ -84,7 +91,7 @@ export function NearbyQuietStatus({
             title={t('mobile.firstBoard.locationOff')}
             actions={
               canOpenAppSettings() ? (
-                <TextAction label={t('mobile.firstBoard.openSettings')} onPress={onOpenSettings} />
+                <TextAction reach="down" label={t('mobile.firstBoard.openSettings')} onPress={onOpenSettings} />
               ) : undefined
             }
           />

@@ -14,12 +14,35 @@ export type TextActionProps = {
   accessibilityLabel?: string;
   /** A trailing chevron, for an action that opens more of the same ("See all"). */
   chevron?: boolean;
+  /**
+   * Which way the target's extra height goes (`TextActionReach`). Defaults to
+   * `even`; a shelf header's action leans `up`, the first action under a
+   * header leans `down`.
+   */
+  reach?: TextActionReach;
   testID?: string;
 };
 
+/**
+ * Where the target's extra height goes around its one-line label: `even` above
+ * and below, `up` mostly above (a shelf header's action, with its content 8pt
+ * below), `down` mostly below (an action at the top of a shelf's content).
+ */
+export type TextActionReach = 'even' | 'up' | 'down';
+
+/**
+ * The most a target leans toward the neighbour it is stacked against: half the
+ * 8pt between a shelf header and its content, so the header's action and the
+ * first action under it never overlap, even when the action wraps under the
+ * title at a large text size.
+ */
+export const TEXT_ACTION_NEIGHBOUR_REACH = 4;
+
 type HitArea = {
-  paddingVertical: number;
-  marginVertical: number;
+  paddingTop: number;
+  marginTop: number;
+  paddingBottom: number;
+  marginBottom: number;
   paddingHorizontal: number;
   marginHorizontal: number;
 };
@@ -27,7 +50,7 @@ type HitArea = {
 type ActionLook = {
   textVariant: TextVariant;
   emphasized: boolean;
-  hitArea: HitArea;
+  hitAreas: Record<TextActionReach, HitArea>;
 };
 
 /** The smallest tap target each design language asks for: 44pt (HIG), 48dp (M3). */
@@ -47,15 +70,31 @@ const HORIZONTAL_REACH = 8;
  * header's row is one line tall, so slop past it was dead; an overflowing box
  * is not.
  */
-function hitAreaFor(variant: UiVariant, textVariant: TextVariant): HitArea {
-  const vertical = Math.ceil(
-    (TEXT_ACTION_MIN_TARGET[variant] - textStylesByVariant[variant][textVariant].lineHeight) / 2,
-  );
+function hitAreaFor(variant: UiVariant, textVariant: TextVariant, reach: TextActionReach): HitArea {
+  const extra = Math.max(0, TEXT_ACTION_MIN_TARGET[variant] - textStylesByVariant[variant][textVariant].lineHeight);
+  const half = Math.ceil(extra / 2);
+  const leaning = Math.max(0, extra - TEXT_ACTION_NEIGHBOUR_REACH);
+  const [top, bottom] =
+    reach === 'up'
+      ? [leaning, TEXT_ACTION_NEIGHBOUR_REACH]
+      : reach === 'down'
+        ? [TEXT_ACTION_NEIGHBOUR_REACH, leaning]
+        : [half, half];
   return {
-    paddingVertical: vertical,
-    marginVertical: -vertical,
+    paddingTop: top,
+    marginTop: -top,
+    paddingBottom: bottom,
+    marginBottom: -bottom,
     paddingHorizontal: HORIZONTAL_REACH,
     marginHorizontal: -HORIZONTAL_REACH,
+  };
+}
+
+function hitAreasFor(variant: UiVariant, textVariant: TextVariant): Record<TextActionReach, HitArea> {
+  return {
+    even: hitAreaFor(variant, textVariant, 'even'),
+    up: hitAreaFor(variant, textVariant, 'up'),
+    down: hitAreaFor(variant, textVariant, 'down'),
   };
 }
 
@@ -66,8 +105,8 @@ function hitAreaFor(variant: UiVariant, textVariant: TextVariant): HitArea {
  * uses labelLarge (14/500), the M3 text-button type, unemphasized.
  */
 const ACTION_LOOK: Record<UiVariant, ActionLook> = {
-  liquidGlass: { textVariant: 'subheadline', emphasized: true, hitArea: hitAreaFor('liquidGlass', 'subheadline') },
-  material: { textVariant: 'label', emphasized: false, hitArea: hitAreaFor('material', 'label') },
+  liquidGlass: { textVariant: 'subheadline', emphasized: true, hitAreas: hitAreasFor('liquidGlass', 'subheadline') },
+  material: { textVariant: 'label', emphasized: false, hitAreas: hitAreasFor('material', 'label') },
 };
 
 /**
@@ -76,7 +115,14 @@ const ACTION_LOOK: Record<UiVariant, ActionLook> = {
  * It takes no layout space beyond its label; the 44pt (48dp on Material) target
  * is its own padded box, handed back by a negative margin (`hitAreaFor`).
  */
-export function TextAction({ label, onPress, accessibilityLabel, chevron = false, testID }: TextActionProps) {
+export function TextAction({
+  label,
+  onPress,
+  accessibilityLabel,
+  chevron = false,
+  reach = 'even',
+  testID,
+}: TextActionProps) {
   const { systemColors, variant } = useTheme();
   const look = selectByVariant(variant, ACTION_LOOK);
   return (
@@ -85,7 +131,7 @@ export function TextAction({ label, onPress, accessibilityLabel, chevron = false
       feedback="opacity"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      style={[styles.action, look.hitArea]}
+      style={[styles.action, look.hitAreas[reach]]}
       testID={testID}
     >
       <Text variant={look.textVariant} emphasized={look.emphasized} color={systemColors.accent} numberOfLines={1}>

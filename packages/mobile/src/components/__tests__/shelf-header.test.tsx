@@ -90,7 +90,7 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 
 import { SHELF_HEADER_CONTENT_GAP, SHELF_SECTION_GAP, ShelfHeader, ShelfSection } from '../ShelfHeader';
-import { TEXT_ACTION_MIN_TARGET, TextAction } from '../TextAction';
+import { TEXT_ACTION_MIN_TARGET, TEXT_ACTION_NEIGHBOUR_REACH, TextAction, type TextActionReach } from '../TextAction';
 import { textStylesByVariant, type TextVariant } from '../../theme/typography';
 
 function styleOf(element: Element | null): Record<string, unknown> {
@@ -163,6 +163,24 @@ describe('ShelfHeader', () => {
 });
 
 describe('ShelfSection', () => {
+  // Near you's Map over its "Show boards near you" (NearbyQuietStatus): the
+  // header's target ends where the content's begins, with Map wrapped under
+  // the title, its lowest place.
+  it("keeps the header action's target off an action leading its content", () => {
+    render(
+      <ShelfSection title="Near you" action={{ label: 'Map', onPress: vi.fn() }} testID="section">
+        <TextAction reach="down" label="Show boards near you" onPress={vi.fn()} />
+      </ShelfSection>,
+    );
+    const headerAction = styleOf(screen.getByRole('button', { name: 'Map' }));
+    const contentAction = screen.getByRole('button', { name: 'Show boards near you' });
+    const gap = Number(styleOf(contentAction.parentElement).paddingTop);
+    expect(gap).toBe(SHELF_HEADER_CONTENT_GAP);
+    const headerReachDown = Number(headerAction.paddingBottom);
+    const contentReachUp = Number(styleOf(contentAction).paddingTop);
+    expect(headerReachDown + contentReachUp).toBeLessThanOrEqual(gap);
+  });
+
   it('puts 8pt between the header and its content and 28pt before the next shelf', () => {
     render(
       <ShelfSection title="Your boards" testID="section">
@@ -195,12 +213,45 @@ describe('TextAction', () => {
       const box = JSON.parse(action.getAttribute('data-style') ?? '{}') as Record<string, number>;
       const textVariant = screen.getByText('Retry').getAttribute('data-variant') as TextVariant;
       const lineHeight = textStylesByVariant[variant][textVariant].lineHeight;
-      expect(lineHeight + 2 * box.paddingVertical).toBeGreaterThanOrEqual(target);
+      expect(lineHeight + box.paddingTop + box.paddingBottom).toBeGreaterThanOrEqual(target);
+      expect(box.paddingTop).toBe(box.paddingBottom);
       // The same room handed back, so the label doesn't move and the row doesn't grow.
-      expect(box.marginVertical).toBe(-box.paddingVertical);
+      expect(box.marginTop).toBe(-box.paddingTop);
+      expect(box.marginBottom).toBe(-box.paddingBottom);
       expect(box.marginHorizontal).toBe(-box.paddingHorizontal);
       expect(box.paddingHorizontal).toBeGreaterThan(0);
       expect(action.getAttribute('data-feedback')).toBe('opacity');
+    },
+  );
+
+  // Stacked actions: a shelf header's (its action can wrap under the title at
+  // large text sizes) 8pt above an action leading the shelf's content, or an
+  // action closing one shelf 28pt above the next shelf header's. A target that
+  // reached into its neighbour's would be drawn over it and take its taps.
+  it.each(['liquidGlass', 'material'] as const)(
+    'leans its %s target away from the action stacked against it, so the two never overlap',
+    (variant) => {
+      ctrl.variant = variant;
+      const boxFor = (reach: TextActionReach) => {
+        render(<TextAction label="Map" reach={reach} onPress={vi.fn()} />);
+        const box = JSON.parse(screen.getByRole('button').getAttribute('data-style') ?? '{}') as Record<string, number>;
+        const textVariant = screen.getByText('Map').getAttribute('data-variant') as TextVariant;
+        cleanup();
+        return { box, lineHeight: textStylesByVariant[variant][textVariant].lineHeight };
+      };
+      const up = boxFor('up');
+      const down = boxFor('down');
+      for (const { box, lineHeight } of [up, down]) {
+        expect(lineHeight + box.paddingTop + box.paddingBottom).toBeGreaterThanOrEqual(TEXT_ACTION_MIN_TARGET[variant]);
+        expect(box.marginTop).toBe(-box.paddingTop);
+        expect(box.marginBottom).toBe(-box.paddingBottom);
+      }
+      expect(up.box.paddingBottom).toBe(TEXT_ACTION_NEIGHBOUR_REACH);
+      expect(down.box.paddingTop).toBe(TEXT_ACTION_NEIGHBOUR_REACH);
+      // A header's action over the first action under it.
+      expect(up.box.paddingBottom + down.box.paddingTop).toBeLessThanOrEqual(SHELF_HEADER_CONTENT_GAP);
+      // An action closing a shelf (leaning up) over the next header's (leaning up).
+      expect(up.box.paddingBottom + up.box.paddingTop).toBeLessThanOrEqual(SHELF_SECTION_GAP);
     },
   );
 

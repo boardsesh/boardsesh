@@ -79,8 +79,8 @@ vi.mock('../../EmptyState', () => ({
     createElement('div', null, createElement('span', null, title), actions),
 }));
 vi.mock('../../TextAction', () => ({
-  TextAction: ({ label, onPress }: { label: string; onPress: () => void }) =>
-    createElement('button', { type: 'button', onClick: onPress }, label),
+  TextAction: ({ label, onPress, reach }: { label: string; onPress: () => void; reach?: string }) =>
+    createElement('button', { type: 'button', onClick: onPress, 'data-reach': reach ?? 'even' }, label),
 }));
 vi.mock('../../InsetGroupedList', () => ({
   InsetGroupedList: ({ children }: Children) => createElement('div', null, children),
@@ -291,6 +291,9 @@ describe('InRangeSection', () => {
     if (button && calls) {
       fireEvent.click(screen.getByRole('button', { name: button }));
       expect(handlers[calls]).toHaveBeenCalledOnce();
+      // The line tops the page; the next shelf header's action leans up across
+      // the gap below it, so this one leans up too.
+      expect(screen.getByRole('button', { name: button }).getAttribute('data-reach')).toBe('up');
     }
   });
 

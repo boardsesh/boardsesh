@@ -204,7 +204,11 @@ export function InRangeSection({
   );
 }
 
-/** Bluetooth off, refused for good or unreachable: one quiet line and the button that can fix it. */
+/**
+ * Bluetooth off, refused for good or unreachable: one quiet line and the button
+ * that can fix it. The line opens the page and a shelf header follows 28pt
+ * below, whose action leans up: this one leans up too, into the page's top.
+ */
 function QuietNoticeLine({
   notice,
   onStart,
@@ -223,7 +227,7 @@ function QuietNoticeLine({
           title={t('mobile.inRange.blockedDenied')}
           actions={
             canOpenAppSettings() ? (
-              <TextAction label={t('mobile.firstBoard.openSettings')} onPress={onOpenSettings} />
+              <TextAction reach="up" label={t('mobile.firstBoard.openSettings')} onPress={onOpenSettings} />
             ) : undefined
           }
         />
@@ -233,7 +237,7 @@ function QuietNoticeLine({
         <EmptyState
           size="quiet"
           title={t('mobile.inRange.blockedOff')}
-          actions={<TextAction label={t('mobile.inRange.scanAgain')} onPress={onStart} />}
+          actions={<TextAction reach="up" label={t('mobile.inRange.scanAgain')} onPress={onStart} />}
         />
       );
     case 'unreachable':
@@ -241,7 +245,7 @@ function QuietNoticeLine({
         <EmptyState
           size="quiet"
           title={t('mobile.inRange.unreachable')}
-          actions={<TextAction label={t('mobile.inRange.scanAgain')} onPress={onStart} />}
+          actions={<TextAction reach="up" label={t('mobile.inRange.scanAgain')} onPress={onStart} />}
         />
       );
   }

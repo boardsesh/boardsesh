@@ -53,6 +53,8 @@ export function ShelfHeader({ title, caption, action, trailing, testID }: ShelfH
             onPress={action.onPress}
             accessibilityLabel={action.accessibilityLabel}
             chevron
+            // Its content is 8pt below: the target leans up, away from it.
+            reach="up"
           />
         ) : null}
         {trailing}

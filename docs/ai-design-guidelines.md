@@ -492,11 +492,16 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
   that reaches its tap target through its own padded box. The title keeps at least 70% of the row: at large text
   sizes the action wraps under it instead. **`ShelfSection`** takes the same props plus `children`
   and owns the spacing: 8pt from the header to the content, 28pt to the next shelf.
-- **`TextAction`** `{ label, onPress, accessibilityLabel?, chevron?, testID? }`: a borderless accent
-  text button that adds no height to its row; padding handed back by a negative margin brings its target
-  to 44pt on Liquid Glass and 48dp on Material (not `hitSlop`: on Fabric a parent hit-tests its children
-  only inside its own bounds, unless their layout overflows it). ShelfHeader's action, and the Retry
-  after a quiet `EmptyState`.
+- **`TextAction`** `{ label, onPress, accessibilityLabel?, chevron?, reach?: 'even' | 'up' | 'down', testID? }`:
+  a borderless accent text button that adds no height to its row; padding handed back by a negative margin
+  brings its target to 44pt on Liquid Glass and 48dp on Material (not `hitSlop`: on Fabric a parent
+  hit-tests its children only inside its own bounds, unless their layout overflows it). ShelfHeader's
+  action, and the Retry after a quiet `EmptyState`. `reach` says where the extra height goes: `even`
+  (the default) splits it, `up` and `down` reach only 4pt toward the other side. Stack two actions and
+  lean them apart, or the lower target is drawn over the upper one and takes its taps: ShelfHeader's
+  action leans `up`, an action leading a shelf's content leans `down` (4 + 4 fits the 8pt gap, even
+  with the header's action wrapped under its title), and an action closing a shelf leans `up`, away
+  from the next header's.
 - **`InsetGroupedList`** `{ children, separatorInset?: 'regular' | 'compact' | 'gutter', testID? }`: the
   inset-grouped `Card`. Rows run to its edges and own the 16pt gutter; it draws a hairline between
   rows, inset to where their text starts, and clips them to its corners. A row that isn't an `ArtRow`
