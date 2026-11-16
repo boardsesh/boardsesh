@@ -137,16 +137,6 @@
       "import": "./src/browser-coordinator-dom.ts",
       "default": "./src/browser-coordinator-dom.ts"
     },
-    "./expired-browser-binding-browser-v1": {
-      "types": "./src/expired-browser-binding-browser-v1.ts",
-      "import": "./src/expired-browser-binding-browser-v1.ts",
-      "default": "./src/expired-browser-binding-browser-v1.ts"
-    },
-    "./expired-browser-binding-v1": {
-      "types": "./src/expired-browser-binding-v1.ts",
-      "import": "./src/expired-browser-binding-v1.ts",
-      "default": "./src/expired-browser-binding-v1.ts"
-    },
     "./browser-password-v1": {
       "types": "./src/browser-password-v1.ts",
       "import": "./src/browser-password-v1.ts",

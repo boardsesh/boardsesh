@@ -3,7 +3,6 @@ import { assertWebSessionWriterActivationConfiguration } from './auth/current-st
 import { handleCurrentStoreWebSignOut } from './handlers/current-store-web-signout';
 import { handleBrowserBinding } from './handlers/browser-binding';
 import { handleBrowserPassword } from './handlers/browser-password';
-import { handleExpiredBrowserBinding } from './handlers/expired-browser-binding';
 import { handleProviderSecurity } from './handlers/provider-security';
 import { handleAnonymousProvider } from './handlers/anonymous-provider';
 import { handleFirstPassword } from './handlers/first-password';
@@ -806,10 +805,6 @@ export async function startServer(options: { host?: string } = {}): Promise<Serv
       }
       if (pathname.startsWith('/api/internal/auth/browser-password/v1/')) {
         await handleBrowserPassword(req, res);
-        return;
-      }
-      if (pathname.startsWith('/api/internal/auth/expired-browser-binding/v1/')) {
-        await handleExpiredBrowserBinding(req, res);
         return;
       }
       if (pathname.startsWith('/api/internal/auth/current-store/provider-security/v1/')) {

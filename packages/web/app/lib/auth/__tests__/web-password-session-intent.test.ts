@@ -16,10 +16,7 @@ vi.mock('../canonical-password-signin', async (original) => ({
   ...(await original<typeof import('../canonical-password-signin')>()),
   signInCanonicalPassword: state.canonical,
 }));
-vi.mock('../browser-coordinator-client', () => ({
-  signInCanonicalBrowserCoordinator: state.preflight,
-  readCanonicalBrowserCoordinator: vi.fn(),
-}));
+vi.mock('../browser-coordinator-client', () => ({ readCanonicalBrowserCoordinator: state.preflight }));
 import { signInWithSessionIntent } from '../web-session-events';
 import { registerCanonicalBrowserOrigin } from '../canonical-browser-origin';
 const origin = 'https://www.password-intent.test';

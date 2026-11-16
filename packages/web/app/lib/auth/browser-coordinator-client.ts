@@ -5,21 +5,17 @@ let current: {
   readonly frame: ReturnType<typeof createCanonicalBrowserCoordinatorFrame>;
 } | null = null;
 /** Coordinates only; the subsequent primary session response still determines
- * identity. No metadata cursor is accepted as an authenticated Session. */
+ * identity. The returned cursor is control metadata a caller may pin across its
+ * next lock, never an authenticated Session. */
 export async function readCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
-  await coordinate(origin, signal, 'read');
+  return coordinate(origin, signal);
 }
-/** Explicit ordinary sign-in only. The returned cursor is control metadata to
- * pin across the caller's next lock, never an authenticated Session. */
-export async function signInCanonicalBrowserCoordinator(origin: string, signal: AbortSignal) {
-  return coordinate(origin, signal, 'signin');
-}
-async function coordinate(origin: string, signal: AbortSignal, operation: 'read' | 'signin') {
+async function coordinate(origin: string, signal: AbortSignal) {
   if (typeof window === 'undefined') throw new Error('COORDINATOR_UNAVAILABLE');
   if (current && current.origin !== origin) throw new Error('COORDINATOR_UNAVAILABLE');
   if (!current || current.frame.isClosed())
     current = { origin, frame: createCanonicalBrowserCoordinatorFrame({ window, canonicalOrigin: origin }) };
-  const observed = await (operation === 'signin' ? current.frame.signIn(signal) : current.frame.read(signal));
+  const observed = await current.frame.read(signal);
   if (observed.status !== 'ready' || signal.aborted) throw new Error('COORDINATOR_UNAVAILABLE');
   return Object.freeze({ ...observed.cursor });
 }
