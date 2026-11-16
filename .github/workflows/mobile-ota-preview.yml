@@ -464,16 +464,8 @@ jobs:
       actions: write
       contents: write
     steps:
-      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
-      # every workflow. An app installation token has its own, larger budget (#7659).
-      # Falls back to GITHUB_TOKEN if the app is not configured.
-      - name: Mint API token
-        id: api_token
-        continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ vars.OTA_PUSH_APP_ID }}
-          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+      # GITHUB_TOKEN only, not the App token (#7659): a sandbox branch created or
+      # deleted with GITHUB_TOKEN starts no `on: push` / `on: create` runs, an App token would.
       - name: Check out the sandbox helper
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -487,7 +479,6 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
         with:
-          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { handOffToSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
             await handOffToSandbox({
@@ -1230,16 +1221,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Budget: GITHUB_TOKEN allows 1,000 REST calls/hour for the whole repo, shared by
-      # every workflow. An app installation token has its own, larger budget (#7659).
-      # Falls back to GITHUB_TOKEN if the app is not configured.
-      - name: Mint API token
-        id: api_token
-        continue-on-error: true
-        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
-        with:
-          app-id: ${{ vars.OTA_PUSH_APP_ID }}
-          private-key: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+      # GITHUB_TOKEN only, not the App token (#7659): a sandbox branch created or
+      # deleted with GITHUB_TOKEN starts no `on: push` / `on: create` runs, an App token would.
       - name: Check out the sandbox helper
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -1251,7 +1234,6 @@ jobs:
       - name: Delete this run's sandbox branch
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
-          github-token: ${{ steps.api_token.outputs.token || github.token }}
           script: |
             const { deleteOwnSandbox } = require(`${process.env.GITHUB_WORKSPACE}/scripts/lib/ci-sandbox.cjs`);
             await deleteOwnSandbox({ github, context, core, workflowKey: 'ota-preview' });
