@@ -1,7 +1,3 @@
-import { useHttpActionScope } from '../../lib/graphql/use-http-action-scope';
-import type { BetaReaderOwner } from '../../lib/graphql/hooks/use-beta-links';
-import { useHttpQueryScope } from '../../lib/graphql/use-http-query-scope';
-import { betaReaderOwnerKey, useBetaReaderOwner, isBetaReaderCurrent } from '../../lib/graphql/hooks/use-beta-links';
 import { PressableSurface } from '../PressableSurface';
 import { ContentAudienceControl } from '../privacy/ContentAudienceControl';
 import { memo, useCallback } from 'react';
@@ -26,7 +22,6 @@ import { BetaVideoCard, BETA_CARD_WIDTH, BETA_CARD_HEIGHT } from './BetaVideoCar
 type BetaVideosSectionProps = {
   climbUuid: string;
   boardName: string;
-  originalParent?: BetaReaderOwner;
 };
 
 const SKELETON_COUNT = 3;
@@ -35,9 +30,7 @@ const CARD_GAP = spacing[3];
 // The "+" add button now lives in the section header (DeferredSections passes it
 // as the CollapsibleSection headerAction, so it sits to the right of the "Beta
 // Videos" title). This component just renders the count + carousel + states.
-const BetaVideosSectionBody = memo(function BetaVideosSectionBody({ climbUuid, boardName }: BetaVideosSectionProps) {
-  const betaOwner = useBetaReaderOwner(boardName, climbUuid);
-  const actions = useHttpActionScope();
+export const BetaVideosSection = memo(function BetaVideosSection({ climbUuid, boardName }: BetaVideosSectionProps) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { brandColors, systemColors } = useTheme();
@@ -45,52 +38,12 @@ const BetaVideosSectionBody = memo(function BetaVideosSectionBody({ climbUuid, b
   // the play drawer, and subscribing to every probe result and failure-counter
   // tick would re-render it for changes it does not read.
   const effectiveOffline = useIsOffline();
-  const {
-    data: links,
-    isLoading,
-    isError,
-    refetch,
-    refetchOriginal,
-    isRefetching,
-    assertOwner,
-  } = useBetaLinks(boardName, climbUuid, true, betaOwner);
+  const { data: links, isLoading, isError, refetch, isRefetching } = useBetaLinks(boardName, climbUuid);
 
   const handleRetry = useCallback(() => {
-    if (!betaOwner) {
-      void Haptics.selectionAsync();
-      void refetch();
-      return;
-    }
-    let action: ReturnType<typeof actions.capture> | undefined;
-    try {
-      assertOwner();
-      action = actions.capture();
-      const originalAction = action;
-      const assertOriginal = () => {
-        originalAction.assertView();
-        assertOwner();
-        originalAction.assertView();
-      };
-      assertOriginal();
-      void Haptics.selectionAsync();
-      assertOriginal();
-      void refetchOriginal(assertOriginal).then(
-        () => originalAction.finish(),
-        () => originalAction.finish(),
-      );
-    } catch {
-      action?.finish();
-    }
-  }, [refetch, refetchOriginal, assertOwner, betaOwner, actions]);
-
-  if (!isBetaReaderCurrent(betaOwner)) return null;
-  if (betaOwner) {
-    try {
-      assertOwner();
-    } catch {
-      return null;
-    }
-  }
+    void Haptics.selectionAsync();
+    void refetch();
+  }, [refetch]);
 
   const hasContent = links !== undefined && links.length > 0;
 
@@ -167,7 +120,7 @@ const BetaVideosSectionBody = memo(function BetaVideosSectionBody({ climbUuid, b
         >
           {links.map((link) => (
             <View key={betaLinkIdentity(link.link)}>
-              <BetaVideoCard link={link} {...(betaOwner ? { originalOwner: betaOwner } : {})} />
+              <BetaVideoCard link={link} />
               <ContentAudienceControl entityType="beta" entityId={`${boardName}:${link.climb_uuid}:${link.link}`} />
             </View>
           ))}
@@ -216,25 +169,4 @@ const styles = StyleSheet.create({
   retryButtonDisabled: {
     opacity: opacity.disabled,
   },
-});
-
-export const BetaVideosSection = memo(function BetaVideosSection(props: BetaVideosSectionProps) {
-  const scope = useHttpQueryScope();
-  if (scope.scoped) {
-    const parent = props.originalParent;
-    if (
-      !parent ||
-      parent.view !== scope.scope ||
-      parent.boardType !== props.boardName ||
-      parent.climbUuid !== props.climbUuid
-    )
-      return null;
-    try {
-      parent.assertCurrent();
-    } catch {
-      return null;
-    }
-  }
-  const key = betaReaderOwnerKey(scope, props.boardName, props.climbUuid);
-  return <BetaVideosSectionBody key={key} {...props} />;
 });

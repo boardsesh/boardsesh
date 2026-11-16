@@ -19,7 +19,7 @@ export function createBrowserHttpOperations(options: {
 }) {
   const { captureScope, isCurrentView, captureResult, captureErrorDelivery, resolveClient } = options;
   function create(scope: string | undefined, options: HttpOperationOptions = {}) {
-    const { mode = 'interactive', signal: callerSignal, assertDispatch } = options;
+    const { mode = 'interactive', signal: callerSignal } = options;
     const controller = new AbortController();
     const signal = callerSignal ? AbortSignal.any([callerSignal, controller.signal]) : controller.signal;
     const original = createBrowserHttpOperation({
@@ -34,7 +34,6 @@ export function createBrowserHttpOperations(options: {
       resolveClient: () => resolveClient(scope, mode),
       beginRequest: original.beginRequest,
       signal,
-      assertDispatch,
     });
     return Object.freeze({
       scope,

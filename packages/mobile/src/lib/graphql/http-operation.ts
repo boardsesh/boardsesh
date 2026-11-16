@@ -7,8 +7,6 @@ import { createAbortError } from './request-timeout';
 export type HttpOperationOptions = Readonly<{
   mode?: 'interactive' | 'offline';
   signal?: AbortSignal;
-  /** Selected-web only: a restrictive original-continuation veto at dispatch. */
-  assertDispatch?: () => void;
 }>;
 
 /** Native keeps its existing transport and account policy. The new operation
