@@ -1,10 +1,12 @@
 package com.boardsesh.boardrenderer
 
+import androidx.annotation.Keep
 import java.io.Closeable
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** JNI transfer object. Every buffer is independently Rust-owned, never a pixel ByteArray. */
+@Keep // JNI finds this constructor by name; its fields are populated outside R8's call graph.
 class GpuPacketResult(val status: Int, val handle: Long, val buffers: Array<ByteBuffer>)
 
 class GpuPacketOutput private constructor(
