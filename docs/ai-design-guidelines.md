@@ -169,22 +169,31 @@ Source: `packages/mobile/src/theme/colors.ts`. **Read colours from `useTheme()`*
 provider resolves from; the file's own rule: _"All color access should go through
 `useTheme().systemColors` — never consume [the constants] directly."_
 
+Every table between a `<!-- velvet-tokens:... -->` marker pair in this doc (colour, type scale, spacing, radii, opacity) is generated from the token sources by `vp run docs:velvet-tokens`. Do not edit them by hand; `vp run check:velvet-tokens` fails CI when they drift.
+
 ### Brand colours
 
 `brandColors` holds the light-scheme values; `brandColorsDark` overrides the roles that need to change
 to stay legible on near-black. The provider picks the set per scheme and exposes it as
-`theme.brandColors`.
+`theme.brandColors`. `tint` is an alias of `primary`. The table is generated from `@boardsesh/velvet-tokens`.
 
-| Role               | Light     | Dark      | Use                                                                         |
-| ------------------ | --------- | --------- | --------------------------------------------------------------------------- |
-| `tint` / `primary` | `#6D28D9` | `#A78BFA` | Brand **foreground**: text, icons, links, borders                           |
-| `primaryFill`      | `#6D28D9` | `#7C3AED` | Brand **filled** surface/button background                                  |
-| `onPrimary`        | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                          |
-| `accent`           | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights — **fill-only, always pair with dark text** |
-| `onAccent`         | `#16111F` | `#16111F` | The dark ink that pairs with `accent` (8.95:1); same in both schemes        |
-| `success`          | `#047857` | `#34D399` | Success states                                                              |
-| `warning`          | `#B45309` | `#FBBF24` | Warnings                                                                    |
-| `error`            | `#C81E1E` | `#F87171` | Destructive actions                                                         |
+<!-- velvet-tokens:brand:start -->
+
+| Role            | Light     | Dark      | Use                                                                        |
+| --------------- | --------- | --------- | -------------------------------------------------------------------------- |
+| `primary`       | `#6D28D9` | `#A78BFA` | Brand **foreground**: text, icons, links, borders                          |
+| `primaryFill`   | `#6D28D9` | `#7C3AED` | Brand **filled** surface/button background                                 |
+| `primaryStrong` | `#5B21B6` | `#A78BFA` | Brand foreground on a tonal violet wash (the player wall button)           |
+| `onPrimary`     | `#FFFFFF` | `#FFFFFF` | Text/icon sitting on `primaryFill`                                         |
+| `accent`        | `#FF8A3D` | `#FF8A3D` | Warm amber spark for highlights; **fill-only, always pair with dark text** |
+| `onAccent`      | `#16111F` | `#16111F` | The dark ink that pairs with `accent`; same in both schemes                |
+| `success`       | `#047857` | `#34D399` | Success states                                                             |
+| `warning`       | `#B45309` | `#FBBF24` | Warnings                                                                   |
+| `error`         | `#C81E1E` | `#F87171` | Destructive actions                                                        |
+| `live`          | `#B45309` | `#FBBF24` | This climb is lit / now on the wall                                        |
+| `historyFill`   | `#475569` | `#64748B` | The wall kiosk's "viewing history" bar                                     |
+
+<!-- velvet-tokens:brand:end -->
 
 **Role split matters.** Foreground brand (`tint`/`primary`) and filled-surface brand (`primaryFill`)
 are different values in dark mode: the dark violet is too low-contrast as a foreground on near-black,
@@ -210,31 +219,58 @@ value, plain text button) use the `primary` tint (`brandControlTint`); `primaryF
 `theme.systemColors` resolves by **platform and variant**:
 
 - **iOS + Liquid Glass** → Apple `PlatformColor` (`systemBackground`, `label`, `separator`,
-  `systemFill`, `link`, …). These adapt to light/dark and accessibility settings natively — no app
+  `systemFill`, …); the accent is the brand violet through `DynamicColorIOS`. These adapt to light/dark and accessibility settings natively — no app
   code needed.
-- **Android (Liquid Glass fallback)** → `androidFallbackColors[light|dark]` (violet-tinted hexes).
+- **Android (Liquid Glass fallback)** → `androidFallbackColors[light|dark]` (the violet-tinted ladder below).
   iOS Liquid Glass also reads these as plain strings (`chartColors`, `sheetSurface`), so they stay.
 - **Any platform + Material** → `materialSurfaces[light|dark]` ("Graphite": pure greys, violet only
   on action and state — see below).
 
-The resolved set always has the same keys. Representative values (Android fallback / Material tonal,
-which are the explicit hexes — iOS uses `PlatformColor` for the same roles):
+The resolved set always has the same keys. The tables below are generated from the code:
 
-| Key                   | Light (Android fallback) | Dark (Android fallback)  | Meaning                                                                             |
-| --------------------- | ------------------------ | ------------------------ | ----------------------------------------------------------------------------------- |
-| `background`          | `#F4F1FB`                | `#0F0B16`                | Screen base                                                                         |
-| `secondaryBackground` | `#FFFFFF`                | `#181225`                | Cards, sheets                                                                       |
-| `tertiaryBackground`  | `#FFFFFF`                | `#221A32`                | —                                                                                   |
-| `groupedBackground`   | `#F4F1FB`                | `#0F0B16`                | Grouped-list base                                                                   |
-| `elevatedSurface`     | `#FFFFFF`                | `#221A32`                | Raised tile (selected segmented pill, elevated bar)                                 |
-| `label`               | `#16111F`                | `#F5F2FB`                | Primary text                                                                        |
-| `secondaryLabel`      | `#5B5563`                | `#A9A2B6`                | Secondary text (opaque, clears WCAG AA — 6.44:1 on bg)                              |
-| `tertiaryLabel`       | `#8E8898`                | `#6E687C`                | Tertiary text                                                                       |
-| `separator`           | `rgba(60,55,75,0.18)`    | `rgba(180,168,205,0.2)`  | Hairlines, dividers                                                                 |
-| `fill`                | `rgba(109,40,217,0.1)`   | `rgba(199,184,232,0.12)` | Faint violet track (segmented controls, fills)                                      |
-| `accent`              | `#6D28D9`                | `#A78BFA`                | Interactive foreground. iOS brand violet adapts to Increase Contrast. |
-| `error`               | iOS `systemRed` / M3 error | iOS `systemRed` / M3 error | Destructive foreground and selected favourite hearts. |
-| `tertiaryFill`        | iOS `tertiarySystemFill` | iOS `tertiarySystemFill` | Large grouped backgrounds; `fill` is reserved for small controls. |
+**iOS** reads these `PlatformColor` names:
+
+<!-- velvet-tokens:ios-system:start -->
+
+| Key                          | iOS `PlatformColor`                | Meaning                                                       |
+| ---------------------------- | ---------------------------------- | ------------------------------------------------------------- |
+| `background`                 | `systemBackground`                 | Screen base                                                   |
+| `secondaryBackground`        | `secondarySystemBackground`        | Cards, sheets                                                 |
+| `tertiaryBackground`         | `tertiarySystemBackground`         | A step above the card                                         |
+| `groupedBackground`          | `systemGroupedBackground`          | Grouped-list base                                             |
+| `secondaryGroupedBackground` | `secondarySystemGroupedBackground` | Card that sits on `groupedBackground` (a Form row)            |
+| `tertiaryGroupedBackground`  | `tertiarySystemGroupedBackground`  | A block inside a grouped card                                 |
+| `elevatedSurface`            | `tertiarySystemBackground`         | Raised tile (selected segmented pill, elevated bar)           |
+| `label`                      | `label`                            | Primary text                                                  |
+| `secondaryLabel`             | `secondaryLabel`                   | Secondary text                                                |
+| `tertiaryLabel`              | `tertiaryLabel`                    | Tertiary text                                                 |
+| `separator`                  | `separator`                        | Hairlines, dividers                                           |
+| `fill`                       | `systemFill`                       | Small control fills (segmented tracks)                        |
+| `error`                      | `systemRed`                        | Destructive foreground and selected favourite hearts          |
+| `tertiaryFill`               | `tertiarySystemFill`               | Large grouped backgrounds; `fill` is for small controls       |
+| `accent`                     | brand tint (DynamicColorIOS)       | Interactive foreground; on iOS it adapts to Increase Contrast |
+
+<!-- velvet-tokens:ios-system:end -->
+
+**Android (Liquid Glass fallback)** reads these hexes:
+
+<!-- velvet-tokens:android-fallback:start -->
+
+| Key                   | Light                     | Dark                        | Meaning                                                       |
+| --------------------- | ------------------------- | --------------------------- | ------------------------------------------------------------- |
+| `background`          | `#F4F1FB`                 | `#0F0B16`                   | Screen base                                                   |
+| `secondaryBackground` | `#FFFFFF`                 | `#181225`                   | Cards, sheets                                                 |
+| `tertiaryBackground`  | `#FFFFFF`                 | `#221A32`                   | A step above the card                                         |
+| `groupedBackground`   | `#F4F1FB`                 | `#0F0B16`                   | Grouped-list base                                             |
+| `elevatedSurface`     | `#FFFFFF`                 | `#221A32`                   | Raised tile (selected segmented pill, elevated bar)           |
+| `label`               | `#16111F`                 | `#F5F2FB`                   | Primary text                                                  |
+| `secondaryLabel`      | `#5B5563`                 | `#A9A2B6`                   | Secondary text                                                |
+| `tertiaryLabel`       | `#8E8898`                 | `#6E687C`                   | Tertiary text                                                 |
+| `separator`           | `rgba(60, 55, 75, 0.18)`  | `rgba(180, 168, 205, 0.2)`  | Hairlines, dividers                                           |
+| `fill`                | `rgba(109, 40, 217, 0.1)` | `rgba(199, 184, 232, 0.12)` | Small control fills (segmented tracks)                        |
+| `accent`              | `#6D28D9`                 | `#A78BFA`                   | Interactive foreground; on iOS it adapts to Increase Contrast |
+
+<!-- velvet-tokens:android-fallback:end -->
 
 #### Material surfaces: "Graphite"
 
@@ -244,23 +280,38 @@ containers, not through a tinted page. The container ladder is hand-set in `colo
 (`materialSurfaceContainers`); Paper's `elevation.level1–5` and the Compose Host's
 `surfaceContainer*` roles read the same table.
 
-| Role                                              | Dark                    | Light                |
-| ------------------------------------------------- | ----------------------- | -------------------- |
-| `background` / `groupedBackground` (page)         | `#0E0E0E`               | `#F2F2F2`            |
-| `containers.lowest`                               | `#121212`               | `#EEEEEE`            |
-| `containers.low` / level1                         | `#161616`               | `#EAEAEA`            |
-| `containers.base` / level2 / `surfaceVariant`     | `#1A1A1A` (MiniPlayer)  | `#E4E4E4`            |
-| `secondaryBackground` (card, Paper `surface`)     | `#1E1E1E`               | `#FFFFFF`            |
-| `containers.high` / level3 / `tertiaryBackground` | `#262626`               | `#DFDFDF` (`tertiaryBackground` stays `#FFFFFF`) |
-| `containers.level4` / level4                      | `#2A2A2A`               | `#DCDCDC`            |
-| `containers.highest` / level5                     | `#2E2E2E`               | `#D9D9D9`            |
-| `label`                                           | `#EDEDED`               | `#1A1A1A`            |
-| `secondaryLabel`                                  | `#B0B0B0`               | `#5A5A5A`            |
-| `tertiaryLabel`                                   | `#8F8F8F`               | `#686868`            |
-| `separator` / `outlineVariant`                    | `rgba(255,255,255,0.12)`| `rgba(0,0,0,0.12)`   |
-| `fill` / `tertiaryFill`                           | white at 10% / 5%       | black at 8% / 4%     |
-| `outline`                                         | `#8A8A8A`               | `#7A7A7A`            |
-| `accent`                                          | `#A78BFA`               | `#6D28D9`            |
+<!-- velvet-tokens:material-surfaces:start -->
+
+| Key                   | Dark                        | Light                 |
+| --------------------- | --------------------------- | --------------------- |
+| `background`          | `#0E0E0E`                   | `#F2F2F2`             |
+| `secondaryBackground` | `#1E1E1E`                   | `#FFFFFF`             |
+| `tertiaryBackground`  | `#262626`                   | `#FFFFFF`             |
+| `groupedBackground`   | `#0E0E0E`                   | `#F2F2F2`             |
+| `elevatedSurface`     | `#262626`                   | `#FFFFFF`             |
+| `label`               | `#EDEDED`                   | `#1A1A1A`             |
+| `secondaryLabel`      | `#B0B0B0`                   | `#5A5A5A`             |
+| `tertiaryLabel`       | `#8F8F8F`                   | `#686868`             |
+| `separator`           | `rgba(255, 255, 255, 0.12)` | `rgba(0, 0, 0, 0.12)` |
+| `fill`                | `rgba(255, 255, 255, 0.10)` | `rgba(0, 0, 0, 0.08)` |
+| `accent`              | `#A78BFA`                   | `#6D28D9`             |
+
+<!-- velvet-tokens:material-surfaces:end -->
+
+The container ladder (`materialSurfaceContainers`) is what Paper's `elevation.level1–5` and the Compose Host's `surfaceContainer*` roles read. `low` is level1, `base` level2, `high` level3, `level4` level4 and `highest` level5. `base` is the MiniPlayer ground; the card is `secondaryBackground` (dark `#1E1E1E`, light `#FFFFFF`), and the separator is `outlineVariant`.
+
+<!-- velvet-tokens:material-containers:start -->
+
+| Container | Dark      | Light     |
+| --------- | --------- | --------- |
+| `lowest`  | `#121212` | `#EEEEEE` |
+| `low`     | `#161616` | `#EAEAEA` |
+| `base`    | `#1A1A1A` | `#E4E4E4` |
+| `high`    | `#262626` | `#DFDFDF` |
+| `level4`  | `#2A2A2A` | `#DCDCDC` |
+| `highest` | `#2E2E2E` | `#D9D9D9` |
+
+<!-- velvet-tokens:material-containers:end -->
 
 **The violet budget.** On Material, violet is spent only on:
 
@@ -425,25 +476,29 @@ Source: `packages/mobile/src/theme/typography.ts`. Two scales, same keys, resolv
 `theme.textStyles[variant]`. Liquid Glass uses the Apple HIG scale; Material uses the M3 (Roboto)
 scale. System font only (San Francisco on iOS, Roboto on Android) — no custom font families.
 
-| Variant key   | HIG (Liquid Glass) | M3 (Material) |
-| ------------- | ------------------ | ------------- |
-| `largeTitle`  | 34 / 700 / 41      | 28 / 400 / 36 |
-| `title1`      | 28 / 700 / 34      | 24 / 400 / 32 |
-| `title2`      | 22 / 700 / 28      | 22 / 400 / 28 |
-| `title3`      | 20 / 600 / 25      | 22 / 500 / 28 |
-| `headline`    | 17 / 600 / 22      | 16 / 500 / 24 |
-| `body`        | 17 / 400 / 22      | 16 / 400 / 24 |
-| `callout`     | 16 / 400 / 21      | 16 / 400 / 24 |
-| `subheadline` | 15 / 400 / 20      | 14 / 400 / 20 |
-| `footnote`    | 13 / 400 / 18      | 12 / 400 / 16 |
-| `caption1`    | 12 / 400 / 16      | 11 / 500 / 16 |
-| `caption2`    | 11 / 400 / 13      | 11 / 500 / 16 |
-| `label`       | 17 / 400 / 22      | 14 / 500 / 20 |
+<!-- velvet-tokens:type-scale:start -->
+
+| Variant key   | HIG (Liquid Glass) | M3 (Material) | Note                            |
+| ------------- | ------------------ | ------------- | ------------------------------- |
+| `largeTitle`  | 34 / 700 / 41      | 28 / 400 / 36 |                                 |
+| `title1`      | 28 / 700 / 34      | 24 / 400 / 32 |                                 |
+| `title2`      | 22 / 700 / 28      | 22 / 400 / 28 |                                 |
+| `title3`      | 20 / 600 / 25      | 22 / 500 / 28 |                                 |
+| `headline`    | 17 / 600 / 22      | 16 / 500 / 24 |                                 |
+| `body`        | 17 / 400 / 22      | 16 / 400 / 24 |                                 |
+| `callout`     | 16 / 400 / 21      | 16 / 400 / 24 |                                 |
+| `subheadline` | 15 / 400 / 20      | 14 / 400 / 20 |                                 |
+| `footnote`    | 13 / 400 / 18      | 12 / 400 / 16 |                                 |
+| `caption1`    | 12 / 400 / 16      | 11 / 500 / 16 |                                 |
+| `caption2`    | 11 / 400 / 13      | 11 / 500 / 16 |                                 |
+| `label`       | 17 / 400 / 22      | 14 / 500 / 20 | Every top-bar and header button |
+
+<!-- velvet-tokens:type-scale:end -->
 
 _(values are `fontSize / fontWeight / lineHeight`)_
 
 `label` is the type of every top-bar and header button (Cancel, Save, Next, Clear all): the size of a
-UIKit bar item on iOS, M3 `labelLarge` on Material. See "Top-bar buttons" below.
+UIKit bar item on iOS, M3 `labelLarge` on Material. See "Top-bar buttons" in [mobile-chrome.md](./mobile-chrome.md#top-bar-buttons).
 
 The HIG scale intentionally sets `largeTitle`/`title1`/`title2` to bold (700) rather than HIG's
 default regular — a deliberate brand choice. The M3 scale drops those display weights to regular,
@@ -513,16 +568,38 @@ Source: `packages/mobile/src/theme/tokens.ts`. Read via `theme.spacing`, `theme.
 
 **Spacing** (4pt grid):
 
-| Token | px  |     | Token | px  |
-| ----- | --- | --- | ----- | --- |
-| `0`   | 0   |     | `5`   | 20  |
-| `1`   | 4   |     | `6`   | 24  |
-| `2`   | 8   |     | `8`   | 32  |
-| `3`   | 12  |     | `10`  | 40  |
-| `4`   | 16  |     | `12`  | 48  |
-|       |     |     | `16`  | 64  |
+<!-- velvet-tokens:spacing:start -->
 
-**Border radius**: `none` 0 · `sm` 4 · `md` 8 · `lg` 12 · `xl` 16 · `full` 9999.
+| Token | px  |
+| ----- | --- |
+| `0`   | 0   |
+| `1`   | 4   |
+| `2`   | 8   |
+| `3`   | 12  |
+| `4`   | 16  |
+| `5`   | 20  |
+| `6`   | 24  |
+| `8`   | 32  |
+| `10`  | 40  |
+| `12`  | 48  |
+| `16`  | 64  |
+
+<!-- velvet-tokens:spacing:end -->
+
+**Border radius**:
+
+<!-- velvet-tokens:radii:start -->
+
+| Token  | pt   |
+| ------ | ---- |
+| `none` | 0    |
+| `sm`   | 4    |
+| `md`   | 8    |
+| `lg`   | 12   |
+| `xl`   | 16   |
+| `full` | 9999 |
+
+<!-- velvet-tokens:radii:end -->
 
 Cards stay `lg` (12) and pills/capsules stay `full` in **both** variants. Spread `cardCorners`
 (12pt plus `borderCurve: 'continuous'`, the iOS squircle) into every card-shaped container, so no
@@ -534,86 +611,23 @@ resolved via `theme.radii.button`: **10dp on Liquid Glass, 20dp on Material** (`
 **Shadows** (`shadows.xs`…`xl`) carry both iOS (`shadowOffset`/`shadowOpacity`/`shadowRadius`) and
 Android (`elevation`) keys: `xs` (elevation 1) → `sm` (2) → `md` (4) → `lg` (8) → `xl` (12).
 
-**Opacity**: `subtle` 0.7, `disabled` 0.5.
+**Opacity**:
+
+<!-- velvet-tokens:opacity:start -->
+
+| Token      | Value |
+| ---------- | ----- |
+| `subtle`   | 0.7   |
+| `peek`     | 0.62  |
+| `disabled` | 0.5   |
+
+<!-- velvet-tokens:opacity:end -->
 
 ---
 
-## Layout & chrome metrics
+## Layout, chrome and large screens
 
-Source: `packages/mobile/src/theme/layout.ts`, plus sheet/material metrics in `tokens.ts`.
-
-**Glass size ladder** — one height ladder for every floating FAB / capsule / pill so the chrome reads
-as one deliberately-sized system. Every interactive tier we draw ourselves is at or above the 44pt touch
-floor; `bar` is a slot inside UIKit's navigation bar, which owns that bar's hit testing:
-
-| Tier            | px  | Use                                                          |
-| --------------- | --- | ------------------------------------------------------------ |
-| `hero`          | 56  | One defining action per surface (create)                     |
-| `standard`      | 48  | Default floating FAB; the log-ascent Attempt / Flash bar     |
-| `capsule`       | 44  | Standalone floating capsule (4pt under sibling FABs)         |
-| `inlinePrimary` | 48  | Primary action inside a sheet                                |
-| `inline`        | 44  | Standard inline control                                      |
-| `bar`           | 38  | UIKit grouped bar-item slot in the native navigation bar; UIKit's own grouped minimum is 36 |
-| `mini`          | 32  | Label-only pill (angle); carries 44pt hit-slop when tappable |
-
-**Play drawer Log.** The drawer's primary Log action uses a 56pt filled circled-check symbol in the same neutral
-colour as its neighbours (white in dark mode). The native symbol centres its check without a separate glyph's
-baseline correction. Its row keeps the same 60pt height by using 4pt top padding instead of 12pt; the board does not shrink.
-Other inline buttons keep their existing sizes. The default row is Mirror (Angle on adjustable boards without
-mirroring), Favorite, Log, Share, Queue. Previous and next remain available in View options.
-
-**Tab bar.** `TAB_BAR_HEIGHT` = 49 (Liquid Glass / native iOS). `MATERIAL_TAB_BAR_HEIGHT` = 64 (M3
-Expressive short navigation bar: a 56×32 active-indicator pill, icon above a label capped at 1.2× font scale).
-On an Android phone's tab root it overlays the content and hides on scroll; elsewhere it sits in flow.
-
-**Floating toolbar.** `TOOLBAR_FAB_SIZE` 48 · `TOOLBAR_CAPSULE_HEIGHT` 44 · `TOOLBAR_CAPSULE_MAX_WIDTH`
-260 · `TOOLBAR_SIDE_MARGIN` 16 · `TOOLBAR_GAP` 8 · `TOOLBAR_GAP_ABOVE_TABBAR` 10 · `TOOLBAR_RESERVE`
-66 (bottom padding screens reserve so the last row clears the toolbar). Material floats the MiniPlayer
-card instead (`FloatingMiniPlayerCard`): the iPhone accessory's row (art, name, the climber's buttons,
-Board light, Log) on an opaque `surfaceContainer` card with a 12dp corner and level-2 elevation,
-`MATERIAL_MINI_PLAYER_CARD_INSET` 8 from each edge, `MATERIAL_MINI_PLAYER_CARD_GAP` 0 so it sits
-straight on the measured tab bar (and on the gesture inset while the bar hides), `MATERIAL_MINI_PLAYER_CARD_HEIGHT` 48 (the platter's height, so it holds the same controls).
-
-**Sheet chrome** resolves per variant via `theme.sheet` (`sheetChromeByVariant`), so `Sheet`,
-`ModalSheet` and `PlayDrawer` never drift:
-
-|               | Liquid Glass            | Material         |
-| ------------- | ----------------------- | ---------------- |
-| Scrim opacity | 0.4                     | 0.32             |
-| Handle        | 36 × 5, radius 3        | 32 × 4, radius 2 |
-| Top corners   | soft (glass background) | 28dp             |
-
-**Sheet backgrounds.** On iOS with the Apple variant, let the native sheet presentation
-draw its background. iOS 26 uses
-the system glass material; earlier iOS versions use the system sheet appearance.
-Material 3 on iOS uses the opaque `theme.sheetSurface` tonal colour, and Reduce
-Transparency uses that opaque surface regardless of variant. Android and web always
-paint an opaque colour, `theme.sheetSurface` unless a sheet picks another theme
-surface (`LogbookEntryChooserSheet` uses `systemColors.background`), so a sheet never
-picks up the phone wallpaper's Material You colours. A form or list may still paint a semantic content
-surface inside the sheet for legibility; do not use that content surface to replace
-the presentation background. The same split applies to `modal` page routes: keep
-the system presentation and paint only content that needs an opaque ground.
-See Apple's [Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)
-and [Adopting Liquid Glass](https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass)
-guidance.
-
-**Where actions go.** Sheet and screen actions sit in a top bar: leading Cancel / close / back, a
-centred title, a trailing confirm. Sheets pass `SheetTopBar` through their `header` prop, and pushed or
-modal screens call `useHeaderActions` to fill the native header. Nothing pinned at the bottom of a sheet
-or form, because a bottom bar moves with the keyboard and the inset. The exceptions are `LogAscentSheet`
-(Attempt / Save stay in thumb reach), composers such as `CommentSheet`, and tool palettes and FABs. Full
-rules: `docs/mobile-sheets-vs-routes.md`, "Where actions go".
-
-**Session screen.** Show one contextual title: "Start a session" before starting,
-then the session name. On iOS Liquid Glass the native large title owns that text;
-omit the in-body title and expose rename through a separate pencil action. The
-Session toolbar contains session actions only (invite, rename, Stop/Leave), with
-board switching in the setup card and board/light controls on Climbs. Stop is
-plain red semibold text; Leave is neutral text. Both keep the exit confirmation.
-The summary's Add a recap action is a full-width inset row. Apple Health saving
-and saved states are readable, noninteractive statuses; Save/Retry are action
-rows. These labels wrap rather than truncate at larger text sizes.
+Chrome metrics (glass size ladder, header and tab bars, controls under the bar, filter capsules, facet rows, top-bar buttons, the Material Climbs bar): see [mobile-chrome.md](./mobile-chrome.md). Large-screen layout (iPad, Android tablet, web desktop): see [mobile-large-screen-layout.md](./mobile-large-screen-layout.md). The two product rules below stay here.
 
 ### Nothing over the climb
 
@@ -756,7 +770,7 @@ comparison initially shows one row before "Show all". Material keeps a neutral t
 collapsed rows. These are Boardsesh hierarchy choices, not an Apple-prescribed row count; expansion
 stays virtualized and the all-board total remains independent of progress filters.
 
-The Profile Logbook puts the quick filter capsule row (see "Quick filter capsules") under the
+The Profile Logbook puts the quick filter capsule row (see "Quick filter capsules" in [mobile-chrome.md](./mobile-chrome.md#quick-filter-capsules)) under the
 profile tabs: Filters · N, then the climber's pinned capsules, then at most one inline Grade or Angle
 rail and the removable tokens. There is no search field on the page: the climb-name search is the
 first row of the filter sheet, and a typed name shows as a token ("“crimp”") so a filtered list
@@ -805,523 +819,6 @@ Android and the Material variant keep the RN sheet with its pin icons.
 Neutral tiles in session summaries and Profile's period comparison use `systemColors.tertiaryFill`
 on Liquid Glass, leaving visual emphasis to the actual values and semantic highlights. Material
 keeps `systemColors.fill`. Do not apply a violet background to every content card.
-
-### Root header actions are native bar items
-
-On an iPhone or iPad running iOS 26 Liquid Glass, the root tabs' header buttons can be native UIKit
-bar items (`root-bar-items.ts`, gated by `useNativeRootBarItems`). iPhone Duo moves native items onto
-its side rail; a custom view never moves there, and neither does an item with a title but no icon. So
-every root action that can be a native item carries an SF Symbol and a title. UIKit shows the symbol
-in the bar and on the rail, and the title in the overflow menu and to VoiceOver. On iPad, UIKit lays
-the items out beside its own sidebar button and the portrait top tab bar, which glass capsules
-collided with.
-
-**The iPhone bar mirrors its sides (#7281).** Off the rail, Climbs and Discover draw two glass
-islands of the same 38pt slots (a 4pt hit slop takes each to 46pt, past the 44pt floor):
-
-```
-Climbs    (@ 40°)   [ Mid Range Game  ]   ((h) ...)
-                    [ V6 · 683 sends  ]
-Discover  (@ 40° +)                       ((board) (*))
-```
-
-- The leading island is the avatar, then the glass "40°", then + where it stays. The angle sits in the
-  same place on both tabs.
-- On Climbs in a compact-width bar, + is the first row of ⋯ ("Create a climb"), so the capsule gets
-  the slot. A regular-width iPad keeps + in the island. Discover keeps +: it
-  has no capsule and no ⋯.
-- The trailing island is history and ⋯ on Climbs (`ClimbListBoardActions` with `showAngle` off), the
-  board and the bulb on Discover. Equal islands centre the capsule: 151pt at 375pt, 178pt at 402pt,
-  216pt at 440pt (`nativeItemsTitleMaxWidth`).
-- Why not native items for the angle: a title-only item ("40°") got a capsule of its own, even with
-  `sharesBackground` (#7281 QA, iOS 27), and an icon would hide the number. Why not native items on
-  the trailing side: UIKit's 44pt items do not match the 38pt island slots.
-
-**Where native items stay:**
-
-- On the Duo rail every action is a native item: account (`person.crop.circle.badge.ellipsis`, not
-  the Profile tab's `person.crop.circle`) and + leading; the angle as a title item (it stays in the
-  bar), history and ⋯ or the board switcher, and the bulb, trailing. A bar item's image is not
-  clipped (a photo shows square), react-native-screens loads any image source after it makes the
-  item, and a bar item cannot draw initials, so the horizontal bar keeps the glass avatar.
-- On an iPad the trailing group stays native items (history and ⋯, or the board switcher) with the
-  glass bulb after them as a custom view: react-native-screens has no item with both a tap and a
-  long-press menu, and the long press opens Board controls. A compact-width iPad also moves + into
-  ⋯ on Climbs. The iPad's native history is where the showcase recorder's `board-history-button`
-  anchor points (`NativeTrailingItemShowcaseAnchor`); the iPhone island anchors its own glass history.
-- + (create) and the notifications bell keep `visibilityPriority: 'high'`, so they stay on screen
-  longest. Board history is `'standard'`; the rest take the default.
-
-**The angle's picker** is a sheet on iPhone and a popover on a regular-width iPad
-(`useAnglePickerPopover`), which needs a React view to point at: the glass "40°" is one. Moving between
-the bar and the rail swaps it for the native title item, so that move waits while the picker is open.
-
-**Material angle control.** Climbs and Discover place the angle beside the avatar
-in a standard `Appbar.Action`. Its numeric `title3` label is 22dp on Material,
-matching the visual size of the neighboring 24dp toolbar icons. Quick filters
-start with Filters; the angle stays in the toolbar when quick filters are hidden.
-
-**The Climbs capsule** (`WallStatusCapsule`, `BoardHeldCapsule`) is the climb's name over the grade
-and one fact:
-
-| State | Line 2 | Face |
-| --- | --- | --- |
-| Someone else lit it (with a name) | `V6 · Sam` | theirs, from a 130pt capsule (every iPhone but Display Zoom) |
-| Your own climb, or no named sender | `V6 · 683 sends` | none |
-| You hold the board | `V6 · 683 sends` | none (it would be yours) |
-| Lit with no live link | `V6 · 20m ago` | as above |
-
-The grade never cuts; the fact after it ends in "…" when room runs out, except the age, which a cut
-would make wrong (it may cut only in a 320pt Display Zoom bar). A climb with no name shows its grade
-as the name, and line 2 drops the grade. While a signed-in climber's id is still loading, the capsule
-shows the grade alone, so your own climb never flashes your face. The capsules carry no ×:
-a left swipe hides them, and VoiceOver gets a Hide action. The capsule's room and the showcase
-anchor measure the navigation stack's frame (`useFrameSize`), not the window, so the iPad sidebar is
-left out. The capsule and the controls under the bar are always custom views.
-
-iOS 18 and the Material variant keep the glass capsules.
-
-### Controls pinned under the bar
-
-Some root tabs pin a block of controls under the UIKit navigation bar: Climbs has its filter chips,
-the grade row and the removable filter tokens; Profile has its segmented control. `NativeRootHeader`
-draws that block (`HeaderControls`), and the list reserves the full measured height, including an
-expanded Grade row. At the top, opening Grade moves results below the controls so compact rows
-remain readable. Away from the top, the Climbs list compensates for the height change after its
-layout commits, preserving the visible rows without resetting the search or scrolling to the top.
-
-**On iOS 26 the block floats without a continuous blur.** Individual filter capsules keep their
-native glass surfaces. List content remains sharp between and beneath them, matching the GitHub
-app's floating filter row. Profile's translucent segmented track has a local opaque
-`systemColors.background` backing so list text cannot cross its tab labels; child filter capsules
-remain outside that backing. UIKit owns the navigation bar's
-scroll-edge material, status area and action lenses above the supplementary controls.
-
-The control block stays below the native bar as its title collapses. Closing Grade releases its
-reserved space; no empty rail slot remains. The block owns
-touches through the gaps between controls, so taps do not open climbs underneath.
-Disclosed grade rails opt into individual regular native glass chips on the same capability
-and accessibility gate as floating header controls. Their rail has no continuous backing;
-neutral labels use the secondary theme label, selected/range labels the primary label.
-Selected endpoints retain the grade hue with a 35% tint and a selection ring; interior grades
-keep their 18% tint and grade-colour ring. Each native lens has its own rounded edge, with
-rings drawn separately. At normal text size the 28pt lens matches the native small filter
-capsules inside a full 44pt touch target. Eight-point vertical insets and matching content
-padding let the lens grow with taller text. The static carrier preserves tap/hold behavior.
-Other grade pickers keep their existing flat chips. Older iOS, Material, Reduce Transparency
-and Increase Contrast keep the local opaque backing. Angle rails also retain their local
-`systemColors.background` backing; the filter capsule row stays transparent.
-
-Older iOS versions, Reduce Transparency, Increase Contrast and an explicit `opaqueControls`
-request retain the painted band in `systemColors.background`. The native glass path adds no
-custom backdrop, fade or wash. Existing scroll-edge wiring is accepted for caller compatibility
-without attaching a backdrop to the store. The Climbs list tracks native offsets in a ref for
-clearance changes; scrolling never updates React state for this tracking.
-
-Filter capsules' SwiftUI Host follows the app's resolved light/dark scheme. Resting native glass
-capsules use SwiftUI's secondary foreground style for muted grey labels, symbols and chevrons.
-Active capsules retain the brand fill and `onPrimary` label; older opaque capsules keep their
-existing neutral styling. The wall-status
-capsule carries one regular native `GlassSurface` with a 14% amber tint and a native rounded
-edge; its opaque amber-bordered fallback remains on older devices and with Reduce Transparency.
-Native glass does not enter through an opacity fade.
-Its custom native title is bounded by the navigation stack's measured local frame, horizontal
-safe-area insets, and the actual leading/trailing action widths plus capsule padding and gaps.
-Only the climb name shrinks; the avatar and grade retain their width. This keeps long names
-inside the title slot on narrow phones, after rotation, and in a tablet pane.
-
-
-### Quick filter capsules
-
-The small filter row under a list's title is one component, `CapsuleRow`
-(`src/components/filter-capsules/`). A surface describes each capsule as a plain object and the row
-draws it natively: SwiftUI glass buttons and menus with `controlSize('small')` on iOS, 32dp M3
-`FilterChip`s on Android, Paper chips on the web. The row holds no filter state and no copy; the
-surface passes final, localised labels and bound handlers. Five kinds (`CapsuleRow.types.ts`):
-
-| Kind         | What a tap does                                          | Example              |
-| ------------ | -------------------------------------------------------- | -------------------- |
-| `sheet`      | Opens a sheet or picker the screen presents              | Filters · 2, Setter  |
-| `rail`       | Shows or hides an inline rail under the row              | Grade                |
-| `menu`       | Single-select menu; extra commands after a divider       | Popularity, Recent   |
-| `toggle`     | Flips an on/off filter                                   | Beta videos          |
-| `toggleMenu` | Flips a filter; iOS long-press opens extra commands      | Tall / Wide (lock)   |
-
-- **One active style.** An active capsule is filled with `primaryFill` and labelled in `onPrimary`
-  on every platform, the web included (Paper's selected chip would draw `secondaryContainer`).
-  Never the text brand colour: in dark mode it is a light lavender that white text can't sit on
-  (see "Brand colours").
-- **Compact Filters control.** Climbs and Logbook opt their Filters sheet capsule into
-  `presentation: 'iconBadge'`: only the filter glyph is visible when no filters are active;
-  an inline count badge appears above zero and grows for multiple digits (99+ ceiling).
-  The full localized Filters/count label remains available to assistive technology.
-  Active capsules retain the brand fill, with an inverse badge for contrast. Other sheet
-  capsules keep their labels; the badge adds no separate tap target or glass surface.
-- **Glass only where it is real.** Below iOS 26 `@expo/ui` turns the glass styles into plain text
-  buttons, so the row draws `bordered` (resting, neutral) and `borderedProminent` (active) there,
-  picked by `useGlassCapability()` as `Button` does.
-- **The rail chevron is iOS-only.** It points up while the rail is shown. On regular-width iPad a
-  `rail` can carry a `popover` instead of the inline row.
-- **Android and the web are tap-only.** A Compose `FilterChip` eats the long-press (#3319, #3322),
-  so a `toggleMenu` draws a plain toggle there and its commands are unreachable. Keep anything a
-  climber needs on those platforms in the sheet.
-- **Order is the climber's.** Filters (and Material's Angle) lead and never move. The pinned
-  capsules follow in the order their store saved, which Settings › Climbs & grades › Quick filters
-  edits with a switch and ↑/↓ arrows per filter, as Settings › Home does. A newly pinned capsule
-  goes last. The Logbook row still draws in its catalog order.
-
-**Pins.** Which capsules show is the climber's choice, saved per surface by a store from
-`createPinnedChipsStore({ storageKey, catalog, defaults, normalize?, fromStored?, toStored? })`
-(`src/lib/pinned-chips-store.ts`). Each store has its own key, state and listeners, and its hook
-returns `{ pinned, loaded, isPinned, togglePin }`; the store also has `set`, `toggle` and
-`move(kind, -1 | 1)`. `pinned` is in the saved order, and the default `normalize`
-(`keepStoredPinOrder`) keeps it, dropping unknown kinds and repeats. The catalog is the order a
-fresh install's defaults draw in and the order unpinned filters list in on Quick filters. Climbs
-uses the key `pinnedFilterChips` and its catalog in `src/lib/pinnable-chips.ts`; `normalize` is
-where a retired kind migrates (a stored `shape` pin becomes Tall + Wide where it stood, unless the
-list names them). `fromStored` runs on load only, for a migration that must not run when a pin
-changes. An older bundle reads a reordered list in its own catalog order: it loses the order, never
-a pin. An active filter whose capsule isn't pinned still shows as a removable token under the row,
-so a filtered list always says why.
-
-**Quick filters** (`src/components/settings/quick-filters/`, route `settings/quick-filters`, also
-re-exported on the Climbs and Discover stacks so a filter sheet can push it) edits two stores:
-Climbs, and Playlists (every playlist, smart playlist and setter page). Pinned filters come first
-in the saved order with a switch and arrows, the rest follow in catalog order with a switch only,
-and each row is named as the Filters sheet names its control (`src/lib/filter-chip-labels.ts`). The
-page is built like Settings › Home (`section-layout-form-rows.ts`, `useMovableFormRows`): hosted
-`SectionLayoutFormList` rows on iOS and the browser, native switches with native move buttons on
-Android. The iOS Filters form has no pin switches; the React Native sheet keeps its pin icons for
-now.
-
-Climbs' Recent menu (saved searches) is a pinnable kind too, first in the catalog and pinned by
-default, with its pin under Climb name in Filters. That Filters row also lists the saved searches as
-a horizontal strip of grade-rail chips (`RecentSearchRail`), or a one-line hint while there are
-none. A chip and the toolbar menu apply a search through the same helpers
-(`src/lib/recent-filter-selection.ts`) and the screen's one apply handler. The toolbar chip still
-shows only while there are saved searches, and unpinning it never deletes them. Every list saved before Recent was pinnable lacks
-it, so the climbs `fromStored` adds `recent`, first, to a list that holds neither `recent` nor the
-`!recent` marker, which is what `toStored` writes when Recent is unpinned. An empty list still loads
-the full defaults, and older bundles drop both values. The Filters capsule itself is never
-pinnable: it is the way back to every pin.
-
-**The Logbook is the second surface.** Its catalog is `src/lib/logbook-pinnable-chips.ts` (Grade,
-Status, Stars, When, Board, Angle, Setter, Benchmarks, Sort; Grade, Status, When, Angle and Sort
-pinned on a fresh install), its store `logbookPinnedChipsStore` on the key `pinnedLogbookChips`, and
-its builder `src/components/you/logbook-capsules.ts` (`buildLogbookCapsules`, plus
-`buildLogbookFilterTokens` for the token row), locked by `logbook-capsules.test.ts`. Grade and Angle
-are `rail`s; Status, Stars, When, Board and Sort are `menu`s (When's "Custom…" command opens the
-sheet on the Custom window, scrolled to When; Board shows only with two or more logged boards); Setter is a `sheet`
-capsule that pushes the setter picker; Benchmarks is a `toggle`. The Sort menu switches the key, and
-each option names what it gives ("Latest", "Name A–Z", "Most tries"); the order itself is in the
-sheet. The Logbook's own climb-name search is never a capsule, only a token.
-
-**A new surface adds three things:** a catalog (the pinnable kinds, their order and the default
-pins), a store on its own storage key, and a pure builder that turns its filter state into
-`Capsule[]` (the climbs one is `src/components/search/climb-capsules.ts`, locked by
-`climb-capsules.test.ts`). It renders `<CapsuleRow capsules={…} />` with the builder's output in a
-`useMemo`, and never imports `@expo/ui` itself.
-
-### Inline facet rows
-
-A filter control that lives in place is a plain row. The reference is the grade picker,
-`GradeRangeRail` (`src/components/grade/GradeRail.tsx`). On Climbs the Grade chip opens it as a row
-of the chrome under the filter chips. The Logbook's Grade capsule opens the same row under its
-capsule row (and its Angle capsule an `AngleRangeRail`, one at a time). Both filter sheets and the iPad
-popover use the same picker.
-
-**No frame, no grab handle.** The row belongs to the surface that holds it; it is not a sheet. [HIG
-Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets) keeps the grabber for
-resizable sheets, and a glass capsule under a row of glass chips is glass on glass (see "Glass
-material" above). The row is the strip of chips and nothing else: no pinned control beside it.
-
-**Hidden until tapped, then it stays.** On Climbs the row is hidden by default and the Grade chip
-opens it over the list, including at the list's resting top. The persistent chip and token rows
-stay above it. On iOS 26 the backdrop covers the expanded controls while the grade row is open,
-even at rest; opaque layouts extend their existing background instead. Open is a persisted setting
-(`gradeRowShown`): the row stays across
-opening a climb, search focus, Filters and app launches, until the chip hides it. Nothing else
-closes it. On iOS the chip's chevron points up while the row is shown. The row is drawn only while
-the Grade chip is pinned: the chip is its one way out, so unpinning the chip takes the row with it,
-and pinning it again brings the row back as it was left. The regular-width iPad popover is the
-exception to all of this: it stays transient.
-
-**It follows the selection, never the finger.** The row centres on the selection when it opens.
-Once the climber has scrolled or tapped it, it stays put for their own picks, so a tapped chip does
-not slide away. It centres again when the selection changes somewhere else (Filters, a recent
-filter, a token) and when the screen comes back into focus (`recenterKey`). It never scrolls itself
-while a finger is on it.
-
-**Insets come from the container.** With no frame, the row lines up with what is above it: the
-first chip rests under the first chip of the chip row (or under the section's label in a sheet).
-Both insets are props (`contentInsetLeft` / `contentInsetRight`, 16pt by default). On Climbs, in
-both filter sheets and in the popover the strip scrolls out to the container's edge. Under a chip
-row that is itself inset (the Material chrome) it clips on that row's line. No
-gradient fade: the background differs per call site.
-
-**One chip per label.** Grades that read the same in the climber's format are one chip, a "stop"
-(`buildGradeRailStops`). Under V grades 4a, 4b and 4c are all "V0", so the row has one "V0" that
-filters all three; under Font nothing merges. Anything that names the selection compares labels,
-not ids: a pick of that "V0" is two different ids and still reads "V0", never "V0–V0". Logging
-keeps one chip per grade (`GradeSingleSelectRail`), because a tick needs the exact one.
-
-**A label never claims more than the filter.** A saved bound can cover only part of a stop: 4a
-alone, set under Font grades or before chips were grouped, sits inside "V0". Nothing rewrites it on
-load. Its chip may draw as selected, but every label names that end precisely, "V0 / 4A"
-(`gradeBoundLabels`); the plain "V0" is for a bound that covers the stop edge to edge. A tap or a
-hold on a partly covered stop first completes it. Only a stop the bound covers exactly clears on a
-tap, and an end the gesture does not touch keeps its exact grade.
-
-**The label is the whole chip.** No dot and no checkmark in front of it; labels are centred. A
-resting chip is a `systemColors.fill` capsule with a transparent border. A selected stop, or either
-end of a range, is the solid grade colour with `readableTextColor` text and a 1pt ring in the label
-colour at 45%, which keeps a dark grade visible on a dark background. A chip inside a range is a
-wash of its own grade colour (18%) with a ring of that colour (75%). "Any" is neutral; with no
-filter set it takes the ring and nothing else, never a brand fill.
-
-**State is never hue alone.** Resting, in range and selected differ in fill strength and in border,
-so they hold up without colour vision, and each chip's accessibility label and `selected` state say
-the same thing. Every state keeps one 1pt border, so a chip does not resize and its label does not
-move when its state changes. The chip's height is one constant, `GRADE_CHIP_HEIGHT`, shared by the
-chip and the row.
-
-**Two quick taps make a range; touch and hold makes one without the clock.** A tap picks one stop
-and a tap on the selected stop clears. A tap on a second stop within 3 s of that pick
-(`RANGE_EXTEND_WINDOW_MS`) makes the range covering both; after 3 s it switches to that stop. With a
-range set, a tap on an end moves it one stop inward and any other tap picks that stop alone
-(`computeGradeTap` in `@boardsesh/climb-filters`). Touch and hold for 400 ms does not depend on
-timing: it makes the range with the selected stop, or moves the nearer end of a range to the held
-stop (`extendGradeRange`). The screen-reader hint names the hold, since VoiceOver cannot count on
-the gap between two taps. The 3 s run from the climber's own tap on the row: a selection that
-arrives from somewhere else closes the window, so the next tap switches grade.
-
-The timed rule is the owner's call, kept against [HIG
-Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)'s advice
-to minimise time-boxed interface elements, with the hold as the route that needs no timing. The
-window stays at 3 s for a measured reason. On iOS over 30 days (October 2026), 2,417 ranges were
-made by the quick second tap and 28% of them were replaced by a single grade within 5 s. The share
-undone is highest for the fastest pairs (41% under 0.5 s, 30% at 0.5 to 1 s) and lowest for the slow
-ones (21 to 23% between 1.5 and 3 s). A shorter window would cut the deliberate ranges and keep the
-accidental ones. `Grade Filter Changed` carries `withinRangeWindow` so the misfire rate can be read
-from the real tap gap from now on.
-
-### Top-bar buttons
-
-One spec for every button in a sheet's `SheetTopBar`, a native stack header (`useHeaderActions` /
-`HeaderActionButtons`) and the hand-built sheet headers (tick, queue, logbook, session, play drawer).
-Source: `src/theme/top-bar.ts` (`topBarFor(variant)`), the `label` text variant, `ChromeIconButton`
-(glyph buttons) and `resolveTopBarActionLook` (text and confirm actions).
-
-| Role | iOS (Liquid Glass) | Material | Size | Colour |
-| --- | --- | --- | --- | --- |
-| Close / back / minimise | `xmark`, `chevron.left`, `chevron.down`, semibold | `close`, `arrow-left`, `chevron-down` | iOS 17pt glyph, 44pt target (a `systemColors.fill` circle in our chrome; in a native header a bare 32pt `mini` frame, `nativeBarGlyphFrame`, with 6pt hit slop out to 44pt, where UIKit draws the glass); M3 24dp in 48dp | iOS label; M3 onSurface |
-| More / edit / help (actions) | `ellipsis` and friends, semibold, same container as close | `more_vert` IconButton | as above | iOS label; M3 onSurfaceVariant |
-| Cancel / plain text action | the word | the word | `label` 17/22/400 (iOS), 14/20/500 (M3) | label colour |
-| `confirm`: saves or commits the climber's own edit (Save, Add, Create, a Done that commits an angle or a crop) | `checkmark` in a brand circle the size of the close; the word is the spoken label | brand text, no fill (an M3 full-screen dialog's Save) | iOS 44pt circle, 17pt semibold glyph; M3 `label` 14/20/500 | brand fill, onPrimary glyph; M3 brand text |
-| `send`: sends or reports to someone else (Submit, Send, Report, Claim) | prominent text: brand capsule in a sheet | brand text, no fill | `label`, 600 on iOS | brand |
-| `forward`: moves on, applies, or closes a confirmation (Next, Apply, "Show 12 climbs", Try again, Use look, the Done after a report went through) | text; prominent: brand capsule in a sheet | brand text if prominent | `label` | label colour; brand if prominent |
-| Destructive commit (End session) | red semibold text, never a red ✓, never a red fill | red text | `label` | `brandColors.error` |
-
-- **A Done with nothing to commit** (a filter sheet that applies live, a read-only summary) is no
-  trailing action at all: the leading X closes it.
-- **Feedback and report submits** (bug report, rating, QA verdict, climb report and wall report)
-  use `kind: 'confirm'` for compact sheet headers: a ✓ in the brand circle on Liquid Glass,
-  short localized Send text on Material. Send remains the spoken label; other send actions keep
-  the `send` presentation above. Dismissal rules stay in `docs/mobile-sheets-vs-routes.md`.
-- **Native headers on iOS 26** (`useHeaderActions`, gated on `useGlassCapability()`): the trailing side
-  is native bar items. An idle confirm is the prominent (brand-tinted glass) item with the ✓ SF Symbol;
-  a send or prominent action the prominent item with its label; a plain or destructive one plain text.
-  While it saves, or beside an accessory, it is a custom item that hides UIKit's glass and draws the
-  same ✓ circle or brand capsule at `glassSize.capsule`, so idle and loading look alike. Inside UIKit's
-  shared glass (iOS before 26) or on Material, a header action is text and never a shape: no circle or
-  capsule inside a capsule.
-- **Disabled:** 40% opacity on iOS, keeping the colour. Material: onSurface at 38%.
-- **Loading:** a spinner takes the label's or glyph's place, in its colour, without changing the width.
-- **Dynamic Type:** bar labels hold at 1.0 on iOS (UIKit bar items don't scale) and 1.2 on Android.
-- **Large Content Viewer:** glyph buttons wrap in `LargeContentViewer`. The known exception is the
-  `AppMenu` ⋯ anchor (the player's and the queue sheet's): on iOS it is a SwiftUI menu with no
-  viewer yet, so a long press at accessibility text sizes shows no HUD on it.
-- **Kind:** callers pass `kind: 'confirm' | 'send' | 'forward'`. Unset, a `prominent` action is a
-  confirm and any other a forward. A confirm may pass `icon` (the create drawer's lock) for the ✓.
-- **Header tint** is the theme's label colour (`useStackScreenOptions`, and the root navigation theme's
-  `primary`), so no bar glyph falls back to React Navigation's iOS blue.
-
-### Material Climbs bar
-
-The Android Climbs header (`ClimbTopChrome`, Material branch) follows the iOS bar: avatar, title
-slot, then history and ⋮. It is about 112dp under the status bar (a 64dp app bar over a 48dp chip
-row), with or without a climb on the wall. Only Climbs looks like this; the other root tabs keep
-their titled bars.
-
-- **Empty title slot.** No "Climbs", no board name. The slot holds an empty `header` view whose
-  spoken label is "Climbs", so TalkBack still names the screen. Boards are switched from ⋮ → Switch board.
-- **The climb on the wall** fills the title slot as a compact M3 pill (`WallStatusCapsule`'s
-  Material skin) that says what the iOS capsule says, plus the climb's board art. It is 48dp
-  tall, full radius, filled with the amber `tertiaryContainer` so it reads as "lit" against the
-  bar (`#FFDBCA` light, `#773300` dark; `paper-theme.ts` sets it from the `#FF8A3D` accent, since
-  Paper's default is a pink). It leads with the MiniPlayer's `AccessoryClimbThumbnail` (40dp
-  slot, drawn through the shared render scheduler), then the sender's 24dp face where iOS would
-  show it. The name sits in titleSmall over the iOS byline, "grade · one fact" in labelMedium:
-  who lit it, your own or an unnamed climb's sends, or how long ago. All text is
-  `onTertiaryContainer` (13.2:1 light, 7.2:1 dark), so the grade never sits in its own hue on
-  the amber. The grade is never cut in the byline; only the fact gives way. Width rules, from
-  the pill's measured width (nothing leads before the first layout): under 130dp neither the
-  thumbnail nor the face; from 130dp the thumbnail; from 180dp the face beside it (the byline
-  names the sender either way). The pill stops at 280dp. Tap opens the wall preview; a left
-  swipe or the screen-reader Hide hides it. There is no ×. The empty `header` view stays
-  beside the pill, so TalkBack still reads "Climbs".
-- **Create** is ⋮'s first row on a compact width, as on iOS. A regular-width tablet keeps + in the bar.
-- **Chips stay pinned.** The chip row is `dense`: no vertical padding, so Compose's 48dp chip touch
-  targets are the row's whole height (8dp visible above and below each 32dp chip). Nothing pads under
-  the chips; when the sheet-only filter tokens show, their row keeps 8dp above and below its pills.
-  The Logbook and playlist rows keep their 8dp padding.
-
-**Material building blocks** (`tokens.ts` → `material`, Android branches only): nav active-indicator
-pill 64 × 32 (radius 16), surface elevation 3, pressed state-layer opacity 0.12. `androidRipple(color,
-borderless)` builds a Pressable `android_ripple` config at that state-layer opacity.
-
----
-
-## Large-screen adaptive layout (iPad + Android tablet + web desktop)
-
-**iPad on Liquid Glass follows Apple Music.** It uses the native `NativeTabs` sidebar
-(`sidebarAdaptable`): a sidebar in landscape, a tab bar at the top in portrait. Every tab is **one
-content column**; there is no player pane, wall column or wall strip beside it. The current climb rides
-the bottom accessory, Music's MiniPlayer (HIG Tab bars: "tab bars with an attached accessory, like the
-MiniPlayer in Music"), and tapping it, or any climb, opens the full-screen `/play` player, as on iPhone
-(HIG: "Don't change your app's functionality based on the space it occupies"). The accessory zooms
-into the player. The accessory shows the bar's climb, the last one you opened, not always the
-current one (see `nativeAccessory` above). `resolveCurrentClimbSurface` (`src/hooks/current-climb-surface.ts`) is the one answer
-to "who shows the current climb": the floating JS bar, the bottom-chrome reserve, the rest pill and the
-drawer host's tap routing all read it, so the climb never shows twice. Tab content clears the
-accessory through the measured in-tab inset (`tabBarAtBottom: false`, the same path as the iPhone
-Duo's side rail).
-
-**The landscape iPad player is Music's Now Playing.** `resolvePlayerArrangement`
-(`src/components/play-drawer/play-drawer-layout.ts`) returns `sideBySide` when a native iPad window is
-wider than tall and leaves a 600 pt board column beside the 400 pt panel; everything else, iPad portrait
-and every phone included, is `stacked`, the board on top as before. Side by side, the board fits the
-column's full height with the title and the tick row under it, and `PlayerSidePanel` sits on the right:
-a segmented control for Up next (the queue sheet's own `QueueListBody`), Logbook (`LogbookSection`) and
-Beta (`BetaVideosSection`), opening on Up next, with Switch board at its foot where Music keeps AirPlay.
-The queue button then selects Up next instead of stacking the queue sheet over the player.
-
-The rest of this section describes the **JS tablet shell**, which Android tablets, Expo web and an iPad
-on the Material variant still use.
-
-A **tablet-sized surface** on the JS shell — an Android tablet, a qualifying web screen, or an iPad on
-Material — gets a multi-column shell; every phone, and a tablet-sized surface in a narrow window, falls
-through to the phone UI **verbatim**. The shell is drawn in each platform's own chrome through
-`TabletSidebar` (`createVariantComponent`): **Material 3** (`MaterialNavigationRail`) on Android
-tablets and web, and the glass `IpadSidebar` rail where the Liquid Glass look applies.
-The size class is pure and unit-tested in `theme/size-class.ts` (`resolveDeviceLayout`), fed window
-width by `hooks/use-device-layout.ts`:
-
-- **`compact`** — every phone, plus a tablet window narrower than `REGULAR_WIDTH_BREAKPOINT` (700dp:
-  iPad Slide Over / a narrow Split View, Android split-screen / freeform / DeX). Renders today's phone
-  UI; no phase may regress it.
-- **`regular`** — a tablet window wide enough for the sidebar rail (replacing the bottom tab bar) + a
-  content column + a detail pane. `expanded` (≥1024dp) is a flag on top.
-
-**Eligibility, not idiom.** The shell admits iPad (`Platform.isPad`) plus Android and web screens whose
-smallest physical-screen width clears **600dp/CSS px** (`resolveIsTablet`, matching Android's
-`sw600dp` tablet qualifier), fed to the same `resolveDeviceLayout`. The signal is launch-fixed (the
-physical screen, not the window), so an eligible device in a small multi-window/DeX/browser window is
-still a tablet surface but reads `compact` from the live width. The live breakpoints are shared across
-variants: below 700 uses the phone chrome, 700–815 adds the rail, 816–1175 also mounts the persistent
-detail pane, and 1176+ has room for the wall column when a board is bound. The `expanded` flag remains
-1024+, independently of those width-budgeted pane decisions.
-
-**The rail is variant-skinned, IA-identical.** The Material `MaterialNavigationRail` mirrors
-`MaterialTabBar`'s M3 roles laid out vertically — a `secondaryContainer` active-indicator pill
-(`material.navRail`, 56×32), `onSecondaryContainer` glyph, `onSurface` active label, `onSurfaceVariant`
-inactive, active/inactive glyph pairs matching the bottom bar — on an `m3SurfaceContainers.low` surface
-(depth by tone, flat, no cast). It shares the **96dp** `SIDEBAR_WIDTH` with the glass rail (96 ≥ M3's
-80dp minimum), because that width is injected into every master-detail width-budget resolver and a
-per-variant width would fork the budget. Same destinations, same top-tablist / bottom-pinned-Profile
-structure. **No rail FAB / no header** — an IA-parity guardrail: the glass rail has neither, so a
-Material-only rail FAB would fork information architecture between the two tablet variants; if ever
-wanted, add it to both together.
-
-**Panes read M3 depth by tone, not iOS hairlines.** On the Material variant the shell column
-separators come from `m3.outlineVariant` (the M3 faint-divider role), and the panes' `GlassSurface`
-degrades to an opaque M3 tonal surface (`useEffectiveSurfaceMode` → `material` on Android). Frame the
-detail (play) pane as an M3 **List-Detail** detail pane and the wall column as an M3 **Supporting
-pane**.
-
-**The live wall reaches Android tablets and web desktops too.** `resolveWallDeviceClass` marks either
-surface `panel-capable` — there is **no** dp/CSS-pixel physical-size floor there (the iPad points floor
-`WALL_PANEL_MIN_DEVICE_LONG_SIDE` exists only because iPad points can't separate a mini from a Pro at
-the same size class; density-bucketed Android dp isn't comparable to it, and the live width budget in
-`resolveWallSurface` already decides column/strip/none). So a 10" Android tablet in landscape gets the
-dedicated wall column, a narrower one gets the strip. The kiosk hero-type distance scale skips the
-iPad points-per-inch estimate on Android (no reliable ppi from RN JS) and falls back to the pane short
-side. True Android distance-DPI calibration (native `DisplayMetrics.xdpi`) and Material You dynamic
-color are follow-ups.
-
-**Android tablets must rotate.** The app is portrait-locked app-wide; the `with-android-tablet-orientation`
-config plugin lets `sw600dp` tablets rotate to landscape (the shell's whole point) while phones stay
-portrait — the Android counterpart to the iOS `~ipad` orientation override. It's a native change, so it
-ships in a native build, not an OTA.
-
-**The right column is master-detail, not status.** At `regular` width the shell is
-`sidebar · active-tab content · detail pane` (`(tabs)/_layout.tsx`). The detail pane (`IpadPlayPane` →
-`PlayDrawer presentation="pane"`) follows the user's **selection** — tapping a list row updates it —
-mirroring Mail/Notes/Files. It is the SELECTION surface; do not repoint it at shared/live status (that
-was the original bug). A `setAsCurrent:false` open (feed / beta / climb view) previews in the pane
-without committing to the queue (`openPlayDrawer(..., { previewQueueItem })`, carried on
-`playDrawerPaneProps.openTarget.options`), so every climb-open entry point populates the pane.
-
-**The live wall is STATUS, with its own width-adaptive home** (`resolveWallSurface({ width, widthClass,
-sidebarWidth })` → `'none' | 'strip' | 'column'`):
-
-- Ambient `SidebarWallCell` in the rail footer (always, `regular`) — the glanceable cross-tab anchor.
-- A dedicated **`column`** on the trailing edge in landscape, when sidebar + browse list (≥
-  `WALL_COLUMN_CONTENT_FLOOR` 400pt) + detail pane (`DETAIL_PANE_WIDTH_WITH_WALL` 320pt) +
-  `WALL_COLUMN_WIDTH` (300pt) all fit (≈≥1116pt → both 11" and 13" landscape).
-- A compact **`strip`** docked atop the detail pane in portrait, where a 4th column would crush the
-  list (11" 834pt / 13" 1032pt).
-
-All three reuse `NowOnTheWallPanel` (extracted from `BoardSheet`, `variant: 'sheet' | 'column'`) and tap
-through to the full `BoardSheet`. Rules when adding layout-sensitive iPad components:
-
-- Decide column-vs-strip from the **computed width budget**, never a raw breakpoint — it stays correct
-  across rotation / Split View / Stage Manager.
-- Exactly **one wall surface per layout**: the shell passes `showWallCell={!showWallColumn}` to the
-  sidebar so the rail cell and the column never both show.
-- Inline columns/strips **own their safe-area insets** (`insets.top` for a top-of-shell column header,
-  `insets.bottom` for a full-height column footer). A native `@expo/ui` sheet does not handle its
-  own: the `Sheet` / `ModalSheet` wrappers add `useWindowBottomInset()` for it (see
-  `docs/mobile-sheets-vs-routes.md`, rule 5). When a strip is
-  docked above the pane, the shell sets `PlayDrawer paneTopInset={false}` so the inset isn't doubled.
-- Status may **annotate** selection (the wall button says whether the selected climb is lit; the header's
-  back chip, arrow + face, goes back to the wall's climb) — but never replace it.
-
-**The detail pane is width-budgeted, like the wall column** — not gated on a raw breakpoint. The
-persistent detail (play) pane mounts only when, after the sidebar and a minimum pane width, the browse
-list still clears the readable content floor (`WALL_COLUMN_CONTENT_FLOOR` 400pt) — via
-`resolveDetailPaneSurface` in `theme/size-class.ts`, mirroring `resolveWallSurface`. On the narrowest
-regular widths (iPad mini and 9.7–10.2" portrait, ~744–810pt) the pane would squeeze the list below the
-floor, so there it falls back to the compact bottom-sheet `PlayDrawer` and the list keeps the full
-content column. This applies the "compute from the width budget, never a raw breakpoint" rule above to
-the detail pane, closing the one place it wasn't followed.
-
-**The active sidebar row uses neutral system glyphs**, matching the bottom tab bars. The sidebar is the
-tab-bar analogue, so its active row follows the same chrome-glyph rule as `NativeTabs` and
-`MaterialTabBar`: `systemColors.label` selected / `secondaryLabel` inactive, with the `systemColors.fill`
-pill as the active affordance — not a brand-violet tint. Brand colour stays for genuine accents, per the
-chrome-glyph rule documented under Iconography.
-
-**The shell is width-adaptive, not idiom-adaptive.** Size class is driven by the launch-fixed tablet
-flag (`Platform.isPad`, Android `sw600dp`, or web physical short side ≥600px) plus the live window
-width; only width is live. The guarantee is "the right layout for the current window width on a
-tablet-sized surface," not a layout that re-derives the device idiom across Stage Manager, DeX, a
-browser resize, or an external display. Note also the deliberate choice of a
-bespoke 96dp icon-over-label rail instead of a `UISplitViewController` sidebar (iOS) / a full Material
-navigation **drawer** (Android, `expanded` width): a Phase-1 call that keeps the rail simple but means
-it won't inherit system sidebar behaviours (collapse control, pointer magnetism). Revisit in Phase 2+
-whether to adopt a true wide text sidebar / the iPadOS 18 floating-tab-bar-to-sidebar pattern, and the
-M3 navigation drawer at expanded width.
 
 ---
 
@@ -1450,31 +947,7 @@ Source: `packages/mobile/src/providers/theme-provider.tsx`.
 
 `useTheme()` returns the resolved theme; `useOptionalTheme()` returns `null` outside a provider (for
 low-level primitives like `Text` that can render before providers mount — e.g. the root error
-boundary). The theme object:
-
-```ts
-type Theme = {
-  colorScheme: 'light' | 'dark';
-  systemColors; // resolved per platform + variant
-  brandColors; // resolved per scheme
-  textStyles; // resolved per variant
-  spacing;
-  borderRadius;
-  shadows;
-  opacity;
-  springs;
-  timing;
-  motion; // variant-aware withTiming configs: motion.standard / motion.emphasized (+ timingFor)
-  variant; // 'liquidGlass' | 'material' (already resolved from 'auto')
-  radii; // variant corner radii (e.g. radii.button)
-  sheet; // variant sheet chrome (scrim/handle/corners)
-  m3; // MD3 colour roles (Material variant only)
-  themeOverride;
-  setThemeOverride; // light | dark | system
-  uiVariantPreference;
-  setUiVariant; // auto | liquidGlass | material
-};
-```
+boundary). The theme object is the `Theme` type in `packages/mobile/src/providers/theme-provider.tsx`; read it there rather than from a copy here. Its colour, type and spacing fields resolve from the token sources below.
 
 Read tokens at the top of the component and compose with `StyleSheet`. Brand colours, per-scheme
 (`Button` glass branch):
@@ -1667,7 +1140,7 @@ release velocity and retain the host's post-render handoff.
 
 On iOS, root screens use UIKit's collapsing large titles and automatic content
 insets. Controls pinned under that bar float over the list on iOS 26 and sit on a
-painted band elsewhere ("Controls pinned under the bar"). Native header controls
+painted band elsewhere ("Controls pinned under the bar" in [mobile-chrome.md](./mobile-chrome.md#controls-pinned-under-the-bar)). Native header controls
 use 38pt slots (`glassSize.bar`), with glyphs scaled to the slot (a 24pt plus
 draws at 21pt); floating controls keep their 48pt slots. A standalone avatar draws
 one circular background, while grouped bar items use UIKit's shared material.

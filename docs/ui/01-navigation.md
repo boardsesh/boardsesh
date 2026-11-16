@@ -143,7 +143,7 @@ The bar itself depends on the device:
   end of a list never covers the last row. Root
   headers use native bar items, as on iPhone, so UIKit places them beside the
   sidebar button and the top tab bar (see "Root header actions are native bar
-  items" in `docs/ai-design-guidelines.md`).
+  items" in `docs/mobile-chrome.md`).
   In landscape the player puts the board on the left and Up next / Logbook /
   Beta in a 400 pt panel on the right (`resolvePlayerArrangement`); in portrait
   the board stays on top.

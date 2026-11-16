@@ -148,7 +148,7 @@ the row, and the Logbook's `LogbookChipRow` does the same with `you/logbook-caps
 glass modifiers, with a `bordered` fallback below iOS 26 picked by `useGlassCapability()`), `CapsuleChips.android.tsx` (action chip, menu chip, menu row) and
 `CapsuleChips.web.tsx` (Paper chip, menu chip). On Android the climbs row is the climbs filtering surface
 (it replaces the Material top-chrome filter button + grade control + summary). See
-"Quick filter capsules" in `docs/ai-design-guidelines.md`.
+"Quick filter capsules" in `docs/mobile-chrome.md`.
 
 `RadioGroup` (`src/components/RadioGroup.*`) is a third, two-platform example —
 single-choice selection. iOS is a SwiftUI `Picker` with `pickerStyle('inline')` (each

@@ -368,7 +368,7 @@ capsule. On iOS both show the climb's name over its grade and one fact: who lit 
 130pt capsule), its sends for your own or a held climb ("V6 · 683 sends", no face), or how long ago when there is no
 live link ("V6 · 20m ago"). The grade never cuts. The iPhone bar mirrors its sides to give the capsule the room (#7281):
 avatar and angle leading, history and ⋯ trailing, with + in ⋯ (see "Root header actions are native bar items" in
-`docs/ai-design-guidelines.md`). Either can be hidden with a left swipe or the screen-reader action Hide; the
+`docs/mobile-chrome.md`). Either can be hidden with a left swipe or the screen-reader action Hide; the
 Material band also ends in a 48 dp × icon button. The iOS capsules carry no ×: every point it took came out of the
 climb's name. A touch that swiped is never a tap, so a swipe on the held capsule never lets go of the board or opens
 its controls.

@@ -70,7 +70,7 @@ export const textStyles = {
   /**
    * Every top-bar and header button label: Cancel, Done, Save, Clear all. A bar
    * item on iOS is body-sized (17/22); the prominent confirm sets 600 on top.
-   * See `theme/top-bar.ts` and docs/ai-design-guidelines.md, "Top-bar buttons".
+   * See `theme/top-bar.ts` and docs/mobile-chrome.md, "Top-bar buttons".
    */
   label: {
     fontSize: 17,

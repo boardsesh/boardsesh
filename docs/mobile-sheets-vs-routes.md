@@ -754,7 +754,7 @@ itself, `PlaylistDetailView` wraps it in `ownHeaderRight()`.
   Bug-report, rating and QA-verdict sheets use a leading `close`.
   Bug-report and rating sheets keep their unsaved-change guard; QA-verdict sheets dismiss directly.
   Climb-report and wall-report sheets keep the form-default dismissal controls.
-- **How the confirm looks.** One spec, in `docs/ai-design-guidelines.md`, "Top-bar buttons". Name the
+- **How the confirm looks.** One spec, in `docs/mobile-chrome.md`, "Top-bar buttons". Name the
   trailing action's `kind`: `confirm` when it saves or commits the climber's own edit (Save, Add, a Done
   that commits a value), `send` when it sends or reports to someone else (Submit, Report, Claim),
   `forward` when it moves on, applies, or closes a confirmation (Next, Apply, a post-submit Done). On

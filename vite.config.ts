@@ -790,6 +790,16 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-board-render-version.ts --check',
         cache: false,
       },
+      // The token tables in docs/ai-design-guidelines.md, generated from the real
+      // token sources between `velvet-tokens` markers. `check:` is the drift gate.
+      'docs:velvet-tokens': {
+        command: 'node --import tsx scripts/generate-velvet-token-tables.ts',
+        cache: false,
+      },
+      'check:velvet-tokens': {
+        command: 'node --import tsx scripts/generate-velvet-token-tables.ts --check',
+        cache: false,
+      },
       // The public /v1 contract as a committed document, so a contract change is
       // a reviewable JSON diff. `check:` is the drift gate.
       'generate:public-api-openapi': {
