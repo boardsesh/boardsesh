@@ -1,0 +1,9 @@
+{
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["WifiJoinModule"]
+  },
+  "android": {
+    "modules": ["com.boardsesh.wifijoin.WifiJoinModule"]
+  }
+}

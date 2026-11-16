@@ -461,6 +461,11 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'com.apple.security.application-groups': ['group.com.boardsesh.app'],
         'keychain-access-groups': ['$(AppIdentifierPrefix)group.com.boardsesh.app'],
         'aps-environment': 'production',
+        // Joining a WLED controller's own hotspot to install Bluetooth support
+        // (modules/wifi-join, #7553). The Hotspot Configuration capability must
+        // also be enabled on the com.boardsesh.app App ID in the Apple Developer
+        // portal (manual, one-time), or signing fails.
+        'com.apple.developer.networking.HotspotConfiguration': true,
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
@@ -583,6 +588,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         // is listed here too: the two knobs are independent and a future edit to
         // one should not silently drop the other.
         'CAMERA',
+        // Installing WLED Bluetooth over the controller's own hotspot (#7553):
+        // modules/wifi-join asks for WLED-AP with a WifiNetworkSpecifier, which
+        // needs this normal (install-time, no prompt) permission. Android 10+
+        // only. ACCESS_NETWORK_STATE and ACCESS_WIFI_STATE already merge in from
+        // @react-native-community/netinfo's manifest.
+        'CHANGE_NETWORK_STATE',
       ],
       // BLUETOOTH_SCAN needs `android:usesPermissionFlags="neverForLocation"` on
       // Android 12+ or the OS silently drops every scan result for a caller
