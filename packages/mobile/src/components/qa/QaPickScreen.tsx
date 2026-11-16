@@ -512,14 +512,14 @@ const QaPickRowItem = memo(function QaPickRowItem({ row, disabled, busy, onPress
           </Text>
           {row.risk !== null ? (
             <View style={[styles.riskChip, { backgroundColor: riskColor }]}>
-              <Text variant="caption2" color={brandColors.onPrimary} style={styles.chipLabel}>
+              <Text emphasized variant="caption2" color={brandColors.onPrimary}>
                 {`${row.risk}/5`}
               </Text>
             </View>
           ) : null}
         </View>
 
-        <Text variant="body" numberOfLines={2} style={styles.rowTitle}>
+        <Text emphasized variant="body" numberOfLines={2}>
           {title}
         </Text>
 
@@ -557,7 +557,7 @@ function Chip({ label, tone }: ChipProps) {
   const { systemColors } = useTheme();
   return (
     <View style={[styles.chip, { borderColor: tone ?? systemColors.separator }]}>
-      <Text variant="caption2" color={tone ?? systemColors.secondaryLabel} style={styles.chipLabel}>
+      <Text emphasized variant="caption2" color={tone ?? systemColors.secondaryLabel}>
         {label}
       </Text>
     </View>
@@ -647,9 +647,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
-  rowTitle: {
-    fontWeight: '600',
-  },
   riskChip: {
     paddingHorizontal: spacing[2],
     paddingVertical: 1,
@@ -665,8 +662,5 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
 });

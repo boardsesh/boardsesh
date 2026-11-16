@@ -135,6 +135,7 @@ function BusyWallQuestionGroupComponent({ model, onKeep, onPut }: BusyWallQuesti
         </View>
         <LargeContentViewer title={label} onActivate={onPress} style={styles.labelViewer}>
           <Text
+            emphasized
             variant="subheadline"
             color={look.foreground}
             numberOfLines={1}
@@ -171,6 +172,7 @@ function BusyWallQuestionGroupComponent({ model, onKeep, onPut }: BusyWallQuesti
           ] as const
         ).map(([label, value]) => (
           <Text
+            emphasized
             key={label}
             variant="subheadline"
             numberOfLines={1}
@@ -228,7 +230,6 @@ const styles = StyleSheet.create({
   },
   labelViewer: { flex: 1, alignItems: 'center' },
   label: {
-    fontWeight: '600',
     textAlign: 'center',
   },
   measure: {

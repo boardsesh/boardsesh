@@ -93,12 +93,12 @@ function WallWindowDigitsComponent({ color }: WallWindowDigitsProps) {
   if (!clock) return null;
   return (
     <Text
+      emphasized
       variant="subheadline"
       color={color}
       numeric
       numberOfLines={1}
       maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-      style={styles.digits}
       accessibilityElementsHidden
       importantForAccessibility="no"
       testID="play-drawer-wall-control-window-clock"
@@ -241,9 +241,6 @@ function WallWindowFrostComponent({ width, reduceMotion, timed, children }: Wall
 export const WallWindowFrost = memo(WallWindowFrostComponent);
 
 const styles = StyleSheet.create({
-  digits: {
-    fontWeight: '600',
-  },
   fill: {
     position: 'absolute',
     top: 0,

@@ -220,7 +220,7 @@ const BareLines = memo(function BareLines({ bareSent, bareTried, complete, stand
       <View style={styles.bareText}>
         {bareSent.length > 0 ? (
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            <Text variant="subheadline" style={styles.strong}>
+            <Text emphasized variant="subheadline">
               {standsAlone ? t('mobile.climberLogs.sentIt') : t('mobile.climberLogs.alsoSent')}
             </Text>{' '}
             {bareNames(bareSent, complete)}
@@ -228,7 +228,7 @@ const BareLines = memo(function BareLines({ bareSent, bareTried, complete, stand
         ) : null}
         {bareTried.length > 0 ? (
           <Text variant="subheadline" color={systemColors.secondaryLabel}>
-            <Text variant="subheadline" style={styles.strong}>
+            <Text emphasized variant="subheadline">
               {t('mobile.climberLogs.triedNoSend')}
             </Text>{' '}
             {bareNames(bareTried, complete)}
@@ -279,7 +279,7 @@ const ClimberLogsFooter = memo(function ClimberLogsFooter({
         <BareLines bareSent={bareSent} bareTried={bareTried} complete={complete} standsAlone={standsAlone} />
       ) : null}
       <View style={styles.seeAll}>
-        <Text variant="subheadline" style={styles.strong}>
+        <Text emphasized variant="subheadline">
           {t('mobile.climberLogs.seeAll')}
         </Text>
         <Icon name="chevron.right" size={16} color={systemColors.secondaryLabel} />
@@ -331,7 +331,7 @@ const ClimberLogsFromEveryone = memo(function ClimberLogsFromEveryone({
   const { systemColors } = useTheme();
   return (
     <View testID="climber-logs-everyone">
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={[styles.strong, styles.everyoneHeading]}>
+      <Text emphasized variant="footnote" color={systemColors.secondaryLabel} style={[styles.everyoneHeading]}>
         {t('mobile.climberLogs.fallthrough.latestFromEveryone')}
       </Text>
       {/* At most INLINE_CLIMBER_LOG_CAP rows on the whole card: the drawer body
@@ -550,9 +550,6 @@ const styles = StyleSheet.create({
   },
   rowRule: {
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  strong: {
-    fontWeight: '600',
   },
   everyoneHeading: {
     paddingTop: spacing[2],

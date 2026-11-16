@@ -42,7 +42,10 @@ export function AngleSlider({ angles, value, onChange, accessibilityLabel, showV
     <View style={styles.container}>
       {rangeInput}
       {showValue ? (
-        <Text style={[styles.value, { color: systemColors.label as string }]}>{`${angles[valueIndex]}°`}</Text>
+        <Text
+          emphasized
+          style={[styles.value, { color: systemColors.label as string }]}
+        >{`${angles[valueIndex]}°`}</Text>
       ) : null}
     </View>
   );
@@ -59,7 +62,6 @@ const createStyles = (textStyles: TypographyScale) =>
     },
     value: {
       fontSize: textStyles.body.fontSize,
-      fontWeight: '600',
       minWidth: 56,
       textAlign: 'center',
     },

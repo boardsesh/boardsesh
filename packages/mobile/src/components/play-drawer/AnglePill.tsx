@@ -40,10 +40,10 @@ export function AnglePill({ angle, onPress, accessibilityLabel, compact = false 
       ]}
     >
       <Text
+        emphasized
         variant="caption1"
         color={systemColors.secondaryLabel}
         maxFontSizeMultiplier={compact ? 1 : undefined}
-        style={styles.label}
       >
         {angle}°
       </Text>
@@ -62,8 +62,5 @@ const styles = StyleSheet.create({
   },
   compact: {
     paddingHorizontal: spacing[2],
-  },
-  label: {
-    fontWeight: '600',
   },
 });

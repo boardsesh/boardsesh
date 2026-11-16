@@ -660,7 +660,9 @@ export function PlaybackControls({
               accessibilityRole="text"
               accessibilityLabel={t('playView.frameCounterA11y', { index: frameIndex + 1, total: frameCount })}
             >
-              <Text style={[styles.counterCurrent, { color: systemColors.label }]}>{frameIndex + 1}</Text>
+              <Text emphasized style={[{ color: systemColors.label }]}>
+                {frameIndex + 1}
+              </Text>
               <Text style={{ color: systemColors.secondaryLabel }}>{` / ${frameCount}`}</Text>
             </Text>
           )}
@@ -861,9 +863,6 @@ const styles = StyleSheet.create({
   },
   counter: {
     fontVariant: ['tabular-nums'],
-  },
-  counterCurrent: {
-    fontWeight: '600',
   },
   wallStateChip: {
     paddingHorizontal: spacing[2],

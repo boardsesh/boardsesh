@@ -53,7 +53,7 @@ export const LogbookAngleHeader = memo(function LogbookAngleHeader({
       style={[styles.header, { borderTopColor: systemColors.separator }]}
     >
       <Text variant="footnote" color={systemColors.secondaryLabel}>
-        <Text variant="footnote" color={systemColors.label} style={styles.angle}>
+        <Text emphasized variant="footnote" color={systemColors.label}>
           {angleLabel}
         </Text>
         {parts.map((part) => ` · ${part}`).join('')}
@@ -66,8 +66,5 @@ const styles = StyleSheet.create({
   header: {
     paddingTop: spacing[3],
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  angle: {
-    fontWeight: '600',
   },
 });

@@ -151,7 +151,7 @@ export const ClimbModerationStatus = memo(function ClimbModerationStatus({
         <View style={styles.block}>
           <View style={styles.titleRow}>
             <Icon name="visibility.off" size={16} color={systemColors.secondaryLabel} />
-            <Text variant="subheadline" style={styles.titleText}>
+            <Text emphasized variant="subheadline" style={styles.titleText}>
               {t('mobile.community.moderation.hiddenTitle')}
             </Text>
           </View>
@@ -254,7 +254,6 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   titleText: {
-    fontWeight: '600',
     flexShrink: 1,
   },
   reasonList: {

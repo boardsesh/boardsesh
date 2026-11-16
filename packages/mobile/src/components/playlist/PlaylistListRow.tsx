@@ -83,7 +83,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
       <View style={styles.row}>
         <PlaylistPreviewSquare color={color} icon={icon} index={index} size={THUMB_SIZE} />
         <View style={styles.info}>
-          <Text variant="body" numberOfLines={1} style={styles.name}>
+          <Text emphasized variant="body" numberOfLines={1}>
             {name}
           </Text>
           <Text tone="secondary" variant="subheadline" numberOfLines={1}>
@@ -92,7 +92,7 @@ export const PlaylistListRow = memo(function PlaylistListRow({
         </View>
         {gradeLabel ? (
           <View style={[styles.gradePill, { backgroundColor: systemColors.tertiaryFill }]}>
-            <Text variant="caption1" numberOfLines={1} style={styles.gradeText}>
+            <Text emphasized variant="caption1" numberOfLines={1}>
               {gradeLabel}
             </Text>
           </View>
@@ -117,16 +117,10 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
-  name: {
-    fontWeight: '600',
-  },
   gradePill: {
     paddingHorizontal: spacing[2],
     paddingVertical: 2,
     borderRadius: spacing[2],
-  },
-  gradeText: {
-    fontWeight: '600',
   },
 });
 
