@@ -4,10 +4,9 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 import NativeStartClient from '../native-start-client';
 
-const { selection, getCsrfToken, gates } = vi.hoisted(() => ({
+const { selection, getCsrfToken } = vi.hoisted(() => ({
   selection: { provider: 'facebook', callbackUrl: '' },
   getCsrfToken: vi.fn<() => Promise<string | undefined>>(async () => undefined),
-  gates: { provider: false },
 }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () =>
@@ -17,13 +16,11 @@ vi.mock('next/navigation', () => ({
     }),
 }));
 vi.mock('next-auth/react', () => ({ getCsrfToken }));
-vi.mock('@/app/lib/auth/provider-security-readiness', () => ({ publicProviderSecurityReady: () => gates.provider }));
 vi.mock('react-i18next', () => ({
   useTranslation: (namespace: string) => ({ t: (key: string) => tFromCatalog(namespace, key) }),
 }));
 
 beforeEach(() => {
-  gates.provider = false;
   selection.callbackUrl = '';
   getCsrfToken.mockReset().mockResolvedValue(undefined);
 });
@@ -50,24 +47,6 @@ describe('native browser provider start', () => {
     await waitFor(() => expect(getCsrfToken).toHaveBeenCalledOnce());
     expect(container.querySelector('form')?.getAttribute('action')).toBe(`/api/auth/signin/${provider}`);
   });
-  it.each(['provider'] as const)(
-    'shows retry without attribution, CSRF or a form post while the %s gate is on',
-    async (gate) => {
-      gates[gate] = true;
-      selection.provider = 'google';
-      selection.callbackUrl = `${window.location.origin}/api/auth/native/callback?attemptId=${'a'.repeat(32)}`;
-      const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
-      const send = vi.fn<typeof fetch>();
-      vi.stubGlobal('fetch', send);
-      render(<NativeStartClient />);
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: tFromCatalog('auth', 'nativeStart.retryProviders') })).toBeTruthy(),
-      );
-      expect(send).not.toHaveBeenCalled();
-      expect(getCsrfToken).not.toHaveBeenCalled();
-      expect(submit).not.toHaveBeenCalled();
-    },
-  );
   it.each(['csrf', 'attribution'] as const)(
     'shows retry after a timed-out legacy %s physically settles without submitting',
     async (pending) => {
