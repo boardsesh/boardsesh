@@ -336,8 +336,8 @@ AUTH_FENCE_TEST_DATABASE_URL=postgresql://postgres:<password>@127.0.0.1:<port>/p
   vp run test:auth-fence
 ```
 
-Author run on 2026-11-16, PG18.6/PostGIS 3.6.4, 317-entry journal: 30/30 cases
-(12 unit, 18 full-schema) in 8.9 seconds. A deliberate `GRANT DELETE ON
+Author run on 2026-11-16, PG18.6/PostGIS 3.6.4, 317-entry journal: 31/31 cases
+(12 unit, 19 full-schema) in 9 seconds. A deliberate `GRANT DELETE ON
 oauth_session TO boardsesh_web` made the per-table case fail and name that
 statement; a `passkey` table added under `schema/auth/` made the coverage test
 fail and name it.
@@ -364,7 +364,7 @@ which drops the `CREATE ROLE` line once the role exists, so it differs from the
 (`reconcileWebRuntimeAcl`) takes the same lock, so a migration and an apply
 cannot interleave their grant reads and writes. The migration runner had no
 advisory lock of its own; the migration DDL itself is not covered, only the
-reconcile that follows it.
+reconcile that follows it. The reconcile waits at most 2 s too, then fails the migration with SQLSTATE `55P03` and a message naming an open `auth:fence apply` as the likely holder; it restores the session's own `lock_timeout` for its grants. Without `boardsesh_web` no reconcile runs, so nothing changes there.
 
 `apply` refuses without `--plan-sha256` (`PLAN_SHA256_REQUIRED`) and refuses a
 hash the live catalogue no longer produces (`PLAN_CHANGED`); `plan` and `verify`

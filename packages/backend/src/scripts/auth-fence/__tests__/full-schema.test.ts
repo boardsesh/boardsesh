@@ -257,6 +257,32 @@ describe.skipIf(!schemaFile)('full migrated local schema authority fence', () =>
       ).rejects.toMatchObject({ code: '55P03' });
     });
   });
+  it('a migration reconcile gives up on a held fence lock within 2 seconds and names the apply', async () => {
+    // A second owner session plays the migration; the first holds the lock like an idle apply.
+    const migration = postgres(address.toString(), { max: 1, onnotice: () => {} });
+    try {
+      await owner.begin(async (holder) => {
+        await holder.unsafe(WEB_FENCE_LOCK_SQL);
+        const started = Date.now();
+        await expect(
+          migration.begin(async (transaction) => {
+            await transaction`SET LOCAL lock_timeout = 0`;
+            return reconcileWebRuntimeAcl(transaction, 'postgres');
+          }),
+        ).rejects.toMatchObject({ code: '55P03', message: expect.stringContaining('auth:fence apply') });
+        expect(Date.now() - started).toBeLessThan(5000);
+      });
+      // Free lock: the session's own lock_timeout comes back for the grants.
+      const [setting] = await migration.begin(async (transaction) => {
+        await transaction`SET LOCAL lock_timeout = '7s'`;
+        await reconcileWebRuntimeAcl(transaction, 'postgres');
+        return transaction<{ value: string }[]>`SELECT current_setting('lock_timeout') AS value`;
+      });
+      expect(setting.value).toBe('7s');
+    } finally {
+      await migration.end({ timeout: 3 });
+    }
+  });
   it('verifies read-only from the CLI and refuses a reopened identity write path', async () => {
     expect(await runAuthFence(['verify', '--confirm-host', address.hostname], environment)).toMatchObject({
       mode: 'verify',

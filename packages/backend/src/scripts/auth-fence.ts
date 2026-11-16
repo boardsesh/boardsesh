@@ -1,7 +1,13 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ExplicitConnectionConfigurationError } from '../auth/email-audit/connection';
-import { WEB_FENCE_LOCK_SQL, fencePlan, readFenceCatalog, verifyFence } from './auth-fence/catalog';
+import {
+  WEB_FENCE_LOCK_SQL,
+  WEB_FENCE_LOCK_TIMEOUT,
+  fencePlan,
+  readFenceCatalog,
+  verifyFence,
+} from './auth-fence/catalog';
 import { operatorClient, parseOperatorArguments } from './auth-fence/operator';
 
 /**
@@ -30,7 +36,7 @@ export async function runAuthFence(
         if (write) {
           // Bounded wait, then hold the lock every migration's web reconcile takes,
           // so no reconcile interleaves between this catalogue read and commit.
-          await transaction.unsafe("SET LOCAL lock_timeout = '2000ms'");
+          await transaction`SELECT set_config('lock_timeout', ${WEB_FENCE_LOCK_TIMEOUT}, true)`;
           await transaction.unsafe(WEB_FENCE_LOCK_SQL);
         }
         const { sql, rollbackSql, sha256: planSha256 } = fencePlan(await readFenceCatalog(transaction));

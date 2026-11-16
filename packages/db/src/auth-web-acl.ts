@@ -381,10 +381,31 @@ export async function verifyFence(client: postgres.Sql | postgres.TransactionSql
   return { role: WEB_ROLE, verified: true as const, catalogSha256: fencePlan(catalog).sha256 };
 }
 
+/** How long a migration's web reconcile waits for the fence lock; the same bound `auth:fence apply` uses. */
+export const WEB_FENCE_LOCK_TIMEOUT = '2000ms';
+
 /** Called inside the migration owner's transaction after the broad backend grants. */
 export async function reconcileWebRuntimeAcl(client: postgres.Sql | postgres.TransactionSql, ddlOwner: string) {
   // Waits for a running `auth:fence apply`; both hold it until their transaction ends.
-  await client.unsafe(WEB_FENCE_LOCK_SQL);
+  // Bounded, so an apply left idle in its transaction fails the migration in
+  // seconds instead of holding it to the job timeout. The session's own
+  // lock_timeout comes back afterwards for the grant statements below.
+  const [previous] = await client<{ value: string }[]>`SELECT current_setting('lock_timeout') AS value`;
+  await client`SELECT set_config('lock_timeout', ${WEB_FENCE_LOCK_TIMEOUT}, true)`;
+  try {
+    await client.unsafe(WEB_FENCE_LOCK_SQL);
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code !== '55P03') throw error;
+    throw Object.assign(
+      new Error(
+        `Web reconcile could not take the BA-04 fence lock (6975, 3) within ${WEB_FENCE_LOCK_TIMEOUT}. ` +
+          'Most likely an `auth:fence apply` is open or idle in its transaction; end it and rerun the migration.',
+        { cause: error },
+      ),
+      { code: '55P03' },
+    );
+  }
+  await client`SELECT set_config('lock_timeout', ${previous?.value ?? '0'}, true)`;
   const plan = fencePlan(await readFenceCatalog(client), { ddlOwner });
   await client.unsafe(plan.sql);
   return verifyFence(client);
