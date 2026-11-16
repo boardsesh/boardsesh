@@ -532,9 +532,9 @@ jobs:
         if: steps.gate.outputs.configured == 'true' && steps.generate.outcome == 'success'
         run: |
           set -euo pipefail
-          changed="$(git status --porcelain --untracked-files=all | awk '{print $NF}' | sort | paste -sd' ' -)"
+          changed="$(git status --porcelain --untracked-files=all | cut -c4- | sort)"
           case "$changed" in
-            '' | 'CHANGELOG.md packages/mobile/src/data/changelog.generated.json') ;;
+            '' | 'CHANGELOG.md' | 'packages/mobile/src/data/changelog.generated.json' | $'CHANGELOG.md\npackages/mobile/src/data/changelog.generated.json') ;;
             *)
               echo "::error::Unexpected working-tree changes before the OTA publish: $changed"
               exit 1
