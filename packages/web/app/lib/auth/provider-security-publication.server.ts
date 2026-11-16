@@ -56,7 +56,7 @@ export function providerSecurityClaimsMatch(claims: JWT, proof: WebCredentialPro
     claims.legacy_no_sid === (proof.requiresAccountCutoff ? true : undefined)
   );
 }
-export function samePreparedProviderSecurityProof(before: WebCredentialProof, after: WebCredentialProof): boolean {
+function samePreparedProviderSecurityProof(before: WebCredentialProof, after: WebCredentialProof): boolean {
   return (
     before.userId === after.userId &&
     before.authSessionId === after.authSessionId &&
