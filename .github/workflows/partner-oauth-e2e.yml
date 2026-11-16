@@ -20,6 +20,9 @@ on:
       - 'packages/backend/src/auth/partner/**'
       - 'packages/backend/src/handlers/partner-*.ts'
       - 'packages/backend/src/handlers/public-api/**'
+      - 'packages/backend/src/graphql/resolvers/oauth-clients/**'
+      - 'packages/db/src/schema/auth/partner-oauth.ts'
+      - 'packages/db/drizzle/*partner*'
       - 'packages/web/app/oauth/**'
       - 'packages/web/app/developers/**'
       - 'packages/web/app/lib/partner-oauth/**'
@@ -28,6 +31,9 @@ on:
       - 'packages/web/partner-oauth-e2e/**'
       - 'packages/web/playwright.partner-oauth.config.ts'
       - '.github/workflows/partner-oauth-e2e.yml'
+
+permissions:
+  contents: read
 
 concurrency:
   group: partner-oauth-e2e-${{ github.ref }}-${{ github.event_name }}

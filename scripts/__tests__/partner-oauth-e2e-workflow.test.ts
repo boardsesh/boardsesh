@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
@@ -13,6 +14,7 @@ import { parse } from 'yaml';
 type Step = { name?: string; run?: string };
 type Job = { if?: string; needs?: string[]; environment?: string; steps?: Step[] };
 type Workflow = {
+  permissions?: Record<string, string>;
   on: { schedule?: Array<{ cron: string }>; pull_request?: { paths?: string[] }; workflow_dispatch?: unknown };
   concurrency: { group: string; 'cancel-in-progress': string };
   jobs: Record<string, Job>;
@@ -28,13 +30,39 @@ describe('partner-oauth-e2e.yml', () => {
     expect(`${hour}:${minute}`).not.toBe('15:23');
   });
 
-  it('runs on a pull request only for paths under partner OAuth code', () => {
-    const paths = workflow.on.pull_request?.paths ?? [];
-    expect(paths.length).toBeGreaterThan(0);
-    expect(paths).toContain('packages/backend/src/auth/partner/**');
-    expect(paths).toContain('packages/web/partner-oauth-e2e/**');
-    expect(paths).toContain('.github/workflows/partner-oauth-e2e.yml');
-    expect(paths.some((path) => path === '**' || path.startsWith('*'))).toBe(false);
+  it('runs on a pull request only for the listed partner OAuth paths', () => {
+    expect(workflow.on.pull_request?.paths).toEqual([
+      'packages/backend/src/auth/partner/**',
+      'packages/backend/src/handlers/partner-*.ts',
+      'packages/backend/src/handlers/public-api/**',
+      'packages/backend/src/graphql/resolvers/oauth-clients/**',
+      'packages/db/src/schema/auth/partner-oauth.ts',
+      'packages/db/drizzle/*partner*',
+      'packages/web/app/oauth/**',
+      'packages/web/app/developers/**',
+      'packages/web/app/lib/partner-oauth/**',
+      'packages/web/app/components/account/connected-apps-section.tsx',
+      'packages/shared/auth-protocol/src/partner-oauth*',
+      'packages/web/partner-oauth-e2e/**',
+      'packages/web/playwright.partner-oauth.config.ts',
+      '.github/workflows/partner-oauth-e2e.yml',
+    ]);
+  });
+
+  it('lists only paths that still exist, so a rename fails here instead of never triggering', () => {
+    for (const path of workflow.on.pull_request?.paths ?? []) {
+      const prefix = path.split('*')[0];
+      const target = prefix.endsWith('/') ? prefix : dirname(prefix);
+      expect(existsSync(prefix.endsWith('/') || !path.includes('*') ? prefix : target), path).toBe(true);
+      if (path.includes('*') && !prefix.endsWith('/')) {
+        const matches = readdirSync(target).filter((name) => name.startsWith(basename(prefix)));
+        expect(matches.length, path).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('asks for read-only repository access', () => {
+    expect(workflow.permissions).toEqual({ contents: 'read' });
   });
 
   it('runs the journey as the repo task', () => {
