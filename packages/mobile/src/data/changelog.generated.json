@@ -1,6 +1,28 @@
 {
-  "generatedAt": "2026-11-16T10:11:05.387Z",
+  "generatedAt": "2026-11-16T14:44:21.099Z",
   "entries": [
+    {
+      "prNumber": 7573,
+      "category": "fixed",
+      "title": "Your wall's hold photos appear when Android opens the bundled app offline.",
+      "mergedAt": "2026-11-16T14:26:52Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7573"
+    },
+    {
+      "prNumber": 7580,
+      "category": "new",
+      "title": "The Boards list finds the board in front of you on its own",
+      "mergedAt": "2026-11-16T14:26:17Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7580",
+      "body": "Add a board or a Spraywall from the + at the top of Boards\nWalls at your gym sit right under the one you're on"
+    },
+    {
+      "prNumber": 7571,
+      "category": "fixed",
+      "title": "Board previews load more reliably, and browser climb lists support vertical touch scrolling.",
+      "mergedAt": "2026-11-16T14:09:36Z",
+      "prUrl": "https://github.com/boardsesh/boardsesh/pull/7571"
+    },
     {
       "prNumber": 7556,
       "category": "new",

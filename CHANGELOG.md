@@ -4,6 +4,19 @@ User-facing changes to Boardsesh, newest first. Auto-generated from the "Release
 Notes" section of merged pull requests — do not edit by hand (a CI check rejects
 manual changes). See docs/mobile-ota-updates.md.
 
+## 2026-11-16
+
+### New
+
+- The Boards list finds the board in front of you on its own ([#7580](https://github.com/boardsesh/boardsesh/pull/7580))
+  Add a board or a Spraywall from the + at the top of Boards
+  Walls at your gym sit right under the one you're on
+
+### Fixed
+
+- Your wall's hold photos appear when Android opens the bundled app offline. ([#7573](https://github.com/boardsesh/boardsesh/pull/7573))
+- Board previews load more reliably, and browser climb lists support vertical touch scrolling. ([#7571](https://github.com/boardsesh/boardsesh/pull/7571))
+
 ## 2026-11-15
 
 ### App update
