@@ -97,14 +97,14 @@ export function DiscoverLibraryView({
             >
               <Icon name="person" size={26} color={systemColors.secondaryLabel} />
               <View style={styles.signInText}>
-                <Text variant="subheadline" style={styles.signInTitle}>
+                <Text emphasized variant="subheadline">
                   {t('library.signInBanner.title')}
                 </Text>
                 <Text tone="secondary" variant="caption1">
                   {t('library.signInBanner.description')}
                 </Text>
               </View>
-              <Text variant="subheadline" color={systemColors.accent} style={styles.signInCta}>
+              <Text emphasized variant="subheadline" color={systemColors.accent}>
                 {t('library.signInBanner.cta')}
               </Text>
             </PressableSurface>
@@ -201,12 +201,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     gap: 2,
-  },
-  signInTitle: {
-    fontWeight: '600',
-  },
-  signInCta: {
-    fontWeight: '600',
   },
   loadingContainer: {
     paddingTop: spacing[10] * 3,

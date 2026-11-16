@@ -165,7 +165,7 @@ export function HoldFilterPicker({
                   </View>
                 ) : null}
               </View>
-              <Text variant="caption1" style={styles.chipLabel} numberOfLines={1}>
+              <Text emphasized variant="caption1" numberOfLines={1}>
                 {typeLabels[option.type]}
               </Text>
             </PressableSurface>
@@ -221,9 +221,6 @@ const styles = StyleSheet.create({
   },
   excludeIcon: {
     position: 'absolute',
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
   hint: {
     textAlign: 'center',

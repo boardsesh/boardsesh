@@ -98,7 +98,7 @@ function FilterChip({ label, selected, onPress }: FilterChipProps) {
       style={styles.chipTarget}
     >
       <View style={[styles.chip, { backgroundColor: selected ? brandColors.primaryFill : systemColors.fill }]}>
-        <Text variant="footnote" color={selected ? iosSystemColors.white : systemColors.label} style={styles.chipLabel}>
+        <Text emphasized variant="footnote" color={selected ? iosSystemColors.white : systemColors.label}>
           {label}
         </Text>
       </View>
@@ -327,12 +327,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
           if (item.section === 'everyone') {
             return (
               <View style={[styles.sectionRow, { borderTopColor: systemColors.separator }]}>
-                <Text
-                  variant="footnote"
-                  accessibilityRole="header"
-                  color={systemColors.secondaryLabel}
-                  style={styles.sectionTitle}
-                >
+                <Text emphasized variant="footnote" accessibilityRole="header" color={systemColors.secondaryLabel}>
                   {angleOnly
                     ? t('mobile.climberLogs.everyone.titleAtAngle', { angle })
                     : t('mobile.climberLogs.everyone.title')}
@@ -351,6 +346,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
                 : t('mobile.climberLogs.sectionFollowingCount', { count: item.count });
           return (
             <Text
+              emphasized
               variant="footnote"
               accessibilityRole="header"
               color={systemColors.secondaryLabel}
@@ -395,6 +391,7 @@ export function ClimberLogsSheet({ visible, climb, boardName, angle, onClose, on
                 : t('mobile.climberLogs.bareHeaderTriedCount', { count: item.count });
           return (
             <Text
+              emphasized
               variant="footnote"
               accessibilityRole="header"
               color={systemColors.secondaryLabel}
@@ -624,13 +621,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     borderRadius: borderRadius.full,
   },
-  chipLabel: {
-    fontWeight: '600',
-  },
   section: {
     paddingTop: spacing[2],
     paddingBottom: spacing[1],
-    fontWeight: '600',
   },
   sectionRow: {
     flexDirection: 'row',
@@ -641,9 +634,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing[3],
     paddingBottom: spacing[1],
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  sectionTitle: {
-    fontWeight: '600',
   },
   bareHeader: {
     marginTop: spacing[2],

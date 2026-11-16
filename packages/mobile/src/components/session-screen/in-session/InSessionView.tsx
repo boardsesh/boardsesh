@@ -245,7 +245,7 @@ const SessionHistoryRow = memo(function SessionHistoryRow({
         ) : (
           <>
             <View style={styles.historyTextColumn}>
-              <Text variant="body" numberOfLines={1} style={styles.historyClimbName}>
+              <Text emphasized variant="body" numberOfLines={1}>
                 {tick.climbName ?? t('detail.unknownClimb')}
               </Text>
               <Text variant="footnote" color={systemColors.secondaryLabel} numberOfLines={1}>
@@ -672,7 +672,7 @@ export function InSessionView({
           <View style={styles.inviteRow}>
             <Icon name="person.badge.plus" size={22} color={systemColors.accent} />
             <View style={styles.inviteTextColumn}>
-              <Text variant="body" color={systemColors.accent} style={styles.inviteTitle}>
+              <Text emphasized variant="body" color={systemColors.accent}>
                 {t('mobile.session.invite')}
               </Text>
               <Text variant="footnote" color={systemColors.secondaryLabel}>
@@ -886,9 +886,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  historyClimbName: {
-    fontWeight: '600',
-  },
   historyGradePill: {
     paddingHorizontal: spacing[2],
     paddingVertical: 2,
@@ -910,8 +907,5 @@ const styles = StyleSheet.create({
   inviteTextColumn: {
     flex: 1,
     gap: 2,
-  },
-  inviteTitle: {
-    fontWeight: '600',
   },
 });

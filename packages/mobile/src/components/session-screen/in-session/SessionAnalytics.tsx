@@ -71,7 +71,7 @@ export function SessionAnalytics({
             {startedAt ? (
               <SessionTimer startedAt={startedAt} />
             ) : (
-              <Text variant="title2" style={styles.statValue}>
+              <Text emphasized variant="title2">
                 —
               </Text>
             )}
@@ -135,7 +135,7 @@ function StatTile({ value, label, icon, tint, labelColor }: StatTileProps) {
     <Card style={styles.statCard}>
       <View style={styles.statTileBody}>
         <Icon name={icon} size={18} color={tint} />
-        <Text variant="title2" style={styles.statValue}>
+        <Text emphasized variant="title2">
           {value}
         </Text>
         <Text variant="caption1" color={labelColor}>
@@ -162,9 +162,6 @@ const styles = StyleSheet.create({
   statTileBody: {
     alignItems: 'center',
     gap: spacing[1],
-  },
-  statValue: {
-    fontWeight: '700',
   },
   hardestBody: {
     gap: spacing[2],

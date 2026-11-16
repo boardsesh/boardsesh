@@ -62,7 +62,7 @@ export function SessionLeaderboard({ participants, selfUserId }: SessionLeaderbo
                 size={32}
               />
               <View style={styles.nameColumn}>
-                <Text variant="subheadline" style={styles.name} numberOfLines={1}>
+                <Text emphasized variant="subheadline" numberOfLines={1}>
                   {participant.displayName ?? t('mobile.session.inLeaderboardClimber')}
                 </Text>
               </View>
@@ -89,7 +89,7 @@ function Chip({ icon, label, tint }: { icon: IconName; label: string; tint: stri
   return (
     <View style={[styles.chip, { backgroundColor: withAlpha(tint, 0.15) }]}>
       <Icon name={icon} size={12} color={tint} />
-      <Text variant="caption1" color={tint} numeric style={styles.chipLabel}>
+      <Text emphasized variant="caption1" color={tint} numeric>
         {label}
       </Text>
     </View>
@@ -120,9 +120,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  name: {
-    fontWeight: '600',
-  },
   chips: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -135,8 +132,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: 3,
     borderRadius: borderRadius.full,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
 });

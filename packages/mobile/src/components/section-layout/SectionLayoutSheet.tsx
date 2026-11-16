@@ -134,7 +134,13 @@ export const SectionLayoutSheetIntro = memo(function SectionLayoutSheetIntro({
 export function SectionLayoutSheetGroupTitle({ title }: { title: string }) {
   const { systemColors } = useTheme();
   return (
-    <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.groupTitle} accessibilityRole="header">
+    <Text
+      emphasized
+      variant="footnote"
+      color={systemColors.secondaryLabel}
+      style={styles.groupTitle}
+      accessibilityRole="header"
+    >
       {title}
     </Text>
   );
@@ -221,7 +227,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: spacing[2] },
   actionSlot: { flex: 1 },
   actionButton: { width: '100%' },
-  groupTitle: { paddingHorizontal: spacing[4], fontWeight: '600' },
+  groupTitle: { paddingHorizontal: spacing[4] },
   footer: { paddingVertical: spacing[3], gap: spacing[2] },
   // Lines the action up with the guidance above it.
   restoreDefaults: { paddingHorizontal: spacing[4] },

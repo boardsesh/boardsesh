@@ -92,7 +92,7 @@ export function SectionHeader({ title, actionLabel, onActionPress, disclosure }:
           accessibilityLabel={actionLabel}
           style={styles.action}
         >
-          <Text variant="footnote" color={systemColors.accent} style={styles.actionText}>
+          <Text emphasized variant="footnote" color={systemColors.accent}>
             {actionLabel}
           </Text>
           <Icon maxFontSizeMultiplier={1} name="chevron.right" size={12} color={systemColors.accent} />
@@ -125,8 +125,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-  },
-  actionText: {
-    fontWeight: '600',
   },
 });

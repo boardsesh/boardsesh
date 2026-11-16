@@ -69,7 +69,7 @@ export const PlaylistFilterBar = memo(function PlaylistFilterBar({
             {t('detail.view.status', { shown: status.shown, count: status.total })}
           </Text>
           <PressableSurface onPress={status.onClear} accessibilityRole="button" hitSlop={8}>
-            <Text variant="footnote" color={systemColors.accent} style={styles.clearLabel}>
+            <Text emphasized variant="footnote" color={systemColors.accent}>
               {t('detail.view.clearFilters')}
             </Text>
           </PressableSurface>
@@ -101,8 +101,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: spacing[3],
-  },
-  clearLabel: {
-    fontWeight: '600',
   },
 });

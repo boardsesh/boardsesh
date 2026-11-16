@@ -153,7 +153,7 @@ export function QaBriefScreen() {
             </Text>
             {preview.risk !== null ? (
               <View style={[styles.riskChip, { backgroundColor: riskColorFor(riskTone(preview.risk), brandColors) }]}>
-                <Text variant="caption2" color={brandColors.onPrimary} style={styles.chipLabel}>
+                <Text emphasized variant="caption2" color={brandColors.onPrimary}>
                   {t('qa.brief.riskLabel', { risk: preview.risk })}
                 </Text>
               </View>
@@ -250,9 +250,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: 1,
     borderRadius: borderRadius.full,
-  },
-  chipLabel: {
-    fontWeight: '600',
   },
   planCard: {
     borderRadius: borderRadius.lg,

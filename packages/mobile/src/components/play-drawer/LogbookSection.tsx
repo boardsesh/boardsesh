@@ -210,7 +210,7 @@ export const LogbookSection = memo(function LogbookSection({
             accessibilityLabel={seeFullLabel}
             style={[styles.seeAll, { borderTopColor: systemColors.separator }]}
           >
-            <Text variant="subheadline" color={systemColors.accent} style={styles.seeAllLabel}>
+            <Text emphasized variant="subheadline" color={systemColors.accent} style={styles.seeAllLabel}>
               {seeFullLabel}
             </Text>
             <Icon name="chevron.right" size={STATE_GLYPH_SIZE} color={systemColors.accent} />
@@ -318,6 +318,5 @@ const styles = StyleSheet.create({
   },
   seeAllLabel: {
     flex: 1,
-    fontWeight: '600',
   },
 });

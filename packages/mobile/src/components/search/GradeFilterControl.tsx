@@ -68,6 +68,7 @@ export function GradeFilterControl({
         style={[styles.toggle, { borderRadius: radius }]}
       >
         <Text
+          emphasized
           variant="subheadline"
           color={active ? systemColors.label : systemColors.secondaryLabel}
           numberOfLines={1}
@@ -122,7 +123,6 @@ const styles = StyleSheet.create({
   },
   label: {
     flexShrink: 1,
-    fontWeight: '600',
   },
   clearButton: {
     width: 32,

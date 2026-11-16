@@ -71,7 +71,7 @@ export const PlaylistCard = memo(function PlaylistCard({
       <PlaylistPreviewSquare color={color} icon={icon} index={index} size={squareSize} />
       {gradeLabel ? (
         <View style={styles.gradeOverlay} pointerEvents="none">
-          <Text variant="caption2" numberOfLines={1} style={styles.gradeText}>
+          <Text emphasized variant="caption2" numberOfLines={1} style={styles.gradeText}>
             {gradeLabel}
           </Text>
         </View>
@@ -91,7 +91,7 @@ export const PlaylistCard = memo(function PlaylistCard({
         style={[styles.scrollCard, { width: SCROLL_SQUARE }]}
       >
         {preview}
-        <Text variant="subheadline" numberOfLines={1} style={styles.scrollName}>
+        <Text emphasized variant="subheadline" numberOfLines={1}>
           {name}
         </Text>
         <Text tone="secondary" variant="caption1" numberOfLines={1}>
@@ -110,7 +110,7 @@ export const PlaylistCard = memo(function PlaylistCard({
     >
       {preview}
       <View style={styles.gridInfo}>
-        <Text variant="subheadline" numberOfLines={1} style={styles.gridName}>
+        <Text emphasized variant="subheadline" numberOfLines={1}>
           {name}
         </Text>
         <Text tone="secondary" variant="caption1" numberOfLines={1}>
@@ -132,14 +132,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 2,
   },
-  gridName: {
-    fontWeight: '600',
-  },
   scrollCard: {
     gap: spacing[2],
-  },
-  scrollName: {
-    fontWeight: '600',
   },
   gradeOverlay: {
     position: 'absolute',
@@ -153,7 +147,6 @@ const styles = StyleSheet.create({
   },
   gradeText: {
     color: overlays.onScrim,
-    fontWeight: '600',
   },
   pinOverlay: {
     position: 'absolute',

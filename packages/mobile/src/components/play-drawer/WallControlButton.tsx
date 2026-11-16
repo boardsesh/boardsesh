@@ -367,6 +367,7 @@ function WallControlButtonComponent({
       >
         <View style={styles.labelRow}>
           <Text
+            emphasized
             variant="subheadline"
             color={rowColors.foreground}
             numberOfLines={1}
@@ -615,7 +616,6 @@ const styles = StyleSheet.create({
     gap: CHEVRON_GAP,
   },
   label: {
-    fontWeight: '600',
     textAlign: 'center',
     flexShrink: 1,
   },

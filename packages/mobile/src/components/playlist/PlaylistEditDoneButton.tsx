@@ -72,7 +72,7 @@ export function PlaylistEditDoneButton({ onPress, collapsed }: PlaylistEditDoneB
           pointerEvents="none"
         />
         <Icon name="check.small" size={18} color={actionColor} />
-        <Text variant="subheadline" color={actionColor} style={styles.label}>
+        <Text emphasized variant="subheadline" color={actionColor}>
           {label}
         </Text>
       </View>
@@ -92,8 +92,5 @@ const styles = StyleSheet.create({
     borderRadius: PILL_RADIUS,
     paddingHorizontal: 16,
     gap: 6,
-  },
-  label: {
-    fontWeight: '600',
   },
 });
