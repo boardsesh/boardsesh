@@ -28,6 +28,7 @@ import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { OfflineState } from '../OfflineState';
 import { SectionHeader } from '../SectionHeader';
+import { StatusPill } from '../StatusPill';
 import { Text } from '../Text';
 import { useOfflineQueryState } from '../../hooks/use-offline-query-state';
 import { useTheme } from '../../providers/theme-provider';
@@ -1119,17 +1120,16 @@ function BoardAccountCard({
           ) : null}
         </View>
         {showStatus ? (
-          <View
-            style={[styles.statusPill, { backgroundColor: credential ? brandColors.primaryFill : systemColors.fill }]}
-          >
-            <Text variant="caption1" color={credential ? brandColors.onPrimary : systemColors.secondaryLabel}>
-              {!credential
+          <StatusPill
+            tone={credential ? 'positive' : 'neutral'}
+            label={
+              !credential
                 ? t('aurora.mobile.notConnected')
                 : isSyncing && !isExpired
                   ? t('aurora.status.syncing')
-                  : t('aurora.status.connected')}
-            </Text>
-          </View>
+                  : t('aurora.status.connected')
+            }
+          />
         ) : null}
       </View>
 
@@ -1455,11 +1455,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing[3],
-  },
-  statusPill: {
-    borderRadius: borderRadius.full,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[1],
   },
   accountCopy: {
     marginTop: spacing[3],

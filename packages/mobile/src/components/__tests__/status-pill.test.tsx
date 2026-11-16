@@ -41,8 +41,15 @@ vi.mock('../Text', () => ({
       children,
     ),
 }));
+vi.mock('../Icon', () => ({
+  Icon: ({ name, color }: { name: string; color?: string }) =>
+    createElement('i', { 'data-icon': name, 'data-color': color }),
+}));
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ status: { fill: '#STATUS_FILL', label: '#STATUS_LABEL' } }),
+  useTheme: () => ({
+    status: { fill: '#STATUS_FILL', label: '#STATUS_LABEL' },
+    brandColors: { success: '#00FF00', warning: '#FFA500' },
+  }),
 }));
 
 import { StatusPill } from '../StatusPill';
@@ -65,5 +72,21 @@ describe('StatusPill', () => {
     const pill = JSON.parse(screen.getByTestId('pill').getAttribute('data-style') ?? '{}') as Record<string, unknown>;
     expect(pill.flexShrink).toBe(0);
     expect(screen.getByText('Ready to review').getAttribute('data-lines')).toBe('unbounded');
+  });
+
+  it('tints positive and warning with the semantic colour, never the brand violet', () => {
+    render(<StatusPill label="Connected" tone="positive" testID="good" />);
+    render(<StatusPill label="Improved" tone="warning" testID="warn" />);
+    const good = JSON.parse(screen.getByTestId('good').getAttribute('data-style') ?? '{}') as Record<string, unknown>;
+    expect(good.backgroundColor).toBe('rgba(0, 255, 0, 0.15)');
+    expect(screen.getByText('Connected').getAttribute('data-color')).toBe('#00FF00');
+    expect(screen.getByText('Improved').getAttribute('data-color')).toBe('#FFA500');
+  });
+
+  it('draws an optional glyph in the label colour', () => {
+    const { container } = render(<StatusPill label="Hidden" icon="visibility.off" />);
+    const glyph = container.querySelector('[data-icon]');
+    expect(glyph?.getAttribute('data-icon')).toBe('visibility.off');
+    expect(glyph?.getAttribute('data-color')).toBe('#STATUS_LABEL');
   });
 });
