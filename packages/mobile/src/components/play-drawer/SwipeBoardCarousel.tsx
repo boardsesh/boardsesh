@@ -358,9 +358,19 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
 }: SwipeBoardCarouselProps) {
   const { width: screenWidth } = useWindowDimensions();
   const { settings: renderSettings } = useBoardRenderSettings();
-  // A failed native scene stays on the image carousel for this board. Changing
-  // climb must not immediately retry the same failed layout on every swipe.
-  const stationaryIdentity = JSON.stringify([boardName, layoutId, sizeId, setIds, renderSettings]);
+  // Frame/context failures affect this window; another climb can use the atlas.
+  // Static failures are independently latched by binary and configuration.
+  const stationaryIdentity = JSON.stringify([
+    boardName,
+    layoutId,
+    sizeId,
+    setIds,
+    renderSettings,
+    currentFrames,
+    prevFrames,
+    nextFrames,
+    mirrored,
+  ]);
   const [failedStationaryIdentity, setFailedStationaryIdentity] = useState<string | null>(null);
   const handleStationaryUnavailable = useCallback(() => {
     setFailedStationaryIdentity(stationaryIdentity);

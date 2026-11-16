@@ -531,6 +531,38 @@ it('uses the existing carousel for Classic and retries stationary rendering afte
   expect(queryAllByTestId(/^board-/)).toHaveLength(1);
 });
 
+it('retries a new climb window after a frame failure without accepting old callbacks', async () => {
+  recorded.motionNative = true;
+  const props = {
+    ...baseProps,
+    pager: restingPager(),
+    layoutId: 8,
+    prevFrames: 'previous',
+    containerSize: { width: 350, height: 500 },
+  };
+  const { rerender, queryAllByTestId } = render(createElement(SwipeBoardCarousel, props));
+  const failedBoard = latestStationaryBoard();
+  act(() => failedBoard.onGpuTransitionStateChange('unavailable'));
+  await nextFrame();
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+  rerender(createElement(SwipeBoardCarousel, { ...props, onSwipeNext: vi.fn() }));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(3);
+
+  rerender(
+    createElement(SwipeBoardCarousel, {
+      ...props,
+      centerPage: 1,
+      prevFrames: 'current',
+      currentFrames: 'next',
+      nextFrames: 'later',
+    }),
+  );
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+  expect(latestStationaryBoard().frames).toBe('next');
+  act(() => failedBoard.onGpuTransitionStateChange('unavailable'));
+  expect(queryAllByTestId(/^board-/)).toHaveLength(1);
+});
+
 it('keeps readiness on retained pages and prunes removed slots without accepting their late callbacks', async () => {
   const props = { ...baseProps, containerSize: { width: 350, height: 500 }, prevFrames: 'previous' };
   const { rerender, unmount } = render(createElement(SwipeBoardCarousel, props));
