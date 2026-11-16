@@ -8,6 +8,12 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### New
 
+- The Boards sheet lists your gym's walls together, with the one you're on marked ([#7643](https://github.com/boardsesh/boardsesh/pull/7643))
+  Your boards is a quick list, so every board you own is one tap away
+  Walking into another gym? The board in front of you is offered first
+- Text follows your iPhone's Larger Text setting the way Apple's own apps do ([#7635](https://github.com/boardsesh/boardsesh/pull/7635))
+- The browser app now reloads when your account changes in another tab, so you never see someone else's logbook. ([#7632](https://github.com/boardsesh/boardsesh/pull/7632))
+- On boardsesh.com, switching accounts in one tab now refreshes your other tabs, so they never show the last account's data. ([#7634](https://github.com/boardsesh/boardsesh/pull/7634))
 - Cleaner screens on iOS 26: the grey band behind the top bar is gone ([#7603](https://github.com/boardsesh/boardsesh/pull/7603))
 - The Boards list finds the board in front of you on its own ([#7580](https://github.com/boardsesh/boardsesh/pull/7580))
   Add a board or a Spraywall from the + at the top of Boards
@@ -15,6 +21,11 @@ manual changes). See docs/mobile-ota-updates.md.
 
 ### Fixed
 
+- Session recaps keep grades and climb names clear of navigation controls. ([#7628](https://github.com/boardsesh/boardsesh/pull/7628))
+- Deleting your own climb from a list works again. ([#7599](https://github.com/boardsesh/boardsesh/pull/7599))
+  A name change, vote or report now finishes even if you leave the screen straight away.
+  A profile save with a new photo is still cancelled if you leave before it finishes.
+- Your set climbs get their own My climbs playlist in Discover. Pin it, play it, and find new saves straight away. ([#7602](https://github.com/boardsesh/boardsesh/pull/7602))
 - Dismiss the bottom-bar hint by tapping its text or the larger ×. ([#7601](https://github.com/boardsesh/boardsesh/pull/7601))
 - The Climbs list no longer goes blank after you pick a grade ([#7570](https://github.com/boardsesh/boardsesh/pull/7570))
 - Your wall's hold photos appear when Android opens the bundled app offline. ([#7573](https://github.com/boardsesh/boardsesh/pull/7573))
