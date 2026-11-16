@@ -33,8 +33,8 @@ import {
 } from './board-card-menu';
 import type { BoardDownloadState } from './board-offline-state';
 
-/** The minimal board shape the card renders. UserBoard, PopularBoardConfig, and
- *  BLE-resolved boards all map onto this so one card serves every section. */
+/** The minimal board shape the card renders. Saved boards and BLE-resolved
+ *  boards both map onto this so one card serves every section. */
 export type DiscoveryBoardItem = {
   /** Stable key for the list. */
   key: string;
@@ -51,8 +51,8 @@ export type DiscoveryBoardItem = {
   isActive?: boolean;
   /**
    * Whether the signed-in user owns this board, stamped once per list build by
-   * `userBoardToItem`. `undefined` means "not resolvable here" — Near you /
-   * Popular, or a session with no identity — and offers neither unfollow nor
+   * `userBoardToItem`. `undefined` means "not resolvable here" — Near you, In
+   * range, or a session with no identity — and offers neither unfollow nor
    * delete rather than guessing (offering to unfollow the user's own wall is
    * worse than offering nothing).
    */
@@ -60,8 +60,8 @@ export type DiscoveryBoardItem = {
   /** Whether the viewer pinned this board to the front of their list. */
   isPinned?: boolean;
   /**
-   * Offline download state for this board's scope. Absent on cards that cannot
-   * be downloaded as a board (popular configs — see `popularConfigToItem`).
+   * Offline download state for this board's scope. Absent on cards that are not
+   * the climber's own or followed boards.
    */
   offlineState?: BoardDownloadState;
   sprayImport?: SprayWallImportProgress | null;
@@ -126,8 +126,8 @@ export type BoardDiscoveryCardViewProps = {
   onPress: (item: DiscoveryBoardItem) => void;
   /**
    * The ⋯ menu, the hold on the card and the screen-reader actions, all from the
-   * same rows. Absent on Popular (a config, not a board) and on the offline
-   * list (every row behind it needs a connection), which draw a plain card.
+   * same rows. Absent on the offline list (every row behind it needs a
+   * connection), which draws a plain card.
    */
   menu?: BoardCardMenu;
 };

@@ -18,15 +18,18 @@ vi.mock('../../../src/providers/queue-provider', () => ({
 //
 // #5654: the launch gate opens /boards?source=onboarding&firstBoard=1 for a new
 // account with no board. This suite pins what the SCREEN does in that mode:
-// "Where do you climb?" instead of the discovery tiles, location asked on the
+// the In range slot on top, then "Where do you climb?", location asked on the
 // gym tap rather than on open, each answer wired to the flow behind it, and an
 // onboarding bind that lands on Climbs. The block's own rendering has its own
-// suite (FirstBoardChoice.test.tsx), so here it is a prop-capturing stub.
+// suite (FirstBoardChoice.test.tsx), so here it is a prop-capturing stub, and so
+// is the In range slot (InRangeSection; its decisions are in-range-view.test.ts).
 //
 // It also pins the two other ways into the same states: Climbs' "Find my
 // board" (source=no_board), which gets the block only for an account with no
-// boards and never tags the bind as onboarding, and the ordinary picker's Find
-// nearby tile, which says what happened instead of going dead.
+// boards and never tags the bind as onboarding, and the ordinary picker's Near
+// you, which searches on open when location is already allowed and says what
+// happened instead of going dead. Last, where each of the In range slot's ways
+// forward for a board it can't name lands.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, screen } from '@testing-library/react';
 import { renderWithNativeTextCheck as render } from '../../../test/native-text-contract';
@@ -34,6 +37,7 @@ import { createElement, type ReactNode } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import type { FirstBoardGymState } from '../../../src/lib/boards/first-board-gym-state';
 import type { LocationStatus } from '../../../src/lib/use-device-location';
+import type { QuickstartRow } from '../../../src/components/board-discovery/quickstart-scan-rows';
 
 type Children = { children?: ReactNode };
 type CarouselItem = { key: string; title: string };
@@ -42,30 +46,41 @@ type ChoiceProps = {
   nearbyResults: ReactNode;
   onGym: () => void;
   onOwn: () => void;
-  onScan: () => void;
+  onAddSprayWall: () => void;
   onFindGymOnMap: () => void;
   onOpenSettings: () => void;
   onRetryNearby: () => void;
   nearbyBoardType?: string | null;
   onShowAllNearby?: () => void;
-  onAddSprayWall?: () => void;
+};
+type UnnamedRow = Extract<QuickstartRow, { kind: 'moonboard' | 'bare_name' | 'unknown_setup' }>;
+type InRangeProps = {
+  view: { content: { kind: string }; scanning: boolean };
+  onStart: () => void;
+  onOpenSettings: () => void;
+  onRetryLookup: () => void;
+  onPickBoard: (item: { key: string }) => void;
+  onUseMyLocation: (row: UnnamedRow) => void;
+  onSearchGyms: (row: UnnamedRow) => void;
+  onOwnBoard: (row: UnnamedRow) => void;
 };
 
 const routerMock = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
-const quickstartHandle = vi.hoisted(() => ({ snapToIndex: vi.fn(), expand: vi.fn(), close: vi.fn() }));
+const navigationMock = vi.hoisted(() => ({ setOptions: vi.fn() }));
 const setActiveBoardMock = vi.hoisted(() => vi.fn());
 const requestLocationMock = vi.hoisted(() => vi.fn());
+const requestLocationIfAllowedMock = vi.hoisted(() => vi.fn());
 const refreshLocationMock = vi.hoisted(() => vi.fn());
 const chooseFirstBoardPathMock = vi.hoisted(() => vi.fn());
 const openAppSettingsMock = vi.hoisted(() => vi.fn());
 const refetchNearbyMock = vi.hoisted(() => vi.fn());
+const setPendingRecognitionMock = vi.hoisted(() => vi.fn());
 const locationOptions = vi.hoisted(() => ({ last: undefined as { retryAfterDenial?: boolean } | undefined }));
 const trackingCtrl = vi.hoisted(() => ({ entryArgs: [] as Array<string | null> }));
 const trackMock = vi.hoisted(() => vi.fn());
 const markOnboardingSeenMock = vi.hoisted(() => vi.fn());
-type ModeCardProps = { label: string; sublabel?: string; state?: string; onPress: () => void };
-const modeCards = vi.hoisted(() => ({ byLabel: new Map<string, ModeCardProps>() }));
 const choiceProps = vi.hoisted(() => ({ last: null as ChoiceProps | null }));
+const inRangeProps = vi.hoisted(() => ({ last: null as InRangeProps | null }));
 type CarouselProps = {
   items: CarouselItem[];
   onSelect: (item: CarouselItem) => void;
@@ -78,13 +93,16 @@ const carouselProps = vi.hoisted(() => ({
   /** The last props of each carousel, keyed by its first item. */
   byFirstKey: new Map<string, CarouselProps>(),
 }));
-type QuickstartSheetProps = {
-  active: boolean;
-  onFindAtGym: (boardType: string) => void;
-  onOwnBoard: (boardType: string) => void;
-};
-const quickstartProps = vi.hoisted(() => ({ last: null as QuickstartSheetProps | null }));
 const nearbyArgs = vi.hoisted(() => ({ last: [] as unknown[] }));
+// The In range slot's scan, driven by hand.
+const scanCtrl = vi.hoisted(() => ({
+  phase: 'needs_permission' as string,
+  rows: [] as unknown[],
+  start: vi.fn(),
+  stop: vi.fn(),
+  retryLookup: vi.fn(),
+  options: null as { focused: boolean; autoStart: boolean } | null,
+}));
 
 const state = vi.hoisted(() => ({
   params: { source: 'onboarding', firstBoard: '1' } as Record<string, string | undefined>,
@@ -96,6 +114,7 @@ const state = vi.hoisted(() => ({
   nearbyPaused: false,
   nearbyError: false,
   locationStatus: 'idle' as LocationStatus,
+  autoScanEnabled: true,
 }));
 
 const gymWall = {
@@ -131,6 +150,8 @@ vi.mock('../../../src/lib/spray/use-spray-import-progress', () => ({
 vi.mock('expo-router', () => ({
   useRouter: () => routerMock,
   useLocalSearchParams: () => state.params,
+  useIsFocused: () => true,
+  useNavigation: () => navigationMock,
 }));
 
 // Link eligibility is covered in its own hook and activation tests. This picker
@@ -172,11 +193,6 @@ vi.mock('../../../src/lib/graphql/hooks', () => ({
     isRefetching: false,
     refetch: vi.fn(),
   }),
-  usePopularBoardConfigs: () => ({
-    data: {
-      configs: [{ boardType: 'kilter', layoutId: 1, sizeId: 10, setIds: [1], displayName: 'Kilter Original 12x12' }],
-    },
-  }),
   useNearbyBoards: (...args: unknown[]) => {
     nearbyArgs.last = args;
     return nearbyBoardsResult();
@@ -207,6 +223,7 @@ vi.mock('../../../src/lib/use-device-location', () => ({
       status: state.locationStatus,
       coords: state.locationStatus === 'granted' ? { latitude: 1, longitude: 2 } : null,
       request: requestLocationMock,
+      requestIfAllowed: requestLocationIfAllowedMock,
       refresh: refreshLocationMock,
     };
   },
@@ -255,6 +272,7 @@ vi.mock('../../../src/offline/use-confirm-board-download', () => ({
 }));
 vi.mock('../../../src/providers/feature-flags-provider', () => ({
   useOfflineDownloadsEnabled: () => true,
+  usePickerAutoScanEnabled: () => state.autoScanEnabled,
 }));
 vi.mock('../../../src/offline/use-downloaded-scope-keys', () => ({ useDownloadedScopeKeys: () => ({ data: [] }) }));
 vi.mock('../../../src/offline/use-offline-catalog-state', () => ({ useOfflineCatalogState: () => null }));
@@ -279,28 +297,32 @@ vi.mock('../../../src/components/Button', () => ({
 vi.mock('../../../src/components/ActivityIndicator', () => ({
   ActivityIndicator: () => createElement('div', { 'data-testid': 'spinner' }),
 }));
-vi.mock('../../../src/components/board-discovery/BoardModeCard', () => ({
-  BoardModeCard: (props: ModeCardProps) => {
-    modeCards.byLabel.set(props.label, props);
-    return createElement(
-      'button',
-      { 'data-mode-card': props.label, onClick: props.onPress, type: 'button' },
-      props.label,
-    );
+vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => ({
+  usePickerBoardScan: (options: { focused: boolean; autoStart: boolean }) => {
+    scanCtrl.options = options;
+    return {
+      phase: scanCtrl.phase,
+      rows: scanCtrl.rows,
+      start: scanCtrl.start,
+      stop: scanCtrl.stop,
+      openSettings: vi.fn(),
+      retryLookup: scanCtrl.retryLookup,
+    };
   },
 }));
-vi.mock('../../../src/components/board-discovery/BluetoothQuickstartSheet', async () => {
-  const { forwardRef, useImperativeHandle } = await import('react');
-  return {
-    BluetoothQuickstartSheet: forwardRef<typeof quickstartHandle, QuickstartSheetProps>(
-      function QuickstartSheetMock(props, ref) {
-        useImperativeHandle(ref, () => quickstartHandle);
-        quickstartProps.last = props;
-        return null;
-      },
-    ),
-  };
-});
+vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
+  InRangeSection: (props: InRangeProps) => {
+    inRangeProps.last = props;
+    return createElement('div', { 'data-testid': 'in-range', 'data-kind': props.view.content.kind });
+  },
+}));
+vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({ AlsoAtGymSection: () => null }));
+vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
+vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
+  setPendingBoardRecognition: setPendingRecognitionMock,
+  consumePendingBoardRecognition: vi.fn(async () => {}),
+}));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
 
 vi.mock('../../../src/components/board-discovery/BoardCarousel', () => ({
@@ -328,14 +350,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   setActiveBoardMock.mockResolvedValue(undefined);
   markOnboardingSeenMock.mockResolvedValue(undefined);
+  requestLocationIfAllowedMock.mockResolvedValue(undefined);
   trackingCtrl.entryArgs = [];
-  modeCards.byLabel.clear();
   choiceProps.last = null;
+  inRangeProps.last = null;
   carouselProps.last = null;
-  quickstartProps.last = null;
   carouselProps.renderedKeys = [];
   carouselProps.byFirstKey.clear();
   nearbyArgs.last = [];
+  scanCtrl.phase = 'needs_permission';
+  scanCtrl.rows = [];
+  scanCtrl.options = null;
   state.params = { source: 'onboarding', firstBoard: '1' };
   state.myBoards = [];
   state.nearbyBoards = [];
@@ -344,6 +369,7 @@ beforeEach(() => {
   state.nearbyPaused = false;
   state.nearbyError = false;
   state.locationStatus = 'idle';
+  state.autoScanEnabled = true;
   refreshLocationMock.mockResolvedValue(false);
 });
 
@@ -352,17 +378,22 @@ function choice(): ChoiceProps {
   return choiceProps.last;
 }
 
+function inRange(): InRangeProps {
+  if (!inRangeProps.last) throw new Error('the In range slot did not render');
+  return inRangeProps.last;
+}
+
 describe('the picker in first-board mode', () => {
-  it('asks where they climb instead of showing the discovery tiles', () => {
+  it('puts the In range slot first, then asks where they climb', () => {
     render(createElement(BoardSelection));
 
-    expect(screen.getByTestId('first-board-choice')).toBeTruthy();
-    expect(document.querySelector('[data-mode-card]')).toBeNull();
-    // Each Popular setups card builds a NEW public board: a gym climber tapping
-    // one makes a duplicate of their gym's wall.
-    expect(screen.queryByText('mobile.discovery.popularTitle')).toBeNull();
+    const slot = screen.getByTestId('in-range');
+    const block = screen.getByTestId('first-board-choice');
+    expect(slot.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('mobile.emptyTitle')).toBeNull();
     expect(screen.queryByText('mobile.onboardingPrompt')).toBeNull();
+    // Near you belongs to "At a gym" here, not to the screen.
+    expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
   });
 
   it('turns its choice tracking on, as the launch gate entry', () => {
@@ -374,6 +405,8 @@ describe('the picker in first-board mode', () => {
   it('does not ask for location until "At a gym" is tapped', () => {
     render(createElement(BoardSelection));
     expect(requestLocationMock).not.toHaveBeenCalled();
+    // Not even the silent read: the question comes with its reason.
+    expect(requestLocationIfAllowedMock).not.toHaveBeenCalled();
     expect(choice().gymState).toBe('idle');
 
     act(() => {
@@ -427,6 +460,24 @@ describe('the picker in first-board mode', () => {
       pathname: '/boards/create',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', preset: '1' },
     });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', { kind: 'board', surface: 'first_run' });
+  });
+
+  // My Spraywall is always offered now: the wall wizard binds with the
+  // onboarding source, so a first wall closes out first run like the builder.
+  it('opens the wall wizard with the onboarding source', () => {
+    render(createElement(BoardSelection));
+    choice().onAddSprayWall();
+
+    expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('spray_wall');
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/boards/spray/new',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding' },
+    });
+    expect(trackMock).toHaveBeenCalledWith('Board Picker Add Selected', {
+      kind: 'spraywall',
+      surface: 'first_run',
+    });
   });
 
   // The only way forward from "Location is off" and "Nothing within 20 km". The
@@ -440,7 +491,7 @@ describe('the picker in first-board mode', () => {
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('gym_map');
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: expect.objectContaining({ source: 'onboarding', returnTo: '/(tabs)/climbs' }),
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker' },
     });
   });
 
@@ -458,12 +509,15 @@ describe('the picker in first-board mode', () => {
     expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports the Bluetooth scan choice', () => {
+  // The In range slot replaced the "Scan for the board in front of me" link,
+  // and reports as its `scan` path.
+  it('reports a tap on the In range slot as the scan path', () => {
     render(createElement(BoardSelection));
     act(() => {
-      choice().onScan();
+      inRange().onStart();
     });
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('scan');
+    expect(scanCtrl.start).toHaveBeenCalledOnce();
   });
 
   it('lands on Climbs after a pick', async () => {
@@ -492,22 +546,53 @@ describe('the picker in first-board mode', () => {
   });
 });
 
-// The wall wizard binds without the onboarding source, so it would leave
-// first-run open; the launch gate's showing keeps its three answers.
-describe('the launch gate showing and spray walls', () => {
-  it('keeps spray walls out of the launch onboarding flow', () => {
+describe('the In range scan', () => {
+  it('scans by itself on open, unless the kill switch says to wait for a tap', () => {
     render(createElement(BoardSelection));
-    expect(choice().onAddSprayWall).toBeUndefined();
+    expect(scanCtrl.options).toMatchObject({ focused: true, autoStart: true });
+
+    state.autoScanEnabled = false;
+    render(createElement(BoardSelection));
+    expect(scanCtrl.options).toMatchObject({ focused: true, autoStart: false });
+  });
+
+  // A pick from the hero binds the board as an onboarding pick, after the scan
+  // has ended.
+  it('binds the board in front of them, as an onboarding pick, after ending the scan', async () => {
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [{ kind: 'board', key: 'board:gym-wall', board: gymWall, rssi: -50, recognizedBy: 'serial' }];
+    render(createElement(BoardSelection));
+    expect(inRange().view.content.kind).toBe('hero');
+
+    await act(async () => {
+      inRange().onPickBoard({ key: 'board:gym-wall' });
+    });
+
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    expect(setActiveBoardMock).toHaveBeenCalledWith(gymWall);
+    expect(markOnboardingSeenMock).toHaveBeenCalled();
+    expect(trackMock).toHaveBeenCalledWith(
+      'Board Picker Selection Completed',
+      expect.objectContaining({ pickSource: 'bluetooth' }),
+    );
+  });
+
+  it('retries a lookup with no signal through the scan', () => {
+    render(createElement(BoardSelection));
+    act(() => {
+      inRange().onRetryLookup();
+    });
+    expect(scanCtrl.retryLookup).toHaveBeenCalledOnce();
   });
 });
 
 describe('the ordinary onboarding picker', () => {
-  it('keeps the discovery tiles and pre-resolves location', () => {
+  it('shows the ordinary list and pre-resolves location', () => {
     state.params = { source: 'onboarding' };
     render(createElement(BoardSelection));
 
     expect(screen.queryByTestId('first-board-choice')).toBeNull();
-    expect(document.querySelector('[data-mode-card]')).not.toBeNull();
+    expect(screen.getByTestId('in-range')).toBeTruthy();
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
     expect(trackingCtrl.entryArgs.every((entry) => entry === null)).toBe(true);
   });
@@ -518,16 +603,14 @@ describe('the ordinary onboarding picker', () => {
     expect(screen.queryByTestId('first-board-choice')).toBeNull();
   });
 
-  // The Find gym tile forwards `source` too, so a gym-map pick from the ordinary
+  // Near you's Map forwards `source` too, so a gym-map pick from the ordinary
   // onboarding picker is the activation bind, like a pick from its own list (the
   // gym finder's side is pinned in app/gyms/__tests__/index.test.tsx).
   it('opens the gym map as an onboarding pick', () => {
     state.params = { source: 'onboarding' };
     render(createElement(BoardSelection));
 
-    act(() => {
-      screen.getByText('mobile.discovery.findGym').click();
-    });
+    fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
@@ -539,13 +622,11 @@ describe('the ordinary onboarding picker', () => {
     state.params = {};
     render(createElement(BoardSelection));
 
-    act(() => {
-      screen.getByText('mobile.discovery.findGym').click();
-    });
+    fireEvent.click(screen.getByText('mobile.discovery.nearbyMap'));
 
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: { returnTo: '/(tabs)/climbs', source: undefined, from: 'picker' },
+      params: { returnTo: '/(tabs)/climbs', from: 'picker' },
     });
   });
 });
@@ -559,7 +640,6 @@ describe('the picker opened from Climbs with no board', () => {
     render(createElement(BoardSelection));
 
     expect(screen.getByTestId('first-board-choice')).toBeTruthy();
-    expect(document.querySelector('[data-mode-card]')).toBeNull();
     expect(trackingCtrl.entryArgs.at(-1)).toBe('no_board');
     // No location prompt on open here either: it comes with "At a gym".
     expect(requestLocationMock).not.toHaveBeenCalled();
@@ -570,7 +650,6 @@ describe('the picker opened from Climbs with no board', () => {
     render(createElement(BoardSelection));
 
     expect(screen.queryByTestId('first-board-choice')).toBeNull();
-    expect(document.querySelector('[data-mode-card]')).not.toBeNull();
     expect(screen.getByText('mobile.discovery.yourBoardsTitle')).toBeTruthy();
     expect(trackingCtrl.entryArgs.every((entry) => entry === null)).toBe(true);
   });
@@ -596,18 +675,14 @@ describe('the picker opened from Climbs with no board', () => {
     });
   });
 
-  // The tile row this block replaced carried the spray wall tile, and My own
-  // board's builder cannot make a spray wall.
-  it('offers a spray wall from the no-board entry', () => {
+  it('forwards its own source to the wall wizard', () => {
     render(createElement(BoardSelection));
-    const onAddSprayWall = choice().onAddSprayWall;
-    if (!onAddSprayWall) throw new Error('no spray wall path');
+    choice().onAddSprayWall();
 
-    onAddSprayWall();
     expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('spray_wall');
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/boards/spray/new',
-      params: { returnTo: '/(tabs)/climbs' },
+      params: { returnTo: '/(tabs)/climbs', source: 'no_board' },
     });
   });
 
@@ -638,44 +713,38 @@ describe('the picker opened from Climbs with no board', () => {
   });
 });
 
-describe("the ordinary picker's Find nearby tile", () => {
+describe("the ordinary picker's Near you", () => {
   beforeEach(() => {
     state.params = {};
     state.myBoards = [gymWall];
   });
 
-  function nearbyTile(): ModeCardProps {
-    const tile = modeCards.byLabel.get('mobile.discovery.findNearby');
-    if (!tile) throw new Error('Find nearby tile did not render');
-    return tile;
-  }
+  // A climber who already allowed location gets their gyms on open, with no
+  // prompt; everyone else gets one row that asks.
+  it('searches on open only when location is already allowed', () => {
+    render(createElement(BoardSelection));
+    expect(requestLocationIfAllowedMock).toHaveBeenCalledOnce();
+    expect(requestLocationMock).not.toHaveBeenCalled();
+  });
 
-  it('says nothing before it is tapped', () => {
+  it('offers one row that asks, before location was ever asked', () => {
     render(createElement(BoardSelection));
 
-    expect(nearbyTile().state).toBe('idle');
+    expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
     expect(screen.queryByText('mobile.firstBoard.locationOff')).toBeNull();
     expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
-    nearbyTile().onPress();
+    fireEvent.click(screen.getByText('mobile.discovery.showNearby'));
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
   });
 
-  // It used to go dim and untappable, with an "Allow location" line that could
-  // not be tapped either.
-  it('says location is off, offers Settings, and stays tappable', () => {
+  it('says location is off and offers Settings', () => {
     state.locationStatus = 'denied';
     render(createElement(BoardSelection));
 
     expect(screen.getByText('mobile.firstBoard.locationOff')).toBeTruthy();
-    expect(nearbyTile().state).toBe('idle');
-    expect(nearbyTile().sublabel).toBe('mobile.discovery.locationDenied');
-
+    expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
     fireEvent.click(screen.getByText('mobile.firstBoard.openSettings'));
     expect(openAppSettingsMock).toHaveBeenCalledTimes(1);
-
-    // Back from Settings, the tile asks again rather than doing nothing.
-    nearbyTile().onPress();
-    expect(requestLocationMock).toHaveBeenCalledTimes(1);
     expect(locationOptions.last).toEqual({ retryAfterDenial: true });
   });
 
@@ -685,8 +754,7 @@ describe("the ordinary picker's Find nearby tile", () => {
     expect(screen.getByText('mobile.firstBoard.locationOff')).toBeTruthy();
   });
 
-  // It used to fall back to idle with no word, and a second tap did nothing.
-  it('says when nothing is within 20 km and points to the gym map', async () => {
+  it('says when nothing is within 20 km and points to the gym map', () => {
     state.locationStatus = 'granted';
     render(createElement(BoardSelection));
 
@@ -694,29 +762,8 @@ describe("the ordinary picker's Find nearby tile", () => {
     fireEvent.click(screen.getByText('mobile.firstBoard.findGymOnMap'));
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/gyms',
-      params: { returnTo: '/(tabs)/climbs', source: undefined, from: 'picker' },
+      params: { returnTo: '/(tabs)/climbs', from: 'picker' },
     });
-
-    // Same spot: a fresh fix, then the same search again.
-    await act(async () => {
-      nearbyTile().onPress();
-    });
-    expect(refreshLocationMock).toHaveBeenCalledTimes(1);
-    expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
-    expect(requestLocationMock).not.toHaveBeenCalled();
-  });
-
-  // A climber who moved gets new coordinates, which is a new search by itself.
-  it('searches from where the climber is now after they move', async () => {
-    state.locationStatus = 'granted';
-    refreshLocationMock.mockResolvedValue(true);
-    render(createElement(BoardSelection));
-
-    await act(async () => {
-      nearbyTile().onPress();
-    });
-    expect(refreshLocationMock).toHaveBeenCalledTimes(1);
-    expect(refetchNearbyMock).not.toHaveBeenCalled();
   });
 
   it('says the lookup failed and retries it', () => {
@@ -730,60 +777,71 @@ describe("the ordinary picker's Find nearby tile", () => {
     expect(refetchNearbyMock).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the searching to the tile spinner', () => {
+  it('says it is looking while location and the list load', () => {
     state.locationStatus = 'loading';
     render(createElement(BoardSelection));
-
-    expect(nearbyTile().state).toBe('loading');
-    expect(screen.queryByText('mobile.firstBoard.searching')).toBeNull();
+    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
   });
 
-  it('shows the boards it found under the tile', () => {
+  it('shows the boards it found, with the map beside the title', () => {
     state.locationStatus = 'granted';
     state.nearbyBoards = [{ ...gymWall, uuid: 'near-wall' }];
     render(createElement(BoardSelection));
 
-    expect(nearbyTile().state).toBe('done');
-    expect(nearbyTile().sublabel).toBe('mobile.discovery.nearbyShowing');
     expect(screen.getByText('mobile.discovery.nearbyTitle')).toBeTruthy();
+    expect(screen.getByText('mobile.discovery.nearbyMap')).toBeTruthy();
+    expect(carouselProps.renderedKeys).toContainEqual(['near-wall']);
     expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
     // Outside onboarding and the first-board choice, Near you cards get a menu.
     expect(carouselProps.byFirstKey.get('near-wall')?.menuCapabilities).toBeDefined();
     expect(carouselProps.byFirstKey.get('near-wall')?.onMenuAction).toBeTypeOf('function');
   });
+
+  // Your boards sits above Near you.
+  it('lists Your boards before Near you', () => {
+    render(createElement(BoardSelection));
+    const yourBoards = screen.getByText('mobile.discovery.yourBoardsTitle');
+    const nearYou = screen.getByText('mobile.discovery.nearbyTitle');
+    expect(yourBoards.compareDocumentPosition(nearYou) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
-// Slice 1 of the first-run redesign: the quickstart scan lists boards it can't
-// name (a MoonBoard, a box with no serial, a serial nobody saved) with two ways
-// forward. The sheet's side, including closing itself before it hands over, is
-// in bluetooth-quickstart-sheet.test.tsx; this is where each one lands.
-describe("the Bluetooth quickstart's ways forward for a board it can't name", () => {
+// The In range slot's three ways forward for a board it heard but couldn't name
+// (a MoonBoard, a box with no serial, a serial nobody saved). Each ends the scan
+// and holds the box for the next bind (pending-board-recognition.ts).
+describe("the In range slot's ways forward for a board it can't name", () => {
   const moonboardWall = { ...gymWall, uuid: 'moon-wall', name: 'Crux MoonBoard', boardType: 'moonboard' } as UserBoard;
+  const MOONBOARD_ROW: UnnamedRow = {
+    kind: 'moonboard',
+    key: 'moonboard:moonboard',
+    boardType: 'moonboard',
+    rssi: -55,
+    deviceId: 'MOON-BOX',
+  };
 
-  function quickstart(): QuickstartSheetProps {
-    if (!quickstartProps.last) throw new Error('the quickstart sheet did not render');
-    return quickstartProps.last;
-  }
+  beforeEach(() => {
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [MOONBOARD_ROW];
+  });
 
-  function openScan() {
+  function useMyLocation() {
     act(() => {
-      choice().onScan();
+      inRange().onUseMyLocation(MOONBOARD_ROW);
     });
   }
 
-  it('stops the scan and shows the gyms near them, only that type', () => {
+  it('ends the scan, holds the box, and shows the gyms near them, only that type', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    expect(quickstart().active).toBe(true);
+    expect(inRange().view.content.kind).toBe('unnamed');
 
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
-    expect(quickstart().active).toBe(false);
+    useMyLocation();
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    expect(setPendingRecognitionMock).toHaveBeenCalledExactlyOnceWith({ deviceId: 'MOON-BOX', boardType: 'moonboard' });
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
     expect(choice().gymState).toBe('searching');
     expect(choice().nearbyBoardType).toBe('moonboard');
-    // The climber chose the scan; the gym list is where it led, not a new path.
+    // The climber chose the slot; the gym list is where it led, not a new path.
+    expect(chooseFirstBoardPathMock).toHaveBeenCalledWith('scan');
     expect(chooseFirstBoardPathMock).not.toHaveBeenCalledWith('gym');
 
     state.locationStatus = 'granted';
@@ -799,12 +857,20 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
   });
 
+  // With two MoonBoards in range the row carries no id: which one the climber
+  // is at is unknowable, so nothing is held.
+  it('holds nothing for a row with no single box behind it', () => {
+    render(createElement(BoardSelection));
+    act(() => {
+      inRange().onUseMyLocation({ ...MOONBOARD_ROW, deviceId: null });
+    });
+    expect(setPendingRecognitionMock).not.toHaveBeenCalled();
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+  });
+
   it('goes back to every board on Show all', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [moonboardWall, gymWall];
     rerender(createElement(BoardSelection));
@@ -822,10 +888,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
   // it, so here it only has to receive the filter and the way out.
   it('hands the choice block the type and a way back to every board when none is near', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [gymWall];
     rerender(createElement(BoardSelection));
@@ -841,10 +904,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
 
   it('binds a gym board found that way as an onboarding pick', async () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [moonboardWall];
     rerender(createElement(BoardSelection));
@@ -860,10 +920,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
 
   it('goes back to every type when they tap "At a gym" themselves', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
 
     act(() => {
       choice().onGym();
@@ -879,10 +936,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
   // The filter is screen state: a fresh picker never starts narrowed.
   it('starts unfiltered every time the picker opens', () => {
     const first = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     first.unmount();
 
     render(createElement(BoardSelection));
@@ -890,45 +944,39 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     expect(choice().nearbyBoardType).toBeNull();
   });
 
-  it('opens the builder on that board type, preset, still as an onboarding pick', () => {
+  it('opens the gym map filtered to that type from Search gyms', () => {
     render(createElement(BoardSelection));
-    openScan();
-
     act(() => {
-      quickstart().onOwnBoard('moonboard');
+      inRange().onSearchGyms(MOONBOARD_ROW);
     });
 
-    expect(quickstart().active).toBe(false);
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    expect(setPendingRecognitionMock).toHaveBeenCalledExactlyOnceWith({ deviceId: 'MOON-BOX', boardType: 'moonboard' });
+    expect(routerMock.push).toHaveBeenCalledWith({
+      pathname: '/gyms',
+      params: { returnTo: '/(tabs)/climbs', source: 'onboarding', from: 'picker', boardType: 'moonboard' },
+    });
+  });
+
+  it('opens the builder on that board type, preset, still as an onboarding pick', () => {
+    render(createElement(BoardSelection));
+    act(() => {
+      inRange().onOwnBoard(MOONBOARD_ROW);
+    });
+
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    expect(setPendingRecognitionMock).toHaveBeenCalledExactlyOnceWith({ deviceId: 'MOON-BOX', boardType: 'moonboard' });
     expect(routerMock.push).toHaveBeenCalledWith({
       pathname: '/boards/create',
       params: { returnTo: '/(tabs)/climbs', source: 'onboarding', preset: '1', presetBoardType: 'moonboard' },
     });
   });
 
-  // `expand()` bypasses the sheet coordinator, so the hand-off wait would
-  // resolve at once and push the builder under a sheet that is still open.
-  it('opens the Bluetooth sheet through the coordinator, not expand()', () => {
-    state.params = {};
-    quickstartHandle.snapToIndex.mockClear();
-    quickstartHandle.expand.mockClear();
-    render(createElement(BoardSelection));
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
-    });
-    expect(quickstartHandle.snapToIndex).toHaveBeenCalledWith(0);
-    expect(quickstartHandle.expand).not.toHaveBeenCalled();
-  });
-
-  it("lands in the ordinary picker's nearby list too, filtered and labelled", () => {
+  it("lands in the ordinary picker's Near you too, filtered and labelled", () => {
     state.params = {};
     state.myBoards = [gymWall];
     const { rerender } = render(createElement(BoardSelection));
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
-    });
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     expect(requestLocationMock).toHaveBeenCalledTimes(1);
 
     state.locationStatus = 'granted';
@@ -948,19 +996,14 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     state.params = {};
     state.myBoards = [gymWall];
     const { rerender } = render(createElement(BoardSelection));
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
-    });
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [];
     rerender(createElement(BoardSelection));
 
     expect(screen.getByText('mobile.firstBoard.nearbyEmptyMoonboard')).toBeTruthy();
     expect(screen.queryByText('mobile.firstBoard.nearbyEmpty')).toBeNull();
-    fireEvent.click(screen.getByText('mobile.discovery.nearbyShowAll'));
+    fireEvent.click(screen.getAllByText('mobile.discovery.nearbyShowAll')[0]);
     expect(nearbyArgs.last[4]).toBeUndefined();
     expect(screen.getByText('mobile.firstBoard.nearbyEmpty')).toBeTruthy();
   });
@@ -970,10 +1013,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
   // "No MoonBoards within 20 km" before the real answer lands.
   it('keeps searching, not empty, while the narrowed search has not answered', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [gymWall];
     state.nearbyPlaceholder = true;
@@ -990,10 +1030,7 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
   // there would spin forever, so a paused search reads as done.
   it('stops searching when the narrowed search is paused offline', () => {
     const { rerender } = render(createElement(BoardSelection));
-    openScan();
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [gymWall];
     state.nearbyPlaceholder = true;
@@ -1006,36 +1043,13 @@ describe("the Bluetooth quickstart's ways forward for a board it can't name", ()
     state.params = {};
     state.myBoards = [gymWall];
     const { rerender } = render(createElement(BoardSelection));
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
-    });
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
+    useMyLocation();
     state.locationStatus = 'granted';
     state.nearbyBoards = [gymWall];
     state.nearbyPlaceholder = true;
     rerender(createElement(BoardSelection));
 
     expect(screen.queryByText('mobile.firstBoard.nearbyEmptyMoonboard')).toBeNull();
-    expect(modeCards.byLabel.get('mobile.discovery.findNearby')?.state).toBe('loading');
-  });
-
-  it('clears the type when the climber taps Find nearby', () => {
-    state.params = {};
-    state.myBoards = [gymWall];
-    render(createElement(BoardSelection));
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.bluetooth')?.onPress();
-    });
-    act(() => {
-      quickstart().onFindAtGym('moonboard');
-    });
-    expect(nearbyArgs.last[4]).toEqual(['moonboard']);
-
-    act(() => {
-      modeCards.byLabel.get('mobile.discovery.findNearby')?.onPress();
-    });
-    expect(nearbyArgs.last[4]).toBeUndefined();
+    expect(screen.getByText('mobile.firstBoard.searching')).toBeTruthy();
   });
 });

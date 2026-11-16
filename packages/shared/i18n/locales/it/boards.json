@@ -168,8 +168,7 @@
       "gymHint": "Scegli il pannello della tua palestra",
       "own": "Il mio pannello",
       "ownHint": "Configura il pannello che hai a casa",
-      "sprayWall": "Aggiungi la mia Spraywall",
-      "scan": "Cerca il pannello che ho davanti",
+      "sprayWall": "La mia Spraywall",
       "searching": "Ricerca dei pannelli vicino a te…",
       "nearbyEmpty": "Niente entro 20 km",
       "nearbyError": "Impossibile caricare i pannelli vicino a te",
@@ -178,7 +177,8 @@
       "openSettings": "Apri Impostazioni",
       "notNow": "Non ora",
       "nearbyEmptyMoonboard": "Nessuna MoonBoard entro 20 km",
-      "nearbyEmptyType": "Nessun pannello {{board}} entro 20 km"
+      "nearbyEmptyType": "Nessun pannello {{board}} entro 20 km",
+      "sprayWallHint": "Fotografa la tua Spraywall e segna le prese"
     },
     "firstConnect": {
       "card": {
@@ -208,24 +208,16 @@
       }
     },
     "discovery": {
-      "findNearby": "Trova vicino a te",
-      "bluetooth": "Bluetooth",
-      "locationDenied": "Consenti la posizione",
       "nearbyTitle": "Vicino a te",
-      "nearbyShowing": "Quelli vicini a te",
       "yourBoardsTitle": "I tuoi pannelli",
       "onIt": "Sei qui",
       "ownedBadgeAria": "Il tuo pannello",
       "followingBadgeAria": "Lo segui",
-      "popularTitle": "Configurazioni popolari",
-      "findGym": "Trova una palestra",
       "create": "Crea un pannello",
-      "createTile": "Crea",
       "followed": "{{name}} aggiunto ai tuoi pannelli",
       "followError": "Impossibile aggiungere {{name}} ai tuoi pannelli",
       "pinnedBadgeAria": "Fissato",
       "pinError": "Impossibile aggiornare i tuoi pannelli fissati",
-      "addWallTile": "Spraywall",
       "nearbyTitleMoonboard": "MoonBoard vicino a te",
       "nearbyTitleType": "Pannelli {{board}} vicino a te",
       "nearbyShowAll": "Mostra tutti",
@@ -237,7 +229,9 @@
         "download": "Scarica per l'uso offline",
         "edit": "Modifica il pannello",
         "editWall": "Modifica la Spraywall"
-      }
+      },
+      "nearbyMap": "Mappa",
+      "showNearby": "Mostra i pannelli vicino a te"
     },
     "create": {
       "screenTitle": "Configura il tuo pannello",
@@ -296,22 +290,41 @@
       "name": "Nome del pannello"
     },
     "bluetooth": {
-      "title": "Pannelli vicino a te",
-      "scanning": "Ricerca dei pannelli…",
-      "resolving": "Caricamento dei pannelli…",
       "noResults": "Nessun pannello nel raggio d'azione",
       "unavailable": "Attiva il Bluetooth per cercare",
-      "notAsked": "Consenti il Bluetooth per cercare pannelli vicino a te.",
-      "unknownSetupTitle": "Trovato un pannello {{board}}",
-      "unknownSetupBody": "Non ne conosciamo ancora la configurazione.",
-      "moonboardTitle": "Trovata una MoonBoard qui vicino",
-      "moonboardBody": "Scopriamo quale sia.",
-      "bareNameTitle": "Trovato un pannello {{board}} qui vicino",
-      "bareNameBody": "Il suo controller non dice quale sia.",
       "needSignalTitle": "Trovato un pannello, serve segnale",
       "needSignalBody": "L'abbiamo rilevato, ma offline non possiamo identificarlo.",
-      "findAtGym": "Trovalo nella mia palestra",
       "ownBoard": "È il mio pannello"
+    },
+    "inRange": {
+      "title": "A portata",
+      "inFrontOfYou": "Davanti a te",
+      "permissionTitle": "Trova il pannello dove sei",
+      "permissionBody": "Boardsesh cerca i pannelli via Bluetooth, così il primo che vedi è quello davanti a te.",
+      "continue": "Continua",
+      "blockedDenied": "Consenti il Bluetooth nelle Impostazioni per trovare il pannello davanti a te.",
+      "blockedOff": "Attiva il Bluetooth per trovare il pannello davanti a te.",
+      "scanTitle": "Cerca il pannello davanti a te",
+      "scan": "Cerca",
+      "scanAgain": "Cerca di nuovo",
+      "lookingTitle": "Ricerca dei pannelli…",
+      "lookingBody": "Avvicinati al pannello. I pannelli accesi compaiono qui.",
+      "gymWalls": "{{gym}} · {{count}} pannelli",
+      "closest": "Il più vicino",
+      "moonboardTitle": "C'è una MoonBoard a portata",
+      "moonboardBody": "Le MoonBoard non trasmettono un numero di serie, quindi dicci dove sei e la troveremo.",
+      "typeTitle": "C'è un pannello {{board}} a portata",
+      "bareNameBody": "Il suo controller non dice quale pannello sia, quindi dicci dove sei e lo troveremo.",
+      "unknownSetupBody": "Non ne conosciamo ancora la configurazione, quindi dicci dove sei e lo troveremo.",
+      "useMyLocation": "Usa la mia posizione",
+      "searchGyms": "Cerca palestre",
+      "alsoAt": "Anche a {{gym}}"
+    },
+    "addBoard": {
+      "aria": "Aggiungi un pannello",
+      "setUp": "Configura un pannello",
+      "sprayWall": "Aggiungi una Spraywall",
+      "findGym": "Trova il pannello di una palestra"
     },
     "boardDetail": {
       "setActive": "Imposta come pannello attivo",

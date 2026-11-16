@@ -1,5 +1,5 @@
-// What the Near you list says when the Bluetooth quickstart's "Find it at my
-// gym" has narrowed it to one board type, shared by the list's title (the
+// What the Near you list says when the In range slot's "Use my location" has
+// narrowed it to one board type, shared by the list's title (the
 // picker screen) and its empty line (NearbySearchStatus).
 //
 // MoonBoard gets its own keys because "{{board}} boards" reads wrong for it in

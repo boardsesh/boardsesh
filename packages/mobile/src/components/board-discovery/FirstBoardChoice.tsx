@@ -20,7 +20,8 @@ type FirstBoardChoiceProps = {
   nearbyResults: ReactNode;
   onGym: () => void;
   onOwn: () => void;
-  onScan: () => void;
+  /** My Spraywall: the add-a-wall wizard, for a wall the climber photographs. */
+  onAddSprayWall: () => void;
   onFindGymOnMap: () => void;
   onOpenSettings: () => void;
   /** Asks for the boards near the climber again, after `nearby_error`. */
@@ -29,12 +30,6 @@ type FirstBoardChoiceProps = {
   nearbyBoardType?: BoardName | null;
   /** Drops `nearbyBoardType`. */
   onShowAllNearby?: () => void;
-  /**
-   * "Add my spray wall", under My own board for the Climbs no-board entry.
-   * The builder behind My own board cannot make a spray wall, so
-   * without it a home spray-wall owner with no boards has no way forward here.
-   */
-  onAddSprayWall?: () => void;
 };
 
 /**
@@ -42,11 +37,11 @@ type FirstBoardChoiceProps = {
  * ways to a board, for a newcomer the launch gate brought here, or a climber
  * with no boards who tapped "Find my board" on Climbs.
  *
- * Two cards and a text button rather than the picker's row of five equal tiles,
- * because the question a newcomer can answer is where they climb, not which
- * discovery mode they want. Each answer leads straight to the existing flow
- * behind it: Find nearby and the gym map for a gym, the builder for a home
- * wall, and the Bluetooth quickstart for the board in front of them.
+ * Three cards, because the question a newcomer can answer is where they climb,
+ * not which discovery mode they want. Each answer leads straight to the flow
+ * behind it: the boards near them and the gym map for a gym, the builder for a
+ * home board, and the add-a-wall wizard for a Spraywall. The board in front of
+ * them is the picker's In range slot, which sits above this block.
  *
  * Presentational: the screen owns location, the lists and navigation, and hands
  * in the gym state and callbacks. Cards are the app's variant-routed `Card`
@@ -58,13 +53,12 @@ export function FirstBoardChoice({
   nearbyResults,
   onGym,
   onOwn,
-  onScan,
+  onAddSprayWall,
   onFindGymOnMap,
   onOpenSettings,
   onRetryNearby,
   nearbyBoardType = null,
   onShowAllNearby,
-  onAddSprayWall,
 }: FirstBoardChoiceProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -111,15 +105,12 @@ export function FirstBoardChoice({
         hint={t('mobile.firstBoard.ownHint')}
         onPress={onOwn}
       />
-      {onAddSprayWall ? (
-        <View style={styles.textAction}>
-          <Button title={t('mobile.firstBoard.sprayWall')} variant="text" icon="camera" onPress={onAddSprayWall} />
-        </View>
-      ) : null}
-
-      <View style={styles.scan}>
-        <Button title={t('mobile.firstBoard.scan')} variant="text" icon="bluetooth" onPress={onScan} />
-      </View>
+      <ChoiceCard
+        icon="camera"
+        title={t('mobile.firstBoard.sprayWall')}
+        hint={t('mobile.firstBoard.sprayWallHint')}
+        onPress={onAddSprayWall}
+      />
     </View>
   );
 }
@@ -185,14 +176,6 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   gymPanel: {
-    paddingHorizontal: spacing[4],
-    alignItems: 'flex-start',
-  },
-  scan: {
-    paddingHorizontal: spacing[4],
-    alignItems: 'flex-start',
-  },
-  textAction: {
     paddingHorizontal: spacing[4],
     alignItems: 'flex-start',
   },

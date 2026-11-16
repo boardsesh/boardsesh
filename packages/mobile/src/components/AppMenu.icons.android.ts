@@ -4,3 +4,6 @@
 
 /** The M3 overflow icon (`more_vert`). */
 export const MORE_VERT_ICON = require('../../assets/material-icons/more-vert.xml');
+
+/** The M3 add icon (`add`), for a + that opens a menu of new things. */
+export const ADD_ICON = require('../../assets/material-icons/add.xml');

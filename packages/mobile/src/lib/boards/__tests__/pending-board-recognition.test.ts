@@ -62,7 +62,13 @@ describe('pendingRecognitionOutcome', () => {
       expected: 'expired',
     },
     { name: 'a spray wall', pending: HELD_MOONBOARD, boardType: 'spray', nowMs: SET_AT_MS, expected: 'other_type' },
-    { name: 'an unknown type', pending: HELD_MOONBOARD, boardType: 'decoy', nowMs: SET_AT_MS, expected: 'other_type' },
+    {
+      name: 'a type this build does not know',
+      pending: HELD_MOONBOARD,
+      boardType: 'not-a-board',
+      nowMs: SET_AT_MS,
+      expected: 'other_type',
+    },
   ])('$name → $expected', ({ pending, boardType, nowMs, expected }) => {
     expect(pendingRecognitionOutcome(pending, boardType, nowMs)).toBe(expected);
   });

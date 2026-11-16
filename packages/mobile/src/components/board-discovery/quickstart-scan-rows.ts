@@ -1,4 +1,4 @@
-// The rows the Bluetooth quickstart lists, built from what the scan heard and
+// The rows the picker's In range slot lists, built from what the scan heard and
 // what the serial lookup made of it. Pure, so every state is testable without
 // a radio or a server.
 //

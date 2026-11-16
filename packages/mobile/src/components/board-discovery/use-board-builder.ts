@@ -71,7 +71,7 @@ export type BoardBuilderOptions = {
   preset?: (boardName: BoardName) => BoardConfigPreset | null;
   /**
    * The board type to open on when there is no `seed`, instead of the first
-   * supported board. The Bluetooth quickstart passes the type it heard, so a
+   * supported board. The picker's In range slot passes the type it heard, so a
    * climber at a MoonBoard lands on MoonBoard chips (and its preset), not
    * Kilter's.
    */

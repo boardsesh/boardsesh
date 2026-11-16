@@ -1,5 +1,6 @@
 import type { GymBoardFilter } from '@boardsesh/gym-filters';
 import { clearBoardFilters, hasActiveBoardFilter } from '@boardsesh/gym-filters';
+import { toBoardName } from '@boardsesh/board-config';
 
 /**
  * The applied filter for the Find Gym ("Wall Finder") screen.
@@ -25,6 +26,16 @@ export type WallFinderFilter = GymBoardFilter & {
 };
 
 export const DEFAULT_WALL_FINDER_FILTER: WallFinderFilter = {};
+
+/**
+ * The filter the screen opens with. The board picker's "Search gyms", for a
+ * board it heard but could not name, passes that board's type, so the map opens
+ * on the gyms with one. A param that names no board type opens unfiltered.
+ */
+export function initialWallFinderFilter(boardTypeParam: string | undefined): WallFinderFilter {
+  const boardType = toBoardName(boardTypeParam);
+  return boardType ? { boardTypes: [boardType] } : DEFAULT_WALL_FINDER_FILTER;
+}
 
 /** True when any filter term is set (name, or any board filter). */
 export function hasActiveWallFinderFilter(filter: WallFinderFilter): boolean {

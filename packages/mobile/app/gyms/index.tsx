@@ -36,6 +36,7 @@ import {
   buildLayoutOptions,
   buildSizeOptions,
   clearWallFinderChipFilters,
+  initialWallFinderFilter,
   toggleBoardTypeFilter,
   toggleLayoutFilter,
   toggleMultiBoardTypeFilter,
@@ -75,7 +76,13 @@ export default function GymDiscovery() {
   const insets = useSafeAreaInsets();
   const location = useDeviceLocation();
   const { geocode, isGeocoding } = useGeocodePlace();
-  const { returnTo, source, from } = useLocalSearchParams<{ returnTo?: string; source?: string; from?: string }>();
+  const { returnTo, source, from, boardType } = useLocalSearchParams<{
+    returnTo?: string;
+    source?: string;
+    from?: string;
+    /** The picker's "Search gyms" for a board it heard: open filtered to its type. */
+    boardType?: string;
+  }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   // Pushed from the onboarding picker, which forwards its `source`: a gym pick
   // there is the activation bind, same as a pick on `/boards` itself.
@@ -123,7 +130,7 @@ export default function GymDiscovery() {
   // location); `searchLabel` drives the "Showing X" caption. Filters apply on submit
   // so typing doesn't fire a request per keystroke.
   const [inputText, setInputText] = useState('');
-  const [appliedFilter, setAppliedFilter] = useState<WallFinderFilter>(DEFAULT_WALL_FINDER_FILTER);
+  const [appliedFilter, setAppliedFilter] = useState<WallFinderFilter>(() => initialWallFinderFilter(boardType));
   const [viewCenter, setViewCenter] = useState<Coords | null>(null);
   const [searchLabel, setSearchLabel] = useState<string | null>(null);
 
