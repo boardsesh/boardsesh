@@ -10,7 +10,6 @@ import { SectionHeader } from '../SectionHeader';
 import { Text } from '../Text';
 export type ConnectedAppDetailPageViewProps = {
   scrollBottomPadding: number;
-  originalOwner?: Readonly<{ assertCurrent(): void }>;
   detail: ConnectedAppDetailView;
   onDisconnect: (row: ConnectedAppRowView) => void;
   disconnecting: boolean;
@@ -24,32 +23,13 @@ export function ConnectedAppDetailPageView({
   disconnecting,
   onRetry,
   scrollBottomPadding,
-  originalOwner,
 }: ConnectedAppDetailPageViewProps) {
   const { systemColors, brandColors } = useTheme();
   const pageStyle = { backgroundColor: systemColors.groupedBackground };
   const cardBackground = { backgroundColor: systemColors.secondaryGroupedBackground };
   const handleDisconnect = useCallback(() => {
-    try {
-      originalOwner?.assertCurrent();
-    } catch {
-      return;
-    }
     if (detail.kind === 'app') onDisconnect(detail.row);
-  }, [detail, onDisconnect, originalOwner]);
-  const guardedRetry = useCallback(() => {
-    try {
-      originalOwner?.assertCurrent();
-    } catch {
-      return;
-    }
-    onRetry();
-  }, [originalOwner, onRetry]);
-  try {
-    originalOwner?.assertCurrent();
-  } catch {
-    return null;
-  }
+  }, [detail, onDisconnect]);
 
   if (detail.kind === 'loading') {
     return (
@@ -64,12 +44,7 @@ export function ConnectedAppDetailPageView({
         <Text variant="body" color={systemColors.secondaryLabel} style={styles.message}>
           {detail.message}
         </Text>
-        <Button
-          title={detail.retryLabel}
-          variant="outlined"
-          size="small"
-          onPress={originalOwner ? guardedRetry : onRetry}
-        />
+        <Button title={detail.retryLabel} variant="outlined" size="small" onPress={onRetry} />
       </View>
     );
   }
