@@ -1246,6 +1246,14 @@ Chromium, on the real www pages and the real backend:
    mutation with their own session. The app's next call gets `401 invalid_token`
    and its refresh `invalid_grant`.
 
+CI runs it in `.github/workflows/partner-oauth-e2e.yml`: nightly at 16:47 UTC
+(a red nightly posts to the Discord deploy channel), on a manual dispatch, and on
+a pull request only when partner OAuth code or this spec changes. The report and,
+on failure, the server logs are uploaded as artifacts. It covers the Chromium
+happy path with a public native app; the public browser app, confidential app,
+custom scheme, loopback variants and the readable 401/429 responses are not
+driven in a browser yet.
+
 Run it with `vp run db:up` once, then `vp run test:e2e:partner-oauth`. A warm run
 takes about 15 seconds; the first one waits for `next dev` to compile the pages
 (budget 5 minutes). It writes two accounts with `partner-e2e-` ids and
