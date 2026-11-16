@@ -77,8 +77,11 @@ export default function DeveloperAppsContent() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [working, setWorking] = useState(false);
   const [revealed, setRevealed] = useState<RevealedCredentials | null>(null);
-  /** The backend wants a sign-in from the last five minutes before this change. */
-  const [signInAgain, setSignInAgain] = useState(false);
+  /**
+   * The backend wants a sign-in from the last five minutes before this change.
+   * `form`: refused from the edit form, which stays open with what was typed.
+   */
+  const [signInAgain, setSignInAgain] = useState<'form' | 'action' | null>(null);
 
   const appsQuery = useQuery({
     queryKey,
@@ -158,8 +161,8 @@ export default function DeveloperAppsContent() {
     } catch (error) {
       const problem = classifyConsoleError(error);
       if (problem.kind === 'sign-in-again') {
-        setFormTarget(null);
-        setSignInAgain(true);
+        // The form stays open behind the prompt, so nothing typed is lost unless the developer leaves.
+        setSignInAgain('form');
         return null;
       }
       if (problem.kind === 'gone' || problem.kind === 'suspended') {
@@ -199,7 +202,7 @@ export default function DeveloperAppsContent() {
       const problem = classifyConsoleError(error);
       if (problem.kind === 'sign-in-again') {
         setPending(null);
-        setSignInAgain(true);
+        setSignInAgain('action');
         return;
       }
       showMessage(problemMessage(problem), 'error');
@@ -387,7 +390,9 @@ export default function DeveloperAppsContent() {
         <SecretDialog revealed={revealed} onClose={() => setRevealed(null)} onCopyFailed={onCopyFailed} />
       ) : null}
 
-      {signInAgain ? <SignInAgainDialog onClose={() => setSignInAgain(false)} /> : null}
+      {signInAgain ? (
+        <SignInAgainDialog fromForm={signInAgain === 'form'} onClose={() => setSignInAgain(null)} />
+      ) : null}
     </Box>
   );
 }

@@ -153,6 +153,7 @@
     "title": "Reconnecte-toi pour faire cette modification",
     "body": "Pour modifier les redirect URIs, créer un nouveau secret ou supprimer une app, il faut une connexion de moins de {{minutes}} minutes. Ainsi, personne d'autre ayant accès à ta session ne peut prendre le contrôle de ton app.",
     "next": "Tu vas te déconnecter, te reconnecter, puis revenir directement ici. Refais ensuite la modification.",
+    "formKept": "Tes modifications restent dans le formulaire derrière ce message. Te reconnecter te fait quitter cette page et les efface : copie d'abord les redirect URIs que tu as saisies.",
     "button": "Se reconnecter"
   },
   "terms": {

@@ -11,9 +11,10 @@ ownership-claim flow:
 - **Approval / ownership-lost** notices to the claimant and the displaced owner.
 
 It also sends the partner developer console's change email
-(`src/email/partner-app-emails.ts`, #7598): the developer hears when one of
-their apps' redirect URIs change, its client secret is replaced or it is deleted.
-Same transport, same best-effort rule, sent after the change commits; see
+(`src/email/partner-app-emails.ts`, #7598): the developer hears when an app is
+registered on their account, or one of their apps' redirect URIs change, its
+client secret is replaced or it is deleted. Same transport, same best-effort rule,
+sent after the change commits and only to a verified address; see
 [integration-platform.md](./integration-platform.md), "The change email".
 
 An admin can approve a queued claim after a handover has already given the gym

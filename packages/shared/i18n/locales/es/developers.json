@@ -153,6 +153,7 @@
     "title": "Vuelve a iniciar sesión para hacer este cambio",
     "body": "Para cambiar las redirect URIs, crear un secret nuevo o eliminar una app, tienes que haber iniciado sesión en los últimos {{minutes}} minutos. Así nadie más que tenga tu sesión puede quedarse con tu app.",
     "next": "Cerrarás sesión, volverás a iniciarla y regresarás directamente aquí. Después, haz el cambio otra vez.",
+    "formKept": "Tus cambios siguen en el formulario detrás de este mensaje. Al volver a iniciar sesión sales de esta página y se borran, así que copia antes las redirect URIs que hayas escrito.",
     "button": "Volver a iniciar sesión"
   },
   "terms": {

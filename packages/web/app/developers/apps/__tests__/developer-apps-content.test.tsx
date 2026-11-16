@@ -326,7 +326,7 @@ describe('DeveloperAppsContent', () => {
       expect(mocks.showMessage).not.toHaveBeenCalled();
     });
 
-    it('asks for a fresh sign-in when a redirect URI change is refused', async () => {
+    it('keeps the typed redirect URIs behind the prompt, and says signing in again clears them', async () => {
       serve({
         MyOAuthClients: () => ({ myOAuthClients: [app()] }),
         UpdateOAuthClient: () => {
@@ -337,12 +337,37 @@ describe('DeveloperAppsContent', () => {
       const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
       fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
       const form = await screen.findByRole('dialog', { name: 'Edit Hangboard Planner' });
-      fireEvent.change(within(form).getByLabelText(/Redirect URIs/), {
-        target: { value: 'https://planner.example/oauth/boardsesh\nhttps://planner.example/oauth/second' },
-      });
+      const typed = 'https://planner.example/oauth/boardsesh\nhttps://planner.example/oauth/second';
+      fireEvent.change(within(form).getByLabelText(/Redirect URIs/), { target: { value: typed } });
       fireEvent.click(within(form).getByRole('button', { name: 'Save changes' }));
-      await expectSignInAgainPrompt();
-      expect(screen.queryByRole('dialog', { name: 'Edit Hangboard Planner' })).toBeNull();
+      const prompt = await expectSignInAgainPrompt();
+      expect(
+        within(prompt).getByText(
+          'Your edits stay in the form behind this message. Signing in again leaves this page and clears them, so copy any redirect URIs you typed before you go.',
+        ),
+      ).toBeTruthy();
+      fireEvent.click(within(prompt).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Sign in again to make this change' })).toBeNull(),
+      );
+      const kept = screen.getByRole('dialog', { name: 'Edit Hangboard Planner' });
+      expect((within(kept).getByLabelText(/Redirect URIs/) as HTMLTextAreaElement).value).toBe(typed);
+    });
+
+    it('says nothing about a form when a secret or delete was refused', async () => {
+      serve({
+        MyOAuthClients: () => ({ myOAuthClients: [app()] }),
+        RotateOAuthClientSecret: () => {
+          throw recentSignInRequired();
+        },
+      });
+      renderConsole();
+      const card = await screen.findByRole('listitem', { name: 'Hangboard Planner' });
+      fireEvent.click(within(card).getByRole('button', { name: 'New secret' }));
+      const confirm = await screen.findByRole('dialog', { name: 'Make a new secret for Hangboard Planner?' });
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Make new secret' }));
+      const prompt = await expectSignInAgainPrompt();
+      expect(within(prompt).queryByText(/Your edits stay in the form/)).toBeNull();
     });
   });
 

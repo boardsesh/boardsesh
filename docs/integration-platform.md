@@ -1419,7 +1419,8 @@ redirect and take its new secret. Editing the name, publisher, homepage or
 privacy policy is not gated: none of them changes where a code or token goes,
 and the name rules apply to them whoever edits. Registering a new app is not
 gated either: it touches no existing app, consent or connection, and starts with
-no climbers. The app type and client authentication method cannot change at all
+no climbers. Someone holding the session could still register apps in the
+developer's name, so a registration is emailed instead (below). The app type and client authentication method cannot change at all
 (no field takes them), so there is nothing to gate there. An edit that sends the
 same redirect URIs, reordered or not, is not a redirect change.
 
@@ -1443,17 +1444,36 @@ A refusal is `FORBIDDEN` with `reason: RECENT_SIGN_IN_REQUIRED`
 and `maxAgeSeconds: 300`, never `UNAUTHENTICATED`: the session is valid, and a 401
 would sign the app out. Nothing is written. The check comes after input
 validation, ownership and suspension, so the developer fixes the form first and
-is never asked to sign in for an app that is gone or suspended.
+is never asked to sign in for an app that is gone or suspended. A change queued
+behind the developer's own account deletion finds no `users` row once it runs:
+the apps went with the account, so it answers `NOT_FOUND`, not a sign-in request.
 
-**The change email** (#7598). Once a redirect URI change, a rotation or a deletion
-commits, the developer's `users.email` gets one email
+Known limits, all in first-party web auth and tracked with #7596's work:
+
+- A provider link on the legacy web path writes a fresh `auth_time`
+  (`oauth-link-guard.server.ts`, `auth-options.ts`), so a 30-day-old session
+  that links Google passes the 5-minute gate.
+- "Sign in again" goes through the plain sign-in page, where Google may sign the
+  developer in without asking for anything (no `prompt` or `max_age`).
+- With the backend-owned provider mode, an Apple-only developer's session
+  carries no sign-in time, so it cannot pass the gate.
+- A sign-in within 60 seconds after a password change does not count
+  (`PASSWORD_CHANGE_CLOCK_TOLERANCE_MS`), so the console can ask again for up to
+  a minute after a reset.
+
+**The change email** (#7598). Once a new app, a redirect URI change, a rotation or
+a deletion commits, the developer's `users.email` gets one email
 (`email/partner-app-emails.ts`, the SMTP transport in
-[backend-email.md](./backend-email.md)): the app's name and client ID, what changed
-and when, and what to do if it was not them. A redirect change is told as counts
-("1 redirect URI added and 1 removed"), so the email carries no link someone else
-chose; no secret, old or new, is ever in it. It is sent after commit and never
-awaited, so a slow or failing mailer neither holds nor fails the change; a failure
-logs only the error's name. A retired `.invalid` address gets nothing. The
+[backend-email.md](./backend-email.md)): the app's name and client ID, what
+happened and when, and what to do if it was not them. Only a verified address
+(`users.emailVerified` set) is sent to; an unverified one is skipped with a
+warning that names the change and the client ID, never the address. A redirect
+change is told as counts ("1 redirect URI added and 1 removed"), so the email
+carries no link someone else chose; no secret, old or new, is ever in it. It is
+sent after commit and never awaited: a notifier that throws at once or rejects
+later is logged (change, client ID and error name only) and reaches nothing, so a
+slow or failing mailer neither holds nor fails the change, and a rotation always
+returns its new secret. A retired `.invalid` address gets nothing. The
 registration takes the sender as `notifyDeveloper`, which the tests replace.
 
 **Changing a suspended app.** Refused, delete included: the record stays for ops
@@ -1492,8 +1512,11 @@ climbers connected now, counted the way the caps count (`connected_at` set,
 `revoked_at` empty); the delete confirmation states it. A new or rotated secret
 is shown once in a dialog that closes only from its own button. It lives in
 component state only: never in the React Query cache, a URL or a log.
-When the backend answers `RECENT_SIGN_IN_REQUIRED`, the console closes the form
-or confirmation and says the change needs a sign-in from the last 5 minutes. Its
+When the backend answers `RECENT_SIGN_IN_REQUIRED`, the console says the change
+needs a sign-in from the last 5 minutes. A rotate or delete confirmation closes;
+an edit form stays open behind the message with what was typed, and the message
+says signing in again leaves the page and clears it, so Cancel goes back to the
+form and its values. Its
 "Sign in again" link (`signInAgainPath` in `app/lib/developer-apps/sign-in-again.ts`)
 goes through `/auth/signout`, then `/auth/login`, back to `/developers/apps` in
 the developer's language; the sign-in page sends a signed-in visitor straight on,

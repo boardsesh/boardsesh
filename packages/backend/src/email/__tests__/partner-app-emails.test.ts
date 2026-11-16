@@ -42,6 +42,11 @@ describe('the partner app change email (#7598)', () => {
       /^Redirect URIs changed for/,
       /1 redirect URI removed\.\n/,
     ],
+    [
+      { ...BASE, change: 'app_registered' },
+      /^New app registered on your Boardsesh account: Crimp <Planner>$/,
+      /was registered in the Boardsesh developer console on .*\n\nIt can ask climbers to connect it/,
+    ],
     [{ ...BASE, change: 'secret_rotated' }, /^New client secret for/, /The old secret stopped working at once/],
     [
       { ...BASE, change: 'app_deleted' },

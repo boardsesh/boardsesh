@@ -619,6 +619,17 @@ describe('with PARTNER_OAUTH_MODE allowlist, in the real server', () => {
       );
       expect(renamed.body.errors).toBeUndefined();
 
+      // A cookie with no sign-in time authenticates as before: it reads the list
+      // and renames. Only the change to where codes go was refused above.
+      const listed = await server.graphql({ query: LIST_QUERY }, { bearer: ageUnknown });
+      expect(listed.status).toBe(200);
+      expect(listed.body.data?.myOAuthClients).toEqual([{ clientId, name: 'Hangboard Planner 2' }]);
+      const renamedAgain = await server.graphql(
+        { query: UPDATE_MUTATION, variables: { input: { clientId, name: 'Hangboard Planner 3' } } },
+        { bearer: ageUnknown },
+      );
+      expect(renamedAgain.body.errors).toBeUndefined();
+
       // Signed in again: each change goes through.
       const repointed = await server.graphql(repoint, { bearer: freshSession });
       expect(repointed.body.errors).toBeUndefined();

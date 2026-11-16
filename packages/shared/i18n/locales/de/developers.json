@@ -153,6 +153,7 @@
     "title": "Melde dich erneut an, um das zu ändern",
     "body": "Um Redirect-URIs zu ändern, ein neues Secret zu erstellen oder eine App zu löschen, brauchst du eine Anmeldung aus den letzten {{minutes}} Minuten. So kann niemand, der deine Anmeldung nutzt, deine App übernehmen.",
     "next": "Du meldest dich ab, meldest dich wieder an und landest direkt wieder hier. Nimm die Änderung dann noch mal vor.",
+    "formKept": "Deine Änderungen bleiben im Formular hinter dieser Meldung. Wenn du dich erneut anmeldest, verlässt du diese Seite und sie gehen verloren. Kopiere deshalb vorher die Redirect-URIs, die du eingegeben hast.",
     "button": "Erneut anmelden"
   },
   "terms": {

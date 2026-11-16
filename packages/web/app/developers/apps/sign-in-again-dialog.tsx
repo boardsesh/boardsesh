@@ -15,6 +15,8 @@ import { DEFAULT_LOCALE, isSupportedLocale } from '@/app/lib/i18n/config';
 import { signInAgainPath } from '@/app/lib/developer-apps/sign-in-again';
 
 type SignInAgainDialogProps = {
+  /** Refused from the edit form, which stays open behind this with what was typed. */
+  fromForm: boolean;
   onClose: () => void;
 };
 
@@ -22,9 +24,11 @@ type SignInAgainDialogProps = {
  * Shown when the backend refuses a redirect URI change, a new secret or a
  * deletion because the developer's sign-in is older than five minutes (#7598).
  * The button goes through the ordinary sign-out and sign-in pages and back to
- * the console, where the developer makes the change again.
+ * the console, where the developer makes the change again. That round trip
+ * leaves the page, so an open form's edits cannot survive it: the dialog says
+ * so, and Cancel goes back to the form with them intact.
  */
-export default function SignInAgainDialog({ onClose }: SignInAgainDialogProps) {
+export default function SignInAgainDialog({ fromForm, onClose }: SignInAgainDialogProps) {
   const { t, i18n } = useTranslation('developers');
   const titleId = useId();
   const locale = isSupportedLocale(i18n.language) ? i18n.language : DEFAULT_LOCALE;
@@ -39,6 +43,11 @@ export default function SignInAgainDialog({ onClose }: SignInAgainDialogProps) {
           <Typography variant="body2" color="text.secondary">
             {t('signInAgain.next')}
           </Typography>
+          {fromForm ? (
+            <Typography variant="body2" color="text.secondary">
+              {t('signInAgain.formKept')}
+            </Typography>
+          ) : null}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2, gap: 1, '& .MuiButton-root': { minHeight: 44 } }}>

@@ -14,9 +14,10 @@ import {
 
 /**
  * The email a developer gets when someone changes where one of their partner
- * apps sends codes and tokens: its redirect URIs, its client secret, or the app
- * itself (#7598). It is how a developer whose session someone else holds finds
- * out.
+ * apps sends codes and tokens (its redirect URIs, its client secret, or the app
+ * itself), or registers a new app on their account (#7598). It is how a
+ * developer whose session someone else holds finds out. The registration sends
+ * it only to a verified address.
  *
  * Best-effort, like every transactional email here: the change is committed
  * before this runs, and a dead SMTP server must not undo it or fail the
@@ -36,6 +37,12 @@ function addedAndRemoved(added: number, removed: number): string {
 /** Subject, heading and one sentence, all plain text; the caller escapes. */
 function describe(notice: PartnerAppChangeNotice): { subject: string; heading: string; what: string } {
   switch (notice.change) {
+    case 'app_registered':
+      return {
+        subject: `New app registered on your Boardsesh account: ${notice.appName}`,
+        heading: 'A new app was registered',
+        what: 'It can ask climbers to connect it to their Boardsesh logbook. Nothing is shared until a climber approves it.',
+      };
     case 'redirect_uris_changed':
       return {
         subject: `Redirect URIs changed for ${notice.appName} on Boardsesh`,
@@ -64,8 +71,8 @@ export async function sendPartnerAppChangeEmail(notice: PartnerAppChangeNotice):
   try {
     const recipient = deliverableEmailSchema.parse(notice.developerEmail);
     const { subject, heading, what } = describe(notice);
-    const appLine = `${notice.appName} (client ID ${notice.clientId})`;
-    const when = notice.changedAt.toUTCString();
+    const happened = notice.change === 'app_registered' ? 'was registered' : 'changed';
+    const lead = `${notice.appName} (client ID ${notice.clientId}) ${happened} in the Boardsesh developer console on ${notice.changedAt.toUTCString()}.`;
     const consoleUrl = `${webPublicUrl()}/developers/apps`;
     const notYou =
       'If this wasn’t you, someone else may be signed in to your Boardsesh account. Change your password, check your apps in the developer console, and reply to this email so we can help.';
@@ -76,15 +83,13 @@ export async function sendPartnerAppChangeEmail(notice: PartnerAppChangeNotice):
       html: shell(
         escapeHtml(heading),
         `
-        <p style="color: ${emailColors.textPrimary}; font-size: 16px; line-height: 1.5;">
-          <strong>${escapeHtml(appLine)}</strong> changed in the Boardsesh developer console on ${escapeHtml(when)}.
-        </p>
+        <p style="color: ${emailColors.textPrimary}; font-size: 16px; line-height: 1.5;">${escapeHtml(lead)}</p>
         <p style="color: ${emailColors.textPrimary}; font-size: 16px; line-height: 1.5;">${escapeHtml(what)}</p>
         <p style="color: ${emailColors.textSecondary}; font-size: 15px; line-height: 1.5;">${escapeHtml(notYou)}</p>
         ${button(escapeHtml(consoleUrl), 'Open the developer console')}
       `,
       ),
-      text: `${appLine} changed in the Boardsesh developer console on ${when}.\n\n${what}\n\n${notYou}\n\n${consoleUrl}`,
+      text: `${lead}\n\n${what}\n\n${notYou}\n\n${consoleUrl}`,
     });
   } catch (error) {
     // The name only: an SMTP error can quote the recipient.

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import postgres from 'postgres';
-import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vite-plus/test';
 import {
   oauthAccessToken,
   oauthAppPolicy,
@@ -24,7 +24,8 @@ import { listConnectedApps } from '../connected-apps';
 import { disconnectPartnerConnection } from '../connection';
 import { createPartnerAuthorityRuntime, type PartnerAuthorityRuntime } from '../authority';
 import { PARTNER_SCOPES } from '../configuration';
-import { managedClientProblem, type PartnerAppChangeNotice } from '../registration';
+import { logger } from '../../../utils/logger';
+import { managedClientProblem, type PartnerAppChangeNotice, type PartnerAppChangeNotifier } from '../registration';
 import {
   PARTNER_APPS_PER_DEVELOPER,
   PARTNER_LAUNCH_MAX_ACTIVE_CONNECTIONS,
@@ -70,6 +71,11 @@ const NATIVE_PUBLIC_INPUT = {
   redirectUris: ['http://127.0.0.1/callback', 'com.example.cli:/oauth/boardsesh'],
   acceptedTermsVersion: TEST_DEVELOPER_TERMS_VERSION,
 };
+
+/** The fields of each logged warning whose message contains `text`, in order. */
+function loggedFields(calls: ReadonlyArray<readonly unknown[]>, text: string): unknown[] {
+  return calls.filter(([message]) => String(message).includes(text)).map(([, fields]) => fields);
+}
 
 /** A sign-in made just now while links were guarded: a developer who has just signed in again. */
 function freshSignIn(): WebSignInProof {
@@ -837,6 +843,33 @@ describe('partner app registration', () => {
       throw new Error(`Fewer than ${minimum} sessions ever waited on a lock`);
     }
 
+    it('answers a change queued behind the developer’s account deletion as the app being gone', async () => {
+      const developerId = await createDeveloper();
+      const created = await register(developerId);
+      const deletion = await raw.reserve();
+      try {
+        // The account deletion holds the developer's row; the rotation queues on it.
+        await deletion`BEGIN`;
+        await deletion`SELECT 1 FROM users WHERE id = ${developerId} FOR UPDATE`;
+        const rotating = runtime.registration
+          .rotateSecret(consoleDatabase, developerId, created.app.clientId, freshSignIn())
+          .then(
+            () => 'rotated',
+            (error: unknown) => error,
+          );
+        await waitForLockWaiters(1);
+        await deletion`DELETE FROM users WHERE id = ${developerId}`;
+        await deletion`COMMIT`;
+        const outcome = await rotating;
+        expect(outcome).toBeInstanceOf(PartnerRegistrationError);
+        expect((outcome as PartnerRegistrationError).reason).toBe('not_found');
+      } finally {
+        await deletion`ROLLBACK`.catch(() => undefined);
+        deletion.release();
+      }
+      expect(await db.$count(oauthClient, eq(oauthClient.clientId, created.app.clientId))).toBe(0);
+    });
+
     it('makes a password reset racing an app delete wait for it, instead of deadlocking', async () => {
       // The reset trigger takes the climber's users row, then their connections
       // and consent screens. The delete takes users FOR SHARE before any of
@@ -1138,7 +1171,8 @@ describe('partner app registration', () => {
         await runtime.registration.updateApp(consoleDatabase, developerId, clientId, { name: 'No sign-in' }, undefined),
       ).toMatchObject({ name: 'No sign-in' });
       expect(await db.$count(oauthConsent, eq(oauthConsent.clientId, clientId))).toBe(1);
-      expect(noticesFor(clientId)).toEqual([]);
+      // Only the registration's own email: no edit here sends one.
+      expect(noticesFor(clientId).map((notice) => notice.change)).toEqual(['app_registered']);
       expect(await clientAuthenticates(client)).toBe(true);
     });
 
@@ -1165,6 +1199,8 @@ describe('partner app registration', () => {
       const sent = noticesFor(clientId);
       const common = { developerEmail: developer.email, appName: APP_INPUT.name, clientId };
       expect(sent).toEqual([
+        // Registering is not gated, so it is told instead.
+        { ...common, change: 'app_registered', changedAt: expect.any(Date) },
         { ...common, change: 'redirect_uris_changed', added: 1, removed: 1, changedAt: expect.any(Date) },
         { ...common, change: 'secret_rotated', changedAt: expect.any(Date) },
         { ...common, change: 'app_deleted', changedAt: expect.any(Date) },
@@ -1176,26 +1212,81 @@ describe('partner app registration', () => {
       }
     });
 
-    it('keeps the change when the email fails', async () => {
+    it.each<[string, PartnerAppChangeNotifier]>([
+      [
+        'rejects',
+        async () => {
+          throw new Error('SMTP is down');
+        },
+      ],
+      [
+        'throws before returning a promise',
+        () => {
+          throw new Error('Mailer not built');
+        },
+      ],
+    ])('keeps every change, and returns the new secret, when the notifier %s', async (_label, notifyDeveloper) => {
       const failing = await createPartnerAuthorityRuntime(runtime.database, TEST_CONFIGURATION, {
         logbook: { feed: db, snapshots: db },
         close: async () => undefined,
-        notifyDeveloper: async () => {
-          throw new Error('SMTP is down');
-        },
+        notifyDeveloper,
       });
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        const developerId = await createDeveloper();
+        const created = await failing.registration.createApp(consoleDatabase, developerId, APP_INPUT);
+        const repointed = await failing.registration.updateApp(
+          consoleDatabase,
+          developerId,
+          created.app.clientId,
+          { redirectUris: ['https://planner.example.test/elsewhere'] },
+          freshSignIn(),
+        );
+        expect(repointed.redirectUris).toEqual(['https://planner.example.test/elsewhere']);
+        const rotated = await failing.registration.rotateSecret(
+          consoleDatabase,
+          developerId,
+          created.app.clientId,
+          freshSignIn(),
+        );
+        expect(rotated.clientSecret).toMatch(/^[A-Za-z]{32}$/);
+        expect(rotated.clientSecret).not.toBe(created.clientSecret);
+        expect(
+          await failing.registration.deleteApp(consoleDatabase, developerId, created.app.clientId, freshSignIn()),
+        ).toBe(true);
+        await vi.waitFor(() =>
+          expect(loggedFields(warn.mock.calls, 'could not be sent')).toEqual(
+            ['app_registered', 'redirect_uris_changed', 'secret_rotated', 'app_deleted'].map((change) => ({
+              change,
+              clientId: created.app.clientId,
+              errorName: 'Error',
+            })),
+          ),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('sends nothing to an address that is not verified, and logs no address', async () => {
       const developerId = await createDeveloper();
-      const created = await failing.registration.createApp(consoleDatabase, developerId, APP_INPUT);
-      const rotated = await failing.registration.rotateSecret(
-        consoleDatabase,
-        developerId,
-        created.app.clientId,
-        freshSignIn(),
-      );
-      expect(rotated.clientSecret).not.toBe(created.clientSecret);
-      expect(
-        await failing.registration.deleteApp(consoleDatabase, developerId, created.app.clientId, freshSignIn()),
-      ).toBe(true);
+      const created = await register(developerId);
+      const { clientId } = created.app;
+      // Verified to register; unverified since, as after an email change.
+      await db.update(users).set({ emailVerified: null }).where(eq(users.id, developerId));
+      const warn = vi.spyOn(logger, 'warn');
+      try {
+        await runtime.registration.rotateSecret(consoleDatabase, developerId, clientId, freshSignIn());
+        expect(await runtime.registration.deleteApp(consoleDatabase, developerId, clientId, freshSignIn())).toBe(true);
+        expect(noticesFor(clientId).map((notice) => notice.change)).toEqual(['app_registered']);
+        expect(loggedFields(warn.mock.calls, 'not verified')).toEqual([
+          { change: 'secret_rotated', clientId },
+          { change: 'app_deleted', clientId },
+        ]);
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('@example.invalid');
+      } finally {
+        warn.mockRestore();
+      }
     });
   });
 

@@ -88,9 +88,14 @@ session, on a shared computer for example, from pointing your app somewhere else
 or taking its secret. Registering an app and editing its name, publisher,
 homepage or privacy policy never ask.
 
-After each of those changes, Boardsesh emails the address on your account: which
-app, what changed and when. The email never contains a secret or a redirect URI.
-If you did not make the change, change your Boardsesh password, check your apps in
+If the console asks you to sign in again while you are editing an app, what you
+typed stays in the form until you leave the page. Signing in again leaves it, so
+copy any redirect URIs you want to keep first.
+
+After each of those changes, and whenever an app is registered on your account,
+Boardsesh emails the address on your account once it is verified: which app,
+what happened and when. The email never contains a secret or a redirect URI. If
+you did not make the change, change your Boardsesh password, check your apps in
 the console, and reply to the email.
 
 Limits that apply to every app (see section 6 for request rates):

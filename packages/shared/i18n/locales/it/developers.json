@@ -153,6 +153,7 @@
     "title": "Accedi di nuovo per fare questa modifica",
     "body": "Per cambiare i redirect URI, creare un nuovo secret o eliminare un'app serve un accesso degli ultimi {{minutes}} minuti. Così nessun altro che usa il tuo accesso può prendersi la tua app.",
     "next": "Uscirai, accederai di nuovo e tornerai subito qui. Poi rifai la modifica.",
+    "formKept": "Le tue modifiche restano nel modulo dietro questo messaggio. Accedendo di nuovo lasci questa pagina e vanno perse, quindi copia prima i redirect URI che hai scritto.",
     "button": "Accedi di nuovo"
   },
   "terms": {
