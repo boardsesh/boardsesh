@@ -56,7 +56,9 @@ vi.mock('../../../lib/board-details', () => ({
 }));
 vi.mock('../../../lib/spray/use-spray-wall-token', () => ({ useSprayWallToken: () => '' }));
 vi.mock('../../../components/BoardImageNative', () => ({ BoardImageNative: () => null }));
-vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ systemColors: {} }) }));
+vi.mock('../../../providers/theme-provider', () => ({
+  useTheme: () => ({ systemColors: {}, selection: { text: 'label', checkmark: 'accent', fill: 'fill' } }),
+}));
 
 import { BoardSummaryCard } from '../../../components/boards/BoardSummaryCard';
 import { useBoardShortcutNavigation } from '../use-board-shortcut-navigation';

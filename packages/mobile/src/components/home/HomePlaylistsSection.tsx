@@ -3,8 +3,9 @@ import { View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSmartPlaylistCounts } from '@boardsesh/playlists-react';
 import type { SmartPlaylistType } from '@boardsesh/graphql/operations/playlists';
-import { Card } from '../Card';
+import { ArtRow } from '../ArtRow';
 import { Icon } from '../Icon';
+import { InsetGroupedList, insetGroupedRowStyles } from '../InsetGroupedList';
 import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import { PlaylistPreviewSquare } from '../playlist/PlaylistPreviewSquare';
@@ -14,7 +15,7 @@ import { hapticLight } from '../../lib/haptics';
 import { smartPlaylistByType, smartPlaylistHref, type SmartPlaylistPresentation } from '../../lib/smart-playlists';
 import { useAuth } from '../../providers/auth-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { HomeSectionFrame, homeCardRowStyles } from './HomeSectionFrame';
+import { HomeSectionFrame } from './HomeSectionFrame';
 
 // The two lists a climber keeps coming back to, as on Boardz's Home. Choosing
 // which lists show here is a later change.
@@ -64,39 +65,37 @@ export const HomePlaylistsSection = memo(function HomePlaylistsSection() {
       title={tCommon('mobile.settings.homeSections.sections.playlists')}
       testID="home-section-playlists"
     >
-      <Card>
-        <View style={homeCardRowStyles.rows}>
-          {HOME_SMART_PLAYLISTS.map((preset) => {
-            const count = countByType.get(preset.type);
-            return (
-              <SmartPlaylistRow
-                key={preset.type}
-                preset={preset}
-                name={t(preset.titleI18nKey)}
-                countLabel={count === undefined ? null : t('detail.climbCount', { count })}
-                onOpen={openSmartPlaylist}
-              />
-            );
-          })}
-          <PressableSurface
-            onPress={openAllPlaylists}
-            feedback="opacity"
-            rippleColor={systemColors.label as string}
-            accessibilityRole="button"
-            accessibilityLabel={allPlaylistsLabel}
-            style={homeCardRowStyles.row}
-            testID="home-playlists-all"
-          >
-            <View style={homeCardRowStyles.leading}>
-              <Icon name="discover" size={20} color={systemColors.secondaryLabel} />
-            </View>
-            <Text variant="body" color={systemColors.label} style={homeCardRowStyles.text}>
-              {allPlaylistsLabel}
-            </Text>
-            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-          </PressableSurface>
-        </View>
-      </Card>
+      <InsetGroupedList>
+        {HOME_SMART_PLAYLISTS.map((preset) => {
+          const count = countByType.get(preset.type);
+          return (
+            <SmartPlaylistRow
+              key={preset.type}
+              preset={preset}
+              name={t(preset.titleI18nKey)}
+              countLabel={count === undefined ? null : t('detail.climbCount', { count })}
+              onOpen={openSmartPlaylist}
+            />
+          );
+        })}
+        <PressableSurface
+          onPress={openAllPlaylists}
+          feedback="opacity"
+          rippleColor={systemColors.label as string}
+          accessibilityRole="button"
+          accessibilityLabel={allPlaylistsLabel}
+          style={insetGroupedRowStyles.row}
+          testID="home-playlists-all"
+        >
+          <View style={insetGroupedRowStyles.leading}>
+            <Icon name="discover" size={20} color={systemColors.secondaryLabel} />
+          </View>
+          <Text variant="body" color={systemColors.label} style={insetGroupedRowStyles.text}>
+            {allPlaylistsLabel}
+          </Text>
+          <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+        </PressableSurface>
+      </InsetGroupedList>
     </HomeSectionFrame>
   );
 });
@@ -112,36 +111,19 @@ const SmartPlaylistRow = memo(function SmartPlaylistRow({
   countLabel: string | null;
   onOpen: (smartType: SmartPlaylistType) => void;
 }) {
-  const { systemColors } = useTheme();
-  const { type } = preset;
+  const { type, color, icon } = preset;
   const handlePress = useCallback(() => onOpen(type), [onOpen, type]);
+  const art = useMemo(() => <PlaylistPreviewSquare color={color} icon={icon} size={PREVIEW_SIZE} />, [color, icon]);
   return (
-    <>
-      <PressableSurface
-        onPress={handlePress}
-        feedback="opacity"
-        rippleColor={systemColors.label as string}
-        accessibilityRole="button"
-        accessibilityLabel={countLabel ? `${name}, ${countLabel}` : name}
-        style={homeCardRowStyles.row}
-        testID={`home-playlists-${preset.slug}`}
-      >
-        <View style={homeCardRowStyles.leading} accessibilityElementsHidden importantForAccessibility="no">
-          <PlaylistPreviewSquare color={preset.color} icon={preset.icon} size={PREVIEW_SIZE} />
-        </View>
-        <View style={homeCardRowStyles.text}>
-          <Text variant="headline" color={systemColors.label}>
-            {name}
-          </Text>
-          {countLabel ? (
-            <Text variant="subheadline" color={systemColors.secondaryLabel}>
-              {countLabel}
-            </Text>
-          ) : null}
-        </View>
-        <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-      </PressableSurface>
-      <View style={[homeCardRowStyles.separator, { backgroundColor: systemColors.separator }]} />
-    </>
+    <ArtRow
+      art={art}
+      artSize="regular"
+      title={name}
+      subtitle={countLabel ?? undefined}
+      accessory="chevron"
+      onPress={handlePress}
+      accessibilityLabel={countLabel ? `${name}, ${countLabel}` : name}
+      testID={`home-playlists-${preset.slug}`}
+    />
   );
 });
