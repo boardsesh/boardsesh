@@ -83,7 +83,7 @@ test or an upstream feature description is not a passed acceptance criterion.
 | BA-03 #6977 | Implementation-only GO after independent capability audit. Complete [source writer inventory](./better-auth-writer-inventory.md) and 10 independently reviewed [candidate role-fence cases](./better-auth-writer-fence-proof.md). Backend current-store service/reservations/fencing are next; no production writer activation or deployed role policy. |
 | BA-02 #4847 | Read-only audit, 21 tests and local execution delivered. Current production counts and ownership resolutions remain unknown; no final uniqueness migration is enabled. |
 | BA-04 #6978 | Prototype cookie/JWT lineage, clock-aware cutoffs, tombstones and reset races pass; production import still depends on one writer and ownership-verified collision resolution. |
-| BA-05 #6979 | Blocked on the authority and session bridge. |
+| BA-05 #6979 | Re-scoped by #7596 to one shared-domain session cookie and one central client guard ([design](./better-auth-browser-session.md)). Phase A (the client guards and removal of the browser binding design) is in progress. Phase B waits until the BA-04 authority can issue sessions. |
 | BA-06 #6980 | Canonical native, pre-cutover refresh and both Redis watch formats pass. Pending source-less pairing requires an authenticated snapshot or fenced issuer; full HTTP behavior and device/offline QA remain acceptance work. |
 | BA-07 #6981 | Tested guards preserve family ancestry after expiry/pruning and offline access after browser-session expiry, alongside client ownership, consent binding and Disconnect. Production router, app-specific subjects and operational guards remain unimplemented. |
 | BA-08 #6982 | Blocked on first-party adoption and partner authority. |

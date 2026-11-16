@@ -1,5 +1,7 @@
 # Explicit recovery from an expired browser binding
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This private prerequisite is disabled by default. It does not enable public
 recovery, admit an expired credential, sign out an account, or turn an uncertain
 session read into anonymous state.

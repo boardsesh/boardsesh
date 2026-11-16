@@ -17,6 +17,8 @@ Measurements must identify the commit and fixture class and report timings witho
 
 The PR10 harness reports partial synthetic qualification. It cannot qualify actual writer switching, stop issuance, rollback to the reader floor, full restored-copy identity/reference preservation, or no-route host-process isolation before those flows exist and are exercised. BA-05 cross-tab response ordering remains separate: a delayed password replacement cookie for A can arrive after another tab signs in B. Source identity binding alone cannot close that gap.
 
+> **Note for #7596.** The "Web account switch" row and the BA-05 cross-tab gap above are handled by the re-scoped design in [better-auth-browser-session.md](better-auth-browser-session.md). Only login and sign-out responses write the session cookie, so a delayed password replacement can no longer restore A. One guard in each browser client drops responses for the old account and reloads other tabs. A login racing a later login is accepted.
+
 The owner confirmed Garmin is installed only on his own test watch, with no shared/public release; publication is planned for December. There is no unknown public-old-watch population. The native-generation and administrative apply gates remain hard blocked pending preservation of existing test ticks, update safety with the original signing key, and real watch QA. No data-loss exception is accepted, and no synthetic backend race result closes those remaining gates.
 
 ## Bounded synthetic observation

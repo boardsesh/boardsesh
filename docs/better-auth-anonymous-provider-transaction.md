@@ -1,5 +1,7 @@
 # Anonymous provider transaction
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This is the private backend transaction for a **positively observed anonymous browser binding**. It accepts Google and Apple. It does not accept a nullable signed-in actor, Facebook, a caller-selected user ID, or a fallback from a refused selected browser. The signed-in provider-security protocol remains unchanged.
 
 The namespace is `/api/internal/auth/anonymous-provider/v1`. It uses the existing private provider service authentication, `private-provider-v1` qualified database pool, primary authority receipt, request freshness window, strict schemas, and byte limits. It returns JSON only, never cookies. Its public browser consumer is still a separate implementation task; adding this namespace does not enable public provider sign-in.

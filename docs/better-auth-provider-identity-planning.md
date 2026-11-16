@@ -30,3 +30,5 @@ credential and browser-login CAS in one transaction. Existing signed-in actor
 APIs remain strict. Public provider readiness and the remaining flow, restricted
 LOGIN and browser/device gates stay open in
 [#7430](https://github.com/boardsesh/boardsesh/issues/7430).
+
+> **Partly superseded by #7596.** The future anonymous command described above binds a positive anonymous browser binding, which is part of the design being removed. The planner seam stays; B5 decides whether provider sign-in on the new session uses it. See [better-auth-browser-session.md](better-auth-browser-session.md).

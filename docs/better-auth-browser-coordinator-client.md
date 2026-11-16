@@ -1,5 +1,7 @@
 # Staged canonical browser coordinator
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 The shared auth protocol exposes four opt-in subpaths: `browser-coordinator`
 for strict control metadata, `browser-coordinator-runner` for canonical lock and
 network settlement, `browser-coordinator-channel` for www/app MessageChannel

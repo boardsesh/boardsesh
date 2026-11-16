@@ -1,5 +1,7 @@
 # Provider Settings browser broker
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 The Settings broker is a server-only factory for reading selected sign-in
 methods, recording an explicit Google/Apple link or unlink intent, and
 submitting the account's actual password for an operation-bound reauthentication

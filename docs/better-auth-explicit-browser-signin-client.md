@@ -1,5 +1,7 @@
 # Explicit browser sign-in coordination
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 Ordinary Google and Apple sign-in uses the shared coordinator's dedicated
 `signin` command. Read and renewal keep their existing binding checks. An
 explicit sign-in can replace a confirmed expired binding through the canonical

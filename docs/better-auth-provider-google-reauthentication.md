@@ -1,5 +1,9 @@
 # Provider Settings Google reauthentication
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+>
+> The Google freshness rule (a signed `auth_time` within five minutes; callback time, `iat`, `prompt` and `max_age` never count) stays, and is restated in [better-auth-browser-session.md](better-auth-browser-session.md) and [better-auth-provider-security-adoption.md](better-auth-provider-security-adoption.md).
+
 This request-local web seam obtains operation-bound reauthentication evidence
 without creating or renewing a login. It is unmounted and its default public
 readiness remains false. Environment and HTTP assertions cannot enable it.

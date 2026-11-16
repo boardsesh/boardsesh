@@ -1,5 +1,7 @@
 # Qualified provider OAuth composition
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 The production NextAuth GET/POST route now joins the backend-owned Google and Apple flows. Its code-owned public readiness remains false. Environment variables, form fields, an old session cookie, or a missing/refused primary browser proof cannot activate this path or select a fallback identity writer. Facebook starts and callbacks remain blocked; stored identities and existing sessions are retained.
 
 ## Selection and ownership

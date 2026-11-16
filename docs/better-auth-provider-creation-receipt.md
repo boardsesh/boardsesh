@@ -1,5 +1,7 @@
 # Genuine provider account-creation receipt
 
+> **Superseded by #7596.** This describes the browser binding design, which is being removed. See [better-auth-browser-session.md](better-auth-browser-session.md). This file is deleted together with its code.
+
 This follow-up restores native browser OAuth account-creation metadata for the selected-browser flow. Public readiness stays false. It adds no database schema, grant, production configuration, credential issuer or authentication freshness source.
 
 ## Original attempt and durable result
