@@ -218,6 +218,10 @@ export function useClimbListBarItems({
     hapticLight();
     onOpenHistory();
   }, [onOpenHistory]);
+  const openMyClimbs = useCallback(
+    () => router.navigate({ pathname: '/(tabs)/profile', params: { tab: 'climbs' } }),
+    [router],
+  );
   const openViewOptions = useCallback(() => router.push('/(tabs)/climbs/settings/climb-list'), [router]);
   const openWallDisplay = useCallback(() => router.push(WALL_DISPLAY_HREF), [router]);
   const openBoards = useCallback(() => router.push('/boards'), [router]);
@@ -246,6 +250,7 @@ export function useClimbListBarItems({
         identifier: 'root.climbListMenu',
         rows: [
           ...(createRow ? [{ label: createRow.label, symbol: iconMap.plus.ios, onPress: createRow.onPress }] : []),
+          { label: t('mobile.listOptions.myClimbs'), symbol: 'person.crop.rectangle', onPress: openMyClimbs },
           { label: t('mobile.listOptions.viewOptions'), symbol: iconMap['view.options'].ios, onPress: openViewOptions },
           ...(wallDisplayInMenu
             ? [
@@ -272,6 +277,7 @@ export function useClimbListBarItems({
     handleOpenHistory,
     badge,
     badgeColor,
+    openMyClimbs,
     openViewOptions,
     openWallDisplay,
     openBoards,

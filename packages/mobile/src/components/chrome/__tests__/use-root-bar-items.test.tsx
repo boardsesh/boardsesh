@@ -22,7 +22,7 @@ const ctrl = vi.hoisted(() => ({
     handlePress: vi.fn(),
     accessibilityLabel: 'ble.connectBoard',
   } as ToolbarLightbulb,
-  router: { push: vi.fn() },
+  router: { push: vi.fn(), navigate: vi.fn() },
   haptic: vi.fn(),
   onRail: false,
   isTablet: false,
@@ -75,6 +75,7 @@ beforeEach(() => {
   ctrl.openAngle.mockReset();
   ctrl.lightbulb = { available: false, lit: false, handlePress: vi.fn(), accessibilityLabel: 'ble.connectBoard' };
   ctrl.router.push.mockReset();
+  ctrl.router.navigate.mockReset();
   ctrl.haptic.mockReset();
   ctrl.onRail = false;
   ctrl.isTablet = false;
@@ -203,10 +204,16 @@ describe('useClimbListBarItems', () => {
     expect(menu).toMatchObject({ type: 'menu', label: 'mobile.listOptions.title', icon: { name: 'ellipsis' } });
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
-    const [viewOptions, switchBoard] = menu.menu.items;
+    const [myClimbs, viewOptions, switchBoard] = menu.menu.items;
+    if (myClimbs?.type === 'action') myClimbs.onPress();
+    expect(ctrl.router.navigate).toHaveBeenCalledExactlyOnceWith({
+      pathname: '/(tabs)/profile',
+      params: { tab: 'climbs' },
+    });
     if (viewOptions?.type === 'action') viewOptions.onPress();
     if (switchBoard?.type === 'action') switchBoard.onPress();
     expect(ctrl.router.push.mock.calls).toEqual([['/(tabs)/climbs/settings/climb-list'], ['/boards']]);
@@ -219,6 +226,7 @@ describe('useClimbListBarItems', () => {
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     // A tablet opens it from the MiniPlayer's ⛶ or the board sheet.
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.switchBoard',
     ]);
@@ -231,6 +239,7 @@ describe('useClimbListBarItems', () => {
     const menu = result.current.find((item) => item.type === 'menu');
     if (menu?.type !== 'menu') throw new Error('expected the list menu');
     expect(menu.menu.items.map((item) => item.label)).toEqual([
+      'mobile.listOptions.myClimbs',
       'mobile.listOptions.viewOptions',
       'mobile.boardPresence.wallDisplay.open',
       'mobile.boardPresence.switchBoard',
