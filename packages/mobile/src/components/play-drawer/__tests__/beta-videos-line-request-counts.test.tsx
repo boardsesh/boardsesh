@@ -12,8 +12,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GET_BETA_LINKS } from '@boardsesh/graphql/operations';
 import type { Climb } from '@boardsesh/shared-schema';
 
-// Native browser-view subscription is exactly a no-op; storage is outside this request-count host.
-vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   DynamicColorIOS: (appearances: { light: string }) => appearances.light,
@@ -78,17 +76,7 @@ vi.mock('../../../lib/graphql/hooks', async () => ({
 }));
 
 const server = vi.hoisted(() => ({ request: vi.fn() }));
-// The original operation wrapper invokes the SDK's RequestOptions overload.
-// Keep the same document/variables observations and every count assertion.
-vi.mock('../../../lib/graphql/client', () => ({
-  getHttpClient: () => ({
-    request: (request: unknown, variables?: unknown) => {
-      if (request !== null && typeof request === 'object' && 'document' in request)
-        return server.request(request.document, 'variables' in request ? request.variables : undefined);
-      return server.request(request, variables);
-    },
-  }),
-}));
+vi.mock('../../../lib/graphql/client', () => ({ getHttpClient: () => ({ request: server.request }) }));
 
 import { DeferredSections } from '../DeferredSections';
 

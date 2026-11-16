@@ -1,62 +1,6 @@
 // @vitest-environment jsdom
-// Existing native presentation tests never dispatch these transport ports.
-vi.mock('../../lib/graphql/client', () => ({
-  getHttpClient: () => {
-    throw new Error('Unexpected native GraphQL I/O');
-  },
-  getOfflineSyncHttpClient: () => {
-    throw new Error('Unexpected native offline I/O');
-  },
-}));
-const selectedBetaFixture = vi.hoisted(() => ({
-  http: null as ReturnType<
-    typeof import('../../lib/graphql/__tests__/fixtures/scoped-http').createScopedHttpFixture
-  > | null,
-  scope: null as import('../../lib/graphql/http-query-scope').HttpQueryScope | null,
-  authListeners: new Set<() => void>(),
-}));
-// These ports select the actual owned browser scope; they never accept a result.
-// Historical native cases keep the original native hook and no-op subscriber.
-vi.mock('../../lib/graphql/use-http-query-scope', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/graphql/use-http-query-scope')>();
-  return { ...actual, useHttpQueryScope: () => selectedBetaFixture.scope ?? actual.useHttpQueryScope() };
-});
-vi.mock('../../lib/graphql/use-auth-token', async () => {
-  const actual = await vi.importActual<typeof import('../../lib/graphql/use-auth-token.web')>(
-    '../../lib/graphql/use-auth-token.web',
-  );
-  return {
-    subscribeHttpOperationScope: (listener: () => void) =>
-      selectedBetaFixture.http ? actual.subscribeHttpOperationScope(listener) : () => {},
-  };
-});
-vi.mock('../../lib/auth-store.web', () => ({
-  subscribeAuthTokenChanges: (listener: () => void) => {
-    selectedBetaFixture.authListeners.add(listener);
-    return () => {
-      selectedBetaFixture.authListeners.delete(listener);
-    };
-  },
-}));
-vi.mock('../../lib/browser-backend-client.web', () => ({
-  expoBrowserBackendClient: {
-    subscribe: (listener: () => void) => {
-      if (!selectedBetaFixture.http) throw new Error('Missing owned browser manager');
-      return selectedBetaFixture.http.backend.subscribe(listener);
-    },
-  },
-}));
-vi.mock('../../lib/graphql/client.web', () => ({
-  browserHttpClients: {
-    subscribe: (listener: () => void) => {
-      if (!selectedBetaFixture.http) throw new Error('Missing owned browser facade');
-      return selectedBetaFixture.http.facade.subscribe(listener);
-    },
-  },
-}));
-
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { createElement, StrictMode, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
+import { createElement, useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { Climb, UserBoard } from '@boardsesh/shared-schema';
@@ -101,7 +45,6 @@ const playlistSheet = vi.hoisted(() => ({
 
 const betaVideoSheet = vi.hoisted(() => ({
   props: null as null | Record<string, unknown>,
-  instance: null as object | null,
 }));
 
 const boardSheet = vi.hoisted(() => ({
@@ -304,9 +247,7 @@ vi.mock('../../components/AddToPlaylistSheet', () => ({
 vi.mock('../../components/report-climb/ReportClimbSheet', () => ({ ReportClimbSheet: () => null }));
 vi.mock('../../components/AddBetaVideoSheet', () => ({
   AddBetaVideoSheet: (props: Record<string, unknown>) => {
-    const [instance] = useState(() => Object.freeze({}));
     betaVideoSheet.props = props;
-    betaVideoSheet.instance = instance;
     return createElement('div', { 'data-add-beta-video': 'true' });
   },
 }));
@@ -490,8 +431,6 @@ import type { BoardSheetClimbAction } from '../../components/board-presence/Boar
 import { clearSprayWallRegistry, registerSprayWall } from '../../lib/spray/spray-wall-registry';
 import { invalidateCredentialSnapshots } from '../../lib/privacy/privacy-cache';
 import { resetAllSettings } from '../../settings/hooks';
-import { createScopedHttpFixture } from '../../lib/graphql/__tests__/fixtures/scoped-http';
-import type { BetaOpening } from '../../lib/graphql/hooks/use-beta-links';
 import {
   enterDriveMode,
   markDriveLive,
@@ -2734,204 +2673,5 @@ describe('DrawerHostProvider phone split (iPhone Duo open in landscape)', () => 
     await act(async () => {});
 
     expect(nativeNavigation.dispatch).not.toHaveBeenCalled();
-  });
-});
-
-// The sheet is a native presentation leaf in this host. Its mount identity
-// observes the real provider's credential key; actual ModalSheet/SDK consumers
-// are qualified in their separate hosts, not replaced with accepting guards.
-describe('selected root beta producer ownership', () => {
-  type SelectedSheet = {
-    visible: boolean;
-    climb: Climb;
-    boardName: string;
-    layoutId: number;
-    angle: number;
-    opening: BetaOpening;
-    onClose: () => void;
-    onFullyDismissed: () => void;
-  };
-  let http: ReturnType<typeof createScopedHttpFixture>;
-  const board: BoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
-  const target = (uuid: string) => makeQueueItem(uuid).climb as Climb;
-  const sheet = () => {
-    if (!betaVideoSheet.props) throw new Error('Missing actual selected beta presentation');
-    return betaVideoSheet.props as unknown as SelectedSheet;
-  };
-  function mountSelected(strict = false) {
-    const hosts: HostValue[] = [];
-    const onHost = (host: HostValue) => {
-      hosts.push(host);
-    };
-    const children = createElement(Probe, { onHost, onRoute: () => {} });
-    const tree = () => {
-      const provider = createElement(DrawerHostProvider, null, children);
-      return strict ? createElement(StrictMode, null, provider) : provider;
-    };
-    const view = render(tree());
-    const latest = () => {
-      const host = hosts.at(-1);
-      if (!host) throw new Error('Missing committed drawer host');
-      return host;
-    };
-    return { ...view, latest, rerenderHost: () => view.rerender(tree()) };
-  }
-  beforeEach(() => {
-    http = createScopedHttpFixture();
-    selectedBetaFixture.http = http;
-    selectedBetaFixture.scope = http.scope();
-    betaVideoSheet.props = null;
-    betaVideoSheet.instance = null;
-  });
-  afterEach(() => {
-    cleanup();
-    http.dispose();
-    selectedBetaFixture.http = null;
-    selectedBetaFixture.scope = null;
-    selectedBetaFixture.authListeners.clear();
-  });
-
-  it('pins an immutable actual opening before batched replacement renders and keeps the credential-keyed sheet', () => {
-    const view = mountSelected();
-    const input = target('A');
-    act(() => view.latest().openAddBetaVideo(input, board));
-    const first = sheet();
-    const instance = betaVideoSheet.instance;
-    const retired: boolean[] = [];
-    const unsubscribe = first.opening.subscribe(() => {
-      try {
-        first.opening.assertAction();
-        retired.push(false);
-      } catch {
-        retired.push(true);
-      }
-    });
-    let presentationBeforeCommit: unknown;
-    act(() => {
-      view.latest().openAddBetaVideo(target('B'), board);
-      presentationBeforeCommit = betaVideoSheet.props;
-      view.latest().openAddBetaVideo(input, board);
-      input.name = 'Mutated after admission';
-    });
-    const current = sheet();
-    expect(presentationBeforeCommit).toBe(first);
-    expect(retired).toEqual([true]);
-    expect(() => first.opening.assertAction()).toThrow();
-    expect(current.opening).not.toBe(first.opening);
-    expect(current.opening.id).not.toBe(first.opening.id);
-    expect(current.opening.entity).toBe('kilter:A');
-    expect(Object.isFrozen(current.opening)).toBe(true);
-    expect(Object.isFrozen(current.climb)).toBe(true);
-    expect(current.climb.name).toBe('Climb A');
-    expect(current.visible).toBe(true);
-    expect(betaVideoSheet.instance).toBe(instance);
-    expect(() => current.opening.assertAction()).not.toThrow();
-    expect(http.performFetch).not.toHaveBeenCalled();
-    unsubscribe();
-  });
-
-  it('retires close synchronously and allows genuine cancelled shell cleanup before another render', () => {
-    const view = mountSelected();
-    act(() => view.latest().openAddBetaVideo(target('A'), board));
-    const original = sheet();
-    let retiredBeforeRender = false;
-    act(() => {
-      original.onClose();
-      try {
-        original.opening.assertAction();
-      } catch {
-        retiredBeforeRender = true;
-      }
-      original.onFullyDismissed();
-    });
-    expect(retiredBeforeRender).toBe(true);
-    expect(view.container.querySelector('[data-add-beta-video]')).toBeNull();
-    expect(http.performFetch).not.toHaveBeenCalled();
-  });
-
-  it('refuses retained A and B close/dismiss callbacks after batched A/B/A reopening', () => {
-    const view = mountSelected();
-    act(() => view.latest().openAddBetaVideo(target('A'), board));
-    const first = sheet();
-    const instance = betaVideoSheet.instance;
-    act(() => view.latest().openAddBetaVideo(target('B'), board));
-    const middle = sheet();
-    act(() => {
-      middle.onClose();
-      view.latest().openAddBetaVideo(target('A'), board);
-      first.onClose();
-      first.onFullyDismissed();
-      middle.onClose();
-      middle.onFullyDismissed();
-    });
-    const current = sheet();
-    expect(current.opening).not.toBe(first.opening);
-    expect(current.opening).not.toBe(middle.opening);
-    expect(current.climb.uuid).toBe('A');
-    expect(current.visible).toBe(true);
-    expect(view.container.querySelector('[data-add-beta-video]')).not.toBeNull();
-    expect(betaVideoSheet.instance).toBe(instance);
-    expect(() => current.opening.assertAction()).not.toThrow();
-    act(() => current.onClose());
-    expect(sheet().visible).toBe(false);
-    act(() => current.onFullyDismissed());
-    expect(view.container.querySelector('[data-add-beta-video]')).toBeNull();
-  });
-
-  it('retains original view authority through account A/B/A without credential I/O', () => {
-    const view = mountSelected();
-    const retained = view.latest().openAddBetaVideo;
-    act(() => retained(target('A'), board));
-    const original = sheet();
-    act(() => {
-      http.switchAccount('owned-B');
-      http.switchAccount('owned-A');
-      retained(target('stale'), board);
-    });
-    expect(() => original.opening.assertAction()).toThrow();
-    expect(sheet().opening).toBe(original.opening);
-    selectedBetaFixture.scope = http.scope();
-    view.rerenderHost();
-    act(() => view.latest().openAddBetaVideo(target('current'), board));
-    expect(sheet().climb.uuid).toBe('current');
-    expect(() => sheet().opening.assertAction()).not.toThrow();
-    expect(http.issueLease).not.toHaveBeenCalled();
-    expect(http.performFetch).not.toHaveBeenCalled();
-  });
-
-  it('rejects a retained fallback opener after committed board A/B/A and uses the current stored board', () => {
-    const view = mountSelected();
-    const retained = view.latest().openAddBetaVideo;
-    activeBoard.stored = { ...activeBoard.defaultStored, boardType: 'tension', layoutId: 7 };
-    view.rerenderHost();
-    activeBoard.stored = { ...activeBoard.defaultStored };
-    view.rerenderHost();
-    act(() => retained(target('old-fallback')));
-    expect(view.container.querySelector('[data-add-beta-video]')).toBeNull();
-    act(() => view.latest().openAddBetaVideo(target('new-fallback')));
-    expect(sheet()).toMatchObject({ boardName: 'kilter', layoutId: 1, angle: 40, visible: true });
-    expect(sheet().climb.uuid).toBe('new-fallback');
-    expect(() => sheet().opening.assertAction()).not.toThrow();
-  });
-
-  it('retires actual producer deletion and refuses its retained opener', () => {
-    const view = mountSelected();
-    const retained = view.latest().openAddBetaVideo;
-    act(() => retained(target('A'), board));
-    const original = sheet();
-    view.unmount();
-    act(() => retained(target('old-after-unmount'), board));
-    expect(() => original.opening.assertAction()).toThrow();
-    expect(betaVideoSheet.props).toBe(original);
-    expect(selectedBetaFixture.authListeners.size).toBe(0);
-    expect(http.performFetch).not.toHaveBeenCalled();
-  });
-
-  it('allows a new current opening after StrictMode layout re-setup', () => {
-    const view = mountSelected(true);
-    act(() => view.latest().openAddBetaVideo(target('strict-current'), board));
-    expect(sheet().climb.uuid).toBe('strict-current');
-    expect(sheet().visible).toBe(true);
-    expect(() => sheet().opening.assertAction()).not.toThrow();
   });
 });

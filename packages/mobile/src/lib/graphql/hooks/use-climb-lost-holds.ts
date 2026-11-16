@@ -1,13 +1,12 @@
-import { hashKey } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   GET_CLIMB_LOST_HOLDS,
   type ClimbLostHold,
   type GetClimbLostHoldsQueryResponse,
   type GetClimbLostHoldsQueryVariables,
 } from '@boardsesh/graphql/operations';
-import { useHttpFiniteQuery } from '../use-http-finite-query';
-import { useHttpQueryScope } from '../use-http-query-scope';
+import { getHttpClient } from '../client';
 
 export const CLIMB_LOST_HOLDS_QUERY_KEY = ['climbLostHolds'] as const;
 
@@ -22,9 +21,6 @@ const IDLE: ClimbLostHoldsState = { status: 'idle' };
 const LOADING: ClimbLostHoldsState = { status: 'loading' };
 const UNAVAILABLE: ClimbLostHoldsState = { status: 'unavailable' };
 
-// Restrictive observer provenance, never network authority or cached GraphQL shape.
-type LostHoldsSelection = ClimbLostHold[] | Readonly<{ inputKey: string; rows: ClimbLostHold[] }>;
-
 /**
  * Where the holds a spray climb lost used to be, for the remix editor's grey
  * rings.
@@ -38,49 +34,23 @@ type LostHoldsSelection = ClimbLostHold[] | Readonly<{ inputKey: string; rows: C
  * `variables` null disables it: a catalogue board, an intact climb, a fresh climb.
  */
 export function useClimbLostHolds(variables: GetClimbLostHoldsQueryVariables | null): ClimbLostHoldsState {
-  const scope = useHttpQueryScope();
-  const originalVariables = useMemo(
-    () => (scope.scoped && variables ? Object.freeze({ ...variables }) : variables),
-    [
-      scope.scoped,
-      variables,
-      variables?.boardName,
-      variables?.layoutId,
-      variables?.sizeId,
-      variables?.setIds,
-      variables?.angle,
-      variables?.climbUuid,
-    ],
-  );
-  const inputKey = hashKey(scope.key([...CLIMB_LOST_HOLDS_QUERY_KEY, originalVariables]));
-  const query = useHttpFiniteQuery<GetClimbLostHoldsQueryResponse, LostHoldsSelection>({
-    queryKey: [...CLIMB_LOST_HOLDS_QUERY_KEY, originalVariables],
-    queryFn: (operation) => operation.request<GetClimbLostHoldsQueryResponse>(GET_CLIMB_LOST_HOLDS, originalVariables!),
-    select: scope.scoped
-      ? (data) => Object.freeze({ inputKey, rows: data.climb?.lostHolds ?? [] })
-      : (data) => data.climb?.lostHolds ?? [],
+  const query = useQuery({
+    queryKey: [...CLIMB_LOST_HOLDS_QUERY_KEY, variables],
+    queryFn: () => getHttpClient().request<GetClimbLostHoldsQueryResponse>(GET_CLIMB_LOST_HOLDS, variables!),
+    select: (data) => data.climb?.lostHolds ?? [],
     enabled: variables !== null,
     networkMode: 'always',
     retry: 1,
     staleTime: 60 * 1000,
   });
   const disabled = variables === null;
-  const { data: selection, isError, isFetching } = query;
-  // QueryObserver can retain an old select result after a select error and a
-  // key change. Only the original view AND complete original input may project it.
-  const lostHolds = scope.scoped
-    ? selection && !Array.isArray(selection) && selection.inputKey === inputKey
-      ? selection.rows
-      : undefined
-    : (selection as ClimbLostHold[] | undefined);
-  const retainedOtherInput = scope.scoped && selection && !Array.isArray(selection) && selection.inputKey !== inputKey;
+  const { data: lostHolds, isError } = query;
   // One object per answer, so a consumer's memo keyed on it only re-runs when
   // the answer changes.
   return useMemo<ClimbLostHoldsState>(() => {
     if (disabled) return IDLE;
-    if (retainedOtherInput && isFetching) return LOADING;
     if (lostHolds) return { status: 'ready', lostHolds };
     if (isError) return UNAVAILABLE;
     return LOADING;
-  }, [disabled, lostHolds, isError, retainedOtherInput, isFetching]);
+  }, [disabled, lostHolds, isError]);
 }

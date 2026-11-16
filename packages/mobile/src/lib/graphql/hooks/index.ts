@@ -1,16 +1,3 @@
-import type { ToastGuard } from '../../../components/Toast';
-import { ClientError } from 'graphql-request';
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
-import { useHttpQueryScope } from '../use-http-query-scope';
-import { createHttpOperation } from '../http-operation';
-import { extractGraphqlMessage } from '../extract-error-message';
-import {
-  createBetaCauseKeeper,
-  refreshOriginalBetaLinks,
-  type BetaOpening,
-  type BetaCauseKeeper,
-  type BetaCompletion,
-} from './use-beta-links';
 import { useQuery, useMutation, useQueryClient, keepPreviousData, onlineManager } from '@tanstack/react-query';
 import type {
   BoardName,
@@ -1309,7 +1296,7 @@ export function useFavoriteStatus(
 // Beta Videos (Instagram + TikTok per climb)
 // ============================================
 
-import { useCallback, useEffect, useInsertionEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   GET_USER_BETA_LINKS,
   ATTACH_BETA_LINK,
@@ -1555,154 +1542,18 @@ export function useBoardseshGradesForAngles(
   });
 }
 
-export type BetaAttachOutcome =
-  | Readonly<{
-      kind: 'delivered';
-      response: AttachBetaLinkMutationResponse;
-      assertCurrent(): void;
-      subscribe(listener: () => void): () => void;
-      retain(): ToastGuard;
-      acceptCompletion(): BetaCompletion;
-      release(): void;
-    }>
-  | Readonly<{
-      kind: 'request-error';
-      assertCurrent(): void;
-      subscribe(listener: () => void): () => void;
-      retain(): ToastGuard;
-      readMessage(): string | null;
-      release(): void;
-    }>
-  | Readonly<{ kind: 'held' }>;
-export type BetaAttachOrigin = Readonly<{ opening: BetaOpening; assertIntent: () => void; signal?: AbortSignal }>;
-
 export function useAttachBetaLink() {
   const queryClient = useQueryClient();
-  const scope = useHttpQueryScope();
-  const issued = useRef(new Set<BetaCauseKeeper>());
-  useInsertionEffect(
-    () => () => {
-      // Accepted presentation has transferred out of producer-deletion lifetime.
-      // Pending/error work still belongs to this actual producer.
-      for (const keeper of issued.current) keeper.abandonProducer();
-    },
-    [],
-  );
-  const nativeMutation = useMutation({
-    mutationFn: (input: AttachBetaLinkMutationVariables['input']) => {
-      if (scope.scoped) throw new BrowserBackendConsumerError('unavailable');
-      return getHttpClient().request<AttachBetaLinkMutationResponse, AttachBetaLinkMutationVariables>(
-        ATTACH_BETA_LINK,
-        { input },
-      );
-    },
+
+  return useMutation({
+    mutationFn: (input: AttachBetaLinkMutationVariables['input']) =>
+      getHttpClient().request<AttachBetaLinkMutationResponse, AttachBetaLinkMutationVariables>(ATTACH_BETA_LINK, {
+        input,
+      }),
     onSuccess: (_data, vars) => {
       void queryClient.invalidateQueries({ queryKey: ['betaLinks', vars.boardType, vars.climbUuid] });
     },
   });
-  const attachWithOutcome = useCallback(
-    async (input: AttachBetaLinkMutationVariables['input'], origin: BetaAttachOrigin): Promise<BetaAttachOutcome> => {
-      if (!scope.scoped) throw new BrowserBackendConsumerError('unavailable');
-      // Synchronous capture before the first await or caller pending publication.
-      const { opening, assertIntent, signal } = origin;
-      const assertOriginal = () => {
-        assertIntent();
-        opening.assertAction();
-        scope.assertView();
-        assertIntent();
-      };
-      assertOriginal();
-      if (issued.current.size >= 16) return { kind: 'held' };
-      const controller = new AbortController();
-      const operation = createHttpOperation(scope.scope, { signal: controller.signal, assertDispatch: assertOriginal });
-      const { request, assertDeliveries, assertErrorDeliveries } = operation;
-      const variables = Object.freeze({
-        input: Object.freeze({ ...input, ...(input.privacy ? { privacy: Object.freeze({ ...input.privacy }) } : {}) }),
-      });
-      let keeper!: BetaCauseKeeper;
-      keeper = createBetaCauseKeeper({
-        opening,
-        operation,
-        assertIntent,
-        signal,
-        abort: () => controller.abort(new BrowserBackendConsumerError('superseded')),
-        onReleased: () => {
-          issued.current.delete(keeper);
-        },
-      });
-      issued.current.add(keeper);
-      let refresh: Promise<unknown> | undefined;
-      try {
-        keeper.assertCurrent();
-        let response: AttachBetaLinkMutationResponse;
-        try {
-          // SDK phase only. Formatting/cache/callback exceptions never enter it.
-          response = await request<AttachBetaLinkMutationResponse, AttachBetaLinkMutationVariables>(
-            ATTACH_BETA_LINK,
-            variables,
-          );
-        } catch (error: unknown) {
-          try {
-            assertErrorDeliveries(error);
-            // Authentic execution-partial data is never successful attach input.
-            if (error instanceof ClientError && error.response.data !== undefined && error.response.data !== null)
-              return { kind: 'held' };
-            keeper.settled(() => assertErrorDeliveries(error));
-            const visible = keeper.retain();
-            return Object.freeze({
-              kind: 'request-error' as const,
-              assertCurrent: visible.assertCurrent,
-              subscribe: visible.subscribe,
-              retain: keeper.retain,
-              release: visible.release,
-              readMessage() {
-                visible.assertCurrent();
-                const message = extractGraphqlMessage(error);
-                visible.assertCurrent();
-                return message;
-              },
-            });
-          } catch {
-            return { kind: 'held' };
-          }
-        }
-        assertDeliveries();
-        keeper.settled(assertDeliveries);
-        const visible = keeper.retain();
-        // Preserve nonblocking active refresh; this independent coordinator hold
-        // remains until its actual fixed-reader work settles.
-        refresh = refreshOriginalBetaLinks(
-          queryClient,
-          scope,
-          variables.input.boardType,
-          variables.input.climbUuid,
-          keeper.assertCurrent,
-        ).then(
-          () => undefined,
-          () => undefined,
-        );
-        return Object.freeze({
-          kind: 'delivered' as const,
-          response,
-          assertCurrent: visible.assertCurrent,
-          subscribe: visible.subscribe,
-          retain: keeper.retain,
-          release: visible.release,
-          acceptCompletion() {
-            visible.assertCurrent();
-            return keeper.acceptCompletion();
-          },
-        });
-      } catch {
-        return { kind: 'held' };
-      } finally {
-        if (refresh) void refresh.then(() => keeper.releaseCoordinator());
-        else keeper.releaseCoordinator();
-      }
-    },
-    [scope, queryClient],
-  );
-  return { ...nativeMutation, attachWithOutcome };
 }
 
 // Re-export feature-specific hooks that live alongside this barrel so the

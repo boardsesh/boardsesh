@@ -17,12 +17,7 @@ export type RestReadOutcome<T> =
   | Readonly<{ ok: true; result: T; assertCurrent(): void }>
   | Readonly<{ ok: false; error: unknown; assertCurrent(): void }>;
 
-export type RestOperationOptions = Readonly<{
-  signal?: AbortSignal;
-  /** Restrictive original caller veto at browser GET sends only. Native and
-   * the closed DELETE port retain their existing transport policy. */
-  assertBrowserGetDispatch?: () => void;
-}>;
+export type RestOperationOptions = Readonly<{ signal?: AbortSignal }>;
 
 export type RestOperation = Readonly<{
   assertView(): void;

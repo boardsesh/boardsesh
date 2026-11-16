@@ -1,15 +1,4 @@
 // @vitest-environment jsdom
-// Native view notifications are a no-op; credential storage is outside this host.
-vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
-// This presentation host must fail if an unrelated native transport runs.
-vi.mock('../../../lib/graphql/client', () => ({
-  getHttpClient: () => {
-    throw new Error('Unexpected native GraphQL I/O');
-  },
-  getOfflineSyncHttpClient: () => {
-    throw new Error('Unexpected native offline I/O');
-  },
-}));
 // The one test that actually RENDERS PlayDrawer.
 //
 // Every anonymous rule in this component was previously pinned one hop away —

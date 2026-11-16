@@ -22,22 +22,15 @@ export type OpenInstagramResult = {
  * require declaring `instagram` in `LSApplicationQueriesSchemes`, which needs a
  * native rebuild. `openURL` works without it and degrades gracefully.
  */
-export async function openInstagram(assertCurrent?: () => void): Promise<OpenInstagramResult> {
-  assertCurrent?.();
+export async function openInstagram(): Promise<OpenInstagramResult> {
   try {
     await Linking.openURL(INSTAGRAM_APP_URL);
-    assertCurrent?.();
     return { opened: true, usedFallback: false };
   } catch {
-    // Retirement is a veto, never evidence that the native app is missing.
-    assertCurrent?.();
     try {
-      assertCurrent?.();
       await Linking.openURL(INSTAGRAM_WEB_URL);
-      assertCurrent?.();
       return { opened: true, usedFallback: true };
     } catch {
-      assertCurrent?.();
       return { opened: false, usedFallback: false };
     }
   }

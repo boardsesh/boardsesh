@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Native view notifications are a no-op; credential storage is outside this host.
-vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
 // How many requests one settled climb costs for the Climber logs card, counted
 // at the HTTP client. The database behind these is the scarce thing, so the
 // numbers are pinned per kind of viewer:

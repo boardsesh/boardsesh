@@ -46,8 +46,6 @@ export type ShareBetaAscentRowViewProps = {
 
   ascent: AscentFeedItem;
   source: ShareBetaAscentSource;
-  assertOriginal?: () => void;
-  assertPresentation?: () => void;
   onActivate: (ascent: AscentFeedItem, source: ShareBetaAscentSource) => void;
 };
 
@@ -69,8 +67,6 @@ export const ShareBetaAscentRowView = memo(function ShareBetaAscentRowView({
   ascent,
   source,
   onActivate,
-  assertOriginal,
-  assertPresentation,
 }: ShareBetaAscentRowViewProps) {
   const { t } = useTranslation(['session', 'you']);
   const { systemColors, brandColors } = useTheme();
@@ -147,28 +143,10 @@ export const ShareBetaAscentRowView = memo(function ShareBetaAscentRowView({
     onActivateRef.current(ascentRef.current, sourceRef.current);
   }, []);
 
-  const handleOwnedPress = useCallback(() => {
-    try {
-      assertOriginal?.();
-      hapticSelection();
-      assertOriginal?.();
-      onActivate(ascent, source);
-    } catch {
-      /* A recycled or retired row cannot activate its successor. */
-    }
-  }, [assertOriginal, ascent, source, onActivate]);
-
-  if (assertOriginal) {
-    try {
-      (assertPresentation ?? assertOriginal)();
-    } catch {
-      return null;
-    }
-  }
   return (
     <View style={styles.container}>
       <PressableSurface
-        onPress={assertOriginal ? handleOwnedPress : handlePress}
+        onPress={handlePress}
         feedback="opacity"
         opacityTo={0.7}
         accessibilityRole="button"

@@ -1,40 +1,5 @@
-import { BrowserBackendConsumerError } from '@boardsesh/auth-protocol/browser-backend-consumer';
 import { GraphQLClient } from 'graphql-request';
 import { createAbortError } from './request-timeout';
-
-type DispatchVeto = Readonly<{ assertCurrent: () => void; close: () => void }>;
-// Only actual invocation signals can locate a veto. Closed weak aliases remain
-// refusal tombstones while a timed-out acquisition can still resume.
-const dispatchVetos = new WeakMap<AbortSignal, DispatchVeto>();
-function registerDispatchVeto(signal: AbortSignal, original: () => void): DispatchVeto {
-  let callback: (() => void) | undefined = original;
-  const record = Object.freeze({
-    assertCurrent() {
-      if (!callback) throw new BrowserBackendConsumerError('superseded');
-      callback();
-    },
-    close() {
-      callback = undefined;
-    },
-  });
-  if (dispatchVetos.has(signal)) throw new BrowserBackendConsumerError('superseded');
-  dispatchVetos.set(signal, record);
-  return record;
-}
-export function captureHttpOperationDispatchVeto(signal: AbortSignal | null | undefined): (() => void) | undefined {
-  return signal ? dispatchVetos.get(signal)?.assertCurrent : undefined;
-}
-export function inheritHttpOperationDispatchVeto(
-  source: AbortSignal | null | undefined,
-  derived: AbortSignal,
-): AbortSignal {
-  const record = source ? dispatchVetos.get(source) : undefined;
-  if (!record) return derived;
-  const existing = dispatchVetos.get(derived);
-  if (existing && existing !== record) throw new BrowserBackendConsumerError('superseded');
-  dispatchVetos.set(derived, record);
-  return derived;
-}
 
 /** Keep the installed SDK's request overloads and decoded objects. Only signal
  * composition and the original invocation's delivery admission are added. */
@@ -44,9 +9,8 @@ export function createHttpOperationRequest(options: {
     requestIdentity: AbortSignal,
   ) => Readonly<{ admit: (result: unknown) => void; admitError: (error: unknown) => void; discard: () => void }>;
   readonly signal: AbortSignal;
-  readonly assertDispatch?: () => void;
 }): GraphQLClient['request'] {
-  const { resolveClient, beginRequest, signal, assertDispatch } = options;
+  const { resolveClient, beginRequest, signal } = options;
   // The prototype target retains the SDK overloads; the trap always invokes
   // the actual operation client with its own bound receiver below.
   return new Proxy(GraphQLClient.prototype.request.bind(GraphQLClient.prototype), {
@@ -56,7 +20,6 @@ export function createHttpOperationRequest(options: {
       };
       assertActive(signal);
       let pending: ReturnType<typeof beginRequest> | undefined;
-      let dispatchVeto: DispatchVeto | undefined;
       try {
         const first = parameters[0];
         // The SDK accepts either RequestOptions or document/variables/headers.
@@ -68,7 +31,6 @@ export function createHttpOperationRequest(options: {
         const caller = 'signal' in requestOptions ? (requestOptions.signal as AbortSignal | null | undefined) : null;
         // A distinct identity for every invocation, even without caller signal.
         const requestSignal = AbortSignal.any(caller ? [caller, signal] : [signal]);
-        if (assertDispatch) dispatchVeto = registerDispatchVeto(requestSignal, assertDispatch);
         pending = beginRequest(requestSignal);
         assertActive(requestSignal);
         const client = resolveClient();
@@ -83,11 +45,7 @@ export function createHttpOperationRequest(options: {
         pending?.admitError(error);
         throw error;
       } finally {
-        try {
-          pending?.discard();
-        } finally {
-          dispatchVeto?.close();
-        }
+        pending?.discard();
       }
     },
   });

@@ -1,7 +1,3 @@
-import { useHttpQueryScope } from '../lib/graphql/use-http-query-scope';
-import { useHttpActionScope } from '../lib/graphql/use-http-action-scope';
-import { subscribeHttpOperationScope } from '../lib/graphql/use-auth-token';
-import { createBetaOpeningCoordinator, type BetaOpening } from '../lib/graphql/hooks/use-beta-links';
 import { useCurrentClimbSurface } from '../hooks/use-current-climb-surface';
 import type { TickClimbIdentity } from '@boardsesh/board-config';
 /**
@@ -18,18 +14,7 @@ import type { TickClimbIdentity } from '@boardsesh/board-config';
  */
 
 import { useClimbModerationEnabled } from './feature-flags-provider';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useInsertionEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useNavigationContainerRef, useSegments } from 'expo-router';
 import { isTabsRoute } from '../lib/route-segments';
 import { useWallDisplayOpen } from '../lib/wall-display-presence';
@@ -367,32 +352,6 @@ function navigateToPlayer() {
 }
 
 export function DrawerHostProvider({ children }: { children: ReactNode }) {
-  const betaScope = useHttpQueryScope();
-  const betaActions = useHttpActionScope();
-  const [betaOpenings] = useState(createBetaOpeningCoordinator);
-  type BetaPresentation = { opening: BetaOpening; closed: boolean; assertView: () => void };
-  type BetaData = { climb: Climb; boardConfig: BoardConfig; presentation?: BetaPresentation };
-  const betaPresentation = useRef<BetaPresentation | undefined>(undefined);
-  const betaLifetime = useRef(true);
-  const [selectedBeta, setSelectedBeta] = useState<Readonly<{ data: BetaData; visible: boolean }>>();
-  useInsertionEffect(
-    () => () => {
-      betaLifetime.current = false;
-      betaOpenings.retire({ deferNotifications: true });
-    },
-    [betaOpenings],
-  );
-  useLayoutEffect(() => {
-    if (!betaScope.scoped) return;
-    return subscribeHttpOperationScope(() => {
-      const opening = betaOpenings.current();
-      try {
-        opening?.assertPresentation();
-      } catch {
-        opening?.retire();
-      }
-    });
-  }, [betaScope.scoped, betaOpenings]);
   const navigationRef = useNavigationContainerRef();
   const composerCredentialScope = usePrivacyCredentialScope();
   // The climb to show in the player route, with a per-open nonce so a re-tap
@@ -535,14 +494,12 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     clearIfClosed: clearPlaylistSheet,
   } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig; anchorPoint?: WindowAnchorPoint }>();
   const {
-    data: nativeBetaVideoData,
-    visible: nativeBetaVideoVisible,
+    data: betaVideoData,
+    visible: betaVideoVisible,
     open: openBetaVideoSheet,
     close: closeBetaVideoSheet,
     clearIfClosed: clearBetaVideoSheet,
-  } = useDeferredSheetData<BetaData>();
-  const betaVideoData = betaScope.scoped ? (selectedBeta?.data ?? null) : nativeBetaVideoData;
-  const betaVideoVisible = betaScope.scoped ? (selectedBeta?.visible ?? false) : nativeBetaVideoVisible;
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const {
     data: reportClimbData,
     visible: reportClimbVisible,
@@ -918,120 +875,16 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // the climb menus' shared commands (useClimbActions) and by PlayDrawer.
   // Falls back to the stored active board, not the override-inclusive one, so a
   // temporary drawer board override can't leak into the beta-video surface.
-  const betaDefaultKey = JSON.stringify([
-    betaScope.scope,
-    storedActiveBoardConfig?.boardName,
-    storedActiveBoardConfig?.layoutId,
-    storedActiveBoardConfig?.sizeId,
-    storedActiveBoardConfig?.setIds,
-    storedActiveBoardConfig?.angle,
-  ]);
-  const betaDefaultCommitted = useRef({
-    key: betaDefaultKey,
-    identity: Object.freeze({}),
-    boardConfig: storedActiveBoardConfig,
-  });
-  const betaDefaultOwner = useMemo(
-    () =>
-      betaDefaultCommitted.current.key === betaDefaultKey
-        ? betaDefaultCommitted.current
-        : { key: betaDefaultKey, identity: Object.freeze({}), boardConfig: storedActiveBoardConfig },
-    [betaDefaultKey, storedActiveBoardConfig],
-  );
-  useLayoutEffect(() => {
-    betaDefaultCommitted.current = betaDefaultOwner;
-  }, [betaDefaultOwner]);
   const openAddBetaVideo = useCallback(
     (climb: Climb, boardConfigOverride?: BoardConfig) => {
-      if (!betaScope.scoped) {
-        const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-        if (!boardConfig) return;
-        openBetaVideoSheet({ climb, boardConfig });
-        return;
-      }
-      let action: ReturnType<typeof betaActions.capture> | undefined;
-      try {
-        action = betaActions.capture();
-        const assertOriginal = () => {
-          action!.assertView();
-          if (
-            !betaLifetime.current ||
-            (!boardConfigOverride && betaDefaultCommitted.current.identity !== betaDefaultOwner.identity)
-          )
-            throw new Error('Retired beta producer');
-        };
-        assertOriginal();
-        const boardConfig = boardConfigOverride ?? betaDefaultOwner.boardConfig;
-        if (!boardConfig) return;
-        const pinnedClimb = Object.freeze({ ...climb });
-        const pinnedBoard = Object.freeze({ ...boardConfig });
-        const opening = betaOpenings.open(betaScope, `${pinnedBoard.boardName}:${pinnedClimb.uuid}`);
-        assertOriginal();
-        const presentation: BetaPresentation = { opening, closed: false, assertView: betaScope.assertView };
-        betaPresentation.current = presentation;
-        const data = Object.freeze({ climb: pinnedClimb, boardConfig: pinnedBoard, presentation });
-        setSelectedBeta((previous) => {
-          try {
-            opening.assertAction();
-            if (betaPresentation.current !== presentation) return previous;
-            return Object.freeze({ data, visible: true });
-          } catch {
-            return previous;
-          }
-        });
-      } catch {
-        /* The admitted opening belongs to this provider, never a fresh menu scope. */
-      } finally {
-        action?.finish();
-      }
+      const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
+      if (!boardConfig) return;
+      openBetaVideoSheet({ climb, boardConfig });
     },
-    [openBetaVideoSheet, betaScope, betaActions, betaDefaultOwner, betaOpenings],
+    [openBetaVideoSheet],
   );
-  const closeAddBetaVideo = useCallback(
-    (expected?: BetaPresentation) => {
-      if (!betaScope.scoped) {
-        closeBetaVideoSheet();
-        return;
-      }
-      if (!expected || betaPresentation.current !== expected || expected.closed || !betaLifetime.current) return;
-      try {
-        expected.assertView();
-        expected.opening.assertPresentation();
-      } catch {
-        return;
-      }
-      expected.closed = true;
-      expected.opening.close();
-      setSelectedBeta((previous) =>
-        previous?.data.presentation === expected && betaPresentation.current === expected && expected.closed
-          ? Object.freeze({ ...previous, visible: false })
-          : previous,
-      );
-    },
-    [betaScope.scoped, closeBetaVideoSheet],
-  );
-  const clearAddBetaVideo = useCallback(
-    (expected?: BetaPresentation) => {
-      if (!betaScope.scoped) {
-        clearBetaVideoSheet();
-        return;
-      }
-      // Shell cleanup survives ordinary cancel, but never an exact presentation
-      // replacement or synchronous open/close/open before React has rendered.
-      if (!expected || betaPresentation.current !== expected || !expected.closed || !betaLifetime.current) return;
-      try {
-        expected.assertView();
-      } catch {
-        return;
-      }
-      setSelectedBeta((previous) =>
-        previous?.data.presentation === expected && betaPresentation.current === expected && expected.closed
-          ? undefined
-          : previous,
-      );
-    },
-    [betaScope.scoped, clearBetaVideoSheet],
-  );
+
+  const closeAddBetaVideo = closeBetaVideoSheet;
 
   // Single parameterized report opener (mirrors openAddBetaVideo), used by the
   // climb menus' shared commands (useClimbActions). Falls back to the
@@ -1558,13 +1411,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
                 boardName={betaVideoData.boardConfig.boardName as BoardName}
                 layoutId={betaVideoData.boardConfig.layoutId}
                 angle={betaVideoData.boardConfig.angle}
-                onClose={
-                  betaVideoData.presentation ? () => closeAddBetaVideo(betaVideoData.presentation) : closeAddBetaVideo
-                }
-                onFullyDismissed={
-                  betaVideoData.presentation ? () => clearAddBetaVideo(betaVideoData.presentation) : clearBetaVideoSheet
-                }
-                {...(betaVideoData.presentation ? { opening: betaVideoData.presentation.opening } : {})}
+                onClose={closeAddBetaVideo}
+                onFullyDismissed={clearBetaVideoSheet}
               />
             ) : null}
             {reportClimbData ? (

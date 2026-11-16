@@ -21,17 +21,6 @@ const registry = vi.hoisted(() => ({
   art: null as null | { scale: number; holds: unknown[] },
 }));
 
-// The geometry fixture supplies local hold positions below. Native scope
-// imports may resolve this module, but drawing/dismissing rings never sends I/O.
-vi.mock('../../../lib/graphql/client', () => ({
-  getHttpClient: () => {
-    throw new Error('Unexpected native HTTP in local ghost fixture');
-  },
-  getOfflineSyncHttpClient: () => {
-    throw new Error('Unexpected native offline HTTP in local ghost fixture');
-  },
-}));
-
 vi.mock('../../../lib/graphql/hooks/use-climb-lost-holds', () => ({
   useClimbLostHolds: (variables: unknown) => {
     lostHoldsQuery.variables.push(variables);

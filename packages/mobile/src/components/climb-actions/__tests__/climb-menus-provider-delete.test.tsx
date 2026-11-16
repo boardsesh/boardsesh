@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Native view notifications are a no-op; credential storage is outside this host.
-vi.mock('../../../lib/graphql/use-auth-token', () => ({ subscribeHttpOperationScope: () => () => {} }));
 // Delete from a row's long-press menu, through the real command host: the
 // provider, `useClimbActions`, the delete flow and the native HTTP mutation.
 // Picking a row clears the selection, which unmounts the executor that ran it,
