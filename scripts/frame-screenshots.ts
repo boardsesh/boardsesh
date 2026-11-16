@@ -519,8 +519,9 @@ export async function frameShowcaseComposition(
     }
   } else if (!wide && (layout === 'store-queue' || layout === 'store-wall')) {
     // These details are lifted from the same full native capture shown below.
-    // Queue: first two rows and their contributor avatars. Wall: native status chip.
-    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.075, height: 0.06 };
+    // Queue: first two rows and their contributor avatars. Wall: the current-climb
+    // card in the expanded wall sheet (the presenting header is empty in this story).
+    const crop = layout === 'store-queue' ? { top: 0.195, height: 0.34 } : { top: 0.26, height: 0.125 };
     const detailWidth = region.width;
     const detailHeight = detailWidth * aspect * crop.height;
     const screenTop = region.top + detailHeight + height * 0.025;

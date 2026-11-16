@@ -368,6 +368,7 @@ type NativeClimbRenderResult = {
    * be visible-broken to the user instead of invisibly-broken.
    */
   missingBackgroundCount: number;
+  backgroundsLoading: boolean;
   /**
    * Paint this under `backgroundPaths` (`LayeredClimbImage`'s `baseColor`), or
    * nothing when undefined. Set only for a spray wall drawn on its "Holds only"
@@ -1008,6 +1009,9 @@ function warmupRenderedOverlaysOnce(): void {
       // File and Directory instances; File has a .name like "<key>.png".
       const name = entry.name;
       if (!name || !name.endsWith('.png')) continue;
+      // The capability probe owns these files and may still be comparing them.
+      // Deleting its first PNG here permanently misclassifies Aura as unavailable.
+      if (name.startsWith('boardsesh-probe-')) continue;
       if (!name.startsWith(currentVersionPrefix) || !isSprayOverlayCurrent(name.slice(0, -'.png'.length))) {
         // Stale leftover from a prior RENDERER_VERSION. Best-effort delete;
         // any failure (permissions, race with another writer) is non-fatal
@@ -2298,6 +2302,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     key: string;
     paths: string[];
     missingCount: number;
+    settled: boolean;
   } | null>(() => {
     const sync = tryGetBackgroundPathsSync({
       boardName,
@@ -2308,7 +2313,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       colorScheme,
     });
     if (!sync) return null;
-    return { key: currentBoardKey, paths: sync.paths, missingCount: sync.missingCount };
+    return {
+      key: currentBoardKey,
+      paths: sync.paths,
+      missingCount: sync.missingCount,
+      settled: sync.missingCount === 0,
+    };
   });
 
   const mountedRef = useRef(true);
@@ -2394,6 +2404,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           key: currentBoardKey,
           paths: sync.paths,
           missingCount: sync.missingCount,
+          settled: sync.missingCount === 0,
         });
       }
     }
@@ -2423,6 +2434,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         // + first-path comparison is sufficient.
         if (
           prev?.key === currentBoardKey &&
+          prev.settled &&
           prev.missingCount === resolved.missingCount &&
           prev.paths.length === resolved.paths.length &&
           prev.paths[0] === resolved.paths[0]
@@ -2433,6 +2445,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
           key: currentBoardKey,
           paths: resolved.paths,
           missingCount: resolved.missingCount,
+          settled: true,
         };
       });
     })();
@@ -3400,6 +3413,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     verifyOverlayForNativeUse,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundsLoading: storedBackgrounds?.key !== currentBoardKey || !storedBackgrounds.settled,
     backgroundBaseColor,
     effectiveRenderSettings,
     boardseshRendererAvailable: getBoardseshRendererSupport(),

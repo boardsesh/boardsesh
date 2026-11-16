@@ -47,6 +47,44 @@ afterEach(() => {
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+describe('wall showcase detail', () => {
+  it('magnifies the current-climb card rather than the empty presenting header', async () => {
+    const width = 400;
+    const height = 870;
+    const card = { left: 24, top: 245, width: 352, height: 84 };
+    const source = await sharp({ create: { width, height, channels: 3, background: '#000000' } })
+      .composite([
+        {
+          input: Buffer.from(
+            `<svg width="${card.width}" height="${card.height}"><rect width="100%" height="100%" fill="#00ff00"/></svg>`,
+          ),
+          left: card.left,
+          top: card.top,
+        },
+      ])
+      .png()
+      .toBuffer();
+    const framed = await frameComposition(
+      [source],
+      { headline: 'On the wall', description: 'Climb together' },
+      'store-wall',
+    );
+    const { data: pixels, info } = await sharp(framed).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    // The full phone is necessarily scaled down. A separate band at least 75%
+    // of the canvas width proves the actual card was also lifted into the detail.
+    let widestCardRow = 0;
+    for (let row = 0; row < info.height; row++) {
+      let greenPixels = 0;
+      for (let column = 0; column < info.width; column++) {
+        const offset = (row * info.width + column) * info.channels;
+        if (pixels[offset] < 10 && pixels[offset + 1] > 245 && pixels[offset + 2] < 10) greenPixels++;
+      }
+      widestCardRow = Math.max(widestCardRow, greenPixels);
+    }
+    expect(widestCardRow).toBeGreaterThan(width * 0.75);
+  });
+});
+
 describe('board-specific CPP openings', () => {
   const devices = Object.keys(ACCEPTED_SIZES);
   const headlineByTarget = {

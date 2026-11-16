@@ -47,6 +47,8 @@ const renderResult = vi.hoisted(() => ({
     overlayUri: string | null;
     rendererUnavailable: boolean;
     overlayFailed?: boolean;
+    missingBackgroundCount?: number;
+    backgroundsLoading?: boolean;
   },
 }));
 vi.mock('../../hooks/use-native-climb-render', () => ({
@@ -57,7 +59,8 @@ vi.mock('../../hooks/use-native-climb-render', () => ({
     onOverlayError: () => {},
     onOverlayMounted: () => {},
     backgroundPaths: ['/bundled/kilter.webp'],
-    missingBackgroundCount: 0,
+    missingBackgroundCount: renderResult.current.missingBackgroundCount ?? 0,
+    backgroundsLoading: renderResult.current.backgroundsLoading ?? false,
     rendererUnavailable: renderResult.current.rendererUnavailable,
     overlayFailed: renderResult.current.overlayFailed,
     artworkIdentity: {
@@ -92,6 +95,27 @@ function overlaySources(container: HTMLElement): string[] {
 }
 
 describe('BoardImageNative overlay layers', () => {
+  it.each([0, 1])('waits for background downloads before reporting %s missing layers', (missingCount) => {
+    imageEvents.displays.length = 0;
+    renderResult.current = {
+      overlayUri: 'file:///overlay-ready.png',
+      rendererUnavailable: false,
+      missingBackgroundCount: 1,
+      backgroundsLoading: true,
+    };
+    const readiness = vi.fn();
+    const props = { ...BOARD, frames: 'p1r12', onArtReadinessChange: readiness };
+    const { rerender } = render(createElement(BoardImageNative, props));
+    act(() => {
+      for (const event of imageEvents.displays) event.display?.();
+    });
+    expect(readiness).toHaveBeenLastCalledWith('loading');
+    expect(readiness).not.toHaveBeenCalledWith('failed');
+    renderResult.current = { ...renderResult.current, missingBackgroundCount: missingCount, backgroundsLoading: false };
+    rerender(createElement(BoardImageNative, { ...props, renderWidth: 601 }));
+    expect(readiness).toHaveBeenLastCalledWith(missingCount ? 'failed' : 'ready');
+  });
+
   it('publishes a terminal failure without declaring missing holds ready', () => {
     imageEvents.displays.length = 0;
     renderResult.current = { overlayUri: 'file:///overlay-ready.png', rendererUnavailable: false };

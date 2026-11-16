@@ -115,6 +115,25 @@ describe('Metro browser/native resolution boundary', () => {
     );
   });
 
+  it('uses the swipeable browser adapter only outside its own implementation', () => {
+    const moduleName = 'react-native-gesture-handler/ReanimatedSwipeable';
+    const shim = join(mobileRoot, 'src/web-shims/reanimated-swipeable');
+    expect(resolveCommonJs('web', moduleName)).toBe(shim);
+    for (const platform of ['ios', 'android']) {
+      expect(resolveCommonJs(platform, moduleName)).not.toBe(shim);
+    }
+    expect(
+      config.resolver?.resolveRequest?.(
+        {
+          originModulePath: `${shim}.tsx`,
+          resolveRequest: (_context: unknown, requestedModule: string) => requestedModule,
+        },
+        moduleName,
+        'web',
+      ),
+    ).not.toBe(shim);
+  });
+
   it('omits only unused browser replay/widgets while retaining native SDK defaults', () => {
     expect(loadMetroConfig(true).sdkOptions).toEqual({ includeWebReplay: false, includeWebFeedback: false });
     expect(loadMetroConfig(false).sdkOptions).toBeUndefined();

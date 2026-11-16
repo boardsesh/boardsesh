@@ -31,9 +31,14 @@ const StoryRow = memo(function StoryRow(props: QueueItemRowProps) {
   return <QueueItemRowView {...props} hasThumbnail menu={menu} ContentComponent={renderStoryClimbContent} />;
 });
 
-function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & { empty?: boolean }) {
+function QueueStory({
+  empty = false,
+  historyVisible = false,
+  onReady,
+  onError,
+}: StoryRenderControls & { empty?: boolean; historyVisible?: boolean }) {
   const { board: STORY_BOARD, climbs } = useStoryBoardFixture();
-  const initialQueue = useMemo(() => climbs.slice(0, 3).map((climb) => climbToQueueItem(climb)), [climbs]);
+  const initialQueue = useMemo(() => climbs.map((climb) => climbToQueueItem(climb)), [climbs]);
   const sheetRef = useRef<BottomSheetModal>(null);
   const managed = useStorySheetPresentation(sheetRef);
   const presented = managed.presented;
@@ -46,10 +51,10 @@ function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & {
   const insets = useSafeAreaInsets();
   const [queue, setQueue] = useState(empty ? [] : initialQueue);
   const [current, setCurrent] = useState<ClimbQueueItem | null>(
-    empty ? null : initialQueue[Math.min(1, initialQueue.length - 1)],
+    empty ? null : initialQueue[Math.min(historyVisible ? 1 : 0, initialQueue.length - 1)],
   );
   const [editing, setEditing] = useState(false);
-  const [history, setHistory] = useState(true);
+  const [history, setHistory] = useState(historyVisible);
   const [fullHistory, setFullHistory] = useState(false);
   const [selected, setSelected] = useState(new Set<string>());
   const [dragging, setDragging] = useState(false);
@@ -92,7 +97,7 @@ function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & {
                 isEditMode={editing}
                 showHistory={history}
                 selectedCount={selected.size}
-                queueCount={Math.max(0, queue.length - 2)}
+                queueCount={Math.max(0, queue.length - (historyVisible ? 2 : 1))}
                 viewOnlyMode={queue.length === 0}
                 onToggleEditMode={() => setEditing((previous) => !previous)}
                 onToggleHistory={() => setHistory((previous) => !previous)}
@@ -105,7 +110,7 @@ function QueueStory({ empty = false, onReady, onError }: StoryRenderControls & {
                 onViewableItemsChanged={art.onViewableItemsChanged}
                 queue={queue}
                 currentItem={current}
-                historyCount={empty || initialQueue.length < 2 ? 0 : 1}
+                historyCount={empty || !historyVisible || initialQueue.length < 2 ? 0 : 1}
                 board={STORY_BOARD}
                 isEditMode={editing}
                 showHistory={history}
@@ -156,7 +161,7 @@ const stories: StoryModule = {
       name: 'History and up next',
       layout: 'fullscreen',
       readiness: 'explicit',
-      render: (controls) => <QueueStory {...controls} />,
+      render: (controls) => <QueueStory {...controls} historyVisible />,
     },
     empty: {
       name: 'Empty queue',

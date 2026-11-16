@@ -7,6 +7,7 @@ import { profileStoryData } from '../../dev/fixtures/profile';
 import type { StoryModule } from '../../dev/stories/types';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useTheme } from '../../providers/theme-provider';
+import { ReadableColumn } from '../ReadableColumn';
 import { GlassActionToolbar } from '../chrome/GlassActionToolbar';
 import { UserAvatarToolbarActionView } from '../user-drawer/UserAvatarToolbarActionView';
 import { ProfileTopChromeView } from './ProfileTopChromeView';
@@ -36,14 +37,16 @@ function ProgressStory({ state = 'ready' }: { state?: State }) {
   );
   return (
     <View style={[styles.fill, { backgroundColor: systemColors.background }]}>
-      <ProgressView
-        data={model}
-        topInset={topInset}
-        bottomInset={bottomInset}
-        nativeRootHeader={nativeRootHeader}
-        listTopOffset={0}
-        onOpenFilters={noop}
-      />
+      <ReadableColumn style={styles.fill}>
+        <ProgressView
+          data={model}
+          topInset={topInset}
+          bottomInset={bottomInset}
+          nativeRootHeader={nativeRootHeader}
+          listTopOffset={0}
+          onOpenFilters={noop}
+        />
+      </ReadableColumn>
       <ProfileTopChromeView
         activeTab="progress"
         displayName="Alex"

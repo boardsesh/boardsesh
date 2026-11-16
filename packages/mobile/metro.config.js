@@ -124,6 +124,7 @@ const webReactDomRoot = path.resolve(projectRoot, 'web-runtime/node_modules/reac
 // Native resolution never enters these tables, preserving the existing
 // iOS/Android module graph and OTA fingerprint.
 const WEB_SHIM_MODULES = {
+  'react-native-gesture-handler/ReanimatedSwipeable': path.resolve(projectRoot, 'src/web-shims/reanimated-swipeable'),
   '@expo/ui/community/bottom-sheet': path.resolve(projectRoot, 'src/web-shims/bottom-sheet'),
   '@react-native-google-signin/google-signin': path.resolve(projectRoot, 'src/web-shims/google-signin'),
   '@react-native-async-storage/async-storage': path.resolve(projectRoot, 'src/web-shims/async-storage'),

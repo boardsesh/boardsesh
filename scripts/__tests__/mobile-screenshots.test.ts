@@ -37,6 +37,7 @@ import {
   findDuplicateScreenshotGroups,
   findScreenshotRenderProblems,
   iosSourceFlowFile,
+  iosSimulatorLaunchArgs,
   screenshotLogcatState,
   summariseScreenshotRender,
   writeCapturedScreenshots,
@@ -2197,5 +2198,18 @@ describe('native capture cache isolation', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('iOS simulator Metro launch', () => {
+  it('uses the native initial URL argument without invoking an OS deep-link dialog', () => {
+    expect(iosSimulatorLaunchArgs('owned-simulator', 8181)).toEqual([
+      'simctl',
+      'launch',
+      'owned-simulator',
+      'com.boardsesh.app',
+      '--initialUrl',
+      'http://localhost:8181',
+    ]);
   });
 });

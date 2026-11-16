@@ -243,6 +243,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
     onOverlayMounted,
     backgroundPaths,
     missingBackgroundCount,
+    backgroundsLoading,
     backgroundBaseColor,
     rendererUnavailable,
     artworkIdentity,
@@ -427,9 +428,10 @@ const BoardImageNative = React.memo(function BoardImageNative({
         if (bridging) setDisplayedArtIdentity(currentArtIdentity);
       }
       onArtReadinessChange?.(
-        missingBackgroundCount > 0 || (!liveOverlay && (overlayFailed || (frames.length > 0 && rendererUnavailable)))
+        (missingBackgroundCount > 0 && !backgroundsLoading) ||
+          (!liveOverlay && (overlayFailed || (frames.length > 0 && rendererUnavailable)))
           ? 'failed'
-          : ready && !bridging
+          : ready && !bridging && !backgroundsLoading
             ? 'ready'
             : 'loading',
       );
@@ -438,6 +440,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       onArtReadinessChange,
       overlayFailed,
       missingBackgroundCount,
+      backgroundsLoading,
       frames,
       rendererUnavailable,
       bridging,

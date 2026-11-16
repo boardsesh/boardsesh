@@ -52,7 +52,7 @@ export function WallStatusScene({ onReady, onError }: StoryRenderControls) {
   const { board: STORY_BOARD, climbs, label } = useStoryBoardFixture();
   const presence = useMemo(
     () =>
-      climbs.slice(0, 3).map((climb, index): BoardPresenceClimb => ({
+      climbs.map((climb, index): BoardPresenceClimb => ({
         climbUuid: climb.uuid,
         name: climb.name,
         frames: climb.frames,

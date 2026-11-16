@@ -13,6 +13,8 @@ These commands boot Metro with `EXPO_PUBLIC_STORY_MODE=1`. The root chooses the 
 
 The route `dev/stories/<id>` also selects that isolated root in a dev bundle. For a fresh capture, use the commands above so the production root cannot initialize before the router resolves the link. A production bundle does not load story modules.
 
+Native deep links to `dev/stories` and its internal `dev/story-tabs` routes bypass application consent deferral in dev bundles. The isolated root has no application consent flow to settle; ordinary app links and production bundles retain that gate.
+
 Visual capture runners preserve `--render-mode aura|classic|default` in the story deep link. Ad hoc links can use `?renderMode=classic`; the default is Aura. Requested Aura captures wait for renderer capability and fail if the installed binary would fall back to classic.
 
 Story IDs are `<filename>--<key>`, kebab-cased: `Climbs.stories.tsx` with `populated` becomes `climbs--populated`. A bare filename ID selects its first declared story. The index at `dev/stories` lists all stories. Only the requested module is evaluated for a direct story link.
@@ -49,6 +51,8 @@ export default stories;
 
 Set `tab` on fullscreen tab stories to mount the production tab navigator, native headers, tablet rail and foldable split shell. The public story URL redirects internally while retaining its story ID and capture readiness.
 
+Retain the production screen’s content wrappers as well as its chrome: climb lists apply `useHorizontalSafeArea` to their clip bounds, Profile uses `ReadableColumn`, and Session pads its tab content before marking `HorizontalSafeAreaApplied`. Native iPad sidebars and the Duo rail can otherwise cover successfully rendered content. Inspect the raw capture as well as the readiness result; asset readiness does not prove that navigation chrome leaves those assets visible.
+
 Use ordinary props and local state for interactions. A view can read theme, translations and layout; it must not require fake auth/query/board providers. Extract shared chrome into a view with explicit props too. Fixtures belong under `src/dev/fixtures` or in the story module, never in the production screen.
 
 ## Capture readiness
@@ -62,7 +66,9 @@ render: ({ onReady, onError }) => (
 readiness: 'explicit',
 ```
 
-Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay.
+Metro emits `[stories] root ready`, `[stories] ready <id>`, `[stories] missing <id>` or `[stories] error <id> <reason>`. Capture scripts fail on errors, unknown IDs, missing logs and readiness timeouts. They do not save an image after an unverified fixed delay. iOS visual captures observe both Metro and the continuous native JavaScript log because Metro console forwarding can omit a ready message. Each launch/navigation takes fresh byte offsets; native events must also have an original event timestamp at or after that boundary, excluding buffered old-process messages. Relaunch boundaries are taken after successful termination. Errors from either stream still fail the capture.
+
+For iPhone Duo hinge failures, the capture debug artifact retains the latest image from each display and a `probes.jsonl` log with capture and conversion errors. Failed display reads are unknown, not proof of a dark screen; the runner waits for a known pose before toggling the hinge.
 
 `mobile:screenshots` uses the same isolated root for visual store/help captures. `scripts/lib/mobile-visual-stories.ts` maps established capture filenames to explicit stories, preserving the device and locale output directories. Board-family stories must use that board's real fixture geometry; a missing family must fail instead of substituting Kilter artwork.
 

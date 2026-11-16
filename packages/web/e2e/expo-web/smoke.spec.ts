@@ -43,9 +43,6 @@ const TAB_NAMES = ['Home', 'Climbs', 'Session', 'Discover', 'Profile'] as const;
 /** The seeded shared board the suite binds through the board sheet (see e2e/SEED_CONTRACT.md). */
 const SEEDED_BOARD_NAME = 'Dyno Den';
 
-/** Android-tablet destinations: the wall view is promoted into the rail. */
-const DESKTOP_TAB_NAMES = ['Home', 'Climbs', 'Session', 'On the Wall', 'Discover', 'Profile'] as const;
-
 /**
  * Console/page-error budget: the smoke fails on error classes that historically
  * meant a broken surface rather than noise.
@@ -284,12 +281,12 @@ test.describe('expo-web smoke', () => {
     const queueButton = page.getByRole('button', { name: /queue/i }).first();
     await expect(queueButton).toBeVisible({ timeout: WARM_TIMEOUT_MS });
     await tapThroughGestureLayer(queueButton);
-    // The queue sheet hosts its list in a BottomSheetFlatList; its "Edit queue"
-    // header action is unique to the presented sheet and proves the gorhom web
-    // shim mounted it. Backdrop dismissal proves it closes.
-    const editQueueButton = page.getByRole('button', { name: 'Edit queue' });
-    await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
-    await dismissSheet(page, editQueueButton);
+    // The history toggle belongs to the presented queue sheet, including when
+    // the queue is empty and correctly has no editing actions. Its visibility
+    // and dismissal prove the gorhom web shim opened and closed the sheet.
+    const historyToggle = page.getByRole('button', { name: 'Toggle history', exact: true });
+    await expect(historyToggle).toBeVisible({ timeout: 15_000 });
+    await dismissSheet(page, historyToggle);
     expect(fatalErrors).toEqual([]);
   });
 
@@ -324,6 +321,25 @@ test.describe('expo-web smoke', () => {
     const centerX = box.x + box.width / 2;
     const dragStartY = box.y + box.height * 0.85;
     const dragEndY = box.y + box.height * 0.15;
+    // A late RNGH config update used to reset the swipeable host to `none`.
+    // Check the browser's actual hit path so a failure identifies that policy
+    // regression; the CDP drag and scroll-distance assertion below still decide
+    // whether touch scrolling works.
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ x, y }) => {
+            const policies: string[] = [];
+            for (let element = document.elementFromPoint(x, y); element; element = element.parentElement) {
+              policies.push(getComputedStyle(element).touchAction);
+              if (element.getAttribute('data-testid') === 'climb-list') break;
+            }
+            return policies.filter((policy) => policy === 'none' || policy === 'pan-x');
+          },
+          { x: centerX, y: dragStartY },
+        ),
+      )
+      .toEqual([]);
     const dragSteps = 10;
     await cdpSession.send('Input.dispatchTouchEvent', {
       type: 'touchStart',
@@ -350,7 +366,7 @@ test.describe('expo-web smoke', () => {
   });
 
   test.describe('desktop adaptive shell', () => {
-    test('uses the tablet rail and keeps every play action and deferred section in the detail pane', async ({
+    test('uses the tablet rail and keeps default play actions and deferred sections in the detail pane', async ({
       browser,
     }) => {
       // `screen` is a browser-context option rather than a per-test fixture.
@@ -379,9 +395,12 @@ test.describe('expo-web smoke', () => {
           .toBe('dark');
         await expect
           .poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor))
-          .toBe('rgb(21, 16, 30)');
+          // Material uses the canonical Graphite page background (#0E0E0E).
+          .toBe('rgb(14, 14, 14)');
 
-        for (const tabName of DESKTOP_TAB_NAMES) {
+        // Desktop uses the same destinations in a rail; Wall display is a
+        // separate full-screen route, not a sixth tab.
+        for (const tabName of TAB_NAMES) {
           await expect(page.getByRole('tab', { name: tabName, exact: true })).toBeVisible();
         }
 
@@ -403,18 +422,15 @@ test.describe('expo-web smoke', () => {
             .first(),
         ).toBeVisible();
 
-        for (const actionName of [
-          'Previous climb',
-          'Log ascent',
-          'Next climb',
-          'Connect Board',
-          'Choose Angle',
-          'Climb actions',
-          'Share climb',
-        ]) {
+        // Previous/Next are optional controls, disabled in fresh preferences.
+        for (const actionName of ['Log ascent', 'Choose Angle', 'Climb actions', 'Share climb']) {
           await expect(page.getByRole('button', { name: actionName, exact: true })).toBeVisible();
         }
-        const queueButton = page.getByRole('button', { name: /^Queue, \d+ climbs$/ });
+        const wallControl = page.getByTestId('play-drawer-wall-control');
+        await expect(wallControl).toBeVisible();
+        await expect(wallControl).toHaveRole('button');
+        await expect(wallControl).toHaveAccessibleName(/\S/);
+        const queueButton = page.getByRole('button', { name: /^Queue, (nothing up next|\d+ climbs?( up next)?)$/ });
         await expect(queueButton).toBeVisible();
 
         const logAscentButton = page.getByRole('button', { name: 'Log ascent', exact: true });
@@ -424,9 +440,9 @@ test.describe('expo-web smoke', () => {
         await dismissSheet(page, saveTickButton);
 
         await tapThroughGestureLayer(queueButton);
-        const editQueueButton = page.getByRole('button', { name: 'Edit queue', exact: true });
-        await expect(editQueueButton).toBeVisible({ timeout: 15_000 });
-        await dismissSheet(page, editQueueButton);
+        const historyToggle = page.getByRole('button', { name: 'Toggle history', exact: true });
+        await expect(historyToggle).toBeVisible({ timeout: 15_000 });
+        await dismissSheet(page, historyToggle);
 
         // Desktop wheel/trackpad scrolling does not emit RN's begin-drag event.
         // Scrolling over the pane must still open the deferred-content gate.
@@ -578,7 +594,9 @@ test.describe('expo-web smoke', () => {
       // preview:true — a deep link must not take over the queue's current climb,
       // which in a party session is everyone's climb.
       await expect(page.getByRole('button', { name: 'Log ascent' })).toBeVisible({ timeout: COLD_LOAD_TIMEOUT_MS });
-      await expect(page.getByRole('button', { name: 'Set active' })).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+      await expect(page.getByRole('button', { name: 'Put on board', exact: true })).toBeVisible({
+        timeout: WARM_TIMEOUT_MS,
+      });
 
       // Second cold load of the same URL — a `reload()` would not do it, since
       // handing off rewrites the address bar to the drawer's own route. This is

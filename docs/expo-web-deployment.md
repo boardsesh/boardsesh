@@ -480,3 +480,23 @@ CI recipe:
 - **`vp run build:expo-web`** — the same bake by hand.
 - **`vp run check:mobile-web-bundle`** — CI bundle check; exports to a temp dir
   via the same script.
+
+### Swipeable rows and browser touch scrolling
+
+The browser-only `ReanimatedSwipeable` adapter preserves vertical touch scrolling
+in climb and logbook rows. RNGH v3 can replace a gesture configuration after its
+detector sets `touchAction="pan-y"`; that replacement resets the DOM style to
+`none`. The adapter's scoped CSS keeps only the library's immediate pan/tap hosts
+at `pan-y`, including after rerenders. The adapter emits a React stylesheet
+resource, hoisted and deduplicated by its `href`, rather than importing CSS:
+Metro's `--no-dev` proxy extracts CSS imports without injecting them into the
+page. This keeps the same policy in the dev proxy and static export. Its wrapper uses `display: contents` and
+forwards the original props and ref. Nested controls retain their own policies;
+horizontal row gestures still reach RNGH.
+
+Metro redirects the exact Swipeable import only for web and bypasses the adapter's
+own upstream import. Native dependencies and resolution stay unchanged. Remove
+this adapter when the upstream web implementation preserves detector-owned DOM
+policies across gesture config updates, after verifying both real touch scrolling
+and horizontal action reveals. The Expo-web smoke uses CDP touch input, checks the
+computed hit-path policy for diagnostics, and still requires actual list movement.

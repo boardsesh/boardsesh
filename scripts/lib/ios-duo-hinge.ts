@@ -15,7 +15,17 @@
  * `simctl io screenshot --display=primary-1`.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,14 +91,18 @@ export function isUnlitBmp(bmp: Buffer): boolean {
 }
 
 /** The pose implied by which display is lit, or null while neither (or both) is. */
-export function poseFromLitDisplays(outerLit: boolean, innerLit: boolean): DuoPose | null {
-  if (outerLit === innerLit) return null;
+export function poseFromLitDisplays(outerLit: boolean | null, innerLit: boolean | null): DuoPose | null {
+  if (outerLit === null || innerLit === null || outerLit === innerLit) return null;
   return innerLit ? 'open' : 'closed';
 }
 
 function run(command: string, args: string[], timeoutMs = 60_000): { status: number; stdout: string; stderr: string } {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' });
-  return { status: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: [result.stderr, result.error?.message].filter(Boolean).join('\n'),
+  };
 }
 
 function sleepSeconds(seconds: number): void {
@@ -123,23 +137,53 @@ export function pngIsLit(png: string): boolean {
   const scratch = mkdtempSync(join(tmpdir(), 'boardsesh-duo-'));
   try {
     const bmp = join(scratch, 'display.bmp');
-    if (run('sips', ['-s', 'format', 'bmp', '--resampleWidth', '96', png, '--out', bmp]).status !== 0) return false;
+    const conversion = run('sips', ['-s', 'format', 'bmp', '--resampleWidth', '96', png, '--out', bmp]);
+    if (conversion.status !== 0) {
+      throw new Error(
+        `sips failed (exit ${conversion.status}): ${conversion.stderr.trim() || conversion.stdout.trim()}`,
+      );
+    }
     return !isUnlitBmp(readFileSync(bmp));
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
 }
 
-/** True when the display shows anything at all. */
-export function duoDisplayLit(udid: string, display: string): boolean {
+/** Keep the latest display image and every probe result in the uploaded debug directory. */
+function duoDiagnosticsDirectory(udid: string): string {
+  const directory = join(process.env.SCREENSHOT_DEBUG_DIR ?? tmpdir(), `duo-${udid}-${process.pid}`);
+  mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+/** A failed capture is unknown, never evidence that a display is dark. */
+export function duoDisplayLit(udid: string, display: string): boolean | null {
   const scratch = mkdtempSync(join(tmpdir(), 'boardsesh-duo-'));
+  const diagnostics = duoDiagnosticsDirectory(udid);
+  let lit: boolean | null = null;
+  let error: string | undefined;
+  let captureSucceeded = false;
   try {
     const png = join(scratch, 'display.png');
-    if (run('xcrun', ['simctl', 'io', udid, 'screenshot', `--display=${display}`, png]).status !== 0) return false;
-    return pngIsLit(png);
+    const capture = run('xcrun', ['simctl', 'io', udid, 'screenshot', `--display=${display}`, png]);
+    captureSucceeded = capture.status === 0 && existsSync(png);
+    if (!captureSucceeded) {
+      throw new Error(
+        `simctl screenshot failed (exit ${capture.status}): ${capture.stderr.trim() || capture.stdout.trim()}`,
+      );
+    }
+    copyFileSync(png, join(diagnostics, `${display}-latest.png`));
+    lit = pngIsLit(png);
+  } catch (failure) {
+    error = failure instanceof Error ? failure.message : String(failure);
   } finally {
+    appendFileSync(
+      join(diagnostics, 'probes.jsonl'),
+      `${JSON.stringify({ at: new Date().toISOString(), display, captureSucceeded, lit, error })}\n`,
+    );
     rmSync(scratch, { recursive: true, force: true });
   }
+  return lit;
 }
 
 export function currentDuoPose(udid: string): DuoPose | null {
@@ -208,17 +252,35 @@ export function installDuoHinge(udid: string, library: string, logPath: string):
 
 /** Fold or unfold to `pose`, verified by which display is lit afterwards. */
 export function setDuoPose(udid: string, pose: DuoPose, logPath: string): void {
-  if (currentDuoPose(udid) === pose) return;
+  let observedPose = currentDuoPose(udid);
+  if (observedPose === null) {
+    waitFor(() => {
+      observedPose = currentDuoPose(udid);
+      return observedPose !== null;
+    }, 30);
+  }
+  if (observedPose === pose) return;
+  if (observedPose === null) {
+    throw new Error(
+      `${LOG} cannot determine the Duo pose; refusing a blind toggle. Diagnostics: ${duoDiagnosticsDirectory(udid)}`,
+    );
+  }
   const swapsBefore = readLog(logPath).split('swap done').length;
   console.log(`${LOG} Moving the Duo to ${pose}...`);
-  simctlSpawn(udid, ['notifyutil', '-p', DUO_HINGE_SWAP_NOTIFICATION]);
+  const notification = simctlSpawn(udid, ['notifyutil', '-p', DUO_HINGE_SWAP_NOTIFICATION]);
+  if (notification.status !== 0) {
+    throw new Error(`${LOG} hinge notification failed: ${notification.stderr.trim() || notification.stdout.trim()}`);
+  }
   const settled = waitFor(
     () => readLog(logPath).split('swap done').length > swapsBefore && currentDuoPose(udid) === pose,
     30,
     1,
   );
   if (!settled) {
-    throw new Error(`${LOG} the Duo did not reach ${pose}. Log: ${readLog(logPath).trim() || '(empty)'}`);
+    if (existsSync(logPath)) copyFileSync(logPath, join(duoDiagnosticsDirectory(udid), 'hinge.log'));
+    throw new Error(
+      `${LOG} the Duo did not reach ${pose}. Diagnostics: ${duoDiagnosticsDirectory(udid)}. Log: ${readLog(logPath).trim() || '(empty)'}`,
+    );
   }
 }
 

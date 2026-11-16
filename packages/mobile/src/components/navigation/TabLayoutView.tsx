@@ -221,9 +221,17 @@ export function TabLayoutView({
       sidebarAdaptable={deviceLayout.isPad}
       minimizeBehavior={tabBarMinimizeBehavior}
       unstable_nativeProps={accessoryNativeProps}
-      iconColor={{ default: systemColors.secondaryLabel, selected: systemColors.label }}
-      labelStyle={{ default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }}
-      tintColor={systemColors.label}
+      // UIKit uses tint as the iPad sidebar selection fill. Let it resolve the
+      // matching foreground in both sidebar and collapsed-tab placements.
+      iconColor={
+        deviceLayout.isPad ? undefined : { default: systemColors.secondaryLabel, selected: systemColors.label }
+      }
+      labelStyle={
+        deviceLayout.isPad
+          ? undefined
+          : { default: { color: systemColors.secondaryLabel }, selected: { color: systemColors.label } }
+      }
+      tintColor={deviceLayout.isPad ? undefined : systemColors.label}
       // `NativeTabs.Trigger.Badge`'s `selectedBackgroundColor` only reaches
       // `options.selectedBadgeBackgroundColor`, which react-navigation-native-tabs
       // applies solely to the ['selected','focused'] item states

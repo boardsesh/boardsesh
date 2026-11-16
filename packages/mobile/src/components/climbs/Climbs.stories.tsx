@@ -19,6 +19,7 @@ import type { StoryModule } from '../../dev/stories/types';
 import { useStoryBoardFixture } from '../../dev/stories/story-board-fixture';
 import { DEFAULT_CLIMB_ROW_DISPLAY } from '../../lib/climb-row-display';
 import { NO_LOCKED_DIMENSIONS } from '../../lib/dimension-chips';
+import { useHorizontalSafeArea } from '../../hooks/use-horizontal-safe-area';
 import { useNativeRootHeader } from '../../hooks/use-native-root-header';
 import { useTheme } from '../../providers/theme-provider';
 import { ClimbListRowView, type ClimbListRowViewProps } from '../ClimbListRow';
@@ -94,9 +95,10 @@ export function ClimbsStory({
   const { systemColors, variant, actionColors } = useTheme();
   const nativeHeader = useNativeRootHeader();
   const [chromeHeight, setChromeHeight] = useState(0);
+  const { left, right } = useHorizontalSafeArea();
   const clipStyle = useMemo(
-    () => selectByVariant(variant, { material: { top: chromeHeight }, liquidGlass: undefined }),
-    [variant, chromeHeight],
+    () => [{ left, right }, selectByVariant(variant, { material: { top: chromeHeight }, liquidGlass: undefined })],
+    [variant, chromeHeight, left, right],
   );
   const [filtered, setFiltered] = useState(scene === 'filtered' || !!fixture.gradeRange);
   const [selected, setSelected] = useState<string | null>(null);
