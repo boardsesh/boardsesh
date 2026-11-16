@@ -399,7 +399,9 @@ final class ClimbOverlayGPUView: ExpoView, MTKViewDelegate {
     } else if error is ClimbOverlayArenaFailure {
       onRenderError(["requestId":request,"reason":"gpu-resource-limit","failureScope":"context"])
     } else {
-      onRenderError(["requestId":request,"reason":"gpu-preparation-failed","failureScope":"static"])
+      // Unknown errors fall back for this mount only. Deterministic causes (device,
+      // pipeline, contract, config) already throw with an explicit "static" scope.
+      onRenderError(["requestId":request,"reason":"gpu-preparation-failed","failureScope":"context"])
     }
   }
 
