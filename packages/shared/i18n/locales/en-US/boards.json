@@ -233,7 +233,8 @@
       "nearbyMap": "Map",
       "showNearby": "Show boards near you",
       "manage": "Manage",
-      "nearbyAllAbove": "No other boards within 20 km"
+      "nearbyAllAbove": "No other boards within 20 km",
+      "yourBoardsAllAbove": "All your boards are listed above"
     },
     "create": {
       "screenTitle": "Set up your board",
@@ -301,6 +302,7 @@
       "title": "In range",
       "atGym": "At {{gym}}",
       "inFrontOfYou": "In front of you",
+      "nearby": "Nearby",
       "permissionTitle": "Spot the board you're at",
       "permissionBody": "Boardsesh listens for boards over Bluetooth, so the one in front of you is the first thing you see.",
       "continue": "Continue",

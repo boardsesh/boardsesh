@@ -1,7 +1,8 @@
 import { memo, useCallback, useMemo, useRef, type ComponentType, type ReactElement } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View, type AccessibilityActionEvent, type AccessibilityActionInfo } from 'react-native';
 import { hapticLight } from '../../lib/haptics';
+import { rowAccessibilityActionsWith } from '../../lib/row-accessibility-actions';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { AppMenu } from '../AppMenu';
@@ -78,7 +79,7 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
   const { t } = useTranslation('boards');
   const { selection, systemColors } = useTheme();
   const copy = useBoardItemCopy(item);
-  const { rows, menuActions, selectFromMenuButton, selectFromHold } = useBoardCardMenuRows(item, menu);
+  const { rows, menuActions, runMenuRow, selectFromMenuButton, selectFromHold } = useBoardCardMenuRows(item, menu);
   const hasMenuRows = rows.length > 0;
   const selected = item.isActive === true;
   const menuRef = useRef<AppMenuHandle | null>(null);
@@ -95,6 +96,29 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
     menuRef.current?.open();
   }, []);
   const onLongPress = hasMenuRows && Platform.OS === 'android' ? openMenuFromHold : undefined;
+
+  // VoiceOver focuses the row as one element, so every menu row is also a
+  // labelled action on it, as on a Near you card; Climb here is the row's own
+  // activation. Android adds `activate`, which a custom action list would
+  // otherwise leave without a route to the press.
+  const accessibilityActions = useMemo(() => {
+    const menuRows: AccessibilityActionInfo[] = rows
+      .filter((row) => row.action !== 'climb_here')
+      .map((row) => ({ name: row.action, label: row.label }));
+    return menuRows.length > 0 ? rowAccessibilityActionsWith(...menuRows) : undefined;
+  }, [rows]);
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      const { actionName } = event.nativeEvent;
+      if (actionName === 'activate') {
+        handlePress();
+        return;
+      }
+      const index = rows.findIndex((row) => row.action === actionName && row.action !== 'climb_here');
+      if (index >= 0) runMenuRow(index, 'accessibility');
+    },
+    [rows, handlePress, runMenuRow],
+  );
 
   const actionsLabel = t('mobile.discovery.cardActionsAria', { name: item.title });
   const wrapTarget = useCallback(
@@ -150,6 +174,8 @@ export const BoardRow = memo(function BoardRow({ item, onPress, menu, BoardArt }
       delayLongPress={BOARD_MENU_LONG_PRESS_DELAY_MS}
       longPressAccessibilityLabel={hasMenuRows ? actionsLabel : undefined}
       accessibilityLabel={boardItemAccessibilityLabel(item, copy)}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
       wrapTarget={hasMenuRows ? wrapTarget : undefined}
     />
   );

@@ -233,7 +233,8 @@
       "nearbyMap": "Mapa",
       "showNearby": "Ver plafones cerca de ti",
       "manage": "Gestionar",
-      "nearbyAllAbove": "No hay más plafones a menos de 20 km"
+      "nearbyAllAbove": "No hay más plafones a menos de 20 km",
+      "yourBoardsAllAbove": "Todos tus plafones están más arriba"
     },
     "create": {
       "screenTitle": "Configura tu plafón",
@@ -301,6 +302,7 @@
       "title": "Al alcance",
       "atGym": "En {{gym}}",
       "inFrontOfYou": "Delante de ti",
+      "nearby": "Cerca",
       "permissionTitle": "Encuentra el plafón en el que estás",
       "permissionBody": "Boardsesh escucha los plafones por Bluetooth, así que el que tienes delante es lo primero que ves.",
       "continue": "Continuar",

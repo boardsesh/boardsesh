@@ -99,13 +99,21 @@ medium detent, so the hints never sit pinned under the rest: with boards listed
 they are the list's footer, and with none the state above them ("No boards
 found", "not found", the spinner) scrolls with them. The `/boards` Bluetooth
 quickstart sheet showed the same tips until the picker's In range slot replaced
-it in 2026-11. The slot shows no tips: its nothing-heard state is "No boards in
-range" and Scan again, except where Android is plausibly withholding the
-results (`useAndroidScanLocationHint`): a binary built before the manifest
+it in 2026-11. The picker shows no tips: a scan that heard nothing draws nothing
+at the top (no "No boards in range" line and no Scan again; Your boards leads),
+except where Android is plausibly withholding the results
+(`useAndroidScanLocationHint`): a binary built before the manifest
 change gets the location grant, and Android 6 to 11 with Location off gets the
 switch, each rescanning once it works. A radio the scan could not read
 (`unknown`) says "Couldn't reach Bluetooth" with Scan again, never "Turn on
 Bluetooth".
+
+What the scan hears leads the picker's top only after it has listened for 3 s
+(or once it ends), and what it led with stays for the rest of that scan: a hero
+never turns into At {gym} or the other way round, one gym never gives way to
+another, and walls heard or listed later join the end of At {gym} instead of
+moving the rows above them (`use-steady-picker-top.ts`). The hero says "In front
+of you" only when no box was heard louder, "Nearby" otherwise.
 
 **Remembered boards.** A connect remembers the box for the board in view: by
 serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less

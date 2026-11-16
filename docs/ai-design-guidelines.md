@@ -489,12 +489,14 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
 - **`ShelfHeader`** `{ title, caption?, action?: { label, onPress, accessibilityLabel? }, trailing?, testID? }`:
   the heading of a shelf of content (Home's sections, the picker's groups). Title 3 emphasized, a
   VoiceOver heading, at the 16pt gutter with no minimum height; "See all" is accent text and a chevron
-  that reaches its tap target through `hitSlop`. The title keeps at least 70% of the row: at large text
+  that reaches its tap target through its own padded box. The title keeps at least 70% of the row: at large text
   sizes the action wraps under it instead. **`ShelfSection`** takes the same props plus `children`
   and owns the spacing: 8pt from the header to the content, 28pt to the next shelf.
 - **`TextAction`** `{ label, onPress, accessibilityLabel?, chevron?, testID? }`: a borderless accent
-  text button that adds no height to its row; `hitSlop` brings it to 44pt on Liquid Glass and 48dp on
-  Material. ShelfHeader's action, and the Retry after a quiet `EmptyState`.
+  text button that adds no height to its row; padding handed back by a negative margin brings its target
+  to 44pt on Liquid Glass and 48dp on Material (not `hitSlop`: on Fabric a parent hit-tests its children
+  only inside its own bounds, unless their layout overflows it). ShelfHeader's action, and the Retry
+  after a quiet `EmptyState`.
 - **`InsetGroupedList`** `{ children, separatorInset?: 'regular' | 'compact' | 'gutter', testID? }`: the
   inset-grouped `Card`. Rows run to its edges and own the 16pt gutter; it draws a hairline between
   rows, inset to where their text starts, and clips them to its corners. A row that isn't an `ArtRow`
@@ -512,7 +514,7 @@ showing its states. Reach for these before hand-rolling a heading, a row, a pill
   leaves it out. `wrapTarget` wraps the row's own target and never the element accessory: a hold
   menu's anchor goes there (the picker's board rows), so the ⋯ keeps its own tap. Presses dip in
   opacity, never scale.
-- **`StatusPill`** `{ label, tone?: 'neutral', testID? }`: something you can't tap ("Closest", "Ready to
+- **`StatusPill`** `{ label, tone?: 'neutral', testID? }`: something you can't tap ("Following", "Ready to
   review"). `theme.status` fill and label, caption 1 emphasized; it never shrinks or truncates, so put
   it beside text that can (`ArtRow`'s `status`).
 - **`EmptyState`** `{ title, body?, actions?, size: 'screen' | 'section' | 'quiet', icon?, testID? }`:

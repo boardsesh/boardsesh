@@ -4,12 +4,17 @@
 // says (and leaves out on the board you're on), when it has the ⋯ and the hold
 // menu, and that the hold anchor wraps the row and never the ⋯.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { BoardCardMenu, DiscoveryBoardItem } from '../BoardDiscoveryCardView';
 
 type Children = { children?: ReactNode };
-const ctrl = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'android', opened: 0 }));
+type AccessibilityActionHandler = (event: { nativeEvent: { actionName: string } }) => void;
+const ctrl = vi.hoisted(() => ({
+  os: 'ios' as 'ios' | 'android',
+  opened: 0,
+  onAccessibilityAction: null as AccessibilityActionHandler | null,
+}));
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -90,9 +95,12 @@ vi.mock('../../ArtRow', () => ({
     onPress?: () => void;
     onLongPress?: () => void;
     accessibilityLabel?: string;
+    accessibilityActions?: readonly { name: string; label?: string }[];
+    onAccessibilityAction?: AccessibilityActionHandler;
     wrapTarget?: (target: ReactElement) => ReactElement;
     art: ReactNode;
   }) => {
+    ctrl.onAccessibilityAction = props.onAccessibilityAction ?? null;
     const target = createElement(
       'button',
       {
@@ -100,6 +108,7 @@ vi.mock('../../ArtRow', () => ({
         'data-testid': 'row-target',
         'aria-label': props.accessibilityLabel,
         'aria-selected': props.selected === true,
+        'data-actions': JSON.stringify(props.accessibilityActions ?? []),
         onClick: props.onPress,
         onContextMenu: props.onLongPress,
       },
@@ -166,6 +175,7 @@ afterEach(() => {
   cleanup();
   ctrl.os = 'ios';
   ctrl.opened = 0;
+  ctrl.onAccessibilityAction = null;
   vi.mocked(MENU.onAction).mockClear();
 });
 
@@ -237,6 +247,38 @@ describe('BoardRow', () => {
     renderRow(GARAGE, MENU);
     fireEvent.contextMenu(screen.getByTestId('row-target'));
     expect(ctrl.opened).toBe(1);
+  });
+
+  // VoiceOver focuses the row as one element: its menu rows are actions on it,
+  // as on a Near you card. Climb here is the row's own activation.
+  it('publishes the menu rows as labelled screen-reader actions that run them', () => {
+    renderRow(GARAGE, MENU);
+    const actions = JSON.parse(screen.getByTestId('row-target').getAttribute('data-actions') ?? '[]') as {
+      name: string;
+      label?: string;
+    }[];
+    expect(actions).toEqual([
+      { name: 'unpin', label: 'Unpin' },
+      { name: 'details', label: 'Details' },
+      { name: 'edit', label: 'Edit board' },
+      { name: 'delete', label: 'Delete' },
+    ]);
+    act(() => ctrl.onAccessibilityAction?.({ nativeEvent: { actionName: 'details' } }));
+    expect(MENU.onAction).toHaveBeenCalledExactlyOnceWith(GARAGE, 'details', 'accessibility');
+  });
+
+  // Android routes a screen reader's double tap through `activate` once a row
+  // has actions (rowAccessibilityActionsWith adds it there).
+  it('picks the board on the activate action', () => {
+    const onPress = vi.fn();
+    renderRow(GARAGE, MENU, onPress);
+    act(() => ctrl.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } }));
+    expect(onPress).toHaveBeenCalledExactlyOnceWith(GARAGE);
+  });
+
+  it('publishes no actions on a row without a menu', () => {
+    renderRow(GARAGE);
+    expect(screen.getByTestId('row-target').getAttribute('data-actions')).toBe('[]');
   });
 
   it('reads its state aloud: on it, ownership, pin and download', () => {

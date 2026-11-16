@@ -10,19 +10,25 @@ import type { BoardCardMenuAction, BoardCardMenuCapabilities, BoardCardMenuVia }
 import type { BoardCardMenu, DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { BoardRow } from './BoardRow';
 import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
-import { collapsedAtGymRows } from './picker-top-view';
+import { collapsedRows } from './picker-top-view';
 import { useBoardCardMenuLabels } from './use-board-card-menu-labels';
 
 export type BoardRowListProps = {
   items: readonly DiscoveryBoardItem[];
-  onSelect: (item: DiscoveryBoardItem) => void;
+  /** A tap on a row, with its 0-based place in the list as drawn. */
+  onSelect: (item: DiscoveryBoardItem, position: number) => void;
   /**
    * What each row's menu may offer (the ⋯, the hold). Absent draws plain rows.
    * Memoize it: a new object re-renders every row.
    */
   menuCapabilities?: BoardCardMenuCapabilities;
-  /** Runs a picked menu row. Only read alongside `menuCapabilities`. Memoize it. */
-  onMenuAction?: (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => void;
+  /** Runs a picked menu row, with the row's place as drawn. Only read alongside `menuCapabilities`. Memoize it. */
+  onMenuAction?: (
+    item: DiscoveryBoardItem,
+    action: BoardCardMenuAction,
+    via: BoardCardMenuVia,
+    position: number,
+  ) => void;
   /**
    * The rows that get the menu, by item key; absent, all of them. At {gym}
    * lists the whole roster, and only the climber's own and followed boards
@@ -30,22 +36,20 @@ export type BoardRowListProps = {
    */
   menuKeys?: ReadonlySet<string>;
   /**
-   * Show the first few rows (always with the selected one) until the climber
-   * asks for the rest: At {gym}, where a big gym holds a dozen walls and the
-   * picker's ScrollView cannot host a virtualised list.
+   * Show this many rows until the climber asks for the rest, always with the
+   * selected row and `alwaysShownKeys` among them. The picker's ScrollView
+   * cannot host a virtualised list. Absent: every row.
    */
-  collapsible?: boolean;
+  collapsedRowCount?: number;
+  /** Rows a collapsed list keeps in view besides the selected one: the walls the scan heard. */
+  alwaysShownKeys?: ReadonlySet<string>;
   BoardArt: ComponentType<DiscoveryBoardArtProps>;
   testID?: string;
 };
 
-function isSelectedItem(item: DiscoveryBoardItem): boolean {
-  return item.isActive === true;
-}
-
 /**
  * Boards as an inset-grouped list of `BoardRow`s, with one menu object for the
- * whole list, so a row re-renders only when its own item changes.
+ * whole list, so a row re-renders only when its own item, or its place, changes.
  */
 export const BoardRowList = memo(function BoardRowList({
   items,
@@ -53,23 +57,45 @@ export const BoardRowList = memo(function BoardRowList({
   menuCapabilities,
   onMenuAction,
   menuKeys,
-  collapsible = false,
+  collapsedRowCount,
+  alwaysShownKeys,
   BoardArt,
   testID,
 }: BoardRowListProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const menuLabels = useBoardCardMenuLabels();
+  const [expanded, setExpanded] = useState(false);
+  const expand = useCallback(() => setExpanded(true), []);
+  const shownItems = useMemo(
+    () =>
+      collapsedRowCount === undefined || expanded
+        ? items
+        : collapsedRows(
+            items,
+            (item) => item.isActive === true || (alwaysShownKeys?.has(item.key) ?? false),
+            collapsedRowCount,
+          ),
+    [items, collapsedRowCount, expanded, alwaysShownKeys],
+  );
+  // Each row's place as drawn, which is what a pick reports.
+  const positions = useMemo(() => new Map(shownItems.map((item, index) => [item.key, index])), [shownItems]);
+  const select = useCallback(
+    (item: DiscoveryBoardItem) => onSelect(item, positions.get(item.key) ?? 0),
+    [onSelect, positions],
+  );
+  const runMenuAction = useCallback(
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) =>
+      onMenuAction?.(item, action, via, positions.get(item.key) ?? 0),
+    [onMenuAction, positions],
+  );
   const menu = useMemo<BoardCardMenu | undefined>(
     () =>
       menuCapabilities && onMenuAction
-        ? { capabilities: menuCapabilities, labels: menuLabels, onAction: onMenuAction }
+        ? { capabilities: menuCapabilities, labels: menuLabels, onAction: runMenuAction }
         : undefined,
-    [menuCapabilities, onMenuAction, menuLabels],
+    [menuCapabilities, onMenuAction, menuLabels, runMenuAction],
   );
-  const [expanded, setExpanded] = useState(false);
-  const expand = useCallback(() => setExpanded(true), []);
-  const shownItems = collapsible && !expanded ? collapsedAtGymRows(items, isSelectedItem) : items;
   return (
     <View style={styles.gutter}>
       <InsetGroupedList testID={testID}>
@@ -77,7 +103,7 @@ export const BoardRowList = memo(function BoardRowList({
           <BoardRow
             key={item.key}
             item={item}
-            onPress={onSelect}
+            onPress={select}
             menu={menuKeys === undefined || menuKeys.has(item.key) ? menu : undefined}
             BoardArt={BoardArt}
           />

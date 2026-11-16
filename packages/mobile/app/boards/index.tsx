@@ -33,11 +33,13 @@ import {
   pickerTopBoardUuids,
   pickerTopGymUuid,
   pickerTopPicks,
+  YOUR_BOARDS_COLLAPSED_ROW_COUNT,
   type PickerTopView,
   type UnnamedInRangeRow,
 } from '../../src/components/board-discovery/picker-top-view';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
 import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
+import { usePickerScanHold, useSteadyPickerTop } from '../../src/components/board-discovery/use-steady-picker-top';
 import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
 import { Button } from '../../src/components/Button';
 import { EmptyState } from '../../src/components/EmptyState';
@@ -326,14 +328,18 @@ export default function BoardSelection() {
   // board you're on is at), the one board heard somewhere else, or a box it
   // can't name. Two steps, because the gym's roster is a query keyed on the
   // gym the first step picks; see picker-top-view.ts.
+  // For a scan's first seconds nothing it heard leads, and once it has led it
+  // stays put for the rest of that scan (use-steady-picker-top.ts).
+  const holdScanLead = usePickerScanHold(scanPhase);
   const topDecision = useMemo(
-    () => decidePickerTop({ phase: scanPhase, rows: scanRows, lookup: scanLookup, activeBoard }),
-    [scanPhase, scanRows, scanLookup, activeBoard],
+    () => decidePickerTop({ phase: scanPhase, rows: scanRows, lookup: scanLookup, activeBoard, holdScanLead }),
+    [scanPhase, scanRows, scanLookup, activeBoard, holdScanLead],
   );
   // Only for the online layout, the one that draws the top.
   const showsTop = isAuthenticated && !isLocalOnly && !isError;
   const { data: topGymRoster } = useGymBoards(showsTop ? pickerTopGymUuid(topDecision) : null);
-  const topView = useMemo(() => buildPickerTopView(topDecision, topGymRoster), [topDecision, topGymRoster]);
+  const builtTopView = useMemo(() => buildPickerTopView(topDecision, topGymRoster), [topDecision, topGymRoster]);
+  const topView = useSteadyPickerTop(builtTopView, scanPhase);
   // Your boards and Near you leave these out, so a board shows once.
   const topBoardUuids = useMemo(() => pickerTopBoardUuids(topView), [topView]);
   // A box held for the next bind (pending-board-recognition.ts) belongs to this
@@ -621,12 +627,13 @@ export default function BoardSelection() {
     },
     [myBoards, nearby?.boards, offlineRows, pickBoard, showToast, t],
   );
-  // One `findIndex` per tap for the card's place, never per row.
+  // The place the list drew the row in, which it passes on a pick; else one
+  // `findIndex` per tap, never per row.
   const myBoardPick = useCallback(
-    (item: DiscoveryBoardItem): PickerPick => ({
+    (item: DiscoveryBoardItem, position?: number): PickerPick => ({
       pickSource: 'your_boards',
       section: 'your_boards',
-      position: positionOf(myBoardItems, item.key),
+      position: position ?? positionOf(myBoardItems, item.key),
     }),
     [myBoardItems],
   );
@@ -639,7 +646,7 @@ export default function BoardSelection() {
     [nearbyItems],
   );
   const onSelectMyBoard = useCallback(
-    (item: DiscoveryBoardItem) => activateItem(item, myBoardPick(item)),
+    (item: DiscoveryBoardItem, position?: number) => activateItem(item, myBoardPick(item, position)),
     [activateItem, myBoardPick],
   );
   const onSelectNearbyBoard = useCallback(
@@ -647,8 +654,12 @@ export default function BoardSelection() {
     [activateItem, nearbyPick],
   );
   const onSelectOfflineBoard = useCallback(
-    (item: DiscoveryBoardItem) =>
-      activateItem(item, { pickSource: 'offline', section: 'offline', position: positionOf(offlineItems, item.key) }),
+    (item: DiscoveryBoardItem, position?: number) =>
+      activateItem(item, {
+        pickSource: 'offline',
+        section: 'offline',
+        position: position ?? positionOf(offlineItems, item.key),
+      }),
     [activateItem, offlineItems],
   );
   const detailBoardsByUuid = useMemo(() => {
@@ -668,7 +679,7 @@ export default function BoardSelection() {
     [detailBoardsByUuid],
   );
   const onMyBoardDetails = useCallback(
-    (item: DiscoveryBoardItem) => openBoardDetails(item, myBoardPick(item)),
+    (item: DiscoveryBoardItem, position?: number) => openBoardDetails(item, myBoardPick(item, position)),
     [openBoardDetails, myBoardPick],
   );
   const onNearbyBoardDetails = useCallback(
@@ -948,11 +959,11 @@ export default function BoardSelection() {
     ],
   );
   const onMyBoardMenuAction = useCallback(
-    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) =>
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia, position?: number) =>
       runBoardMenuAction(item, action, via, {
         section: 'your_boards',
-        select: onSelectMyBoard,
-        openDetails: onMyBoardDetails,
+        select: (picked) => onSelectMyBoard(picked, position),
+        openDetails: (opened) => onMyBoardDetails(opened, position),
       }),
     [runBoardMenuAction, onSelectMyBoard, onMyBoardDetails],
   );
@@ -971,19 +982,26 @@ export default function BoardSelection() {
     onPress: onManageBoards,
   };
 
-  const myBoardsSection =
-    myBoardItems.length > 0 ? (
-      <ShelfSection title={t('mobile.discovery.yourBoardsTitle')} action={manageAction}>
+  // Whenever the climber has boards, so Manage is always one tap away: with
+  // every board already listed above (one board, at a gym, the one they're
+  // on), the shelf says so in one quiet line.
+  const myBoardsSection = hasBoards ? (
+    <ShelfSection title={t('mobile.discovery.yourBoardsTitle')} action={manageAction}>
+      {myBoardItems.length > 0 ? (
         <BoardRowList
           items={myBoardItems}
           onSelect={onSelectMyBoard}
           menuCapabilities={showCardMenus ? myBoardMenuCapabilities : undefined}
           onMenuAction={showCardMenus ? onMyBoardMenuAction : undefined}
+          collapsedRowCount={YOUR_BOARDS_COLLAPSED_ROW_COUNT}
           BoardArt={DiscoveryBoardArt}
           testID="picker-your-boards"
         />
-      </ShelfSection>
-    ) : null;
+      ) : (
+        <EmptyState size="quiet" title={t('mobile.discovery.yourBoardsAllAbove')} />
+      )}
+    </ShelfSection>
+  ) : null;
 
   const requestLocation = location.request;
   const requestLocationIfAllowed = location.requestIfAllowed;
@@ -1080,8 +1098,10 @@ export default function BoardSelection() {
   // you're on is not. A board in Your boards binds as that fuller copy: the
   // gym's roster is a narrower read of the same board.
   const topPicks = useMemo(() => pickerTopPicks(topView), [topView]);
+  // `drawnPosition` is where At {gym}'s list drew the row, which a collapsed
+  // list knows and the full order doesn't.
   const onPickTopBoard = useCallback(
-    (item: DiscoveryBoardItem) => {
+    (item: DiscoveryBoardItem, drawnPosition?: number) => {
       const topPick = topPicks.get(item.key);
       if (!topPick) return;
       if (topPick.pickSource === 'bluetooth') chooseFirstBoardPath('scan');
@@ -1090,22 +1110,26 @@ export default function BoardSelection() {
       const { pickSource, section, position } = topPick;
       // A box held from an earlier tap on a row it couldn't name is not this
       // board: `pickBoard` drops it for every pick but the Near you one.
-      pickBoard(board, { pickSource, section, position });
+      pickBoard(board, { pickSource, section, position: drawnPosition ?? position });
     },
     [topPicks, chooseFirstBoardPath, myBoards, pickBoard],
   );
   const onAtGymDetails = useCallback(
-    (item: DiscoveryBoardItem) => {
+    (item: DiscoveryBoardItem, drawnPosition?: number) => {
       const topPick = topPicks.get(item.key);
       if (!topPick) return;
       const { pickSource, section, position } = topPick;
-      openBoardDetails(item, { pickSource, section, position });
+      openBoardDetails(item, { pickSource, section, position: drawnPosition ?? position });
     },
     [topPicks, openBoardDetails],
   );
   const onAtGymMenuAction = useCallback(
-    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) =>
-      runBoardMenuAction(item, action, via, { section: 'at_gym', select: onPickTopBoard, openDetails: onAtGymDetails }),
+    (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia, position?: number) =>
+      runBoardMenuAction(item, action, via, {
+        section: 'at_gym',
+        select: (picked) => onPickTopBoard(picked, position),
+        openDetails: (opened) => onAtGymDetails(opened, position),
+      }),
     [runBoardMenuAction, onPickTopBoard, onAtGymDetails],
   );
   // The three ways forward for a board it heard but couldn't name (a MoonBoard,

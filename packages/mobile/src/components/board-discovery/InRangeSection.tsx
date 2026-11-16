@@ -20,7 +20,12 @@ import type { BoardCardMenuAction, BoardCardMenuCapabilities, BoardCardMenuVia }
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { BoardRowList } from './BoardRowList';
 import type { DiscoveryBoardArtProps } from './DiscoveryBoardArt';
-import type { PickerScanNotice, PickerTopContent, PickerTopView, UnnamedInRangeRow } from './picker-top-view';
+import {
+  AT_GYM_COLLAPSED_ROW_COUNT,
+  type PickerScanNotice,
+  type PickerTopView,
+  type UnnamedInRangeRow,
+} from './picker-top-view';
 
 /** Side of the hero's art slot, in points: the board fits inside at its own aspect. */
 const HERO_ART_SIZE = 80;
@@ -45,8 +50,8 @@ export type InRangeSectionProps = {
   onStart: () => void;
   onOpenSettings: () => void;
   onRetryLookup: () => void;
-  /** Climb here on the hero, or a tap on a row At {gym}. */
-  onPickBoard: (item: DiscoveryBoardItem) => void;
+  /** Climb here on the hero, or a tap on a row At {gym} (with its place as drawn). */
+  onPickBoard: (item: DiscoveryBoardItem, position?: number) => void;
   /** The three ways forward for a board it heard but cannot name. */
   onUseMyLocation: (row: UnnamedInRangeRow) => void;
   onSearchGyms: (row: UnnamedInRangeRow) => void;
@@ -55,7 +60,12 @@ export type InRangeSectionProps = {
   locationHint?: InRangeLocationHint | null;
   /** The card menu At {gym}'s rows offer, as Your boards does. Absent: plain rows. */
   atGymMenuCapabilities?: BoardCardMenuCapabilities;
-  onAtGymMenuAction?: (item: DiscoveryBoardItem, action: BoardCardMenuAction, via: BoardCardMenuVia) => void;
+  onAtGymMenuAction?: (
+    item: DiscoveryBoardItem,
+    action: BoardCardMenuAction,
+    via: BoardCardMenuVia,
+    position: number,
+  ) => void;
   /** The At {gym} rows that are the climber's own or followed boards: the only ones with a menu. */
   atGymMenuKeys?: ReadonlySet<string>;
 };
@@ -76,8 +86,8 @@ function isNoticeCard(notice: PickerScanNotice | null): boolean {
   );
 }
 
-function hasInRangeSection(notice: PickerScanNotice | null, content: PickerTopContent<DiscoveryBoardItem>): boolean {
-  return isNoticeCard(notice) || content.kind === 'unnamed' || content.kind === 'looking';
+function hasInRangeSection(view: PickerTopView<DiscoveryBoardItem>): boolean {
+  return isNoticeCard(view.notice) || view.unnamed !== null || view.content.kind === 'looking';
 }
 
 /**
@@ -91,7 +101,9 @@ function hasInRangeSection(notice: PickerScanNotice | null, content: PickerTopCo
  * - the one board heard somewhere else (the hero), with Climb here, no title;
  * - "In range": the scan's own card (Continue, Scan, need signal), the box it
  *   cannot name, or one row's worth of placeholder while it looks;
- * - "At {gym}": the gym's walls A to Z, the board you're on among them.
+ * - "At {gym}": the gym's walls A to Z, the board you're on among them. A box
+ *   it cannot name is above it when the board you're on named the gym: the
+ *   scan heard something the gym's list doesn't say.
  */
 export function InRangeSection({
   view,
@@ -109,7 +121,7 @@ export function InRangeSection({
   atGymMenuKeys,
 }: InRangeSectionProps) {
   const { t } = useTranslation('boards');
-  const { notice, content, scanning, heardNothing } = view;
+  const { notice, content, unnamed, scanning, heardNothing } = view;
   const needSignalBeside = notice?.kind === 'lookup_failed' && notice.besideHeardBoards;
   // One spinner while the scan listens, by the title of what it is filling.
   const spinner = scanning ? <ActivityIndicator size="small" /> : undefined;
@@ -128,11 +140,16 @@ export function InRangeSection({
       ) : null}
       {content.kind === 'hero' ? (
         <View style={[styles.gutter, styles.stack, styles.block]}>
-          <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
+          <HeroCard
+            item={content.board}
+            inFrontOfYou={content.strongestSignal}
+            BoardArt={BoardArt}
+            onPick={onPickBoard}
+          />
           {needSignalBeside ? <NeedSignalRow onRetry={onRetryLookup} /> : null}
         </View>
       ) : null}
-      {hasInRangeSection(notice, content) ? (
+      {hasInRangeSection(view) ? (
         <ShelfSection title={t('mobile.inRange.title')} trailing={content.kind === 'at_gym' ? undefined : spinner}>
           <View style={[styles.gutter, styles.stack]}>
             {notice?.kind === 'permission_card' ? (
@@ -147,11 +164,12 @@ export function InRangeSection({
             ) : notice?.kind === 'lookup_failed' && !notice.besideHeardBoards ? (
               <LookupFailedCard onRetry={onRetryLookup} />
             ) : null}
-            {content.kind === 'looking' ? (
-              <LookingRow />
-            ) : content.kind === 'unnamed' ? (
+            {content.kind === 'looking' ? <LookingRow /> : null}
+            {unnamed !== null ? (
               <UnnamedCard
-                row={content.row}
+                // A card left on one box's actions closes when another box takes its place.
+                key={unnamed.key}
+                row={unnamed}
                 onUseMyLocation={onUseMyLocation}
                 onSearchGyms={onSearchGyms}
                 onOwnBoard={onOwnBoard}
@@ -170,7 +188,8 @@ export function InRangeSection({
             menuCapabilities={atGymMenuCapabilities}
             onMenuAction={onAtGymMenuAction}
             menuKeys={atGymMenuKeys}
-            collapsible
+            collapsedRowCount={AT_GYM_COLLAPSED_ROW_COUNT}
+            alwaysShownKeys={content.heardKeys}
             BoardArt={BoardArt}
             testID="picker-at-gym"
           />
@@ -257,15 +276,19 @@ function LocationHintBlock({ hint }: { hint: InRangeLocationHint }) {
   );
 }
 
-/** "In front of you" with the Bluetooth glyph, in secondary label: it says where, it does nothing. */
-function InFrontOfYou() {
+/**
+ * "In front of you" with the Bluetooth glyph, in secondary label: it says
+ * where, it does nothing. "Nearby" when a box was heard louder than this board:
+ * the climber may be standing at that one.
+ */
+function InFrontOfYou({ nearby = false }: { nearby?: boolean }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   return (
     <View style={styles.inline}>
       <Icon name="bluetooth" size={13} color={systemColors.secondaryLabel} />
       <Text variant="caption1" tone="secondary">
-        {t('mobile.inRange.inFrontOfYou')}
+        {nearby ? t('mobile.inRange.nearby') : t('mobile.inRange.inFrontOfYou')}
       </Text>
     </View>
   );
@@ -337,12 +360,15 @@ function LookingRow() {
  */
 const HeroCard = memo(function HeroCard({
   item,
+  inFrontOfYou,
   BoardArt,
   onPick,
 }: {
   item: DiscoveryBoardItem;
+  /** No box was heard louder: "In front of you", else "Nearby". */
+  inFrontOfYou: boolean;
   BoardArt: ComponentType<DiscoveryBoardArtProps>;
-  onPick: (item: DiscoveryBoardItem) => void;
+  onPick: (item: DiscoveryBoardItem, position?: number) => void;
 }) {
   const { t } = useTranslation('boards');
   const handlePick = useCallback(() => onPick(item), [item, onPick]);
@@ -353,7 +379,7 @@ const HeroCard = memo(function HeroCard({
           <BoardArt item={item} size={HERO_ART_SIZE} />
         </View>
         <View style={styles.heroText}>
-          <InFrontOfYou />
+          <InFrontOfYou nearby={!inFrontOfYou} />
           <Text variant="headline" numberOfLines={2}>
             {item.title}
           </Text>

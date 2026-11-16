@@ -169,7 +169,8 @@ const UNKNOWN_SETUP: UnnamedInRangeRow = {
   boardType: 'kilter',
   rssi: -60,
 };
-const AT_CRUX: PickerTopContent<DiscoveryBoardItem> = {
+type AtGym = Extract<PickerTopContent<DiscoveryBoardItem>, { kind: 'at_gym' }>;
+const AT_CRUX: AtGym = {
   kind: 'at_gym',
   gymUuid: 'gym-crux',
   gymName: 'Crux',
@@ -178,7 +179,9 @@ const AT_CRUX: PickerTopContent<DiscoveryBoardItem> = {
     { ...KILTER, subtitle: '12 x 12', isActive: true },
     { ...TENSION, isActive: false },
   ],
+  heardKeys: new Set(),
 };
+const HERO: PickerTopContent<DiscoveryBoardItem> = { kind: 'hero', board: KILTER, strongestSignal: true };
 
 const handlers = {
   onStart: vi.fn(),
@@ -198,11 +201,13 @@ function renderSlot(
   content: PickerTopContent<DiscoveryBoardItem>,
   {
     notice = null,
+    unnamed = null,
     scanning = false,
     heardNothing = false,
     locationHint = null,
   }: {
     notice?: PickerScanNotice | null;
+    unnamed?: UnnamedInRangeRow | null;
     scanning?: boolean;
     heardNothing?: boolean;
     locationHint?: InRangeLocationHint | null;
@@ -210,7 +215,7 @@ function renderSlot(
 ) {
   return render(
     <InRangeSection
-      view={{ notice, content, scanning, heardNothing }}
+      view={{ notice, content, unnamed, scanning, heardNothing }}
       BoardArt={BoardArt}
       locationHint={locationHint}
       {...handlers}
@@ -348,7 +353,7 @@ describe('InRangeSection', () => {
 
   // The hero needs no title: "In front of you" says it.
   it('leads with the one board heard somewhere else, and Climb here picks it', () => {
-    renderSlot({ kind: 'hero', board: KILTER });
+    renderSlot(HERO);
     expect(headings()).toEqual([]);
     expect(screen.getByText('In front of you')).toBeTruthy();
     expect(screen.getByText('Crux Kilter')).toBeTruthy();
@@ -368,7 +373,8 @@ describe('InRangeSection', () => {
     const kilterRow = screen.getByRole('button', { name: 'Crux Kilter, 12 x 12' });
     expect(kilterRow.getAttribute('aria-selected')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Crux Tension, 12 x 12' }));
-    expect(handlers.onPickBoard).toHaveBeenCalledExactlyOnceWith(AT_CRUX.kind === 'at_gym' ? AT_CRUX.rows[1] : null);
+    // With its place in the list as drawn.
+    expect(handlers.onPickBoard).toHaveBeenCalledExactlyOnceWith(AT_CRUX.rows[1], 1);
   });
 
   it('puts the spinner by At {gym} while the scan listens, and nowhere else', () => {
@@ -406,7 +412,7 @@ describe('InRangeSection', () => {
   it("offers the card menu only on the climber's own walls", () => {
     render(
       <InRangeSection
-        view={{ notice: null, content: AT_CRUX, scanning: false, heardNothing: false }}
+        view={{ notice: null, content: AT_CRUX, unnamed: null, scanning: false, heardNothing: false }}
         BoardArt={BoardArt}
         {...handlers}
         atGymMenuCapabilities={{ canPin: true, canDownload: true, canOpenDetails: true, canManage: true }}
@@ -416,6 +422,20 @@ describe('InRangeSection', () => {
     );
     expect(screen.getByRole('button', { name: 'Crux Kilter, 12 x 12' }).getAttribute('data-menu')).toBe('yes');
     expect(screen.getByRole('button', { name: 'Crux Tension, 12 x 12' }).getAttribute('data-menu')).toBe('no');
+  });
+
+  // The walls the scan heard stay in view past the cut, like the board you're on.
+  it('keeps the walls the scan heard in view in a big gym', () => {
+    const { container } = renderSlot({ ...AT_CRUX, rows: EIGHT_WALLS, heardKeys: new Set(['wall-5']) });
+    const shownWalls = [...container.querySelectorAll('[data-art]')].map((art) => art.getAttribute('data-art'));
+    expect(shownWalls).toEqual(['wall-1', 'wall-2', 'wall-5', 'wall-7']);
+  });
+
+  // A pick reports the row's place as drawn, not in the full roster.
+  it('reports a pick from a collapsed gym at its place as drawn', () => {
+    renderSlot({ ...AT_CRUX, rows: EIGHT_WALLS });
+    fireEvent.click(screen.getByRole('button', { name: 'Wall 7, Crux · 12 x 12' }));
+    expect(handlers.onPickBoard).toHaveBeenCalledExactlyOnceWith(EIGHT_WALLS[6], 3);
   });
 
   it('offers no Show all when it would hide one wall', () => {
@@ -440,7 +460,7 @@ describe('InRangeSection', () => {
       body: "We don't know its setup yet, so tell us where you are and we'll find this one.",
     },
   ])('leads with $row.kind it cannot name, with its three ways forward', ({ row, title, body }) => {
-    renderSlot({ kind: 'unnamed', row });
+    renderSlot({ kind: 'none' }, { unnamed: row });
     expect(screen.getByText('In front of you')).toBeTruthy();
     expect(screen.getByText(title)).toBeTruthy();
     expect(screen.getByText(body)).toBeTruthy();
@@ -453,6 +473,20 @@ describe('InRangeSection', () => {
     expect(handlers.onOwnBoard).toHaveBeenCalledExactlyOnceWith(row);
   });
 
+  // The gym of the board you're on doesn't say what this box is.
+  it('shows a box it cannot name above At {gym}', () => {
+    renderSlot({ ...AT_CRUX, source: 'active_board' }, { unnamed: MOONBOARD });
+    expect(headings()).toEqual(['In range', 'At Crux']);
+    expect(screen.getByText('A MoonBoard is in range')).toBeTruthy();
+  });
+
+  // Something was heard louder: the climber may be standing at that one.
+  it('says "Nearby" on a hero that is not the strongest signal heard', () => {
+    renderSlot({ ...HERO, strongestSignal: false } as PickerTopContent<DiscoveryBoardItem>);
+    expect(screen.getByText('Nearby')).toBeTruthy();
+    expect(screen.queryByText('In front of you')).toBeNull();
+  });
+
   it('asks for signal when serials could not be looked up, with Retry', () => {
     renderSlot({ kind: 'none' }, { notice: { kind: 'lookup_failed', besideHeardBoards: false } });
     expect(screen.getByText('Found a board, need signal')).toBeTruthy();
@@ -461,7 +495,7 @@ describe('InRangeSection', () => {
   });
 
   it.each<{ name: string; content: PickerTopContent<DiscoveryBoardItem> }>([
-    { name: 'the hero', content: { kind: 'hero', board: KILTER } },
+    { name: 'the hero', content: HERO },
     { name: 'At {gym}', content: AT_CRUX },
   ])('says so in one compact line beside $name', ({ content }) => {
     renderSlot(content, { notice: { kind: 'lookup_failed', besideHeardBoards: true } });
@@ -483,7 +517,7 @@ describe('InRangeSection', () => {
     { name: 'unreachable', content: { kind: 'none' }, notice: { kind: 'unreachable' }, offersScanAgain: true },
     { name: 'nothing heard', content: { kind: 'none' }, notice: null, offersScanAgain: false },
     { name: 'refused for good', content: { kind: 'none' }, notice: { kind: 'blocked_denied' }, offersScanAgain: false },
-    { name: 'a board heard', content: { kind: 'hero', board: KILTER }, notice: null, offersScanAgain: false },
+    { name: 'a board heard', content: HERO, notice: null, offersScanAgain: false },
     { name: 'At {gym}', content: AT_CRUX, notice: null, offersScanAgain: false },
     { name: 'looking', content: { kind: 'looking' }, notice: null, offersScanAgain: false },
   ])('Scan again for $name: $offersScanAgain', ({ content, notice, offersScanAgain }) => {

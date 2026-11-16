@@ -233,7 +233,8 @@
       "nearbyMap": "Karte",
       "showNearby": "Boards in deiner Nähe anzeigen",
       "manage": "Verwalten",
-      "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km"
+      "nearbyAllAbove": "Keine weiteren Boards im Umkreis von 20 km",
+      "yourBoardsAllAbove": "Alle deine Boards stehen weiter oben"
     },
     "create": {
       "screenTitle": "Richte dein Board ein",
@@ -301,6 +302,7 @@
       "title": "In Reichweite",
       "atGym": "In {{gym}}",
       "inFrontOfYou": "Vor dir",
+      "nearby": "In der Nähe",
       "permissionTitle": "Finde das Board, an dem du stehst",
       "permissionBody": "Boardsesh sucht über Bluetooth nach Boards, damit du das Board vor dir als Erstes siehst.",
       "continue": "Weiter",

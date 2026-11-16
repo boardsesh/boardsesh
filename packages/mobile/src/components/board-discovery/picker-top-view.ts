@@ -1,6 +1,7 @@
 // What sits at the top of the board picker, above Your boards. Pure, so every
 // scan phase and every mix of rows is a table row in the tests; the screen
-// fetches the gym's roster and InRangeSection draws the answer.
+// fetches the gym's roster, holds the top steady while it scans
+// (use-steady-picker-top.ts) and InRangeSection draws the answer.
 //
 // The scan only works out which gym the climber is at. It no longer ranks
 // boards by signal, and nothing is "closest":
@@ -12,13 +13,19 @@
 // - Exactly one named board heard, which is not the board you're on and not at
 //   its gym: that board alone, with Climb here (the hero), and no At {gym}.
 //   Several named boards none of which is at a gym (home walls) lead with the
-//   strongest the same way, unless the board you're on is among them.
+//   strongest the same way, unless the board you're on is among them. The
+//   hero says "In front of you" only when it is the strongest signal heard.
 // - Nothing named heard: the gym of the board you're on, when it has one.
-// - Only boxes it cannot name heard (a MoonBoard, a bare `Kilter Board`, a
-//   serial nobody saved) and no gym known: the box's card with its three ways
-//   forward. Once a gym is known they are ignored.
+// - Boxes it cannot name heard (a MoonBoard, a bare `Kilter Board`, a serial
+//   nobody saved) and nothing named: the box's card with its three ways
+//   forward, above At {gym} when the board you're on names the gym.
 // - Nothing heard and no gym: nothing at the top, so Your boards leads. There
-//   is no "No boards in range" line.
+//   is no "No boards in range" line, and a climber on a home wall gets no
+//   "Looking" placeholder: only one with no board at all does.
+//
+// For its first few seconds (`holdScanLead`) the scan's answer is not drawn at
+// all: what a scan hears first is the box nearest the door, not the wall the
+// climber stands at.
 //
 // The scan's own states (asking for Bluetooth, Bluetooth off or refused, a tap
 // to scan, serials it could not look up) are a notice drawn above whatever
@@ -78,18 +85,33 @@ export type PickerTopBoard = {
 export type PickerTopContent<Board> =
   /** Nothing: Your boards leads. */
   | { kind: 'none' }
-  /** Scanning with no gym known yet: the placeholder that holds the slot. */
+  /** Scanning, with no board picked and no gym known yet: the placeholder that holds the slot. */
   | { kind: 'looking' }
   /** The gym's roster, A to Z, the board you're on in place. */
-  | { kind: 'at_gym'; gymUuid: string; gymName: string; source: AtGymSource; rows: readonly Board[] }
-  /** One named board somewhere other than the board you're on, with Climb here. */
-  | { kind: 'hero'; board: Board }
-  /** A box it cannot name, with no gym known: its three ways forward. */
-  | { kind: 'unnamed'; row: UnnamedInRangeRow };
+  | {
+      kind: 'at_gym';
+      gymUuid: string;
+      gymName: string;
+      source: AtGymSource;
+      rows: readonly Board[];
+      /** The rows the scan heard, by key: a long gym keeps them in view, like the selected row. */
+      heardKeys: ReadonlySet<string>;
+    }
+  /**
+   * One named board somewhere other than the board you're on, with Climb here.
+   * `strongestSignal`: no box was heard louder, so it can say "In front of you".
+   */
+  | { kind: 'hero'; board: Board; strongestSignal: boolean };
 
 export type PickerTopView<Board> = {
   notice: PickerScanNotice | null;
   content: PickerTopContent<Board>;
+  /**
+   * A box it heard but cannot name, with nothing named heard: its card, with
+   * its three ways forward. Above At {gym} when the board you're on names the
+   * gym, alone otherwise.
+   */
+  unnamed: UnnamedInRangeRow | null;
   /** The scan is still listening: a small spinner by the title. */
   scanning: boolean;
   /**
@@ -111,8 +133,7 @@ export type PickerTopLead =
       /** The boards the scan named at this gym, so the rows never wait on the roster. */
       heardBoards: readonly UserBoard[];
     })
-  | { kind: 'hero'; board: UserBoard }
-  | { kind: 'unnamed'; row: UnnamedInRangeRow };
+  | { kind: 'hero'; board: UserBoard; strongestSignal: boolean };
 
 /** The first step: everything but the roster, which needs `pickerTopGymUuid` to fetch. */
 export type PickerTopDecision = Omit<PickerTopView<never>, 'content'> & {
@@ -127,6 +148,12 @@ export type PickerTopInputs = {
   lookup: QuickstartLookupState;
   /** The board you're on: null for none, undefined while it is still being read. */
   activeBoard: UserBoard | null | undefined;
+  /**
+   * The scan has listened only a moment (`usePickerScanHold`): nothing it
+   * heard is drawn yet, so the first box heard, often not the one the climber
+   * stands at, never leads and then gives way.
+   */
+  holdScanLead?: boolean;
 };
 
 const NONE: PickerTopLead = { kind: 'none' };
@@ -139,13 +166,16 @@ function gymOf(board: UserBoard): GymRef | null {
 
 /**
  * Whether two boards are the same board. A hidden board found by serial has
- * no uuid (#6375), so it compares on its serial instead.
+ * no uuid (#6375), so it compares on its serial and type instead: a Kilter and
+ * a Tension box can share a serial.
  */
-function isSameBoard(first: UserBoard, second: UserBoard): boolean {
+export function isSameBoard(first: UserBoard, second: UserBoard): boolean {
   const firstUuid = boardUuidOrNull(first.uuid);
   const secondUuid = boardUuidOrNull(second.uuid);
   if (firstUuid !== null && secondUuid !== null) return firstUuid === secondUuid;
-  return Boolean(first.serialNumber) && first.serialNumber === second.serialNumber;
+  return (
+    Boolean(first.serialNumber) && first.serialNumber === second.serialNumber && first.boardType === second.boardType
+  );
 }
 
 function isBoardRow(row: QuickstartRow): row is InRangeBoardRow {
@@ -184,15 +214,22 @@ export function gymMostHeard(named: readonly InRangeBoardRow[], activeGym: GymRe
 /** What the named boards lead with: the hero, the gym they point at, or nothing they can decide. */
 function leadFromNamed(
   named: readonly InRangeBoardRow[],
+  heard: readonly QuickstartRow[],
   activeBoard: UserBoard | null,
   activeGym: GymRef | null,
 ): PickerTopLead | null {
-  const [only] = named;
-  if (only === undefined) return null;
+  const [strongest] = named;
+  if (strongest === undefined) return null;
+  // "In front of you" only when nothing at all, named or not, was heard louder.
+  const hero: PickerTopLead = {
+    kind: 'hero',
+    board: strongest.board,
+    strongestSignal: heard[0]?.key === strongest.key,
+  };
   if (named.length === 1) {
-    const onIt = activeBoard !== null && isSameBoard(only.board, activeBoard);
-    const atItsGym = activeGym !== null && gymOf(only.board)?.gymUuid === activeGym.gymUuid;
-    if (!onIt && !atItsGym) return { kind: 'hero', board: only.board };
+    const onIt = activeBoard !== null && isSameBoard(strongest.board, activeBoard);
+    const atItsGym = activeGym !== null && gymOf(strongest.board)?.gymUuid === activeGym.gymUuid;
+    if (!onIt && !atItsGym) return hero;
   }
   const gym = gymMostHeard(named, activeGym);
   if (!gym) {
@@ -200,7 +237,7 @@ function leadFromNamed(
     // as one board would. Not when the board you're on is among them: it is
     // the one in front of you, and Your boards already marks it.
     const onItHeard = activeBoard !== null && named.some((row) => isSameBoard(row.board, activeBoard));
-    return named.length > 1 && !onItHeard ? { kind: 'hero', board: only.board } : null;
+    return named.length > 1 && !onItHeard ? hero : null;
   }
   return {
     kind: 'at_gym',
@@ -228,7 +265,13 @@ function noticeForIdlePhase(phase: Exclude<PickerScanPhase, 'scanning' | 'done'>
   }
 }
 
-export function decidePickerTop({ phase, rows, lookup, activeBoard }: PickerTopInputs): PickerTopDecision {
+export function decidePickerTop({
+  phase,
+  rows,
+  lookup,
+  activeBoard,
+  holdScanLead = false,
+}: PickerTopInputs): PickerTopDecision {
   const active = activeBoard ?? null;
   const activeGym = active ? gymOf(active) : null;
   const fromActiveBoard: PickerTopLead | null = activeGym
@@ -240,6 +283,7 @@ export function decidePickerTop({ phase, rows, lookup, activeBoard }: PickerTopI
     return {
       notice: noticeForIdlePhase(phase),
       lead: fromActiveBoard ?? NONE,
+      unnamed: null,
       scanning: false,
       heardNothing: false,
       activeBoard: active,
@@ -247,29 +291,32 @@ export function decidePickerTop({ phase, rows, lookup, activeBoard }: PickerTopI
   }
 
   const scanning = phase === 'scanning';
-  // While the scan's first serial lookup is out, the boards it names are held
-  // back and the answer could point at another gym, so nothing heard counts
-  // yet: the board you're on's gym, or the placeholder.
-  const heard = lookup === 'pending' ? [] : rows;
+  // Nothing heard counts yet while the scan has only just started listening,
+  // or while its first serial lookup is out (the answer could point at
+  // another gym): the board you're on's gym, or nothing.
+  const heard = lookup === 'pending' || (scanning && holdScanLead) ? [] : rows;
   const named = heard.filter(isBoardRow);
-  const firstUnnamed = heard.find(isUnnamedRow);
   const lookupFailed = heard.some((row) => row.kind === 'lookup_failed');
+  // A box it can't name is worth a card only when nothing named was heard.
+  const unnamed = named.length === 0 ? (heard.find(isUnnamedRow) ?? null) : null;
 
   let lead: PickerTopLead =
-    leadFromNamed(named, active, activeGym) ??
+    leadFromNamed(named, heard, active, activeGym) ??
     fromActiveBoard ??
-    (named.length === 0 && firstUnnamed ? { kind: 'unnamed', row: firstUnnamed } : null) ??
-    (scanning ? LOOKING : NONE);
+    // The placeholder is for a climber with no board yet: one on a home wall
+    // has Your boards to look at, and the scan may well hear nothing new.
+    (scanning && active === null ? LOOKING : NONE);
 
   const besideHeardBoards = lead.kind === 'hero' || (lead.kind === 'at_gym' && lead.source === 'scan');
   const notice: PickerScanNotice | null = lookupFailed ? { kind: 'lookup_failed', besideHeardBoards } : null;
-  // The need-signal card already holds the slot; a placeholder under it would
-  // say the opposite.
-  if (lead.kind === 'looking' && notice !== null) lead = NONE;
+  // A card already holds the slot (need signal, or the box it can't name); a
+  // placeholder under it would say the opposite.
+  if (lead.kind === 'looking' && (notice !== null || unnamed !== null)) lead = NONE;
 
   return {
     notice,
     lead,
+    unnamed,
     scanning,
     heardNothing: phase === 'done' && rows.length === 0,
     activeBoard: active,
@@ -296,11 +343,11 @@ function compareRows(first: PickerTopBoard, second: PickerTopBoard): number {
  * one of them, the board you're on wins, then the scan's: those are the full
  * boards, where the roster is a narrower read (`GymBoardForSwitcher`).
  */
-function atGymRows(
+function atGymContent(
   lead: Extract<PickerTopLead, { kind: 'at_gym' }>,
   gymRoster: readonly UserBoard[] | undefined,
   activeBoard: UserBoard | null,
-): PickerTopBoard[] {
+): Extract<PickerTopContent<PickerTopBoard>, { kind: 'at_gym' }> {
   const isAtGym = (board: UserBoard) => board.gymUuid === lead.gymUuid;
   const boards: UserBoard[] = [];
   const add = (board: UserBoard) => {
@@ -312,7 +359,7 @@ function atGymRows(
   // Filtered by gym as well: a roster still cached for another gym is not this one's.
   for (const board of gymRoster ?? []) add(board);
   const keys = boardRowKeys(boards);
-  return boards
+  const rows = boards
     .map((board, index) => ({
       key: keys[index] ?? board.uuid,
       board,
@@ -320,6 +367,10 @@ function atGymRows(
       selected: activeBoard !== null && isSameBoard(board, activeBoard),
     }))
     .sort(compareRows);
+  const heardKeys = new Set(
+    rows.filter((row) => lead.heardBoards.some((heard) => isSameBoard(heard, row.board))).map((row) => row.key),
+  );
+  return { kind: 'at_gym', gymUuid: lead.gymUuid, gymName: lead.gymName, source: lead.source, rows, heardKeys };
 }
 
 /**
@@ -330,27 +381,25 @@ export function buildPickerTopView(
   decision: PickerTopDecision,
   gymRoster: readonly UserBoard[] | undefined,
 ): PickerTopView<PickerTopBoard> {
-  const { notice, scanning, heardNothing, lead, activeBoard } = decision;
+  const { notice, unnamed, scanning, heardNothing, lead, activeBoard } = decision;
   let content: PickerTopContent<PickerTopBoard>;
   switch (lead.kind) {
     case 'at_gym':
-      content = {
-        kind: 'at_gym',
-        gymUuid: lead.gymUuid,
-        gymName: lead.gymName,
-        source: lead.source,
-        rows: atGymRows(lead, gymRoster, activeBoard),
-      };
+      content = atGymContent(lead, gymRoster, activeBoard);
       break;
     case 'hero': {
       const [key = lead.board.uuid] = boardRowKeys([lead.board]);
-      content = { kind: 'hero', board: { key, board: lead.board, title: lead.board.name, selected: false } };
+      content = {
+        kind: 'hero',
+        board: { key, board: lead.board, title: lead.board.name, selected: false },
+        strongestSignal: lead.strongestSignal,
+      };
       break;
     }
     default:
       content = lead;
   }
-  return { notice, content, scanning, heardNothing };
+  return { notice, content, unnamed, scanning, heardNothing };
 }
 
 /** Both steps at once, for callers that already hold the roster (tests, stories). */
@@ -359,6 +408,61 @@ export function pickerTopView(
   gymRoster?: readonly UserBoard[],
 ): PickerTopView<PickerTopBoard> {
   return buildPickerTopView(decidePickerTop(inputs), gymRoster);
+}
+
+/**
+ * Whether the scan put this content at the top, rather than the board you're
+ * on: once drawn, it holds for the rest of the scan (`stabilizePickerTop`).
+ */
+export function isScanLed(content: PickerTopContent<unknown>): boolean {
+  return content.kind === 'hero' || (content.kind === 'at_gym' && content.source === 'scan');
+}
+
+/**
+ * The top as the climber keeps seeing it while one scan runs on. `drawn` is
+ * what the scan put at the top earlier in this scan, or null before it has
+ * (`useSteadyPickerTop` keeps it). Once the scan has led:
+ * - its hero stays the hero and its gym stays the gym: a box heard later never
+ *   swaps a hero for At {gym}, or one gym for another, under the climber's
+ *   finger;
+ * - At {gym} keeps the order it was drawn in, and walls that arrive later
+ *   (the roster landing, another wall heard) join at the end.
+ * The rest of the view (notices, the spinner, the box it can't name, a hero's
+ * "In front of you") follows `next`.
+ */
+export function stabilizePickerTop(
+  drawn: PickerTopContent<PickerTopBoard> | null,
+  next: PickerTopView<PickerTopBoard>,
+): PickerTopView<PickerTopBoard> {
+  if (drawn === null || (drawn.kind !== 'hero' && drawn.kind !== 'at_gym')) return next;
+  const nextContent = next.content;
+  if (drawn.kind === 'hero') {
+    if (nextContent.kind === 'hero' && nextContent.board.key === drawn.board.key) return next;
+    return { ...next, content: drawn, unnamed: null };
+  }
+  if (nextContent.kind !== 'at_gym' || nextContent.gymUuid !== drawn.gymUuid) {
+    return { ...next, content: drawn, unnamed: null };
+  }
+  const nextByKey = new Map(nextContent.rows.map((row) => [row.key, row]));
+  const drawnKeys = new Set(drawn.rows.map((row) => row.key));
+  const kept = drawn.rows.flatMap((row) => {
+    const current = nextByKey.get(row.key);
+    return current ? [current] : [];
+  });
+  const joined = nextContent.rows.filter((row) => !drawnKeys.has(row.key));
+  return { ...next, content: { ...nextContent, rows: [...kept, ...joined] } };
+}
+
+/** What a drawn top looks like, to tell whether a new render moved anything. */
+export function pickerTopSignature(content: PickerTopContent<PickerTopBoard>): string {
+  switch (content.kind) {
+    case 'hero':
+      return `hero:${content.board.key}`;
+    case 'at_gym':
+      return `at_gym:${content.gymUuid}:${content.rows.map((row) => row.key).join(',')}`;
+    default:
+      return content.kind;
+  }
 }
 
 /** The boards the top lists, so Your boards and Near you can leave them out. */
@@ -389,7 +493,10 @@ export type PickerTopPick = {
   /** 'bluetooth' when the scan put the board here, 'gym_walls' when the board you're on did. */
   pickSource: Extract<BoardPickSource, 'bluetooth' | 'gym_walls'>;
   section: Extract<BoardPickSection, 'at_gym' | 'hero'>;
-  /** 0-based, in the section's own order. */
+  /**
+   * 0-based, in the section's full order. A long At {gym} collapsed behind
+   * Show all draws a shorter list: the list reports where the row was drawn.
+   */
   position: number;
 };
 
@@ -419,7 +526,11 @@ export function mapPickerTopBoards<From, To>(
       return { ...view, content: { ...content, rows: mapBoards(content.rows, 'at_gym') } };
     case 'hero': {
       const [board] = mapBoards([content.board], 'hero');
-      return { ...view, content: board === undefined ? { kind: 'none' } : { kind: 'hero', board } };
+      return {
+        ...view,
+        content:
+          board === undefined ? { kind: 'none' } : { kind: 'hero', board, strongestSignal: content.strongestSignal },
+      };
     }
     default:
       return { ...view, content };
@@ -428,22 +539,30 @@ export function mapPickerTopBoards<From, To>(
 
 /** Rows At {gym} shows before Show all. */
 export const AT_GYM_COLLAPSED_ROW_COUNT = 4;
+/** Rows Your boards shows before Show all: about 91% of climbers have 3 or fewer. */
+export const YOUR_BOARDS_COLLAPSED_ROW_COUNT = 6;
 
 /**
- * The rows a long At {gym} shows before Show all. The picker's ScrollView
- * cannot hold a virtualised list, and a big gym has a dozen walls. Never
- * collapses to hide a single row, and always keeps the selected row, which
- * Your boards no longer lists: past the cut it replaces the last row shown, so
- * the rows that show keep their order.
+ * The rows a long list shows before Show all. The picker's ScrollView cannot
+ * hold a virtualised list, and a big gym has a dozen walls. Never collapses to
+ * hide a single row. Rows that must stay in view (the board you're on, which
+ * no other list shows; the walls the scan heard) always do, in their place:
+ * the other rows give up the room they take, so the rows that show keep their
+ * order and the list stays about `limit` long.
  */
-export function collapsedAtGymRows<Row>(
+export function collapsedRows<Row>(
   rows: readonly Row[],
-  isSelected: (row: Row) => boolean,
-  limit: number = AT_GYM_COLLAPSED_ROW_COUNT,
+  mustShow: (row: Row) => boolean,
+  limit: number,
 ): readonly Row[] {
   if (rows.length <= limit + 1) return rows;
-  const head = rows.slice(0, limit);
-  if (head.some(isSelected)) return head;
-  const selected = rows.find(isSelected);
-  return selected === undefined ? head : [...rows.slice(0, limit - 1), selected];
+  const mustShowCount = rows.filter(mustShow).length;
+  let otherRoom = Math.max(0, limit - mustShowCount);
+  const shown = rows.filter((row) => {
+    if (mustShow(row)) return true;
+    if (otherRoom === 0) return false;
+    otherRoom -= 1;
+    return true;
+  });
+  return shown.length >= rows.length - 1 ? rows : shown;
 }

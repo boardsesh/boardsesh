@@ -233,7 +233,8 @@
       "nearbyMap": "Mappa",
       "showNearby": "Mostra i pannelli vicino a te",
       "manage": "Gestisci",
-      "nearbyAllAbove": "Nessun altro pannello entro 20 km"
+      "nearbyAllAbove": "Nessun altro pannello entro 20 km",
+      "yourBoardsAllAbove": "Tutti i tuoi pannelli sono più in alto"
     },
     "create": {
       "screenTitle": "Configura il tuo pannello",
@@ -301,6 +302,7 @@
       "title": "A portata",
       "atGym": "A {{gym}}",
       "inFrontOfYou": "Davanti a te",
+      "nearby": "Qui vicino",
       "permissionTitle": "Trova il pannello dove sei",
       "permissionBody": "Boardsesh cerca i pannelli via Bluetooth, così il primo che vedi è quello davanti a te.",
       "continue": "Continua",

@@ -128,12 +128,22 @@ type SelectorState = {
   firstRun?: boolean;
 };
 
-const QUIET_TOP = { notice: null, scanning: false, heardNothing: false } as const;
+const QUIET_TOP = { notice: null, unnamed: null, scanning: false, heardNothing: false } as const;
+// Crux Homewall heard: a long At Crux keeps it in view.
+const HEARD_AT_CRUX: ReadonlySet<string> = new Set([CRUX_HOMEWALL.key]);
+const NOTHING_HEARD: ReadonlySet<string> = new Set();
 const STATES = {
   atGym: {
     top: {
       ...QUIET_TOP,
-      content: { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', source: 'scan', rows: AT_CRUX_ON_HOMEWALL },
+      content: {
+        kind: 'at_gym',
+        gymUuid: 'gym-crux',
+        gymName: 'Crux',
+        source: 'scan',
+        rows: AT_CRUX_ON_HOMEWALL,
+        heardKeys: HEARD_AT_CRUX,
+      },
     },
     yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
@@ -148,6 +158,7 @@ const STATES = {
         gymName: 'Crux',
         source: 'active_board',
         rows: AT_CRUX_ON_HOMEWALL,
+        heardKeys: NOTHING_HEARD,
       },
     },
     yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
@@ -155,7 +166,10 @@ const STATES = {
   },
   // On the garage board, one Crux wall heard: Climb here, no At Crux under it.
   otherGymHero: {
-    top: { ...QUIET_TOP, content: { kind: 'hero', board: { ...CRUX_ORIGINAL, subtitle: 'Crux · 12 x 12' } } },
+    top: {
+      ...QUIET_TOP,
+      content: { kind: 'hero', board: { ...CRUX_ORIGINAL, subtitle: 'Crux · 12 x 12' }, strongestSignal: true },
+    },
     yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
@@ -168,14 +182,38 @@ const STATES = {
   noActiveBoard: {
     top: {
       ...QUIET_TOP,
-      content: { kind: 'at_gym', gymUuid: 'gym-crux', gymName: 'Crux', source: 'scan', rows: CRUX_ROSTER },
+      content: {
+        kind: 'at_gym',
+        gymUuid: 'gym-crux',
+        gymName: 'Crux',
+        source: 'scan',
+        rows: CRUX_ROSTER,
+        heardKeys: HEARD_AT_CRUX,
+      },
     },
     yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   unnamed: {
-    top: { ...QUIET_TOP, content: { kind: 'unnamed', row: MOONBOARD_ROW } },
+    top: { ...QUIET_TOP, unnamed: MOONBOARD_ROW, content: { kind: 'none' } },
     yourBoards: [onIt(GARAGE), CRUX_HOMEWALL, BOULDERING_BAR, SHED_SPRAY],
+    nearby: 'results',
+  },
+  // On Crux Homewall, a MoonBoard heard that the gym's list doesn't name: its card above At Crux.
+  unnamedAtGym: {
+    top: {
+      ...QUIET_TOP,
+      unnamed: MOONBOARD_ROW,
+      content: {
+        kind: 'at_gym',
+        gymUuid: 'gym-crux',
+        gymName: 'Crux',
+        source: 'active_board',
+        rows: AT_CRUX_ON_HOMEWALL,
+        heardKeys: NOTHING_HEARD,
+      },
+    },
+    yourBoards: [GARAGE, BOULDERING_BAR, SHED_SPRAY],
     nearby: 'results',
   },
   permission: {
@@ -375,6 +413,7 @@ const stories: StoryModule = {
     home: selectorStory('At home on your garage board, nothing heard: your boards lead', 'home'),
     noActiveBoard: selectorStory('No board picked yet, at Crux', 'noActiveBoard'),
     unnamed: selectorStory('Only a MoonBoard it cannot name, and no gym known', 'unnamed'),
+    unnamedAtGym: selectorStory('A MoonBoard it cannot name, above At Crux', 'unnamedAtGym'),
     permission: selectorStory('Asking for Bluetooth first', 'permission'),
     nearbyEmpty: selectorStory('Nothing within 20 km: Near you keeps its Map', 'nearbyEmpty'),
     firstRun: selectorStory('First run: asking for Bluetooth, then where you climb', 'firstRun'),

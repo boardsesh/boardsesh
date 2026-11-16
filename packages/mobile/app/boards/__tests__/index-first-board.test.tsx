@@ -55,7 +55,7 @@ type ChoiceProps = {
 };
 type UnnamedRow = Extract<QuickstartRow, { kind: 'moonboard' | 'bare_name' | 'unknown_setup' }>;
 type InRangeProps = {
-  view: { content: { kind: string }; scanning: boolean };
+  view: { content: { kind: string }; unnamed: { key: string } | null; scanning: boolean };
   onStart: () => void;
   onOpenSettings: () => void;
   onRetryLookup: () => void;
@@ -949,7 +949,7 @@ describe("the In range slot's ways forward for a board it can't name", () => {
 
   it('ends the scan, holds the box, and shows the gyms near them, only that type', () => {
     const { rerender } = render(createElement(BoardSelection));
-    expect(inRange().view.content.kind).toBe('unnamed');
+    expect(inRange().view.unnamed?.key).toBe('moonboard:moonboard');
 
     useMyLocation();
     expect(scanCtrl.stop).toHaveBeenCalledOnce();

@@ -171,7 +171,7 @@ export function resolveSelectionColors(inputs: RoleColorInputs, brandPrimary: st
 }
 
 /**
- * A status that can't be tapped: "Closest", "Ready to review", "On it". A quiet
+ * A status that can't be tapped: "Ready to review", "On it". A quiet
  * pill (`tertiarySystemFill`) with `secondaryLabel` text, so it never competes with
  * the tappable accent beside it.
  */

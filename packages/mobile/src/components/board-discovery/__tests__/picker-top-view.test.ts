@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import {
   buildPickerTopView,
-  collapsedAtGymRows,
+  collapsedRows,
   decidePickerTop,
   gymMostHeard,
+  isSameBoard,
   mapPickerTopBoards,
   pickerTopBoardUuids,
   pickerTopGymUuid,
   pickerTopPicks,
+  pickerTopSignature,
   pickerTopView,
+  stabilizePickerTop,
   type InRangeBoardRow,
   type PickerTopBoard,
   type PickerTopInputs,
@@ -71,9 +74,13 @@ const blocTension = board('bloc-tension', BLOC);
 const homeWall = board('home-wall');
 const friendsWall = board('friends-wall');
 
-/** The top in one line: the notice, what leads (with its gym, source and rows) and the spinner. */
+/**
+ * The top in one line: the notice, the box it can't name, what leads (with its
+ * gym, source and rows, `*` on the selected one) and the spinner. A hero that
+ * isn't the strongest signal heard reads `~nearby`.
+ */
 function summarize(view: PickerTopView<PickerTopBoard>): string {
-  const { notice, content, scanning } = view;
+  const { notice, unnamed, content, scanning } = view;
   let lead: string;
   switch (content.kind) {
     case 'at_gym':
@@ -82,10 +89,7 @@ function summarize(view: PickerTopView<PickerTopBoard>): string {
         .join(',')}]`;
       break;
     case 'hero':
-      lead = `hero:${content.board.board.uuid}`;
-      break;
-    case 'unnamed':
-      lead = `unnamed:${content.row.key}`;
+      lead = `hero:${content.board.board.uuid}${content.strongestSignal ? '' : '~nearby'}`;
       break;
     default:
       lead = content.kind;
@@ -94,7 +98,8 @@ function summarize(view: PickerTopView<PickerTopBoard>): string {
     notice === null
       ? ''
       : `${notice.kind}${notice.kind === 'lookup_failed' && notice.besideHeardBoards ? '(beside)' : ''} + `;
-  return `${noticeText}${lead}${scanning ? ' (scanning)' : ''}`;
+  const unnamedText = unnamed === null ? '' : `unnamed:${unnamed.key} + `;
+  return `${noticeText}${unnamedText}${lead}${scanning ? ' (scanning)' : ''}`;
 }
 
 function top(inputs: Partial<PickerTopInputs>, gymRoster?: readonly UserBoard[]): string {
@@ -142,7 +147,7 @@ describe('which gym the top is at', () => {
         rows: [heard(friendsWall), heard(homeWall)],
         activeBoard: homeWall,
       }),
-    ).toBe('looking (scanning)');
+    ).toBe('none (scanning)');
   });
 
   it('counts a board as at a gym only when it carries the gym name too', () => {
@@ -188,27 +193,63 @@ describe('one named board heard', () => {
   });
 });
 
+describe('which board is the same board', () => {
+  it('compares uuids when both have one', () => {
+    expect(isSameBoard(cruxKilter, board('crux-kilter', BLOC))).toBe(true);
+    expect(isSameBoard(cruxKilter, cruxTension)).toBe(false);
+  });
+
+  // A Kilter box and a Tension box can share a serial.
+  it('compares the serial and the board type when one has no uuid', () => {
+    const kilterBySerial = board('', null, { serialNumber: 'S1', boardType: 'kilter' });
+    expect(isSameBoard(kilterBySerial, board('mine', null, { serialNumber: 'S1', boardType: 'kilter' }))).toBe(true);
+    expect(isSameBoard(kilterBySerial, board('mine', null, { serialNumber: 'S1', boardType: 'tension' }))).toBe(false);
+    expect(isSameBoard(kilterBySerial, board('mine', null, { serialNumber: 'S2', boardType: 'kilter' }))).toBe(false);
+    expect(isSameBoard(board(''), board(''))).toBe(false);
+  });
+});
+
+describe('"In front of you" or "Nearby"', () => {
+  it('says the hero is in front of you only when nothing was heard louder', () => {
+    expect(top({ rows: [heard(cruxKilter), MOONBOARD_ROW], activeBoard: homeWall })).toBe('hero:crux-kilter');
+    expect(top({ rows: [MOONBOARD_ROW, heard(cruxKilter)], activeBoard: homeWall })).toBe('hero:crux-kilter~nearby');
+    expect(top({ rows: [LOOKUP_FAILED_ROW, heard(cruxKilter)], lookup: 'failed', activeBoard: homeWall })).toBe(
+      'lookup_failed(beside) + hero:crux-kilter~nearby',
+    );
+  });
+});
+
 describe('boxes it cannot name', () => {
-  it.each([MOONBOARD_ROW, BARE_KILTER_ROW, UNKNOWN_SETUP_ROW])('leads with $kind when no gym is known', (row) => {
-    expect(top({ rows: [row] })).toBe(`unnamed:${row.key}`);
-    expect(top({ rows: [row], activeBoard: homeWall })).toBe(`unnamed:${row.key}`);
+  it.each([MOONBOARD_ROW, BARE_KILTER_ROW, UNKNOWN_SETUP_ROW])('shows $kind when nothing named was heard', (row) => {
+    expect(top({ rows: [row] })).toBe(`unnamed:${row.key} + none`);
+    expect(top({ rows: [row], activeBoard: homeWall })).toBe(`unnamed:${row.key} + none`);
   });
 
   it('takes the strongest of several', () => {
-    expect(top({ rows: [UNKNOWN_SETUP_ROW, MOONBOARD_ROW] })).toBe('unnamed:unknown_setup:tension');
+    expect(top({ rows: [UNKNOWN_SETUP_ROW, MOONBOARD_ROW] })).toBe('unnamed:unknown_setup:tension + none');
   });
 
-  it('is ignored once the board you are on names a gym', () => {
-    expect(top({ rows: [MOONBOARD_ROW], activeBoard: cruxKilter })).toBe('at_gym:Crux/active_board[crux-kilter*]');
+  // The gym the board you're on names doesn't say what this box is: its card
+  // goes above At {gym}.
+  it('shows above At {gym} when the gym comes from the board you are on', () => {
+    expect(top({ rows: [MOONBOARD_ROW], activeBoard: cruxKilter })).toBe(
+      'unnamed:moonboard:moonboard + at_gym:Crux/active_board[crux-kilter*]',
+    );
   });
 
   it('is ignored beside a named board', () => {
-    expect(top({ rows: [MOONBOARD_ROW, heard(cruxKilter)], activeBoard: homeWall })).toBe('hero:crux-kilter');
+    expect(top({ rows: [heard(cruxKilter), MOONBOARD_ROW], activeBoard: homeWall })).toBe('hero:crux-kilter');
     expect(top({ rows: [MOONBOARD_ROW, heard(cruxKilter), heard(cruxTension)] })).toBe(
       'at_gym:Crux/scan[crux-kilter,crux-tension]',
     );
     // Even one that names no gym: it is the board you're on, right there.
     expect(top({ rows: [MOONBOARD_ROW, heard(homeWall)], activeBoard: homeWall })).toBe('none');
+  });
+
+  it('replaces the placeholder while scanning', () => {
+    expect(top({ phase: 'scanning', lookup: 'none', rows: [MOONBOARD_ROW] })).toBe(
+      'unnamed:moonboard:moonboard + none (scanning)',
+    );
   });
 });
 
@@ -222,7 +263,7 @@ describe('the scan phases', () => {
     { phase: 'tap_to_scan', expected: 'tap_to_scan + none' },
   ])('$phase passes its notice through, with no gym known', ({ phase, expected }) => {
     // Rows left over from an earlier scan say nothing about now.
-    expect(top({ phase, rows: [heard(cruxKilter)] })).toBe(expected);
+    expect(top({ phase, rows: [heard(cruxKilter), MOONBOARD_ROW] })).toBe(expected);
   });
 
   // The `picker-auto-scan-kill` switch leaves the scan waiting for a tap: the
@@ -236,12 +277,19 @@ describe('the scan phases', () => {
     expect(top({ phase, activeBoard: cruxKilter })).toBe(expected);
   });
 
-  it('holds the placeholder while scanning with no gym known', () => {
+  it('holds the placeholder while scanning for a climber with no board yet', () => {
     expect(top({ phase: 'scanning', lookup: 'none' })).toBe('looking (scanning)');
-    expect(top({ phase: 'scanning', lookup: 'none', activeBoard: homeWall })).toBe('looking (scanning)');
   });
 
-  it('lists the gym of the board you are on while scanning, with the spinner', () => {
+  // A climber on a home wall has Your boards to look at; the scan may hear nothing new.
+  it('reserves no placeholder for a climber on a board with no gym', () => {
+    expect(top({ phase: 'scanning', lookup: 'none', activeBoard: homeWall })).toBe('none (scanning)');
+    expect(top({ phase: 'scanning', lookup: 'resolved', rows: [heard(homeWall)], activeBoard: homeWall })).toBe(
+      'none (scanning)',
+    );
+  });
+
+  it('lists the gym of the active board while scanning, with the spinner', () => {
     expect(top({ phase: 'scanning', lookup: 'none', activeBoard: cruxKilter })).toBe(
       'at_gym:Crux/active_board[crux-kilter*] (scanning)',
     );
@@ -263,9 +311,6 @@ describe('the scan phases', () => {
     expect(top({ phase: 'scanning', lookup: 'resolved', rows: [heard(cruxKilter), heard(cruxTension)] })).toBe(
       'at_gym:Crux/scan[crux-kilter,crux-tension] (scanning)',
     );
-    expect(top({ phase: 'scanning', lookup: 'none', rows: [MOONBOARD_ROW] })).toBe(
-      'unnamed:moonboard:moonboard (scanning)',
-    );
   });
 
   // No "No boards in range" line: at home with nothing heard, Your boards leads.
@@ -285,6 +330,32 @@ describe('the scan phases', () => {
   });
 });
 
+// The first box a scan hears is often the one by the door: for its first
+// seconds nothing it heard leads.
+describe('while the scan holds', () => {
+  const held = (inputs: Partial<PickerTopInputs>) =>
+    top({ phase: 'scanning', lookup: 'resolved', holdScanLead: true, ...inputs });
+
+  it('draws nothing the scan heard, only the gym of the board you are on', () => {
+    expect(held({ rows: [heard(blocKilter), heard(blocTension)], activeBoard: cruxKilter })).toBe(
+      'at_gym:Crux/active_board[crux-kilter*] (scanning)',
+    );
+    expect(held({ rows: [heard(cruxKilter)], activeBoard: homeWall })).toBe('none (scanning)');
+    expect(held({ rows: [MOONBOARD_ROW], activeBoard: homeWall })).toBe('none (scanning)');
+    expect(held({ rows: [LOOKUP_FAILED_ROW], lookup: 'failed', activeBoard: homeWall })).toBe('none (scanning)');
+  });
+
+  it('keeps the placeholder for a climber with no board yet', () => {
+    expect(held({ rows: [heard(cruxKilter)] })).toBe('looking (scanning)');
+  });
+
+  it('lets go once the scan has ended', () => {
+    expect(top({ phase: 'done', rows: [heard(cruxKilter)], activeBoard: homeWall, holdScanLead: true })).toBe(
+      'hero:crux-kilter',
+    );
+  });
+});
+
 describe('serials it could not look up', () => {
   it('is the need-signal card when nothing named is shown', () => {
     expect(top({ rows: [LOOKUP_FAILED_ROW], lookup: 'failed' })).toBe('lookup_failed + none');
@@ -301,9 +372,6 @@ describe('serials it could not look up', () => {
   });
 
   it('is the compact line beside boards the scan named', () => {
-    expect(top({ rows: [LOOKUP_FAILED_ROW, heard(cruxKilter)], lookup: 'failed', activeBoard: homeWall })).toBe(
-      'lookup_failed(beside) + hero:crux-kilter',
-    );
     expect(top({ rows: [heard(cruxKilter), LOOKUP_FAILED_ROW, heard(cruxTension)], lookup: 'failed' })).toBe(
       'lookup_failed(beside) + at_gym:Crux/scan[crux-kilter,crux-tension]',
     );
@@ -311,7 +379,7 @@ describe('serials it could not look up', () => {
 
   it('keeps the box it cannot name beside the card', () => {
     expect(top({ rows: [LOOKUP_FAILED_ROW, MOONBOARD_ROW], lookup: 'failed' })).toBe(
-      'lookup_failed + unnamed:moonboard:moonboard',
+      'lookup_failed + unnamed:moonboard:moonboard + none',
     );
   });
 });
@@ -356,6 +424,8 @@ describe("At {gym}'s rows", () => {
       board('crux-spray', CRUX),
       cruxTension,
     ]);
+    // A long gym keeps the walls the scan heard in view.
+    expect([...view.content.heardKeys]).toEqual(['crux-kilter', 'crux-tension']);
   });
 
   it('has rows before the roster lands', () => {
@@ -390,27 +460,72 @@ describe('two steps: the gym, then its roster', () => {
   });
 });
 
+// Once the scan has led, what it led with stays for the rest of that scan.
+describe('stabilizePickerTop', () => {
+  const scanView = (rows: readonly QuickstartRow[], activeBoard: UserBoard | null, roster?: readonly UserBoard[]) =>
+    pickerTopView({ phase: 'scanning', rows, lookup: 'resolved', activeBoard }, roster);
+
+  it('passes the top through before the scan has led', () => {
+    const next = scanView([heard(cruxKilter)], homeWall);
+    expect(stabilizePickerTop(null, next)).toBe(next);
+  });
+
+  it('keeps the hero when a later box would make the top At {gym}', () => {
+    const drawn = scanView([heard(cruxKilter)], homeWall).content;
+    const next = scanView([heard(cruxKilter), heard(cruxTension)], homeWall);
+    expect(summarize(stabilizePickerTop(drawn, next))).toBe('hero:crux-kilter (scanning)');
+  });
+
+  it('follows the hero it drew, so its "Nearby" can change', () => {
+    const drawn = scanView([heard(cruxKilter)], homeWall).content;
+    const next = scanView([MOONBOARD_ROW, heard(cruxKilter)], homeWall);
+    expect(summarize(stabilizePickerTop(drawn, next))).toBe('hero:crux-kilter~nearby (scanning)');
+  });
+
+  it('keeps At {gym} when a later box would make it a hero or another gym', () => {
+    const drawn = scanView([heard(cruxKilter), heard(cruxTension)], homeWall).content;
+    const toBloc = scanView(
+      [heard(blocKilter, -30), heard(blocTension, -35), heard(cruxKilter), heard(cruxTension)],
+      homeWall,
+    );
+    expect(summarize(stabilizePickerTop(drawn, toBloc))).toBe('at_gym:Crux/scan[crux-kilter,crux-tension] (scanning)');
+  });
+
+  // The roster landing, or another wall heard: they join the end, nothing moves.
+  it('keeps the rows in the order drawn and adds late walls at the end', () => {
+    const drawn = scanView([heard(cruxTension), heard(cruxMoon)], homeWall).content;
+    const withRoster = scanView([heard(cruxTension), heard(cruxMoon)], homeWall, [
+      cruxKilter,
+      board('crux-arch', CRUX),
+    ]);
+    expect(summarize(withRoster)).toBe('at_gym:Crux/scan[crux-arch,crux-kilter,crux-moon,crux-tension] (scanning)');
+    expect(summarize(stabilizePickerTop(drawn, withRoster))).toBe(
+      'at_gym:Crux/scan[crux-moon,crux-tension,crux-arch,crux-kilter] (scanning)',
+    );
+  });
+
+  it('tells a moved top from an unmoved one by its signature', () => {
+    const drawn = scanView([heard(cruxTension), heard(cruxMoon)], homeWall);
+    const withRoster = scanView([heard(cruxTension), heard(cruxMoon)], homeWall, [cruxKilter]);
+    expect(pickerTopSignature(stabilizePickerTop(drawn.content, withRoster).content)).toBe(
+      'at_gym:gym-crux:crux-moon,crux-tension,crux-kilter',
+    );
+    expect(pickerTopSignature(scanView([heard(cruxKilter)], homeWall).content)).toBe('hero:crux-kilter');
+  });
+});
+
 describe('what the rest of the picker leaves out', () => {
   it('names every board the top lists, but no hidden board without a uuid', () => {
     const geometryOnly = board('', null, { serialNumber: 'S9' });
-    expect([
+    const uuidsOf = (inputs: Partial<PickerTopInputs>, roster?: readonly UserBoard[]) => [
       ...pickerTopBoardUuids(
-        pickerTopView({ phase: 'done', rows: [heard(geometryOnly)], lookup: 'resolved', activeBoard: null }),
+        pickerTopView({ phase: 'done', rows: [], lookup: 'resolved', activeBoard: null, ...inputs }, roster),
       ),
-    ]).toEqual([]);
-    expect([
-      ...pickerTopBoardUuids(
-        pickerTopView({ phase: 'done', rows: [], lookup: 'none', activeBoard: cruxKilter }, [cruxTension]),
-      ),
-    ]).toEqual(['crux-kilter', 'crux-tension']);
-    expect([
-      ...pickerTopBoardUuids(
-        pickerTopView({ phase: 'done', rows: [heard(cruxKilter)], lookup: 'resolved', activeBoard: homeWall }),
-      ),
-    ]).toEqual(['crux-kilter']);
-    expect(
-      pickerTopBoardUuids(pickerTopView({ phase: 'done', rows: [], lookup: 'none', activeBoard: homeWall })).size,
-    ).toBe(0);
+    ];
+    expect(uuidsOf({ rows: [heard(geometryOnly)] })).toEqual([]);
+    expect(uuidsOf({ activeBoard: cruxKilter }, [cruxTension])).toEqual(['crux-kilter', 'crux-tension']);
+    expect(uuidsOf({ rows: [heard(cruxKilter)], activeBoard: homeWall })).toEqual(['crux-kilter']);
+    expect(uuidsOf({ activeBoard: homeWall })).toEqual([]);
   });
 });
 
@@ -453,9 +568,8 @@ describe('how a pick from the top is reported', () => {
   });
 
   it('offers nothing to pick when the top lists no board', () => {
-    expect(
-      pickerTopPicks(pickerTopView({ phase: 'done', rows: [MOONBOARD_ROW], lookup: 'none', activeBoard: null })).size,
-    ).toBe(0);
+    const view = pickerTopView({ phase: 'done', rows: [MOONBOARD_ROW], lookup: 'none', activeBoard: null });
+    expect(pickerTopPicks(view).size).toBe(0);
   });
 });
 
@@ -469,27 +583,50 @@ describe('mapPickerTopBoards', () => {
     });
   });
 
-  it('drops a hero the view cannot draw', () => {
-    const view = pickerTopView({ phase: 'done', rows: [heard(cruxKilter)], lookup: 'resolved', activeBoard: null });
+  it('keeps the hero its label, and drops a hero the view cannot draw', () => {
+    const view = pickerTopView({
+      phase: 'done',
+      rows: [MOONBOARD_ROW, heard(cruxKilter)],
+      lookup: 'resolved',
+      activeBoard: null,
+    });
+    expect(mapPickerTopBoards(view, (boards) => boards.map((row) => row.key)).content).toEqual({
+      kind: 'hero',
+      board: 'crux-kilter',
+      strongestSignal: false,
+    });
     expect(mapPickerTopBoards(view, () => []).content).toEqual({ kind: 'none' });
   });
 });
 
-describe('collapsedAtGymRows', () => {
+describe('collapsedRows', () => {
   const rows = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-  const selected = (target: string) => (row: string) => row === target;
+  const only =
+    (...kept: string[]) =>
+    (row: string) =>
+      kept.includes(row);
 
   it('never collapses to hide a single row', () => {
-    expect(collapsedAtGymRows(rows.slice(0, 5), selected('e'))).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(collapsedRows(rows.slice(0, 5), only('e'), 4)).toEqual(['a', 'b', 'c', 'd', 'e']);
   });
 
-  it('shows the first four of a long gym', () => {
-    expect(collapsedAtGymRows(rows, selected('b'))).toEqual(['a', 'b', 'c', 'd']);
-    expect(collapsedAtGymRows(rows, () => false)).toEqual(['a', 'b', 'c', 'd']);
+  it('shows the first rows of a long list', () => {
+    expect(collapsedRows(rows, only('b'), 4)).toEqual(['a', 'b', 'c', 'd']);
+    expect(collapsedRows(rows, only(), 4)).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  // Your boards no longer lists the board you're on: it can't hide behind Show all.
-  it('keeps the selected row in place of the last one shown', () => {
-    expect(collapsedAtGymRows(rows, selected('g'))).toEqual(['a', 'b', 'c', 'g']);
+  // The board you're on, which no other list shows, can't hide behind Show all.
+  it('keeps a row that must show, in its place, and gives up room for it', () => {
+    expect(collapsedRows(rows, only('g'), 4)).toEqual(['a', 'b', 'c', 'g']);
+  });
+
+  // The walls the scan heard stay in view too.
+  it('keeps every row that must show', () => {
+    expect(collapsedRows(rows, only('b', 'f', 'h'), 4)).toEqual(['a', 'b', 'f', 'h']);
+    expect(collapsedRows(rows, only('e', 'f', 'g', 'h'), 4)).toEqual(['e', 'f', 'g', 'h']);
+  });
+
+  it('shows everything when keeping the rows that must show would hide one row at most', () => {
+    expect(collapsedRows(rows, only('b', 'c', 'd', 'e', 'f', 'g', 'h'), 4)).toEqual(rows);
   });
 });

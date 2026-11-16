@@ -681,14 +681,21 @@ describe('the card menu on Your boards', () => {
     expect(screen.queryByText('No boards yet')).toBeNull();
   });
 
-  it('shows no empty state when every board is At {gym}', () => {
+  // One board, at a gym, the one you're on: Your boards keeps its header and
+  // Manage, and says the boards are above.
+  it('keeps Your boards and Manage when every board is At {gym}', () => {
     const crux = { gymUuid: 'gym-crux', gymName: 'Crux' };
     const cruxKilter = board({ uuid: 'crux-kilter', name: 'Crux Kilter', ...crux });
     state.myBoards = [cruxKilter];
     state.activeBoard = cruxKilter;
     render(createElement(BoardSelection));
     expect(screen.queryByText('No boards yet')).toBeNull();
-    expect(screen.queryByText('Your boards')).toBeNull();
+    expect(screen.getByText('Your boards')).toBeTruthy();
+    expect(screen.getByText('mobile.discovery.yourBoardsAllAbove')).toBeTruthy();
+    expect(carouselProps.byFirstKey.has('crux-kilter')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Manage boards' }));
+    expect(routerMock.push).toHaveBeenCalledWith('/boards/manage');
   });
 
   it('never injects a stored active board the list does not contain', () => {
