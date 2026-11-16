@@ -24,11 +24,9 @@ const compatibility = workflow.jobs['test-auth-compatibility'];
 const backend = workflow.jobs['test-backend'];
 const proofs = [
   'test:native-contract',
-  'test:auth-prototype',
   'test:auth-authority',
   'test:auth-identities',
   'test:auth-web-credential-proof',
-  'test:auth-prototype:browser',
   'test:auth-browser-proof-cookies',
 ];
 
@@ -70,7 +68,7 @@ describe('auth compatibility CI has an independent complete budget', () => {
       compatibility.steps.filter((step) => step.run === 'vp exec playwright install --with-deps chromium'),
     ).toHaveLength(1);
   });
-  it('runs cookie recovery after Chromium and preserves all actual proof inputs', () => {
+  it('runs cookie recovery after Chromium', () => {
     const install = compatibility.steps.findIndex(
       (step) => step.run === 'vp exec playwright install --with-deps chromium',
     );
@@ -89,8 +87,7 @@ describe('auth compatibility CI has an independent complete budget', () => {
     const filters = parse(filter!) as Record<string, string[]>;
     expect(filters.authCompatibility).toEqual(
       expect.arrayContaining([
-        'packages/web/auth-prototype/**',
-        'packages/web/playwright.auth-prototype.config.ts',
+        'packages/web/auth-proofs/**',
         'packages/web/app/lib/auth/**',
         'packages/web/app/lib/partner-oauth/**',
         'packages/web/app/api/auth/**',

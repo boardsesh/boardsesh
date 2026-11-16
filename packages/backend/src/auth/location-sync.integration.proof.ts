@@ -38,20 +38,15 @@ import {
   upsertPublicBoardLocationsInBatches,
   type PublicBoardLocationInput,
 } from '@boardsesh/location-sync';
-import { handleCurrentStoreLocationSync } from '../../handlers/current-store-location-sync';
-import {
-  enqueueBackgroundJob,
-  executeBackgroundJob,
-  handlerForRole,
-  type BackgroundJobPayload,
-} from '../../workers/jobs';
-import { createLocationBatchWriter } from '../current-store/location-sync-client';
-import { executeLocationSyncCommand } from '../current-store/location-sync';
-import { prepareProjectionUnderUsersTableLock } from '../current-store/email-reservations';
-import { CURRENT_EMAIL_NORMALIZER_VERSION } from '../current-store/foundation-context';
-import { readIdentityAuthority } from '../authority/router';
-import { registerWebPassword } from '../current-store/web-password';
-import { deleteExpiredCommandClaims } from '../current-store/command-context';
+import { handleCurrentStoreLocationSync } from '../handlers/current-store-location-sync';
+import { enqueueBackgroundJob, executeBackgroundJob, handlerForRole, type BackgroundJobPayload } from '../workers/jobs';
+import { createLocationBatchWriter } from './current-store/location-sync-client';
+import { executeLocationSyncCommand } from './current-store/location-sync';
+import { prepareProjectionUnderUsersTableLock } from './current-store/email-reservations';
+import { CURRENT_EMAIL_NORMALIZER_VERSION } from './current-store/foundation-context';
+import { readIdentityAuthority } from './authority/router';
+import { registerWebPassword } from './current-store/web-password';
+import { deleteExpiredCommandClaims } from './current-store/command-context';
 import { buildMoonBoardLocationRecords } from '@boardsesh/moonboard-sync/sync';
 
 function ownedUrl(): URL {

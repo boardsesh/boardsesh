@@ -20,10 +20,7 @@ export default defineConfig(async (environment) => {
       ...web.test,
       name: 'browser-proof-cookie-codec',
       environment: 'node',
-      include: [
-        'auth-prototype/browser-proof-cookies.proof.ts',
-        'auth-prototype/provider-security-cookie-recovery.proof.ts',
-      ],
+      include: ['auth-proofs/browser-proof-cookies.proof.ts', 'auth-proofs/provider-security-cookie-recovery.proof.ts'],
       exclude: ['**/node_modules/**', '**/dist/**'],
       testTimeout: 30_000,
       hookTimeout: 60_000,

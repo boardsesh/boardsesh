@@ -27,10 +27,10 @@ const task = 'vp run test:auth-web-credential-proof';
 
 describe('database-backed backend/web credential proof placement', () => {
   it('keeps backend source imports outside the web-only build and default web tests', () => {
-    expect(existsSync(`packages/web/auth-prototype/${proofFile}`)).toBe(true);
+    expect(existsSync(`packages/web/auth-proofs/${proofFile}`)).toBe(true);
     expect(existsSync('packages/web/app/lib/auth/__tests__/web-credential-proof.integration.test.ts')).toBe(false);
     for (const filename of providerProofFiles) {
-      expect(existsSync(`packages/web/auth-prototype/${filename}`)).toBe(true);
+      expect(existsSync(`packages/web/auth-proofs/${filename}`)).toBe(true);
       expect(existsSync(`packages/web/app/lib/auth/__tests__/${filename.replace('.proof.ts', '.test.ts')}`)).toBe(
         false,
       );
@@ -38,12 +38,12 @@ describe('database-backed backend/web credential proof placement', () => {
     const typeConfiguration = JSON.parse(readFileSync('packages/web/tsconfig.json', 'utf8')) as {
       exclude: string[];
     };
-    expect(typeConfiguration.exclude).toContain('auth-prototype');
-    expect(readFileSync('packages/web/vite.config.ts', 'utf8')).toContain("'auth-prototype/**'");
+    expect(typeConfiguration.exclude).toContain('auth-proofs');
+    expect(readFileSync('packages/web/vite.config.ts', 'utf8')).toContain("'auth-proofs/**'");
   });
 
   it('strictly typechecks the proof in the existing separate auth project', () => {
-    const configuration = JSON.parse(readFileSync('packages/web/auth-prototype/tsconfig.json', 'utf8')) as {
+    const configuration = JSON.parse(readFileSync('packages/web/auth-proofs/tsconfig.json', 'utf8')) as {
       include: string[];
     };
     expect(configuration.include).toContain(proofFile);
@@ -51,13 +51,13 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(configuration.include).toContain('credential-proof.vite.config.ts');
     expect(configuration.include).toContain('../app/lib/auth/types.ts');
     const tasks = readFileSync('vite.config.ts', 'utf8');
-    const typecheckStart = tasks.indexOf("'typecheck:auth-prototype-browser':");
+    const typecheckStart = tasks.indexOf("'typecheck:auth-proofs':");
     const typecheck = tasks.slice(typecheckStart, tasks.indexOf("'typecheck:ble-protocol':", typecheckStart));
     expect(typecheck).toContain('cache: false');
     const start = tasks.indexOf("'test:auth-web-credential-proof':");
     expect(start).toBeGreaterThanOrEqual(0);
-    const definition = tasks.slice(start, tasks.indexOf("'test:auth-prototype:browser':", start));
-    expect(definition).toContain("dependsOn: ['typecheck:auth-prototype-browser']");
+    const definition = tasks.slice(start, tasks.indexOf("'test:auth-browser-proof-cookies':", start));
+    expect(definition).toContain("dependsOn: ['typecheck:auth-proofs']");
     expect(definition).toContain('--maxWorkers=1');
     expect(definition).not.toContain('--changed');
   });
@@ -75,10 +75,10 @@ describe('database-backed backend/web credential proof placement', () => {
   });
 
   it('selects only the explicit node proof and never the database-free default project', () => {
-    const configuration = readFileSync('packages/web/auth-prototype/credential-proof.vite.config.ts', 'utf8');
+    const configuration = readFileSync('packages/web/auth-proofs/credential-proof.vite.config.ts', 'utf8');
     expect(configuration).toContain("environment: 'node'");
     for (const filename of [proofFile, ...providerProofFiles])
-      expect(configuration).toContain(`'auth-prototype/${filename}'`);
+      expect(configuration).toContain(`'auth-proofs/${filename}'`);
     expect(configuration).toContain('maxWorkers: 1');
   });
 
@@ -91,13 +91,13 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(step?.['continue-on-error']).toBeUndefined();
   });
   it('runs both actual-cookie proofs explicitly in the required post-install task', () => {
-    const configuration = readFileSync('packages/web/auth-prototype/browser-proof-cookies.vite.config.ts', 'utf8');
-    const types = JSON.parse(readFileSync('packages/web/auth-prototype/tsconfig.json', 'utf8')) as {
+    const configuration = readFileSync('packages/web/auth-proofs/browser-proof-cookies.vite.config.ts', 'utf8');
+    const types = JSON.parse(readFileSync('packages/web/auth-proofs/tsconfig.json', 'utf8')) as {
       include: string[];
     };
     for (const file of cookieProofFiles) {
-      expect(existsSync(`packages/web/auth-prototype/${file}`)).toBe(true);
-      expect(configuration).toContain(`'auth-prototype/${file}'`);
+      expect(existsSync(`packages/web/auth-proofs/${file}`)).toBe(true);
+      expect(configuration).toContain(`'auth-proofs/${file}'`);
       expect(types.include).toContain(file);
     }
     const tasks = readFileSync('vite.config.ts', 'utf8');
@@ -105,7 +105,7 @@ describe('database-backed backend/web credential proof placement', () => {
     expect(start).toBeGreaterThanOrEqual(0);
     const task = tasks.slice(start, tasks.indexOf("'test:offline-sync':", start));
     expect(task).toContain('browser-proof-cookies.vite.config.ts');
-    expect(task).toContain("dependsOn: ['typecheck:auth-prototype-browser']");
+    expect(task).toContain("dependsOn: ['typecheck:auth-proofs']");
     expect(task).toContain('--maxWorkers=1');
     expect(task).toContain('cache: false');
     expect(task).not.toContain('--changed');

@@ -114,8 +114,8 @@ existing Chromium installation, with a targeted web-auth source filter.
 ```sh
 vp test run --project web packages/web/app/lib/auth/__tests__/browser-proof-cookies.test.ts --reporter=agent
 AUTH_PROTOTYPE_DATABASE_URL='<explicit owned localhost admin URL ending /postgres>' \
-  vp test run --config packages/web/auth-prototype/browser-proof-cookies.vite.config.ts --reporter=agent
-vp exec tsc -p packages/web/auth-prototype/tsconfig.json --noEmit
+  vp test run --config packages/web/auth-proofs/browser-proof-cookies.vite.config.ts --reporter=agent
+vp exec tsc -p packages/web/auth-proofs/tsconfig.json --noEmit
 ```
 
 Only owned loopback www/app HTTPS origins and synthetic accounts are used.

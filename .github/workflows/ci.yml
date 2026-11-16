@@ -136,14 +136,12 @@ jobs:
               - 'packages/web/**'
             backend:
               - 'packages/backend/**'
-              # The HTTPS auth proof runs with the backend's disposable Postgres.
-              - 'packages/web/auth-prototype/**'
-              - 'packages/web/playwright.auth-prototype.config.ts'
+              # The backend/web credential proofs run with the backend's disposable Postgres.
+              - 'packages/web/auth-proofs/**'
             # Web-only auth changes need the owned auth/browser proofs without
             # selecting the full baseline backend suite for unrelated pages.
             authCompatibility:
-              - 'packages/web/auth-prototype/**'
-              - 'packages/web/playwright.auth-prototype.config.ts'
+              - 'packages/web/auth-proofs/**'
               - 'packages/web/app/lib/auth/**'
               - 'packages/web/app/lib/partner-oauth/**'
               - 'packages/web/app/api/auth/**'
@@ -200,7 +198,7 @@ jobs:
             locationSync:
               - 'packages/backend/src/auth/current-store/**'
               - 'packages/backend/src/auth/authority/**'
-              - 'packages/backend/src/auth/prototype/location-sync.integration.proof.ts'
+              - 'packages/backend/src/auth/location-sync.integration.proof.ts'
               - 'packages/backend/src/handlers/current-store-*'
               - 'packages/backend/src/workers/**'
               - 'packages/backend/scripts/bootstrap-location-proof-database.sh'
@@ -1566,12 +1564,6 @@ jobs:
           NATIVE_CONTRACT_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
           NATIVE_CONTRACT_REDIS_URL: redis://localhost:6380
         run: vp run test:native-contract
-      - name: Run Better Auth compatibility prototype
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-          AUTH_PROTOTYPE_REDIS_URL: redis://localhost:6380
-        run: vp run test:auth-prototype
       - name: Run unmounted production authority mapping proof
         if: ${{ !cancelled() }}
         env:
@@ -1591,11 +1583,6 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: packages/web
         run: vp exec playwright install --with-deps chromium
-      - name: Run HTTPS auth browser proof
-        if: ${{ !cancelled() }}
-        env:
-          AUTH_PROTOTYPE_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/postgres
-        run: vp run test:auth-prototype:browser
       - name: Run versioned proof cookies and result recovery
         if: ${{ !cancelled() }}
         env:

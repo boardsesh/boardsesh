@@ -27,7 +27,7 @@ import {
 // The wire contract released Expo builds and the Garmin PairingView/TokenStore
 // parse, and the app's own unverified `sub` reader, loaded unchanged. The app
 // module sits outside this package's rootDir, so it is loaded by path.
-import { assertLegacyNativeTokenPair } from '../auth/prototype/__tests__/identity-native-contract';
+import { assertLegacyNativeTokenPair } from './identity-native-contract';
 const { userIdFromJwt } = (await import(
   fileURLToPath(new URL('../../../mobile/src/lib/jwt-user-id.ts', import.meta.url))
 )) as { userIdFromJwt: (token: string | null | undefined) => string | undefined };
