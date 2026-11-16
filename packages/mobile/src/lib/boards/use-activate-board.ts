@@ -27,16 +27,27 @@ import { consumePendingBoardRecognition } from './pending-board-recognition';
 
 /**
  * Which list the climber tapped the board in. Analytics only: it rides the
- * `Board Picker Selection Completed` event so a pick from Near you, the
- * picker's In range slot ('bluetooth'), its "Also at {gym}" rows ('gym_walls')
- * or the gym finder can be told apart from a switch between boards they
- * already have.
+ * `Board Picker Selection Completed` event so a pick from Near you, a board
+ * the picker's scan put at the top ('bluetooth'), a wall At {gym} that came
+ * from the board you're on ('gym_walls') or the gym finder can be told apart
+ * from a switch between boards they already have.
  */
 export type BoardPickSource = 'your_boards' | 'nearby' | 'offline' | 'bluetooth' | 'gym_walls' | 'gym_finder';
+
+/**
+ * The picker section the board sat in, as drawn: At {gym}, the one board
+ * heard somewhere else ('hero'), Your boards, Near you, the offline list, or
+ * the gym map. Analytics only, beside `pickSource`, which names the list the
+ * board came from rather than where it was drawn.
+ */
+export type BoardPickSection = 'at_gym' | 'hero' | 'your_boards' | 'near_you' | 'offline' | 'map';
 
 /** What the caller knows about the tap, passed per bind. */
 export type ActivateBoardPick = {
   pickSource?: BoardPickSource;
+  section?: BoardPickSection;
+  /** The board's 0-based place in its section, in the order drawn; null when it has none to give. */
+  position?: number | null;
 };
 
 /** What `onBound` learns about the bind that just landed. */
@@ -49,6 +60,10 @@ export type BoundBoard = {
    * or when it is someone else's private board, which can't be followed.
    */
   followed: boolean;
+  /** The section the board was drawn in, when the caller said. */
+  section?: BoardPickSection;
+  /** Its 0-based place in that section, when the caller said. */
+  position?: number | null;
 };
 
 export type ActivateBoardOptions = {
@@ -180,6 +195,8 @@ export function useActivateBoard({
         try {
           await onBound(board, {
             pickSource: pick?.pickSource,
+            section: pick?.section,
+            position: pick?.position,
             // Asked before adoption runs (it waits for the navigation below), from
             // the same decision adoption uses, so the pick event can say whether
             // this board landed in Your boards. Both callbacks come from the

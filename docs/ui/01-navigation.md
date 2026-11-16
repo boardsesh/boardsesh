@@ -190,16 +190,32 @@ The bar itself depends on the device:
   their existing persistence; scroll position is retained within the running app,
   not restored across process restarts.
 
-The picker emits `Board Picker Opened` once after the active-board read settles
-and `Board Picker Selection Completed` after an existing-board selection is
-persisted. `sameBoard` compares UUIDs; `sameConfig` compares board type, layout,
-size and hold sets. A failed restoration records unknown (`null`) rather than
-claiming there was no board. `source` distinguishes onboarding, explicit Session
-returns, and other picker entries; `returnTo` records the destination.
-`pickSource` names the list the board was tapped in (`your_boards`, `nearby`,
-`offline`, `bluetooth` or `gym_finder`) and `followed` says whether the pick
-added it to Your boards. The gym finder binds through the same `useActivateBoard`
-path, so its picks report this event (and close out onboarding when the picker
+The picker emits `Board Picker Opened` once per presentation and `Board Picker
+Selection Completed` after an existing-board selection is persisted. The
+opening waits for the active-board read to settle, then for Near you's answer
+(at most 5 s), and is backdated to when the read settled, so time to pick still
+counts from the opening. A pick, or closing the picker, sends a waiting opening
+first, so it always precedes the pick. `nearbyResultCount` is how many boards
+the Near you search returned (after a board-type filter, before boards already
+shown above are left out); it is `null` when the picker did not search (location
+not allowed, or first-board mode before "At a gym"), when the search failed, or
+when it had not answered by the time the opening went. `locationStatus` is the
+location state then: `idle`, `loading`, `granted`, `denied` or `unavailable`. The
+gym finder opened on its own sends neither. `sameBoard` compares UUIDs;
+`sameConfig` compares board type, layout, size and hold sets. A failed
+restoration records unknown (`null`) rather than claiming there was no board.
+`source` distinguishes onboarding, explicit Session returns, and other picker
+entries; `returnTo` records the destination. `pickSource` names the list the
+board was tapped in (`your_boards`, `nearby`, `offline`, `bluetooth` for a board
+the scan put at the top, `gym_walls` for a wall At {gym} that came from the
+board you're on, or `gym_finder`) and `followed` says whether the pick added it
+to Your boards. `section` names where the board was drawn (`at_gym`, `hero` for
+the one board heard at another gym, `your_boards`, `near_you`, `offline`, or
+`map` on the gym finder) and `position` is its 0-based place in that section as
+drawn (At {gym} A to Z, Your boards in the server's order, Near you by
+distance). `position` is `null` for a wall on the map, and both are `null` for
+the active spray wall's own details row, which sits in no section. The gym
+finder binds through the same `useActivateBoard` path, so its picks report this event (and close out onboarding when the picker
 forwarded `source=onboarding`). Pushed from the picker's "Find gym" (which adds
 `from=picker`), it reports no opening of its own, because the picker already
 did, and its picks carry the picker's `source`. Opened on its own from Home or

@@ -1105,15 +1105,23 @@ export const SHARED_EVENTS = {
   // gym map opened on its own, from Home or My gyms; the map pushed from the
   // picker's "Find gym" reports no opening, the picker did).
   // hadActiveBoard is null when storage could not be read, not false.
+  // nearbyResultCount (from 2026-11): boards the Near you search returned, null
+  // when it did not search, failed, or had not answered; locationStatus: idle |
+  // loading | granted | denied | unavailable. The picker waits up to 5 s for
+  // Near you before sending, backdates the event to when it opened, and sends
+  // it before any pick. The gym finder's own opening carries neither.
   BoardPickerOpened: 'Board Picker Opened',
   // Existing-board selection in that picker, only after a successful write.
   // sameBoard compares UUIDs; sameConfig compares board type/layout/size/sets.
   // source matches the opening that led here: a pick on the gym map pushed from
   // the picker carries the picker's source, a pick on a map opened on its own
   // carries gym_finder. pickSource: your_boards | nearby | offline | bluetooth
-  // (the In range slot; the Bluetooth sheet before 2026-11) | gym_walls (the
-  // "Also at {gym}" rows under it, from 2026-11) | gym_finder | null (the list
-  // the board was tapped in). followed: the pick
+  // (a board the picker's scan put at the top; the Bluetooth sheet before
+  // 2026-11) | gym_walls (a wall At {gym} because of the board you're on; the
+  // "Also at {gym}" rows before that) | gym_finder | null (the list the board
+  // was tapped in). section (from 2026-11): at_gym | hero | your_boards |
+  // near_you | offline | map | null (where it was drawn), with position, its
+  // 0-based place there (null when it has none). followed: the pick
   // added the board to Your boards (#5654); false when it was already theirs,
   // was someone else's private board, the viewer was signed out, or it came
   // from the on-device rows shown with no connection.

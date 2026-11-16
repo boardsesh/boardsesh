@@ -293,7 +293,7 @@ describe('picking a board on the gym finder', () => {
     expect(captured.mapAvailable).toBe(false);
     expect(getByText('mobile.gyms.mapUnavailable')).toBeTruthy();
     captured.onActivateBoard?.(GYM_WALL);
-    expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder' });
+    expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder', section: 'map' });
 
     fireEvent.click(getByRole('button', { name: 'mobile.gyms.retryMap' }));
     expect(captured.mapMounts).toBe(2);
@@ -328,7 +328,7 @@ describe('picking a board on the gym finder', () => {
 
     captured.onActivateBoard?.(GYM_WALL);
 
-    expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder' });
+    expect(bindMock).toHaveBeenCalledWith(GYM_WALL, { pickSource: 'gym_finder', section: 'map' });
     // The pick event rides the bind's onBound.
     expect(captured.activateOptions?.onBound).toBe(trackSelectionMock);
     expect(captured.activateOptions?.returnTo).toBe('/(tabs)/climbs');
