@@ -2,12 +2,7 @@ import { CLIENT_PLATFORM_HEADER } from '@boardsesh/shared-schema';
 import { type RequestDocument, type Variables, GraphQLClient } from 'graphql-request';
 import { getGraphQLHttpUrl as _getGraphQLHttpUrl } from '@/app/lib/backend-url';
 import { webClientIdentityHeaders } from '@/app/lib/client-identity';
-import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { guardedFetch } from '@/app/lib/auth/session-guard';
-import {
-  captureBrowserBackendRequestScope,
-  createBrowserBackendGraphQLTransport,
-} from '@/app/lib/auth/browser-backend-graphql';
 
 const DEBUG = process.env.NODE_ENV === 'development';
 
@@ -44,13 +39,7 @@ export function createGraphQLHttpClient(authToken?: string | null): GraphQLClien
   // go through the session guard: a response that lands after the account
   // changed rejects with SessionSupersededError instead of reaching the caller.
   if (typeof window === 'undefined') return new GraphQLClient(url, { headers });
-  const scope = captureBrowserBackendRequestScope(authToken);
-  return new GraphQLClient(url, {
-    headers,
-    ...(scope
-      ? createBrowserBackendGraphQLTransport({ client: browserBackendClient, scope, fetch: guardedFetch })
-      : { fetch: guardedFetch }),
-  });
+  return new GraphQLClient(url, { headers, fetch: guardedFetch });
 }
 
 /**

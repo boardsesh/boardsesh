@@ -2,12 +2,6 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { useSyncExternalStore } from 'react';
-import {
-  readBrowserBackendSessionScope,
-  browserBackendSessionKey,
-} from '@boardsesh/auth-protocol/browser-backend-session';
-import { browserBackendClient } from '@/app/lib/auth/browser-backend-client';
 import { browserSessionGuard, signedInViewer } from '@/app/lib/auth/session-guard';
 import { requestWebSessionRefresh } from '@/app/lib/auth/web-session-events';
 
@@ -39,36 +33,10 @@ export function useWsAuthToken(enabled = true) {
   const { data: session, status } = useSession();
   const sessionUserId = session?.user?.id ?? null;
   const authSessionId = session?.authSessionId ?? null;
-  const observation = readBrowserBackendSessionScope(session ?? null);
-  const owner = observation.status === 'selected' ? observation.owner : null;
-  const selectedKey = owner ? browserBackendSessionKey(owner) : null;
-  // A terminal refusal or another accepted account retires the receipt before
-  // this hook can return an earlier positive query result to its callers.
-  useSyncExternalStore(
-    browserBackendClient.subscribe,
-    browserBackendClient.getSnapshot,
-    browserBackendClient.getSnapshot,
-  );
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['wsAuthToken', status, sessionUserId, authSessionId, ...(selectedKey ? [selectedKey] : [])],
+    queryKey: ['wsAuthToken', status, sessionUserId, authSessionId],
     queryFn: async (): Promise<WsAuthResponse> => {
-      if (owner) {
-        const lease = await browserBackendClient.acquire(owner);
-        const scope = browserBackendClient.capture(lease.token);
-        if (!scope) throw new Error('Selected browser session changed');
-        browserBackendClient.assertCurrent(scope, lease);
-        return {
-          token: lease.token,
-          authenticated: true,
-          userId: owner.userId,
-          authSessionId: owner.authSessionId,
-        };
-      }
-      if (observation.status === 'anonymous' && browserBackendClient.isSelected() && status === 'unauthenticated')
-        return { token: null, authenticated: false };
-      if (observation.status === 'invalid' || browserBackendClient.isSelected())
-        throw new Error('Selected browser session is unavailable');
       const result = await fetchWsAuthToken();
       // A logged-in NextAuth session must yield a token. A null here is a
       // transient cookie/endpoint hiccup, not a genuine "anonymous" — throw so
@@ -100,8 +68,7 @@ export function useWsAuthToken(enabled = true) {
     // focus/reconnect so a transient failure self-heals. When the token value
     // is unchanged this is a no-op; only a null→token recovery tears down and
     // reconnects the socket (persistent-session-context) — now authenticated.
-    staleTime: selectedKey ? 0 : 5 * 60_000,
-    refetchInterval: selectedKey ? 15_000 : false,
+    staleTime: 5 * 60_000,
     retry: 3,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
@@ -116,14 +83,8 @@ export function useWsAuthToken(enabled = true) {
   }
 
   return {
-    token:
-      enabled && (!selectedKey || (data?.token && browserBackendClient.capture(data.token)))
-        ? (data?.token ?? null)
-        : null,
-    isAuthenticated:
-      enabled && (!selectedKey || (data?.token && browserBackendClient.capture(data.token)))
-        ? (data?.authenticated ?? false)
-        : false,
+    token: enabled ? (data?.token ?? null) : null,
+    isAuthenticated: enabled ? (data?.authenticated ?? false) : false,
     isLoading: enabled && (isLoading || status === 'loading'),
     error: enabled ? errorMessage : null,
   };
