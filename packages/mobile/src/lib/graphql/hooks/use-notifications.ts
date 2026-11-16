@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   GET_GROUPED_NOTIFICATIONS,
   GET_NOTIFICATION_ACTORS,
@@ -20,8 +20,7 @@ import type {
   SocialEntityType,
 } from '@boardsesh/shared-schema';
 import { APPROVE_FOLLOW_REQUEST, DECLINE_FOLLOW_REQUEST } from '@boardsesh/graphql/operations/privacy';
-import { useHttpInfiniteQuery, useHttpQuery } from '../use-http-query';
-import { useHttpMutation } from '../use-http-mutation';
+import { getHttpClient } from '../client';
 // The stored-token read, NOT `useAuth`: this module is re-exported from the
 // hooks barrel, and `auth-provider` drags react-native's Flow source into the
 // barrel's static graph, which Rolldown's scan refuses (it breaks every suite
@@ -64,19 +63,17 @@ export function useGroupedNotifications() {
   const { data: authToken } = useAuthToken();
   const queryClient = useQueryClient();
 
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY,
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       const variables: GetGroupedNotificationsQueryVariables = { limit: PAGE_SIZE, offset: Number(pageParam) };
-      const response = await operation.request<
+      const response = await getHttpClient().request<
         GetGroupedNotificationsQueryResponse,
         GetGroupedNotificationsQueryVariables
       >(GET_GROUPED_NOTIFICATIONS, variables);
 
-      operation
-        .cache(queryClient)
-        .setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, response.groupedNotifications.unreadCount);
+      queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, response.groupedNotifications.unreadCount);
 
       return response.groupedNotifications;
     },
@@ -129,17 +126,17 @@ export function useNotificationActors(
 ) {
   const { data: authToken } = useAuthToken();
 
-  return useHttpInfiniteQuery({
+  return useInfiniteQuery({
     queryKey: [NOTIFICATION_ACTORS_QUERY_KEY, type, entityType ?? null, entityId ?? null],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }, operation) => {
+    queryFn: async ({ pageParam }) => {
       const variables: GetNotificationActorsQueryVariables = {
         input: { type, entityType, entityId, limit: ACTORS_PAGE_SIZE, offset: Number(pageParam) },
       };
-      const response = await operation.request<GetNotificationActorsQueryResponse, GetNotificationActorsQueryVariables>(
-        GET_NOTIFICATION_ACTORS,
-        variables,
-      );
+      const response = await getHttpClient().request<
+        GetNotificationActorsQueryResponse,
+        GetNotificationActorsQueryVariables
+      >(GET_NOTIFICATION_ACTORS, variables);
       return response.notificationActors;
     },
     getNextPageParam: nextActorsOffset,
@@ -151,10 +148,11 @@ export function useNotificationActors(
 export function useUnreadNotificationCount(): number {
   const { data: authToken } = useAuthToken();
 
-  const { data: unreadCount = 0 } = useHttpQuery({
+  const { data: unreadCount = 0 } = useQuery({
     queryKey: NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY,
-    queryFn: async (_context, operation) => {
-      const response = await operation.request<GetUnreadNotificationCountQueryResponse>(GET_UNREAD_NOTIFICATION_COUNT);
+    queryFn: async () => {
+      const response =
+        await getHttpClient().request<GetUnreadNotificationCountQueryResponse>(GET_UNREAD_NOTIFICATION_COUNT);
       return response.unreadNotificationCount;
     },
     enabled: !!authToken,
@@ -172,22 +170,21 @@ export function useUnreadNotificationCount(): number {
 export function useMarkGroupAsRead() {
   const queryClient = useQueryClient();
 
-  return useHttpMutation({
-    mutationFn: async (notification: GroupedNotification, operation) => {
+  return useMutation({
+    mutationFn: async (notification: GroupedNotification) => {
       const variables: MarkGroupNotificationsReadMutationVariables = {
         type: notification.type,
         entityType: notification.entityType,
         entityId: notification.entityId,
       };
-      const response = await operation.request<
+      const response = await getHttpClient().request<
         MarkGroupNotificationsReadMutationResponse,
         MarkGroupNotificationsReadMutationVariables
       >(MARK_GROUP_NOTIFICATIONS_READ, variables);
       return response.markGroupNotificationsRead;
     },
-    onSuccess: (markedCount, notification, _context, operation) => {
-      const cache = operation.cache(queryClient);
-      cache.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+    onSuccess: (markedCount, notification) => {
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
               ...previous,
@@ -201,7 +198,7 @@ export function useMarkGroupAsRead() {
           : previous,
       );
 
-      cache.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
+      queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
         Math.max(0, (previousCount ?? 0) - markedCount),
       );
     },
@@ -212,13 +209,12 @@ export function useMarkGroupAsRead() {
 export function useMarkAllAsRead() {
   const queryClient = useQueryClient();
 
-  return useHttpMutation({
-    mutationFn: async (_variables: void, operation) => {
-      await operation.request(MARK_ALL_NOTIFICATIONS_READ);
+  return useMutation({
+    mutationFn: async () => {
+      await getHttpClient().request(MARK_ALL_NOTIFICATIONS_READ);
     },
-    onSuccess: (_result, _variables, _context, operation) => {
-      const cache = operation.cache(queryClient);
-      cache.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+    onSuccess: () => {
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
               ...previous,
@@ -230,7 +226,7 @@ export function useMarkAllAsRead() {
           : previous,
       );
 
-      cache.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 0);
+      queryClient.setQueryData(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, 0);
     },
   });
 }
@@ -244,27 +240,29 @@ export type FollowRequestAnswer = 'approve' | 'decline';
  * privacy change triggers. The requester is the group's entity (one row per
  * requester); the first actor is the same person and covers a row without one.
  *
- * Exposes the original delivery receipt for UI continuations after an await.
- * The compatibility wrapper below retains the existing mutateAsync signature.
+ * Returns `mutateAsync`, which React Query keeps stable, so the screen can hand
+ * it to every memoized row without re-rendering them.
  */
-export function useAnswerFollowRequestMutation() {
+export function useAnswerFollowRequest() {
   const queryClient = useQueryClient();
 
-  return useHttpMutation({
+  const { mutateAsync } = useMutation({
     networkMode: 'always',
-    mutationFn: async (
-      { notification, answer }: { notification: GroupedNotification; answer: FollowRequestAnswer },
-      operation,
-    ) => {
+    mutationFn: async ({
+      notification,
+      answer,
+    }: {
+      notification: GroupedNotification;
+      answer: FollowRequestAnswer;
+    }) => {
       const requesterId = notification.entityId ?? notification.actors[0]?.id;
       if (!requesterId) throw new Error('A follow request row has no requester.');
-      await operation.request(answer === 'approve' ? APPROVE_FOLLOW_REQUEST : DECLINE_FOLLOW_REQUEST, {
+      await getHttpClient().request(answer === 'approve' ? APPROVE_FOLLOW_REQUEST : DECLINE_FOLLOW_REQUEST, {
         userId: requesterId,
       });
     },
-    onSuccess: (_result, { notification, answer }, _context, operation) => {
-      const cache = operation.cache(queryClient);
-      cache.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
+    onSuccess: (_result, { notification, answer }) => {
+      queryClient.setQueriesData<GroupedNotificationPages>({ queryKey: GROUPED_NOTIFICATIONS_QUERY_KEY }, (previous) =>
         previous
           ? {
               ...previous,
@@ -276,26 +274,23 @@ export function useAnswerFollowRequestMutation() {
           : previous,
       );
       if (!notification.isRead) {
-        cache.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
+        queryClient.setQueryData<number>(NOTIFICATIONS_UNREAD_COUNT_QUERY_KEY, (previousCount) =>
           Math.max(0, (previousCount ?? 0) - 1),
         );
       }
       // The requests list in privacy settings shows the same request.
-      void cache.invalidateQueries({ queryKey: ['privacyFollowRequests'] }).catch(() => {});
+      void queryClient.invalidateQueries({ queryKey: ['privacyFollowRequests'] });
       if (answer === 'approve') {
         // An approval adds a follower: the owner's follower list and count, the
         // requester's following list, and both profiles' follow state change.
         // The same keys the follow and privacy-settings approval paths refresh.
-        void cache.invalidateQueries({ queryKey: ['followers'] }).catch(() => {});
-        void cache.invalidateQueries({ queryKey: ['following'] }).catch(() => {});
-        void cache.invalidateQueries({ queryKey: ['publicProfile'] }).catch(() => {});
-        void cache.invalidateQueries({ queryKey: ['privacyRelationship'] }).catch(() => {});
+        void queryClient.invalidateQueries({ queryKey: ['followers'] });
+        void queryClient.invalidateQueries({ queryKey: ['following'] });
+        void queryClient.invalidateQueries({ queryKey: ['publicProfile'] });
+        void queryClient.invalidateQueries({ queryKey: ['privacyRelationship'] });
       }
     },
   });
-}
 
-/** Compatibility surface for notification rows; receipt-aware callers use the mutation hook. */
-export function useAnswerFollowRequest() {
-  return useAnswerFollowRequestMutation().mutateAsync;
+  return mutateAsync;
 }
