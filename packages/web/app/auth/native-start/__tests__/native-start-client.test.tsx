@@ -47,6 +47,29 @@ describe('native browser provider start', () => {
     await waitFor(() => expect(getCsrfToken).toHaveBeenCalledOnce());
     expect(container.querySelector('form')?.getAttribute('action')).toBe(`/api/auth/signin/${provider}`);
   });
+
+  it('records the native attempt, then fills the CSRF token and submits the Google form', async () => {
+    selection.provider = 'google';
+    const attemptId = 'a'.repeat(32);
+    selection.callbackUrl = `${window.location.origin}/api/auth/native/callback?attemptId=${attemptId}`;
+    const attributionFetch = vi.fn<typeof fetch>(async () => new Response(null));
+    vi.stubGlobal('fetch', attributionFetch);
+    getCsrfToken.mockResolvedValue('csrf');
+    const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {});
+    const { container } = render(<NativeStartClient />);
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    expect(attributionFetch).toHaveBeenCalledOnce();
+    const [attemptUrl, attemptInit] = attributionFetch.mock.calls[0];
+    expect(attemptUrl).toBe('/api/auth/native/attempt');
+    expect(attemptInit?.method).toBe('POST');
+    const attemptBody = attemptInit?.body;
+    expect(typeof attemptBody).toBe('string');
+    expect(JSON.parse(attemptBody as string)).toEqual({ attemptId, provider: 'google' });
+    expect(getCsrfToken).toHaveBeenCalledOnce();
+    expect(container.querySelector<HTMLInputElement>('input[name="csrfToken"]')?.value).toBe('csrf');
+    expect(container.querySelector<HTMLInputElement>('input[name="callbackUrl"]')?.value).toBe(selection.callbackUrl);
+  });
+
   it.each(['csrf', 'attribution'] as const)(
     'shows retry after a timed-out legacy %s physically settles without submitting',
     async (pending) => {
