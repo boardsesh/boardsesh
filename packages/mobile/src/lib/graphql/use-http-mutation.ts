@@ -4,7 +4,6 @@ import { createAbortError } from './request-timeout';
 import { useHttpQueryScope, type HttpQueryOperation } from './use-http-query-scope';
 
 type Callbacks<Result, Error, Variables, Context> = {
-  signal?: AbortSignal;
   onSuccess?: (
     result: Result,
     variables: Variables,
@@ -121,14 +120,9 @@ export function useHttpMutation<Result, Error = DefaultError, Variables = void, 
   });
   const capture = useCallback(
     (variables: Variables, callbacks: Callbacks<Result, Error, Variables, Context> = {}) => {
-      const hookSignal = currentOptions.current.signal;
-      const callSignal = callbacks.signal;
-      const signal = hookSignal && callSignal ? AbortSignal.any([hookSignal, callSignal]) : (callSignal ?? hookSignal);
-      // A browser view's write follows its caller, so a retired view never
-      // publishes. Native and wholly legacy writes never did: a save the
-      // climber started finishes after its screen goes, and its own rollback
-      // or cache update still runs. There the caller's signal only refuses to
-      // start a write for an action it has already retired.
+      const signal = currentOptions.current.signal;
+      // Native and wholly legacy writes finish after their screen goes; there the
+      // caller's signal only refuses to start a write it has already retired.
       if (!scope.scoped && signal?.aborted) throw signal.reason ?? createAbortError('GraphQL operation aborted');
       const operation = scope.create(scope.scoped ? { signal } : undefined);
       operation.assertView();

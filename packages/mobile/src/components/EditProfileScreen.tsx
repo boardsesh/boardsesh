@@ -11,8 +11,7 @@ import { useHeaderActions } from '../hooks/use-header-actions';
 import { useKeyboardHeight } from '../hooks/use-keyboard-height';
 import { useBottomChromeMetrics } from '../hooks/use-bottom-chrome-metrics';
 import { useProfile, useUpdateProfile } from '../lib/graphql/hooks';
-import { uploadAvatarWithReceipt, type AvatarUploadFile } from '../lib/avatar-upload';
-import { useHttpActionScope, type HttpActionScope } from '../lib/graphql/use-http-action-scope';
+import { uploadAvatar, type AvatarUploadFile } from '../lib/avatar-upload';
 import { compressPickedImage } from '../lib/image-compression';
 import { reportError } from '../lib/error-reporting';
 import { borderRadius, spacing } from '../theme/tokens';
@@ -29,11 +28,6 @@ const MAX_DIMENSION = 1024;
 const COMPRESSION_QUALITY = 0.85;
 
 export function EditProfileScreen() {
-  const actionScope = useHttpActionScope();
-  return <EditProfileForm key={actionScope.key} actionScope={actionScope} />;
-}
-
-function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
   const { t } = useTranslation('settings');
   const { systemColors } = useTheme();
   const { showToast } = useToast();
@@ -48,15 +42,6 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
   const [displayName, setDisplayName] = useState('');
   const [pickedAvatar, setPickedAvatar] = useState<AvatarUploadFile | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const savingRef = useRef(false);
-  const pickerSequence = useRef(0);
-  useEffect(() => {
-    // Legacy keeps its existing form key, but an older request must not keep
-    // the newly observed view busy or reset a newer request's reentry guard.
-    savingRef.current = false;
-    setIsSaving(false);
-    pickerSequence.current += 1;
-  }, [actionScope]);
 
   // Seed the name field from the loaded profile exactly once. The query is
   // usually warm (the avatar/drawer already read it), but on a cold load the
@@ -87,17 +72,6 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
   const canSave = !isSaving && !nameTooLong && hasChanges && !!profile?.id;
 
   const handlePickAvatar = async () => {
-    let action: ReturnType<HttpActionScope['capture']>;
-    try {
-      action = actionScope.capture();
-    } catch {
-      return;
-    }
-    const sequence = ++pickerSequence.current;
-    const assertCurrent = () => {
-      action.assertView();
-      if (sequence !== pickerSequence.current) throw new Error('Avatar selection changed');
-    };
     try {
       // No library permission request: the system picker needs none (#5957).
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -107,21 +81,16 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
         // We compress ourselves below; ask the picker for the full-quality crop.
         quality: 1,
       });
-      assertCurrent();
       if (result.canceled) return;
       const asset = result.assets[0];
       const compressedUri = await compressPickedImage(asset.uri, asset.width, asset.height, {
         maxDimension: MAX_DIMENSION,
         quality: COMPRESSION_QUALITY,
       });
-      assertCurrent();
       setPickedAvatar({ uri: compressedUri, name: 'avatar.jpg', type: 'image/jpeg' });
     } catch (error) {
-      if (!action.isCurrent() || sequence !== pickerSequence.current) return;
       reportError(error);
       showToast(t('profile.validation.compressionFailed'), 'error');
-    } finally {
-      action.finish();
     }
   };
 
@@ -129,19 +98,10 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
   // render closure and don't update until the next render, so a fast double-tap
   // could enter `handleSave` twice (double upload + double router.back). The ref
   // flips immediately.
+  const savingRef = useRef(false);
+
   const handleSave = async () => {
     if (savingRef.current || !canSave || !profile?.id) return;
-    let action: ReturnType<HttpActionScope['capture']>;
-    try {
-      // A save with a new photo stays with this screen: leaving cancels the
-      // upload and the save, so a slow abandoned photo can never land after a
-      // newer edit. A name-only save is one small request; on native it
-      // finishes after a swipe back and still says so, ending only for an
-      // account change. Going back is this screen's own step either way.
-      action = actionScope.capture({ endsWithScreen: pickedAvatar != null });
-    } catch {
-      return;
-    }
     savingRef.current = true;
     setIsSaving(true);
     try {
@@ -153,19 +113,10 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
       }
 
       let avatarUploadFailed = false;
-      let assertOriginalUpload: (() => void) | undefined;
       if (pickedAvatar) {
         try {
-          const uploaded = await uploadAvatarWithReceipt({ ...pickedAvatar }, profile.id, {
-            assertView: action.assertOwner,
-            signal: action.signal,
-          });
-          action.assertOwner();
-          uploaded.assertCurrent();
-          assertOriginalUpload = uploaded.assertCurrent;
-          input.avatarUrl = uploaded.result;
+          input.avatarUrl = await uploadAvatar(pickedAvatar, profile.id);
         } catch (error) {
-          action.assertOwner();
           // Keep the name edit, but leave the selected photo here for retry.
           avatarUploadFailed = true;
           reportError(error);
@@ -179,30 +130,17 @@ function EditProfileForm({ actionScope }: { actionScope: HttpActionScope }) {
         return;
       }
 
-      action.assertOwner();
-      assertOriginalUpload?.();
-      const saved = await updateProfile.mutateWithReceipt(input, { signal: action.signal });
-      action.assertOwner();
-      assertOriginalUpload?.();
-      saved.assertCurrent();
+      await updateProfile.mutateAsync(input);
       if (avatarUploadFailed) return;
       // showToast fires the success/error haptic itself based on the variant.
       showToast(t('profile.saved'), 'success');
-      // Already swiped back: going back again would leave the screen under it.
-      if (!action.isCurrent()) return;
-      assertOriginalUpload?.();
-      saved.assertCurrent();
       router.back();
     } catch (error) {
-      if (!action.isOwnerCurrent()) return;
       reportError(error);
       showToast(t('profile.saveError'), 'error');
     } finally {
-      if (action.isCurrent()) {
-        setIsSaving(false);
-        savingRef.current = false;
-      }
-      action.finish();
+      setIsSaving(false);
+      savingRef.current = false;
     }
   };
 
