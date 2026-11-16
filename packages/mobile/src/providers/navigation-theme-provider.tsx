@@ -14,7 +14,7 @@ import { iosDarkColors } from '../theme/ios-colors';
 // `primary` is the label colour, not React Navigation's iOS blue: it is the tint
 // a native header falls back to when its screen sets no `headerTintColor`, so
 // without this every such header draws a blue back chevron and blue bar items.
-// The brand colour is for the prominent confirm alone (docs/ai-design-guidelines.md,
+// The brand colour is for the prominent confirm alone (docs/mobile-chrome.md,
 // "Top-bar buttons"); `useStackScreenOptions` sets the same tint explicitly.
 //
 // The dark `background` is the scene ground every stack paints under its

@@ -6,7 +6,7 @@ import type { UiVariant } from './resolve-ui-variant';
  * native stack header's actions (HeaderActionButtons / useHeaderActions), and the
  * hand-built sheet headers (tick, queue, logbook, session). Resolved per UI
  * variant with `topBarFor(variant)`. The table in
- * docs/ai-design-guidelines.md, "Top-bar buttons", says the same thing in words.
+ * docs/mobile-chrome.md, "Top-bar buttons", says the same thing in words.
  *
  * Labels use the `label` text variant (iOS 17/22, M3 labelLarge 14/20/500).
  */
