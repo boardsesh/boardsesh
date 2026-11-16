@@ -60,6 +60,7 @@ function MyGymRowComponent({
 }: MyGymRowProps) {
   const { systemColors } = useTheme();
 
+  const isOwner = !!currentUserId && gym.ownerId === currentUserId;
   const roleLabel = resolveRoleLabel(gym, currentUserId, roleLabels);
   const addressLine = gym.address?.trim() ? gym.address.trim() : noAddressLabel;
 
@@ -78,7 +79,7 @@ function MyGymRowComponent({
           {addressLine}
         </Text>
       </View>
-      {roleLabel ? <StatusPill label={roleLabel} /> : null}
+      {roleLabel ? <StatusPill label={roleLabel} icon={isOwner ? 'crown.fill' : undefined} /> : null}
     </View>
   );
 

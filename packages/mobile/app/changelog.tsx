@@ -9,6 +9,7 @@ import { Button } from '../src/components/Button';
 import { AppUpdatesCard } from '../src/components/AppUpdatesCard';
 import { Icon } from '../src/components/Icon';
 import { PressableSurface } from '../src/components/PressableSurface';
+import { changelogCategoryTone } from '../src/lib/changelog-category-tone';
 import { StatusPill } from '../src/components/StatusPill';
 import { Text } from '../src/components/Text';
 import { OfflineSpotlightCard } from '../src/components/offline/OfflineSpotlightCard';
@@ -82,7 +83,7 @@ const CurrentBuildDetails = memo(function CurrentBuildDetails() {
 
 const CategoryChip = memo(function CategoryChip({ category }: { category: ChangelogCategory }) {
   const { t } = useTranslation('common');
-  const tone = category === 'new' ? 'neutral' : category === 'improved' ? 'warning' : 'positive';
+  const tone = changelogCategoryTone(category);
   return <StatusPill tone={tone} icon={CATEGORY_ICONS[category]} label={t(`mobile.changelog.category.${category}`)} />;
 });
 
