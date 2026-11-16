@@ -304,6 +304,7 @@
       "continue": "Continue",
       "blockedDenied": "Allow Bluetooth in Settings to spot the board in front of you.",
       "blockedOff": "Turn on Bluetooth to spot the board in front of you.",
+      "unreachable": "Couldn't reach Bluetooth.",
       "scanTitle": "Look for the board in front of you",
       "scan": "Scan",
       "scanAgain": "Scan again",
@@ -316,6 +317,9 @@
       "typeTitle": "A {{board}} board is in range",
       "bareNameBody": "Its box doesn't say which board it is, so tell us where you are and we'll find this one.",
       "unknownSetupBody": "We don't know its setup yet, so tell us where you are and we'll find this one.",
+      "alsoMoonboard": "A MoonBoard is also in range",
+      "alsoType": "A {{board}} board is also in range",
+      "alsoNeedSignal": "Another board is in range. We need signal to name it.",
       "useMyLocation": "Use my location",
       "searchGyms": "Search gyms",
       "alsoAt": "Also at {{gym}}"

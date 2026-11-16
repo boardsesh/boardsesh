@@ -70,13 +70,12 @@ const scan = vi.hoisted(() => ({
   finish: vi.fn(),
   retryLookup: vi.fn(),
   options: null as {
-    slotPolicy?: string;
     mayStartRadio?: () => boolean;
     knownBoards?: unknown;
   } | null,
 }));
 vi.mock('../use-quickstart-scan', () => ({
-  useQuickstartScan: (options: { slotPolicy?: string; mayStartRadio?: () => boolean; knownBoards?: unknown }) => {
+  useQuickstartScan: (options: { mayStartRadio?: () => boolean; knownBoards?: unknown }) => {
     scan.options = options;
     return {
       status: scan.status,
@@ -148,13 +147,12 @@ afterEach(() => {
 });
 
 describe('usePickerBoardScan on open', () => {
-  it('scans by itself, once, claiming the scan rather than taking it, with the climber’s boards to recognise', async () => {
+  it('scans by itself, once, with the climber’s boards to recognise', async () => {
     const { result, rerender } = renderPickerScan();
 
     await waitFor(() => expect(startTriggers()).toEqual(['picker_auto']));
     expect(result.current.phase).toBe('scanning');
     expect(scan.options).toEqual({
-      slotPolicy: 'claim',
       mayStartRadio: expect.any(Function),
       knownBoards: MY_BOARDS,
     });
@@ -646,5 +644,53 @@ describe('usePickerBoardScan never starts the radio in the background', () => {
       await Promise.resolve();
     });
     expect(scan.status).toBe('scanning');
+  });
+});
+
+// What the In range slot reads beside the phase: whether the serial lookup is
+// still out, and whether the scan behind the rows listened long enough for a
+// one-box row to mean one box (Fable F2).
+describe('usePickerBoardScan for the rows', () => {
+  it('says when the serial lookup is still out', () => {
+    scan.lookup = 'pending';
+    const { result, rerender } = renderPickerScan({ focused: true, autoStart: false });
+    expect(result.current.lookupPending).toBe(true);
+
+    scan.lookup = 'resolved';
+    rerender({ focused: true, autoStart: false });
+    expect(result.current.lookupPending).toBe(false);
+  });
+
+  it('trusts a one-box row only after 5 s of listening, or a scan that ran to its end', async () => {
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+    rerender({ focused: true, autoStart: true });
+    expect(result.current.listenedLongEnough()).toBe(false);
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(result.current.listenedLongEnough()).toBe(true);
+  });
+
+  it('does not trust a one-box row from a scan a tap cut short at 2 s', async () => {
+    const { result, rerender } = renderPickerScan();
+    await waitFor(() => expect(scan.start).toHaveBeenCalledOnce());
+    rerender({ focused: true, autoStart: true });
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+    scan.status = 'done';
+    rerender({ focused: true, autoStart: true });
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(result.current.listenedLongEnough()).toBe(false);
+  });
+
+  it('has nothing to trust before any scan ran', () => {
+    const { result } = renderPickerScan({ focused: true, autoStart: false });
+    expect(result.current.listenedLongEnough()).toBe(false);
   });
 });

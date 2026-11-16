@@ -101,6 +101,8 @@ const scanCtrl = vi.hoisted(() => ({
   start: vi.fn(),
   stop: vi.fn(),
   retryLookup: vi.fn(),
+  /** Whether the scan behind the rows listened long enough for a one-box row (Fable F2). */
+  listenedLongEnough: true,
   options: null as { focused: boolean; autoStart: boolean } | null,
 }));
 
@@ -303,12 +305,17 @@ vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => (
     return {
       phase: scanCtrl.phase,
       rows: scanCtrl.rows,
+      lookupPending: false,
+      listenedLongEnough: () => scanCtrl.listenedLongEnough,
       start: scanCtrl.start,
       stop: scanCtrl.stop,
       openSettings: vi.fn(),
       retryLookup: scanCtrl.retryLookup,
     };
   },
+}));
+vi.mock('../../../src/components/board-discovery/use-in-range-location-hint', () => ({
+  useInRangeLocationHint: () => null,
 }));
 vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   InRangeSection: (props: InRangeProps) => {
@@ -319,8 +326,10 @@ vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
 vi.mock('../../../src/components/board-discovery/AlsoAtGymSection', () => ({ AlsoAtGymSection: () => null }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({ AddBoardMenu: () => null }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
   setPendingBoardRecognition: setPendingRecognitionMock,
+  clearPendingBoardRecognition: clearPendingRecognitionMock,
   consumePendingBoardRecognition: vi.fn(async () => {}),
 }));
 vi.mock('../../../src/components/board-discovery/BoardDetailSheet', () => ({ BoardDetailSheet: () => null }));
@@ -361,6 +370,7 @@ beforeEach(() => {
   scanCtrl.phase = 'needs_permission';
   scanCtrl.rows = [];
   scanCtrl.options = null;
+  scanCtrl.listenedLongEnough = true;
   state.params = { source: 'onboarding', firstBoard: '1' };
   state.myBoards = [];
   state.nearbyBoards = [];
@@ -394,6 +404,18 @@ describe('the picker in first-board mode', () => {
     expect(screen.queryByText('mobile.onboardingPrompt')).toBeNull();
     // Near you belongs to "At a gym" here, not to the screen.
     expect(screen.queryByText('mobile.discovery.showNearby')).toBeNull();
+  });
+
+  // "Where do you climb?" already carries the + menu's choices as its cards.
+  it.each([
+    { name: 'the launch gate', params: { source: 'onboarding', firstBoard: '1' }, plus: false },
+    { name: 'Climbs with no boards', params: { source: 'no_board' }, plus: false },
+    { name: 'the ordinary picker', params: {}, plus: true },
+  ])('offers the + in the top bar from $name: $plus', ({ params, plus }) => {
+    state.params = params;
+    render(createElement(BoardSelection));
+    const options = navigationMock.setOptions.mock.calls.at(-1)?.[0] as { headerRight?: unknown } | undefined;
+    expect(typeof options?.headerRight === 'function').toBe(plus);
   });
 
   it('turns its choice tracking on, as the launch gate entry', () => {
@@ -575,6 +597,33 @@ describe('the In range scan', () => {
       'Board Picker Selection Completed',
       expect.objectContaining({ pickSource: 'bluetooth' }),
     );
+  });
+
+  // A box held from an earlier tap on a row the phone couldn't name is not the
+  // board the climber then picks by name.
+  it('drops a held box before binding a board picked by name', async () => {
+    scanCtrl.phase = 'done';
+    scanCtrl.rows = [{ kind: 'board', key: 'board:gym-wall', board: gymWall, rssi: -50, recognizedBy: 'serial' }];
+    render(createElement(BoardSelection));
+
+    await act(async () => {
+      inRange().onPickBoard({ key: 'board:gym-wall' });
+    });
+
+    expect(clearPendingRecognitionMock).toHaveBeenCalled();
+    expect(clearPendingRecognitionMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setActiveBoardMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  // Fable F1: the hold belongs to one picker visit. The gym map and the builder
+  // are pushed over the picker, so they use it before this; a switch after the
+  // picker closed is about some other box.
+  it('drops a held box when the picker closes', () => {
+    const picker = render(createElement(BoardSelection));
+    expect(clearPendingRecognitionMock).not.toHaveBeenCalled();
+    picker.unmount();
+    expect(clearPendingRecognitionMock).toHaveBeenCalledOnce();
   });
 
   it('retries a lookup with no signal through the scan', () => {
@@ -855,6 +904,17 @@ describe("the In range slot's ways forward for a board it can't name", () => {
     // The list says which type it holds, and offers the rest.
     expect(screen.getByText('mobile.discovery.nearbyTitleMoonboard')).toBeTruthy();
     expect(screen.queryByText('mobile.discovery.nearbyTitle')).toBeNull();
+  });
+
+  // Fable F2: "one box" is only trusted after 5 s of listening or a scan that
+  // ran to its end; a tap 2 s in may not have heard the second MoonBoard yet.
+  it('holds nothing from a scan that listened too briefly to trust one box', () => {
+    scanCtrl.listenedLongEnough = false;
+    render(createElement(BoardSelection));
+    useMyLocation();
+    expect(setPendingRecognitionMock).not.toHaveBeenCalled();
+    expect(scanCtrl.stop).toHaveBeenCalledOnce();
+    expect(choice().nearbyBoardType).toBe('moonboard');
   });
 
   // With two MoonBoards in range the row carries no id: which one the climber

@@ -50,33 +50,49 @@ const UNKNOWN_SETUP_ROW: QuickstartRow = {
 };
 const LOOKUP_FAILED_ROW: QuickstartRow = { kind: 'lookup_failed', key: 'lookup_failed', rssi: -40 };
 
-/** The content's kind plus whichever row or rows it carries, by key. */
+/** The content's kind plus whichever rows it carries, by key, and what else is in range. */
 function summarize(content: InRangeContent<InRangeBoardRow>): string {
+  const keys = (boards: readonly InRangeBoardRow[]) => boards.map((row) => row.key).join(',');
+  const also = (alsoInRange: { kind: string; row?: { key: string } } | null) =>
+    alsoInRange === null ? '' : ` +${alsoInRange.row?.key ?? alsoInRange.kind}`;
   switch (content.kind) {
     case 'hero':
-      return `hero:${content.board.key}`;
+      return `hero:${content.board.key}${also(content.also)}`;
     case 'board_rows':
-      return `board_rows:${content.boards.map((row) => row.key).join(',')}@${content.gymName ?? '-'}`;
+      return `board_rows:${keys(content.boards)}@${content.gymName ?? '-'}${also(content.also)}`;
     case 'unnamed':
-      return `unnamed:${content.row.key}`;
+      return `unnamed:${content.row.key}[${keys(content.boards)}]`;
+    case 'lookup_failed':
+      return `lookup_failed[${keys(content.boards)}]`;
     default:
       return content.kind;
   }
 }
 
 describe('inRangeView', () => {
-  it.each<{ phase: PickerScanPhase; rows: QuickstartRow[]; expected: string; scanning: boolean }>([
+  it.each<{
+    phase: PickerScanPhase;
+    rows: QuickstartRow[];
+    lookupPending?: boolean;
+    expected: string;
+    scanning: boolean;
+  }>([
     // Phases that ignore rows.
     { phase: 'hidden', rows: [], expected: 'none', scanning: false },
     { phase: 'needs_permission', rows: [], expected: 'permission_card', scanning: false },
     { phase: 'blocked_denied', rows: [], expected: 'blocked_denied', scanning: false },
     { phase: 'blocked_off', rows: [], expected: 'blocked_off', scanning: false },
+    { phase: 'unreachable', rows: [], expected: 'unreachable', scanning: false },
     { phase: 'tap_to_scan', rows: [], expected: 'tap_to_scan', scanning: false },
     { phase: 'tap_to_scan', rows: [boardRow('crux-kilter')], expected: 'tap_to_scan', scanning: false },
     // Scanning: rows show as they come in, the spinner stays.
     { phase: 'scanning', rows: [], expected: 'looking', scanning: true },
     { phase: 'scanning', rows: [boardRow('crux-kilter')], expected: 'hero:board:crux-kilter', scanning: true },
-    { phase: 'scanning', rows: [MOONBOARD_ROW], expected: 'unnamed:moonboard:moonboard', scanning: true },
+    { phase: 'scanning', rows: [MOONBOARD_ROW], expected: 'unnamed:moonboard:moonboard[]', scanning: true },
+    // While the serial lookup is out the serial rows are held back, so what
+    // shows now could be overtaken: the slot holds its place instead.
+    { phase: 'scanning', rows: [MOONBOARD_ROW], lookupPending: true, expected: 'looking', scanning: true },
+    { phase: 'scanning', rows: [boardRow('home')], lookupPending: true, expected: 'looking', scanning: true },
     // Done: a pre-empted or finished scan with nothing heard reads the same, with Scan again.
     { phase: 'done', rows: [], expected: 'none_in_range', scanning: false },
     { phase: 'done', rows: [boardRow('crux-kilter', CRUX)], expected: 'hero:board:crux-kilter', scanning: false },
@@ -92,26 +108,69 @@ describe('inRangeView', () => {
       expected: 'board_rows:board:crux-kilter,board:bloc-kilter@-',
       scanning: false,
     },
-    // A board it can name wins over a closer box it can't.
+    // The strongest row leads, named or not. A MoonBoard beside a saved Kilter
+    // is not the Kilter: the MoonBoard's card leads and the Kilter follows.
     {
       phase: 'done',
-      rows: [UNKNOWN_SETUP_ROW, boardRow('crux-kilter', CRUX), MOONBOARD_ROW],
-      expected: 'hero:board:crux-kilter',
+      rows: [MOONBOARD_ROW, boardRow('crux-kilter', CRUX)],
+      expected: 'unnamed:moonboard:moonboard[board:crux-kilter]',
+      scanning: false,
+    },
+    {
+      phase: 'done',
+      rows: [UNKNOWN_SETUP_ROW, boardRow('crux-kilter', CRUX), MOONBOARD_ROW, boardRow('crux-moon', CRUX)],
+      expected: 'unnamed:unknown_setup:tension[board:crux-kilter,board:crux-moon]',
+      scanning: false,
+    },
+    // A named lead with a box it can't name behind it: one compact row under it.
+    {
+      phase: 'done',
+      rows: [boardRow('crux-kilter', CRUX), MOONBOARD_ROW],
+      expected: 'hero:board:crux-kilter +moonboard:moonboard',
+      scanning: false,
+    },
+    {
+      phase: 'done',
+      rows: [boardRow('crux-kilter', CRUX), BARE_KILTER_ROW, MOONBOARD_ROW],
+      expected: 'hero:board:crux-kilter +bare_name:kilter',
+      scanning: false,
+    },
+    {
+      phase: 'done',
+      rows: [boardRow('crux-kilter', CRUX), MOONBOARD_ROW, boardRow('crux-tension', CRUX)],
+      expected: 'board_rows:board:crux-kilter,board:crux-tension@Crux +moonboard:moonboard',
+      scanning: false,
+    },
+    {
+      phase: 'done',
+      rows: [boardRow('home'), LOOKUP_FAILED_ROW],
+      expected: 'hero:board:home +lookup_failed',
       scanning: false,
     },
     // Nothing it can name: the closest thing heard decides.
-    { phase: 'done', rows: [MOONBOARD_ROW, BARE_KILTER_ROW], expected: 'unnamed:moonboard:moonboard', scanning: false },
-    { phase: 'done', rows: [BARE_KILTER_ROW], expected: 'unnamed:bare_name:kilter', scanning: false },
-    { phase: 'done', rows: [UNKNOWN_SETUP_ROW], expected: 'unnamed:unknown_setup:tension', scanning: false },
-    { phase: 'done', rows: [LOOKUP_FAILED_ROW, MOONBOARD_ROW], expected: 'lookup_failed', scanning: false },
+    {
+      phase: 'done',
+      rows: [MOONBOARD_ROW, BARE_KILTER_ROW],
+      expected: 'unnamed:moonboard:moonboard[]',
+      scanning: false,
+    },
+    { phase: 'done', rows: [BARE_KILTER_ROW], expected: 'unnamed:bare_name:kilter[]', scanning: false },
+    { phase: 'done', rows: [UNKNOWN_SETUP_ROW], expected: 'unnamed:unknown_setup:tension[]', scanning: false },
+    { phase: 'done', rows: [LOOKUP_FAILED_ROW, MOONBOARD_ROW], expected: 'lookup_failed[]', scanning: false },
+    {
+      phase: 'done',
+      rows: [LOOKUP_FAILED_ROW, boardRow('home')],
+      expected: 'lookup_failed[board:home]',
+      scanning: false,
+    },
     {
       phase: 'done',
       rows: [MOONBOARD_ROW, LOOKUP_FAILED_ROW],
-      expected: 'unnamed:moonboard:moonboard',
+      expected: 'unnamed:moonboard:moonboard[]',
       scanning: false,
     },
-  ])('$phase with $rows.length rows → $expected', ({ phase, rows, expected, scanning }) => {
-    const view = inRangeView(phase, rows);
+  ])('$phase with $rows.length rows → $expected', ({ phase, rows, lookupPending = false, expected, scanning }) => {
+    const view = inRangeView(phase, rows, { lookupPending });
     expect(summarize(view.content)).toBe(expected);
     expect(view.scanning).toBe(scanning);
   });
@@ -131,7 +190,7 @@ describe('sharedGymName', () => {
 
 describe('alsoAtGymAnchor', () => {
   const activeAtBloc = board('bloc-kilter', BLOC);
-  const heroAtCrux = inRangeView('done', [boardRow('crux-kilter', CRUX)]).content;
+  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookupPending: false }).content;
 
   it.each<{
     name: string;
@@ -139,18 +198,35 @@ describe('alsoAtGymAnchor', () => {
     active: UserBoard | null;
     expected: string | null;
   }>([
-    { name: 'the board in range', content: heroAtCrux, active: activeAtBloc, expected: 'crux-kilter' },
+    {
+      name: 'the board in range',
+      content: done([boardRow('crux-kilter', CRUX)]),
+      active: activeAtBloc,
+      expected: 'crux-kilter',
+    },
     {
       name: 'the board in range has no gym: nothing, not the active board',
-      content: inRangeView('done', [boardRow('home-kilter')]).content,
+      content: done([boardRow('home-kilter')]),
       active: activeAtBloc,
       expected: null,
     },
     {
       name: 'several boards in range: their rows already are the gym',
-      content: inRangeView('done', [boardRow('crux-kilter', CRUX), boardRow('crux-moon', CRUX)]).content,
+      content: done([boardRow('crux-kilter', CRUX), boardRow('crux-moon', CRUX)]),
       active: activeAtBloc,
       expected: null,
+    },
+    {
+      name: 'an unnamed lead with named boards behind it: their rows are the walls around',
+      content: done([MOONBOARD_ROW, boardRow('crux-kilter', CRUX)]),
+      active: activeAtBloc,
+      expected: null,
+    },
+    {
+      name: 'an unnamed lead alone: the active board',
+      content: done([MOONBOARD_ROW]),
+      active: activeAtBloc,
+      expected: 'bloc-kilter',
     },
     {
       name: 'nothing in range: the active board',
@@ -173,26 +249,34 @@ describe('alsoAtGymAnchor', () => {
 
 describe('mapInRangeBoards', () => {
   const toTitles = (rows: readonly InRangeBoardRow[]) => rows.map((row) => row.board.name.toUpperCase());
+  const done = (rows: QuickstartRow[]) => inRangeView('done', rows, { lookupPending: false }).content;
 
-  it('maps the hero and the rows, and leaves every other kind alone', () => {
-    expect(mapInRangeBoards(inRangeView('done', [boardRow('crux')]).content, toTitles)).toEqual({
+  it('maps every board the content carries, and keeps what else is in range', () => {
+    expect(mapInRangeBoards(done([boardRow('crux'), MOONBOARD_ROW]), toTitles)).toEqual({
       kind: 'hero',
       board: 'CRUX',
+      also: { kind: 'unnamed', row: MOONBOARD_ROW },
     });
-    expect(mapInRangeBoards(inRangeView('done', [boardRow('a', CRUX), boardRow('b', CRUX)]).content, toTitles)).toEqual(
-      {
-        kind: 'board_rows',
-        boards: ['A', 'B'],
-        gymName: 'Crux',
-      },
-    );
-    const unnamed = inRangeView('done', [MOONBOARD_ROW]).content;
-    expect(mapInRangeBoards(unnamed, toTitles)).toBe(unnamed);
+    expect(mapInRangeBoards(done([boardRow('a', CRUX), boardRow('b', CRUX)]), toTitles)).toEqual({
+      kind: 'board_rows',
+      boards: ['A', 'B'],
+      gymName: 'Crux',
+      also: null,
+    });
+    expect(mapInRangeBoards(done([MOONBOARD_ROW, boardRow('a')]), toTitles)).toEqual({
+      kind: 'unnamed',
+      row: MOONBOARD_ROW,
+      boards: ['A'],
+    });
+    expect(mapInRangeBoards(done([LOOKUP_FAILED_ROW, boardRow('a')]), toTitles)).toEqual({
+      kind: 'lookup_failed',
+      boards: ['A'],
+    });
+    const blocked = { kind: 'blocked_off' } as const;
+    expect(mapInRangeBoards(blocked, toTitles)).toBe(blocked);
   });
 
   it('reads as nothing in range when the hero board cannot be drawn', () => {
-    expect(mapInRangeBoards(inRangeView('done', [boardRow('crux')]).content, () => [])).toEqual({
-      kind: 'none_in_range',
-    });
+    expect(mapInRangeBoards(done([boardRow('crux')]), () => [])).toEqual({ kind: 'none_in_range' });
   });
 });

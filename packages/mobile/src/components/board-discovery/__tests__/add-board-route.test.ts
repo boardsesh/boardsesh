@@ -25,10 +25,22 @@ describe('addBoardRoute', () => {
       expected: { pathname: '/boards/spray/new', params: { returnTo: '/(tabs)/climbs', source: 'onboarding' } },
     },
     {
-      name: 'the gym map, which the picker already counted',
+      name: 'the gym map from the picker, which already counted the opening',
       kind: 'gym_map',
-      context: { returnTo: '/(tabs)/discover' },
+      context: { returnTo: '/(tabs)/discover', fromPicker: true },
       expected: { pathname: '/gyms', params: { returnTo: '/(tabs)/discover', from: 'picker' } },
+    },
+    {
+      name: 'the gym map from Manage boards, which counts its own opening',
+      kind: 'gym_map',
+      context: {},
+      expected: { pathname: '/gyms', params: {} },
+    },
+    {
+      name: 'the builder ignores fromPicker',
+      kind: 'board',
+      context: { fromPicker: true },
+      expected: { pathname: '/boards/create', params: {} },
     },
     {
       name: 'the wall wizard ignores a preset',

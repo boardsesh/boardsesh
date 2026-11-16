@@ -114,6 +114,15 @@ describe('useActivateBoard', () => {
     expect(consumePendingRecognitionMock).toHaveBeenCalledExactlyOnceWith(BOARD);
   });
 
+  // Manage boards: a switch there says nothing about the box the climber stood at.
+  it('leaves the held box alone for a caller that opts out', async () => {
+    const result = activate({ recognizesHeldBox: false });
+    await result.current(BOARD);
+
+    expect(setActiveBoardMock).toHaveBeenCalledWith(BOARD);
+    expect(consumePendingRecognitionMock).not.toHaveBeenCalled();
+  });
+
   // The builder renders its failure inline and has submit state to unwind — a
   // toast is invisible behind its modal route, and a swallowed rejection would
   // leave its CTA spinning forever with nothing on screen to explain why.

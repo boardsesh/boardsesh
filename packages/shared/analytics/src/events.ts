@@ -627,11 +627,12 @@ export const SHARED_EVENTS = {
   // a controller rotating its private address mid-scan can count twice. A scan
   // that heard nothing has all three at zero; older events have no
   // `serialless_count`.
-  // `trigger` (2026-11) says who started the scan: 'sheet' (the Bluetooth
-  // quickstart sheet), 'picker_auto' (the board picker's in-range slot scanning
-  // by itself on open) or 'picker_tap' (that slot's scan button). The picker
-  // scans on most opens, so filter on `trigger` to keep the sheet's series;
-  // older events have none and are all 'sheet'.
+  // `trigger` (2026-11) says who started the scan: 'picker_auto' (the board
+  // picker's In range slot scanning by itself on open) or 'picker_tap' (that
+  // slot's Continue, Scan and Scan again). 'sheet' was the Bluetooth quickstart
+  // sheet, until the picker layout OTA retired it; older events have no
+  // `trigger` and are all the sheet's. The picker scans on most opens, so
+  // filter on `trigger` to keep the sheet's series apart.
   BoardQuickstartScanFinished: 'Board Quickstart Scan Finished',
   // Fired once per device-picker session (on close) with tallies of how each
   // listed device's board preview resolved: saved board, recorded serial

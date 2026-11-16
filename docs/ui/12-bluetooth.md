@@ -99,7 +99,13 @@ medium detent, so the hints never sit pinned under the rest: with boards listed
 they are the list's footer, and with none the state above them ("No boards
 found", "not found", the spinner) scrolls with them. The `/boards` Bluetooth
 quickstart sheet showed the same tips until the picker's In range slot replaced
-it in 2026-11; the slot shows no tips, only "No boards in range" and Scan again.
+it in 2026-11. The slot shows no tips: its nothing-heard state is "No boards in
+range" and Scan again, except where Android is plausibly withholding the
+results (`useAndroidScanLocationHint`): a binary built before the manifest
+change gets the location grant, and Android 6 to 11 with Location off gets the
+switch, each rescanning once it works. A radio the scan could not read
+(`unknown`) says "Couldn't reach Bluetooth" with Scan again, never "Turn on
+Bluetooth".
 
 **Remembered boards.** A connect remembers the box for the board in view: by
 serial for Aurora boxes, by BLE device id for a MoonBoard or a serial-less

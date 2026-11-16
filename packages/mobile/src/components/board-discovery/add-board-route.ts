@@ -20,6 +20,12 @@ export type AddBoardRouteContext = {
   source?: string;
   /** Opens the builder with the board type's most used setup chosen ("My own board"). */
   preset?: string;
+  /**
+   * The board picker itself is opening the gym map, and has already counted
+   * this picker session's opening (`useBoardPickerAnalytics`), so the map must
+   * not count another. Manage boards leaves it off: the map counts its own.
+   */
+  fromPicker?: boolean;
 };
 
 export function addBoardRoute(kind: BoardPickerAddKind, context: AddBoardRouteContext): AddBoardRoute {
@@ -33,7 +39,7 @@ export function addBoardRoute(kind: BoardPickerAddKind, context: AddBoardRouteCo
     case 'spraywall':
       return { pathname: '/boards/spray/new', params };
     case 'gym_map':
-      // The picker already counted this opening (`useBoardPickerAnalytics`).
-      return { pathname: '/gyms', params: { ...params, from: 'picker' } };
+      if (context.fromPicker) params.from = 'picker';
+      return { pathname: '/gyms', params };
   }
 }

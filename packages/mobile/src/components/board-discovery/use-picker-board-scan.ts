@@ -45,6 +45,7 @@ import type { BoardScanTrigger } from '../../lib/ble/use-board-scan';
 import { openAppSettings } from '../../lib/open-app-settings';
 import {
   isWithinPickerScanCooldown,
+  listenedLongEnoughForSoleBox,
   PICKER_SCAN_COOLDOWN_MS,
   pickerScanPermissionFromAuthorization,
   resolvePickerScan,
@@ -60,6 +61,18 @@ export type PickerScan = {
   phase: PickerScanPhase;
   /** As `buildQuickstartRows`, strongest first, with recognised serial-less boxes named. */
   rows: QuickstartRow[];
+  /**
+   * Serials were heard and their lookup has not answered yet. `rows` hold back
+   * every serial row meanwhile, so the slot holds its place rather than show an
+   * order the answer would rearrange.
+   */
+  lookupPending: boolean;
+  /**
+   * Whether the scan behind `rows` listened long enough (or ran to its end) for
+   * a serial-less row standing for one box to mean one box. Read at the tap,
+   * before `stop()`. See `listenedLongEnoughForSoleBox`.
+   */
+  listenedLongEnough: () => boolean;
   /** The Continue / tap-to-scan / Scan again button: asks for Bluetooth when needed, then scans. */
   start: () => void;
   /** End the scan, keeping its rows. Call on any pick. */
@@ -126,7 +139,6 @@ export function usePickerBoardScan({
     finish,
     retryLookup,
   } = useQuickstartScan({
-    slotPolicy: 'claim',
     mayStartRadio,
     knownBoards,
   });
@@ -174,7 +186,10 @@ export function usePickerBoardScan({
   // Read the permission and the cooldown again whenever the slot comes back on
   // screen. An Android grant made in Settings after the scan was refused gets
   // a fresh start: drop the refusal back to idle, and the rules decide whether
-  // it scans by itself. (iOS relaunches the app when that switch moves.)
+  // it scans by itself. (iOS relaunches the app when that switch moves.) Not
+  // while a start is on its way or held: a deny, then Continue and an Allow in
+  // the dialog, leaves the old refusal showing until that start reaches the
+  // radio, and a reset now would cancel the start the climber just made.
   useEffect(() => {
     if (!canScan || !focused || !appActive) return;
     setScannedRecently(isWithinPickerScanCooldown(lastPickerScanEndedAt, Date.now()));
@@ -182,10 +197,12 @@ export function usePickerBoardScan({
     void readPermission().then((nextPermission) => {
       if (cancelled) return;
       setPermission(nextPermission);
-      const { status: scanStatus, unavailableReason: reason } = scanStateRef.current;
+      const { status: scanStatus, unavailableReason: reason, startPending: startOnItsWay } = scanStateRef.current;
       const refusedForPermission =
         scanStatus === 'unavailable' && (reason === 'unauthorized' || reason === 'permission_denied');
-      if (Platform.OS === 'android' && nextPermission === 'granted' && refusedForPermission) reset();
+      if (Platform.OS === 'android' && nextPermission === 'granted' && refusedForPermission && !startOnItsWay) {
+        reset();
+      }
     });
     return () => {
       cancelled = true;
@@ -201,14 +218,30 @@ export function usePickerBoardScan({
     return () => clearTimeout(timer);
   }, [scannedRecently]);
 
-  // Stamp the end of every radio scan this slot ran, however it ended
-  // (timeout, finish, error, unmount), for the next picker open's cooldown.
+  // Stamp the start and end of every radio scan this slot ran, however it ended
+  // (timeout, finish, error, pre-emption, unmount): the end for the next picker
+  // open's cooldown, both for how long the rows' scan listened.
+  const scanStartedAtRef = useRef<number | null>(null);
+  const scanEndedAtRef = useRef<number | null>(null);
   useEffect(() => {
     if (status !== 'scanning') return;
+    scanStartedAtRef.current = Date.now();
+    scanEndedAtRef.current = null;
     return () => {
-      lastPickerScanEndedAt = Date.now();
+      const endedAt = Date.now();
+      lastPickerScanEndedAt = endedAt;
+      scanEndedAtRef.current = endedAt;
     };
   }, [status]);
+  const listenedLongEnough = useCallback(
+    () =>
+      listenedLongEnoughForSoleBox({
+        startedAtMs: scanStartedAtRef.current,
+        endedAtMs: scanEndedAtRef.current,
+        nowMs: Date.now(),
+      }),
+    [],
+  );
 
   // One start at a time. `starting` covers the permission prompt and the wait
   // for the radio, and a held start waits for the app, so the slot reads
@@ -304,8 +337,18 @@ export function usePickerBoardScan({
     void openAppSettings();
   }, []);
 
+  const lookupPending = lookup === 'pending';
   return useMemo(
-    () => ({ phase: resolution.phase, rows, start, stop, openSettings, retryLookup }),
-    [resolution.phase, rows, start, stop, openSettings, retryLookup],
+    () => ({
+      phase: resolution.phase,
+      rows,
+      lookupPending,
+      listenedLongEnough,
+      start,
+      stop,
+      openSettings,
+      retryLookup,
+    }),
+    [resolution.phase, rows, lookupPending, listenedLongEnough, start, stop, openSettings, retryLookup],
   );
 }

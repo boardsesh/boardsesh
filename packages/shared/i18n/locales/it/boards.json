@@ -304,6 +304,7 @@
       "continue": "Continua",
       "blockedDenied": "Consenti il Bluetooth nelle Impostazioni per trovare il pannello davanti a te.",
       "blockedOff": "Attiva il Bluetooth per trovare il pannello davanti a te.",
+      "unreachable": "Impossibile raggiungere il Bluetooth.",
       "scanTitle": "Cerca il pannello davanti a te",
       "scan": "Cerca",
       "scanAgain": "Cerca di nuovo",
@@ -316,6 +317,9 @@
       "typeTitle": "C'è un pannello {{board}} a portata",
       "bareNameBody": "Il suo controller non dice quale pannello sia, quindi dicci dove sei e lo troveremo.",
       "unknownSetupBody": "Non ne conosciamo ancora la configurazione, quindi dicci dove sei e lo troveremo.",
+      "alsoMoonboard": "C'è anche una MoonBoard a portata",
+      "alsoType": "C'è anche un pannello {{board}} a portata",
+      "alsoNeedSignal": "C'è un altro pannello a portata. Serve segnale per identificarlo.",
       "useMyLocation": "Usa la mia posizione",
       "searchGyms": "Cerca palestre",
       "alsoAt": "Anche a {{gym}}"

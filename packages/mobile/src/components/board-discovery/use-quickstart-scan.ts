@@ -5,7 +5,7 @@
 
 import { useCallback, useMemo } from 'react';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useBoardScan, type BoardScan, type BoardScanSlotPolicy } from '../../lib/ble/use-board-scan';
+import { useBoardScan, type BoardScan } from '../../lib/ble/use-board-scan';
 import { useBoardsBySerialNumbers } from '../../lib/graphql/hooks';
 import { selectBleBoardCandidates } from '../../lib/ble/select-board-candidates';
 import { useMyBoardSerialConfigs } from '../../lib/ble/use-my-board-serial-configs';
@@ -33,12 +33,9 @@ export type QuickstartScan = Pick<
 };
 
 export function useQuickstartScan({
-  slotPolicy,
   mayStartRadio,
   knownBoards,
 }: {
-  /** How the scan gets ble-plx's one scan; see `BoardScanSlotPolicy`. Defaults to 'take'. */
-  slotPolicy?: BoardScanSlotPolicy;
   /** Asked right before the radio starts; false drops the start (see `useBoardScan`). */
   mayStartRadio?: () => boolean;
   /**
@@ -49,7 +46,6 @@ export function useQuickstartScan({
   knownBoards?: readonly UserBoard[];
 } = {}): QuickstartScan {
   const { status, unavailableReason, serials, advertisedTypes, devices, start, reset, finish } = useBoardScan({
-    slotPolicy,
     mayStartRadio,
   });
   // Scoped to what each controller announced. Aurora reuses a serial across

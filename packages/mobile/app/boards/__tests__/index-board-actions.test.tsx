@@ -170,11 +170,16 @@ vi.mock('../../../src/components/board-discovery/use-picker-board-scan', () => (
   usePickerBoardScan: () => ({
     phase: scanCtrl.phase,
     rows: scanCtrl.rows,
+    lookupPending: false,
+    listenedLongEnough: () => true,
     start: vi.fn(),
     stop: scanCtrl.stop,
     openSettings: vi.fn(),
     retryLookup: vi.fn(),
   }),
+}));
+vi.mock('../../../src/components/board-discovery/use-in-range-location-hint', () => ({
+  useInRangeLocationHint: () => null,
 }));
 vi.mock('../../../src/components/board-discovery/InRangeSection', () => ({
   InRangeSection: (props: NonNullable<(typeof inRangeProps)['last']>) => {
@@ -200,8 +205,10 @@ vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
     ),
 }));
 vi.mock('../../../src/components/board-discovery/DiscoveryBoardArt', () => ({ DiscoveryBoardArt: () => null }));
+const clearPendingRecognitionMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/lib/boards/pending-board-recognition', () => ({
   setPendingBoardRecognition: vi.fn(),
+  clearPendingBoardRecognition: clearPendingRecognitionMock,
   consumePendingBoardRecognition: vi.fn(async () => {}),
 }));
 

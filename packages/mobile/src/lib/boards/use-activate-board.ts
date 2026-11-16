@@ -104,6 +104,14 @@ export type ActivateBoardOptions = {
    * Whether the bind buzzes. Off for the builder, whose submit tap already did.
    */
   haptic?: boolean;
+  /**
+   * Whether this bind may name a box the In range slot is holding
+   * (pending-board-recognition.ts). On for the routes the slot's three ways
+   * forward lead to: the picker, the gym map and the builder. Off for Manage
+   * boards: switching to a board there, even with the picker open underneath,
+   * says nothing about the box the climber stood at.
+   */
+  recognizesHeldBox?: boolean;
 };
 
 /**
@@ -119,6 +127,7 @@ export function useActivateBoard({
   onBound,
   writeFailure = 'toast',
   haptic = true,
+  recognizesHeldBox = true,
 }: ActivateBoardOptions) {
   const router = useRouter();
   const { t } = useTranslation('boards');
@@ -165,7 +174,7 @@ export function useActivateBoard({
       // A box the picker's In range slot heard but could not name, which the
       // climber set off to find: a bound board of its type is that box, here or
       // on whichever route got them here. Never rejects.
-      void consumePendingBoardRecognition(board);
+      if (recognizesHeldBox) void consumePendingBoardRecognition(board);
 
       if (onBound) {
         try {
@@ -224,6 +233,7 @@ export function useActivateBoard({
       onBound,
       writeFailure,
       haptic,
+      recognizesHeldBox,
     ],
   );
 }

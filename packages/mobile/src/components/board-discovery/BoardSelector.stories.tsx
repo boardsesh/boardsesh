@@ -68,14 +68,28 @@ const IN_RANGE_ROWS: DiscoveryBoardItem[] = [
   { ...STORY_BOARD, key: 'board:crux-homewall', title: 'Crux Homewall', subtitle: 'Crux · 10 x 12' },
   { ...STORY_BOARD, key: 'board:crux-spray', title: 'Crux Training Wall', subtitle: 'Crux · 7 x 10' },
 ];
+const IN_RANGE_MOONBOARD = {
+  kind: 'moonboard',
+  key: 'moonboard:moonboard',
+  boardType: 'moonboard',
+  rssi: -55,
+  deviceId: 'MOON-BOX',
+} as const;
 const IN_RANGE_STORY_STATES = {
-  hero: { content: { kind: 'hero', board: IN_RANGE_HERO }, scanning: false },
-  gymRows: { content: { kind: 'board_rows', boards: IN_RANGE_ROWS, gymName: 'Crux' }, scanning: false },
-  unnamed: {
+  hero: { content: { kind: 'hero', board: IN_RANGE_HERO, also: null }, scanning: false },
+  // Three walls at Crux, with a MoonBoard it can't name heard behind them.
+  gymRows: {
     content: {
-      kind: 'unnamed',
-      row: { kind: 'moonboard', key: 'moonboard:moonboard', boardType: 'moonboard', rssi: -55, deviceId: 'MOON-BOX' },
+      kind: 'board_rows',
+      boards: IN_RANGE_ROWS,
+      gymName: 'Crux',
+      also: { kind: 'unnamed', row: IN_RANGE_MOONBOARD },
     },
+    scanning: false,
+  },
+  // The MoonBoard is the strongest signal: it leads, the named Kilter follows.
+  unnamed: {
+    content: { kind: 'unnamed', row: IN_RANGE_MOONBOARD, boards: [IN_RANGE_HERO] },
     scanning: false,
   },
   permission: { content: { kind: 'permission_card' }, scanning: false },
@@ -84,7 +98,7 @@ type InRangeStoryState = keyof typeof IN_RANGE_STORY_STATES;
 
 /** The art each state draws, so the story is ready only once all of it painted. */
 function inRangeArtKeys(state: InRangeStoryState | null): string[] {
-  if (state === 'hero') return [`in-range:${IN_RANGE_HERO.key}`];
+  if (state === 'hero' || state === 'unnamed') return [`in-range:${IN_RANGE_HERO.key}`];
   if (state === 'gymRows') return IN_RANGE_ROWS.map((item) => `in-range:${item.key}`);
   return [];
 }
@@ -227,13 +241,13 @@ const stories: StoryModule = {
       render: (controls) => <SelectorStory {...controls} inRangeState="hero" withNearby={false} />,
     },
     inRangeGymRows: {
-      name: 'In range: three walls at one gym, closest first',
+      name: 'In range: three walls at one gym, closest first, and a MoonBoard it cannot name',
       layout: 'fullscreen',
       readiness: 'explicit',
       render: (controls) => <SelectorStory {...controls} inRangeState="gymRows" withNearby={false} />,
     },
     inRangeUnnamed: {
-      name: 'In range: a MoonBoard it cannot name yet',
+      name: 'In range: a MoonBoard it cannot name leads, a named board follows',
       layout: 'fullscreen',
       readiness: 'explicit',
       render: (controls) => <SelectorStory {...controls} inRangeState="unnamed" withNearby={false} />,

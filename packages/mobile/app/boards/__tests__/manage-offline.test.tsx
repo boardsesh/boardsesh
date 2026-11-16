@@ -177,7 +177,13 @@ vi.mock('expo-router', () => ({
 }));
 vi.mock('../../../src/components/board-discovery/AddBoardMenu', () => ({
   AddBoardMenu: ({ onSelect }: { onSelect: (kind: string) => void }) =>
-    createElement('button', { type: 'button', onClick: () => onSelect('spraywall') }, 'Add a board'),
+    createElement(
+      'div',
+      null,
+      ['board', 'spraywall', 'gym_map'].map((kind) =>
+        createElement('button', { key: kind, type: 'button', onClick: () => onSelect(kind) }, `add ${kind}`),
+      ),
+    ),
 }));
 const trackAddSelectedMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/lib/boards/board-picker-add-analytics', () => ({
@@ -1226,9 +1232,14 @@ describe('My Boards with no usable network list', () => {
     expect(plus).not.toBeNull();
     if (!plus) return;
     render(createElement(plus));
-    fireEvent.click(screen.getByRole('button', { name: 'Add a board' }));
+    fireEvent.click(screen.getByRole('button', { name: 'add spraywall' }));
     expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'spraywall', surface: 'manage' });
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards/spray/new', params: {} });
+
+    // The gym map from here counts its own opening: no `from: 'picker'`.
+    fireEvent.click(screen.getByRole('button', { name: 'add gym_map' }));
+    expect(trackAddSelectedMock).toHaveBeenCalledWith({ kind: 'gym_map', surface: 'manage' });
+    expect(routerMock.push).toHaveBeenLastCalledWith({ pathname: '/gyms', params: {} });
   });
 
   it('degrades to the downloaded list, not the error state, when the profile fails online', () => {

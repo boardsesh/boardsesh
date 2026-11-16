@@ -304,6 +304,7 @@
       "continue": "Weiter",
       "blockedDenied": "Erlaube Bluetooth in den Einstellungen, um das Board vor dir zu finden.",
       "blockedOff": "Schalt Bluetooth ein, um das Board vor dir zu finden.",
+      "unreachable": "Bluetooth war nicht erreichbar.",
       "scanTitle": "Such nach dem Board vor dir",
       "scan": "Suchen",
       "scanAgain": "Nochmal suchen",
@@ -316,6 +317,9 @@
       "typeTitle": "Ein {{board}} Board ist in Reichweite",
       "bareNameBody": "Seine Box verrät nicht, welches Board es ist. Sag uns, wo du bist, dann finden wir es.",
       "unknownSetupBody": "Sein Setup kennen wir noch nicht. Sag uns, wo du bist, dann finden wir es.",
+      "alsoMoonboard": "Auch ein MoonBoard ist in Reichweite",
+      "alsoType": "Auch ein {{board}} Board ist in Reichweite",
+      "alsoNeedSignal": "Noch ein Board ist in Reichweite. Zum Erkennen brauchen wir Empfang.",
       "useMyLocation": "Meinen Standort verwenden",
       "searchGyms": "Hallen suchen",
       "alsoAt": "Auch in {{gym}}"

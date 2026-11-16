@@ -1,5 +1,5 @@
 import { formatBoardDisplayName } from '@boardsesh/board-config';
-import { memo, useCallback, type ComponentType } from 'react';
+import { memo, useCallback, useState, type ComponentType } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyleSheet, View } from 'react-native';
 import { canOpenAppSettings } from '../../lib/open-app-settings';
@@ -13,7 +13,7 @@ import { PressableSurface } from '../PressableSurface';
 import { Text } from '../Text';
 import type { DiscoveryBoardItem } from './BoardDiscoveryCardView';
 import { BoardSelectorSection } from './BoardSelectorView';
-import type { InRangeView, UnnamedInRangeRow } from './in-range-view';
+import type { InRangeAlso, InRangeView, UnnamedInRangeRow } from './in-range-view';
 
 /** Side of the hero's board art, in points. */
 const HERO_ART_SIZE = 88;
@@ -21,6 +21,18 @@ const HERO_ART_SIZE = 88;
 const ROW_ART_SIZE = 52;
 
 export type InRangeBoardArtProps = { item: DiscoveryBoardItem; size: number };
+
+/**
+ * What to say instead of "No boards in range" when Android is plausibly
+ * withholding the scan's results (see `useAndroidScanLocationHint`): grant
+ * location on old binaries, or turn Location on on Android 6 to 11. The action
+ * rescans when it works.
+ */
+export type InRangeLocationHint = {
+  kind: 'grant_location' | 'enable_location_services';
+  busy: boolean;
+  onPress: () => void;
+};
 
 export type InRangeSectionProps = {
   view: InRangeView<DiscoveryBoardItem>;
@@ -36,6 +48,8 @@ export type InRangeSectionProps = {
   onUseMyLocation: (row: UnnamedInRangeRow) => void;
   onSearchGyms: (row: UnnamedInRangeRow) => void;
   onOwnBoard: (row: UnnamedInRangeRow) => void;
+  /** Replaces the nothing-heard line when Android hides the results; null otherwise. */
+  locationHint?: InRangeLocationHint | null;
 };
 
 /**
@@ -43,9 +57,9 @@ export type InRangeSectionProps = {
  * thing on the screen. Presentational: `inRangeView` (in-range-view.ts) decides
  * what shows, and the screen owns the scan, the picks and navigation.
  *
- * The states that are not about a board (Bluetooth off or refused, nothing
- * heard) are one quiet line with one button and no section title, so a climber
- * at home is not shown an empty card on every open.
+ * The states that are not about a board (Bluetooth off, refused or unreachable,
+ * nothing heard) are one quiet line with one button and no section title, so a
+ * climber at home is not shown an empty card on every open.
  */
 export function InRangeSection({
   view,
@@ -57,6 +71,7 @@ export function InRangeSection({
   onUseMyLocation,
   onSearchGyms,
   onOwnBoard,
+  locationHint = null,
 }: InRangeSectionProps) {
   const { t } = useTranslation('boards');
   const { content, scanning } = view;
@@ -78,8 +93,14 @@ export function InRangeSection({
       return (
         <QuietLine text={t('mobile.inRange.blockedOff')} action={t('mobile.inRange.scanAgain')} onAction={onStart} />
       );
-    case 'none_in_range':
+    case 'unreachable':
       return (
+        <QuietLine text={t('mobile.inRange.unreachable')} action={t('mobile.inRange.scanAgain')} onAction={onStart} />
+      );
+    case 'none_in_range':
+      return locationHint ? (
+        <LocationHintBlock hint={locationHint} />
+      ) : (
         <QuietLine text={t('mobile.bluetooth.noResults')} action={t('mobile.inRange.scanAgain')} onAction={onStart} />
       );
     default:
@@ -90,6 +111,7 @@ export function InRangeSection({
     content.kind === 'board_rows' && content.gymName
       ? t('mobile.inRange.gymWalls', { gym: content.gymName, count: content.boards.length })
       : undefined;
+  const unnamedActions = { onUseMyLocation, onSearchGyms, onOwnBoard };
 
   return (
     <BoardSelectorSection
@@ -97,7 +119,7 @@ export function InRangeSection({
       caption={caption}
       trailing={scanning ? <ActivityIndicator size="small" /> : null}
     >
-      <View style={styles.slot}>
+      <View style={[styles.slot, styles.stack]}>
         {content.kind === 'permission_card' ? (
           <PromptCard
             title={t('mobile.inRange.permissionTitle')}
@@ -110,18 +132,29 @@ export function InRangeSection({
         ) : content.kind === 'looking' ? (
           <LookingCard />
         ) : content.kind === 'hero' ? (
-          <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
+          <>
+            <HeroCard item={content.board} BoardArt={BoardArt} onPick={onPickBoard} />
+            {content.also ? <AlsoRow also={content.also} onRetryLookup={onRetryLookup} {...unnamedActions} /> : null}
+          </>
         ) : content.kind === 'board_rows' ? (
-          <BoardRows items={content.boards} BoardArt={BoardArt} onPick={onPickBoard} />
+          <>
+            <BoardRows items={content.boards} markClosest BoardArt={BoardArt} onPick={onPickBoard} />
+            {content.also ? <AlsoRow also={content.also} onRetryLookup={onRetryLookup} {...unnamedActions} /> : null}
+          </>
         ) : content.kind === 'unnamed' ? (
-          <UnnamedCard
-            row={content.row}
-            onUseMyLocation={onUseMyLocation}
-            onSearchGyms={onSearchGyms}
-            onOwnBoard={onOwnBoard}
-          />
+          <>
+            <UnnamedCard row={content.row} {...unnamedActions} />
+            {content.boards.length > 0 ? (
+              <BoardRows items={content.boards} markClosest={false} BoardArt={BoardArt} onPick={onPickBoard} />
+            ) : null}
+          </>
         ) : content.kind === 'lookup_failed' ? (
-          <LookupFailedCard onRetry={onRetryLookup} />
+          <>
+            <LookupFailedCard onRetry={onRetryLookup} />
+            {content.boards.length > 0 ? (
+              <BoardRows items={content.boards} markClosest={false} BoardArt={BoardArt} onPick={onPickBoard} />
+            ) : null}
+          </>
         ) : null}
       </View>
     </BoardSelectorSection>
@@ -141,7 +174,37 @@ function QuietLine({ text, action, onAction }: { text: string; action?: string; 
   );
 }
 
-/** "In front of you" with the Bluetooth glyph, in the brand colour. */
+/**
+ * Android is withholding what the scan heard: say why and offer the fix, in
+ * the device picker's own words, instead of "No boards in range". Literal keys
+ * per kind: the i18n lint rejects a computed one.
+ */
+function LocationHintBlock({ hint }: { hint: InRangeLocationHint }) {
+  const { t } = useTranslation('settings');
+  const { systemColors } = useTheme();
+  const grant = hint.kind === 'grant_location';
+  return (
+    <View style={styles.hintBlock} accessibilityLiveRegion="polite">
+      <Text variant="footnote" color={systemColors.secondaryLabel}>
+        {grant ? t('ble.locationHintTitle') : t('ble.locationServicesHintTitle')}
+      </Text>
+      <Text variant="caption1" color={systemColors.secondaryLabel}>
+        {grant ? t('ble.locationHintBody') : t('ble.locationServicesHintBody')}
+      </Text>
+      <View style={styles.textAction}>
+        <Button
+          title={grant ? t('ble.locationHintGrant') : t('ble.locationServicesHintEnable')}
+          variant="text"
+          size="small"
+          loading={hint.busy}
+          onPress={hint.onPress}
+        />
+      </View>
+    </View>
+  );
+}
+
+/** "In front of you" with the Bluetooth glyph, in the brand colour. Only ever on the lead. */
 function InFrontOfYou() {
   const { t } = useTranslation('boards');
   const { brandColors } = useTheme();
@@ -191,8 +254,9 @@ function PromptCard({
 }
 
 /**
- * Scanning with nothing heard yet. The same height as the hero, so the board
- * that turns up does not push the screen down.
+ * Scanning with nothing to lead with yet, or while the serial lookup is out.
+ * The same height as the hero, so the board that turns up does not push the
+ * screen down.
  */
 function LookingCard() {
   const { t } = useTranslation('boards');
@@ -256,13 +320,19 @@ const HeroCard = memo(function HeroCard({
   );
 });
 
-/** Two or more boards the phone can name, closest first, in one rounded block. */
+/**
+ * Named boards in one rounded block, strongest first. With `markClosest` they
+ * lead the slot and the first carries the Closest pill; under a box the phone
+ * can't name, they are only what else is around.
+ */
 function BoardRows({
   items,
+  markClosest,
   BoardArt,
   onPick,
 }: {
   items: readonly DiscoveryBoardItem[];
+  markClosest: boolean;
   BoardArt: ComponentType<InRangeBoardArtProps>;
   onPick: (item: DiscoveryBoardItem) => void;
 }) {
@@ -274,7 +344,7 @@ function BoardRows({
       {items.map((item, index) => (
         <View key={item.key}>
           {index > 0 ? <View style={[styles.separator, { backgroundColor: systemColors.separator }]} /> : null}
-          <InRangeBoardRowView item={item} closest={index === 0} BoardArt={BoardArt} onPick={onPick} />
+          <InRangeBoardRowView item={item} closest={markClosest && index === 0} BoardArt={BoardArt} onPick={onPick} />
         </View>
       ))}
     </View>
@@ -323,21 +393,56 @@ const InRangeBoardRowView = memo(function InRangeBoardRowView({
   );
 });
 
-/**
- * A board the phone heard but cannot name: what it is, and the three ways to
- * find it. Literal keys per kind: the i18n lint rejects a computed one.
- */
-function UnnamedCard({
+type UnnamedActionsProps = {
+  onUseMyLocation: (row: UnnamedInRangeRow) => void;
+  onSearchGyms: (row: UnnamedInRangeRow) => void;
+  onOwnBoard: (row: UnnamedInRangeRow) => void;
+};
+
+/** Use my location, Search gyms and It's my own board, for one box it can't name. */
+function UnnamedActions({
   row,
   onUseMyLocation,
   onSearchGyms,
   onOwnBoard,
-}: {
-  row: UnnamedInRangeRow;
-  onUseMyLocation: (row: UnnamedInRangeRow) => void;
-  onSearchGyms: (row: UnnamedInRangeRow) => void;
-  onOwnBoard: (row: UnnamedInRangeRow) => void;
-}) {
+}: UnnamedActionsProps & { row: UnnamedInRangeRow }) {
+  const { t } = useTranslation('boards');
+  return (
+    <>
+      <View style={styles.actionsRow}>
+        <Button
+          title={t('mobile.inRange.useMyLocation')}
+          size="small"
+          icon="location"
+          onPress={() => onUseMyLocation(row)}
+        />
+        <Button
+          title={t('mobile.inRange.searchGyms')}
+          size="small"
+          variant="tonal"
+          icon="gym"
+          onPress={() => onSearchGyms(row)}
+        />
+      </View>
+      <View style={styles.textAction}>
+        <Button
+          title={t('mobile.bluetooth.ownBoard')}
+          size="small"
+          variant="text"
+          icon="home"
+          onPress={() => onOwnBoard(row)}
+        />
+      </View>
+    </>
+  );
+}
+
+/**
+ * A board the phone heard but cannot name, leading the slot: what it is, and
+ * the three ways to find it. Literal keys per kind: the i18n lint rejects a
+ * computed one.
+ */
+function UnnamedCard({ row, ...actions }: UnnamedActionsProps & { row: UnnamedInRangeRow }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const board = formatBoardDisplayName(row.boardType);
@@ -365,36 +470,67 @@ function UnnamedCard({
         <Text variant="subheadline" color={systemColors.secondaryLabel}>
           {body}
         </Text>
-        <View style={styles.actionsRow}>
-          <Button
-            title={t('mobile.inRange.useMyLocation')}
-            size="small"
-            icon="location"
-            onPress={() => onUseMyLocation(row)}
-          />
-          <Button
-            title={t('mobile.inRange.searchGyms')}
-            size="small"
-            variant="tonal"
-            icon="gym"
-            onPress={() => onSearchGyms(row)}
-          />
-        </View>
-        <View style={styles.textAction}>
-          <Button
-            title={t('mobile.bluetooth.ownBoard')}
-            size="small"
-            variant="text"
-            icon="home"
-            onPress={() => onOwnBoard(row)}
-          />
-        </View>
+        <UnnamedActions row={row} {...actions} />
       </View>
     </Card>
   );
 }
 
-/** Serials heard but no signal to look them up. */
+/**
+ * What else is in range under a named lead, as one compact row. A box it can't
+ * name opens its three ways forward on a tap; serials it couldn't look up carry
+ * Retry.
+ */
+function AlsoRow({
+  also,
+  onRetryLookup,
+  ...actions
+}: UnnamedActionsProps & { also: InRangeAlso; onRetryLookup: () => void }) {
+  const { t } = useTranslation('boards');
+  const { systemColors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const toggle = useCallback(() => setExpanded((open) => !open), []);
+  if (also.kind === 'lookup_failed') {
+    return (
+      <View style={[styles.alsoRow, { backgroundColor: systemColors.secondaryBackground }]}>
+        <View style={styles.inline}>
+          <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.flexText}>
+            {t('mobile.inRange.alsoNeedSignal')}
+          </Text>
+          <Button title={t('mobile.errorRetry')} size="small" variant="text" onPress={onRetryLookup} />
+        </View>
+      </View>
+    );
+  }
+  const { row } = also;
+  const label =
+    row.kind === 'moonboard'
+      ? t('mobile.inRange.alsoMoonboard')
+      : t('mobile.inRange.alsoType', { board: formatBoardDisplayName(row.boardType) });
+  return (
+    <View style={[styles.alsoRow, { backgroundColor: systemColors.secondaryBackground }]}>
+      <PressableSurface
+        onPress={toggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        style={styles.alsoHeader}
+      >
+        <Icon name="bluetooth" size={15} color={systemColors.secondaryLabel} />
+        <Text variant="subheadline" style={styles.flexText}>
+          {label}
+        </Text>
+        <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={13} color={systemColors.tertiaryLabel} />
+      </PressableSurface>
+      {expanded ? (
+        <View style={styles.alsoActions}>
+          <UnnamedActions row={row} {...actions} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Serials heard but no signal to look them up, leading the slot. */
 function LookupFailedCard({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
@@ -427,6 +563,10 @@ const styles = StyleSheet.create({
   },
   quietText: {
     flex: 1,
+  },
+  hintBlock: {
+    paddingHorizontal: spacing[4],
+    gap: spacing[1],
   },
   inline: {
     flexDirection: 'row',
@@ -497,5 +637,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: 2,
     borderRadius: borderRadius.full,
+  },
+  alsoRow: {
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing[3],
+  },
+  alsoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    minHeight: 44,
+  },
+  alsoActions: {
+    paddingBottom: spacing[3],
+    gap: spacing[1],
   },
 });

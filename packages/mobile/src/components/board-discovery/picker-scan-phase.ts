@@ -28,6 +28,12 @@ export type PickerScanPhase =
   | 'blocked_denied'
   /** Bluetooth is off. */
   | 'blocked_off'
+  /**
+   * The radio could not be used for a reason the scan could not read (still
+   * resetting, a platform answer it does not know). Bluetooth may well be on,
+   * so the slot says it could not reach it rather than "Turn on Bluetooth".
+   */
+  | 'unreachable'
   /** Ready, waiting for a tap: auto-scan is switched off, a picker scan ended under 30 s ago, or another scan held the radio. */
   | 'tap_to_scan'
   /** Scanning, or about to. Rows may already hold boards heard so far. */
@@ -128,14 +134,41 @@ function phaseForUnavailable(reason: BoardScanUnavailableReason | null): PickerS
     case 'permission_denied':
     case 'not_asked':
       return 'needs_permission';
-    // 'unknown' is a radio the scan couldn't use for a reason it couldn't read
-    // (still resetting, Android location services off): "Bluetooth is off" and
-    // its Scan again is the nearest thing the climber can act on.
     case 'powered_off':
+      return 'blocked_off';
+    // A radio the scan couldn't use for a reason it couldn't read (still
+    // resetting, say). "Turn on Bluetooth" would be wrong when it is on, so the
+    // slot says it couldn't reach Bluetooth, with Scan again.
     case 'unknown':
     case null:
-      return 'blocked_off';
+      return 'unreachable';
   }
+}
+
+/**
+ * How long the scan must have listened before a serial-less row standing for
+ * one box can be trusted to mean one box: a second MoonBoard in the same gym
+ * may simply not have been heard yet. A scan that ran to its end (15 s) always
+ * qualifies; one the climber's tap cut short at 2 s does not.
+ */
+export const SOLE_BOX_MIN_LISTEN_MS = 5_000;
+
+/**
+ * Whether the scan behind the rows listened long enough for "one box" to mean
+ * one box. `endedAtMs` is null while it still runs (read at `nowMs`), and
+ * `startedAtMs` null when no scan ran.
+ */
+export function listenedLongEnoughForSoleBox({
+  startedAtMs,
+  endedAtMs,
+  nowMs,
+}: {
+  startedAtMs: number | null;
+  endedAtMs: number | null;
+  nowMs: number;
+}): boolean {
+  if (startedAtMs === null) return false;
+  return (endedAtMs ?? nowMs) - startedAtMs >= SOLE_BOX_MIN_LISTEN_MS;
 }
 
 export function resolvePickerScan(inputs: PickerScanInputs): PickerScanResolution {
@@ -147,6 +180,10 @@ export function resolvePickerScan(inputs: PickerScanInputs): PickerScanResolutio
 
 function resolvePhase(inputs: PickerScanInputs, scansByItself: boolean): PickerScanPhase {
   if (!inputs.canScan || inputs.connectedToBoard) return 'hidden';
+  // A start on its way (asking, waiting on the radio, held for the app) reads
+  // as scanning whatever the last scan ended at: after an Allow, the old
+  // refusal's Continue card must not come back while the new start runs.
+  if (inputs.starting) return 'scanning';
   switch (inputs.scanStatus) {
     // Another owner held ble-plx's one scan (the rest timer, an Android
     // connect). "No boards in range" would be untrue; the button tries again.
@@ -162,7 +199,6 @@ function resolvePhase(inputs: PickerScanInputs, scansByItself: boolean): PickerS
     case 'idle':
       break;
   }
-  if (inputs.starting) return 'scanning';
   switch (inputs.permission) {
     case 'blocked':
       return 'blocked_denied';

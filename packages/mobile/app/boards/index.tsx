@@ -36,6 +36,7 @@ import { nearbyListTitle } from '../../src/components/board-discovery/nearby-boa
 import { NearbySearchStatus } from '../../src/components/board-discovery/NearbySearchStatus';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useBoardOfflineState } from '../../src/components/board-discovery/use-board-offline-state';
+import { useInRangeLocationHint } from '../../src/components/board-discovery/use-in-range-location-hint';
 import { usePickerBoardScan } from '../../src/components/board-discovery/use-picker-board-scan';
 import { Button } from '../../src/components/Button';
 import { Icon } from '../../src/components/Icon';
@@ -59,7 +60,10 @@ import {
   type FirstBoardEntry,
 } from '../../src/lib/boards/first-board-mode';
 import { deriveLocalOnly, pickerNoticeKey } from '../../src/lib/boards/local-only';
-import { setPendingBoardRecognition } from '../../src/lib/boards/pending-board-recognition';
+import {
+  clearPendingBoardRecognition,
+  setPendingBoardRecognition,
+} from '../../src/lib/boards/pending-board-recognition';
 import { useActivateBoard, type BoardPickSource } from '../../src/lib/boards/use-activate-board';
 import { useBoardPickerAnalytics } from '../../src/lib/boards/use-board-picker-analytics';
 import { useConnectivity } from '../../src/lib/connectivity/use-connectivity';
@@ -296,7 +300,20 @@ export default function BoardSelection() {
     autoStart: pickerAutoScanEnabled,
     knownBoards: myBoards,
   });
-  const { phase: scanPhase, rows: scanRows, start: startScan, stop: stopScan, retryLookup } = pickerScan;
+  const {
+    phase: scanPhase,
+    rows: scanRows,
+    lookupPending,
+    listenedLongEnough,
+    start: startScan,
+    stop: stopScan,
+    retryLookup,
+  } = pickerScan;
+  // A box held for the next bind (pending-board-recognition.ts) belongs to this
+  // picker visit. The gym map and the builder are pushed over the picker, so
+  // they bind, and use the hold, before this unmounts; anything after the
+  // picker closes is about some other box.
+  useEffect(() => clearPendingBoardRecognition, []);
 
   // Both the "At a gym" choice and Near you offer Open Settings after a
   // denial, so a second tap has to be able to ask again: a climber coming back
@@ -506,7 +523,7 @@ export default function BoardSelection() {
   // picker already counted the opening. It is the way forward from "Location
   // is off" and "Nothing within 20 km", and Near you's Map.
   const openGymMap = useCallback(() => {
-    router.push(addBoardRoute('gym_map', { returnTo: boardReturnTo, source }));
+    router.push(addBoardRoute('gym_map', { returnTo: boardReturnTo, source, fromPicker: true }));
   }, [router, boardReturnTo, source]);
 
   const nearbyTitle = nearbyListTitle(t, nearbyBoardType);
@@ -810,7 +827,7 @@ export default function BoardSelection() {
   const openAddRoute = useCallback(
     (kind: BoardPickerAddKind, surface: BoardPickerAddSurface) => {
       trackBoardPickerAddSelected({ kind, surface });
-      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source }));
+      router.push(addBoardRoute(kind, { returnTo: boardReturnTo, source, fromPicker: true }));
     },
     [router, boardReturnTo, source],
   );
@@ -819,9 +836,10 @@ export default function BoardSelection() {
   const onEmptyAddSprayWall = useCallback(() => openAddRoute('spraywall', 'empty_state'), [openAddRoute]);
 
   // The + in the top bar. Online and signed in only: every way behind it needs
-  // a connection and an account.
+  // a connection and an account. Not under "Where do you climb?", whose three
+  // cards are those same choices.
   const navigation = useNavigation();
-  const canAddBoards = isAuthenticated && !isLocalOnly && !isError;
+  const canAddBoards = isAuthenticated && !isLocalOnly && !isError && !showFirstBoardChoice;
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: canAddBoards ? () => <AddBoardMenu onSelect={onAddFromMenu} /> : undefined,
@@ -861,7 +879,10 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     startScan();
   }, [chooseFirstBoardPath, startScan]);
-  const inRange = useMemo(() => inRangeView(scanPhase, scanRows), [scanPhase, scanRows]);
+  const inRange = useMemo(
+    () => inRangeView(scanPhase, scanRows, { lookupPending }),
+    [scanPhase, scanRows, lookupPending],
+  );
   const inRangeRowsByKey = useMemo(() => {
     const rowsByKey = new Map<string, InRangeBoardRow>();
     for (const row of scanRows) if (row.kind === 'board') rowsByKey.set(row.key, row);
@@ -881,25 +902,31 @@ export default function BoardSelection() {
       const row = inRangeRowsByKey.get(item.key);
       if (!row) return;
       chooseFirstBoardPath('scan');
+      // A box held from an earlier tap on a row it couldn't name is not this
+      // board: the climber picked one the phone can name instead.
+      clearPendingBoardRecognition();
       pickBoard(row.board, 'bluetooth');
     },
     [inRangeRowsByKey, chooseFirstBoardPath, pickBoard],
   );
   // The three ways forward for a board it heard but couldn't name (a MoonBoard,
   // a box with no serial, a serial nobody has saved). Each one ends the scan and
-  // holds the box (when one box stands behind the row) so the board the climber
-  // binds next, here or on the route it opens, names it from then on
-  // (pending-board-recognition.ts). The bind keeps `source`, so it still closes
-  // out first-run. Location is asked on the tap, never when the scan finds it.
+  // holds the box so the board the climber binds next, here or on the route it
+  // opens, names it from then on (pending-board-recognition.ts). Only when one
+  // box stands behind the row, and the scan listened long enough for "one" to
+  // mean one: read before `stop()`, which ends the listening. The bind keeps
+  // `source`, so it still closes out first-run. Location is asked on the tap,
+  // never when the scan finds the board.
   const startUnnamedRowAction = useCallback(
     (row: UnnamedInRangeRow) => {
+      const soleBoxHeardLongEnough = listenedLongEnough();
       stopScan();
       chooseFirstBoardPath('scan');
-      if (row.kind !== 'unknown_setup' && row.deviceId) {
+      if (row.kind !== 'unknown_setup' && row.deviceId && soleBoxHeardLongEnough) {
         setPendingBoardRecognition({ deviceId: row.deviceId, boardType: row.boardType });
       }
     },
-    [stopScan, chooseFirstBoardPath],
+    [listenedLongEnough, stopScan, chooseFirstBoardPath],
   );
   // "Use my location": the boards near the climber, of that type only. In
   // first-board mode they show under "At a gym", elsewhere in Near you.
@@ -916,7 +943,7 @@ export default function BoardSelection() {
   const onInRangeSearchGyms = useCallback(
     (row: UnnamedInRangeRow) => {
       startUnnamedRowAction(row);
-      const gymMap = addBoardRoute('gym_map', { returnTo: boardReturnTo, source });
+      const gymMap = addBoardRoute('gym_map', { returnTo: boardReturnTo, source, fromPicker: true });
       router.push({ pathname: gymMap.pathname, params: { ...gymMap.params, boardType: row.boardType } });
     },
     [startUnnamedRowAction, router, boardReturnTo, source],
@@ -938,6 +965,9 @@ export default function BoardSelection() {
     chooseFirstBoardPath('scan');
     retryLookup();
   }, [chooseFirstBoardPath, retryLookup]);
+  // Android can withhold what a scan heard; the nothing-heard line then says
+  // why and offers the fix, which rescans when it works.
+  const locationHint = useInRangeLocationHint(inRange.content.kind === 'none_in_range', startScan);
   const inRangeSection = (
     <InRangeSection
       view={inRangeDisplay}
@@ -949,6 +979,7 @@ export default function BoardSelection() {
       onUseMyLocation={onInRangeUseMyLocation}
       onSearchGyms={onInRangeSearchGyms}
       onOwnBoard={onInRangeOwnBoard}
+      locationHint={locationHint}
     />
   );
 

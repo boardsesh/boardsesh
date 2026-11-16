@@ -304,6 +304,7 @@
       "continue": "Continuar",
       "blockedDenied": "Permite el Bluetooth en Ajustes para encontrar el plafón que tienes delante.",
       "blockedOff": "Activa el Bluetooth para encontrar el plafón que tienes delante.",
+      "unreachable": "No se pudo conectar con el Bluetooth.",
       "scanTitle": "Busca el plafón que tienes delante",
       "scan": "Buscar",
       "scanAgain": "Buscar de nuevo",
@@ -316,6 +317,9 @@
       "typeTitle": "Hay un plafón {{board}} al alcance",
       "bareNameBody": "Su caja no dice qué plafón es, así que dinos dónde estás y lo encontraremos.",
       "unknownSetupBody": "Aún no sabemos cómo está configurado, así que dinos dónde estás y lo encontraremos.",
+      "alsoMoonboard": "También hay un MoonBoard al alcance",
+      "alsoType": "También hay un plafón {{board}} al alcance",
+      "alsoNeedSignal": "Hay otro plafón al alcance. Necesitamos conexión para identificarlo.",
       "useMyLocation": "Usar mi ubicación",
       "searchGyms": "Buscar rocódromos",
       "alsoAt": "También en {{gym}}"

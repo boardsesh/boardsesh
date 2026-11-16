@@ -438,7 +438,14 @@ export default function ManageBoards() {
   const archivedWalls = useMemo(() => archivedSprayWallSummaries(sprayWallLifecycle), [sprayWallLifecycle]);
   // `rethrow`: a failed write is said by `useOpenSprayWall`'s alert, not a toast
   // the modal route would draw over.
-  const activateBoard = useActivateBoard({ returnTo: MANAGE_RETURN_TO, isLocalOnly: true, writeFailure: 'rethrow' });
+  // A switch here, even with the picker open underneath, says nothing about a
+  // box the picker's In range slot is holding (pending-board-recognition.ts).
+  const activateBoard = useActivateBoard({
+    returnTo: MANAGE_RETURN_TO,
+    isLocalOnly: true,
+    writeFailure: 'rethrow',
+    recognizesHeldBox: false,
+  });
   const openSprayWall = useOpenSprayWall(activateBoard);
   const openArchivedWall = useCallback(
     (wallUuid: string) => {
